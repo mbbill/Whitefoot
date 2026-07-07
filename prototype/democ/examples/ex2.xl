@@ -1,0 +1,16 @@
+fn main () -> own unit traps {
+  doc "Loop, break, mutable locals, trapping arithmetic: sum 0..4 == 10.";
+  let i: own i32 = 0_i32;
+  let sum: own i32 = 0_i32;
+  loop @l {
+    match ige<i32>(i, 5_i32) {
+      True() => { break @l; }
+      False() => { }
+    }
+    set sum = iadd.trap<i32>(sum, i);
+    set i = iadd.trap<i32>(i, 1_i32);
+  }
+  check ieq<i32>(sum, 10_i32) else trap "sum drift";
+  check ieq<i32>(imul.wrap<i32>(sum, 2_i32), 20_i32) else trap "mul drift";
+  return unit;
+}

@@ -1,0 +1,7 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn bad (x: own i32) -> own Sign pure {
+  match ilt<i32>(x, 0_i32) {
+    True() => { return Neg(); }
+  }
+}

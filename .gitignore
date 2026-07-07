@@ -1,0 +1,11 @@
+# Session tooling snapshot (not project content)
+.playwright-mcp/
+
+# Compiled demo binaries — regenerate with `make examples`
+prototype/democ/examples/ex1
+prototype/democ/examples/ex2
+
+# OS / editor / Python cruft
+.DS_Store
+__pycache__/
+*.pyc

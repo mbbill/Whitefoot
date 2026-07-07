@@ -1,0 +1,307 @@
+{
+  "question": "Research major programming language feature sets and optimization implications for designing an optimizer-first, performance-first programming language. Focus on evidence-backed facts about features that help or hinder compiler optimization: aliasing, ownership/borrowing, pointers, arrays, iterators, data layout, dispatch, generics, exceptions, effects, GC/RC, closures, reflection, dynamic typing, numeric semantics, concurrency, loop constructs, and memory models. Cover C, C++, Rust, Fortran, Ada/SPARK, Zig, Go, Java, C#, Swift, Julia, Haskell/ML/Futhark, Python/Ruby/JavaScript, and relevant DSLs/IRs such as LLVM IR, MLIR, Halide, ISPC, Chapel, Mojo if useful. Do not make final language design decisions yet. Produce sourced notes and a future-reference corpus under /Users/bytedance/Dev/xlang/optimizer-language-research/.",
+  "summary": "Across the verified corpus, the strongest optimizer-first pattern is explicit non-interference: Rust borrowing, Fortran dummy-argument rules, G++ `__restrict__`, SPARK anti-aliasing/ownership, and LLVM `noalias` metadata all give compilers permission to cache, reorder, eliminate, or promote memory operations when writes cannot interfere. The evidence also shows that optimization-friendly language design benefits from preserving high-level semantics into IR: Swift SIL keeps Swift-specific SSA semantics and exposes ARC, while LLVM scoped-alias metadata carries source-level no-alias facts into later passes. Runtime-managed languages can recover some performance through analysis, as HotSpot escape analysis can eliminate some allocations and locks, but these optimizations are conditional and not equivalent to a language-level stack-allocation guarantee. Conversely, exception/runtime models can impose backend costs: LLVM documents Windows-style EH funclets as constraining register allocation, while Itanium-style `landingpad` is better for optimization in that setting. The future-reference corpus target for this synthesis is `/Users/bytedance/Dev/xlang/optimizer-language-research/`; no new files were written by this subagent.",
+  "findings": [
+    {
+      "claim": "Language-level non-aliasing and non-interference rules are central optimizer enablers: Rust's safe `&mut` exclusivity, Fortran dummy-argument restrictions, SPARK anti-aliasing/ownership, and G++ `__restrict__` all provide ways to assume that writes through one access path do not secretly affect another, enabling optimizations that are unsound in more permissive languages without global analysis.",
+      "confidence": "high",
+      "sources": [
+        "https://doc.rust-lang.org/nomicon/aliasing.html",
+        "https://doc.rust-lang.org/reference/behavior-considered-undefined.html",
+        "https://flang.llvm.org/docs/Aliasing.html",
+        "https://docs.adacore.com/spark2014-docs/html/ug/en/source/language_restrictions.html",
+        "https://docs.adacore.com/spark2014-docs/html/lrm/subprograms.html#anti-aliasing",
+        "https://gcc.gnu.org/onlinedocs/gcc/Restricted-Pointers.html"
+      ],
+      "evidence": "Merged claims 0, 1, 8, 9, 11, 12, 13, and 14. Rust's Nomicon explicitly says overlapping `compute(&x, &mut x)` is impossible in safe Rust because `&mut` is not allowed to be aliased, making the caching/simplifying optimization sound in Rust but not generally in languages without comparable no-alias guarantees. Flang says a Fortran compiler may optimize assuming conformance with dummy-argument aliasing rules, including the rule that modified dummy-associated storage is referenced only through permitted paths. SPARK rejects non-benign aliasing, says two mutable parameters should never be aliased, and enforces ownership for access types; G++ supports `__restrict__` on pointers and references to express local no-alias assumptions despite standard C++ lacking `restrict` as a keyword.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "The optimization value of alias information is specifically about proving non-interference around writes: when analysis or language semantics prove a location is not modified through another path, compilers can keep values in registers, eliminate redundant reads and dead writes, and reorder memory operations.",
+      "confidence": "high",
+      "sources": [
+        "https://doc.rust-lang.org/nomicon/aliasing.html",
+        "https://llvm.org/docs/AliasAnalysis.html",
+        "https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html"
+      ],
+      "evidence": "Merged claims 2 and 3. The Rust Nomicon lists register promotion, read elimination, write elimination, and reordering as alias-analysis-enabled optimizations, and emphasizes that writes are the primary hazard: reads can move unless they might cross a write to the same location. LLVM and GCC documentation corroborate the general compiler principle through alias/mod-ref analysis, dead-store elimination, redundant-load elimination, load/store motion, loop-invariant code motion, and promotion of memory locations to registers when may-aliasing or modification is ruled out.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "LLVM IR provides optimizer-facing encodings for no-alias facts: `noalias` attributes and `alias.scope`/`noalias` metadata can express disjoint memory access sets, and violating those promises is undefined behavior.",
+      "confidence": "high",
+      "sources": [
+        "https://www.llvm.org/docs/LangRef.html#noalias",
+        "https://www.llvm.org/docs/LangRef.html#noalias-and-alias-scope-metadata",
+        "https://llvm.org/doxygen/ScopedNoAliasAA_8cpp_source.html"
+      ],
+      "evidence": "Merged claims 4, 6, and 7. LLVM LangRef says `noalias` on parameters or returns means memory accessed through based pointers is not also accessed via unrelated bases for modified locations, with UB on violating accesses. The same documentation says `alias.scope` and `noalias` metadata specify generic scoped no-alias memory-access sets for loads, stores, memory-accessing calls, and fences; two accesses are assumed not to alias when, in some metadata domain, one access's `alias.scope` scopes are a subset of the other's `noalias` scopes. The implementation source for `ScopedNoAliasAA` corroborates this subset/superset rule.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "LLVM's `noalias` return attribute is stronger than C99-style `restrict`: it models a fresh allocation-like return disjoint from all other caller-accessible storage, making return-value uniqueness an especially strong optimization contract.",
+      "confidence": "high",
+      "sources": [
+        "https://www.llvm.org/docs/LangRef.html#noalias",
+        "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/docs/LangRef.rst"
+      ],
+      "evidence": "Merged claim 5 as a distinct finding because it is stronger than parameter no-aliasing. LLVM LangRef explicitly says C99 `restrict` is not meaningful for function return values, while LLVM `noalias` is, and that a `noalias` return makes the function act like a system allocation function returning storage disjoint from any other object accessible to the caller. The same wording was found in current and historical LLVM documentation, so it appears stable.",
+      "vote": "Claim survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "Fortran's aliasing model is optimization-friendly in two separate ways: dummy-argument rules let compilers assume no conflicting references to modified dummy-associated storage, while pointer aliasing is narrowed because ordinary variables without `TARGET` are usually excluded from pointer alias sets.",
+      "confidence": "high",
+      "sources": [
+        "https://flang.llvm.org/docs/Aliasing.html",
+        "https://wg5-fortran.org/N2151-N2200/N2161.pdf"
+      ],
+      "evidence": "Merged claims 8, 9, and 10, while retaining their qualifications. Flang states compilers may optimize assuming programs obey dummy-argument aliasing rules, and explains that storage modified through a dummy argument must be referenced only through permitted dummy paths during the subprogram lifetime. For pointers, Flang says variables without `TARGET` are generally safe from aliasing with pointers, whereas pointers must conservatively be assumed to alias other pointers and `TARGET` data unless data-flow analysis proves otherwise. The Fortran drafts support the standard basis but include exceptions for POINTER, TARGET, and coarray cases.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "SPARK demonstrates a verification-oriented route to optimizer-friendly semantics: it restricts mutable aliasing, gives pointer-like access types an ownership policy with transfer on assignment, and requires expressions/function calls to be side-effect free except for controlled side-effecting functions.",
+      "confidence": "high",
+      "sources": [
+        "https://docs.adacore.com/spark2014-docs/html/ug/en/source/language_restrictions.html",
+        "https://docs.adacore.com/spark2014-docs/html/ug/en/source/access.html",
+        "https://www.adacore.com/blog/using-pointers-in-spark",
+        "https://docs.adacore.com/spark2014-docs/html/lrm/subprograms.html#anti-aliasing"
+      ],
+      "evidence": "Merged claims 13, 14, and 15. AdaCore's SPARK guide says access types and allocators follow an ownership policy in which only one access object has read-write permission to allocated memory at a time and assignment transfers ownership. The same documentation says aliasing of names is not permitted except for benign aliasing, two mutable parameters should never be aliased, and assignments to one variable cannot change another variable. It also says expressions, including function calls, are side-effect free, partly to avoid nondeterministic evaluation from conflicting side effects and to support mathematical treatment of functions in specifications.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "Managed-runtime implementations can regain some allocation and synchronization performance through escape analysis, but the HotSpot evidence supports conditional elimination and scalar replacement, not guaranteed stack allocation.",
+      "confidence": "high",
+      "sources": [
+        "https://docs.oracle.com/javase/8/docs/technotes/guides/vm/performance-enhancements-7.html",
+        "https://docs.oracle.com/en/java/javase/21/vm/java-hotspot-virtual-machine-performance-enhancements.html",
+        "https://docs.oracle.com/en/java/javase/25/vm/java-hotspot-virtual-machine-performance-enhancements.html",
+        "https://shipilev.net/jvm/anatomy-quarks/18-scalar-replacement/"
+      ],
+      "evidence": "Merged claims 16, 17, and 18. Oracle documentation says HotSpot Server Compiler escape analysis can decide whether a new object's uses require Java heap allocation and classifies `NoEscape` objects as scalar-replaceable, enabling allocation removal. The same documentation says escape analysis can eliminate scalar-replaceable allocations and associated locks, and can eliminate synchronization blocks when objects are thread-local or do not globally escape. Oracle explicitly states this does not replace non-globally escaping heap allocations with stack allocations, so the optimization is allocation elimination/scalar replacement and lock elision when analysis succeeds.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "Exception-handling representation affects optimization: LLVM documents Itanium-style `landingpad` as better for optimization than representing the same behavior with funclets, and Windows-style EH funclets constrain register allocation for values live into or out of the funclet.",
+      "confidence": "high",
+      "sources": [
+        "https://llvm.org/docs/ExceptionHandling.html",
+        "https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/docs/ExceptionHandling.md",
+        "https://learn.microsoft.com/en-us/cpp/build/exception-handling-x64?view=msvc-170"
+      ],
+      "evidence": "Merged claims 19 and 20. LLVM's exception-handling documentation states that although newer funclet-oriented EH instructions can represent Itanium EH, the `landingpad` model is strictly better for optimization purposes. The same documentation explains that Windows EH funclets access locals through the frame pointer and that no variables live into or out of the funclet can be allocated in registers. This makes EH model choice relevant to performance-first language and ABI design, especially around register allocation and normal-code optimization.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    },
+    {
+      "claim": "Optimization-first language design benefits from an IR that preserves source-language semantics long enough to optimize them: Swift SIL is SSA-form, keeps Swift-specific high-level semantic information, and exposes ARC operations instead of hiding retain/release as implicit effects.",
+      "confidence": "high",
+      "sources": [
+        "https://apple-swift.readthedocs.io/en/latest/SIL.html",
+        "https://github.com/swiftlang/swift/blob/main/docs/SIL/SIL.md",
+        "https://github.com/swiftlang/swift/blob/main/docs/OptimizerDesign.md",
+        "https://github.com/swiftlang/swift/blob/main/docs/SIL/Instructions.md",
+        "https://github.com/swiftlang/swift/blob/main/docs/ARCOptimization.md"
+      ],
+      "evidence": "Merged claims 21 and 22. Swift SIL documentation says SIL is an SSA-form IR with high-level semantic information designed to implement Swift, and optimizer documentation explains that Swift-level optimization happens before LLVM IR generation so passes can use information LLVM would not otherwise see. SIL also makes reference counting visible: retain/release operations are not implicit after OSSA lowering/non-OSSA SIL, and current docs describe explicit reference-counting instructions and ARC analyses/transformations. This supports the design lesson that performance-critical semantics such as ownership and reference counting should be visible to optimizer passes rather than buried in opaque runtime effects.",
+      "vote": "All merged claims survived 3-0 adversarial verification."
+    }
+  ],
+  "caveats": "All included claims were unanimously verified, but the corpus is narrow relative to the original research scope. It strongly covers aliasing, ownership, no-alias IR metadata, escape analysis, exception representation, and Swift ARC/SIL; it does not provide similarly verified coverage for Zig, Go, C#, Julia, Haskell/ML/Futhark, Python/Ruby/JavaScript, Halide, ISPC, Chapel, Mojo, MLIR, dynamic typing, numeric semantics, memory models, or most concurrency/iterator/data-layout topics. Rust aliasing evidence comes partly from the Nomicon, which is explanatory rather than a complete formal aliasing model; unsafe Rust, `UnsafeCell`, raw pointers, and future aliasing-model changes remain important caveats. Fortran rules include POINTER, TARGET, and coarray exceptions; SPARK permits benign/read-only and ownership-controlled aliasing; HotSpot optimizations depend on inlining, analysis limits, tier/options, and implementation details; Swift SIL has OSSA/non-OSSA phase distinctions. Source time-sensitivity is moderate: compiler IR semantics and VM optimizer behavior can change, though checked sources were current or corroborated across current documentation where noted.",
+  "openQuestions": [
+    "How should an optimizer-first new language balance Rust/SPARK-style ownership and anti-aliasing guarantees against C/Fortran-style opt-in `restrict`/dummy-argument contracts for usability and FFI?",
+    "Which data-layout, array, iterator, and loop constructs from DSLs such as Halide, ISPC, Futhark, Chapel, MLIR, and Mojo best expose vectorization, locality, and parallelism without over-specializing the surface language?",
+    "What effect, exception, and concurrency model would preserve enough ordering and side-effect information for aggressive optimization while remaining practical for systems and application programming?",
+    "For managed memory options, when should the language prefer explicit ownership/ARC/regions/borrowing over GC plus escape analysis, given that HotSpot-style allocation and lock elimination are conditional rather than guaranteed?"
+  ],
+  "refuted": [
+    {
+      "claim": "LLVM’s exception-handling design uses a zero-cost model that keeps exception-handling machinery off the normal execution path.",
+      "vote": "0-3",
+      "source": "https://llvm.org/docs/ExceptionHandling.html"
+    },
+    {
+      "claim": "LLVM IR represents potentially throwing calls with `invoke`, not ordinary `call`, because `invoke` has both normal and exceptional continuation points in the control-flow graph.",
+      "vote": "0-3",
+      "source": "https://llvm.org/docs/ExceptionHandling.html"
+    }
+  ],
+  "unverified": [],
+  "sources": [
+    {
+      "url": "https://doc.rust-lang.org/nomicon/aliasing.html",
+      "quality": "primary",
+      "angle": "Cross-language optimizer-visible semantics baseline",
+      "claimCount": 5
+    },
+    {
+      "url": "https://www.llvm.org/docs/LangRef.html#noalias",
+      "quality": "primary",
+      "angle": "Cross-language optimizer-visible semantics baseline",
+      "claimCount": 5
+    },
+    {
+      "url": "https://flang.llvm.org/docs/Aliasing.html",
+      "quality": "primary",
+      "angle": "Cross-language optimizer-visible semantics baseline",
+      "claimCount": 5
+    },
+    {
+      "url": "https://gcc.gnu.org/onlinedocs/gcc/Restricted-Pointers.html",
+      "quality": "primary",
+      "angle": "Cross-language optimizer-visible semantics baseline",
+      "claimCount": 4
+    },
+    {
+      "url": "https://docs.adacore.com/spark2014-docs/html/ug/en/source/language_restrictions.html",
+      "quality": "primary",
+      "angle": "Cross-language optimizer-visible semantics baseline",
+      "claimCount": 5
+    },
+    {
+      "url": "https://docs.oracle.com/javase/8/docs/technotes/guides/vm/performance-enhancements-7.html",
+      "quality": "primary",
+      "angle": "Runtime and high-level feature optimization costs",
+      "claimCount": 5
+    },
+    {
+      "url": "https://llvm.org/docs/ExceptionHandling.html",
+      "quality": "primary",
+      "angle": "Runtime and high-level feature optimization costs",
+      "claimCount": 5
+    },
+    {
+      "url": "https://apple-swift.readthedocs.io/en/latest/SIL.html",
+      "quality": "primary",
+      "angle": "Runtime and high-level feature optimization costs",
+      "claimCount": 5
+    },
+    {
+      "url": "https://devblogs.microsoft.com/dotnet/performance-improvements-in-net-6/",
+      "quality": "primary",
+      "angle": "Runtime and high-level feature optimization costs",
+      "claimCount": 5
+    },
+    {
+      "url": "https://v8.dev/docs/hidden-classes",
+      "quality": "primary",
+      "angle": "Runtime and high-level feature optimization costs",
+      "claimCount": 5
+    },
+    {
+      "url": "https://peps.python.org/pep-0659/",
+      "quality": "primary",
+      "angle": "Runtime and high-level feature optimization costs",
+      "claimCount": 5
+    },
+    {
+      "url": "https://llvm.org/docs/Vectorizers.html",
+      "quality": "primary",
+      "angle": "Numerics, loops, arrays, vectorization, and parallelism",
+      "claimCount": 5
+    },
+    {
+      "url": "https://mlir.llvm.org/docs/Dialects/Affine/",
+      "quality": "primary",
+      "angle": "Numerics, loops, arrays, vectorization, and parallelism",
+      "claimCount": 5
+    },
+    {
+      "url": "https://futhark-lang.org/",
+      "quality": "primary",
+      "angle": "Numerics, loops, arrays, vectorization, and parallelism",
+      "claimCount": 5
+    },
+    {
+      "url": "https://ispc.github.io/ispc.html",
+      "quality": "primary",
+      "angle": "Numerics, loops, arrays, vectorization, and parallelism",
+      "claimCount": 5
+    },
+    {
+      "url": "https://docs.julialang.org/en/v1/manual/performance-tips/",
+      "quality": "primary",
+      "angle": "Numerics, loops, arrays, vectorization, and parallelism",
+      "claimCount": 5
+    },
+    {
+      "url": "https://eel.is/c++draft/intro.races",
+      "quality": "primary",
+      "angle": "Memory models, concurrency, and effects",
+      "claimCount": 5
+    },
+    {
+      "url": "https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html",
+      "quality": "primary",
+      "angle": "Memory models, concurrency, and effects",
+      "claimCount": 5
+    },
+    {
+      "url": "https://go.dev/ref/mem",
+      "quality": "primary",
+      "angle": "Memory models, concurrency, and effects",
+      "claimCount": 5
+    },
+    {
+      "url": "https://doc.rust-lang.org/nomicon/atomics.html",
+      "quality": "primary",
+      "angle": "Memory models, concurrency, and effects",
+      "claimCount": 5
+    },
+    {
+      "url": "https://llvm.org/docs/Atomics.html",
+      "quality": "primary",
+      "angle": "Memory models, concurrency, and effects",
+      "claimCount": 5
+    },
+    {
+      "url": "https://arxiv.org/abs/2002.11054",
+      "quality": "primary",
+      "angle": "IRs and DSL design lessons for optimizer-first languages",
+      "claimCount": 5
+    },
+    {
+      "url": "https://halide-lang.org/",
+      "quality": "primary",
+      "angle": "IRs and DSL design lessons for optimizer-first languages",
+      "claimCount": 5
+    },
+    {
+      "url": "https://llvm.org/docs/LangRef.html",
+      "quality": "primary",
+      "angle": "IRs and DSL design lessons for optimizer-first languages",
+      "claimCount": 5
+    },
+    {
+      "url": "https://futhark-lang.org/publications.html",
+      "quality": "primary",
+      "angle": "IRs and DSL design lessons for optimizer-first languages",
+      "claimCount": 5
+    },
+    {
+      "url": "https://ispc.github.io/",
+      "quality": "primary",
+      "angle": "IRs and DSL design lessons for optimizer-first languages",
+      "claimCount": 5
+    },
+    {
+      "url": "https://arxiv.org/abs/1802.04799",
+      "quality": "primary",
+      "angle": "IRs and DSL design lessons for optimizer-first languages",
+      "claimCount": 5
+    }
+  ],
+  "stats": {
+    "angles": 5,
+    "sourcesFetched": 27,
+    "claimsExtracted": 134,
+    "claimsVerified": 25,
+    "confirmed": 23,
+    "killed": 2,
+    "unverified": 0,
+    "afterSynthesis": 9,
+    "urlDupes": 1,
+    "budgetDropped": 2,
+    "agentCalls": 109
+  }
+}

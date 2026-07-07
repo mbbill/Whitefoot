@@ -1,0 +1,36 @@
+{
+  "date": "2026-07-02",
+  "artifact": "/Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md",
+  "audit": "calibration_audit_v0",
+  "measurements": {
+    "chars": 13109,
+    "words": 1899,
+    "lines": 177,
+    "rule_ids": 59,
+    "tokens_cl100k_base": 3208,
+    "tokens_o200k_base": 3218
+  },
+  "scope_notes": [
+    "Kernel only: gated family, FFI, layers (fast-math, operation tables, parallel loops) excluded per SCOPE-1.",
+    "No worked examples included yet — round-4 says examples count toward the pack; estimate +2-4k tokens for a canonical example set.",
+    "Diagnostics vocabulary and edit-list schema not yet drafted — no-shadow-spec rule says they count; estimate +1-2k."
+  ],
+  "finding": "Projected full teaching pack ~7-9k tokens, comfortably inside even the strictest debated budget (10k). The D2 spec-compactness constraint appears satisfiable with margin; the binding constraint will be layer/periphery growth, policed by the spec-delta gate.",
+  "caveats": [
+    "v0 is a draft, not ratified; adversarial critique pending.",
+    "Rule individuation not yet owner-defined; 59 is the naive count.",
+    "Tokenizers: tiktoken cl100k/o200k; no Anthropic tokenizer run yet."
+  ],
+  "v0_1_update": {
+    "date": "2026-07-02",
+    "artifact": "/Users/bytedance/Dev/xlang/spec/kernel-spec-v0.1.md",
+    "tokens_cl100k_base": 6310,
+    "tokens_o200k_base": 6331,
+    "words": 3576,
+    "notes": [
+      "v0.1 addresses all 13 blocking and all major critique findings (or records explicit DEFERRED deltas); adds closed grammar, prelude, operation table, worked example, capability/gate/ledger stubs.",
+      "Rule count grew from 57 unique to ~75 (recount pending owner rule-individuation procedure).",
+      "Spec roughly doubled (3.2k -> 6.3k tokens) and still fits the projected pack budget: spec 6.3k + examples included + diagnostics schemas deferred (~1-2k) => ~8k total, inside the 10k strictest anchor."
+    ]
+  }
+}

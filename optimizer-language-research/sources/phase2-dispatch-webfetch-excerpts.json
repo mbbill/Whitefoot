@@ -1,0 +1,156 @@
+[
+  {
+    "cluster": "Rust generics / monomorphization",
+    "url": "https://doc.rust-lang.org/book/ch10-01-syntax.html",
+    "claims": [
+      "Rust compiles generics by monomorphization, replacing generic code with concrete type-specific versions for actually used types.",
+      "The Rust Book claims generic types do not make runtime execution slower than concrete types in the illustrated sense.",
+      "Generic operations require compile-time trait bounds, so the compiler knows available operations for T."
+    ],
+    "caveats": [
+      "The source does not discuss code size, compile-time cost, instruction-cache effects, or optimizer pass details."
+    ]
+  },
+  {
+    "cluster": "Rust trait objects / dynamic dispatch",
+    "url": "https://doc.rust-lang.org/book/ch18-02-trait-objects.html",
+    "claims": [
+      "Trait objects use dyn Trait behind a pointer to a value plus a method table looked up at runtime.",
+      "Generics use static dispatch by monomorphization when concrete types are known; trait objects use dynamic dispatch when concrete types are not known to the compiler.",
+      "Dynamic dispatch has runtime lookup cost and prevents method-body inlining, which can prevent some optimizations.",
+      "Trait objects enable heterogeneous collections checked against trait implementation at compile time."
+    ],
+    "caveats": [
+      "Book describes conceptual table rather than stable ABI/vtable layout; dynamic dispatch is a flexibility/performance tradeoff, not universally bad."
+    ]
+  },
+  {
+    "cluster": "Rust dyn compatibility / object safety",
+    "url": "https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility",
+    "claims": [
+      "Only dyn-compatible traits may be base traits of trait objects.",
+      "Dyn-compatible traits cannot require Self: Sized, cannot have associated constants, and dispatchable methods cannot have type parameters or opaque return types such as async fn or impl Trait.",
+      "Dispatchable receivers are limited to specified pointer receiver forms such as &Self, &mut Self, Box<Self>, Rc<Self>, Arc<Self>, and Pin over them.",
+      "Methods with where Self: Sized may exist but are explicitly non-dispatchable through the trait object."
+    ],
+    "caveats": [
+      "These are language restrictions for dynamic dispatch compatibility, not direct optimizer guarantees."
+    ]
+  },
+  {
+    "cluster": "Rust trait object representation",
+    "url": "https://doc.rust-lang.org/reference/types/trait-object.html",
+    "claims": [
+      "Trait objects are dynamically sized types used behind pointers; each pointer to a trait object includes a data pointer and a vtable pointer.",
+      "The vtable contains method pointers for the concrete type implementation of the base trait and supertraits.",
+      "Calling a method on a trait object performs virtual dispatch at runtime by loading a function pointer from the vtable and invoking it.",
+      "Trait object type identity includes base trait, auto-trait set, and lifetime bound."
+    ],
+    "caveats": [
+      "The Reference does not specify exact ABI layout, entry ordering, address stability, or devirtualization rules."
+    ]
+  },
+  {
+    "cluster": "Rust codegen options / optimization boundaries",
+    "url": "https://doc.rust-lang.org/rustc/codegen-options/index.html",
+    "claims": [
+      "More codegen units allow LLVM parallelism and may speed compile times, but may produce slower code; codegen-units=1 may improve generated code performance while slowing compilation.",
+      "Incremental compilation can inhibit certain optimizations and is not recommended for release builds.",
+      "LTO enables LLVM whole-program analysis for better optimized code at longer link time; linker-plugin LTO can defer optimization to the linker."
+    ],
+    "caveats": [
+      "The page does not enumerate which optimizations are lost or tie this specifically to generics/monomorphization."
+    ]
+  },
+  {
+    "cluster": ".NET generics runtime",
+    "url": "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/generics/generics-in-the-run-time",
+    "claims": [
+      "CIL for generic types contains metadata identifying type parameters.",
+      "For value type generic arguments, the runtime creates a specialized generic type for each unique value type, avoiding conversions because the specialized class natively contains the value type.",
+      "For reference type generic arguments, the runtime creates/reuses one specialized version with object references because all references are the same size.",
+      "Reflection can query generic type information and actual type parameters at runtime."
+    ],
+    "caveats": [
+      "This is runtime representation evidence; it does not by itself state JIT inlining/devirtualization behavior or code-size tradeoffs beyond sharing reference-type instantiations."
+    ]
+  },
+  {
+    "cluster": ".NET generics reflection",
+    "url": "https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/reflection-and-attributes/generics-and-reflection",
+    "claims": [
+      "CLR has access to generic type information at runtime, and reflection can obtain generic type and method information.",
+      "Reflection APIs expose whether a type/method is generic, its generic arguments, generic type definition, constraints, and constructed methods/types."
+    ],
+    "caveats": [
+      "Reflection availability may constrain ahead-of-time/link-time assumptions unless closed-world restrictions are imposed; the source does not discuss optimizer effects directly."
+    ]
+  },
+  {
+    "cluster": "C# sealed",
+    "url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/sealed",
+    "claims": [
+      "sealed on a class prevents other classes from inheriting from it.",
+      "sealed on an overriding method/property prevents further overrides while still allowing derivation from the class.",
+      "Structs are implicitly sealed."
+    ],
+    "caveats": [
+      "Microsoft page does not explicitly claim devirtualization/inlining benefits, so only semantic finality should be recorded."
+    ]
+  },
+  {
+    "cluster": "GCC devirtualization / IPA / LTO",
+    "url": "https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html",
+    "claims": [
+      "GCC -fdevirtualize can convert calls to virtual functions into direct calls and is enabled at O2/O3/Os.",
+      "GCC can speculatively devirtualize likely target sets into guarded direct calls plus fallback indirect calls.",
+      "Inlining, indirect inlining, IPA constant propagation, IPA SRA, IPA ICF, and other interprocedural analyses are enabled at optimization levels and can interact with dispatch optimization.",
+      "LTO stores GIMPLE in object files and merges objects at link time as if part of one translation unit, enabling cross-file IPA and inlining.",
+      "Semantic interposition can restrict IPA/inlining/propagation for exported ELF symbols; disabling it lets GCC assume interposed symbols preserve semantics."
+    ],
+    "caveats": [
+      "Options are compiler- and target-dependent; speculative calls can be reverted; some IPA options cost memory/compile time or code size."
+    ]
+  },
+  {
+    "cluster": "Clang/LLVM optimization reports / semantic assumptions",
+    "url": "https://clang.llvm.org/docs/UsersManual.html",
+    "claims": [
+      "Clang builds on the LLVM optimizer and code generator, and the optimizer assumes code has no undefined behavior.",
+      "Optimization remarks can report inlining and missed/performed optimization decisions through Rpass flags.",
+      "LTO/ThinLTO are mentioned in optimization-record and CFI contexts; excerpt did not provide broad devirtualization claims."
+    ],
+    "caveats": [
+      "The fetched excerpt did not support devirtualization/whole-program-vtables claims; avoid inventing them from memory."
+    ]
+  },
+  {
+    "cluster": "Julia performance tips",
+    "url": "https://docs.julialang.org/en/v1/manual/performance-tips/",
+    "claims": [
+      "Julia performance depends strongly on type inference and type-stable functions whose return types are predictable.",
+      "Changing variable types, abstract fields, abstract containers, and Function-typed fields hide representation/call targets and can require dynamic dispatch or indirect storage.",
+      "Function barriers move hot loops behind concrete argument types so Julia can specialize them.",
+      "Julia may avoid specializing on Type, Function, and Vararg arguments in some forwarding-only cases; type parameters can force specialization.",
+      "Values-as-parameters can expose compile-time values such as dimensions, but overuse can create many specializations and compile-time/cache pressure.",
+      "Closures can box captured variables and cause runtime dispatch when stable type/non-reassignment cannot be proven."
+    ],
+    "caveats": [
+      "Performance tips are practical guidance; actual specialization depends on compiler heuristics and workload."
+    ]
+  },
+  {
+    "cluster": "Julia methods / multiple dispatch",
+    "url": "https://docs.julialang.org/en/v1/manual/methods/",
+    "claims": [
+      "Julia dispatch selects the most specific applicable method based on number and types of all positional arguments; keyword arguments do not participate.",
+      "A broad method may be compiled separately for concrete argument tuples, allowing downstream method calls to be resolved ahead of execution.",
+      "Julia may avoid specialization where possible cases are effectively unlimited.",
+      "Ambiguous overlapping methods raise MethodError rather than relying on definition order.",
+      "World age can make newly added methods unavailable to currently running code."
+    ],
+    "caveats": [
+      "methods(f) lists user-visible methods, not compiler-generated specializations; internal method-table layout is not described."
+    ]
+  }
+]

@@ -1,0 +1,10 @@
+family,role,evidence_stage,optimizer_relevant_topics
+Algol/Pascal/Modula/Oberon/Ada,structured/procedural systems lineage,missing_primary_source,range/subtype/module/alias/control-flow restrictions
+C/C++/D/Zig/Cyclone/Checked C,systems pointer lineage,partial_seed,"pointers, restrict, UB, provenance, checked pointers"
+Fortran/HPF/Chapel/X10/UPC,numeric/data-parallel lineage,partial_seed,"arrays, dummy arguments, parallel loops, locality"
+Lisp/Scheme/Smalltalk/Self/Ruby/Python/JS,dynamic/object/JIT lineage,missing_primary_source,"runtime specialization, inline caches, reflection, object shapes"
+ML/Haskell/Clean/Futhark,functional/static types lineage,missing_primary_source,"purity, effects, laziness/strictness, uniqueness, fusion"
+Rust/SPARK/Pony,ownership/capability/verification lineage,partial_seed,"borrowing, anti-aliasing, proof/capability semantics"
+SQL/APL/Matlab/R/array DSLs,declarative/array optimization lineage,missing_primary_source,whole-program/query/array transformations
+LLVM/MLIR/Swift SIL/JVM/.NET IRs,IR/runtime optimization lineage,partial_seed,"metadata, high-level IR, escape analysis, ARC visibility"
+GPU/CUDA/OpenCL/SYCL/ISPC,accelerator/SPMD lineage,missing_primary_source,"address spaces, vector lanes, memory hierarchy, divergence"

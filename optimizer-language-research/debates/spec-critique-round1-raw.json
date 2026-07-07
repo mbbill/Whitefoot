@@ -1,0 +1,1282 @@
+{
+  "summary": "Adversarial critique of kernel-spec-v0 against decided law: floors, envelope, D2 invariants, checker prototype scope",
+  "agentCount": 5,
+  "logs": [],
+  "result": {
+    "perDimension": [
+      {
+        "findings": [
+          {
+            "ruleId": "FN-4",
+            "severity": "blocking",
+            "problem": "FN-4 lets a 'law-test harness' discharge laws into optimizer-usable facts. A property-test harness is neither deterministic-checker-grade proof, a runtime check under trap=abort, nor a verified proof artifact — the only admissible discharge forms (round3-synthesis-safety-envelope.md, Decided now: \"'proof' is defined as deterministic-checker or verified-proof-artifact discharge\"; Layer-2 discharge preference). A tested-but-unproven law consumed by the optimizer is exactly the third state the verification spine bans (round2-synthesis-minimal-core.md line 33: law annotations must be checked obligations, not trusted assertions; round-3 spine amendment: toolchain-gated ledger entries are the SOLE trusted-assertion class).",
+            "fix": "Restrict law discharge to (a) the stated-and-checked channel — static proof, runtime check under trap=abort, or verified proof artifact (round-3 Layer-0 channel (a)) — or (b) gated-family ledger entries. Testing may inform gate review of a ledger entry but never directly licenses optimizer use of a law."
+          },
+          {
+            "ruleId": "SCOPE-3",
+            "severity": "blocking",
+            "problem": "\"Accepted programs have no undefined behavior\" states D1 unconditionally. The owner ruled D1a as a Rust-class CONDITIONAL envelope (decision-gates.md, Owner rulings D1a/D0a), and round-3 recorded the honest Layer-4 statement as position-invariant law: safety holds CONDITIONAL on ABI-well-behaved foreign code and the declared TCB (round3-synthesis-safety-envelope.md, Layer 4 and decision-log entry (c)). Even a pure-kernel program sits on the undelimited TCB (allocator, runtime, compiler/checker).",
+            "fix": "Restate SCOPE-3 conditionally: accepted programs have no UB conditional on the declared TCB (and, once gated/FFI constructs are linked, on ABI-well-behaved foreign code), cross-referencing the Layer-4 envelope statement."
+          },
+          {
+            "ruleId": "STOR-2",
+            "severity": "blocking",
+            "problem": "Defaulting non-borrowed `let` bindings to `stack` \"unless the initializer is an explicit allocation call\" elides a contract-bearing fact. The round-2 MEMORY floor requires EVERY allocation to carry a writer-stated storage/lifetime contract (round2-synthesis-minimal-core.md, MEMORY line; decision-gates.md round-2 floors: \"explicit storage contracts\"), the round-2 cut list bans \"elision of contract-bearing facts\", and the D2 corrected ruling decides uniform verbose-everywhere annotation with no elision (decision-gates.md, D2 corrected ruling). The \"unless\" clause also violates the spec's own META-3 (no exception clauses).",
+            "fix": "Make the storage class explicit on every binding — e.g. fold storage into the mandatory mode (`let x: own stack i32 = ...;`) or require alloc_stack/alloc_arena/alloc_heap calls uniformly — and delete the default clause."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "blocking",
+            "problem": "SCOPE-1 plus the LAYER exclusion define the priced kernel as writer-facing-only, excluding the obligation ledger, FFI declaration frames, and capability predicates from the budget (3208 tokens, decision-gates.md Calibration audit v0). Round-4 decided law says \"kernel (D1a ownership calculus + ledger + FFI frames + capabilities) is priced FIRST\" (decision-gates.md, Round-4 teachability states), and round-2 promoted C004 capability predicates to \"a required core kernel component\" (round2-synthesis-minimal-core.md, Round-1 verdicts affected, concurrency-model). The spec both narrows the decided kernel-pricing unit and silently drops a required component; the calibration audit priced the wrong artifact.",
+            "fix": "Add capability-predicate rules and the writer-visible schemas of the ledger and FFI frames (normative stubs at minimum) to this document's counted kernel mass and re-run the calibration audit; any narrowing of the round-4 kernel definition requires an owner ruling with a declared spec delta per META-5."
+          },
+          {
+            "ruleId": "SCOPE-2",
+            "severity": "major",
+            "problem": "\"There is no third state: nothing writer-stated is trusted unchecked\" restates the PRE-amendment spine. The adopted amendment (round3-synthesis-safety-envelope.md, Round-1/2 amendments, first bullet; decision-gates.md round-3: \"no WRITER-EMITTABLE third state; toolchain-gated ledger entries are the sole trusted-assertion class\") is the legislated form, and FN-4's own reference to gated-channel discharge contradicts SCOPE-2 as written — a kernel program relying on a gated law lives in a state SCOPE-2 says does not exist.",
+            "fix": "Reword to \"no writer-emittable third state\", name toolchain-gated ledger entries as the sole trusted-assertion class (specified separately), and note that the strict reading governs until the amendment is formally issued (round-3 Decided now, last item)."
+          },
+          {
+            "ruleId": "GRAM-5",
+            "severity": "major",
+            "problem": "bool has two identities and two spellings: TYPE-1 lists `bool` as a primitive, GRAM-5 says it is prelude `enum Bool { True(); False(); }`, and FORM-5 defines literals `true`/`false` alongside variant spellings `True()`/`False()`. This violates FORM-1/META-1 and the round-2 canonical-form floor (one spelling per semantic construct — round2-synthesis-minimal-core.md SURFACE line; decision-gates.md round-2 floors). A writer cannot know whether match arms on a bool are legal or which constructor to emit.",
+            "fix": "Pick one representation: prelude Bool enum (remove `bool` from TYPE-1 and `true`/`false` from FORM-5) or a primitive bool with a defined dispatch form. One spelling, stated once."
+          },
+          {
+            "ruleId": "GRAM-2",
+            "severity": "major",
+            "problem": "FN-3 requires conformance to be \"declared explicitly per (type, contract)\", but `item := fn_decl | struct_decl | enum_decl | contract_decl` has no conformance-declaration production, and `fn_sig`/`law` in contract_decl are undefined nonterminals. Conformance is unwritable, so contract-bounded generics (FN-2/FN-3) — part of the decided contract-group kernel (round2-synthesis-minimal-core.md, CONTRACT KERNEL line) — can never be exercised. Direct writer/checker divergence.",
+            "fix": "Add a `conform_decl` production to `item` (naming type, contract, and member bindings) plus `fn_sig` and `law` productions."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "The place grammar has no dereference/borrow-projection form (`place := IDENT | place.IDENT | index(...)`), so reading or writing \"through that borrow\" — the only legal access under a live `&mut` per OWN-5 — is inexpressible. The D1a calculus (decision-gates.md, Owner rulings D1a) is unusable as specified: borrows can be created but never used.",
+            "fix": "Add a deref place node (e.g. `place := ... | \"deref\" \"(\" place \")\"`) with its region/exclusivity typing rules in section 5."
+          },
+          {
+            "ruleId": "GRAM-3",
+            "severity": "major",
+            "problem": "Referenced nonterminals are never defined: `type`, `mode`, `generics`, `targs`, `effects`, `region_params`, `path`, `literal`, `type_list`, `param_list`, `arg_list`, `binder_list`, `LABEL`, `STRING`; struct/enum construction expressions are missing entirely. GRAM-1 claims LL(1) and 1:1 core-tree isomorphism over a grammar that is not closed. Under the round-4 no-shadow-spec rule (decision-gates.md: \"writer-facing schemas count as spec mass\") the undefined productions are uncounted spec mass distorting the calibration audit baseline.",
+            "fix": "Complete the grammar (all productions, all token classes, construction forms), then re-price the spec and update the audit note in decision-gates.md."
+          },
+          {
+            "ruleId": "STOR-1",
+            "severity": "major",
+            "problem": "The storage-contract vocabulary omits the decided `foreign-shared` allocation-site field: round-3 decided now that foreign-retainable memory is pre-declared foreign-shared at its allocation site as \"one field on the existing writer-stated storage-contract floor\", and that compiler-inferred call-site demotion is REJECTED (round3-synthesis-safety-envelope.md, Decided now; round-2 MEMORY floor amendment (b)). The spec is silent, so the storage grammar must break when FFI frames land, and the demotion rejection is recorded nowhere normative.",
+            "fix": "Reserve the foreign-shared field in STOR-1's contract vocabulary now, with a rule stating it is only legal in programs containing gated FFI frames, and record that call-site demotion is a floor violation."
+          },
+          {
+            "ruleId": "DIAG-2",
+            "severity": "major",
+            "problem": "The decided machine-readable report family is missing: per-function check reports (round3-synthesis-safety-envelope.md, Decided now: \"Machine-readable per-function check reports join the report family now\"), per-function lifetime reports (round2-synthesis-minimal-core.md, MEMORY floor), and check-density/elision reports as the lint-class containment channel (round-3 Layer 1). DIAG-2 surfaces ops in the artifact but omits the report family that decided law attaches to it.",
+            "fix": "Add a DIAG rule enumerating the normative report family (check reports, lifetime reports, check-density/elision reports) as toolchain output accompanying the canonical artifact."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "major",
+            "problem": "Acceptance artifact-checkability has no rule: round-3 cross-cutting invariant (4) and decision-log entry (d) require proof objects and check instrumentation to travel with the program so that 'accepted' is artifact-checkable, not process-relative (round3-synthesis-safety-envelope.md). The spec defines acceptance (SCOPE-2) purely as a process outcome.",
+            "fix": "Add a rule: the canonical elaborated artifact embeds proof objects and check instrumentation, and acceptance is decidable from the artifact alone across toolchain versions."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "major",
+            "problem": "The contract-edit gating floor is unstated: round-2 decided that editing a declared contract (signatures, law bundles, lifetime contracts) is a privileged, gated toolchain operation so a writer cannot launder a hallucinated body by rewriting the declaration (round2-synthesis-minimal-core.md, Additions required because the writer is an AI), extended by round-3 into the unified gating regime (round3-synthesis-safety-envelope.md, gating regime unification). This is writer-facing law — it bounds what the writer may edit — and the kernel spec omits it entirely.",
+            "fix": "Add a rule: contract, signature, law, and storage-contract edits are one privileged gated toolchain operation with one audit trail, outside steady-state writer capability."
+          },
+          {
+            "ruleId": "OP-4",
+            "severity": "major",
+            "problem": "\"The compiler may eliminate a check only by proof\" leaves 'proof' undefined. Round-3 legislated that proof means deterministic-checker-grade or verified-proof-artifact discharge, and fenced the solver: it may only PROMOTE performance facts, never gate acceptance, and never elide safety-relevant checks until a proof-checker TCB exists (round3-synthesis-safety-envelope.md, Decided now; decision-gates.md round-3 summary). As written, raw SMT output could count as proof — a permissive reading that contradicts the solver fence.",
+            "fix": "Define 'proof' per the round-3 legislated definition in OP-4 (or a shared definition rule) and state the solver fence: solver-promoted facts are performance-ledger only and never license check elision."
+          },
+          {
+            "ruleId": "PROG-2",
+            "severity": "major",
+            "problem": "`writes('static)` references a `'static` region defined nowhere: OWN-3 admits only lexical regions and caller-supplied region parameters, FORM-3's region identifiers have no tick form, and the spec has no global/static declarations for the effect to range over. A writer cannot produce a conforming main, and the checker has no rule to check it against.",
+            "fix": "Either define the static region and global state as kernel constructs, or reduce main's permitted row to `allocates(heap), traps` and delete the reference."
+          },
+          {
+            "ruleId": "ERR-1",
+            "severity": "major",
+            "problem": "The decided error-handling replacement is only half-present. Missing: verifier-checked Result propagation with auto-derived context/cause chains at zero hand-written tokens per site — explicitly the argument that neutralized unwinding — and the language-enforced Result-vs-trap classification rule plus anti-sentinel lints (round2-synthesis-minimal-core.md, ERRORS line and Replacing exceptions). Bare manual match propagation reopens the objection the round-2 verdict priced away.",
+            "fix": "Add the propagation operation with auto-derived context chains and the Result-vs-trap classification rule, or record an explicit deferral with its spec delta per META-5."
+          },
+          {
+            "ruleId": "PROG-1",
+            "severity": "major",
+            "problem": "The prelude (Bool, Result, Option, the iadd/isub/imul/idiv/ineg/comparison families, cvt, index, alloc_arena, alloc_heap, band/bor/bnot) is normative writer-facing surface referenced throughout but specified nowhere and not counted in the 3208-token pricing — a shadow spec violating the round-4 no-shadow-spec rule (decision-gates.md, Round-4: \"writer-facing schemas count as spec mass\").",
+            "fix": "Publish the full prelude signature listing (with modes, effect rows, and generic bounds) as a counted normative annex and re-run the calibration audit."
+          },
+          {
+            "ruleId": "FN-5",
+            "severity": "major",
+            "problem": "The closures/dispatch replacement floors are named but not specified: no guarantee that env-struct dispatch monomorphizes to direct calls (round2-synthesis-minimal-core.md, Replacing closures: \"GUARANTEED language capability — never fn-pointer+env indirection\"), none of the mandated exactness diagnostics (unused env field, used-but-uninitialized field, dead dispatch variant, non-exhaustive tag dispatch, signature mismatch — each naming struct, function, construction site), and typed operation tables with construction-checked payload/table coupling and the one-canonical-table-per-(variant-set x operation) one-definition rule (Replacing dyn dispatch) are absent entirely.",
+            "fix": "Add rules for the direct-call guarantee and the mandated diagnostic set; add the typed-operation-table construct with its one-definition and construction-coupling rules, or record explicit deferrals with spec deltas."
+          },
+          {
+            "ruleId": "TYPE-2",
+            "severity": "major",
+            "problem": "`array<T, N>` introduces const generics with no constant-expression rules. The round-2 floor is a \"closed, decidable, trivially-terminating constant-expression sublanguage\" (round2-synthesis-minimal-core.md, COMPILE-TIME COMPUTATION; decision-gates.md round-2 floors: \"closed constant-expression sublanguage only\"). With N's expression language unspecified, writer and checker will diverge on what lengths are writable and when two array types are equal.",
+            "fix": "Add CONST rules defining the closed sublanguage (built-in arithmetic/layout/target-parameter constants), or restrict N to literal integer constants in v0 and say so explicitly."
+          },
+          {
+            "ruleId": "OP-3",
+            "severity": "minor",
+            "problem": "\"Strict IEEE 754 by default\" is incoherent under one-mode-per-node (there are no defaults if every node names `.strict`), and remanding fast-math/approximation permissions to a LAYER decides the placement of a question numeric-semantics still holds open (decision-gates.md round-1: numeric-semantics no_decision; round2-synthesis-minimal-core.md amendment: default-mode policy question remains open; round-3 narrowed the open residue but decided only overflow, not float relaxation placement).",
+            "fix": "Reword: \"v0 defines only `.strict` float modes; each node names its mode.\" Record approximation/fast-math modes as an open numeric-semantics question rather than a decided LAYER."
+          },
+          {
+            "ruleId": "OWN-3",
+            "severity": "minor",
+            "problem": "Region spelling is internally inconsistent: sections 5-6 use tick form (`'a`, `arena<'a>`, `&mut 'a p`) while FORM-3 gives regions plain `[a-z][a-z0-9_]*` identifiers and GRAM-4 uses tickless REGIONID. Two spellings for one construct violates FORM-1/META-1 and the canonical-form floor (round2-synthesis-minimal-core.md, SURFACE).",
+            "fix": "Pick one region spelling and use it in every rule, grammar production, and example."
+          },
+          {
+            "ruleId": "META-2",
+            "severity": "minor",
+            "problem": "\"Every rule is locally decidable at its node given declared types in scope\" overstates the round-4 invariant (decision-gates.md: \"zero context-dependent rules\" — a regularity constraint on spellings/rules, not node-local decidability) and is falsified by the spec's own flow-dependent checks: OWN-5 exclusivity and OWN-6 liveness require knowledge of other live borrows, not just the node and declared types.",
+            "fix": "Reword META-2 to the round-4 formulation (no context-dependent spellings or rule variants) and drop the node-local decidability claim."
+          },
+          {
+            "ruleId": "EFF-1",
+            "severity": "minor",
+            "problem": "The effect-row vocabulary is instantiated while its named blocking evidence is undischarged: region/effect verifier exemplar cards (Cyclone, MLKit, Koka, DPJ) are \"blocking for the effect-row floor\" (round3-synthesis-safety-envelope.md, Experiments needed; round2-synthesis-minimal-core.md, aliasing-model amendment: currently ZERO cards). The spec draft does not record this gate on section 9.",
+            "fix": "Mark section 9 in the status header as gated on the region/effect exemplar carding before ratification."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "minor",
+            "problem": "Match arm binder modes are unspecified: whether `Variant(x)` moves the payload into x, and what binders denote when the scrutinee is a shared or exclusive borrow, is undefined — a direct writer/checker divergence point inside the D1a calculus the checker prototype has necessarily already decided one way (decision-gates.md, Checker-core prototype).",
+            "fix": "Add binder-mode rules to sections 3/5 (e.g. binders inherit the scrutinee's mode; an owned scrutinee is consumed by the match)."
+          },
+          {
+            "ruleId": "OP-5",
+            "severity": "minor",
+            "problem": "The optional stated-and-checked channel (loop invariants, ranges, loop-bounded disjointness, law obligations — fact-creating but always checked; round3-synthesis-safety-envelope.md, Layer 0 channel (a)) has no kernel surface, and the spec does not say whether a passed `check` is fact-creating (its fact joining the proven set on the dominated path, the A005 guard-then-assume pattern) or purely a trap assertion.",
+            "fix": "State check's fact-creating status in OP-5 and record the fuller stated-and-checked vocabulary as an explicitly deferred channel with its spec delta."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "minor",
+            "problem": "Section 5 presents an invented rule set without recording the ratification precondition the owner attached: \"formalized-calculus adoption (Featherweight Rust/Austral-class) required before ratification\" and the adopted checker-simplification levers (decision-gates.md, Owner rulings D1a/D0a and Checker-core prototype). A reader of the spec alone cannot see that OWN-1..9 are provisional pending calculus alignment.",
+            "fix": "Add to the status header (or section 5 preamble) that OWN rules must be reconciled against a formalized minimal calculus before ratification, citing the D1a gate."
+          }
+        ],
+        "missingRules": [
+          "CAP-1..n: type-level capability predicates (Send/Sync-class per C004, amended scope: data races prevented, general race conditions not) — required core kernel component (round2-synthesis-minimal-core.md CONTRACT KERNEL + concurrency amendment; round-3 Layer 0; part of the round-4 kernel pricing unit in decision-gates.md).",
+          "STOR-5: the `foreign-shared` allocation-site field on the storage contract, plus the recorded rejection of compiler-inferred call-site demotion (round3-synthesis-safety-envelope.md, Decided now; round-2 MEMORY amendment (b)).",
+          "GATE-1: contract-edit gating / unified gating regime — contract, signature, law-bundle, and storage-contract edits are one privileged gated toolchain operation with one audit trail, outside steady-state writer capability (round-2 Additions; round-3 gating unification).",
+          "DIAG-3: machine-readable report family — per-function check reports, per-function lifetime reports, and check-density/elision reports accompanying the canonical artifact (round-2 MEMORY floor; round-3 Decided now).",
+          "DIAG-4: acceptance artifact-checkability — proof objects and check instrumentation travel with the canonical artifact; acceptance is decidable from the artifact alone (round-3 cross-cutting invariant 4, decision-log (d)).",
+          "DIAG-5: trap-report content — machine-readable, with descriptive CFI/frame-pointer stack attribution and no executable unwind semantics (round-2 ERRORS floor and AI-writer additions).",
+          "ERR-3: language-enforced Result-vs-trap classification rule; verifier-checked Result propagation with auto-derived context/cause chains; anti-sentinel lint contract (round-2 Replacing exceptions).",
+          "DISP-1: typed operation tables — named fields, per-row signature checks, construction-checked payload/table coupling, one canonical table per (variant-set x operation) with ad-hoc switch sites lowered or flagged (round-2 Replacing dyn dispatch).",
+          "FN-7: env-struct guarantees and mandated exactness diagnostics — guaranteed direct-call monomorphization; unused env field, used-but-uninitialized field, dead dispatch variant, non-exhaustive tag dispatch, signature mismatch, each naming struct/function/construction site (round-2 Replacing closures).",
+          "CONST-1: the closed, decidable, trivially-terminating constant-expression sublanguage governing const generics and array lengths (round-2 COMPILE-TIME COMPUTATION floor).",
+          "GRAM: conformance-declaration item production, fn_sig/law productions, full type/mode/effects/generics/targs/path/literal/token-class productions, and struct/enum construction expressions (closes GRAM-1's isomorphism claim).",
+          "GRAM/OWN: dereference place form with region/exclusivity rules, and match-binder mode rules (without these the D1a borrow calculus is unusable as written).",
+          "PRELUDE-1: normative, token-counted prelude signature annex (Bool/Result/Option, arithmetic/comparison/boolean families, cvt, index, alloc_* ops) per the round-4 no-shadow-spec rule.",
+          "PROG/OWN: definition of the 'static region and global state, or removal of `writes('static)` from PROG-2.",
+          "SCOPE/LEDGER: a writer-visible normative stub for the gated fact-boundary family — one family, one per-fact obligation ledger, manifest-free members unrepresentable, writer cannot author or edit — so kernel programs' relationship to gated law (e.g. FN-4 discharge) is defined and the round-4 pricing unit is complete (round-3 Layer 2; decision-gates.md round-4)."
+        ]
+      },
+      {
+        "findings": [
+          {
+            "ruleId": "OWN-4",
+            "severity": "blocking",
+            "problem": "The escape condition is INVERTED and unsound: 'may not be stored into a value or returned unless the destination's declared region outlives-or-equals 'a' permits exactly the dangling case — a borrow in inner region 'a stored into a destination in an enclosing (longer-lived) region passes the test and outlives its referent (use-after-free representable, contradicting SCOPE-3 and directive D1 in notes/user-directives.md). The reference checker implements the OPPOSITE (sound) direction: prototype/checker/checker.py:170-177 rejects when the borrow's region does not outlive the destination's, and test_checker.py:80-100 (test_escape_inner_region_to_outer) rejects a program the spec text as written accepts. Spec text and checker already diverge.",
+            "fix": "Rewrite: 'it may not be stored into a value or returned unless 'a outlives-or-equals the destination's declared region.' Add a spec-CI test tying OWN-4's text to the checker's OWN-4 test vectors."
+          },
+          {
+            "ruleId": "STOR-2",
+            "severity": "blocking",
+            "problem": "'let bindings of non-borrowed values are stack unless the initializer is an explicit allocation call' is (a) a defaulting rule — banned by the round-4 zero-context-dependence invariant ('no defaulting', round4-synthesis-teachability.md line 32) and by META-2; (b) an 'unless' exception clause — banned by META-3/empty-exception-lists; (c) a direct contradiction of STOR-1 ('Every allocation names its storage class explicitly') since plain-let stack allocations name nothing; and (d) a violation of the round-2 decided floor 'every allocation carries a writer-stated, compiler-checked storage/lifetime contract' (round2-synthesis-minimal-core.md line 29), which round4-synthesis line 8 explicitly calls majority-path mandatory law.",
+            "fix": "Make storage explicit in the one uniform spelling: either every let names its storage class in the mode position (e.g. 'let x: own stack T = ...') or every initializer is an explicit allocation call including alloc_stack<T>(v). Delete the default and the unless-clause."
+          },
+          {
+            "ruleId": "TYPE-1",
+            "severity": "blocking",
+            "problem": "bool has two contradictory definitions and two spellings: TYPE-1 lists bool as a PRIMITIVE type while GRAM-5 says 'bool is enum Bool { True(); False(); } in the prelude'. FORM-5 additionally blesses literals 'true'/'false', giving the same construct a literal spelling in expression position and a variant spelling (True()/False()) in match-arm position — a one-spelling-per-construct violation with positionally-resolved spelling (round4-synthesis lines 31-32) and a duplicated, mutually inconsistent normative fact (META-1/META-4 fail on the spec's own terms).",
+            "fix": "Pick one story and state it once: remove bool from TYPE-1's primitive list, remove true/false from FORM-5, define Bool/True()/False() solely as the prelude enum with the variant spelling in both expression and pattern position (matches GRAM-5's no-if design). Fix the enum name/type-name case mismatch (bool vs Bool) at the same time."
+          },
+          {
+            "ruleId": "FN-4",
+            "severity": "blocking",
+            "problem": "'each law is either checked by the toolchain's law-test harness or discharged by the gated channel' creates a third trust state: a property-test harness samples inputs — it neither proves the law nor attaches a runtime check at the optimizer's point of use, yet FN-4 makes harness-passed laws 'optimizer-usable facts'. This contradicts SCOPE-2's own 'There is no third state' and the round-3 spine amendment ('no WRITER-EMITTABLE third state; toolchain-gated ledger entries are the sole trusted-assertion class' — round3-synthesis-safety-envelope.md line 82, decision-gates.md line 62). A false-but-test-passing associativity law consumed by a reassociation pass is a silent miscompile.",
+            "fix": "Restrict optimizer-usable laws to gated-family ledger discharge or verified proof artifacts (cross-reference the gated channel only). The law-test harness may remain as non-normative pre-gate evidence but must not be a trust source; reword FN-4 accordingly."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "blocking",
+            "problem": "No-shadow-spec violations: the spec normatively references writer-facing artifacts whose schemas live nowhere in the artifact — the machine-readable trap report (SCOPE-3, OP-5, EFF-3), the diagnostics vocabulary and node-path format (DIAG-1), the site-enumerated edit list (ERR-2), the elaborated re-read artifact format (DIAG-2, STOR-3), and the prelude contents (GRAM-5, ERR-1, PROG-1, STOR-2). Round-4 decided law adopts no-shadow-spec with an extended perimeter naming exactly these items as counted normative mass (round4-synthesis-teachability.md lines 11, 21, 39; decision-gates.md line 84). notes/calibration-audit-v0.json confirms the priced 3208 tokens exclude them, so the calibration baseline the spec exists to establish (its stated purpose (a)) undercounts decided-law spec mass.",
+            "fix": "Add sections for the trap-report schema, diagnostics/witness vocabulary, edit-list schema, elaborated-artifact format, and the prelude inventory to this artifact (they may be appendices but must be inside the counted document), then re-run the calibration audit and restate the baseline in decision-gates.md."
+          },
+          {
+            "ruleId": "OWN-2",
+            "severity": "major",
+            "problem": "Region names have two spellings inside the spec: OWN-2 writes '&r T' (bare identifier), while OWN-3/OWN-4/STOR-1/STOR-2/EFF-1/PROG-2 write ''a'/''static' (apostrophe form), and GRAM-4's REGIONID terminal is never lexically defined. FORM-3 assigns regions the [a-z][a-z0-9_]* class, which excludes the apostrophe form used by six other rules — the artifact itself exhibits two spellings for one construct (META-1 / round-4 one-spelling invariant) and leaves the canonical one undecidable.",
+            "fix": "Define REGIONID's lexical form once in FORM-3 (pick one: bare lowercase ident or apostrophe form), and rewrite every region occurrence in OWN/STOR/EFF/PROG to that single spelling."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "The 'canonical grammar' (load-bearing per SCOPE-2 acceptance) is not closed: nonterminals/terminals mode, type, generics, region_params, effects, targs, path, literal, LABEL, STRING, fn_sig, law, and all list separators (param_list, arg_list, type_list, binder_list) are used but never defined. There is also no spelling for supplying region arguments at call sites even though functions take region_params and FN-2/round-2 law forbids inference — a writer cannot spell a call to a region-polymorphic function at all, and every implementer will invent divergent syntax.",
+            "fix": "Add productions for every undefined nonterminal, define LABEL/STRING/REGIONID lexically, specify list separators and trailing rules, and add explicit region arguments to the call production (e.g. call := path targs? rargs? '(' arg_list? ')')."
+          },
+          {
+            "ruleId": "GRAM-1",
+            "severity": "major",
+            "problem": "The LL(1) claim is false for the stated productions: 'place := IDENT | place \".\" IDENT | ...' is left-recursive (never LL(1)); expr's alternatives place and call share FIRST token IDENT (FIRST/FIRST conflict); and 'index targs (place, expr)' is derivable both as a place and as a call (path='index'), so the grammar is ambiguous. A normative property the grammar itself violates guarantees implementer divergence in how conflicts are resolved.",
+            "fix": "Refactor to LL(1) form (place := IDENT place_suffix*; distinguish call by lookahead-free means such as a distinct production ordering the spec defines) and add a spec-CI check that mechanically verifies the LL(1)/unambiguity claims over the stated productions."
+          },
+          {
+            "ruleId": "OP-1",
+            "severity": "major",
+            "problem": "index has two grammar homes: OP-4 presents index<T>(s, i) as a call-shaped operation (and OP-1 claims 'Every computation is a call-shaped operation'), while GRAM-4 gives index its own special place production. One construct, two syntactic categories — a one-spelling violation and a break of GRAM-1's 1:1 production-to-node isomorphism; a writer cannot tell whether index in expression position is legal, and set/borrow of an indexed element depends on which reading the checker picked.",
+            "fix": "Choose one home and state it once: either index is only a place form (delete the call reading; OP-4 then governs the place form's check semantics) or only a call returning a borrow (delete it from the place grammar). Cross-reference from the other section by rule ID."
+          },
+          {
+            "ruleId": "OWN-1",
+            "severity": "major",
+            "problem": "Affine ownership with no copy class: as written, every value — including i32 — is moved at most once, so the second use of any primitive binding is an error, making arithmetic on a variable used twice unwritable. The intended exception exists only as a comment in toolchain code ('read (copy for prims)', prototype/checker/checker.py line 19) — a hidden exception clause (META-3) living outside the artifact (no-shadow-spec violation) and a guaranteed writer/checker divergence.",
+            "fix": "Add one uniform rule stating which types copy on use (e.g. all TYPE-1 primitives copy; all composites and borrows are affine) and how use-vs-move is spelled or locally determined; align the checker's behavior with the stated rule."
+          },
+          {
+            "ruleId": "OWN-3",
+            "severity": "major",
+            "problem": "The outlives definition is self-contradicting and partial: 'outlives iff 'a's block strictly encloses 'b's block' is immediately falsified by the next clause (caller-supplied regions have no local block yet outlive everything) — an exception-shaped addendum to an 'iff'. Worse, the relation between two DISTINCT caller-supplied regions is undefined, but OWN-4 needs it to check stores/returns. The prototype checker invents declaration-order semantics (regions.index comparison, prototype/checker/checker.py lines 65-71: earlier-declared caller regions outlive later ones) — normative semantics stated nowhere.",
+            "fix": "Replace with one total definition: outlives is a partial order = strict block enclosure on local regions; every caller-supplied region outlives every local region; distinct caller-supplied regions are incomparable, and any check requiring an order between them fails (reject, per OWN-8's fail-closed stance). Fix the checker to match."
+          },
+          {
+            "ruleId": "FN-3",
+            "severity": "major",
+            "problem": "Conformance 'is declared explicitly per (type, contract)' but the item grammar (GRAM-2: fn_decl | struct_decl | enum_decl | contract_decl) contains no conformance declaration production, and the bound spelling 'fn sum<T: Monoid>' is unparseable because generics has no production. A construct with zero legal spellings contradicts one-spelling-per-construct from the other side and makes the whole contract system unwritable.",
+            "fix": "Add a conformance item production (e.g. conform_decl := 'conform' TYPEID ':' TYPEID '{' fn_decl* '}') and a generics production covering bounds, and state the at-most-one-conformance coherence rule against it."
+          },
+          {
+            "ruleId": "OP-2",
+            "severity": "major",
+            "problem": "The operation inventory is open-ended and exception-laden: 'likewise isub, imul, idiv' plus the parenthetical idiv carve-out ('.trap and .checked only ... no wrap mode') is an inline exception list (META-3 violation); whether ineg has all three modes is ambiguous; OP-3's 'fadd.strict<T> etc.' leaves the float set undefined; irem, float comparisons, and the cvt rows (referenced by TYPE-4) are absent. Round-2 decided law mandates typed operation tables as core machinery (round2-synthesis-minimal-core.md line 27; round4-synthesis line 50 counts them as mandatory floors), yet no table exists — every implementer and writer will reconstruct a different inventory.",
+            "fix": "Replace OP-2/OP-3 prose with one canonical operation table (rows: operation, type domain, available modes, signature, effect row). Mode availability becomes table data, not rule exceptions; the idiv row simply lists two modes. State the table once and cross-reference it."
+          },
+          {
+            "ruleId": "TYPE-4",
+            "severity": "major",
+            "problem": "cvt<i32, i64>(x) is normatively required for every representation change, with '(§7)' claiming its definition, but §7 contains no cvt operation. Which (source, target) pairs exist, which are value-preserving, and which return Result — the entire conversion matrix — is normative content the spec references but does not contain (dangling cross-reference; shadow spec).",
+            "fix": "Add cvt rows to the §7 canonical operation table with the value-preserving vs Result<T, E> classification stated per pair (or per one uniform width/sign rule), and name the error type E."
+          },
+          {
+            "ruleId": "EFF-1",
+            "severity": "major",
+            "problem": "Effect rows have no grammar and no canonical ordering — GRAM-3's 'effects' nonterminal is undefined, so 'reads('r) writes('s)' vs 'writes('s) reads('r)' are both plausible spellings, violating FORM-1's one-legal-byte-formatting. Additionally allocates(stack) is incoherent: every function uses the stack, so either stack allocation is silently exempt from the row (a hidden exception, META-3 — and PROG-2's example row for main omits it, implying exactly that) or every function must declare it (contradicting PROG-2). The row's exactness rule (both-ways checking) makes this undecidable for a writer.",
+            "fix": "Add the effects production with a fixed canonical order and separator, and one rule stating exactly which operations count as allocates (only alloc_arena/alloc_heap calls; frame storage never counts). State the stack exemption as part of the definition of allocates, not as an exception."
+          },
+          {
+            "ruleId": "PROG-2",
+            "severity": "major",
+            "problem": "writes('static) references a region 'static that no rule defines, and the grammar has no static/global declaration form (items are only fn/struct/enum/contract), so there is nothing writes('static) could describe. 'not exceeding' also introduces an effect-row subsumption relation defined nowhere, in tension with EFF-1's both-ways exactness.",
+            "fix": "Either define 'static (its allocations, access rules, and a global declaration form) or shrink main's bound to 'allocates(heap), traps'. Define row subsumption in EFF-1 in one sentence ('row A does not exceed B iff every effect in A appears in B') or restate PROG-2 as an exact-row constraint."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "There is no dereference spelling: the place grammar (IDENT, field access, index) cannot express reading or writing THROUGH a borrow, and no auto-deref rule is stated (auto-deref would itself be banned context-dependence). OWN-9's 'shared borrows are read-only' therefore has no operational meaning in the surface language. The prototype checker invents holder-based through-borrow semantics (require_readable/require_writable holder logic, prototype/checker/checker.py lines 203-222) that appear in no spec rule — normative behavior living only in toolchain code.",
+            "fix": "Add an explicit deref place production (e.g. place := ... | 'deref' '(' place ')') plus one OWN rule for access-through-borrow (read via shared or exclusive borrow; write only via exclusive borrow), and align the checker."
+          },
+          {
+            "ruleId": "ERR-2",
+            "severity": "major",
+            "problem": "Match's ownership semantics are unspecified: nothing states whether the scrutinee is moved or borrowed, or what mode arm binders receive (moved payload fields? borrows in which region?). The OWN section never mentions match, yet Result/Option dispatch (ERR-1) and Bool dispatch (GRAM-5) make match the most common construct in every program — writer and checker will diverge on whether a matched value is dead afterwards.",
+            "fix": "Add one uniform rule: matching an owned scrutinee moves it and binds payload fields by move; matching through a borrow binds fields as borrows in the borrow's region (or require binder modes to be written explicitly, consistent with OWN-2's no-default stance)."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "No expression form constructs a struct or an enum-variant value: expr := literal | place | call | match_expr | borrow_expr contains no struct literal, and whether variant construction (e.g. Some<T>(x)) counts as a 'call' is unstated (call := path ... with path undefined). Programs cannot create any composite value under the stated grammar.",
+            "fix": "State once that constructor application is call-shaped with the type/variant name as path (one production covering struct and variant construction with explicit type arguments), or add dedicated construction productions; define path to include TYPEID segments."
+          },
+          {
+            "ruleId": "SCOPE-2",
+            "severity": "major",
+            "problem": "'every checkable-but-unproven D1-critical fact carries a runtime check' uses the classification 'D1-critical' which the artifact never defines. The class assignment (bounds and checkable alias-disjointness are D1-critical; overflow is a policy class with legal wrap fallback) lives only in round3-synthesis-safety-envelope.md lines 8 and 21 — normative content referenced but not contained; a writer cannot determine from this spec which facts obligate a check.",
+            "fix": "Add one rule enumerating the D1-critical checkable fact classes in-kernel (array bounds per OP-4; alias-disjointness where a check form exists) and stating that overflow is not in the class; cross-reference it from SCOPE-2 and OP-4 by ID."
+          },
+          {
+            "ruleId": "FORM-2",
+            "severity": "major",
+            "problem": "The claimed 'exactly one legal byte-level formatting' (FORM-1) is not actually pinned down: 'exactly one space separates tokens where separation is required' leaves required-ness undefined (is 'iadd.wrap<T>(x,y)' or 'iadd.wrap<T>( x , y )' canonical?), and there is no rule for line breaks — GRAM-3's fn_decl production itself spans lines with an indentation/wrapping convention no rule licenses. Two conforming implementations will disagree on canonical bytes, which is a hard error either way (FORM-1), so accepted programs differ per implementation.",
+            "fix": "Specify the token-separation table (which adjacent token classes take a space) and the newline rules (one statement per line; the declaration-header wrapping rule or a no-wrap rule) as part of FORM-2. Add byte-level golden tests to spec CI."
+          },
+          {
+            "ruleId": "FORM-5",
+            "severity": "major",
+            "problem": "STRING is used by the grammar (doc STRING, check ... trap STRING) but FORM-5's exhaustive literal list ('No other literal forms') excludes strings, and STRING's lexical form — quoting, escapes, permitted characters — is defined nowhere. This is both an internal contradiction and an undefined byte-canonical surface (are escapes normalized? is \\u allowed?).",
+            "fix": "Add STRING to FORM-5 with a complete lexical definition (delimiter, escape set, canonical escape policy so each string value has exactly one spelling), or replace strings in doc/trap with a defined restricted form."
+          },
+          {
+            "ruleId": "TYPE-2",
+            "severity": "major",
+            "problem": "Two gaps: (a) 'slice<T> (view; always borrowed, never owned)' is a type-specific exception to the uniform mode rule OWN-2 (an implicit exception list, META-3) and leaves undefined what region a slice-typed struct field or return value carries — a stored view is precisely the escape case OWN-4 polices, but slice has no region parameter to check. (b) 'N a const generic' introduces const generics whose argument forms and relationship to FN-2's 'explicit type arguments' are defined nowhere.",
+            "fix": "Give slice an explicit region parameter (slice<'r, T>) so ownership/escape rules apply uniformly with no exception text, and add one rule defining const-generic arguments (integer literals only in v0, spelled in targs)."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "major",
+            "problem": "Kernel-reserve pricing is incomplete against decided law: round-4 requires the kernel reserve — 'D1a-simplified ownership calculus, obligation ledger, FFI frames, capability predicates' — to be priced FIRST (round4-synthesis-teachability.md line 19; decision-gates.md line 84), but SCOPE-1 scopes the gated family/FFI frames out of this artifact and Send/Sync-class capability predicates (writer-visible in signatures per round-2 contract kernel, round2-synthesis line 32) appear nowhere. The calibration audit therefore prices only part of the reserve while claiming the baseline role.",
+            "fix": "Either add the writer-visible reserve items (capability predicates; the writer-visible shape of frames/ledger references) to this artifact, or record explicitly in the audit and decision-gates that the v0 baseline covers only the writer-facing subset and the reserve pricing gate remains open."
+          },
+          {
+            "ruleId": "META-4",
+            "severity": "minor",
+            "problem": "Stated-once violations that the spec's own CI rule would fail: trap=abort is stated three times (SCOPE-3, EFF-3, ERR-1); proven-else-checked three times (SCOPE-2, OP-4, OP-5); match-as-the-only-conditional/dispatch four times (GRAM-5, OP-6, FN-5, ERR-1); gated-family-not-writer-writable twice (SCOPE-1, PROG-1); the check statement's spelling twice (GRAM-4, OP-5); and OWN-9 restates OWN-1/OWN-5 consequences as fresh normative text. Near-duplicate detection (round4-synthesis line 34) fails on all of these.",
+            "fix": "Keep one normative statement per fact (trap semantics in SCOPE-3; proven-else-checked in SCOPE-2; dispatch in GRAM-5) and convert the other mentions to bare rule-ID cross-references; recast OWN-9 as an explicitly derived, non-normative consequences note or delete it."
+          },
+          {
+            "ruleId": "OWN-7",
+            "severity": "minor",
+            "problem": "'index places overlap conservatively unless indices are distinct constants' is exception-clause phrasing (META-3) rather than a total definition.",
+            "fix": "Restate as one total rule: 'two index places with the same base overlap iff their index expressions are not both constants with unequal values; all other prefix-related places overlap.'"
+          },
+          {
+            "ruleId": "FORM-4",
+            "severity": "minor",
+            "problem": "Wrong cross-reference: 'Documentation is the doc field of declarations (§4)' — §4 is Types; the doc production lives in §3 (GRAM-3).",
+            "fix": "Change the citation to §3/GRAM-3, and prefer rule-ID citations over section numbers throughout (META-4 uses rule IDs)."
+          },
+          {
+            "ruleId": "FORM-5",
+            "severity": "minor",
+            "problem": "The token 'unit' is simultaneously a type (TYPE-1) and a value literal (FORM-5) — one spelling, two constructs, resolved by position, which brushes against the zero-context-dependence invariant's 'no positionally-resolved meaning' (round4-synthesis line 32) even though each occurrence is production-local.",
+            "fix": "Split the spellings (e.g. type unit, literal unit_v) or add an explicit note-rule that type and literal namespaces are disjoint grammar positions so the resolution is production-local, not contextual."
+          },
+          {
+            "ruleId": "OWN-6",
+            "severity": "minor",
+            "problem": "The parenthetical '(Flow-sensitive shortening is a permitted future refinement; ...)' embeds a future-amendment permission inside a normative rule — proto-exception text that belongs in the decision gates, not in the counted artifact (it is spec mass that teaches the writer nothing).",
+            "fix": "Delete the parenthetical; record the NLL-refinement option in decision-gates.md (it is already there under the D1a checker levers, decision-gates.md line 74)."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "minor",
+            "problem": "The audited baseline '59 rules' (decision-gates.md line 90; notes/calibration-audit-v0.json) counts rule-ID occurrences, including the two cross-reference citations ([GRAM-1] cited in META-1, [SCOPE-3] cited in OP-4); the artifact defines 57 unique rules. The spec-delta ratchet (round4-synthesis line 36) starts from a miscounted baseline, and cross-references will inflate future counts — exactly the individuation gaming the round-4 open tension warns about.",
+            "fix": "Recount using definition-position IDs only (57), update decision-gates.md and calibration-audit-v0.json, and fold 'citations do not count as rules' into the pending canonical rule-individuation procedure."
+          },
+          {
+            "ruleId": "DIAG-1",
+            "severity": "minor",
+            "problem": "Rule-to-emitter bijection is already broken at prototype scale: the checker emits TYPE-5 for an unknown binding (prototype/checker/checker.py line 198), but TYPE-5 is about type inference — the spec contains no name-resolution/scoping rule at all, so the checker had to misappropriate an ID. Round-4's closed-diagnostic-vocabulary invariant requires every rejection to cite a rule whose canonical text actually covers it (round4-synthesis line 40).",
+            "fix": "Add a scoping/definition-before-use rule (see missing rules) and retarget the checker's diagnostic; add the rule-to-emitter coverage audit to spec CI now, while there is exactly one emitter."
+          }
+        ],
+        "missingRules": [
+          "Copy class rule: which types copy on use vs move under affine ownership (currently only a comment in prototype/checker/checker.py line 19); without it OWN-1 makes all primitive reuse illegal.",
+          "Dereference/access-through-borrow: a place production for deref plus the OWN rule licensing reads via any borrow and writes only via &mut; borrows are otherwise unusable.",
+          "Match ownership rule: scrutinee move-vs-borrow semantics and arm-binder modes (owned payload moves vs region-inheriting borrows), locally decidable per OWN-2's no-default stance.",
+          "Aggregate construction: the canonical call-shaped spelling for struct values and enum variants, with explicit type arguments; no expr form currently constructs any composite.",
+          "Conformance declaration item: grammar production for declaring (type, contract) conformance plus the coherence rule FN-3 asserts; also the generics production for bounds (<T: Monoid>).",
+          "Name resolution/scoping rule: definition-before-use, shadowing legality, and duplicate-name rejection, with its own rule ID (the prototype checker already needs one and misuses TYPE-5).",
+          "Canonical operation table: complete closed inventory of kernel operations with signatures, mode availability per row, and effect rows — replacing OP-2/OP-3's 'likewise'/'etc.' prose and absorbing the idiv mode restriction as table data (round-2 typed-operation-table floor).",
+          "Prelude inventory: definitions of Bool, Result<T,E>, Option<T>, Overflow (and the idiv error type), plus full signatures with effect rows for index, alloc_arena, alloc_heap, band/bor/bnot, ieq/ilt/ile, cvt; FN-1 makes signatures the unit of trust but no prelude signature is stated.",
+          "Index type rule: the integer type of array/slice indices and of the const generic N (no usize exists in TYPE-1).",
+          "Effect-row grammar: spelling, separators, and one canonical ordering for rows; definition of which allocations count for allocates(...) (stack exemption stated as definition, not exception); the row-subsumption relation PROG-2 uses, or its removal.",
+          "REGIONID lexical form and region arguments at call sites: explicit spelling for supplying caller regions at calls (no-inference law forbids inferring them); definition or deletion of 'static.",
+          "Caller-region ordering rule: distinct caller-supplied regions are incomparable and order-requiring checks fail closed (the prototype currently invents declaration-order outlives, checker.py lines 65-71).",
+          "STRING lexical definition: delimiters, escape set, and canonical escape policy so every string value has exactly one byte spelling.",
+          "Line-break/statement-layout rules completing FORM-2: token-separation table and newline placement (including the declaration-header wrapping rule GRAM-3's own formatting presupposes).",
+          "D1-critical fact-class enumeration: which checkable fact classes obligate proven-else-checked (bounds; alias-disjointness where a check form exists) and the explicit statement that overflow is a policy class outside it (imports round-3 layer assignment into the counted artifact).",
+          "Writer-facing schemas (no-shadow-spec perimeter): trap-report schema, machine diagnostics vocabulary and node-path format, site-enumerated edit-list schema, and the elaborated re-read artifact format, inside the counted artifact.",
+          "Send/Sync-class capability predicates: the writer-visible kernel-reserve item (round-2 contract kernel; round-4 kernel-reserve pricing) absent from the artifact even as a named placeholder.",
+          "Entry-point rule: existence and uniqueness of main (PROG-2 constrains its signature but nothing requires exactly one).",
+          "Conservative-extension statement: one sentence making unknown constructs deterministic hard errors at kernel extension points (round-4 retained law; currently only implied by FORM-1's canonical-form error)."
+        ]
+      },
+      {
+        "findings": [
+          {
+            "ruleId": "OWN-4",
+            "severity": "blocking",
+            "problem": "Outlives direction is INVERTED. OWN-4 permits a store/return 'unless the destination's declared region outlives-or-equals 'a'. Requiring dest-outlives-borrow accepts exactly the dangerous case (storing an inner-region borrow into an outer-lived destination -> dangling on region exit) and rejects the safe one (storing a long borrow into a short-lived slot, standard &'long T <: &'short T subtyping). The prototype implements the OPPOSITE, correct direction: checker.py line 174 requires outlives(r, dest_r) (borrow region outlives destination), and test_escape_inner_region_to_outer (test_checker.py:80) rejects inner->outer, which the spec text as written would accept. Spec letter is unsound AND diverges from the passing prototype.",
+            "fix": "Rewrite OWN-4: 'A borrow &'a p may be stored into a destination of declared region 'b, or returned into return region 'b, only if 'a outlives-or-equals 'b.'"
+          },
+          {
+            "ruleId": "OWN-4",
+            "severity": "blocking",
+            "problem": "No rule ties a borrow's region to the BORROWED PLACE'S storage duration. OWN-3/OWN-4 only relate regions to regions and borrows to destinations; nothing forbids borrowing a stack-frame local (or owned parameter) at a caller-supplied region. Concrete dangling reference: fn f(x: own T) regions['r0] { return &r0 x; } — x's frame storage dies at return, borrow survives. The prototype not only misses this, it ENSHRINES it as a positive test: test_return_caller_region_borrow (test_checker.py:180) accepts returning &r0 of an own parameter; checker.py's borrow path (line 158-183) checks require_live and region existence but never compares the binding's depth/scope against the borrow's region. This is the core soundness rule of every region calculus (Tofte-Talpin, Cyclone — both uncarded per missing-research-backlog.jsonl item 68) and it is absent, directly violating directive D1 (use-after-free impossible, user-directives.md).",
+            "fix": "Add rule (proposed OWN-10): a borrow &'a p is legal only if p's storage provably outlives 'a — for an own binding, 'a must be introduced within that binding's scope (so never a caller region for locals/own params); for a place reached through a borrow &'b q, require 'b outlives-or-equals 'a. Fix the prototype test to expect rejection."
+          },
+          {
+            "ruleId": "OWN-7",
+            "severity": "blocking",
+            "problem": "Overlap is purely syntactic (prefix in the place grammar), but places can be rooted at borrow-holder bindings, and those alias the borrowed place while never overlapping it syntactically. Concrete hole: let p: &mut 'a X = &mut 'a x; let r: &'a _ = &'a p.f; — place (p,f) shares no prefix with (x), so OWN-5/OWN-7 see no conflict, yet r is a live readable alias of x.f while p can write x.f. I confirmed the prototype accepts this construction (places_overlap((x,),(p,f)) is False at checker.py:166; no test covers it). This breaks OWN-9's exported guarantee ('an &mut borrow does not alias any other live access path'), which per corpus verified-findings.md F3/F4 becomes LLVM noalias-class facts whose violation is UB — i.e., real miscompilation, not just a checker gap. Same root cause makes slice-view aliasing invisible (cf. phase2-arrays-findings.jsonl A001: MemRef views alias original storage and need verifier obligations).",
+            "fix": "Add a place-resolution rule: a place rooted at a ref-mode binding denotes the borrowed place with the path appended (deref-transparent places); OWN-5 and OWN-7 overlap are judged on RESOLVED places. Define 'holder' normatively (the binding bound to a borrow expression) since OWN-5's 'through that borrow' is currently undefined. Forbid borrowing a binding that holds a live &mut."
+          },
+          {
+            "ruleId": "OWN-5",
+            "severity": "blocking",
+            "problem": "The access restrictions apply only to 'p itself', not to overlapping places. While &mut 'a x.f is live, the letter forbids reading/writing/moving x.f — but 'use x' and 'set x = v' (the parent place, which contains f) are neither 'p itself' nor borrows, so the text permits them; likewise 'set x = v' is permitted while &'a x.f is live (only 'p may not be... written' is stated, p = x.f). Both overwrite or read exclusively-borrowed memory. The prototype correctly rejects both via overlap checks in require_readable/require_writable (checker.py:203-222), so the spec letter is both unsound and divergent from the checker that passed the D1a gate (checker-prototype-report.json claims OWN-5 covered — it covers the checker's stronger, unwritten rule).",
+            "fix": "Restate OWN-5 over overlapping places: 'while an &mut 'a p is live, no place overlapping p may be read, written, moved, or borrowed other than through the holder of that borrow; while any &'a p is live, no place overlapping p may be written, moved, or mutably borrowed.'"
+          },
+          {
+            "ruleId": "OWN-5",
+            "severity": "blocking",
+            "problem": "The clause 'p itself may not be read, written, or moved EXCEPT THROUGH THAT BORROW' textually licenses moving owned content out through an &mut borrow: region 'a { let p = &mut 'a x; let y: own T = move p; } — the move is 'through that borrow', so OWN-5 permits it; x's binding remains live, so after the region the owner is used/dropped again -> use-after-move/double-drop (D1 violation). The prototype forbids exactly this under OWN-1 ('move through non-owning binding', checker.py:154-155, test_move_through_borrow_binding), a rule that appears nowhere in the spec. Also note the 'except' wording violates META-3 (no exception clauses).",
+            "fix": "Add an explicit rule: content reached through any borrow (shared or exclusive) may never be moved; moves require a place rooted at an own-mode binding. Reword OWN-5 to grant read/write-through-holder positively rather than as an exception clause."
+          },
+          {
+            "ruleId": "OWN-1",
+            "severity": "blocking",
+            "problem": "No copy/move classification exists and the grammar cannot express the distinction. OWN-1 makes EVERY value affine ('a value is moved at most once'), so iadd.wrap<i32>(x, x) is literally a double move of x, and any second read of any binding is a use-after-move. The prototype survives only because its toy AST has separate 'use' and 'move' node kinds (checker.py header, lines 19-21) — but GRAM-4's expr production is 'literal | place | call | match_expr | borrow_expr' with no move spelling, so the canonical grammar cannot represent the distinction the calculus depends on, breaking GRAM-1's grammar/core-tree isomorphism. Whether shared borrows and primitives are duplicable is likewise unstated; if &mut borrow values are copyable, two live &mut aliases exist and OWN-9 is unsound.",
+            "fix": "Add rules: (a) a copy class — primitives (TYPE-1) and shared borrows are copied on use; own-mode composites and &mut borrows are affine; (b) an explicit 'move p' expression spelling in GRAM-4 (one spelling per construct, satisfying FORM-1/D2 regularity); a bare place expression of affine type is a hard error."
+          },
+          {
+            "ruleId": "OWN-6",
+            "severity": "blocking",
+            "problem": "Loop back-edges are unhandled. OWN-6 defines liveness as 'creation to the end of the enclosing region block', and loop bodies are not region blocks (GRAM-4), so a borrow created inside 'loop l { let p = &mut 'a x; ... }' where 'a encloses the loop is still live when the back-edge re-executes the borrow: iteration 2 creates a second &mut 'a x while iteration 1's is live — two live exclusive borrows, violating the OWN-9 noalias export — yet a single-pass lexical checker sees one textual borrow and accepts. Same for moves: 'move x' of a loop-external binding is a runtime use-after-move on iteration 2. Nothing in OWN-1..9 mentions loops; the prototype has no loop support at all (check_stmt raises GRAM-4 'unknown stmt kind'; checker-prototype-report.json lists 'match/loop control flow interaction with liveness' as not covered), so this hole is currently invisible to the gate evidence.",
+            "fix": "Add a loop rule: inside 'loop l', (a) a borrow may only name a region whose region block is itself inside l's body (forcing 'loop l { region 'b { ... } }' for per-iteration borrows), and (b) a binding declared outside l may not be moved inside l (copies exempt)."
+          },
+          {
+            "ruleId": "STOR-4",
+            "severity": "blocking",
+            "problem": "Arena escape is not locally decidable, contradicting META-2 and leaving STOR-4 unenforceable. 'let x: own T = alloc_arena<'a, T>(v);' produces a binding whose declared mode/type ('own T') carries no trace of 'a; after 'let y: own T = move x;' and a move past the end of 'a, the value dangles. STOR-4 says this 'is an OWN-4 violation', but OWN-4 is a rule about borrows and declared regions — an arena-owned value has neither, so no rule can mechanically fire at any node given only declared types in scope (META-2). A checker would need whole-function storage-class dataflow the spec never licenses. The prototype has no STOR coverage (report: 'storage contracts (STOR)' not covered), so this is untested.",
+            "fix": "Surface the region in the type: alloc_arena<'a, T> returns a distinct type (e.g. own<'a> T or arena<'a, T>), moves preserve it, and OWN-4's outlives machinery then applies to arena-owned moves/stores exactly as to borrows."
+          },
+          {
+            "ruleId": "GRAM-3",
+            "severity": "major",
+            "problem": "Borrows cannot be returned or stored per the grammar, yet OWN-4 legislates both. fn_decl returns '-> type' with no mode slot, and 'field := IDENT \":\" type' likewise; TYPE-2's type list has no borrow/reference type former (&r T exists only as a binding/param MODE). So OWN-4's 'stored into a value or returned' is grammatically inexpressible, while the prototype's positive test test_return_caller_region_borrow returns one. Also slice<T> ('always borrowed') can then never be a field or return type. Spec-internal contradiction guaranteeing writer/checker divergence.",
+            "fix": "Decide and state: either add a borrow type former (&'r T as a type, usable in return position and struct fields with declared regions), or restrict OWN-4 to let-bindings and forbid borrow returns/fields outright and delete the return clause. The prototype and OWN-4 both assume the former."
+          },
+          {
+            "ruleId": "TYPE-2",
+            "severity": "major",
+            "problem": "slice<T> is a borrow with no region and no birth. It has no region parameter (so OWN-3/OWN-4/OWN-6 cannot bound its life), no creation operation anywhere in GRAM-4/OP (only 'index' consumes one), and no OWN-7 overlap story: two slices s, t viewing one array are distinct place bases, so index(s,i) vs index(t,j) never overlap syntactically — if two &mut-mode slices are ever constructible the OWN-9 noalias export is silently false (the task-relevant miscompile class per verified-findings.md F3/F4; cf. phase2-arrays-findings.jsonl A001 on view aliasing obligations, A008 on Futhark uniqueness for views). Report lists no slice coverage in the prototype.",
+            "fix": "Make it slice<'a, T>; add exactly one creation operation (e.g. slice<'a, T>(place, lo, hi)) specified as a borrow of the underlying array place for OWN-5/OWN-7 purposes; state that two slice places over the same resolved root overlap conservatively."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "major",
+            "problem": "The OWN rules say nothing about CALLS passing borrows. Unspecified: (a) how caller regions instantiate callee region_params at a call site (no substitution rule exists; OWN-3's 'caller-supplied region outlives every local region' is an assumption the spec never obliges call sites to validate, e.g. that passed regions are live at the call); (b) that argument-position borrows are live across (and per OWN-6, well past) the call for OWN-5 purposes; (c) that a callee's effect row (EFF-1 reads('r)/writes('r)) instantiated at actuals counts as caller-side reads/writes for OWN-5 — without this, calling a writes('a) function while an &'a shared borrow is live is unrejectable and breaks OWN-9; (d) disjointness of resolved places for two &mut-mode arguments when pre-existing borrow bindings are passed; (e) region instantiation of a returned borrow. FN-1 says 'callers rely only on signatures' but no rule consumes the signature's modes/regions/effects at the call node. The prototype's call case ignores everything (checker.py:185-188 just recurses into args).",
+            "fix": "Add an OWN-CALL rule cluster: region-argument substitution at call nodes; argument borrows treated as live accesses of their resolved places for the call; callee effect row instantiated and checked against live borrows under OWN-5; returned-borrow region = instantiated actual, then OWN-4 applies."
+          },
+          {
+            "ruleId": "OWN-2",
+            "severity": "major",
+            "problem": "Match binders carry no written mode — 'arm := TYPEID \"(\" binder_list? \")\"' — directly contradicting OWN-2 ('Modes are always written; there is no default'). Also unstated: whether matching an own-mode scrutinee moves it (and whether binders move payload fields = partial move), whether one can match through a borrow, and the binding-state JOIN across arms (a binding moved in one arm but not another: live or dead after the match?). ERR-2 forces exhaustive matches everywhere (it is the only conditional, per GRAM-5), so every conditional in the language hits this hole. Prototype: no match support (report not_yet_covered).",
+            "fix": "Require written modes on binders; state scrutinee semantics (v0-simple: matching an own place moves it; matching through &/&mut yields binders of the same borrow mode and region); add the conservative join: a binding moved in ANY arm is dead after the match."
+          },
+          {
+            "ruleId": "OWN-1",
+            "severity": "major",
+            "problem": "Partial moves conflate place and binding: 'a value is moved at most once; after a move the SOURCE BINDING is dead' — but moves target places (move x.f). Whether moving x.f kills all of x (prototype behavior: Binding.state='moved' is whole-binding, checker.py:156) or only x.f (requiring per-place deadness and partial-drop elaboration in the DIAG-2 artifact) is unstated; each choice changes which programs are accepted and what drops elaborate.",
+            "fix": "State the v0 rule explicitly: moving any place rooted at binding b kills b entirely; reads of disjoint sibling fields after a partial move are OWN-1 errors requiring restructuring (consistent with OWN-8 posture)."
+          },
+          {
+            "ruleId": "OWN-6",
+            "severity": "major",
+            "problem": "Lexical liveness plus no reborrow rule makes sequential &mut use in one region impossible, a guaranteed high-frequency AI-writer rejection: f(&mut 'a x); g(&mut 'a x); — the first argument borrow is live until the region block ends (OWN-6), so the second violates OWN-5. Every mutating call needs its own nested region block. That may be the intended D1a trade (Austral-style restrictiveness, corpus K001), but the spec never says so, and the writer-facing idiom appears nowhere; checker-prototype-report.json's own caveat flags 'rejection rates on realistic AI-written code unmeasured'. Divergence between what the spec teaches and what the checker accepts is exactly the D2 spec-as-teacher failure mode.",
+            "fix": "Either add a call-scoped borrow rule (an argument borrow not bound by let dies at the end of the call expression — a small, flow-free carve-out) or normatively document the region-per-mutating-call idiom in OWN-6/OWN-8 restructuring guidance and include it in the worked-example pack priced by calibration-audit-v0.json."
+          },
+          {
+            "ruleId": "META-3",
+            "severity": "minor",
+            "problem": "META-3 ('No rule carries an exception clause') is already violated by the draft it governs: OWN-5 ('except through that borrow'), OWN-7 ('unless indices are distinct constants'), STOR-2 ('unless the initializer is an explicit allocation call'). If META-3 is CI-checked as claimed, spec CI fails on day one; if these are not 'exceptions', the term is undefined.",
+            "fix": "Restate the three rules in positive form (e.g. OWN-7: 'index places with distinct constant indices are disjoint; all other index pairs overlap') or define 'exception clause' precisely in META-3."
+          },
+          {
+            "ruleId": "OWN-9",
+            "severity": "minor",
+            "problem": "'Owned values are unaliased' is false while shared borrows of them are live (the owner remains readable under OWN-5, so owner path and borrow path alias for reads). Harmless only because the third bullet makes shared borrows read-only, but an optimizer-facing consequences rule should not require cross-bullet reasoning to be true — and once the OWN-5/OWN-7 holes above are fixed, this sentence should be re-derived, not asserted.",
+            "fix": "Qualify: 'owned values are unaliased except by live shared borrows, which are read-only for their duration', or drop the bullet and keep only the &mut-noalias and shared-read-only bullets."
+          },
+          {
+            "ruleId": "OWN-1",
+            "severity": "minor",
+            "problem": "Reinitialization after move is unspecified: OWN-1 bans 'use' of a dead binding, but whether 'set x = e' on a moved x is a use (prototype: rejected via require_live in require_writable, checker.py:212) or a revival is unstated. Writers coming from Rust priors will expect revival; the checker will reject.",
+            "fix": "State it: a moved binding is dead for all statements including set; reinitialization requires a new let (new name, consistent with affine v0)."
+          },
+          {
+            "ruleId": "OWN-3",
+            "severity": "minor",
+            "problem": "Region name uniqueness/shadowing is unspecified: nothing forbids 'region a { region a { ... } }' or a local region named identically to a caller region_param. The prototype's index-based region_depth (checker.py:66-67) silently miscomputes outlives under shadowing (index returns the first/outer occurrence).",
+            "fix": "Add to OWN-3: region identifiers are unique within a function (params included); duplicate introduction is an error."
+          },
+          {
+            "ruleId": "GRAM-2",
+            "severity": "minor",
+            "problem": "The grammar is not closed: nonterminals mode, type, type_list, effects, region_params, generics, targs, literal, arg_list, binder_list, fn_sig, law and tokens LABEL, REGIONID, STRING have no productions, so the LL(1)/isomorphism claims (GRAM-1) and the calibration-audit token pricing are over an incomplete artifact; mode's spelling in particular is load-bearing for OWN-2.",
+            "fix": "Add the missing productions (mode := \"own\" | \"&\" REGIONID | \"&mut\" REGIONID; type := ...; region_params := ...; etc.) before the next audit run."
+          },
+          {
+            "ruleId": "STOR-3",
+            "severity": "minor",
+            "problem": "Non-lexical region exits are unhandled by the elaboration story: 'break LABEL' and 'return' can cross region boundaries (GRAM-4 permits break/return anywhere), but STOR-3/STOR-4 derive drops and arena releases from 'region ends' only, and DIAG-2 requires every derived drop explicit in the artifact — where releases attach on early exit paths is unstated.",
+            "fix": "State that every control-flow edge leaving a region block (fallthrough, break, return) carries the region's releases/drops in the elaborated artifact, in a defined order (reverse declaration order is the conventional pick — state one)."
+          }
+        ],
+        "missingRules": [
+          "OWN-10 (borrow-storage outlives): a borrow &'a p is legal only if p's storage outlives 'a — own bindings: 'a introduced within the binding's scope; through-borrow places: source borrow's region outlives-or-equals 'a. Closes the dangling-return hole enshrined by test_return_caller_region_borrow.",
+          "OWN-11 (place resolution / holders): a place rooted at a ref-mode binding denotes the borrowed place plus the appended path; OWN-5 and OWN-7 are judged on resolved places; 'holder' (the binding bound to a borrow) is defined normatively; borrowing a binding that holds a live &mut is an error.",
+          "OWN-12 (copy class + move spelling): primitives and shared borrows copy on use; own composites and &mut borrows are affine; GRAM-4 gains an explicit 'move p' expression; a bare place expression of affine type is an error.",
+          "OWN-13 (no move out of borrowed content): content reached through any borrow may never be moved; moves require a place rooted at an own-mode binding (currently only the prototype's unwritten OWN-1 behavior).",
+          "OWN-14 (loop back-edge rule): inside a loop, borrows may only name regions introduced inside that loop's body, and bindings declared outside the loop may not be moved inside it (copies exempt).",
+          "OWN-15 (match ownership): written modes on arm binders (per OWN-2); scrutinee move/borrow semantics; conservative join — a binding moved in any arm is dead after the match.",
+          "OWN-16 (call boundary): region-argument substitution at call nodes; argument borrows are live accesses of resolved places across the call; the callee's effect row instantiated at actuals is checked against live borrows under OWN-5; two &mut-mode arguments must resolve to disjoint places; returned-borrow regions instantiate to actuals and then satisfy OWN-4.",
+          "TYPE-6/SLICE (slice regions and birth): slice<'a, T> carries a region; exactly one creation operation specified as a borrow of the underlying array place; slices over the same resolved root overlap conservatively under OWN-7.",
+          "STOR-5 (arena values typed by region): alloc_arena<'a, T> returns a region-carrying type so arena escape is locally decidable (META-2) and enforced by OWN-4 machinery, not by the currently un-fireable STOR-4 cross-reference.",
+          "OWN-17 (partial moves): moving any place rooted at binding b kills b entirely in v0 (matches prototype whole-binding kill); state it rather than leave 'source binding is dead' ambiguous.",
+          "OWN-18 (no reinitialization): set on a moved binding is a use of a dead binding (OWN-1 error); revival requires a new let.",
+          "GRAM completion: productions for mode, type, effects, region_params, generics, targs, literal, arg_list, binder_list, plus a borrow type former (or an explicit prohibition) for return types and struct fields so OWN-4's 'stored into a value or returned' is expressible.",
+          "STOR-6 (region-exit elaboration): every edge leaving a region block (fallthrough, break, return) carries that region's drops/arena releases in the DIAG-2 artifact, in a stated order.",
+          "Process note (per checker-prototype-report.json caveat and missing-research-backlog.jsonl item 68): cross-check the repaired calculus against Featherweight Rust / Oxide / Austral formalizations before ratification — the two inverted/exception-clause bugs found here (OWN-4 direction, OWN-5 'except through that borrow') are exactly the class a formal-core comparison catches."
+        ]
+      },
+      {
+        "findings": [
+          {
+            "ruleId": "GLOBAL",
+            "severity": "blocking",
+            "problem": "The prelude is normative but undefined. GRAM-5 requires 'enum Bool { True(); False(); }' \"in the prelude\", ERR-1 makes Result<T,E>/Option<T> \"prelude enums\", OP-2 returns Result<T, Overflow>, PROG-1 closes the world \"plus the prelude\" — yet no rule anywhere defines the prelude's contents, variant names (Ok/Err? Some/None?), or the operation signature table (generics, operand/result types, effect rows of iadd.*, cvt, index, band...). A writer cannot emit a single exhaustive match (ERR-2) over Result without guessing variant names; nothing in the corpus fixes them either (grep for Ok(/Err(/Some(/Overflow across optimizer-language-research/debates/*.md finds only round3-synthesis-safety-envelope.md line 21's policy use of 'Overflow'). This violates the no-shadow-spec rule adopted as decided law in round4-synthesis-teachability.md ('Decided now', no-shadow-spec: all normative writer-facing content counts inside the one artifact) and falsifies SCOPE-1's claim that the document contains everything the writer needs. notes/calibration-audit-v0.json prices the spec without it.",
+            "fix": "Add a §Prelude with stable rule IDs: full canonical source of Bool, Result<T,E>, Option<T>, and every error type named by ops (Overflow, division, cvt narrowing), plus a signature table for every §7 operation (name, type parameters, parameter modes/types, return type, effect row). Count it in the calibration audit."
+          },
+          {
+            "ruleId": "TYPE-1",
+            "severity": "blocking",
+            "problem": "bool is simultaneously a primitive type (TYPE-1), a prelude enum (GRAM-5: 'bool is enum Bool { True(); False(); }'), and has dedicated literals true/false (FORM-5). That is two-or-three spellings for one construct: is a truth value written 'true' or constructed as 'True()'? Is 'bool' or 'Bool' the type name (FORM-3 says lowercase = values, uppercase = types, so 'bool' as a TYPEID is ill-formed)? Can you match on a bool produced by ieq (arms are TYPEID-patterns, but primitives have no variants per ERR-2)? This directly contradicts FORM-1/META-1 and the round-2 one-spelling floor (round2-synthesis-minimal-core.md, Minimal core sketch, SURFACE bullet).",
+            "fix": "Pick one: delete bool from TYPE-1's primitive list, make the type Bool a prelude enum, delete true/false from FORM-5, and state that ieq/ilt/ile and band/bor/bnot return/accept Bool and are dispatched by match True()/False(). If a primitive bool is kept instead, delete GRAM-5's enum claim and add a primitive-condition dispatch rule."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "blocking",
+            "problem": "There is no value-construction syntax for any composite type. expr := literal | place | call | match_expr | borrow_expr; no struct literal, no enum-variant construction, no array construction. 'call := path targs? ...' might be meant to cover variant construction, but path is undefined and FORM-3 reserves uppercase for types/variants while call-shaped operations are lowercase. As written, the writer cannot create a Result, an Option, a Bool, an env-struct (FN-5), or any array — making ERR-1 (errors are values, decided law per round2-synthesis-minimal-core.md ERRORS bullet), GRAM-5's Bool dispatch, and FN-5's env-struct pattern all unimplementable.",
+            "fix": "Add explicit productions and one worked example each: variant_expr := TYPEID targs? \"(\" arg_list? \")\" (e.g., Ok<i32, Overflow>(x)); struct_expr := TYPEID targs? \"{\" (IDENT \":\" expr \";\")* \"}\"; array_expr := \"array\" targs \"(\" arg_list? \")\". State how targs interact with prelude generics."
+          },
+          {
+            "ruleId": "OWN-1",
+            "severity": "blocking",
+            "problem": "Move-vs-copy is undefined, and the grammar cannot express the distinction. OWN-1 says a value is moved at most once, but no rule says which expressions move: is every place-read a move (then iadd.wrap<i32>(x, x) is a double-move error and the language is unusable), or do primitives copy (never stated), or do all reads not move (then reading an owned struct duplicates it and its heap members, giving double-drop/use-after-free — a D1 violation per notes/user-directives.md D1). The prototype had to invent semantics the spec lacks: prototype/checker/checker.py lines 19-21 define separate {\"kind\":\"use\"} ('read (copy for prims)') and {\"kind\":\"move\"} expression kinds that GRAM-4 collapses into 'place' — writer/checker divergence is already manifest in the project's own code.",
+            "fix": "Add an OWN rule: primitive types (TYPE-1) are copy; all composite and owned values move on any use as an own-mode operand or initializer; reading a place as a shared-borrow operand never moves. If the core tree distinguishes use/move (as checker.py does), GRAM must too (e.g., explicit 'move p' spelling), preserving GRAM-1's 1:1 production/node isomorphism."
+          },
+          {
+            "ruleId": "STOR-4",
+            "severity": "blocking",
+            "problem": "Arena escape is unsound as specified. STOR-4 says escaping an arena value past its region 'is an OWN-4 violation', but OWN-4 governs only borrows (&'a p / &mut 'a p). The result mode/type of alloc_arena<'a, T>(v) is never stated; if it is 'own T' (the only owned mode OWN-2 offers), the value's type carries no region, OWN-1 permits moving/returning owned values, and no rule fires when an arena allocation is returned past region end — use-after-free in an accepted program, violating D1 (notes/user-directives.md) and SCOPE-3. alloc_heap<T>(v)'s return type is equally unstated (TYPE-2 has no box type), so heap-ness is untracked in the type system that STOR-3's drop elaboration needs.",
+            "fix": "Define the result types: alloc_arena<'a, T>(v) returns &mut 'a T (arena owns; borrow discipline enforces containment via OWN-4), and alloc_heap<T>(v) returns own T with an explicit note that heap vs stack is a storage fact tracked in elaboration, not in the type. Alternatively introduce a region-bound owned mode own<'a> T with its own escape rule — but pick one and give an example."
+          },
+          {
+            "ruleId": "EFF-2",
+            "severity": "blocking",
+            "problem": "The optimizer license in EFF-2 ('may deduplicate, reorder, and eliminate' pure calls) is unsound without a termination requirement. pure excludes traps but not divergence (loop with no break is expressible per GRAM-4 and FN-6 permits recursion); eliminating or reordering a diverging pure call changes observable behavior — the classic LLVM forward-progress hazard. This contradicts SCOPE-3 ('accepted programs have no undefined behavior') and the round-1/round-3 verification-spine principle that optimizer facts must be checked, not assumed (round3-synthesis-safety-envelope.md, Layer 0).",
+            "fix": "Either (a) restrict the license: pure calls may be deduplicated/reordered; elimination of an unused pure call is permitted only with a termination proof; or (b) add divergence to the effect row (diverges) with pure implying termination checked by a conservative structural rule (loops require a break on every path; recursion requires a declared decreasing measure or is rejected in pure fns)."
+          },
+          {
+            "ruleId": "EFF-1",
+            "severity": "blocking",
+            "problem": "Rows 'checked both ways' makes acceptance prover-relative. traps is exhibited by 'checked ops with unproven facts' (EFF-3) and unproven bounds checks (OP-4), and checks are eliminated 'only by proof'. So whether a body exhibits traps depends on what the checker can prove: upgrade the prover and a previously mandatory 'traps' declaration becomes an unexhibited effect — the same program flips from required-to-declare to rejected-for-declaring. This contradicts round-3 cross-cutting invariant 4 (round3-synthesis-safety-envelope.md line 12: acceptance is artifact-checkable, not process-relative; the accepted-programs quantifier stays stable across toolchain versions).",
+            "fix": "Define 'exhibits' syntactically, not proof-relatively: any occurrence of a .trap op, check stmt, or bounds-checked index counts as trapping regardless of whether the check is later proven away; or make rows upper bounds (declaring an unexhibited effect is legal, surfaced as a lint in the check report), which also matches PROG-2's 'not exceeding' phrasing."
+          },
+          {
+            "ruleId": "FORM-3",
+            "severity": "blocking",
+            "problem": "The spec uses two region spellings, violating its own FORM-1/META-4 and the round-2 one-spelling floor (round2-synthesis-minimal-core.md SURFACE bullet). FORM-3 says regions are [a-z][a-z0-9_]* and 'no other identifier forms exist'; GRAM-4 uses an undefined token REGIONID; but OWN-3 writes region 'a, STOR-1 arena<'a>, STOR-2 alloc_arena<'a, T>, EFF-1 reads('r...), and PROG-2 writes('static) all use apostrophe-prefixed forms, which FORM-3 makes ill-formed. A writer model will emit whichever spelling the rule it read used, and the checker will implement the other (prototype/checker/test_checker.py already uses bare \"a\").",
+            "fix": "Pick one spelling, define REGIONID as a token (either 'IDENT-with-apostrophe-prefix' or plain IDENT in region position), and rewrite every occurrence in OWN-3, OWN-4, STOR-1, STOR-2, EFF-1, PROG-2 to it. Run the META-4 duplicate/near-duplicate CI check the spec promises."
+          },
+          {
+            "ruleId": "STOR-2",
+            "severity": "blocking",
+            "problem": "STOR-2 contradicts STOR-1 and decided law. STOR-1: 'Every allocation names its storage class explicitly.' STOR-2: bindings 'are stack unless the initializer is an explicit allocation call' — a default with an 'unless' clause, i.e., exactly the exception form META-3 bans, and a violation of the round-2 memory floor 'every allocation carries a writer-stated, compiler-checked storage/lifetime contract' (round2-synthesis-minimal-core.md MEMORY bullet, reaffirmed as mandatory-on-every-allocation in round4-synthesis-teachability.md, Spec architecture bullet 2).",
+            "fix": "Either make storage explicit in the grammar (let_stmt := \"let\" IDENT \":\" mode storage type \"=\" expr \";\" with storage := \"stack\" | \"arena\" \"<\" REGIONID \">\" | \"heap\") so STOR-1 is literally true, or rewrite STOR-1/STOR-2 as one uniform positive rule ('a let binding's storage class is stack; arena/heap storage exists only via alloc_arena/alloc_heap, whose names are the explicit statement') with no 'unless'."
+          },
+          {
+            "ruleId": "FN-3",
+            "severity": "blocking",
+            "problem": "Conformance is undeclarable. FN-3: 'Conformance is declared explicitly per (type, contract) and checked per member' — but GRAM-2's item := fn_decl | struct_decl | enum_decl | contract_decl contains no conformance/impl item, and no production anywhere binds (type, contract) to member implementations. The contract-group kernel is decided-required machinery ('required under every open outcome', round2-synthesis-minimal-core.md CONTRACT KERNEL bullet), and FN-2/FN-3 generics are unusable without it: a writer cannot make any type satisfy T: Monoid, so no constrained generic can ever be instantiated.",
+            "fix": "Add item and production, e.g., conform_decl := \"conform\" TYPEID \":\" TYPEID \"{\" doc? fn_decl* \"}\" (type : contract, members are full fn_decls checked against the contract's fn_sigs), plus the at-most-one-conformance coherence rule as its own ID and a worked example (Monoid for i32)."
+          },
+          {
+            "ruleId": "GRAM-2",
+            "severity": "major",
+            "problem": "The grammar references 15 nonterminals and 3 token classes it never defines: type, mode, generics, targs, param_list, type_list, arg_list, binder_list, path, fn_sig, law, effects, region_params, expr_stmt, literal; tokens STRING, LABEL, REGIONID. SCOPE-2 gates acceptance on 'parses under the canonical grammar', which is therefore undefined. Worst holes: no type production at all (how to write Pair<i32, i64>, array<u8, 16>, a borrow-typed field &r T, or a region-parameterized struct — needed by OWN-4's 'stored into a value'); no mode production despite OWN-2; no rule for how call sites pass region arguments or const-generic arguments (FN-2 demands explicit args); STRING is used by doc and check yet FORM-5 says 'no other literal forms', and string escape rules are alternate-spelling hazards under FORM-1.",
+            "fix": "Add every missing production and token definition, including: type := PRIM | TYPEID targs? | \"array\" \"<\" type \",\" const \">\" | \"slice\" \"<\" type \">\" | \"&\" REGIONID type | \"&mut\" REGIONID type; mode := \"own\" | \"&\" REGIONID | \"&mut\" REGIONID; generics := \"<\" gparam (\",\" gparam)* \">\" with gparam covering T, T: Contract, const N, and regions; targs covering types, regions, and const literals (state whether const args carry FORM-5 suffixes); expr_stmt := expr \";\"; STRING with a closed escape set; LABEL and REGIONID charsets."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "match_expr cannot produce a value: expr includes match_expr, but arm bodies are '{\" stmt* \"}' with no result expression, no tail position, no '=> expr' form. Since there is no 'if' (GRAM-5) and let requires an initializer (GRAM-4), conditional initialization — the single most common pattern an AI writer needs (let y = if c then a else b) — is inexpressible: match-as-expr yields nothing and match-as-stmt cannot initialize an immutable binding. GRAM-5's claim that Bool 'is dispatched by match' is unusable in expression position.",
+            "fix": "Either add a value form (arm := TYPEID \"(\" binder_list? \")\" \"=>\" expr \";\" when match is used as an expr, keeping the stmt-arm form for stmt position — at the cost of two arm shapes), or remove match from expr, make it a statement only, and add the canonical idiom as a worked example (declare with let + placeholder is impossible, so likely: each arm ends 'return' or 'set' into a pre-bound own binding — which itself needs an uninitialized-let or default rule that does not currently exist)."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "Match binder ownership is undefined. arm := TYPEID \"(\" binder_list? \")\" — binder_list has no production, and no OWN rule says whether binders move the payload out of the scrutinee, copy it, or borrow it; nothing says what binders do when the scrutinee is a borrow (&r Option<T>): binding the payload by value through a shared borrow would move out of a borrowed place (an OWN-5 violation) — so borrowed-scrutinee matching presumably binds by borrow, but that is nowhere stated and the binder then needs a region. Rust required a dedicated design (match ergonomics) here; a model will guess and diverge from the checker.",
+            "fix": "Add a rule: matching an own scrutinee moves it and binders are own; matching &r e / &mut r e gives binders of mode &r / &mut r respectively; binders always state nothing (modes derived from scrutinee mode — one uniform rule), with one worked example of each."
+          },
+          {
+            "ruleId": "GRAM-1",
+            "severity": "major",
+            "problem": "The LL(1) claim is false for the grammar as written: (a) place := IDENT | place \".\" IDENT | ... is left-recursive — no left-recursive grammar is LL(1); (b) expr can start with either a place (x.f) or a call whose path is dotted (iadd.wrap<T>(x,y)), so after IDENT '.' IDENT the parser cannot decide place-vs-call within one token; (c) 'index' is both a place-keyword (GRAM-4) and a FORM-3-legal identifier, and no reserved-word list exists — a writer may legally name a binding 'index', 'set', 'loop', or 'match' and produce unparseable-or-ambiguous text.",
+            "fix": "Rewrite place iteratively (place := IDENT suffix*; suffix := \".\" IDENT | ...), resolve the call/place prefix by making operation names single tokens (see the OP-2 finding) or by requiring targs/'(' lookahead to be part of a factored production, and add a rule enumerating reserved words excluded from IDENT."
+          },
+          {
+            "ruleId": "OP-2",
+            "severity": "major",
+            "problem": "Dotted operation names (iadd.wrap, fadd.strict) have no lexical home: FORM-3 identifiers cannot contain '.', 'path' is undefined, and '.' already means field projection in places, creating the GRAM-1 ambiguity. Also underspecified: does ineg have all three modes ('likewise' scope is ambiguous — negating i32::MIN overflows, so it matters); idiv overflow (INT_MIN/-1) is unmentioned (only divisor-zero); and whether ige/igt/ine exist or writers must compose ile/ilt/bnot with swapped args is unstated.",
+            "fix": "Define opname as a single token class (e.g., OPNAME := [a-z]+ \".\" [a-z]+) distinct from IDENT, or respell modes as suffixed names (iadd_wrap) fitting FORM-3. Enumerate the full op×mode matrix in a table (including ineg modes and idiv's INT_MIN/-1 behavior per mode) and state the comparison-op closure rule (only ieq/ilt/ile exist; others are compositions)."
+          },
+          {
+            "ruleId": "OWN-6",
+            "severity": "major",
+            "problem": "Borrow liveness endpoint is ambiguous: OWN-6 says 'from its creation to the end of the enclosing region block' while OWN-4 says the borrow 'names the region whose scope bounds the borrow's life'. For &'a p written inside an inner region block where 'a is caller-supplied, these give different answers (inner block end vs whole function). prototype/checker/checker.py lines 124-125 implements the named-region reading (borrows die when their NAMED region exits), meaning a temporary &'a x passed as a call argument locks x for the entire function — a semantics a writer must be taught explicitly (name the innermost region for temporaries) or every second program will be rejected. The lifetime of borrows not bound to any binding (call-argument temporaries) is not addressed by any rule.",
+            "fix": "Rewrite OWN-6: 'a borrow is live from its creation to the end of the block of its NAMED region', delete 'enclosing', add a rule or note that call-argument temporaries should name the innermost enclosing region, and add a canonical example of both the rejected (outer-region temporary) and accepted (inner-region temporary) forms."
+          },
+          {
+            "ruleId": "EFF-1",
+            "severity": "major",
+            "problem": "The effect-row surface is undefined at the byte level and semantically incomplete: (a) no grammar — separator, ordering canon (PROG-2 shows writes, allocates, traps in that order but nothing legislates it, so two orderings = two spellings, violating FORM-1), empty-row spelling vs 'pure'; (b) is stack allocation an effect? Every fn with a let allocates a frame — if allocates(stack) is required, virtually every function carries it; if exempt, the exemption is an unstated special case (META-3 risk); (c) how rows compose at call sites (callee's reads('r) substituted through region args) is unstated; (d) PROG-2's 'not exceeding' presumes a row-subsumption relation EFF-1's exactness doctrine never defines. Round-3 flags the effect-row floor as having zero exemplar cards (round3-proof-burden.md, Weaknesses/experiments), so the spec cannot lean on precedent — it must state everything.",
+            "fix": "Add effects := effect (\",\" effect)* with a fixed canonical order (reads < writes < allocates < traps), define pure as the empty row's unique spelling, state 'stack frames are not allocations for EFF purposes' as a positive rule, define call-site row substitution, and define row subsumption once for PROG-2."
+          },
+          {
+            "ruleId": "PROG-2",
+            "severity": "major",
+            "problem": "writes('static) references a region 'static that no rule introduces: OWN-3 defines only lexical regions and caller-supplied region params; there are no global/static declarations in GRAM-2 (item has no static/const item), so nothing can live in 'static and the permission is a grant over an inexpressible effect. It is also spelled with the apostrophe form FORM-3 forbids.",
+            "fix": "Either delete writes('static) from PROG-2 (main's row becomes 'allocates(heap), traps' or narrower), or add the static-data story: a 'static region rule in §5 and a static/const item production in GRAM-2 with its storage and initialization semantics."
+          },
+          {
+            "ruleId": "GLOBAL",
+            "severity": "major",
+            "problem": "Zero worked examples exist in the artifact. FORM-1/FORM-2 legislate a single legal byte-level formatting, but no complete program is shown, so the canonical bytes are underdetermined and unlearnable: a model cannot infer where blank lines go, how a fn_decl's effects/region_params wrap across the two lines GRAM-3 itself displays, or what a whole accepted program looks like. Round-4 makes the teaching pack (spec + canonical worked examples) the delivery unit (round4-synthesis-teachability.md, Spec architecture bullet 3), and notes/calibration-audit-v0.json explicitly flags 'No worked examples included yet — estimate +2-4k tokens'. For a sole in-context teaching artifact this is the highest-leverage single addition.",
+            "fix": "Add a §Examples with at minimum: one complete accepted program (main + a generic fn with contract bound + region + borrow + match on Result + check + checked arithmetic), byte-exact, plus per-construct micro-examples for env-struct (FN-5), arena allocation, and enum construction. Mark examples normative for FORM rules."
+          },
+          {
+            "ruleId": "FORM-2",
+            "severity": "major",
+            "problem": "Byte-level canonical form is underdetermined: FORM-2 fixes indentation and inter-token spacing 'where separation is required' but not comma conventions (f(a, b) vs f(a,b)), whether long expressions ever wrap (fn_decl in GRAM-3 is displayed wrapped across two lines — under what rule?), what counts as a nesting level for match arms and arm bodies, trailing newline at EOF, or blank lines inside bodies. Two writers can both 'comply' and produce different bytes; FORM-1 then makes one of them a hard error chosen by the checker's private convention.",
+            "fix": "Complete FORM-2 with explicit sub-rules: comma followed by exactly one space, no space before; a declaration/statement occupies exactly one line, no wrapping (unbounded line length) OR a deterministic wrap rule; one nesting level per '{' block including match arms; file ends with exactly one LF; no blank lines inside a block. Then show it in the worked example."
+          },
+          {
+            "ruleId": "OP-4",
+            "severity": "major",
+            "problem": "index is doubly specified and incomplete: GRAM-4 makes index a place form with mandatory targs; OP-4 writes index<T>(s, i) as an operation. The index operand's type is never stated (u64? any unsigned? is cvt required first?), the targs arity is unclear for array<T, N> vs slice<T>, and being a place means 'set index<T>(a, i) = e' is a write — its interaction with OWN-7's conservative overlap and OWN-5 exclusivity for non-constant indices deserves its own statement. Moreover, no operation creates a slice from an array (slices are 'always borrowed' per TYPE-2, but there is no slice-of/borrow-to-slice op) and no length operation exists, so slices are unconstructible and loops over arrays cannot terminate on a queried bound.",
+            "fix": "Specify: index<T>(s, i) with i: u64 (one rule, no alternatives), targs = element type only; add slice<T> creation (e.g., slice_all<'a, T, N>(&'a arr) -> slice<T> and slice_range with checked bounds) and len<T>(s) -> u64; state that index-as-place is the sole lvalue form and cross-reference OWN-7 for overlap."
+          },
+          {
+            "ruleId": "OP-3",
+            "severity": "major",
+            "problem": "'fadd.strict<T> etc.' — 'etc.' is not normative. The float op set (fsub/fmul/fdiv/fneg? fma? sqrt?) is unenumerated, float comparisons do not exist anywhere (ieq/ilt/ile are integer ops by name), and NaN semantics for comparison/equality — the classic silent-wrong trap for a generated-code writer — is unstated (is feq total? does NaN != NaN make match-based dispatch on comparison results hazardous?).",
+            "fix": "Enumerate the closed float op table with modes, add feq/flt/fle<T> with an explicit IEEE-754 NaN rule (all comparisons with NaN yield False; note feq is not an equivalence), and state whether unordered-comparison variants exist (preferably not — one rule)."
+          },
+          {
+            "ruleId": "TYPE-4",
+            "severity": "major",
+            "problem": "cvt<i32, i64>(x) is the only conversion example; the conversion matrix is undefined: which (source, target) pairs are value-preserving (widening) vs Result-returning (narrowing, float->int?), what the error type of a failed cvt is (Overflow? a new type?), whether float<->int conversions exist at all, and whether cvt appears in §7's operation inventory (it does not — it lives only in §4, straining META-4's each-fact-once-and-cross-referenced discipline).",
+            "fix": "Move cvt into §7 as OP-7 with a table: widening int->int and f32->f64 are total; narrowing int->int returns Result<T, Overflow>; int<->float pairs enumerated with their totality/error types; TYPE-4 keeps only the no-implicit-conversion law with a cross-reference to OP-7."
+          },
+          {
+            "ruleId": "TYPE-5",
+            "severity": "major",
+            "problem": "Name-binding rules are missing entirely: nothing legislates declaration-before-use, whether shadowing or redeclaration of a binding is legal, whether loop LABELs share a namespace with values, or label uniqueness/scoping for break. The prototype exposes the gap: prototype/checker/checker.py line 198 raises 'unknown binding' citing TYPE-5 — a rule that is about type inference, not name resolution — because no correct rule ID exists to cite, violating DIAG-1's premise that every rejection cites the governing rule.",
+            "fix": "Add rules: names must be declared before use; redeclaration/shadowing of a live name in any enclosing scope is an error (one uniform rule — cheapest for a canonical-form language); LABELs and REGIONIDs each have their own namespace with the same no-shadowing rule; break's LABEL must name a lexically enclosing loop."
+          },
+          {
+            "ruleId": "GRAM-4",
+            "severity": "major",
+            "problem": "Return totality and dead code are unspecified: must every control path end in return (or trap)? Does a fn returning unit implicitly return, or must it end 'return unit;'? Is code after return/break rejected as unreachable, accepted, or canonical-form-illegal? Each choice changes what the writer must emit for main() -> unit, and the checker will pick one silently.",
+            "fix": "Add: every function body must return on all paths ('return unit;' mandatory for unit functions — no implicit return, matching the no-elision doctrine); statements after a return/break in the same block are a hard error citing this rule."
+          },
+          {
+            "ruleId": "OWN-3",
+            "severity": "minor",
+            "problem": "outlives is defined strictly ('strictly encloses'), so 'a never outlives 'a and OWN-4 must patch with 'outlives-or-equals'; meanwhile caller-supplied regions are mutually unordered (nothing says whether a callee may store a borrow of 'a into a destination in 'b), and prototype/checker/checker.py line 71 implements the reflexive relation (<=), quietly diverging from the strict wording.",
+            "fix": "Define one reflexive relation outlives-or-equals ('a ⊒ 'b iff same region, or 'a's block encloses 'b's block, or 'a is caller-supplied and 'b is local) and use it everywhere; state explicitly that distinct caller-supplied regions are unordered so cross-storing is rejected."
+          },
+          {
+            "ruleId": "OWN-5",
+            "severity": "minor",
+            "problem": "'p itself may not be read, written, or moved except through that borrow' — 'through that borrow' is undefined: the checker must identify which access paths count as through-the-borrow (prototype/checker/checker.py lines 207, 215-217 approximates this as 'the binding holding the borrow', a notion — holder — that no spec rule introduces).",
+            "fix": "Add a definition: an access is 'through' a borrow iff its place's base is the binding whose initializer created that borrow; make holder-binding a defined term in §5."
+          },
+          {
+            "ruleId": "FN-4",
+            "severity": "minor",
+            "problem": "law has no production (contract_decl shows law* but no law := ...) and no vocabulary: are law names (associative, commutative, ...) a closed set the law-test harness understands, or free-form? What arities/argument forms are legal? A writer cannot emit a law without guessing.",
+            "fix": "Add law := \"law\" LAWNAME \"(\" IDENT (\",\" IDENT)* \")\" \";\" with a closed LAWNAME table (associative, commutative, identity, idempotent...) each with its arity and the checked property, stated once."
+          },
+          {
+            "ruleId": "FN-6",
+            "severity": "minor",
+            "problem": "'polymorphic recursion is not [permitted] (instantiation closure must be finite)' names a property, not a decidable rule: the writer cannot predict which recursive generic patterns are rejected, and no rule ID exists for the diagnostic to cite the check procedure.",
+            "fix": "State the conservative decidable rule (e.g., in any call cycle, every generic function must be called at exactly its own type parameters — syntactic check) so rejection is predictable and locally explainable."
+          },
+          {
+            "ruleId": "SCOPE-1",
+            "severity": "minor",
+            "problem": "The kernel is silently concurrency-free: no spawn/thread/atomic constructs exist, so D1's data-race half (notes/user-directives.md D1) holds vacuously, and the Send/Sync-class capability predicates that round-4 places inside the kernel reserve to be priced first (round4-synthesis-teachability.md, Decided now: 'kernel reserve is priced FIRST: ... capability predicates') are absent without a stated deferral — the calibration number in notes/calibration-audit-v0.json therefore under-prices the reserve.",
+            "fix": "Add one sentence to SCOPE-1: 'Kernel v0 defines no concurrency constructs; programs are single-threaded, and D1's race-freedom obligation is vacuous until the concurrency kernel (capability predicates) lands as a priced spec delta.' Record the pending delta in the decision gates."
+          },
+          {
+            "ruleId": "SCOPE-3",
+            "severity": "minor",
+            "problem": "The 'machine-readable trap report' (also EFF-3, OP-5) is writer-facing — the repair loop reads it — but its schema is unspecified and uncounted, which the round-4 no-shadow-spec rule classifies as normative spec mass (round4-synthesis-teachability.md, no-shadow-spec: diagnostics vocabulary and report schemas count). Same applies to ERR-2's site-enumerated edit list.",
+            "fix": "Either add the trap-report and edit-list schemas to this artifact (a compact field table each) or add an explicit cross-reference stating they are pending counted spec deltas, so the calibration audit's +1-2k estimate becomes a tracked obligation rather than silent shadow spec."
+          }
+        ],
+        "missingRules": [
+          "PRELUDE section: normative canonical source of Bool, Result<T,E>, Option<T>, and all operation error types (Overflow, division-by-zero, cvt narrowing) with exact variant names, plus a complete signature table for every kernel operation (type params, operand modes/types, return type, effect row) — required by round-4's no-shadow-spec decided law",
+          "GRAM productions for: type, mode, generics (type/const/region parameters), targs (type, region, and const arguments at call sites — including whether const args carry FORM-5 suffixes), param_list/type_list/arg_list/binder_list with separator and spacing canon, path (or a single-token OPNAME class replacing dotted paths), fn_sig, law, effects, region_params, expr_stmt, literal; token definitions for STRING (with closed escape set), LABEL, REGIONID; and a reserved-word list excluded from IDENT",
+          "Value-construction rules: enum-variant construction, struct construction, and array construction expressions (currently no composite value is constructible)",
+          "Copy/move law: which types are copy (primitives), which expressions move, whether a moved binding can be re-initialized via set, and — if the core tree distinguishes use vs move (as prototype/checker/checker.py does) — the corresponding surface spelling to preserve GRAM-1 isomorphism",
+          "Match-value rule: expression-valued match (=> expr arms) or the canonical statement idiom for conditional initialization, plus binder ownership modes for own vs &r vs &mut r scrutinees",
+          "Conformance declaration item (conform/impl) binding (type, contract) to member implementations, with the one-conformance coherence rule as its own rule ID",
+          "Name-resolution rules: declaration-before-use, no shadowing/redeclaration, separate namespaces and scoping for LABELs and REGIONIDs, break-label must name an enclosing loop",
+          "Return-totality and dead-code rules: all paths return (return unit; mandatory), statements after return/break are errors",
+          "Arena/heap allocation result types: the mode/type returned by alloc_arena<'a,T> (region-bound — e.g., &mut 'a T or an own<'a> T mode) and alloc_heap<T>, closing the STOR-4 escape soundness hole and defining how heap-ness is tracked for drop elaboration",
+          "'static region and static-data story (or deletion of writes('static) from PROG-2)",
+          "Effect-row completion: row grammar with fixed canonical ordering, pure = empty-row unique spelling, stack-frame exemption from allocates, call-site row substitution through region arguments, and the row-subsumption relation PROG-2's 'not exceeding' presumes",
+          "Termination/divergence policy for pure functions (or a restricted EFF-2 elimination license requiring termination proof) — currently an unsoundness",
+          "Canonical formatting completion: comma/space rules, line-wrapping (or explicit no-wrap) rule, nesting-depth definition for match arms, EOF newline, blank-line rules inside bodies",
+          "Canonical worked examples section: at least one complete byte-exact accepted program plus micro-examples (env-struct pattern, Result match, region+borrow, arena allocation, checked arithmetic) — flagged pending in notes/calibration-audit-v0.json",
+          "Slice and array operations: slice creation from arrays, len, and the index operand type (e.g., u64); float operation enumeration with feq/flt/fle and an explicit NaN policy; the full cvt conversion matrix with error types, moved into §7",
+          "Explicit kernel-v0 concurrency scope statement (no threads; Send/Sync capability predicates deferred as a priced future spec delta per round-4 kernel-reserve sequencing)",
+          "Writer-facing artifact schemas or tracked cross-references: trap report (SCOPE-3/EFF-3), site-enumerated edit list (ERR-2), per-function check/lifetime reports and elaborated-artifact view format (DIAG-2) — all count under the no-shadow-spec rule",
+          "Prelude interaction rule: prelude names are in scope in every program and may not be redefined (extends PROG-1's closed world to the prelude boundary)"
+        ]
+      }
+    ],
+    "merged": {
+      "findings": [
+        {
+          "ruleId": "OWN-4",
+          "severity": "blocking",
+          "problem": "Outlives direction is INVERTED and unsound (critics B and C, independently, both blocking — no conflict). 'May not be stored/returned unless the destination's region outlives-or-equals 'a' accepts exactly the dangling case (inner-region borrow stored into a longer-lived destination) and rejects the safe direction. The prototype implements the opposite, sound direction (checker.py:170-177 requires the borrow's region to outlive the destination; test_checker.py:80 test_escape_inner_region_to_outer rejects a program the spec text accepts), so spec letter and checker already diverge and the letter violates D1.",
+          "fix": "Rewrite OWN-4: a borrow &'a p may be stored into a destination of declared region 'b, or returned into return region 'b, only if 'a outlives-or-equals 'b. Add a spec-CI test tying OWN-4's text to the checker's OWN-4 vectors."
+        },
+        {
+          "ruleId": "OWN-4",
+          "severity": "blocking",
+          "problem": "No rule ties a borrow's region to the borrowed PLACE'S storage duration (critic C). fn f(x: own T) regions['r0] { return &r0 x; } dangles — x's frame dies at return — yet nothing forbids borrowing a local or own parameter at a caller-supplied region. The prototype enshrines the bug as a POSITIVE test (test_checker.py:180 test_return_caller_region_borrow accepts it); this is the core soundness rule of every region calculus (Tofte-Talpin/Cyclone, both uncarded) and it is absent. Direct D1 violation.",
+          "fix": "Add OWN-10: &'a p is legal only if p's storage provably outlives 'a — for own bindings, 'a must be introduced within the binding's scope (never a caller region for locals/own params); for places reached through &'b q, require 'b outlives-or-equals 'a. Flip the prototype test to expect rejection."
+        },
+        {
+          "ruleId": "OWN-5",
+          "severity": "blocking",
+          "problem": "Exclusivity applies only to 'p itself', not overlapping places (critic C). While &mut 'a x.f is live, the letter permits 'use x' and 'set x = v' (the parent place), and permits 'set x = v' while &'a x.f is live — overwriting/reading exclusively-borrowed memory. The prototype correctly rejects both via overlap checks (checker.py:203-222), so the checker enforces a stronger rule that is written nowhere; the D1a gate evidence covers the unwritten rule, not the spec.",
+          "fix": "Restate OWN-5 over overlapping places: while &mut 'a p is live, no place overlapping p may be read, written, moved, or borrowed except through the borrow's holder; while any &'a p is live, no overlapping place may be written, moved, or mutably borrowed."
+        },
+        {
+          "ruleId": "OWN-7",
+          "severity": "blocking",
+          "problem": "Overlap is purely syntactic, so places rooted at borrow-HOLDER bindings alias the borrowed place invisibly (critic C, blocking): let p = &mut 'a x; then &'a p.f is a live readable alias of x.f while p can write it — accepted by the prototype (places_overlap((x,),(p,f)) is False, checker.py:166, untested). This falsifies OWN-9's exported &mut-noalias guarantee, which becomes LLVM noalias-class UB, i.e. real miscompiles. Related surface gap flagged by critics A and B (both major): the place grammar has no dereference form at all, so through-borrow access — the only legal access under OWN-5 — is inexpressible, and the checker invents holder semantics no rule states; critic D rated the undefined 'holder'/'through that borrow' notion minor. CONFLICT on fix approach: A and B propose an explicit deref(place) production; C proposes deref-transparent resolved places; B warns auto-deref would itself violate the zero-context-dependence law.",
+          "fix": "Define 'holder' normatively; judge OWN-5/OWN-7 overlap on RESOLVED places (holder-rooted paths resolve to the borrowed place plus appended path); forbid borrowing a binding holding a live &mut. Then pick ONE through-borrow spelling — an explicit deref place production is the safer choice under the no-context-dependence law — with region/exclusivity typing rules in section 5, and align the checker."
+        },
+        {
+          "ruleId": "OWN-5",
+          "severity": "blocking",
+          "problem": "'p itself may not be read, written, or moved EXCEPT THROUGH THAT BORROW' textually licenses moving owned content out through an &mut borrow (critic C): let p = &mut 'a x; let y: own T = move p; leaves x's binding live for a later use/drop — use-after-move/double-drop, a D1 violation. The prototype forbids exactly this under an UNWRITTEN rule (checker.py:154-155, test_move_through_borrow_binding). The 'except' wording also violates META-3.",
+          "fix": "Add an explicit rule: content reached through any borrow (shared or exclusive) may never be moved; moves require a place rooted at an own-mode binding. Reword OWN-5's grant positively (read/write through the holder) rather than as an exception clause."
+        },
+        {
+          "ruleId": "OWN-1",
+          "severity": "blocking",
+          "problem": "No copy/move classification exists and the grammar cannot express the distinction (critics C and D blocking; critic B major — severity conflict noted, resolved to blocking). Under affine OWN-1, iadd.wrap<i32>(x, x) is a double move and any second read of any binding is a use-after-move, making the language unusable; the only 'fix' lives as a comment plus separate use/move node kinds in toolchain code (checker.py:19-21), which GRAM-4's single 'place' production collapses — breaking GRAM-1's grammar/core-tree isomorphism and constituting a hidden exception (META-3) outside the artifact (no-shadow-spec). Whether &mut borrow values are copyable also decides OWN-9's soundness (copyable &mut = two live exclusive aliases).",
+          "fix": "Add one uniform rule: TYPE-1 primitives and shared borrows copy on use; own-mode composites and &mut borrows are affine. Add an explicit 'move p' expression to GRAM-4; a bare place expression of affine type is a hard error. Align the checker."
+        },
+        {
+          "ruleId": "OWN-6",
+          "severity": "blocking",
+          "problem": "Loop back-edges are unhandled (critic C). Loop bodies are not region blocks, so a borrow created inside 'loop' against an enclosing region is still live when the back-edge re-executes it — two live &mut borrows of one place (OWN-9/noalias violated) — and 'move x' of a loop-external binding is a runtime use-after-move on iteration 2. No OWN rule mentions loops; the prototype has zero loop support (check_stmt raises on loops; checker-prototype-report.json lists loop/liveness interaction as not covered), so the gate evidence cannot see the hole.",
+          "fix": "Add a loop rule: inside 'loop l', borrows may only name regions whose region block is inside l's body (forcing region-per-iteration), and bindings declared outside l may not be moved inside l (copies exempt)."
+        },
+        {
+          "ruleId": "STOR-4",
+          "severity": "blocking",
+          "problem": "Arena escape is unsound and unenforceable (critics C and D, both blocking). alloc_arena<'a,T>'s result mode/type is never stated; if it is 'own T' the value's type carries no trace of 'a, OWN-1 permits moving/returning it past region end, and STOR-4's claimed 'OWN-4 violation' cannot fire because OWN-4 governs only borrows — use-after-free in an accepted program (D1/SCOPE-3 violation), and the check is not locally decidable, contradicting META-2. alloc_heap's return type is equally unstated, so heap-ness is untracked for STOR-3 drop elaboration. No prototype STOR coverage. Mild fix conflict: C prefers a region-carrying owned type (own<'a> T / arena<'a,T>); D offers that or having alloc_arena return &mut 'a T (arena owns, borrow discipline contains it).",
+          "fix": "Surface the region in the type — pick ONE of: alloc_arena returns a region-carrying owned type own<'a> T whose moves/stores go through OWN-4's outlives machinery, or alloc_arena returns &mut 'a T. State alloc_heap's return type and how heap-ness is tracked for drop elaboration. Give one example."
+        },
+        {
+          "ruleId": "STOR-2",
+          "severity": "blocking",
+          "problem": "The stack default with its 'unless the initializer is an explicit allocation call' clause is unanimously blocking (critics A, B, D). It (a) is a defaulting rule banned by the round-4 zero-context-dependence invariant and META-2; (b) is an exception clause banned by META-3; (c) directly contradicts STOR-1 ('every allocation names its storage class explicitly'); and (d) violates the round-2 MEMORY floor (every allocation carries a writer-stated contract) and the D2 corrected ruling (uniform verbose-everywhere, no elision).",
+          "fix": "Make storage explicit in one uniform spelling: either every let names its storage class in the mode position (let x: own stack i32 = ...) or every initializer is an explicit allocation call including alloc_stack<T>(v). Delete the default and the unless-clause."
+        },
+        {
+          "ruleId": "FN-4",
+          "severity": "blocking",
+          "problem": "The law-test harness as a discharge channel creates the banned third trust state (critics A and B, both blocking). A property-test harness is neither deterministic-checker-grade proof, a runtime check under trap=abort, nor a verified proof artifact — the only admissible discharge forms per round-3 decided law ('no WRITER-EMITTABLE third state; toolchain-gated ledger entries are the SOLE trusted-assertion class'). A false-but-test-passing associativity law consumed by a reassociation pass is a silent miscompile; it also contradicts SCOPE-2's own 'no third state'.",
+          "fix": "Restrict optimizer-usable law discharge to the stated-and-checked channel (static proof, runtime check under trap=abort, verified proof artifact) or gated-family ledger entries. The harness may remain as non-normative pre-gate evidence informing gate review, never as a trust source."
+        },
+        {
+          "ruleId": "TYPE-1",
+          "severity": "blocking",
+          "problem": "bool has two-to-three identities and spellings (critics B and D blocking; critic A major — severity conflict noted, resolved to blocking): a TYPE-1 primitive, a prelude enum per GRAM-5 ('enum Bool { True(); False(); }'), and literals true/false per FORM-5. FORM-3's case rule makes 'bool' as a type name ill-formed against 'Bool'; a writer cannot know whether match arms on a bool are legal, whether to emit true or True(), or what ieq returns. Violates FORM-1/META-1/META-4 and the round-2 one-spelling floor.",
+          "fix": "Pick one representation and state it once. B and D lean prelude-enum-only: delete bool from TYPE-1, delete true/false from FORM-5, dispatch via match True()/False(), and make ieq/ilt/ile/band/bor/bnot take and return Bool; A treats primitive-bool-with-a-dispatch-rule as an admissible alternative. Fix the bool/Bool case mismatch either way."
+        },
+        {
+          "ruleId": "SCOPE-3",
+          "severity": "blocking",
+          "problem": "'Accepted programs have no undefined behavior' states D1 unconditionally (critic A). The owner ruled D1a a Rust-class CONDITIONAL envelope, and round-3 recorded the honest Layer-4 statement as position-invariant law: safety holds conditional on ABI-well-behaved foreign code and the declared TCB. Even a pure-kernel program sits on the undelimited TCB (allocator, runtime, compiler/checker).",
+          "fix": "Restate SCOPE-3 conditionally: accepted programs have no UB conditional on the declared TCB (and, once gated/FFI constructs link, on ABI-well-behaved foreign code), cross-referencing the Layer-4 envelope statement."
+        },
+        {
+          "ruleId": "EFF-2",
+          "severity": "blocking",
+          "problem": "The optimizer license for pure calls ('deduplicate, reorder, eliminate') is unsound without a termination requirement (critic D). pure excludes traps but not divergence (unbounded loop / recursion are expressible), and eliminating or reordering a diverging pure call changes observable behavior — the classic LLVM forward-progress hazard, contradicting SCOPE-3 and the round-3 checked-not-assumed spine.",
+          "fix": "Either restrict the license (dedup/reorder allowed; elimination of an unused pure call requires a termination proof) or add divergence to the effect row with pure implying termination via a conservative structural rule (every loop has a break on all paths; recursion needs a declared decreasing measure or is rejected in pure fns)."
+        },
+        {
+          "ruleId": "EFF-1",
+          "severity": "blocking",
+          "problem": "Rows 'checked both ways' plus proof-relative trap elimination makes acceptance prover-relative (critic D): whether a body 'exhibits' traps depends on what the checker can prove, so a prover upgrade flips the same program from required-to-declare to rejected-for-declaring — contradicting round-3 cross-cutting invariant 4 (acceptance is artifact-checkable and stable across toolchain versions). Cross-references the missing artifact-checkability rule (see the GLOBAL report-family/artifact finding).",
+          "fix": "Define 'exhibits' syntactically (any .trap op, check stmt, or bounds-checked index counts, even if later proven away) or make rows upper bounds with unexhibited effects surfaced as a lint — which also matches PROG-2's 'not exceeding' phrasing."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "blocking",
+          "problem": "The prelude is normative but undefined (critics B and D blocking; critic A major via PROG-1 — resolved to blocking). GRAM-5, ERR-1, OP-2, PROG-1, STOR-2 all lean on prelude contents (Bool, Result<T,E>, Option<T>, Overflow, iadd family, cvt, index, alloc_*, band/bor/bnot), but no rule fixes variant names (Ok/Err? Some/None?) or any operation signature (modes, effect rows, generics). A writer cannot emit one exhaustive match over Result without guessing. This is a shadow spec under the round-4 no-shadow-spec decided law, and notes/calibration-audit-v0.json prices the 3208-token spec without it.",
+          "fix": "Add a counted, normative §Prelude annex with stable rule IDs: full canonical source of Bool/Result/Option and every op error type, plus a complete signature table (name, type params, operand modes/types, return type, effect row) for every kernel operation. Re-run the calibration audit."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "major",
+          "problem": "Kernel-reserve pricing is incomplete against round-4 decided law — SEVERITY CONFLICT: critic A blocking, critic B major, critic D minor (resolved to major, middle). Round-4 requires the kernel (D1a calculus + obligation ledger + FFI frames + capability predicates) to be priced FIRST, but SCOPE-1/LAYER scope the ledger and FFI frames out and Send/Sync-class capability predicates (a round-2 'required core kernel component') appear nowhere, so the 3208-token audit priced the wrong artifact. FIX CONFLICT: A demands adding writer-visible stubs now plus an owner ruling per META-5 for any narrowing; B and D accept an explicitly recorded deferral (audit and decision-gates state the v0 baseline covers only the writer-facing subset; SCOPE-1 gains a one-sentence no-concurrency scope statement with capability predicates as a priced future delta).",
+          "fix": "Either add the writer-visible reserve items (capability-predicate rules; writer-visible ledger/FFI-frame schemas) to the counted kernel mass and re-run the audit, or record the narrowing explicitly in the audit and decision-gates with an owner ruling and declared spec delta. Do not leave the narrowing silent."
+        },
+        {
+          "ruleId": "FORM-3",
+          "severity": "major",
+          "problem": "Two region spellings coexist — SEVERITY CONFLICT: critic D blocking, critic B major, critic A minor (resolved to major). OWN-3/OWN-4/STOR-1/STOR-2/EFF-1/PROG-2 use apostrophe forms ('a, 'static) that FORM-3's [a-z][a-z0-9_]* identifier rule makes ill-formed; OWN-2 and GRAM-4 use bare/undefined REGIONID; prototype tests already use bare 'a'. Two spellings for one construct violates FORM-1/META-1 and the canonical-form floor, and the writer will emit whichever spelling the rule it read used.",
+          "fix": "Define REGIONID's lexical form once in FORM-3 (pick one form) and rewrite every region occurrence in OWN/STOR/EFF/PROG, grammar productions, and examples to that single spelling. Run the META-4 duplicate-detection CI the spec promises."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "major",
+          "problem": "Writer-facing artifact schemas are normatively referenced but absent and uncounted — SEVERITY CONFLICT: critic B blocking, critic D minor (resolved to major). The machine-readable trap report (SCOPE-3/OP-5/EFF-3), diagnostics vocabulary and node-path format (DIAG-1), site-enumerated edit list (ERR-2), and elaborated re-read artifact format (DIAG-2/STOR-3) are all inside the round-4 no-shadow-spec perimeter, and calibration-audit-v0.json confirms they are excluded from the 3208-token baseline. FIX CONFLICT: B requires them inside the counted document; D accepts explicit cross-references recording them as tracked, counted pending deltas.",
+          "fix": "Add compact field-table schemas for each (appendices are fine but inside the counted artifact), or at minimum convert each reference into an explicit tracked spec-delta obligation; then re-run the audit and restate the baseline in decision-gates.md."
+        },
+        {
+          "ruleId": "GRAM-2",
+          "severity": "major",
+          "problem": "The grammar is not closed (critics A, B, D major; critic C minor — noted): roughly 15 referenced nonterminals are never defined (type, mode, generics, targs, effects, region_params, path, literal, fn_sig, law, param/arg/type/binder lists, expr_stmt) nor are tokens STRING, LABEL, REGIONID; there is no spelling for passing region or const-generic arguments at call sites even though FN-2/round-2 law forbids inference. GRAM-1's LL(1)/isomorphism claims and SCOPE-2's 'parses under the canonical grammar' acceptance gate are therefore undefined, and under round-4's no-shadow-spec rule the missing productions are uncounted spec mass distorting the calibration baseline.",
+          "fix": "Add every missing production and token definition (including mode := own | & REGIONID | &mut REGIONID; a full type production; call-site region/const argument syntax; list separator rules), then re-price the spec and update the audit."
+        },
+        {
+          "ruleId": "GRAM-1",
+          "severity": "major",
+          "problem": "The LL(1)/unambiguity claims are false as written (critics B and D): place is left-recursive (never LL(1)); expr's place and call alternatives share FIRST token IDENT; index is derivable as both a place and a call (critic B's OP-1 finding: one construct, two syntactic homes, breaking the 1:1 production/node isomorphism); dotted operation names (iadd.wrap) have no lexical home since FORM-3 identifiers cannot contain '.' and '.' already means field projection; and there is no reserved-word list, so a binding named 'index' or 'match' is legal and unparseable.",
+          "fix": "Refactor to genuine LL(1) (place := IDENT suffix*), give index exactly ONE home (place-only or call-only, cross-referenced from the other section), define OPNAME as a single token class (or respell as iadd_wrap), enumerate reserved words, and add a spec-CI check that mechanically verifies the LL(1)/unambiguity claims."
+        },
+        {
+          "ruleId": "GRAM-3",
+          "severity": "major",
+          "problem": "Borrows cannot be returned or stored per the grammar, yet OWN-4 legislates both (critic C): fn_decl's return is '-> type' with no mode slot, fields are 'IDENT : type', and TYPE-2 has no borrow/reference type former — &r T exists only as a binding/param mode. So OWN-4's 'stored into a value or returned' is grammatically inexpressible (while a prototype positive test returns one), and slice<T> ('always borrowed') can never be a field or return type. Spec-internal contradiction guaranteeing writer/checker divergence.",
+          "fix": "Decide and state once: either add a borrow type former (&'r T usable in return position and struct fields with declared regions — what OWN-4 and the prototype assume), or forbid borrow returns/fields outright and delete OWN-4's return/store clause."
+        },
+        {
+          "ruleId": "GRAM-4",
+          "severity": "major",
+          "problem": "No expression form constructs any composite value — no struct literal, no enum-variant construction, no array construction (critic D blocking; critics A and B major — resolved to major, noting D's escalation). Whether variant construction counts as a 'call' is unstated (path undefined; FORM-3 reserves uppercase for types). As written the writer cannot create a Result, Option, Bool, env-struct (FN-5), or array, making ERR-1's errors-as-values and GRAM-5's Bool dispatch unimplementable.",
+          "fix": "Add explicit productions with one worked example each: variant construction (e.g. Ok<i32, Overflow>(x)), struct construction, array construction; define path to include TYPEID segments or give construction dedicated productions; state how targs interact with prelude generics."
+        },
+        {
+          "ruleId": "FN-3",
+          "severity": "major",
+          "problem": "Conformance is undeclarable (critics A and B major; critic D blocking — resolved to major, noting D's escalation): FN-3 requires explicit per-(type, contract) conformance but item := fn_decl | struct_decl | enum_decl | contract_decl has no conformance production, fn_sig and law are undefined nonterminals, and the bound spelling fn sum<T: Monoid> is unparseable because generics has no production. The decided contract-group kernel (required under every open outcome) can never be exercised: no type can satisfy T: Monoid, so no constrained generic can be instantiated.",
+          "fix": "Add a conform_decl item production (naming type, contract, and member bindings checked against the contract's fn_sigs), plus fn_sig, law, and generics-with-bounds productions, and the at-most-one-conformance coherence rule with its own rule ID and a worked example."
+        },
+        {
+          "ruleId": "GRAM-4",
+          "severity": "major",
+          "problem": "Match ownership semantics are entirely unspecified (critics B, C, D major; critic A minor — resolved to major): whether the scrutinee is moved or borrowed, what modes arm binders receive (binders carry no written mode, directly contradicting OWN-2's 'modes are always written; there is no default'), what binding by value through a shared borrow means (a move out of a borrowed place), and the binding-state join across arms (moved-in-one-arm: live or dead after?). Since match is the ONLY conditional/dispatch construct, every conditional in the language hits this hole; the checker prototype has necessarily decided it one way already.",
+          "fix": "Add uniform rules: matching an own scrutinee moves it and binds payload by move (or require written binder modes); matching through &r / &mut r yields binders of that borrow mode and region; conservative join — a binding moved in ANY arm is dead after the match. One worked example per case."
+        },
+        {
+          "ruleId": "GRAM-4",
+          "severity": "major",
+          "problem": "match_expr cannot produce a value (critic D): expr includes match_expr but arm bodies are '{ stmt* }' with no result expression or '=> expr' form. With no 'if' and let requiring an initializer, conditional initialization (let y = if c then a else b) — the most common pattern an AI writer needs — is inexpressible in both expression and statement form.",
+          "fix": "Either add a value-arm form (=> expr) for expression position — accepting the two-arm-shapes cost against the one-spelling rule, which D itself flags — or make match statement-only and add the canonical conditional-initialization idiom as a worked example (which requires deciding how an arm initializes a pre-bound binding)."
+        },
+        {
+          "ruleId": "OP-2",
+          "severity": "major",
+          "problem": "The operation inventory is open-ended and exception-laden (critics B and D): 'likewise isub, imul, idiv' plus the parenthetical idiv carve-out is an inline exception list (META-3); ineg's mode set is ambiguous (i32::MIN negation overflows, so it matters); idiv's INT_MIN/-1 case is unmentioned; OP-3's 'fadd.strict<T> etc.' leaves the float set unenumerated with no float comparisons and no NaN policy (the classic silent-wrong trap: is feq total? NaN != NaN?); and TYPE-4's cvt matrix — which pairs exist, which are total vs Result-returning, what the error type is — is a dangling cross-reference to a §7 that contains no cvt. Round-2 decided law mandates typed operation tables; none exists.",
+          "fix": "Replace OP-2/OP-3 prose with ONE canonical operation table (operation, type domain, available modes, signature, effect row) where mode availability is table data, not exceptions; include cvt rows with the total-vs-Result classification and error type per pair, ineg's modes, idiv's INT_MIN/-1 behavior, and feq/flt/fle with an explicit IEEE-754 NaN rule."
+        },
+        {
+          "ruleId": "EFF-1",
+          "severity": "major",
+          "problem": "The effect-row surface is undefined and semantically incomplete (critics B and D): no effects production, separator, or canonical ordering (two orderings = two spellings, violating FORM-1); allocates(stack) is incoherent (every function uses the stack — either an unstated exemption, META-3, or every fn must declare it, contradicting PROG-2's example); call-site row composition through region-argument substitution is unstated; and PROG-2's 'not exceeding' presumes a row-subsumption relation EFF-1's both-ways exactness never defines. Round-3 also flags the effect-row floor as having ZERO exemplar cards, so nothing can lean on precedent (critic A separately notes this gate is unrecorded — see minor finding).",
+          "fix": "Add effects := effect (',' effect)* with a fixed canonical order; define pure as the empty row's unique spelling; state 'stack frames are not allocations for EFF purposes' as a positive definition; define call-site row substitution; define row subsumption once (or restate PROG-2 as exact-row)."
+        },
+        {
+          "ruleId": "PROG-2",
+          "severity": "major",
+          "problem": "writes('static) is dangling (critics A, B, D unanimous): no rule defines a 'static region (OWN-3 admits only lexical and caller-supplied regions), the grammar has no static/global item for the effect to range over, FORM-3's identifier rule excludes the tick spelling, and 'not exceeding' presumes the undefined subsumption relation. A writer cannot produce a conforming main and the checker has nothing to check it against.",
+          "fix": "Either define the static region and a global/static item with storage and initialization semantics, or reduce main's permitted row to 'allocates(heap), traps' and delete the reference. Define or drop 'not exceeding' per the EFF-1 fix."
+        },
+        {
+          "ruleId": "OWN-3",
+          "severity": "major",
+          "problem": "The outlives definition is self-contradicting and partial (critic B major; critics A/D touch it as minor — resolved to major): 'outlives iff strictly encloses' is immediately falsified by the caller-supplied-region clause (an exception-shaped addendum to an 'iff'), the strict form means 'a never outlives 'a (forcing OWN-4's ad-hoc 'outlives-or-equals'), and the relation between two DISTINCT caller-supplied regions is undefined although OWN-4 needs it. The prototype invents declaration-order semantics (checker.py:65-71: earlier-declared caller regions outlive later ones) that appear in no rule.",
+          "fix": "Replace with one total, reflexive relation: outlives-or-equals = same region, or strict block enclosure, or (caller-supplied, local); distinct caller-supplied regions are incomparable and any check requiring an order between them fails closed (per OWN-8). Fix the checker to match."
+        },
+        {
+          "ruleId": "OWN-6",
+          "severity": "major",
+          "problem": "Borrow liveness endpoint is ambiguous and the resulting semantics is usability-hostile (critics C and D): OWN-6 says 'to the end of the ENCLOSING region block' while OWN-4 says the borrow's NAMED region bounds its life — different answers for a caller-region borrow written in an inner block; the prototype implements the named-region reading (checker.py:124-125). Under lexical liveness with no reborrow rule, f(&mut 'a x); g(&mut 'a x); in one region is illegal — every mutating call needs its own region block, a guaranteed high-frequency AI-writer rejection the spec never teaches (the D2 spec-as-teacher failure mode; rejection rates flagged unmeasured in checker-prototype-report.json). Call-argument temporary borrows bound to no binding are addressed by no rule.",
+          "fix": "Rewrite OWN-6 to the named-region reading (delete 'enclosing'), then either add a call-scoped temporary rule (an argument borrow not bound by let dies at the end of the call expression) or normatively document the region-per-mutating-call idiom with accepted/rejected examples in the worked-example pack."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "major",
+          "problem": "The OWN rules say nothing about calls passing borrows (critic C): no region-argument substitution rule at call sites (and no obligation that passed regions be live), no statement that argument borrows are live accesses of their resolved places across the call, no rule that a callee's instantiated effect row counts as caller-side reads/writes under OWN-5 (so calling a writes('a) fn while an &'a borrow is live is unrejectable, breaking OWN-9), no disjointness requirement for two &mut arguments, and no region instantiation for returned borrows. FN-1 says callers rely only on signatures, but no rule consumes the signature at the call node; the prototype's call case just recurses into args (checker.py:185-188).",
+          "fix": "Add an OWN-CALL rule cluster: region-argument substitution; argument borrows treated as live accesses for the call; instantiated callee effect rows checked against live borrows under OWN-5; two &mut arguments must resolve to disjoint places; returned-borrow region = instantiated actual, then OWN-4 applies."
+        },
+        {
+          "ruleId": "OWN-1",
+          "severity": "major",
+          "problem": "Partial moves conflate place and binding (critic C): moves target places (move x.f) but OWN-1 kills 'the source BINDING'. Whether moving x.f kills all of x (the prototype's whole-binding behavior, checker.py:156) or only x.f (requiring per-place deadness and partial-drop elaboration) is unstated; each choice changes accepted programs and drop elaboration.",
+          "fix": "State the v0 rule explicitly: moving any place rooted at binding b kills b entirely; reads of disjoint sibling fields after a partial move are OWN-1 errors requiring restructuring (consistent with OWN-8's posture)."
+        },
+        {
+          "ruleId": "TYPE-2",
+          "severity": "major",
+          "problem": "slice<T> is a borrow with no region and no birth (critics C and D; B partially): no region parameter (so OWN-3/4/6 cannot bound its life and a stored view is exactly the escape case OWN-4 polices, with nothing to check), no creation operation anywhere (only index consumes one — slices are unconstructible), no len operation (loops over arrays cannot terminate on a queried bound), no OWN-7 overlap story (two slices over one array never overlap syntactically — if two &mut-mode slices are constructible, the OWN-9 noalias export is silently false, the known miscompile class), the index operand's integer type is unstated (no usize exists), and 'always borrowed, never owned' is a type-specific exception to OWN-2 (META-3).",
+          "fix": "Make it slice<'a, T> with an explicit region; add exactly one creation operation specified as a borrow of the underlying array place (plus len) so OWN-5/OWN-7 apply; state that slices over the same resolved root overlap conservatively; fix the index operand type (e.g. u64) in one rule."
+        },
+        {
+          "ruleId": "TYPE-2",
+          "severity": "major",
+          "problem": "array<T, N> introduces const generics with no constant-expression rules (critics A and D). The round-2 floor is a closed, decidable, trivially-terminating constant-expression sublanguage; with N's language unspecified, writer and checker will diverge on which lengths are writable and when two array types are equal, and const-generic argument spelling at instantiation sites is undefined.",
+          "fix": "Add CONST rules defining the closed sublanguage, or restrict N to literal integer constants in v0 and say so explicitly (including whether const args carry FORM-5 suffixes in targs)."
+        },
+        {
+          "ruleId": "SCOPE-2",
+          "severity": "major",
+          "problem": "Two SCOPE-2 defects (critics A and B): (a) 'There is no third state: nothing writer-stated is trusted unchecked' restates the PRE-amendment spine — the legislated form is 'no WRITER-EMITTABLE third state' with toolchain-gated ledger entries as the sole trusted-assertion class, and a kernel program relying on a gated law lives in a state SCOPE-2 says does not exist; (b) 'every checkable-but-unproven D1-critical fact carries a runtime check' uses the classification 'D1-critical' which the artifact never defines — the class assignment (bounds and checkable alias-disjointness in; overflow out, as a policy class) lives only in round-3 notes.",
+          "fix": "Reword to 'no writer-emittable third state', naming gated ledger entries as the sole trusted-assertion class (with the strict reading governing until the amendment formally issues), and add one rule enumerating the in-kernel D1-critical fact classes, cross-referenced from SCOPE-2 and OP-4."
+        },
+        {
+          "ruleId": "OP-4",
+          "severity": "major",
+          "problem": "'The compiler may eliminate a check only by proof' leaves 'proof' undefined (critic A). Round-3 legislated proof = deterministic-checker-grade or verified-proof-artifact discharge, and fenced the solver: it may only PROMOTE performance facts, never gate acceptance or elide safety-relevant checks until a proof-checker TCB exists. As written, raw SMT output could count as proof.",
+          "fix": "Define 'proof' per the round-3 legislated definition in OP-4 (or one shared definition rule) and state the solver fence: solver-promoted facts are performance-ledger only and never license check elision."
+        },
+        {
+          "ruleId": "ERR-1",
+          "severity": "major",
+          "problem": "The decided error-handling replacement is only half-present (critic A): missing are verifier-checked Result propagation with auto-derived context/cause chains at zero hand-written tokens per site — explicitly the argument that neutralized unwinding — plus the language-enforced Result-vs-trap classification rule and anti-sentinel lints. Bare manual match propagation reopens the objection the round-2 verdict priced away.",
+          "fix": "Add the propagation operation with auto-derived context chains and the Result-vs-trap classification rule, or record an explicit deferral with its spec delta per META-5."
+        },
+        {
+          "ruleId": "FN-5",
+          "severity": "major",
+          "problem": "The closures/dispatch replacement floors are named but not specified (critic A): no guaranteed direct-call monomorphization for env-struct dispatch (never fn-pointer+env indirection), none of the mandated exactness diagnostics (unused env field, used-but-uninitialized field, dead dispatch variant, non-exhaustive tag dispatch, signature mismatch — each naming struct/function/construction site), and typed operation tables with construction-checked payload/table coupling and the one-canonical-table-per-(variant-set x operation) rule are absent entirely.",
+          "fix": "Add rules for the direct-call guarantee and the mandated diagnostic set; add the typed-operation-table construct with its one-definition and construction-coupling rules, or record explicit deferrals with spec deltas."
+        },
+        {
+          "ruleId": "STOR-1",
+          "severity": "major",
+          "problem": "The storage-contract vocabulary omits the decided foreign-shared allocation-site field (critic A): round-3 decided foreign-retainable memory is pre-declared foreign-shared at its allocation site as one field on the existing storage-contract floor, and REJECTED compiler-inferred call-site demotion. The spec is silent, so the storage grammar must break when FFI frames land, and the demotion rejection is recorded nowhere normative.",
+          "fix": "Reserve the foreign-shared field in STOR-1's vocabulary now, legal only in programs containing gated FFI frames, and record that call-site demotion is a floor violation."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "major",
+          "problem": "The decided report family and artifact-checkability are missing (critic A, two findings merged; corroborated by critic D's EFF-1 prover-relativity finding): per-function check reports, per-function lifetime reports, and check-density/elision reports are decided-law toolchain outputs attached to the canonical artifact, and round-3 invariant (4) requires proof objects and check instrumentation to travel with the program so 'accepted' is artifact-checkable, not process-relative. The spec defines acceptance purely as a process outcome and DIAG-2 omits the report family.",
+          "fix": "Add DIAG rules: (a) the normative report family enumerated as toolchain output accompanying the canonical artifact; (b) the canonical elaborated artifact embeds proof objects and check instrumentation, and acceptance is decidable from the artifact alone across toolchain versions."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "major",
+          "problem": "The contract-edit gating floor is unstated (critic A): round-2 decided that editing a declared contract (signatures, law bundles, lifetime/storage contracts) is a privileged, gated toolchain operation so a writer cannot launder a hallucinated body by rewriting its declaration, and round-3 unified this into one gating regime. This is writer-facing law — it bounds what the writer may edit — and the kernel spec omits it entirely.",
+          "fix": "Add a rule: contract, signature, law, and storage-contract edits are one privileged gated toolchain operation with one audit trail, outside steady-state writer capability."
+        },
+        {
+          "ruleId": "TYPE-5",
+          "severity": "major",
+          "problem": "Name-binding rules are missing entirely (critic D major; critic B minor via DIAG-1 — resolved to major): nothing legislates declaration-before-use, shadowing/redeclaration legality, label/region namespaces, or break-label scoping. The prototype exposes the gap by misappropriating TYPE-5 (a type-inference rule) for 'unknown binding' (checker.py:198) because no correct rule ID exists — already breaking DIAG-1's rule-to-emitter bijection at prototype scale.",
+          "fix": "Add rules: declaration-before-use; no shadowing/redeclaration of a live name (one uniform rule); LABELs and REGIONIDs get their own namespaces under the same rule; break's LABEL must name a lexically enclosing loop. Retarget the checker's diagnostic and add the rule-to-emitter coverage audit to spec CI now, while there is one emitter."
+        },
+        {
+          "ruleId": "GRAM-4",
+          "severity": "major",
+          "problem": "Return totality and dead code are unspecified (critic D): must every path end in return/trap, does a unit function return implicitly, and is code after return/break rejected? Each choice changes what the writer must emit for main() -> unit, and the checker will pick one silently.",
+          "fix": "Add: every function body returns on all paths ('return unit;' mandatory — no implicit return, matching the no-elision doctrine); statements after return/break in the same block are a hard error citing this rule."
+        },
+        {
+          "ruleId": "FORM-2",
+          "severity": "major",
+          "problem": "FORM-1's 'exactly one legal byte-level formatting' is not actually pinned down (critics B and D): required-ness of token separation is undefined, comma conventions, line-break/wrapping rules (GRAM-3's own fn_decl display wraps under no stated rule), nesting-level definition for match arms, blank lines, and EOF newline are all unstated. Two conforming implementations will disagree on canonical bytes, and FORM-1 makes one of them a hard error chosen by private convention.",
+          "fix": "Complete FORM-2: token-separation table, comma rule (one space after, none before), a deterministic wrap rule or explicit no-wrap, one nesting level per '{' block including match arms, blank-line rules, exactly one trailing LF. Add byte-level golden tests to spec CI and exhibit it in the worked example."
+        },
+        {
+          "ruleId": "FORM-5",
+          "severity": "major",
+          "problem": "STRING is used by the grammar (doc STRING, check ... trap STRING) but FORM-5's exhaustive literal list excludes strings, and STRING's lexical form — delimiters, escape set, canonical escape policy — is defined nowhere (critics B and D). Both an internal contradiction and an undefined byte-canonical surface (unnormalized escapes = multiple spellings per value).",
+          "fix": "Add STRING to FORM-5 with a complete lexical definition including a canonical escape policy (one spelling per string value), or replace strings in doc/trap with a defined restricted form."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "major",
+          "problem": "Zero worked examples exist in the artifact (critic D). FORM-1/FORM-2 legislate a single legal byte formatting, but no complete program is shown, so canonical bytes are unlearnable for a sole in-context teaching artifact. Round-4 makes the teaching pack (spec + canonical worked examples) the delivery unit, and calibration-audit-v0.json itself flags examples as pending (+2-4k tokens). Highest-leverage single addition per critic D.",
+          "fix": "Add a §Examples section: at minimum one complete byte-exact accepted program (main + generic fn with contract bound + region + borrow + match on Result + check + checked arithmetic) plus per-construct micro-examples (env-struct, arena allocation, enum construction). Mark examples normative for FORM rules and count them in the audit."
+        },
+        {
+          "ruleId": "OP-3",
+          "severity": "minor",
+          "problem": "'Strict IEEE 754 by default' is incoherent under one-mode-per-node (there are no defaults if every node names .strict), and remanding fast-math/approximation permissions to a LAYER decides a placement that numeric-semantics still holds open (critic A; round-3 decided only overflow, not float-relaxation placement).",
+          "fix": "Reword: 'v0 defines only .strict float modes; each node names its mode.' Record approximation/fast-math modes as an open numeric-semantics question rather than a decided LAYER."
+        },
+        {
+          "ruleId": "META-2",
+          "severity": "minor",
+          "problem": "'Every rule is locally decidable at its node given declared types in scope' overstates the round-4 invariant (a regularity constraint on spellings/rules, not node-local decidability) and is falsified by the spec's own flow-dependent checks: OWN-5 exclusivity and OWN-6 liveness need knowledge of other live borrows (critic A; critic C's STOR-4 finding independently shows a rule that is not locally decidable as written).",
+          "fix": "Reword META-2 to the round-4 formulation (no context-dependent spellings or rule variants) and drop the node-local decidability claim."
+        },
+        {
+          "ruleId": "META-3",
+          "severity": "minor",
+          "problem": "META-3 ('no rule carries an exception clause') is violated by the draft it governs: OWN-5 ('except through that borrow'), OWN-7 ('unless indices are distinct constants'), STOR-2 ('unless the initializer is...'), plus OP-2's idiv parenthetical and TYPE-2's slice carve-out (critics B, C, D collectively). If META-3 is CI-checked as claimed, spec CI fails on day one; if these are not 'exceptions', the term is undefined. Largely resolved as a side effect of the blocking OWN-5/STOR-2 fixes.",
+          "fix": "Restate the remaining rules in positive/total form (e.g. OWN-7: 'index places with the same base overlap iff their indices are not both constants with unequal values') or define 'exception clause' precisely in META-3."
+        },
+        {
+          "ruleId": "META-4",
+          "severity": "minor",
+          "problem": "Stated-once violations the spec's own CI rule would fail (critic B): trap=abort stated three times, proven-else-checked three times, match-as-only-dispatch four times, gated-family-not-writer-writable twice, check's spelling twice, and OWN-9 restates OWN-1/OWN-5 consequences as fresh normative text.",
+          "fix": "Keep one normative statement per fact and convert other mentions to bare rule-ID cross-references; recast OWN-9 as an explicitly derived non-normative consequences note or delete it."
+        },
+        {
+          "ruleId": "OWN-9",
+          "severity": "minor",
+          "problem": "'Owned values are unaliased' is false while shared borrows of them are live (owner remains readable under OWN-5, so owner path and borrow path alias for reads) — and once the OWN-5/OWN-7 holes are fixed, this optimizer-facing sentence should be re-derived, not asserted (critic C).",
+          "fix": "Qualify ('owned values are unaliased except by live shared borrows, which are read-only for their duration') or drop the bullet, keeping only the &mut-noalias and shared-read-only bullets."
+        },
+        {
+          "ruleId": "OWN-1",
+          "severity": "minor",
+          "problem": "Reinitialization after move is unspecified (critic C): whether 'set x = e' on a moved x is a use of a dead binding (the prototype rejects, checker.py:212) or a revival is unstated; Rust-prior writers will expect revival and the checker will reject.",
+          "fix": "State it: a moved binding is dead for all statements including set; reinitialization requires a new let."
+        },
+        {
+          "ruleId": "OWN-3",
+          "severity": "minor",
+          "problem": "Region name uniqueness/shadowing is unspecified (critic C): nothing forbids nested regions with the same name or a local region shadowing a caller region param, and the prototype's index-based region depth silently miscomputes outlives under shadowing (checker.py:66-67).",
+          "fix": "Add to OWN-3: region identifiers are unique within a function (params included); duplicate introduction is an error."
+        },
+        {
+          "ruleId": "STOR-3",
+          "severity": "minor",
+          "problem": "Non-lexical region exits are unhandled by the elaboration story (critic C): break LABEL and return can cross region boundaries, but STOR-3/STOR-4 derive drops and arena releases from 'region ends' only, and DIAG-2 requires every derived drop explicit in the artifact — where releases attach on early-exit paths is unstated.",
+          "fix": "State that every control-flow edge leaving a region block (fallthrough, break, return) carries the region's releases/drops in the elaborated artifact, in one stated order (e.g. reverse declaration order)."
+        },
+        {
+          "ruleId": "FN-4",
+          "severity": "minor",
+          "problem": "law has no production and no vocabulary (critic D): contract_decl shows law* but law := ... does not exist, and whether law names (associative, commutative, ...) form a closed harness-understood set or are free-form, with what arities, is unstated. A writer cannot emit a law without guessing. (Separate from the blocking FN-4 trust-channel finding.)",
+          "fix": "Add law := 'law' LAWNAME '(' IDENT (',' IDENT)* ')' ';' with a closed LAWNAME table (name, arity, checked property), stated once."
+        },
+        {
+          "ruleId": "FN-6",
+          "severity": "minor",
+          "problem": "'Polymorphic recursion is not permitted (instantiation closure must be finite)' names a property, not a decidable rule (critic D): the writer cannot predict which recursive generic patterns are rejected and no rule ID exists for the diagnostic to cite the procedure.",
+          "fix": "State the conservative decidable rule (e.g. in any call cycle, every generic function is called at exactly its own type parameters — a syntactic check) so rejection is predictable and locally explainable."
+        },
+        {
+          "ruleId": "EFF-1",
+          "severity": "minor",
+          "problem": "The effect-row vocabulary is instantiated while its named blocking evidence is undischarged (critic A): region/effect verifier exemplar cards (Cyclone, MLKit, Koka, DPJ) are blocking for the effect-row floor and currently number zero; the draft does not record this gate on section 9.",
+          "fix": "Mark section 9 in the status header as gated on region/effect exemplar carding before ratification."
+        },
+        {
+          "ruleId": "OP-5",
+          "severity": "minor",
+          "problem": "The optional stated-and-checked channel (loop invariants, ranges, loop-bounded disjointness — fact-creating but always checked) has no kernel surface, and the spec does not say whether a passed check is fact-creating (its fact joining the proven set on the dominated path, the guard-then-assume pattern) or purely a trap assertion (critic A).",
+          "fix": "State check's fact-creating status in OP-5 and record the fuller stated-and-checked vocabulary as an explicitly deferred channel with its spec delta."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "minor",
+          "problem": "Section 5's provisional status is unrecorded (critics A and C converge): the owner attached a ratification precondition — formalized-calculus adoption (Featherweight Rust/Oxide/Austral-class) before ratification — and critic C notes the two inverted/exception-clause OWN bugs found in this review are exactly the class a formal-core comparison catches. A reader of the spec alone cannot see OWN-1..9 are provisional.",
+          "fix": "Add to the status header (or section 5 preamble) that OWN rules must be reconciled against a formalized minimal calculus before ratification, citing the D1a gate."
+        },
+        {
+          "ruleId": "FORM-4",
+          "severity": "minor",
+          "problem": "Wrong cross-reference: 'Documentation is the doc field of declarations (§4)' — §4 is Types; the doc production lives in §3/GRAM-3 (critic B).",
+          "fix": "Change the citation to §3/GRAM-3 and prefer rule-ID citations over section numbers throughout."
+        },
+        {
+          "ruleId": "FORM-5",
+          "severity": "minor",
+          "problem": "The token 'unit' is simultaneously a type (TYPE-1) and a value literal (FORM-5) — one spelling, two constructs, resolved by position, brushing against the zero-context-dependence invariant's 'no positionally-resolved meaning' (critic B).",
+          "fix": "Split the spellings or add an explicit note-rule that type and literal namespaces are disjoint grammar positions, making the resolution production-local rather than contextual."
+        },
+        {
+          "ruleId": "OWN-6",
+          "severity": "minor",
+          "problem": "The parenthetical '(Flow-sensitive shortening is a permitted future refinement...)' embeds a future-amendment permission inside a normative rule — spec mass that teaches the writer nothing and belongs in the decision gates, where it already exists under the D1a checker levers (critic B).",
+          "fix": "Delete the parenthetical; the NLL-refinement option stays recorded in decision-gates.md."
+        },
+        {
+          "ruleId": "GLOBAL",
+          "severity": "minor",
+          "problem": "The audited baseline '59 rules' counts rule-ID occurrences including two cross-reference citations; the artifact defines 57 unique rules (critic B). The spec-delta ratchet starts from a miscounted baseline and cross-references will inflate future counts — exactly the individuation gaming the round-4 open tension warns about.",
+          "fix": "Recount using definition-position IDs only (57), update decision-gates.md and calibration-audit-v0.json, and fold 'citations do not count as rules' into the canonical rule-individuation procedure."
+        }
+      ],
+      "missingRules": [
+        "PRELUDE annex (all four critics): counted, normative canonical source of Bool, Result<T,E>, Option<T>, and every operation error type (Overflow, division, cvt narrowing) with exact variant names; a complete signature table for every kernel operation (type params, operand modes/types, return type, effect row); and a rule that prelude names are in scope in every program and may not be redefined.",
+        "GRAM completion (all four critics): productions for type, mode, generics (type/const/region params with bounds), targs (type/region/const arguments at call sites — inference is forbidden, so call-site region/const argument syntax is mandatory), effects, region_params, path or a single-token OPNAME class, literal, expr_stmt, fn_sig, law, and all list forms with separators; token definitions for STRING (closed escape set), LABEL, REGIONID; a reserved-word list excluded from IDENT; a conformance-declaration item production; composite construction forms (struct, enum-variant, array); and a borrow type former for return/field positions (or an explicit prohibition, deleting OWN-4's store/return clause).",
+        "Copy class and move spelling (critics B, C, D): which types copy on use (TYPE-1 primitives, shared borrows) vs are affine (own composites, &mut borrows), plus an explicit 'move p' expression in GRAM-4 — currently only a comment and node-kind split in prototype/checker/checker.py:19-21.",
+        "Place resolution / holder / dereference (critics A, B, C): normative definition of 'holder'; places rooted at ref-mode bindings resolve to the borrowed place plus appended path; OWN-5/OWN-7 judged on resolved places; an explicit deref spelling (per A/B) or deref-transparent rule (per C — approach conflict to resolve); no borrowing a binding that holds a live &mut; and no moving content reached through any borrow.",
+        "OWN-10 borrow-storage outlives (critic C): a borrow &'a p is legal only if p's storage outlives 'a — own bindings require 'a introduced within the binding's scope; through-borrow places require the source borrow's region to outlive-or-equal 'a. Closes the dangling-return hole enshrined by test_return_caller_region_borrow.",
+        "Loop back-edge rule (critic C): inside a loop, borrows may only name regions introduced inside the loop body, and bindings declared outside the loop may not be moved inside it (copies exempt).",
+        "Match ownership rules (critics B, C, D; critic A rated minor): scrutinee move-vs-borrow semantics, arm-binder modes (written or uniformly derived — OWN-2 currently forbids the unstated default), and the conservative join (a binding moved in any arm is dead after the match).",
+        "OWN-CALL boundary cluster (critic C): region-argument substitution at call nodes; argument borrows as live accesses of resolved places across the call; callee effect rows instantiated at actuals and checked against live borrows under OWN-5; disjointness of resolved places for two &mut arguments; returned-borrow region instantiation feeding OWN-4.",
+        "Partial-move rule (critic C): moving any place rooted at binding b kills b entirely in v0 (matches the prototype's whole-binding kill); stated rather than left ambiguous in OWN-1.",
+        "No-reinitialization rule (critic C): set on a moved binding is a use of a dead binding; revival requires a new let.",
+        "Total outlives relation and caller-region ordering (critics B, C, D): one reflexive outlives-or-equals definition; distinct caller-supplied regions are incomparable and order-requiring checks fail closed (the prototype currently invents declaration-order outlives, checker.py:65-71); region-name uniqueness/no-shadowing within a function.",
+        "Region-carrying allocation result types (critics C, D): the mode/type returned by alloc_arena<'a,T> (own<'a> T or &mut 'a T — pick one) and alloc_heap<T>, so arena escape is locally decidable (META-2) and enforced by OWN-4 machinery; heap-ness tracking for drop elaboration.",
+        "Region-exit elaboration (critic C): every edge leaving a region block (fallthrough, break, return) carries that region's drops/arena releases in the DIAG-2 artifact, in one stated order.",
+        "STOR foreign-shared field (critic A): the foreign-shared allocation-site field on the storage contract, legal only with gated FFI frames, plus the recorded rejection of compiler-inferred call-site demotion.",
+        "Slice and index rules (critics C, D): slice<'a, T> with a region; exactly one slice-creation operation specified as a borrow of the underlying array place; len; conservative overlap for slices over the same resolved root; the integer type of array/slice indices and of const generic N (no usize exists in TYPE-1).",
+        "CONST-1 (critics A, D): the closed, decidable, trivially-terminating constant-expression sublanguage governing const generics and array lengths — or an explicit literals-only v0 restriction.",
+        "Capability predicates and concurrency scope (critics A, B, D — severity/fix conflict noted in findings): CAP rules for Send/Sync-class type-level capability predicates (data races prevented; general race conditions out of scope per amended C004), or at minimum an explicit SCOPE-1 statement that kernel v0 is single-threaded with capability predicates as a priced future spec delta per the round-4 kernel-reserve sequencing.",
+        "GATE-1 contract-edit gating (critic A): contract, signature, law-bundle, and storage-contract edits are one privileged gated toolchain operation with one audit trail, outside steady-state writer capability (round-2 AI-writer additions; round-3 gating unification).",
+        "LEDGER stub (critic A): a writer-visible normative stub for the gated fact-boundary family — one family, one per-fact obligation ledger, manifest-free members unrepresentable, writer cannot author or edit — so kernel programs' relationship to gated law (e.g. FN-4 discharge) is defined and the round-4 pricing unit is complete.",
+        "DIAG report family (critic A): machine-readable per-function check reports, per-function lifetime reports, and check-density/elision reports as normative toolchain output accompanying the canonical artifact.",
+        "DIAG artifact-checkability (critics A, D): proof objects and check instrumentation travel with the canonical elaborated artifact; acceptance is decidable from the artifact alone across toolchain versions (round-3 invariant 4).",
+        "Writer-facing schemas per the no-shadow-spec perimeter (critics A, B, D — in-artifact vs tracked-deferral conflict noted in findings): trap-report schema (machine-readable, descriptive CFI/frame-pointer stack attribution, no executable unwind semantics), diagnostics vocabulary and node-path format, site-enumerated edit-list schema, and the elaborated re-read artifact format.",
+        "ERR-3 (critic A): language-enforced Result-vs-trap classification; verifier-checked Result propagation with auto-derived context/cause chains at zero hand-written tokens per site; anti-sentinel lint contract.",
+        "DISP-1 typed operation tables (critic A): named fields, per-row signature checks, construction-checked payload/table coupling, one canonical table per (variant-set x operation), ad-hoc switch sites lowered or flagged.",
+        "FN-7 env-struct floors (critic A): guaranteed direct-call monomorphization (never fn-pointer+env indirection) and the mandated exactness diagnostics (unused env field, used-but-uninitialized field, dead dispatch variant, non-exhaustive tag dispatch, signature mismatch — each naming struct/function/construction site).",
+        "Name-resolution/scoping rules (critics B, D): declaration-before-use, no shadowing/redeclaration, separate namespaces for LABELs and REGIONIDs, break-label must name an enclosing loop — with their own rule IDs so the checker stops misappropriating TYPE-5.",
+        "Return-totality and dead-code rules (critic D): all paths return ('return unit;' mandatory); statements after return/break are hard errors.",
+        "Effect-row completion (critics B, D): row grammar with fixed canonical ordering; pure as the empty row's unique spelling; the definition of allocates (stack frames excluded by definition, not exception); call-site row substitution through region arguments; the row-subsumption relation PROG-2 presumes, or its removal.",
+        "'static and global state (critics A, B, D): definition of the 'static region and a static/global item with storage and initialization semantics, or deletion of writes('static) from PROG-2.",
+        "D1-critical fact-class enumeration (critic B): which checkable fact classes obligate proven-else-checked in-kernel (bounds; alias-disjointness where a check form exists) and the explicit statement that overflow is a policy class outside it.",
+        "Termination/divergence policy for pure functions (critic D): either a divergence effect / conservative termination rule, or a restricted EFF-2 elimination license requiring termination proof — currently an unsoundness.",
+        "FORM-2 completion (critics B, D): token-separation table, comma rules, deterministic wrap or no-wrap rule, nesting-level definition for match arms, blank-line rules, EOF newline — with byte-level golden tests in spec CI.",
+        "Worked-examples section (critic D; flagged pending in calibration-audit-v0.json): at least one complete byte-exact accepted program plus per-construct micro-examples (env-struct, Result match, region+borrow, arena allocation, checked arithmetic), normative for FORM rules and counted in the audit.",
+        "Match-value form or canonical conditional-initialization idiom (critic D): either '=> expr' arms in expression position or a statement-only match with a documented canonical initialization idiom.",
+        "Entry-point rule (critic B): existence and uniqueness of main (PROG-2 constrains its signature but nothing requires exactly one).",
+        "Conservative-extension statement (critic B): unknown constructs at kernel extension points are deterministic hard errors (round-4 retained law; currently only implied by FORM-1).",
+        "Process gate, non-spec (critics A, C): reconcile the repaired OWN calculus against Featherweight Rust / Oxide / Austral formalizations before ratification and record the D1a gate in the status header — the inverted OWN-4 direction and the OWN-5 exception-clause bug found in this review are exactly the class a formal-core comparison catches."
+      ]
+    }
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Critique"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Consolidate"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "critique:floors",
+      "phaseIndex": 1,
+      "phaseTitle": "Critique",
+      "agentId": "a4dad1ce4abb0865a",
+      "model": "claude-fable-5",
+      "state": "done",
+      "startedAt": 1783018348207,
+      "queuedAt": 1783018348199,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are an adversarial spec reviewer for an optimizer-first, AI-written language. Check every rule in /Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md against the decided round-2 floors and round-3 envelope in /Users/bytedance/Dev/xlang/optimizer-language-research/implementation/decision-gates.md, /Users/bytedance/Dev/xlang/optimizer-language-research/debates/round2-synthesis-minimal-core.md, /Us…",
+      "lastProgressAt": 1783018814202,
+      "tokens": 46670,
+      "toolCalls": 5,
+      "durationMs": 465995,
+      "resultPreview": "{\"findings\":[{\"ruleId\":\"FN-4\",\"severity\":\"blocking\",\"problem\":\"FN-4 lets a 'law-test harness' discharge laws into optimizer-usable facts. A property-test harness is neither deterministic-checker-grade proof, a runtime check under trap=abort, nor a verified proof artifact — the only admissible discharge forms (round3-synthesis-safety-envelope.md, Decided now: \\\"'proof' is defined as deterministic-c…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "critique:regularity",
+      "phaseIndex": 1,
+      "phaseTitle": "Critique",
+      "agentId": "a237bd4aefd0f3914",
+      "model": "claude-fable-5",
+      "state": "done",
+      "startedAt": 1783018348207,
+      "queuedAt": 1783018348199,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are an adversarial spec reviewer for an optimizer-first, AI-written language. Check /Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md against the round-4 regularity invariants in /Users/bytedance/Dev/xlang/optimizer-language-research/debates/round4-synthesis-teachability.md: one spelling per construct, zero context-dependence, empty exception lists, stated-once, no-shadow-spec. Find violations…",
+      "lastProgressAt": 1783018931250,
+      "tokens": 85548,
+      "toolCalls": 14,
+      "durationMs": 583043,
+      "resultPreview": "{\"findings\":[{\"ruleId\":\"OWN-4\",\"severity\":\"blocking\",\"problem\":\"The escape condition is INVERTED and unsound: 'may not be stored into a value or returned unless the destination's declared region outlives-or-equals 'a' permits exactly the dangling case — a borrow in inner region 'a stored into a destination in an enclosing (longer-lived) region passes the test and outlives its referent (use-after-f…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "critique:soundness",
+      "phaseIndex": 1,
+      "phaseTitle": "Critique",
+      "agentId": "a64e07fc80273d673",
+      "model": "claude-fable-5",
+      "state": "done",
+      "startedAt": 1783018348208,
+      "queuedAt": 1783018348199,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are an adversarial spec reviewer for an optimizer-first, AI-written language. Check the ownership calculus (OWN-1..9, STOR) in /Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md for soundness holes as a type-system reviewer: aliasing through struct fields vs OWN-7 prefix overlap, borrow holders and reborrows, moves out of borrowed content, region parameter outlives assumptions at call boundarie…",
+      "lastProgressAt": 1783018842021,
+      "tokens": 38210,
+      "toolCalls": 13,
+      "durationMs": 493812,
+      "resultPreview": "{\"findings\":[{\"ruleId\":\"OWN-4\",\"severity\":\"blocking\",\"problem\":\"Outlives direction is INVERTED. OWN-4 permits a store/return 'unless the destination's declared region outlives-or-equals 'a'. Requiring dest-outlives-borrow accepts exactly the dangerous case (storing an inner-region borrow into an outer-lived destination -> dangling on region exit) and rejects the safe one (storing a long borrow int…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "critique:writability",
+      "phaseIndex": 1,
+      "phaseTitle": "Critique",
+      "agentId": "a97c8234218446351",
+      "model": "claude-fable-5",
+      "state": "done",
+      "startedAt": 1783018348208,
+      "queuedAt": 1783018348199,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are an adversarial spec reviewer for an optimizer-first, AI-written language. Evaluate /Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md as the sole in-context teaching artifact for an AI writer: ambiguities a model would trip on, missing canonical examples, rules whose statement presumes unstated context, the missing prelude definition (Bool/Result/Option), and whether GRAM productions actual…",
+      "lastProgressAt": 1783019009989,
+      "tokens": 91190,
+      "toolCalls": 13,
+      "durationMs": 661781,
+      "resultPreview": "{\"findings\":[{\"ruleId\":\"GLOBAL\",\"severity\":\"blocking\",\"problem\":\"The prelude is normative but undefined. GRAM-5 requires 'enum Bool { True(); False(); }' \\\"in the prelude\\\", ERR-1 makes Result<T,E>/Option<T> \\\"prelude enums\\\", OP-2 returns Result<T, Overflow>, PROG-1 closes the world \\\"plus the prelude\\\" — yet no rule anywhere defines the prelude's contents, variant names (Ok/Err? Some/None?), or …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "consolidate",
+      "phaseIndex": 2,
+      "phaseTitle": "Consolidate",
+      "agentId": "ae3034e0d93bd16ea",
+      "model": "claude-fable-5",
+      "state": "done",
+      "startedAt": 1783019011990,
+      "queuedAt": 1783019011989,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "Merge these spec-critique results into one prioritized revision list for kernel-spec-v0. Deduplicate, order by severity, and where critics conflict, say so. Results: [{\"findings\":[{\"ruleId\":\"FN-4\",\"severity\":\"blocking\",\"problem\":\"FN-4 lets a 'law-test harness' discharge laws into optimizer-usable facts. A property-test harness is neither deterministic-checker-grade proof, a runtime check under tra…",
+      "lastProgressAt": 1783019499252,
+      "tokens": 51781,
+      "toolCalls": 1,
+      "durationMs": 487262,
+      "resultPreview": "{\"findings\":[{\"ruleId\":\"OWN-4\",\"severity\":\"blocking\",\"problem\":\"Outlives direction is INVERTED and unsound (critics B and C, independently, both blocking — no conflict). 'May not be stored/returned unless the destination's region outlives-or-equals 'a' accepts exactly the dangling case (inner-region borrow stored into a longer-lived destination) and rejects the safe direction. The prototype implem…"
+    }
+  ],
+  "totalTokens": 313399,
+  "totalToolCalls": 46
+}

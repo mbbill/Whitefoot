@@ -1,0 +1,73 @@
+{
+  "date": "2026-07-02",
+  "gate": "D1a checker-core feasibility (blocking)",
+  "artifact": "/Users/bytedance/Dev/xlang/prototype/checker/",
+  "result": "PASSED_INITIAL",
+  "measurements": {
+    "checker_loc": 227,
+    "test_loc": 208,
+    "tests": 16,
+    "tests_passing": 16,
+    "negative_tests": 10,
+    "positive_tests": 6,
+    "implementation_time": "single session"
+  },
+  "covered_rules": [
+    "OWN-1 affine move / use-after-move",
+    "OWN-3 lexical region nesting/outlives",
+    "OWN-4 escape via store and via return",
+    "OWN-5 exclusivity (mut/mut, shared/mut, read/write/move under borrow)",
+    "OWN-7 prefix place overlap",
+    "OWN-8 reject-when-unsure posture",
+    "DIAG-1 every rejection cites one rule ID (asserted in tests)"
+  ],
+  "not_yet_covered": [
+    "struct field types / real type checking",
+    "effects rows (EFF-1..3)",
+    "storage contracts (STOR)",
+    "generics/instantiation closure (FN-2/FN-6)",
+    "match/loop control flow interaction with liveness",
+    "arena/heap drops elaboration",
+    "interior-mutability capability (round-3 blocked sub-decision)"
+  ],
+  "finding": "The D1a-simplified calculus (affine ownership + lexical regions + exclusivity, no inference) checks in ~230 lines with rule-ID-carrying diagnostics. This is strong directional evidence for frontend-scale effort: the owner condition. The hard remaining risks are rule soundness at scale (adopt a formalized calculus before ratification) and the not-yet-covered list, not code volume.",
+  "caveats": [
+    "Toy AST, no parser/type checker integration; lexical liveness only (OWN-6) — rejection rates on realistic AI-written code unmeasured; place overlap conservative; single-author rules not yet cross-checked against Featherweight Rust/Austral formalizations."
+  ],
+  "v0_1_update": {
+    "date": "2026-07-02",
+    "tests": 19,
+    "tests_passing": 19,
+    "checker_loc": 262,
+    "soundness_bugs_found_by_critique_and_fixed": [
+      "OWN-4 outlives direction was INVERTED in the spec text (checker had the sound direction; spec text fixed) — found independently by two critics.",
+      "OWN-10 was missing entirely: returning/storing a borrow of an own binding into a caller-supplied region dangled. The v0 prototype ACCEPTED the dangling case (one positive test was the counterexample). Rule added to spec and checker; test flipped to negative.",
+      "Holder-rooted aliasing: places rooted at borrow-holder bindings did not resolve to the borrowed place, allowing invisible aliases of &mut content. resolve() added; OWN-5/7 now judge resolved places."
+    ],
+    "remaining_scope_gaps": [
+      "OWN-11 loop back-edges",
+      "OWN-12 call-boundary cluster",
+      "OWN-13 match ownership",
+      "slices/arena content borrows",
+      "copy/affine classification enforcement at expression level"
+    ],
+    "finding_update": "Effort estimate unchanged (still frontend-scale: 262 lines after fixes), but the critique validated the ratification precondition: rule soundness, not code volume, is the risk. Two of three soundness bugs were in the SPEC TEXT while the checker was accidentally sound or unsound respectively — spec-CI tying rule text to checker test vectors (a critique fix suggestion) is now a required artifact."
+  },
+  "v0_3_update": {
+    "date": "2026-07-07",
+    "tests": 26,
+    "tests_passing": 26,
+    "checker_loc": 292,
+    "newly_covered": [
+      "OWN-11 loop back-edges (outer-region borrows and outer-binding moves rejected inside loops; region-per-iteration positive test)",
+      "OWN-12 call-argument aliasing (two uniq args or shared+uniq overlap rejected with rule-precise diagnostics; disjoint-field and shared+shared positives)",
+      "OWN-6 call-scoped temporaries (holderless borrows die at statement end)"
+    ],
+    "remaining_scope_gaps": [
+      "OWN-13 match ownership",
+      "slices/arena content borrows",
+      "copy/affine classification at expression level",
+      "FR-style model checking"
+    ]
+  }
+}

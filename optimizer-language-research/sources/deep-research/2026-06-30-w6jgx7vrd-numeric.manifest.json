@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "artifact_path": "/Users/bytedance/Dev/xlang/optimizer-language-research/sources/deep-research/2026-06-30-w6jgx7vrd-numeric.output.json",
+  "original_tmp_path": "/private/tmp/claude-501/-Users-bytedance-Dev-xlang/035e62ef-9ecd-42d5-b288-f6f92231c257/tasks/w6jgx7vrd.output",
+  "copied_at": "2026-06-30",
+  "artifact_sha256": "ba434be3fa5802b852a69294835cae8b33f45b94c4bd32b2e7f7717954af5462",
+  "artifact_size_bytes": 192175,
+  "workflow_id_or_task_id": "w6jgx7vrd / wf_c93f9d2c-94c",
+  "producer": "Claude Code deep-research workflow",
+  "topic": "numeric_semantics",
+  "notes": [
+    "Stats: {'angles': 5, 'sourcesFetched': 25, 'claimsExtracted': 120, 'claimsVerified': 25, 'confirmed': 14, 'killed': 1, 'unverified': 10, 'afterSynthesis': 6, 'urlDupes': 4, 'budgetDropped': 1, 'agentCalls': 107}",
+    "Some pipeline failures were reported despite final synthesized result; preserve failures separately and do not overstate coverage.",
+    "The result is LLVM-heavy and does not settle source-language numeric policy."
+  ]
+}

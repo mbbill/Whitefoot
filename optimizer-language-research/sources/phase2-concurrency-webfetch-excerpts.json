@@ -1,0 +1,78 @@
+[
+  {
+    "cluster": "Go memory model",
+    "url": "https://go.dev/ref/mem",
+    "claims": [
+      "Go defines happens-before via synchronization: goroutine creation, channel send/receive, mutex lock/unlock ordering, sync.Once, and atomics.",
+      "Data-race-free Go programs execute as if sequentially consistent (DRF-SC).",
+      "Go constrains compilers explicitly: no introducing new writes, no single read observing multiple values, no single write writing multiple values, no moving accesses out of possibly non-terminating loops, no moving accesses before calls unless proven side-effect/synchronization free.",
+      "Racy programs may observe non-sequentially-consistent behavior; idioms like double-checked locking and busy-wait flags are invalid without synchronization."
+    ],
+    "caveats": [
+      "Go bounds racy-program behavior more than C++ (implementation may also report races and halt); constraints are on implementations, not a claim that racy code is meaningful."
+    ]
+  },
+  {
+    "cluster": "Rust atomics / C++ model",
+    "url": "https://doc.rust-lang.org/nomicon/atomics.html",
+    "claims": [
+      "Rust pragmatically inherits the C++ atomic memory model with SeqCst, Acquire/Release, and Relaxed orderings.",
+      "Compilers may radically reorder or eliminate ordinary data accesses based on single-threaded analysis, so unsynchronized data accesses cannot build correct synchronization.",
+      "Hardware ordering strength differs (x86 strong, ARM weak); atomic orderings control which compiler/hardware reorderings are forbidden."
+    ],
+    "caveats": [
+      "Nomicon notes the model is complex with known flaws; SeqCst is often stronger than needed and can cost fences."
+    ]
+  },
+  {
+    "cluster": "Rust Send/Sync",
+    "url": "https://doc.rust-lang.org/nomicon/send-and-sync.html",
+    "claims": [
+      "Send means safe to transfer to another thread; Sync means safe to share (&T is Send).",
+      "Send/Sync are unsafe auto traits: automatically derived from components, with raw pointers, UnsafeCell, and Rc as key exceptions.",
+      "Send/Sync plus the borrow checker prevent data races in safe code; incorrect manual implementations are undefined behavior."
+    ],
+    "caveats": [
+      "They do not prevent deadlocks or logic errors; manual unsafe impls shift proof burden to the programmer."
+    ]
+  },
+  {
+    "cluster": "LLVM atomics",
+    "url": "https://llvm.org/docs/Atomics.html",
+    "claims": [
+      "LLVM defines ordering levels NotAtomic, Unordered, Monotonic, Acquire, Release, AcquireRelease, SequentiallyConsistent with distinct optimizer freedoms.",
+      "A racing non-atomic load returns undef rather than full UB at the IR level; speculative loads are allowed.",
+      "Optimizers may not insert stores to possibly-shared variables along paths where they would not otherwise occur.",
+      "Atomic operations forbid splitting/narrowing/rematerialization transformations; specific passes (DSE, LICM, CSE) retain limited legal transforms around weaker orderings."
+    ],
+    "caveats": [
+      "IR-level semantics differ from source-language semantics; per-pass behavior varies and must be checked individually."
+    ]
+  },
+  {
+    "cluster": "Cross-language memory model survey",
+    "url": "https://research.swtch.com/plmm",
+    "claims": [
+      "Modern languages converge on DRF-SC: data-race-free programs behave sequentially consistently.",
+      "C/C++/Rust/Swift treat races as undefined behavior; Java/JavaScript bound racy outcomes for security reasons.",
+      "Compilers may reorder ordinary accesses within single-threaded semantics but cannot introduce new racy reads/writes; atomics/volatile restrict register caching.",
+      "Out-of-thin-air values remain a formally unresolved problem in all these models."
+    ],
+    "caveats": [
+      "Survey/essay by Russ Cox: authoritative synthesis but secondary source; language versions evolve."
+    ]
+  },
+  {
+    "cluster": "Java memory model (JSR-133 FAQ)",
+    "url": "https://www.cs.umd.edu/~pugh/java/memoryModel/jsr-133-faq.html",
+    "claims": [
+      "Java compilers/JITs/processors may reorder within as-if-serial single-thread semantics, but cannot move code before an acquire or after a release.",
+      "Volatile write/read have monitor release/acquire memory semantics and cannot reorder with each other or with surrounding accesses (post-JSR-133).",
+      "Final fields provide initialization safety without synchronization if the object reference does not escape construction.",
+      "Values must not appear out of thin air; empty synchronized blocks on unshared monitors may be removed."
+    ],
+    "caveats": [
+      "FAQ (2004) is explanatory, not the JLS text itself; details refined in later JLS versions."
+    ]
+  }
+]

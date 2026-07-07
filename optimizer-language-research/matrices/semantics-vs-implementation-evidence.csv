@@ -1,0 +1,8 @@
+evidence_layer,example,finding_ids,optimizer_relevance,scope_limits
+source semantic rule,Rust &mut exclusivity,F001,helps prove non-interference,unsafe/interior mutability caveats
+source semantic rule,Fortran dummy argument restrictions,"F001,F005",compiler may assume conforming alias restrictions,POINTER/TARGET/coarray caveats
+verification/proof obligation,SPARK anti-aliasing/ownership,"F001,F006",rejects non-benign mutable aliasing,subset/language restriction caveats
+IR annotation/attribute,LLVM noalias and alias.scope/noalias metadata,"F003,F004",communicates disjoint access sets to later passes,UB if promises false; lowering hazards
+runtime/JIT mechanism,HotSpot escape analysis / lock elimination,F007,may eliminate allocation/synchronization conditionally,implementation/inlining limits
+backend/EH representation,landingpad vs funclet representation,F008,can affect register allocation/control-flow constraints,two broad claims refuted
+high-level IR,Swift SIL exposing ARC/source semantics,F009,preserves facts long enough for language-specific optimization,version/stale-doc caveats

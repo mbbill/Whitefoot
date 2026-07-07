@@ -1,0 +1,135 @@
+[
+  {
+    "cluster": "MLIR MemRef",
+    "url": "https://mlir.llvm.org/docs/Dialects/MemRef/",
+    "claims": [
+      "MemRef operations expose shape/layout/stride metadata and view-like reshapes/subviews/transposes without copying data when compatibility/contiguity conditions hold.",
+      "MemRef has explicit memory space casts, allocation/deallocation, stack allocation, metadata extraction, and lowering details relevant to LLVM GEP inbounds/nuw emission.",
+      "memref.distinct_objects lets optimizers assume listed memrefs do not mutually alias; if they do alias, load/store behavior is undefined.",
+      "Out-of-bounds subviews, non-contiguous collapse where unsupported, mismatched copy shapes, using an old memref after realloc, and invalid bounds can be UB."
+    ],
+    "caveats": [
+      "Many operations are metadata transformations rather than full source-language semantics. UB consequences require frontend/verifier obligations before lowering from a source language."
+    ]
+  },
+  {
+    "cluster": "MLIR Linalg",
+    "url": "https://mlir.llvm.org/docs/Dialects/Linalg/",
+    "claims": [
+      "Linalg structured ops keep iteration spaces tied to input/output operands and indexing maps, making data/control relationships explicit.",
+      "Explicit iterator kinds such as parallel and reduction guide legality of transformations.",
+      "The dialect is intended to support buffer allocation, tiling, promotion to fast memory, tile-and-fuse, loop/hardware mapping, vectorization, and lowering to loops or library calls.",
+      "Views/strided memrefs preserve layout metadata and can expose subview/transpose-like layout transformations without data movement."
+    ],
+    "caveats": [
+      "Docs describe design rationale and evolving implementation; frontend must ensure region behavior and iterator semantics are sound."
+    ]
+  },
+  {
+    "cluster": "MLIR Affine",
+    "url": "https://mlir.llvm.org/docs/Dialects/Affine/",
+    "claims": [
+      "Affine dialect is optimizer-oriented and uses restricted affine maps/loop forms to make dependence analysis and loop transformations efficient and reliable.",
+      "affine.for has affine-map bounds and positive constant strides; affine.load/store indices are affine expressions of loop IVs and symbols.",
+      "affine.parallel models hyper-rectangular affine parallel bands with reductions whose order is unspecified.",
+      "Affine prefetch, vector affine load/store, DMA, linearization/delinearization encode memory and locality facts in structured form."
+    ],
+    "caveats": [
+      "The benefits depend on affine restrictions; semi-affine extensions may not be accepted by analyses expecting strict affine form. Some operations carry UB conditions."
+    ]
+  },
+  {
+    "cluster": "MLIR Vector",
+    "url": "https://mlir.llvm.org/docs/Dialects/Vector/",
+    "claims": [
+      "MLIR vector dialect represents n-dimensional vectors as optimizer-facing SSA values useful for transformations.",
+      "The dialect separates vector-value optimization from buffer/loop analysis and supports progressive lowering from virtual vectors to hardware vectors to LLVM.",
+      "Vector transfer operations encode memory-to-vector movement with permutation maps, allowing reasoning above scalar load/store form.",
+      "LLVM lowering must eventually fit LLVM native 1-D vectors or nested aggregates, with constraints for dynamic indexing and scalable dimensions."
+    ],
+    "caveats": [
+      "Docs describe infrastructure rather than universal policy; target-friendly shapes and legal lowering remain constraints."
+    ]
+  },
+  {
+    "cluster": "LLVM Vectorizers",
+    "url": "https://llvm.org/docs/Vectorizers.html",
+    "claims": [
+      "LLVM has loop and SLP vectorizers enabled by default; loop vectorization widens iterations, while SLP combines independent scalar operations.",
+      "Loop Vectorizer uses a cost model for vector width and interleave factor; pragmas/hints can influence but not guarantee vectorization.",
+      "If pointer disjointness is not known statically, the loop vectorizer may add runtime pointer-overlap checks and fall back to scalar code if arrays may overlap.",
+      "The Loop Vectorizer handles reductions, inductions, unknown trip counts, epilogues, and some if-conversion; floating reductions generally need permissive math flags or ordered reductions."
+    ],
+    "caveats": [
+      "Capability is not guarantee; profitability, legality, target support, alias/dependence information, and diagnostics matter."
+    ]
+  },
+  {
+    "cluster": "Halide scheduling",
+    "url": "https://halide-lang.org/tutorials/tutorial_lesson_05_scheduling_1.html",
+    "claims": [
+      "Halide separates algorithm specification from scheduling/optimization choices.",
+      "Schedules expose loop order, split, fuse, tiling, vectorization, unrolling, and parallelization choices.",
+      "Tiling can improve locality when neighboring outputs share overlapping input data; vectorization maps fixed inner ranges to vector computations; fusing tile loops can expose parallel tile execution.",
+      "Halide can print generated loop nests, making optimization choices explicit."
+    ],
+    "caveats": [
+      "Examples are simple and benefits are conditional. Pure Funcs tolerate duplicate evaluation; external callbacks/update definitions impose correctness constraints."
+    ]
+  },
+  {
+    "cluster": "ISPC SPMD/vector model",
+    "url": "https://ispc.github.io/ispc.html",
+    "claims": [
+      "ISPC lets programmers write SPMD code where multiple program instances map to SIMD lanes in a gang.",
+      "uniform versus varying types expose whether values are shared across the gang or lane-varying, affecting scalarization and control flow.",
+      "foreach maps multiple logical indices to target-width lane-wise work; gang/mask size and target ISA are explicit compilation choices.",
+      "Control-flow divergence is represented with a per-instance execution mask; coherent branches improve SIMD utilization.",
+      "ISPC supports layout/performance controls such as soa<n>, alignment behavior, gathers/scatters, FMA, fast math, and address-width choices."
+    ],
+    "caveats": [
+      "Some extracted claims came from visible guide excerpts; full rules need deeper source pass. Performance implications are target-dependent."
+    ]
+  },
+  {
+    "cluster": "Futhark arrays and uniqueness",
+    "url": "https://futhark.readthedocs.io/en/stable/language-reference.html",
+    "claims": [
+      "Futhark arrays are regular/rectangular, and array sizes participate in types, reflecting efficient-compilation concerns.",
+      "SOACs and attributes guide parallelization/fusion; attributes can be ambiguous after fusion if conflicting.",
+      "In-place updates are semantically pure but can avoid copying by consuming the old array and requiring aliases to be unused afterward.",
+      "Consuming parameters use * to transfer ownership; consuming functions are restricted in higher-order contexts.",
+      "Alias analysis tracks simple bindings and components conservatively; size coercion can be runtime-checked."
+    ],
+    "caveats": [
+      "Parallel constructs are not guaranteed to execute in parallel. The language reference is semantic; exact layout/codegen details need implementation docs/papers."
+    ]
+  },
+  {
+    "cluster": "Chapel arrays/domains",
+    "url": "https://chapel-lang.org/docs/primers/arrays.html",
+    "claims": [
+      "Chapel arrays are defined over domains, first-class index-set descriptors; rectangular arrays use bounded integer ranges per dimension.",
+      "Named domains can let multiple arrays share an index set, reduce overhead for matching distributed arrays, and help compiler optimization.",
+      "Declaring invariant domains as const can enable key compiler optimizations.",
+      "forall can iterate over arrays/domains in parallel; whole-array assignment requires compatible shape rather than identical indices."
+    ],
+    "caveats": [
+      "Primer does not enumerate specific optimizations or distribution mechanics. Aliasing/materialization details for slicing are not fully described."
+    ]
+  },
+  {
+    "cluster": "Fortran DO CONCURRENT",
+    "url": "https://flang.llvm.org/docs/DoConcurrent.html",
+    "claims": [
+      "Fortran DO CONCURRENT models iterations as executable in arbitrary order, not necessarily actually parallel.",
+      "Restrictions constrain cross-iteration data flow and disallow constructs that prevent full iteration execution or introduce problematic effects.",
+      "Compilers may localize/privatize temporaries assigned before use in each iteration; post-loop values may be unusable.",
+      "Fortran 2018 locality specifiers LOCAL, SHARED, LOCAL_INIT, and DEFAULT(NONE) can communicate intent.",
+      "Implicit localization and safe parallel lowering are difficult when arrays, pointers, components, pure calls that read globals, or interprocedural effects obscure dependences."
+    ],
+    "caveats": [
+      "Restrictions are necessary but not sufficient for automatic parallelization. Locality specifiers name variables, not arbitrary elements/slices/components."
+    ]
+  }
+]

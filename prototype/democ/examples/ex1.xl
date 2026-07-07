@@ -1,0 +1,27 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn sign_of (x: own i32) -> own Sign pure {
+  match ilt<i32>(x, 0_i32) {
+    True() => { return Neg(); }
+    False() => {
+      match ieq<i32>(x, 0_i32) {
+        True() => { return Zero(); }
+        False() => { return Pos(); }
+      }
+    }
+  }
+}
+
+fn main () -> own unit traps {
+  doc "EX-1-class demo: checked arithmetic, Result match, check, cross-fn call.";
+  let a: own i32 = 40_i32;
+  let s: own Result = iadd.checked<i32>(a, 2_i32);
+  match s {
+    Ok(v) => {
+      check ieq<i32>(v, 42_i32) else trap "arithmetic drift";
+      check ieq<i32>(sign_of(v), 2_i32) else trap "sign drift";
+    }
+    Err(e) => { return unit; }
+  }
+  return unit;
+}

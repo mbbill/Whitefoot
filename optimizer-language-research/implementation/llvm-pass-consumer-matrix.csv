@@ -1,0 +1,5 @@
+pass_or_analysis,required_IR_facts,candidate_language_sources_of_facts,positive_example,negative_example,metadata_ignored_or_stripped_cases,unsoundness_hazards,version_notes,validation_tests_needed
+ScopedNoAliasAA,alias.scope/noalias metadata,source noalias/disjoint view contracts,F003,metadata absent or false,lowering strips metadata,false noalias causes miscompile,LLVM version TBD,FileCheck metadata + negative alias test
+SROA/mem2reg,"non-escaping allocas, scalarizable aggregates",ownership/escape/lifetime rules,F002/F007 analogies,address escapes,opaque calls/FFI,escape mis-modeled,LLVM version TBD,allocation-elision tests
+LICM/GVN/DSE,memory mod/ref and alias facts,effects/noalias/purity contracts,F002,unknown writes,calls with unknown effects,incorrect effect summary,LLVM version TBD,loop/load-store tests
+LoopVectorize,"no loop-carried deps, alignment, bounds, FP flags",array/layout/loop contracts,backlog,possible alias/deps,metadata dropped,unsafe parallelization,LLVM version TBD,vectorization remark tests

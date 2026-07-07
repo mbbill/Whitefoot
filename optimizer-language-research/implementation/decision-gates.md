@@ -1,0 +1,228 @@
+# Decision gates
+
+| State | Meaning | Promotion requirement |
+|---|---|---|
+| research_only | Topic identified but insufficient evidence | primary sources gathered |
+| fetched_not_verified | Source fetched but claim not adversarially checked | evidence card + verifier pass |
+| workflow_confirmed | Source-grounded in workflow | scope/caveats attached |
+| implementation_mapping_needed | Semantics not tied to IR/pass consumers | capability/pass map row |
+| prototype_required | Mechanism plausible but untested | lowering sketch + validation plan |
+| design_candidate | Ready for debate, not final | evidence, contract, threat model, validation, ABI/runtime impact |
+| blocked_by_semantics | Source contract unclear | semantic contract ledger row |
+| blocked_by_runtime | Runtime/ABI constraints unresolved | runtime/ABI dossier row |
+| rejected_or_refuted | Claim failed or design not viable | preserve reason and source |
+
+A feature cannot become a language default merely because it is optimizer-attractive; it must pass the relevant gates.
+
+## Round-1 debate states (2026-07-01)
+
+| Topic | State after round 1 | Leading candidate exists |
+|---|---|---|
+| violation-semantics | research_needed | yes |
+| aliasing-model | design_candidate_later | yes |
+| arrays-loops | prototype_needed | yes |
+| dispatch-generics | design_candidate_later | yes |
+| static-vs-profile | research_needed | yes |
+| numeric-semantics | no_decision | yes |
+| concurrency-model | research_needed | yes |
+| ir-strategy | research_needed | yes |
+
+## Round-2 feature-essentialism states (2026-07-02)
+
+| Feature | Verdict |
+|---|---|
+| generics | keep_essential |
+| type-inference | needs_evidence |
+| dynamic-dispatch | replace_with_alternative |
+| closures | replace_with_alternative |
+| metaprogramming | replace_with_alternative |
+| interfaces | needs_evidence |
+| syntax | replace_with_alternative |
+| error-handling | replace_with_alternative |
+| modules | replace_with_alternative |
+| memory-automation | replace_with_alternative |
+
+Decided language law from round 2 (floors that constrain all future rounds): zero implicit value-changing conversions; one numeric mode per arithmetic node; canonical-form-only surface; closed-world whole-program compilation; no exceptions/unwinding (Result + trap=abort); no implicit dynamic dispatch (exhaustive match is the core dispatch); no GC/pervasive RC (checked ownership + explicit storage contracts); no in-language metaprogramming (closed constant-expression sublanguage only); monomorphization-only generics with explicit instantiation.
+
+## Load-bearing card verification (2026-07-02)
+
+D001, D002, D003, D005, D007, J004, A001, A002, A006 adversarially verified against re-fetched primary sources: CONFIRMED with verbatim quotes (see `notes/card-verification-2026-07-02.jsonl`). C004 CONFIRMED with amended sources — the data-race guarantee required adding nomicon/races.html; scope sharpened (data races prevented, general race conditions not). Consequence: the round-2 generics verdict (conditioned on D001) and the five verdicts conditioned on checked ownership/C004 keep their evidentiary footing. Remaining unverified provisional cards: the rest of the A/D/C/J series not in this load-bearing set, plus D009/D010 flagged in round 2.
+
+## Round-3 safety-envelope states (2026-07-02)
+
+| Topic | Outcome |
+|---|---|
+| unsafe-hatch | design_candidate_later |
+| check-policy | design_candidate_later |
+| ffi-attenuation | research_needed |
+| proof-burden | design_candidate_later |
+
+Decided now (see round3-synthesis-safety-envelope.md): proven-else-checked for D1-critical checkable facts in ALL build modes; no free-form writer-emittable unsafe anywhere; exactly one gated fact-boundary construct family with a per-fact obligation ledger; checks artifact-surfaced on the drop-op template; conservative no-emit fallback where no check form exists; overflow classified non-D1-critical (wrap fallback legal, unproven nsw forbidden); mandatory conservative FFI declaration frames + barrier semantics; foreign-shared memory pre-declared at allocation site; writer proof burden = round-2 floors exactly, nothing writer-stated trusted unchecked; solver may only promote performance facts, never gate acceptance.
+
+Formal spine amendment adopted: "no third state" restated as "no WRITER-EMITTABLE third state; toolchain-gated ledger entries are the sole trusted-assertion class."
+
+PENDING OWNER RULINGS (arbitrate hatch form): (a) D1 quantifier — unconditional theorem over all accepted source vs Rust-class conditional-on-confined-trusted-base; (b) D0 boundary — may humans author toolchain primitives and review gate requests.
+
+## D2 corrected ruling (2026-07-02, owner)
+
+Program-text verbosity is acceptable — benefits of explicit facts outweigh generation tokens. The constraint is spec compactness: few uniform rules, no special cases, stated once. The round-4 verbosity-budget topic is thereby DECIDED BY OWNER (uniform verbose-everywhere annotation stands; elision/inference gains no D2 support — it now costs spec budget instead of saving program budget). Round-2 "verbosity is free" is restored for program text.
+
+## Owner rulings D1a/D0a (2026-07-02)
+
+- D1a: Rust-class conditional envelope CONFIRMED, gated on checker-core feasibility (owner condition: rustc-scale borrow checker effort is unacceptable; simplified checker required). Blocking gate: checker-core prototype.
+- D0a: gated-channel content is AI-authored, human-approved (initially); revisit after gate-efficacy experiments.
+- Checker simplification levers adopted as design requirements (see notes/checker-feasibility-findings.jsonl): explicit regions/borrows over inference; soundness-over-completeness (checker may reject sound-but-hard patterns and demand restructuring); lexical borrows before NLL-class flow sensitivity; adopt a formalized minimal calculus (Featherweight-Rust/Oxide/Austral-class) rather than inventing rules; dynamic-oracle cross-check (Miri-style interpreter over canonical IR in debug builds).
+
+## Round-4 teachability states (2026-07-02, v2 under corrected D2)
+
+| Topic | Outcome |
+|---|---|
+| spec-budget | research_needed |
+| familiarity | research_needed |
+| compiler-as-teacher | research_needed |
+
+Decided now: the spec becomes a SINGLE machine-checked, version-pinned CI artifact under regularity invariants (one spelling per construct; zero context-dependent rules; empty exception lists; each fact stated once; no sugar/inference in the writable surface); every design proposal must declare its spec delta (a spec-delta column is hereby part of this gate document's discipline); kernel (D1a ownership calculus + ledger + FFI frames + capabilities) is priced FIRST; no numeric token cap has cut authority until the calibration audit + spec-size ablation run; no-shadow-spec rule (writer-facing schemas count as spec mass); teaching pack is a generated, tested build artifact; spec-primary pedagogy with repair loop as reinforcement; conservative-extension law for any future partition.
+
+Pending owner rulings (procedural): canonical counting procedure (tokenizer set, rule individuation, normative boundary); D2 binding unit (total description vs resident context).
+
+## Calibration audit v0 (2026-07-02)
+
+Kernel spec v0 drafted (`/Users/bytedance/Dev/xlang/spec/kernel-spec-v0.md`, 59 rules) and priced: 3208 tokens (cl100k_base), 3218 (o200k_base). Projected full teaching pack (spec + examples + diagnostics vocabulary): ~7-9k tokens. Spec-delta discipline starts from this baseline. See notes/calibration-audit-v0.json.
+
+## Checker-core prototype (D1a gate) — 2026-07-02
+
+PASSED initial gate: the D1a-simplified ownership calculus (affine ownership, lexical regions, borrow exclusivity, escape checking, reject-when-unsure) implemented in ~230 lines Python over a toy canonical AST; 16/16 tests (10 negative asserting exact rule IDs per DIAG-1, 6 positive). Evidence for frontend-scale effort per the owner condition on D1a. Remaining risk is rule soundness at scale, not volume — formalized-calculus adoption (Featherweight Rust/Austral-class) required before ratification. See notes/checker-prototype-report.json and /Users/bytedance/Dev/xlang/prototype/checker/.
+
+## kernel-spec v0.1 delta (2026-07-02, META-5 declaration)
+
+Revision under spec-critique round 1 (63 findings: 13 blocking, ~37 major, rest minor; 37 missing rules; archived at debates/spec-critique-round1-raw.json).
+
+- Spec delta: +~18 rules (57 -> ~75 unique; recount pending rule-individuation procedure); tokens 3208 -> 6310 (cl100k); +0 alternate spellings; exception clauses reduced to 0 (STOR-2 default clause deleted; OP carve-outs became table data).
+- Blocking fixes: OWN-4 direction inverted (unsound, fixed); OWN-10 added (borrow-storage duration; the dangling own-param return case); OWN-5 restated over resolved overlapping places; OWN-6 holder/resolution defined; move-through-borrow banned; copy/affine classification added; OWN-11 loop back-edge rule; STOR storage-by-type (no default clause); arena confinement; FN-4 law discharge restricted to stated-and-checked or gated ledger; Bool made prelude-enum-only; SCOPE-3 made conditional (Layer-4); EFF-2 syntactic exhibits; EFF-3 pure-elimination restricted (no termination assumption); prelude made normative; grammar closed (all nonterminals defined); conformance declarations and deref places added; kernel pricing scope corrected (CAP/GATE/LEDGER stubs added and counted).
+- Deferred with recorded deltas: ERR-3 Result propagation; typed operation tables; env-struct exactness diagnostics; report field schemas; constant-expression sublanguage; stated-and-checked vocabulary beyond check.
+- Checker updated to match: OWN-10 + holder resolution implemented; 19/19 tests; the v0 positive test that embodied the dangling case is now a negative test.
+- Ratification preconditions unchanged: formal-calculus reconciliation (section 5), effect-exemplar carding (section 9), owner rule-individuation and counting-procedure rulings.
+
+## kernel-spec v0.2 delta (2026-07-03, META-5 declaration)
+
+Lexicon revision per owner rulings (D3): `&mut` renamed `&uniq` throughout; LEX-1 added (lexicon policy: invariant-naming, no backend-IR vocabulary at the surface, divergence census for borrowed keywords; two-axis mode vocabulary DEFERRED). Spec delta: +1 rule (LEX-1), tokens 6310 -> 6502 (cl100k), 0 new spellings (rename replaces a spelling), 0 exceptions. Artifact: /Users/bytedance/Dev/xlang/spec/kernel-spec-v0.2.md (v0.1 retained as history). Checker diagnostics wording aligned; 19/19 tests pass. Backlog: Rust-divergence audit of the full spec lexicon.
+
+## Constitution adopted (2026-07-05)
+
+THE GOAL + rules R1-R6 recorded in notes/user-directives.md; grounds D0-D3. Immediate consequences: (a) D1 re-grounded as shift-left for the AI loop (R4), not a standalone value; (b) R3 audit opened — constructs selected for spec-minimality rather than validated best-for-AI are now PROVISIONAL: first flagged item is the loop form (bare loop+break chosen for grammar minimality; counted-loop alternatives never evaluated for AI codegen error rates or provability); (c) Go pre-generics recorded as the R2 precedent case.
+
+## Constitution amended (2026-07-05, owner)
+
+THE GOAL restructured: floors (D1 + W3 cheat-proofness) / P0 performance with the Rust test R0 (every major decision names its delta over Rust) / P1 = W1 weak-writer robustness + W2 context economy; balance rule with P0 as post-evidence tie-breaker. Consequences: (a) all planned codegen experiments must add a weak-model tier (W1); (b) W3 unifies previously scattered anti-cheat rules (gating, no wildcards, proof-only elision, trap-not-silent, canonical bytes) under one named floor; (c) the running constitution-audit workflow evaluated the pre-amendment text — its findings must be re-read against this version.
+
+## Constitution audit integrated (2026-07-05)
+
+Full results: debates/constitution-audit.md. 22 decided items re-grounded with R-citations. Adopted immediately:
+
+1. META-5 EXTENSION (resolves the structural D2-R3 tension): every spec delta now declares its SELECTION GROUND — evidence-selected vs minimality-selected — alongside rules/tokens/spellings/exceptions. Spec-delta PRICES candidates; AI-codegen + performance evidence SELECTS them. Minimality-selected forms are automatically PROVISIONAL.
+2. PROCEDURAL BREACH acknowledged: TYPE-5 (interior annotation mandate) and FN-3/conform (interfaces replacement) shipped as normative while their round-2 verdicts sit at needs_evidence. Both are now marked R3-provisional in the spec status header; their pre-registered experiments (redundancy-independence; interfaces back-fill) are BLOCKING ratification preconditions.
+3. R3-PROVISIONAL REGISTER (13 items) recorded in the spec status header: loop form, conditional form (no-if — never debated), statement-only match, prefix arithmetic surface, TYPE-5 interior, TYPE-6 no-shadowing, FN-5 env-structs, FN-3 contracts, FORM-1/2 byte-format choices (reject-vs-canonicalize untested), FORM-4 no-comments, FORM-5 decimal-only literals, checker levers (OWN-3/8/11 rejection-rate unmeasured), deref/index prefix forms.
+4. Ratification preconditions EXTENDED with the R3 validation debts (AI-codegen validation harness; loop/conditional/syntax/redundancy experiments across W1 model tiers; N001/N002/D009/D010 card verification; R1 justification pass on human-residue rules; check-loop latency budget; CONST-1 delivery or evidence per R2).
+5. Round-3 'wrap fallback legal' wording ANNOTATED: legal as an explicit per-node mode only; any future defaulting rule instantiating it would violate R4 + META-2.
+
+## D4 recorded (2026-07-06)
+
+Rewrite-first, FFI-narrow (owner). ffi_abi_runtime dossier RESCOPED: C-ABI out-calls, buffer pinning/foreign_shared, unwind-abort at boundary, single-threaded-entry contract for exports; JNI/GCHandle/cgo rich-interop precedent study reduced to the pinning/pointer-escape rules only; foreign-thread callback problem deferred behind the entry contract. Round-3 wall composite unaffected (quarantine + declaration frames were already the leading candidate); the C002-at-the-wall question is now scoped to foreign_shared buffers only.
+
+## Card verification round 2 + formal-calculus candidates (2026-07-06)
+
+Discharged from the ratification debt: N001, A005, C005, C002, D009, D010 CONFIRMED verbatim (notes/card-verification-2026-07-06.jsonl). N002 PARTIALLY_VERIFIED (nsw->poison corroborated by the verified UB manual; wraps-modulo verbatim quote blocked by LangRef fetch size — not refuted; pending sectioned source). Remaining unverified load-bearing: J001/J002, A003.
+
+Formal-calculus dossier (K003/K004): **Featherweight Rust selected as the section-5 reconciliation target** — soundness-proven, lightweight, Java reference implementation, validated by 500B-program model checking and rustc fuzzing (which found a real rustc bug — evidence that adversarial validation of borrow checkers works and that even production checkers have bugs). Oxide recorded as the NLL-upgrade reference (its fully-annotated-types premise matches our no-inference direction). Reconciliation task: map OWN-1..13 onto FR rules, prove-or-fix divergences, and adopt FR-style model checking for our checker.
+
+## static-vs-profile resolved by layering (2026-07-06, owner)
+
+Owner's layering question dissolved the round-1 topic (research_needed since 2026-07-01):
+- Language half DECIDED: no runtime speculation machinery (no JIT/deopt/OSR/safepoint semantics — already law), and no writer-stated performance hints ([[likely]]/#[cold]-class rejected under R1: unverifiable data-habit assertions; measured-beats-asserted; zero checkable invariant).
+- Toolchain half OUT OF LANGUAGE SCOPE, recorded as two policy lines: (1) profiles are cost inputs, never acceptance inputs — acceptance remains decidable from the canonical artifact alone (DIAG-2); (2) any profile used in a build is a declared, content-addressed build input (reproducibility).
+- Residual research item (descriptive CFI / stack-attribution without F008-class codegen constraints) moves to the toolchain track; it feeds trap-report telemetry, not language design.
+- Area-6 closing question about guarded value speculation in AOT binaries reclassified: an LLVM pass-pipeline question inside already-stated semantics, not a design question.
+
+## D2a recorded (2026-07-07)
+
+W2 deprioritized (owner): token counting stays as measurement, never gate; regularity invariants retained under W1 grounding; spec-size ablation and resident-vs-total ruling deprioritized; rule-individuation ruling now needed only for the ratchet, not for cap arithmetic.
+
+## Constitution relocated (2026-07-07)
+
+Authoritative text moved to /Users/bytedance/Dev/xlang/CONSTITUTION.md (top-level, discoverable; owner could not find it in notes/). user-directives.md now holds only the D-rulings plus a pointer; D2a folded into the constitution W2 clause. Historical gate entries referencing the old location remain as history.
+
+## Constitution restructured: floors -> standing theorems (2026-07-07, owner)
+
+Memory/thread safety (D1) and the no-UB envelope are NOT constitutional axioms; they are STANDING THEOREMS derived from the goals — from P1 (R4 shift-left, W1 undebuggable-at-runtime, W3 no-papering-over) and independently from P0 (F001 ownership=noalias facts; race-freedom keeps proofs sound). Rust-vs-C/C++ recorded as the natural experiment. W3 moved under P1 as a component of AI-writability. Practical force unchanged: theorems hold while premises hold, revisitable only by refuting a derivation, never by preference. No downstream decision changes; round-3 envelope and D1a/D0a rulings stand on the theorem exactly as they stood on the floor.
+
+## Derivation ledger built (2026-07-07, owner-mandated)
+
+spec/derivation-ledger-v0.2.md: all 75 rules traced against the current constitution. Result: 36 derived / 39 derived_existence_only / 0 underived. META-6 added (every rule must carry a ledger entry; orphaned chains auto-flag; underived rules may not ratify). Notable: (a) zero underived — no rule exists for literally no reason, but the 39 existence-only entries confirm the audit: roughly half the spec's specific FORMS await their R3 experiments; (b) new register gaps found by the ledger itself: FORM-3 sigil choices, FORM-6 unit token (zero provenance), FN-6's over-strong polymorphic-recursion criterion, FN-7 no-globals (uncarded plausibility), OP-2's ineg.wrap exclusion (two's-complement wrapping negation IS sound modular arithmetic — the div/rem rationale does not cover it; fix or justify); (c) weakest-chain list is the priority re-grounding queue; META-4 and several FORM rules are W2-only post-D2a and need W1 re-grounding.
+
+## kernel-spec v0.3 delta (2026-07-07, META-5/6 declaration)
+
+Ledger-fix revision. Selection grounds: evidence-selected (OP-2 negation fix — semantic argument; META-4 W1 re-grounding), recorded-rationale (FORM-6, FN-6, FN-7, FORM-3 census entry). Spec delta: +1 op-table row (ineg.wrap), +0 rules, ~+550 tokens (6502->7059), 0 new spellings, 0 exceptions. Ledger stats moved 36/39/0 -> 38/37/0 (derived/existence-only/underived; OP-2 and FORM-6 promoted; META-4 was already derived and only re-grounded). Living ledger renamed to spec/derivation-ledger.md (v0.2-named file retained as history). Remaining from weakest-chain queue: FORM-4 no-comments experiment, GRAM-7 statement-only-match A/B, TYPE-6 shadowing evidence, OWN-9 noalias benchmark carding, DIAG-3 schema delivery — all registered.
+
+## v0.3.1 delta (2026-07-07)
+
+ERR-3 propagation (try_stmt) + ERR-4 classification added — closes the R4-load-bearing deferral. Evidence-selected (R4/W1/W3 chain recorded in-rule). +2 rules, +1 production. ROADMAP.md added at repo root.
+
+## Spec-CI online (2026-07-07)
+
+tools/spec_ci.py enforces META-1 uniqueness, cross-reference integrity, META-6 ledger coverage, META-3 exception scan against the latest spec version. First run caught META-6 missing its own ledger entry (fixed, self-referentially) and validated itself by correctly flagging v0-era defects when mis-pointed. Ledger: 41 derived / 36 existence-only / 0 underived (77 rules). Run before every spec change.
+
+## Checker extended: OWN-11/OWN-12/OWN-6-temporaries (2026-07-07)
+
+292 lines, 26/26 tests. Rule-precision preserved: intra-call conflicts cite OWN-12, not OWN-5 (DIAG-1). Remaining before FR reconciliation: OWN-13, slices, copy/affine expression-level enforcement.
+
+## Demo compiler online (2026-07-07)
+
+prototype/democ/democ.py: micro-subset source -> parse -> prototype ownership checker -> LLVM IR -> clang -O2. Demonstrated end-to-end: (1) dangling-borrow program REJECTED citing OWN-10 before codegen; (2) &uniq/& lower to noalias/noalias-readonly, iadd.wrap to unflagged add (N002), iadd.trap to sadd.with.overflow + trap block (SCOPE-4); (3) MEASURED P0 payoff: optimized code performs 1 load with ownership facts vs 2 without (read-after-store of a distinct-by-checker location eliminated) — the F001/Area-1 claim now reproduced by our own pipeline. Owner ruling recorded: the checker/compiler prototypes are temporary; the endgame is self-hosting (bootstrap ladder: host-language demo -> real compiler -> compiler in xlang as the ultimate R0 dogfood).
+
+## Build plan M0-M4 ratified (2026-07-07)
+
+Order rationale recorded: M0 (FR reconciliation) precedes M1 (reference compiler) because the compiler core implements §5 and rule changes would rework it; M1+M2 constitute the instrument (M3) that the empirical spec questions require; research track parallel. democ 1-vs-2-loads native measurement noted as partial discharge of the OWN-9 benchmark debt.
+
+## M1 first increment: EX-1-class program compiles AND RUNS (2026-07-07)
+
+democ grown to: enums, match (Bool/Result/user-enum scrutinees, binders), check-else-trap, region stmts, doc fields, cross-fn calls, iadd.checked->Result pair repr, runnable main. examples/ex1.xl (sign_of + main with checked arithmetic, Result match, two runtime checks, cross-fn call) compiles to native and RUNS: exit 0, both checks pass. Regressions green (twice_read OK, dangle REJECTED OWN-10 exit 1). SPEC FINDING by construction: GRAM-4 says `match place` but spec EX-1 matches an EXPRESSION (`match ilt<i32>(x, 0_i32)`) — GRAM-4/EX-1 contradiction; fix queued for v0.4 (widen scrutinee to expr, or canonicalize EX-1 to bind-then-match). Known prototype approximations recorded in democ source: match-arm checker mapping is sequential (OWN-13 move precision TODO), effects blob unvalidated (EFF-2 TODO).
+
+## kernel-spec v0.4 delta (2026-07-07, META-5/6)
+
+GRAM-4 match scrutinee: place -> expr (fixes GRAM-4/EX-1 contradiction). Selection ground: evidence-adjacent — bind-then-match alternative rejected under R3/W1 (taxes the only conditional idiom with an invented temporary per use; weak-writer naming burden); democ already implements expr scrutinees. OWN-13 += owned-temporary clause. +0 rules, ~+90 tokens, 0 spellings, 0 exceptions. Ledger chains for GRAM-4/OWN-13 unchanged in kind.
+
+## democ enforces ERR-2 (2026-07-07)
+
+Non-exhaustive match now REJECTED with rule ID (examples/nonexhaustive.xl: "have [True], need [False, True]", exit 1). W3 floor (exhaustiveness cannot be silenced) is enforced, not aspirational. Regressions green: ex1 runs exit 0; dangle OWN-10 exit 1.
+
+## M1 increment 2 + trap-elimination measured (2026-07-07)
+
+democ: loop/break codegen, mutable own locals (alloca, mem2reg-cleaned), full isub/imul wrap/trap/checked families. ex2.xl (loop-summed 0..4 with iadd.trap counter/accumulator + two checks) compiles and runs exit 0. MEASUREMENT: IR contains 5 overflow-checked ops; clang -O2 output is mov w0,#0; ret — every trap branch eliminated BY PROOF (0 b.vs), loop constant-folded, checks statically discharged. The Area-2 three-tier prediction (induction traps are free) confirmed in native code; the whole guarded program folded to return 0. Regressions green (ex1 runs, twice_read compiles, nonexhaustive ERR-2 exit 1).
+
+## M0 reconciliation memo drafted (2026-07-07)
+
+spec/fr-reconciliation-m0.md: OWN-1..13 + STOR-4 mapped to Featherweight Rust; verdicts: 8 equivalent-or-stricter (sound by restriction), 2 extensions beyond FR (calls, sums) with named proof obligations, 0 weaker-than-FR rules found. Two structural theorems recorded: T-A singleton provenance (no borrow rebinding => FR path-sets degenerate to our one-place model — the load-bearing D1a simplification, a language choice not a checker shortcut) and T-B arm isolation. Section 5 status: reconciled-modulo-OBL-0..3 (OBL-0 = verbatim paper check, blocked on fetch; OBL-1/3 land with M2 harness; OBL-2 is a proof note). Not yet ratified — honest gate.
+
+## M2 online: oracle + model checker; OBL-1/OBL-2 progress (2026-07-07)
+
+OBL-2 discharged (OWN-12 = OWN-5 closed under simultaneity; proof note in memo). M2 instruments built: independent oracle interpreter (oracle.py) + generative model checker (modelcheck.py). Run: 20,000 programs, 14,905 accepted, 0 soundness violations; over-rejection = 2.9% of rejections oracle-clean — first measurement of the OWN-8/D1a lever cost (audit item "rejection-rate unmeasured" now has a number for the base fragment). OBL-1 partially discharged; OBL-0 (verbatim FR paper pass) and OBL-3 (arm isolation) remain.
+
+## OBL-3 discharged; match lands in checker (2026-07-07)
+
+Arm isolation + conservative join implemented (28/28 tests, incl. the false-rejection fix and the join negative). democ uses real match nodes. All-paths oracle (<=256 paths). Model check with match generation: 20k programs, 0 soundness violations, over-rejection 1.1%. Section-5 ratification now blocks ONLY on OBL-0 (verbatim FR paper verification).
+
+## Model-check hardened; perf pinned; parser regression caught (2026-07-07)
+
+30k programs (calls/params/caller-horizon oracle): 0 soundness violations; true over-rejection 7.2% (all OWN-10 temporaries — measured, refinement recorded). perf_regress.py pins the 1-vs-2-loads noalias win — and its first run caught a REAL parser regression (deref swallowed as user call; IR referenced undefined @deref; earlier smoke check missed it by testing democ exit only, not clang). Fixed; all regressions green including perf pin. Lesson recorded: regression checks must assert the artifact, not the tool exit code.
+
+## OWN-13 fully implemented (2026-07-07)
+
+Binder modes now DERIVED per OWN-13: own scrutinee moves (post-match use rejected OWN-1); borrow-mode scrutinee stays live, binders become aliasing borrows of its content (uniq binder conflicts with root re-borrow: rejected OWN-5); expression scrutinees are owned temporaries. Oracle mirrors the dynamics (own-scrutinee move observable). 31/31 tests; 30k model check clean chain (exit 0 => 0 soundness violations); true over-rejection improved again 7.2% -> 5.5%; democ ex1/ex2 run; perf pin intact. Checker OWN coverage now complete: OWN-1..13 all implemented and generatively tested.
+
+## OBL-0 DISCHARGED — §5 formally reconciled (2026-07-07)
+
+FR preprint fetched, archived in sources/, and verbatim-verified (page-anchored quotes in the memo): all five memo claims CONFIRMED, plus exact alignments (Def 3.6 copy classification = OWN-1 verbatim; FR itself bans shadowing = TYPE-6; OWN-5 clause set matches T-Move/T-Copy/T-MutBorrow/T-ImmBorrow rule-for-rule; Def 3.21 containment = OWN-4 direction letter-for-letter). The single permissiveness delta located precisely: FR supports borrow reassignment with retyping (p.25 ex.17) — the feature whose removal makes T-A hold; our model is a strict sound subset of FR state space. ALL M0 OBLIGATIONS DISCHARGED (OBL-1 at fragment scope). §5 ratification now awaits only owner sign-off.
+
+## v0.4.1 delta + lexicon census (2026-07-07)
+
+DIAG-3 field schemas delivered in-spec (trap/check/lifetime/check-density tables) — closes the audit-flagged R4-load-bearing deferral; ~+300 tokens, 0 rules, evidence-selected (R4 grounding recorded at flag time). D3 lexicon census recorded (notes/lexicon-census.md): 8 PASS, 1 HOLD (region sigil, kept provisionally), 0 FAIL — with the reusable errs-toward-rejection principle: borrowed names are safe when every prior-driven misuse lands as checker rejection, never accepted-but-wrong. D3 audit backlog item substantially discharged.

@@ -1,0 +1,63 @@
+[
+  {
+    "cluster": "CPython specializing interpreter (PEP 659)",
+    "url": "https://peps.python.org/pep-0659/",
+    "claims": [
+      "PEP 659 calls specialization the most important optimization for dynamic Python, enabled by adaptive instructions that replace themselves with specialized variants at runtime.",
+      "Inline caches store per-instruction metadata (offsets, type info); counters trigger de-specialization back to adaptive form when assumptions fail.",
+      "Specialization targets attribute lookup, globals, and calls, with claimed 10-60% speedups and measurable memory cost per instruction.",
+      "Dynamic-language VMs must specialize code to observed types/values to perform well, with rapid deoptimization as the robustness mechanism."
+    ],
+    "caveats": [
+      "Informational PEP; implementation details evolve, and no formal benchmark data is included in the PEP itself."
+    ]
+  },
+  {
+    "cluster": "V8 elements kinds",
+    "url": "https://v8.dev/blog/elements-kinds",
+    "claims": [
+      "V8 tracks ~21 element kinds per array and generates type-specific code for small-integer, double, and general element arrays.",
+      "Element-kind transitions are one-directional from specific to general; holey arrays generally stay holey and need extra prototype-chain checks.",
+      "Monomorphic operations optimize better; polymorphic element handling triggers extra checks and possible deoptimization."
+    ],
+    "caveats": [
+      "Blog-level source; real-world packed/holey differences are often negligible per the source itself."
+    ]
+  },
+  {
+    "cluster": "V8 hidden classes",
+    "url": "https://v8.dev/docs/hidden-classes",
+    "claims": [
+      "V8 objects carry a map (hidden class) pointer enabling O(1) shape comparison; property addition creates transition chains between maps.",
+      "TurboFan embeds constant field values into optimized code and marks dependent code for deoptimization when such fields mutate.",
+      "Optimized code verifies map identity so layout assumptions stay valid; out-of-order property addition bifurcates transition chains."
+    ],
+    "caveats": [
+      "Docs say the subject is rich and subject to change; inline caches referenced but not detailed on this page."
+    ]
+  },
+  {
+    "cluster": "PyPy meta-tracing",
+    "url": "https://doc.pypy.org/en/latest/architecture.html",
+    "claims": [
+      "PyPy uses a tracing JIT that traces the RPython interpreter rather than the user program, making the JIT language-implementation-generic.",
+      "The JIT pipeline is tracer, optimizer over residual operations, and machine-code backend, driven by hints in the interpreter."
+    ],
+    "caveats": [
+      "Architecture page does not detail guards/hot-loop thresholds; deeper claims need PyPy papers."
+    ]
+  },
+  {
+    "cluster": "HotSpot performance enhancements",
+    "url": "https://docs.oracle.com/en/java/javase/21/vm/java-hotspot-virtual-machine-performance-enhancements.html",
+    "claims": [
+      "Tiered compilation uses the client compiler during profiling so the server compiler final code arrives with faster startup, at the cost of a much larger code cache.",
+      "HotSpot escape analysis classifies allocations (NoEscape/ArgEscape/GlobalEscape), eliminating scalar-replaceable allocations and eliding locks on thread-local objects.",
+      "Oracle documentation states escape analysis does not replace heap allocation with stack allocation; it only eliminates allocations and locks.",
+      "Compressed oops trade decode/encode overhead for pointer-size reduction, showing runtime data-representation choices affect performance."
+    ],
+    "caveats": [
+      "Version-specific documentation; speculation/deoptimization internals are not covered by this page."
+    ]
+  }
+]
