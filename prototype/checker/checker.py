@@ -527,6 +527,9 @@ class TypeChecker:
         if k == "doc":
             return
         if k == "let":
+            if s["name"] in self.env:                      # TYPE-6: no shadowing/redeclaration
+                raise CheckError("TYPE-6",
+                    f"redeclaration of live name '{s['name']}' (no shadowing)")
             if s["init"].get("kind") == "match":
                 self.deliver.append((s["mode"], s["ty"]))
                 self.check_match(s["init"])
@@ -568,7 +571,7 @@ class TypeChecker:
             raise CheckError("GRAM-4", f"unknown stmt kind {k}")
 
     def check_match(self, s):
-        sd = self.expr_desc(s["scrut"])
+        sd = self._scrut_desc(s["scrut"])
         scrut_ty = sd["ty"]
         variants = None
         if scrut_ty.get("kind") == "named" and scrut_ty["name"] in self.P.enums:
@@ -602,13 +605,33 @@ class TypeChecker:
             self.check_block(arm["body"])
             self.env = saved
 
+    def _scrut_desc(self, e):
+        """A match scrutinee that is a place is MOVED by the match [OWN-13], so a bare
+        place here is not an OWN-1 affine-use error; other scrutinees type normally."""
+        if e["kind"] in ("use", "move"):
+            return self.place_desc(e["place"])
+        return self.expr_desc(e)
+
+    @staticmethod
+    def _is_copy(desc):                                     # OWN-1 copy classification
+        # prim/unit copy; borrows copy; `any` is the generic-payload wildcard of unknown
+        # affinity -> treat as copy (lenient), matching the type layer's generic handling.
+        return (desc["cat"] == "ref"
+                or desc["ty"].get("kind") in ("prim", "unit", "any"))
+
     # -- expression typing ---------------------------------------------------
     def expr_desc(self, e):
         k = e["kind"]
         if k == "lit":
             return {"cat": "val", "ty": e.get("ty", {"kind": "unit"})}
-        if k in ("use", "move"):
+        if k == "move":
             return self.place_desc(e["place"])
+        if k == "use":                                     # OWN-1: a bare use must be copy
+            d = self.place_desc(e["place"])
+            if not self._is_copy(d):
+                raise CheckError("OWN-1",
+                    f"bare use of affine value of type {_ty_str(d['ty'])}; write move")
+            return d
         if k == "borrow":
             inner = self.place_desc(e["place"])
             return {"cat": "ref", "ty": inner["ty"],

@@ -217,6 +217,8 @@ def tstmt(s):
 def tstmts(body):
     return [x for x in (tstmt(s) for s in body) if x is not None]
 def build_prog(enums, fns):
+    if len([f for f in fns if f["name"] == "main"]) > 1:   # FN-7: at most one main
+        raise CheckError("FN-7", "at most one fn main")
     prog = {"structs": {}, "enums": {}, "fns": {}}
     for en, vs in enums.items():
         prog["enums"][en] = [{"variant": vn,
