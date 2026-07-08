@@ -1,0 +1,3 @@
+fn dangle ['r0] (x: own i32) -> &'r0 i32 pure {
+  return &'r0 x;
+}

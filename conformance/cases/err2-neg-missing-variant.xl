@@ -1,0 +1,15 @@
+enum Color { Red(); Green(); Blue(); }
+
+fn pick (c: own Color) -> own i32 pure {
+  match c {
+    Red() => { return 1_i32; }
+    Green() => { return 2_i32; }
+  }
+}
+
+fn main () -> own unit traps {
+  doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
+  let n: own i32 = pick(c: Red());
+  check ieq<i32>(n, 1_i32) else trap "x";
+  return unit;
+}

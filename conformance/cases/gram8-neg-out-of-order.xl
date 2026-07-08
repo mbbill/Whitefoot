@@ -1,0 +1,6 @@
+enum Pair { P(a: i32, b: i32); }
+
+fn make () -> own Pair pure {
+  doc "GRAM-8: out-of-order field names are rejected; declared order is the one legal byte sequence.";
+  return P(b: 2_i32, a: 1_i32);
+}

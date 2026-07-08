@@ -1,0 +1,14 @@
+fn main () -> own unit traps {
+  doc "OWN-2: the three modes own / shared / uniq borrow are always written.";
+  let a: own i32 = 5_i32;
+  region 'r {
+    let s: &'r i32 = &'r a;
+    check ieq<i32>(deref(s), 5_i32) else trap "read";
+  }
+  region 'q {
+    let u: &uniq 'q i32 = &uniq 'q a;
+    set deref(u) = 9_i32;
+  }
+  check ieq<i32>(a, 9_i32) else trap "write";
+  return unit;
+}

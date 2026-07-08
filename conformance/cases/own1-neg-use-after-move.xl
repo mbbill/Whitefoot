@@ -1,0 +1,17 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn main () -> own unit traps {
+  doc "OWN-1/OWN-13: matching an own value moves it; a second use is use-after-move.";
+  let s: own Sign = Pos();
+  match s {
+    Neg() => { }
+    Zero() => { }
+    Pos() => { }
+  }
+  match s {
+    Neg() => { }
+    Zero() => { }
+    Pos() => { }
+  }
+  return unit;
+}

@@ -1,0 +1,5 @@
+fn main () -> own unit traps {
+  doc "A failing check is a runtime check in all build modes, never elided; it traps and aborts [OP-5].";
+  check ilt<i32>(3_i32, 2_i32) else trap "impossible order";
+  return unit;
+}

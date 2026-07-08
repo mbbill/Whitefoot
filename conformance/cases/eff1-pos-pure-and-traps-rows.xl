@@ -1,0 +1,11 @@
+fn inc (x: own i32) -> own i32 pure {
+  doc "Empty-row `pure` spelling [EFF-1].";
+  return iadd.wrap<i32>(x, 1_i32);
+}
+
+fn main () -> own unit traps {
+  doc "Canonical effect rows: `pure` (empty row) and `traps` [EFF-1].";
+  let a: own i32 = inc(x: 41_i32);
+  check ieq<i32>(a, 42_i32) else trap "drift";
+  return unit;
+}

@@ -1,0 +1,10 @@
+fn f (x: own i32) -> own i32 traps, allocates(heap) {
+  doc "Row order violates EFF-1 canonical order (allocates before traps).";
+  return x;
+}
+
+fn main () -> own unit traps {
+  let a: own i32 = f(x: 7_i32);
+  check ieq<i32>(a, 7_i32) else trap "x";
+  return unit;
+}

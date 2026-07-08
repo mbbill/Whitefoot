@@ -1,0 +1,4 @@
+fn main () -> own unit traps {
+  doc "A conformant kernel program contains no gated constructs [SCOPE-1].";
+  return unit;
+}

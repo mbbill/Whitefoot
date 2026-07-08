@@ -1,0 +1,9 @@
+contract Semigroup {
+  doc "A law uses a closed LAWNAME from {associative, commutative, identity} [FN-4].";
+  fn combine (x: own i32, y: own i32) -> own i32 pure;
+  law associative(combine);
+}
+
+fn main () -> own unit traps {
+  return unit;
+}

@@ -1,0 +1,11 @@
+fn main () -> own unit traps {
+  doc "OWN-11: inside a loop, a borrow may only name regions introduced in the loop body.";
+  let a: own i32 = 0_i32;
+  region 'r {
+    loop @l {
+      let p: &'r i32 = &'r a;
+      break @l;
+    }
+  }
+  return unit;
+}

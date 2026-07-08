@@ -1,0 +1,5 @@
+fn main () -> own unit traps {
+  doc "An unknown construct is a hard error (conservative extension) [FORM-1].";
+  gimble x;
+  return unit;
+}

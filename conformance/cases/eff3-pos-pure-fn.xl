@@ -1,0 +1,11 @@
+fn dbl (x: own i32) -> own i32 pure {
+  doc "A genuinely `pure` body: `.wrap` add, no traps/reads/writes/allocates [EFF-3].";
+  let r: own i32 = iadd.wrap<i32>(x, x);
+  return r;
+}
+
+fn main () -> own unit traps {
+  let a: own i32 = dbl(x: 21_i32);
+  check ieq<i32>(a, 42_i32) else trap "x";
+  return unit;
+}

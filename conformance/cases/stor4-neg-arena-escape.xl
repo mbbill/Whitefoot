@@ -1,0 +1,5 @@
+fn make ['r] () -> own arena<'r, i32> allocates(arena 'r) {
+  doc "A value of type arena<'r,T> may not be returned outside 'r's block [STOR-4]; returning it escapes the region.";
+  let a: own arena<'r, i32> = arena_new<'r, i32>(3_i32);
+  return a;
+}

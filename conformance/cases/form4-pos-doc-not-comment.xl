@@ -1,0 +1,4 @@
+fn main () -> own unit traps {
+  doc "There are no comments; documentation is the doc field [FORM-4].";
+  return unit;
+}

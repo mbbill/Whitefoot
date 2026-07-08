@@ -1,0 +1,16 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn twice ['r] (s: &'r Sign) -> own i32 pure {
+  doc "OWN-13: matching through &'r leaves the scrutinee live; s is matched again after.";
+  match deref(s) {
+    Neg() => { }
+    Zero() => { }
+    Pos() => { }
+  }
+  match deref(s) {
+    Neg() => { }
+    Zero() => { }
+    Pos() => { }
+  }
+  return 0_i32;
+}

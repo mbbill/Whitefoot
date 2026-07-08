@@ -1,0 +1,14 @@
+fn main () -> own unit traps {
+  doc "OWN-7: borrows of distinct roots do not overlap; two uniq borrows coexist.";
+  let a: own i32 = 1_i32;
+  let b: own i32 = 2_i32;
+  region 'r {
+    let ua: &uniq 'r i32 = &uniq 'r a;
+    let ub: &uniq 'r i32 = &uniq 'r b;
+    set deref(ua) = 5_i32;
+    set deref(ub) = 6_i32;
+  }
+  check ieq<i32>(a, 5_i32) else trap "a";
+  check ieq<i32>(b, 6_i32) else trap "b";
+  return unit;
+}

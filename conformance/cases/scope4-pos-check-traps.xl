@@ -1,0 +1,5 @@
+fn main () -> own unit traps {
+  doc "A contract violation at runtime traps and aborts; no unwinding [SCOPE-4].";
+  check ieq<i32>(2_i32, 3_i32) else trap "contract violated";
+  return unit;
+}

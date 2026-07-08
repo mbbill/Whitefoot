@@ -1,0 +1,13 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn main () -> own unit traps {
+  doc "GRAM-5: literal atom, place atom, borrow_expr atom, deref place, call, construct.";
+  let a: own i32 = 5_i32;
+  region 'r {
+    let p: &'r i32 = &'r a;
+    let b: own i32 = iadd.wrap<i32>(deref(p), a);
+    let s: own Sign = Zero();
+    check ieq<i32>(b, 10_i32) else trap "drift";
+  }
+  return unit;
+}

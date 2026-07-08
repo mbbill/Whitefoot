@@ -1,0 +1,4 @@
+fn Main () -> own unit traps {
+  doc "A fn name must be an IDENT; a TYPEID-spelled name is illegal [FORM-3].";
+  return unit;
+}

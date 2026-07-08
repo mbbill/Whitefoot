@@ -1,0 +1,6 @@
+fn main () -> own unit traps {
+  doc "Redeclaring a live name shadows it, which TYPE-6 forbids.";
+  let a: own i32 = 1_i32;
+  let a: own i32 = 2_i32;
+  return unit;
+}

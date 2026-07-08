@@ -1,0 +1,9 @@
+fn main () -> own unit traps {
+  doc "GRAM-9: flat three-address — each computed value is bound by a let and forwarded by name; no nesting.";
+  let a: own i32 = 3_i32;
+  let b: own i32 = 4_i32;
+  let s: own i32 = iadd.wrap<i32>(a, b);
+  let p: own i32 = imul.wrap<i32>(s, s);
+  check ieq<i32>(p, 49_i32) else trap "drift";
+  return unit;
+}

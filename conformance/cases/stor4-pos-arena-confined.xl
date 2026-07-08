@@ -1,0 +1,9 @@
+fn main () -> own unit traps {
+  doc "An arena<'r,T> stays within its region 'r and is released at block exit [STOR-4].";
+  region 'r {
+    let a: own arena<'r, i32> = arena_new<'r, i32>(4_i32);
+    let v: own i32 = deref(a);
+    check ieq<i32>(v, 4_i32) else trap "arena drift";
+  }
+  return unit;
+}

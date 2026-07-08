@@ -1,0 +1,13 @@
+fn two ['r] (a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
+  return unit;
+}
+
+fn main () -> own unit traps {
+  doc "OWN-12: distinct &uniq arguments do not alias — accepted.";
+  let x: own i32 = 0_i32;
+  let y: own i32 = 1_i32;
+  region 'r {
+    two(a: &uniq 'r x, b: &uniq 'r y);
+  }
+  return unit;
+}

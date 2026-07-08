@@ -1,0 +1,13 @@
+fn main () -> own unit traps {
+  doc "Overflow via `.checked` is classified recoverable: delivered as a value (Err), not a trap [ERR-4].";
+  let v: own i32 = match iadd.checked<i32>(2147483647_i32, 1_i32) {
+    Ok(value: w) => {
+      give w;
+    }
+    Err(error: e) => {
+      give 0_i32;
+    }
+  }
+  check ieq<i32>(v, 0_i32) else trap "x";
+  return unit;
+}

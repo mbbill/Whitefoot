@@ -1,0 +1,6 @@
+fn main () -> own unit traps {
+  doc "A check that holds passes and the program continues [OP-5]; the passed check creates a checked fact on the dominated path.";
+  let x: own i32 = iadd.wrap<i32>(1_i32, 2_i32);
+  check ieq<i32>(x, 3_i32) else trap "check drift";
+  return unit;
+}

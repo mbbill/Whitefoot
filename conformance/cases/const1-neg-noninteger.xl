@@ -1,0 +1,7 @@
+const NAME: unit = unit;
+
+fn main () -> own unit traps {
+  doc "A non-integer const in a const-expr position is rejected [CONST-1].";
+  let xs: own array<i32, NAME> = array_new<i32, NAME>(0_i32);
+  return unit;
+}

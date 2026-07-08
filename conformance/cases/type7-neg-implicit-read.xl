@@ -1,0 +1,10 @@
+fn main () -> own unit traps {
+  doc "Using a borrow where a value is expected, without deref, is forbidden [TYPE-7/TYPE-5].";
+  let a: own i32 = 1_i32;
+  region 'r {
+    let p: &'r i32 = &'r a;
+    let v: own i32 = p;
+    return unit;
+  }
+  return unit;
+}

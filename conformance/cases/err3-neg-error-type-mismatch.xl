@@ -1,0 +1,16 @@
+enum ErrA { A(); }
+enum ErrB { B(); }
+
+fn step (x: own i32) -> own Result<i32, ErrA> pure {
+  return Ok(value: x);
+}
+
+fn use (x: own i32) -> own Result<i32, ErrB> pure {
+  doc "`try` requires inner and outer E to match (no conversions) [ERR-3]; ErrA != ErrB.";
+  let y: own i32 = try step(x: x);
+  return Ok(value: y);
+}
+
+fn main () -> own unit traps {
+  return unit;
+}

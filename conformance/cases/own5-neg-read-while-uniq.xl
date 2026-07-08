@@ -1,0 +1,9 @@
+fn main () -> own unit traps {
+  doc "OWN-5: reading a place while a &uniq borrow of it is live is rejected.";
+  let a: own i32 = 3_i32;
+  region 'r {
+    let u: &uniq 'r i32 = &uniq 'r a;
+    let b: own i32 = a;
+  }
+  return unit;
+}

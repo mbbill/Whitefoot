@@ -1,0 +1,4 @@
+fn main () -> own unit traps {
+  doc "Canonical form: one spelling, one legal byte formatting [FORM-1].";
+  return unit;
+}

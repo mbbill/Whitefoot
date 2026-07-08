@@ -1,0 +1,5 @@
+fn main () -> own unit pure {
+  doc "Body exhibits traps (a `check`) but declares `pure` [EFF-2] undeclared-but-exhibited.";
+  check ieq<i32>(2_i32, 2_i32) else trap "x";
+  return unit;
+}

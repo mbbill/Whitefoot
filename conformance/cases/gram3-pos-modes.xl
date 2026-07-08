@@ -1,0 +1,5 @@
+fn use3 ['r] (a: own i32, b: &'r i32, c: &uniq 'r i32) -> own i32 pure {
+  doc "GRAM-3: the three modes own / &'r / &uniq 'r written on i32 params.";
+  let x: own i32 = iadd.wrap<i32>(a, deref(b));
+  return x;
+}

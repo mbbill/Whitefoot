@@ -1,0 +1,8 @@
+fn widths (a: own i8, b: own i64, c: own u32, d: own f64) -> own unit pure {
+  doc "The remaining primitive types are nameable and type-check [TYPE-1].";
+  return unit;
+}
+
+fn main () -> own unit traps {
+  return unit;
+}

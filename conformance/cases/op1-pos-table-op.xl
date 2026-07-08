@@ -1,0 +1,6 @@
+fn main () -> own unit traps {
+  doc "Every computation is a call naming one operation from the table [OP-1]: a wrapping add and an integer compare, nothing overloaded.";
+  let x: own i32 = iadd.wrap<i32>(20_i32, 22_i32);
+  check ieq<i32>(x, 42_i32) else trap "op drift";
+  return unit;
+}

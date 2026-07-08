@@ -1,0 +1,9 @@
+fn main () -> own unit traps {
+  doc "GRAM-10: a misspelled binder field name is a hard error citing GRAM-10.";
+  let a: own i32 = 40_i32;
+  let v: own i32 = match iadd.checked<i32>(a, 2_i32) {
+    Ok(val: w) => { give w; }
+    Err(error: e) => { return unit; }
+  }
+  return unit;
+}

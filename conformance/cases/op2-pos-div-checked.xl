@@ -1,0 +1,7 @@
+fn classify (x: own i32, y: own i32) -> own i32 pure {
+  doc "idiv.checked yields Result<T, DivError> [OP-2]: Err(DivideByZero()) for a zero divisor, Err(DivOverflow()) for signed iK::MIN/-1, else Ok.";
+  match idiv.checked<i32>(x, y) {
+    Ok(value: q) => { return q; }
+    Err(error: e) => { return 0_i32; }
+  }
+}

@@ -1,0 +1,22 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn main () -> own unit traps {
+  doc "IDENT, TYPEID, REGIONID, LABEL, and OPNAME lexical classes [FORM-3].";
+  let a: own i32 = 3_i32;
+  region 'r {
+    let p: &'r i32 = &'r a;
+    loop @l {
+      break @l;
+    }
+    let v: own i32 = match iadd.checked<i32>(deref(p), 1_i32) {
+      Ok(value: w) => {
+        give w;
+      }
+      Err(error: e) => {
+        return unit;
+      }
+    }
+    check ieq<i32>(v, 4_i32) else trap "drift";
+  }
+  return unit;
+}

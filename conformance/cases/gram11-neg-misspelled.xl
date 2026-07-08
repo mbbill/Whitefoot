@@ -1,0 +1,9 @@
+fn add2 (x: own i32, y: own i32) -> own i32 pure {
+  return iadd.wrap<i32>(x, y);
+}
+
+fn main () -> own unit traps {
+  doc "GRAM-11: a misspelled parameter name in a call is a hard error citing GRAM-11.";
+  let r: own i32 = add2(x: 40_i32, z: 2_i32);
+  return unit;
+}

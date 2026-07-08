@@ -1,0 +1,19 @@
+fn sumto (n: own i32) -> own i32 pure {
+  doc "Recursion is permitted [FN-6].";
+  match ieq<i32>(n, 0_i32) {
+    True() => {
+      return 0_i32;
+    }
+    False() => {
+      let m: own i32 = isub.trap<i32>(n, 1_i32);
+      let r: own i32 = sumto(n: m);
+      return iadd.trap<i32>(n, r);
+    }
+  }
+}
+
+fn main () -> own unit traps {
+  let s: own i32 = sumto(n: 4_i32);
+  check ieq<i32>(s, 10_i32) else trap "recursion drift";
+  return unit;
+}

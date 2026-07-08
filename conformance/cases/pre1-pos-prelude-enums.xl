@@ -1,0 +1,20 @@
+fn main () -> own unit traps {
+  doc "PRE-1: prelude enums are usable with no declaration in the unit -- Bool (True/False) from a compare, Result (Ok/Err) from checked arithmetic.";
+  let r: own i32 = match iadd.checked<i32>(3_i32, 4_i32) {
+    Ok(value: w) => {
+      give w;
+    }
+    Err(error: e) => {
+      return unit;
+    }
+  }
+  match ilt<i32>(r, 100_i32) {
+    True() => {
+      check ieq<i32>(r, 7_i32) else trap "prelude drift";
+    }
+    False() => {
+      return unit;
+    }
+  }
+  return unit;
+}

@@ -1,0 +1,9 @@
+fn main () -> own unit traps {
+  doc "A box allocated in a region is freed by a compiler-derived drop on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
+  region 'r {
+    let b: own box<i32> = box_new<i32>(9_i32);
+    let v: own i32 = deref(b);
+    check ieq<i32>(v, 9_i32) else trap "box drift";
+  }
+  return unit;
+}

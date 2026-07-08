@@ -1,0 +1,12 @@
+fn helper (x: own i32) -> own i32 pure {
+  doc "In-unit helper; every callee name is defined within this compilation unit.";
+  return iadd.trap<i32>(x, 1_i32);
+}
+
+fn main () -> own unit traps {
+  doc "PROG-1 closed world: helper is defined in-unit, ieq/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
+  let a: own i32 = 6_i32;
+  let b: own i32 = helper(x: a);
+  check ieq<i32>(b, 7_i32) else trap "closed-world drift";
+  return unit;
+}

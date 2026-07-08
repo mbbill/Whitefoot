@@ -1,0 +1,11 @@
+fn addk (x: own i32) -> own i32 pure {
+  return iadd.trap<i32>(x, 1_i32);
+}
+
+fn main () -> own unit traps {
+  doc "Every let states full mode+type; the call states its type arg; types match [TYPE-5].";
+  let a: own i32 = 41_i32;
+  let b: own i32 = addk(x: a);
+  check ieq<i32>(b, 42_i32) else trap "type drift";
+  return unit;
+}

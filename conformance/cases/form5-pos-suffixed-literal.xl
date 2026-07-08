@@ -1,0 +1,5 @@
+fn main () -> own unit traps {
+  doc "An integer literal carries its mandatory type suffix [FORM-5].";
+  let a: own i32 = 42_i32;
+  return unit;
+}

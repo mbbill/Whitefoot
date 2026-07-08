@@ -1,0 +1,12 @@
+fn main () -> own unit traps {
+  doc "OWN-11: a borrow naming a region introduced inside the loop body is allowed.";
+  let a: own i32 = 0_i32;
+  loop @l {
+    region 's {
+      let p: &'s i32 = &'s a;
+      check ieq<i32>(deref(p), 0_i32) else trap "p";
+    }
+    break @l;
+  }
+  return unit;
+}

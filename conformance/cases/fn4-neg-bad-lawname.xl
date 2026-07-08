@@ -1,0 +1,8 @@
+contract BadLaw {
+  fn combine (x: own i32, y: own i32) -> own i32 pure;
+  law distributive(combine, combine);
+}
+
+fn main () -> own unit traps {
+  return unit;
+}

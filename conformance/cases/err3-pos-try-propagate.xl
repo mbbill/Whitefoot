@@ -1,0 +1,18 @@
+enum MyErr { Bad(); }
+
+fn step (x: own i32) -> own Result<i32, MyErr> pure {
+  match ilt<i32>(x, 0_i32) {
+    True() => { return Err(error: Bad()); }
+    False() => { return Ok(value: x); }
+  }
+}
+
+fn use (x: own i32) -> own Result<i32, MyErr> pure {
+  doc "`try` binds Ok payload; Err returns Err(err) with same E [ERR-3].";
+  let y: own i32 = try step(x: x);
+  return Ok(value: y);
+}
+
+fn main () -> own unit traps {
+  return unit;
+}

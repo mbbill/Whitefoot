@@ -1,0 +1,6 @@
+const BAD: box<i32> = 0_i32;
+
+fn main () -> own unit traps {
+  doc "box<T> is not const-eligible: a const is pure static rodata [CONST-2].";
+  return unit;
+}

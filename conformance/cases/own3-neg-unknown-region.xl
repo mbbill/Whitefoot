@@ -1,0 +1,6 @@
+fn main () -> own unit traps {
+  doc "OWN-3: naming a region that was never introduced is rejected.";
+  let a: own i32 = 1_i32;
+  let p: &'z i32 = &'z a;
+  return unit;
+}

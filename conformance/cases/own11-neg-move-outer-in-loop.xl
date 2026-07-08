@@ -1,0 +1,15 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn main () -> own unit traps {
+  doc "OWN-11: a binding declared outside a loop may not be moved inside it.";
+  let s: own Sign = Pos();
+  loop @l {
+    match s {
+      Neg() => { }
+      Zero() => { }
+      Pos() => { }
+    }
+    break @l;
+  }
+  return unit;
+}

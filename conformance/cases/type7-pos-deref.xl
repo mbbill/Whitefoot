@@ -1,0 +1,10 @@
+fn main () -> own unit traps {
+  doc "Reading through a reference is explicit via deref(place) [TYPE-7].";
+  let a: own i32 = 42_i32;
+  region 'r {
+    let p: &'r i32 = &'r a;
+    let v: own i32 = deref(p);
+    check ieq<i32>(v, 42_i32) else trap "deref drift";
+  }
+  return unit;
+}

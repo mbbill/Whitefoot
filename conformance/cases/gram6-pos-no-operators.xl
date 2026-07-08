@@ -1,0 +1,15 @@
+fn main () -> own unit traps {
+  doc "GRAM-6: no operators/if/while/for — arithmetic is named ops, conditional is match, iteration is loop+break.";
+  let n: own i32 = 4_i32;
+  let acc: own i32 = 0_i32;
+  loop @l {
+    match ieq<i32>(n, 0_i32) {
+      True() => { break @l; }
+      False() => { }
+    }
+    set acc = iadd.wrap<i32>(acc, n);
+    set n = isub.wrap<i32>(n, 1_i32);
+  }
+  check ieq<i32>(acc, 10_i32) else trap "sum drift";
+  return unit;
+}

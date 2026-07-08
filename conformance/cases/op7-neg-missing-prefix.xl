@@ -1,0 +1,4 @@
+fn bad (a: own i32, b: own i32) -> own i32 pure {
+  doc "An arithmetic op carries a domain prefix whether or not a twin exists [OP-7]; unprefixed 'add.wrap' names no table op and must be rejected.";
+  return add.wrap<i32>(a, b);
+}

@@ -68,13 +68,16 @@ def matches(v, expect):
             or (k == "trap" and v[0] == "trap"))
 
 
-def load_cases():
-    out = []
+def load_manifest():
+    """Split manifest lines into cases (have "id") and coverage annotations (have "covered_by")."""
+    cases, annots = [], []
     for ln in MANIFEST.read_text().splitlines():
         ln = ln.strip()
-        if ln and not ln.startswith("#"):
-            out.append(json.loads(ln))
-    return out
+        if not ln or ln.startswith("#"):
+            continue
+        o = json.loads(ln)
+        (cases if "id" in o else annots).append(o)
+    return cases, annots
 
 
 def run_cases(cases):
@@ -105,7 +108,7 @@ def spec_rule_ids():
     return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)\]", spec.read_text(), re.M)), spec.name
 
 
-def coverage(cases):
+def coverage(cases, annots):
     rules, spec_name = spec_rule_ids()
     tagged, pos, neg = set(), set(), set()
     for c in cases:
@@ -114,13 +117,16 @@ def coverage(cases):
             neg.add(c["expect"]["rule"])
         else:
             pos |= set(c["rules"])
-    return rules, spec_name, tagged & rules, pos, neg, sorted(rules - tagged)
+    annotated = {a["rule"] for a in annots} & rules
+    by_case = tagged & rules
+    covered = by_case | annotated
+    return rules, spec_name, covered, by_case, annotated, pos, neg, sorted(rules - covered)
 
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     verbose = "-v" in sys.argv
-    cases = load_cases()
+    cases, annots = load_manifest()
     fail = 0
     if cmd in ("run", "all"):
         tally = {}
@@ -135,11 +141,12 @@ def main():
                 print(f"  SKIP  {c['id']:38} {v[1] if len(v) > 1 else 'pending'}")
         print("conformance run: " + "  ".join(f"{k}={tally[k]}" for k in sorted(tally)))
     if cmd in ("coverage", "all"):
-        rules, spec_name, covered, pos, neg, uncovered = coverage(cases)
-        print(f"coverage ({spec_name}): {len(covered)}/{len(rules)} rules have a case "
-              f"(+{len(pos)} positive / -{len(neg)} negative); {len(uncovered)} untested")
+        rules, spec_name, covered, by_case, annotated, pos, neg, uncovered = coverage(cases, annots)
+        print(f"coverage ({spec_name}): {len(covered)}/{len(rules)} rules covered "
+              f"({len(by_case)} by case [+{len(pos)}/-{len(neg)}], {len(annotated)} by annotation); "
+              f"{len(uncovered)} uncovered")
         if verbose and uncovered:
-            print("  untested: " + " ".join(uncovered))
+            print("  uncovered: " + " ".join(uncovered))
     sys.exit(1 if fail else 0)
 
 

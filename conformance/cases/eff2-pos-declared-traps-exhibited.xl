@@ -1,0 +1,5 @@
+fn main () -> own unit traps {
+  doc "Body exhibits traps (a `check`) and declares `traps` [EFF-2].";
+  check ieq<i32>(2_i32, 2_i32) else trap "x";
+  return unit;
+}

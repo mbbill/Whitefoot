@@ -1,0 +1,22 @@
+enum Sign { Neg(); Zero(); Pos(); }
+
+fn id (x: own i32) -> own i32 pure {
+  return x;
+}
+
+fn main () -> own unit traps {
+  doc "GRAM-1: FIRST-set overlaps (construct K() vs op op<t>() vs call f() ; stmt-match vs let-match) resolved by two-token lookahead; one parse each.";
+  let a: own i32 = id(x: 20_i32);
+  let b: own i32 = iadd.wrap<i32>(a, 22_i32);
+  let s: own Sign = Neg();
+  let c: own i32 = match ilt<i32>(b, 100_i32) {
+    True() => { give b; }
+    False() => { give a; }
+  }
+  match s {
+    Neg() => { check ieq<i32>(c, 42_i32) else trap "drift"; }
+    Zero() => { return unit; }
+    Pos() => { return unit; }
+  }
+  return unit;
+}

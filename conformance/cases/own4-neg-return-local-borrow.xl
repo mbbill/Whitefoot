@@ -1,0 +1,5 @@
+fn leak ['r0] (x: &'r0 i32) -> &'r0 i32 pure {
+  region 's {
+    return &'s deref(x);
+  }
+}

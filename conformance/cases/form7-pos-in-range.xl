@@ -1,0 +1,5 @@
+fn main () -> own unit traps {
+  doc "An in-range integer literal is well-formed [FORM-7].";
+  let a: own i32 = 2147483647_i32;
+  return unit;
+}

@@ -1,0 +1,10 @@
+fn takes_i32 (x: own i32) -> own unit pure {
+  return unit;
+}
+
+fn main () -> own unit traps {
+  doc "A unit argument where i32 is declared violates exact argument typing [TYPE-5].";
+  let u: own unit = unit;
+  let r: own unit = takes_i32(x: u);
+  return unit;
+}

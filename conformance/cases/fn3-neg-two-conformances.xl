@@ -1,0 +1,23 @@
+contract Zeroed {
+  fn zero () -> own i32 pure;
+}
+
+conform i32 : Zeroed {
+  zero = i32_zero_a;
+}
+
+conform i32 : Zeroed {
+  zero = i32_zero_b;
+}
+
+fn i32_zero_a () -> own i32 pure {
+  return 0_i32;
+}
+
+fn i32_zero_b () -> own i32 pure {
+  return 0_i32;
+}
+
+fn main () -> own unit traps {
+  return unit;
+}
