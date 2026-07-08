@@ -1,27 +1,50 @@
 enum Sign { Neg(); Zero(); Pos(); }
 
 fn sign_of (x: own i32) -> own Sign pure {
+  doc "Conditional value produced by returning from arms (return-position match).";
   match ilt<i32>(x, 0_i32) {
-    True() => { return Neg(); }
+    True() => {
+      return Neg();
+    }
     False() => {
       match ieq<i32>(x, 0_i32) {
-        True() => { return Zero(); }
-        False() => { return Pos(); }
+        True() => {
+          return Zero();
+        }
+        False() => {
+          return Pos();
+        }
       }
     }
   }
 }
 
 fn main () -> own unit traps {
-  doc "EX-1-class demo: checked arithmetic, Result match, check, cross-fn call.";
+  doc "let-initializer match with give, named construction, named user-fn call.";
   let a: own i32 = 40_i32;
-  let s: own Result = iadd.checked<i32>(a, 2_i32);
-  match s {
-    Ok(v) => {
-      check ieq<i32>(v, 42_i32) else trap "arithmetic drift";
-      check ieq<i32>(sign_of(v), 2_i32) else trap "sign drift";
+  region 'r {
+    let p: &'r i32 = &'r a;
+    let v: own i32 = match iadd.checked<i32>(deref(p), 2_i32) {
+      Ok(value: w) => {
+        give w;
+      }
+      Err(error: e) => {
+        return unit;
+      }
     }
-    Err(e) => { return unit; }
+    check ieq<i32>(v, 42_i32) else trap "arithmetic drift";
+    let sg: own Sign = sign_of(x: v);
+    match sg {
+      Neg() => {
+        return unit;
+      }
+      Zero() => {
+        return unit;
+      }
+      Pos() => {
+        check ieq<i32>(v, 42_i32) else trap "sign drift";
+      }
+    }
   }
   return unit;
 }

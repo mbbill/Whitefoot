@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""democ: demo compiler for a growing subset of kernel-spec v0.3.
-source -> parse -> ownership check (prototype checker) -> LLVM IR (-> native).
+"""democ: demo compiler for a growing subset of kernel-spec v0.6.
+source -> parse -> program check (type + ownership) -> LLVM IR (-> native).
 Subset: fns, own/&/&uniq i32 params, let/set/return, deref places, iadd.wrap/
-trap/checked, ieq/ilt comparisons, payloadless enums + builtin Bool/Result,
-match, check-else-trap, region stmts, doc fields, cross-fn calls, runnable main.
+trap/checked, ieq/ilt comparisons, enums + builtin Bool/Result, named
+construction K(field: atom), named match binders K(field: binder), named
+user-fn call args f(param: atom), give value-match, check-else-trap, region
+stmts, doc fields, cross-fn calls, runnable main.
 Temporary tool (owner ruling): endgame is a self-hosted compiler.
 """
 import re, sys, subprocess
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'checker'))
-from checker import check_fn, CheckError
+from checker import check_program, CheckError
 
 TOK = re.compile(r'"[^"]*"|\'[a-z][a-z0-9_]*|[0-9]+_i32|[0-9]+'
                  r'|[a-z][a-z0-9_]*(?:\.[a-z]+)?|[A-Z][A-Za-z0-9]*'
@@ -45,8 +47,9 @@ def parse_type(p):
 def parse_place(p):
     if p.peek() == 'deref':
         p.eat(); p.eat('('); inner = parse_place(p); p.eat(')')
-        return {"base": inner["base"], "path": inner["path"]}
-    return {"base": p.eat(), "path": []}
+        inner["deref"] = inner.get("deref", 0) + 1
+        return inner
+    return {"base": p.eat(), "path": [], "deref": 0}
 
 def parse_expr(p):
     t = p.peek()
@@ -55,32 +58,53 @@ def parse_expr(p):
         return {"e": "borrow", "uniq": uniq, "region": r, "place": parse_place(p)}
     if t == 'unit': p.eat(); return {"e": "unit"}
     if re.fullmatch(r'[0-9]+_i32', t): p.eat(); return {"e": "lit", "v": int(t.split('_')[0])}
-    if is_typeid(t):                                   # construct: Variant(args)
-        n = p.eat(); p.eat('('); args = []
+    if is_typeid(t):                                   # construct K(field: atom, ...) [GRAM-8]
+        n = p.eat(); p.eat('('); fields = []
         while p.peek() != ')':
-            args.append(parse_expr(p))
+            fname = p.eat(); p.eat(':'); atom = parse_expr(p)
+            fields.append({"name": fname, "atom": atom})
             if p.peek() == ',': p.eat()
-        p.eat(')'); return {"e": "construct", "n": n, "args": args}
-    if '.' in t or p.peek(1) == '<':                   # OPNAME<ty>(args); comparisons are dotless
-        op = p.eat(); p.eat('<'); parse_type(p); p.eat('>'); p.eat('(')
+        p.eat(')'); return {"e": "construct", "n": n, "fields": fields}
+    if '.' in t or p.peek(1) == '<':                   # OPNAME<ty>(atoms); positional [GRAM-11]
+        op = p.eat(); p.eat('<'); tyargs = [parse_type(p)]
+        while p.peek() == ',': p.eat(); tyargs.append(parse_type(p))
+        p.eat('>'); p.eat('(')
         args = [parse_expr(p)]
         while p.peek() == ',': p.eat(); args.append(parse_expr(p))
-        p.eat(')'); return {"e": "op", "op": op, "args": args}
-    if p.peek(1) == '(' and t not in ('deref', 'index'):   # user call f(args)
-        n = p.eat(); p.eat('('); args = []
+        p.eat(')'); return {"e": "op", "op": op, "args": args, "tyargs": tyargs}
+    if p.peek(1) == '(' and t not in ('deref', 'index'):   # user call f(param: atom, ...) [GRAM-11]
+        n = p.eat(); p.eat('('); args = []; argnames = []
         while p.peek() != ')':
-            args.append(parse_expr(p))
+            pname = p.eat(); p.eat(':'); atom = parse_expr(p)
+            argnames.append(pname); args.append(atom)
             if p.peek() == ',': p.eat()
-        p.eat(')'); return {"e": "ucall", "n": n, "args": args}
+        p.eat(')'); return {"e": "ucall", "n": n, "args": args, "argnames": argnames}
     return {"e": "place", "p": parse_place(p)}
+
+def parse_match(p):
+    p.eat('match'); scrut = parse_expr(p); p.eat('{'); arms = []
+    while p.peek() != '}':
+        vn = p.eat(); p.eat('('); binders = []
+        while p.peek() != ')':                         # K(field: binder, ...) [GRAM-10]
+            field = p.eat(); p.eat(':'); binder = p.eat()
+            binders.append({"field": field, "name": binder})
+            if p.peek() == ',': p.eat()
+        p.eat(')'); p.eat('=>'); p.eat('{'); body = []
+        while p.peek() != '}': body.append(parse_stmt(p))
+        p.eat('}'); arms.append({"v": vn, "b": binders, "body": body})
+    p.eat('}'); return {"s": "match", "scrut": scrut, "arms": arms}
 
 def parse_stmt(p):
     t = p.peek()
     if t == 'doc': p.eat(); p.eat(); p.eat(';'); return {"s": "doc"}
     if t == 'let':
-        p.eat(); n = p.eat(); p.eat(':'); m = parse_mode(p); ty = parse_type(p)
-        p.eat('='); e = parse_expr(p); p.eat(';')
+        p.eat(); n = p.eat(); p.eat(':'); m = parse_mode(p); ty = parse_type(p); p.eat('=')
+        if p.peek() == 'match':                        # value-match initializer [GIVE-1]
+            return {"s": "let", "n": n, "m": m, "ty": ty, "match": parse_match(p)}
+        e = parse_expr(p); p.eat(';')
         return {"s": "let", "n": n, "m": m, "ty": ty, "e": e}
+    if t == 'give':
+        p.eat(); e = parse_expr(p); p.eat(';'); return {"s": "give", "e": e}
     if t == 'set':
         p.eat(); pl = parse_place(p); p.eat('='); e = parse_expr(p); p.eat(';')
         return {"s": "set", "p": pl, "e": e}
@@ -100,16 +124,7 @@ def parse_stmt(p):
         p.eat(); e = parse_expr(p); p.eat('else'); p.eat('trap'); msg = p.eat(); p.eat(';')
         return {"s": "check", "e": e, "msg": msg.strip('"')}
     if t == 'match':
-        p.eat(); scrut = parse_expr(p); p.eat('{'); arms = []
-        while p.peek() != '}':
-            vn = p.eat(); p.eat('('); binders = []
-            while p.peek() != ')':
-                binders.append(p.eat())
-                if p.peek() == ',': p.eat()
-            p.eat(')'); p.eat('=>'); p.eat('{'); body = []
-            while p.peek() != '}': body.append(parse_stmt(p))
-            p.eat('}'); arms.append({"v": vn, "b": binders, "body": body})
-        p.eat('}'); return {"s": "match", "scrut": scrut, "arms": arms}
+        return parse_match(p)
     e = parse_expr(p); p.eat(';'); return {"s": "expr", "e": e}
 
 def parse_program(src):
@@ -118,12 +133,12 @@ def parse_program(src):
         if p.peek() == 'enum':
             p.eat(); name = p.eat(); p.eat('{'); vs = []
             while p.peek() != '}':
-                vn = p.eat(); p.eat('(')
-                nargs = 0
+                vn = p.eat(); p.eat('('); fields = []      # vfield := IDENT ":" type
                 while p.peek() != ')':
-                    parse_type(p); nargs += 1
+                    fname = p.eat(); p.eat(':'); fty = parse_type(p)
+                    fields.append({"name": fname, "ty": fty})
                     if p.peek() == ',': p.eat()
-                p.eat(')'); p.eat(';'); vs.append((vn, nargs))
+                p.eat(')'); p.eat(';'); vs.append((vn, fields))
             p.eat('}'); enums[name] = vs
         else:
             p.eat('fn'); name = p.eat(); regions = []
@@ -138,50 +153,91 @@ def parse_program(src):
                 pn = p.eat(); p.eat(':'); m = parse_mode(p); ty = parse_type(p)
                 params.append({"name": pn, "mode": m, "ty": ty})
                 if p.peek() == ',': p.eat()
-            p.eat(')'); p.eat('->'); parse_mode(p); rty = parse_type(p)
+            p.eat(')'); p.eat('->'); rmode = parse_mode(p); rty = parse_type(p)
             while p.peek() != '{': p.eat()             # effects blob (unvalidated: TODO EFF-2)
             p.eat('{'); body = []
             while p.peek() != '}': body.append(parse_stmt(p))
             p.eat('}')
-            fns.append({"name": name, "regions": regions, "params": params, "rty": rty, "body": body})
+            fns.append({"name": name, "regions": regions, "params": params,
+                        "rmode": rmode, "rty": rty, "body": body})
     return enums, fns
 
-# ---- ownership-checker mapping (match arms: isolated per T-B via checker match nodes) ----
-def cplace(pl): return {"base": pl["base"], "path": pl["path"]}
-def cexpr(e):
+# ---- v0.6 type-layer mapping: democ parse tree -> check_program `prog` dict ----
+PRIM_SET = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64"}
+def ttype(base):
+    if base in PRIM_SET: return {"kind": "prim", "name": base}
+    if base == "unit": return {"kind": "unit"}
+    if base in ("box", "buffer"): return {"kind": base, "elem": {"kind": "any"}}
+    if base in ("slice", "arena"): return {"kind": base, "region": None, "elem": {"kind": "any"}}
+    if base == "array": return {"kind": "array", "elem": {"kind": "any"}, "n": None}
+    return {"kind": "named", "name": base}
+def tplace(pl):
+    node = {"kind": "var", "name": pl["base"]}
+    for f in pl.get("path", []):
+        node = {"kind": "field", "place": node, "name": f}
+    for _ in range(pl.get("deref", 0)):
+        node = {"kind": "deref", "place": node}
+    return node
+def texpr(e):
     k = e["e"]
-    if k in ("lit", "unit"): return {"kind": "lit"}
-    if k == "place": return {"kind": "use", "place": cplace(e["p"])}
-    if k == "borrow": return {"kind": "borrow", "region": e["region"], "uniq": e["uniq"], "place": cplace(e["place"])}
-    return {"kind": "call", "args": [cexpr(a) for a in e.get("args", [])]}
-def cstmts(body):
-    out = []
-    for s in body:
-        if s["s"] == "doc": continue
-        if s["s"] == "let": out.append({"kind": "let", "name": s["n"], "mode": s["m"], "init": cexpr(s["e"])})
-        elif s["s"] == "set": out.append({"kind": "set", "place": cplace(s["p"]), "expr": cexpr(s["e"])})
-        elif s["s"] == "return": out.append({"kind": "return", "expr": cexpr(s["e"])})
-        elif s["s"] == "region": out.append({"kind": "region", "name": s["r"], "body": cstmts(s["body"])})
-        elif s["s"] == "loop": out.append({"kind": "loop", "label": s["l"], "body": cstmts(s["body"])})
-        elif s["s"] == "break": pass
-        elif s["s"] == "check": out.append({"kind": "expr", "expr": cexpr(s["e"])})
-        elif s["s"] == "match":
-            out.append({"kind": "match", "scrut": cexpr(s["scrut"]),
-                        "arms": [{"binders": a["b"], "body": cstmts(a["body"])}
-                                 for a in s["arms"]]})
-        else: out.append({"kind": "expr", "expr": cexpr(s["e"])})
-    return out
-def spec_check(f):
-    check_fn({"kind": "fn", "name": f["name"], "regions": f["regions"],
-              "params": [{"name": q["name"], "mode": q["mode"]} for q in f["params"]],
-              "body": cstmts(f["body"])})
+    if k == "lit": return {"kind": "lit", "ty": {"kind": "prim", "name": "i32"}}
+    if k == "unit": return {"kind": "lit", "ty": {"kind": "unit"}}
+    if k == "place": return {"kind": "use", "place": tplace(e["p"])}
+    if k == "borrow": return {"kind": "borrow", "region": e["region"], "uniq": e["uniq"],
+                              "place": tplace(e["place"])}
+    if k == "construct": return {"kind": "construct", "name": e["n"],
+        "fields": [{"name": f["name"], "atom": texpr(f["atom"])} for f in e["fields"]]}
+    if k == "ucall": return {"kind": "call", "callee": e["n"],
+        "args": [texpr(a) for a in e["args"]], "argnames": e["argnames"]}
+    if k == "op": return {"kind": "call", "callee": e["op"],
+        "args": [texpr(a) for a in e["args"]], "argnames": None,
+        "tyargs": [ttype(t) for t in e["tyargs"]]}
+    raise SystemExit(f"democ: cannot map expr {k}")
+def tmatch(m):
+    return {"kind": "match", "scrut": texpr(m["scrut"]),
+            "arms": [{"variant": a["v"],
+                      "binders": [{"field": b["field"], "name": b["name"]} for b in a["b"]],
+                      "body": tstmts(a["body"])} for a in m["arms"]]}
+def tstmt(s):
+    k = s["s"]
+    if k == "doc": return None
+    if k == "let":
+        init = tmatch(s["match"]) if "match" in s else texpr(s["e"])
+        return {"kind": "let", "name": s["n"], "mode": s["m"], "ty": ttype(s["ty"]), "init": init}
+    if k == "set": return {"kind": "set", "place": tplace(s["p"]), "expr": texpr(s["e"])}
+    if k == "return": return {"kind": "return", "expr": texpr(s["e"])}
+    if k == "region": return {"kind": "region", "name": s["r"], "body": tstmts(s["body"])}
+    if k == "loop": return {"kind": "loop", "label": s["l"], "body": tstmts(s["body"])}
+    if k == "break": return {"kind": "break"}
+    if k == "check": return {"kind": "check", "expr": texpr(s["e"])}
+    if k == "match": return tmatch(s)
+    if k == "give": return {"kind": "give", "expr": texpr(s["e"])}
+    if k == "expr": return {"kind": "expr", "expr": texpr(s["e"])}
+    raise SystemExit(f"democ: cannot map stmt {k}")
+def tstmts(body):
+    return [x for x in (tstmt(s) for s in body) if x is not None]
+def build_prog(enums, fns):
+    prog = {"structs": {}, "enums": {}, "fns": {}}
+    for en, vs in enums.items():
+        prog["enums"][en] = [{"variant": vn,
+            "fields": [{"name": f["name"], "ty": ttype(f["ty"])} for f in flds]}
+            for (vn, flds) in vs]
+    for f in fns:
+        prog["fns"][f["name"]] = {
+            "regions": f["regions"],
+            "params": [{"name": q["name"], "mode": q["mode"], "ty": ttype(q["ty"])}
+                       for q in f["params"]],
+            "rmode": f["rmode"], "rty": ttype(f["rty"]),
+            "body": tstmts(f["body"]),
+        }
+    return prog
 
 # ---- LLVM IR ----
 class Gen:
     def __init__(g, f, enums, alias=True):
         g.f = f; g.enums = enums; g.alias = alias
         g.n = 0; g.lines = []; g.env = {}; g.traps = False; g.term = False
-        g.loopstk = []
+        g.loopstk = []; g.give_slot = None
     def tmp(g): g.n += 1; return f"%t{g.n}"
     def lbl(g): g.n += 1; return f"L{g.n}"
     def emit(g, s): g.lines.append(s)
@@ -199,11 +255,18 @@ class Gen:
             if v["k"] in ("ptr", "slot"):
                 t = g.tmp(); g.emit(f"  {t} = load i32, ptr {v['v']}"); return {"k": "i32", "v": t}
             return v
+        if k == "borrow":                              # &'r p / &uniq 'r p -> pointer to place
+            src = g.env[e["place"]["base"]]
+            if src["k"] in ("slot", "ptr"):
+                return {"k": "ptr", "v": src["v"]}
+            slot = g.tmp(); g.emit(f"  {slot} = alloca i32")   # spill own SSA to make addressable
+            g.emit(f"  store i32 {src['v']}, ptr {slot}")
+            return {"k": "ptr", "v": slot}
         if k == "construct":
-            n = e["n"]
+            n = e["n"]; flds = e["fields"]
             if n == "True": return {"k": "i1", "v": "true"}
             if n == "False": return {"k": "i1", "v": "false"}
-            if n == "Ok": a = g.expr(e["args"][0]); return {"k": "pair", "tag": "false", "val": a["v"]}
+            if n == "Ok": a = g.expr(flds[0]["atom"]); return {"k": "pair", "tag": "false", "val": a["v"]}
             if n == "Err": return {"k": "pair", "tag": "true", "val": "0"}
             return {"k": "i32", "v": str(g.vtag(n))}
         if k == "ucall":
@@ -248,12 +311,22 @@ class Gen:
             k = s["s"]
             if k == "doc": continue
             if k == "let":
+                if "match" in s:                       # value-match with give [GIVE-1]
+                    slot = g.tmp(); g.emit(f"  {slot} = alloca i32")
+                    prev = g.give_slot; g.give_slot = slot
+                    g.gen_match(s["match"])
+                    g.give_slot = prev
+                    g.env[s["n"]] = {"k": "slot", "v": slot}
+                    continue
                 v = g.expr(s["e"])
                 if v["k"] == "i32":
                     slot = g.tmp(); g.emit(f"  {slot} = alloca i32")
                     g.emit(f"  store i32 {v['v']}, ptr {slot}")
                     g.env[s["n"]] = {"k": "slot", "v": slot}
                 else: g.env[s["n"]] = v
+            elif k == "give":
+                v = g.expr(s["e"])
+                g.emit(f"  store i32 {v['v']}, ptr {g.give_slot}")
             elif k == "set":
                 v = g.expr(s["e"]); tgt = g.env[s["p"]["base"]]
                 assert tgt["k"] in ("ptr", "slot"), "set target must be param ptr or own local"
@@ -283,47 +356,49 @@ class Gen:
                 g.emit(f"  br i1 {c['v']}, label %{l}, label %trap")
                 g.emit(f"{l}:")
             elif k == "match":
-                sc = g.expr(s["scrut"])
-                have = {a["v"] for a in s["arms"]}
-                need = ({"True", "False"} if sc["k"] == "i1" else
-                        {"Ok", "Err"} if sc["k"] == "pair" else
-                        {vn for en, vs in g.enums.items() for (vn, _) in vs
-                         if g.vtag(s["arms"][0]["v"]) is not None
-                         and any(v2[0] == s["arms"][0]["v"] for v2 in vs)})
-                if have != need:
-                    raise CheckError("ERR-2",
-                        f"non-exhaustive match: have {sorted(have)}, need {sorted(need)}")
-                done = g.lbl(); any_open = False
-                if sc["k"] == "i1":
-                    lt, lf = g.lbl(), g.lbl()
-                    g.emit(f"  br i1 {sc['v']}, label %{lt}, label %{lf}")
-                    for a in s["arms"]:
-                        l = lt if a["v"] == "True" else lf
-                        g.emit(f"{l}:"); g.term = False; g.stmts(a["body"])
-                        if not g.term: g.emit(f"  br label %{done}"); any_open = True
-                elif sc["k"] == "pair":
-                    lo, le = g.lbl(), g.lbl()
-                    g.emit(f"  br i1 {sc['tag']}, label %{le}, label %{lo}")
-                    for a in s["arms"]:
-                        l = lo if a["v"] == "Ok" else le
-                        g.emit(f"{l}:"); g.term = False
-                        if a["b"]:
-                            g.env[a["b"][0]] = {"k": "i32", "v": sc["val"] if a["v"] == "Ok" else "0"}
-                        g.stmts(a["body"])
-                        if not g.term: g.emit(f"  br label %{done}"); any_open = True
-                else:
-                    nxt = None
-                    for a in s["arms"]:
-                        if nxt: g.emit(f"{nxt}:")
-                        tag = g.vtag(a["v"]); la = g.lbl(); nxt = g.lbl()
-                        c = g.tmp(); g.emit(f"  {c} = icmp eq i32 {sc['v']}, {tag}")
-                        g.emit(f"  br i1 {c}, label %{la}, label %{nxt}")
-                        g.emit(f"{la}:"); g.term = False; g.stmts(a["body"])
-                        if not g.term: g.emit(f"  br label %{done}"); any_open = True
-                    g.emit(f"{nxt}:"); g.emit("  unreachable")   # exhaustive [ERR-2]
-                g.term = not any_open
-                if any_open: g.emit(f"{done}:")
+                g.gen_match(s)
             else: g.expr(s["e"])
+    def gen_match(g, s):
+        sc = g.expr(s["scrut"])
+        have = {a["v"] for a in s["arms"]}
+        need = ({"True", "False"} if sc["k"] == "i1" else
+                {"Ok", "Err"} if sc["k"] == "pair" else
+                {vn for en, vs in g.enums.items() for (vn, _) in vs
+                 if g.vtag(s["arms"][0]["v"]) is not None
+                 and any(v2[0] == s["arms"][0]["v"] for v2 in vs)})
+        if have != need:
+            raise CheckError("ERR-2",
+                f"non-exhaustive match: have {sorted(have)}, need {sorted(need)}")
+        done = g.lbl(); any_open = False
+        if sc["k"] == "i1":
+            lt, lf = g.lbl(), g.lbl()
+            g.emit(f"  br i1 {sc['v']}, label %{lt}, label %{lf}")
+            for a in s["arms"]:
+                l = lt if a["v"] == "True" else lf
+                g.emit(f"{l}:"); g.term = False; g.stmts(a["body"])
+                if not g.term: g.emit(f"  br label %{done}"); any_open = True
+        elif sc["k"] == "pair":
+            lo, le = g.lbl(), g.lbl()
+            g.emit(f"  br i1 {sc['tag']}, label %{le}, label %{lo}")
+            for a in s["arms"]:
+                l = lo if a["v"] == "Ok" else le
+                g.emit(f"{l}:"); g.term = False
+                if a["b"]:
+                    g.env[a["b"][0]["name"]] = {"k": "i32", "v": sc["val"] if a["v"] == "Ok" else "0"}
+                g.stmts(a["body"])
+                if not g.term: g.emit(f"  br label %{done}"); any_open = True
+        else:
+            nxt = None
+            for a in s["arms"]:
+                if nxt: g.emit(f"{nxt}:")
+                tag = g.vtag(a["v"]); la = g.lbl(); nxt = g.lbl()
+                c = g.tmp(); g.emit(f"  {c} = icmp eq i32 {sc['v']}, {tag}")
+                g.emit(f"  br i1 {c}, label %{la}, label %{nxt}")
+                g.emit(f"{la}:"); g.term = False; g.stmts(a["body"])
+                if not g.term: g.emit(f"  br label %{done}"); any_open = True
+            g.emit(f"{nxt}:"); g.emit("  unreachable")   # exhaustive [ERR-2]
+        g.term = not any_open
+        if any_open: g.emit(f"{done}:")
     def run(g):
         ps = []
         for q in g.f["params"]:
@@ -344,7 +419,7 @@ class Gen:
 
 def compile_program(src, alias=True):
     enums, fns = parse_program(src)
-    for f in fns: spec_check(f)
+    check_program(build_prog(enums, fns))
     ir = [f"declare {{i32, i1}} @llvm.{n}.with.overflow.i32(i32, i32)" for n in ("sadd","ssub","smul")] + ["declare void @llvm.trap()", ""]
     for f in fns: ir.append(Gen(f, enums, alias).run())
     return "\n".join(ir)
