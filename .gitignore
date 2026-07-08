@@ -9,3 +9,7 @@ prototype/democ/examples/ex2
 .DS_Store
 __pycache__/
 *.pyc
+
+# conformance: artifacts from running democ directly on a case (the runner uses a tempdir)
+conformance/cases/*.ll
+conformance/cases/*.s
