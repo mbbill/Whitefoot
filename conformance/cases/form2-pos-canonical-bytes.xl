@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "Byte-level formatting: two-space indent, canonical spacing [FORM-2].";
   let a: own i32 = 1_i32;
   return unit;

@@ -1,4 +1,4 @@
-fn sumto (n: own i32) -> own i32 pure {
+fn sumto (n: own i32) -> own i32 traps {
   doc "Recursion is permitted [FN-6].";
   match ieq<i32>(n, 0_i32) {
     True() => {

@@ -1,6 +1,6 @@
 enum Op { Inc(); Dec(); }
 
-fn apply (op: own Op, x: own i32) -> own i32 pure {
+fn apply (op: own Op, x: own i32) -> own i32 traps {
   doc "Closed-set dispatch is match, not a function value [FN-5].";
   match op {
     Inc() => {

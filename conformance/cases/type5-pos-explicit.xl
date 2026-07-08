@@ -1,4 +1,4 @@
-fn addk (x: own i32) -> own i32 pure {
+fn addk (x: own i32) -> own i32 traps {
   return iadd.trap<i32>(x, 1_i32);
 }
 

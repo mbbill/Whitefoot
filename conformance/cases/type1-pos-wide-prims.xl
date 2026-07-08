@@ -3,6 +3,6 @@ fn widths (a: own i8, b: own i64, c: own u32, d: own f64) -> own unit pure {
   return unit;
 }
 
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   return unit;
 }

@@ -5,6 +5,6 @@ fn paint ['r] (x: &'r i32, y: &uniq 'r i32) -> own Color pure {
   return Red();
 }
 
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   return unit;
 }

@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "GRAM-10: a misspelled binder field name is a hard error citing GRAM-10.";
   let a: own i32 = 40_i32;
   let v: own i32 = match iadd.checked<i32>(a, 2_i32) {

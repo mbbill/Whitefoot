@@ -1,6 +1,6 @@
 enum Sign { Neg(); Zero(); Pos(); }
 
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "A bare use of an affine value must be rejected [OWN-1] (write move). KNOWN GAP.";
   let a: own Sign = Neg();
   let b: own Sign = a;

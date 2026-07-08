@@ -780,6 +780,145 @@ class TypeChecker:
                     f"(declared order {[x['name'] for x in declared]})")
 
 
+EFF_RANK = {"reads": 0, "writes": 1, "allocates": 2, "traps": 3}
+
+
+def _parse_effect_row(toks, fnname):
+    """Validate an effect row [EFF-1]; return (kinds set, declares_traps)."""
+    if toks == ["pure"]:
+        return set(), False
+    if not toks:
+        raise CheckError("EFF-1", f"{fnname}: empty effect row; use 'pure'")
+    if "pure" in toks:
+        raise CheckError("EFF-1", f"{fnname}: 'pure' is the empty row; it cannot combine with effects")
+    kinds, i, n = [], 0, len(toks)
+    while i < n:
+        k = toks[i]
+        if k not in EFF_RANK:
+            raise CheckError("EFF-1", f"{fnname}: unknown effect '{k}' (reads/writes/allocates/traps)")
+        kinds.append(k); i += 1
+        if k in ("reads", "writes"):
+            if i >= n or toks[i] != "(":
+                raise CheckError("EFF-1", f"{fnname}: {k} needs (REGIONID+)")
+            i += 1; cnt = 0
+            while i < n and toks[i] != ")":
+                if not toks[i].startswith("'"):
+                    raise CheckError("EFF-1", f"{fnname}: {k} takes regions")
+                cnt += 1; i += 1
+            if i >= n or cnt == 0:
+                raise CheckError("EFF-1", f"{fnname}: {k} needs (REGIONID+)")
+            i += 1
+        elif k == "allocates":
+            if i >= n or toks[i] != "(":
+                raise CheckError("EFF-1", f"{fnname}: allocates needs (heap|arena REGIONID)+")
+            i += 1; cnt = 0
+            while i < n and toks[i] != ")":
+                if toks[i] == "heap":
+                    i += 1; cnt += 1
+                elif toks[i] == "arena":
+                    i += 1
+                    if i >= n or not toks[i].startswith("'"):
+                        raise CheckError("EFF-1", f"{fnname}: arena needs a REGIONID")
+                    i += 1; cnt += 1
+                else:
+                    raise CheckError("EFF-1", f"{fnname}: allocates takes heap or arena REGIONID")
+            if i >= n or cnt == 0:
+                raise CheckError("EFF-1", f"{fnname}: allocates needs (heap|arena REGIONID)+")
+            i += 1
+        if i < n:
+            if toks[i] != ",":
+                raise CheckError("EFF-1", f"{fnname}: expected ',' between effects, got '{toks[i]}'")
+            i += 1
+            if i >= n:
+                raise CheckError("EFF-1", f"{fnname}: trailing ',' in effect row")
+    ranks = [EFF_RANK[k] for k in kinds]
+    if ranks != sorted(ranks) or len(set(kinds)) != len(kinds):
+        raise CheckError("EFF-1",
+            f"{fnname}: effect row not in canonical order reads<writes<allocates<traps ({kinds})")
+    return set(kinds), ("traps" in kinds)
+
+
+def _exhibits_traps(fn, declared_traps):
+    """EFF-2: does the body exhibit traps? (.trap op, check, bounds-checked index,
+    or a call to a fn/op whose declared row includes traps)."""
+    hit = [False]
+
+    def place(p):
+        if isinstance(p, dict) and not hit[0]:
+            if p.get("kind") == "index":
+                hit[0] = True
+            if "place" in p:
+                place(p["place"])
+
+    def expr(e):
+        if not isinstance(e, dict) or hit[0]:
+            return
+        k = e.get("kind")
+        if k == "call":
+            c = e.get("callee", "")
+            if isinstance(c, str) and (c.endswith(".trap") or declared_traps.get(c)):
+                hit[0] = True
+            for a in e.get("args", []):
+                expr(a)
+        elif k == "construct":
+            for f in e.get("fields", []):
+                expr(f["atom"])
+        elif k in ("use", "move", "borrow"):
+            place(e.get("place"))
+
+    def match(m):
+        expr(m.get("scrut"))
+        for arm in m.get("arms", []):
+            for s in arm.get("body", []):
+                stmt(s)
+
+    def stmt(s):
+        if hit[0]:
+            return
+        k = s.get("kind")
+        if k == "check":
+            hit[0] = True
+        elif k == "let":
+            init = s.get("init")
+            if isinstance(init, dict) and init.get("kind") == "match":
+                match(init)
+            else:
+                expr(init)
+        elif k == "match":
+            match(s)
+        elif k in ("return", "give", "expr"):
+            expr(s.get("expr"))
+        elif k == "set":
+            place(s.get("place")); expr(s.get("expr"))
+        elif k in ("region", "loop"):
+            for b in s.get("body", []):
+                stmt(b)
+
+    for s in fn["body"]:
+        stmt(s)
+    return hit[0]
+
+
+def check_effects(prog):
+    """EFF-1 (row grammar/order) + EFF-2 (declared-vs-exhibited traps). No-op for a
+    harness that omits effect rows (e.g. the ownership-only test AST)."""
+    fns = prog["fns"]
+    declared_traps = {}
+    for name, fn in fns.items():
+        declared_traps[name] = (_parse_effect_row(fn["effects"], name)[1]
+                                if "effects" in fn else False)
+    for name, fn in fns.items():
+        if "effects" not in fn:
+            continue
+        ex = _exhibits_traps(fn, declared_traps)
+        if ex and not declared_traps[name]:
+            raise CheckError("EFF-2",
+                f"{name}: body exhibits traps but the row omits it (undeclared-but-exhibited)")
+        if declared_traps[name] and not ex:
+            raise CheckError("EFF-2",
+                f"{name}: row declares traps but the body does not exhibit it (declared-but-unexhibited)")
+
+
 def check_program(prog: dict):
     """Type layer + ownership over a whole program.
 
@@ -793,3 +932,4 @@ def check_program(prog: dict):
     for name, fn in prog["fns"].items():
         TypeChecker(fn, P).check()             # GRAM-8/10/11, TYPE-5/6/7, GIVE-1
         Checker(fn).check()                    # OWN-1..13 (reused machinery)
+    check_effects(prog)                        # EFF-1 row order, EFF-2 traps exhibits

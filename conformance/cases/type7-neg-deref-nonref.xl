@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "deref of a non-reference value is malformed [TYPE-7].";
   let a: own i32 = 42_i32;
   let v: own i32 = deref(a);

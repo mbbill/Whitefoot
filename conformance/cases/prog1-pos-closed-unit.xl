@@ -1,4 +1,4 @@
-fn helper (x: own i32) -> own i32 pure {
+fn helper (x: own i32) -> own i32 traps {
   doc "In-unit helper; every callee name is defined within this compilation unit.";
   return iadd.trap<i32>(x, 1_i32);
 }

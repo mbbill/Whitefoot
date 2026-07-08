@@ -1,4 +1,4 @@
-fn add (x: own i32, y: own i32) -> own i32 pure {
+fn add (x: own i32, y: own i32) -> own i32 traps {
   doc "A full signature states param modes/types and return mode/type [FN-1].";
   return iadd.trap<i32>(x, y);
 }

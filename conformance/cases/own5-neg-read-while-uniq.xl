@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "OWN-5: reading a place while a &uniq borrow of it is live is rejected.";
   let a: own i32 = 3_i32;
   region 'r {

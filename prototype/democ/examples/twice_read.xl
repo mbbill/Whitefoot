@@ -1,4 +1,4 @@
-fn twice_read ['r0] (a: &'r0 i32, b: &uniq 'r0 i32) -> own i32 writes {
+fn twice_read ['r0] (a: &'r0 i32, b: &uniq 'r0 i32) -> own i32 reads('r0), writes('r0), traps {
   set deref(b) = iadd.trap<i32>(deref(a), 1_i32);
   let s: own i32 = iadd.wrap<i32>(deref(a), deref(a));
   return s;

@@ -2,7 +2,7 @@ fn bump ['r] (n: &uniq 'r i32) -> own unit pure {
   return unit;
 }
 
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "OWN-6: an unbound borrow is a call-scoped temporary, dead at statement end.";
   let a: own i32 = 5_i32;
   region 'r {

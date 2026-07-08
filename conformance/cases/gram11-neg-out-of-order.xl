@@ -2,7 +2,7 @@ fn sub2 (x: own i32, y: own i32) -> own i32 pure {
   return isub.wrap<i32>(x, y);
 }
 
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "GRAM-11: arguments out of declared order are rejected; declared order is the one legal byte sequence.";
   let r: own i32 = sub2(y: 2_i32, x: 40_i32);
   return unit;

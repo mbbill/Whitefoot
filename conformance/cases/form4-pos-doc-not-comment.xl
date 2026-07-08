@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "There are no comments; documentation is the doc field [FORM-4].";
   return unit;
 }

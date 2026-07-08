@@ -187,12 +187,13 @@ def parse_program(src):
                 params.append({"name": pn, "mode": m, "ty": ty})
                 if p.peek() == ',': p.eat()
             p.eat(')'); p.eat('->'); rmode = parse_mode(p); rty = parse_type(p)
-            while p.peek() != '{': p.eat()             # effects blob (unvalidated: TODO EFF-2)
+            eff = []
+            while p.peek() != '{': eff.append(p.eat())   # effect row [EFF-1/EFF-2]
             p.eat('{'); body = []
             while p.peek() != '}': body.append(parse_stmt(p))
             p.eat('}')
             fns.append({"name": name, "regions": regions, "params": params,
-                        "rmode": rmode, "rty": rty, "body": body})
+                        "rmode": rmode, "rty": rty, "effects": eff, "body": body})
     return enums, fns
 
 # ---- v0.6 type-layer mapping: democ parse tree -> check_program `prog` dict ----
@@ -263,6 +264,7 @@ def build_prog(enums, fns):
             "params": [{"name": q["name"], "mode": q["mode"], "ty": ttype(q["ty"])}
                        for q in f["params"]],
             "rmode": f["rmode"], "rty": ttype(f["rty"]),
+            "effects": f.get("effects", []),
             "body": tstmts(f["body"]),
         }
     return prog

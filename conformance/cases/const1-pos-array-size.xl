@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "A decimal literal is a constant-expression for an array<T, N> size [CONST-1].";
   let xs: own array<i32, 4> = array_new<i32, 4>(0_i32);
   return unit;

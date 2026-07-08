@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main () -> own unit pure {
   doc "Using a borrow where a value is expected, without deref, is forbidden [TYPE-7/TYPE-5].";
   let a: own i32 = 1_i32;
   region 'r {
