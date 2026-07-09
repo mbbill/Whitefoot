@@ -102,7 +102,7 @@ Grounding: XL-specific x-factors and the "scatter is the lone structural win, no
 # Prior-art surveys (primary evidence, verbatim)
 
 
-## Prior-art survey: dpj-effects (Deterministic Parallel Java + effect-system lineage)
+## Prior-art survey: region-parallel-langs (Regent/Legion, Chapel, X10)
 
 # Survey Cluster: region-parallel-langs — AUTO vs MANUAL parallelism
 
