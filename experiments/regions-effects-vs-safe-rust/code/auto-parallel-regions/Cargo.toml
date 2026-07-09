@@ -1,0 +1,17 @@
+[package]
+name = "auto_parallel_regions"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.12"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[[bin]]
+name = "bench"
+path = "src/main.rs"

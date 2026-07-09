@@ -1,0 +1,22 @@
+[package]
+name = "region-bulk-free"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bumpalo = "3"
+typed-arena = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[[bin]]
+name = "bench"
+path = "bench.rs"
+
+[[bin]]
+name = "free_isolate"
+path = "free_isolate.rs"
