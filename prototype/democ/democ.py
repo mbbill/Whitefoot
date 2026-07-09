@@ -11,7 +11,7 @@ Temporary tool (owner ruling): endgame is a self-hosted compiler.
 import re, sys, subprocess
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'checker'))
-from checker import check_program, CheckError
+from checker import check_program, CheckError, PRELUDE_ENUMS
 
 TOK = re.compile(r'"[^"]*"|\'[a-z][a-z0-9_]*'
                  r'|[0-9]+_(?:i8|i16|i32|i64|u8|u16|u32|u64)|[0-9]+'
@@ -367,6 +367,18 @@ def build_prog(structs, enums, fns):
 # ---- LLVM IR ----
 INT_LL = {"i8", "i16", "i32", "i64"}            # the LLVM integer types democ emits
 
+def _enum_payw(variants):
+    """Widest payload (bits) across an enum's variants; 0 => tag-only enum.
+    A payload-carrying enum lowers to { i32 tag, i<payw> payload }: one word-sized
+    slot sized to hold any variant's payload, narrower payloads zext/trunc in/out
+    [word-sized copy payloads]. Multi-field or non-int-field variants only occur in
+    checker-rejected programs (never reach codegen)."""
+    best = 0
+    for _vn, flds in variants:
+        w = sum(1 if f["ty"] == "Bool" else INT_WIDTH.get(f["ty"], 32) for f in flds)
+        best = max(best, w)
+    return best
+
 def _field_ll(tyname, structs):
     """LLVM type for a struct field: int width, i1 for Bool, %Sub for a nested struct,
     i32 for an enum tag (the democ enum representation)."""
@@ -383,8 +395,40 @@ class Gen:
         g.n = 0; g.lines = []; g.env = {}; g.traps = False; g.term = False
         g.loopstk = []; g.give_slot = None; g.give_ty = "i32"
         g.prologue = []                # entry-block setup (own struct params spilled to a slot)
-    def llty(g, name):                             # struct-aware LLVM type name
-        return ("%" + name) if name in g.structs else _llty(name)
+        # payload-carrying enums lower to a named aggregate %E = { i32, i<payw> }
+        g.payenums = {en for en, vs in g.enums.items() if _enum_payw(vs) > 0}
+        # global variant registry over prelude + user enums (TYPE-6 => names unique):
+        # variant -> (enum, tag index); enum -> [variant, ...]. This is the single
+        # dispatch table that subsumes Ok/Err, Some/None and user variants alike.
+        g.venum, g.evariants = {}, {}
+        def _reg(en, names):
+            g.evariants[en] = list(names)
+            for i, vn in enumerate(names):
+                g.venum[vn] = (en, i)
+        for en, vs in PRELUDE_ENUMS.items():
+            _reg(en, [v["variant"] for v in vs])
+        for en, vs in g.enums.items():
+            _reg(en, [vn for vn, _ in vs])
+    def llty(g, name):                             # struct/enum-aware LLVM type name
+        return ("%" + name) if (name in g.structs or name in g.payenums) else _llty(name)
+    def enum_payll(g, en):                         # LLVM type of the payload word of enum en
+        return "i" + str(_enum_payw(g.enums[en]))
+    def variant_field_ll(g, en, variant):          # (LLVM type, signed) of a variant's payload field
+        for vn, flds in g.enums[en]:
+            if vn == variant and flds:
+                return _field_ll(flds[0]["ty"], g.structs), _is_signed(flds[0]["ty"])
+        return g.enum_payll(en), True
+    def coerce_int(g, val, src_ll, dst_ll):        # bit-preserving zext/trunc between int widths
+        if src_ll == dst_ll:
+            return val
+        op = "zext" if int(dst_ll[1:]) > int(src_ll[1:]) else "trunc"
+        t = g.tmp(); g.emit(f"  {t} = {op} {src_ll} {val} to {dst_ll}")
+        return t
+    def load_enum(g, x):                           # materialize an SSA aggregate from an enum value
+        if x.get("slot"):
+            t = g.tmp(); g.emit(f"  {t} = load %{x['en']}, ptr {x['v']}")
+            return t
+        return x["v"]
     def field_info(g, sname, fname):               # (index, LLVM type, signed, sub-struct-or-None)
         for i, fld in enumerate(g.structs[sname]):
             if fld["name"] == fname:
@@ -425,6 +469,7 @@ class Gen:
         if x["k"] in INT_LL: return x["k"]
         if x["k"] in ("ptr", "slot"): return "ptr"
         if x["k"] == "struct": return "%" + x["st"]
+        if x["k"] == "enum": return "%" + x["en"]
         return x["k"]
     def expr(g, e):
         k = e["e"]
@@ -440,32 +485,57 @@ class Gen:
                 t = g.tmp(); g.emit(f"  {t} = load {fll}, ptr {ptr}")
                 return {"k": fll, "v": t, "signed": fsigned}
             v = g.env[pl["base"]]
-            if v["k"] == "struct":                     # whole-struct use stays an addressable slot
+            if v["k"] in ("struct", "enum"):           # whole aggregate use stays an addressable slot
                 return v
             if v["k"] in ("ptr", "slot"):
+                if v.get("en"):                        # &'r E: reading/deref yields the enum aggregate
+                    return {"k": "enum", "v": v["v"], "en": v["en"], "slot": True}
                 ty = v.get("ty", "i32")
                 t = g.tmp(); g.emit(f"  {t} = load {ty}, ptr {v['v']}")
                 return {"k": ty, "v": t, "signed": v.get("signed", True)}
             return v
         if k == "borrow":                              # &'r p / &uniq 'r p -> pointer to place
             src = g.env[e["place"]["base"]]
+            if src["k"] == "enum":                     # borrow of an own enum local: ptr to its slot
+                return {"k": "ptr", "v": src["v"], "ty": "%" + src["en"], "en": src["en"]}
             if src["k"] in ("slot", "ptr"):
                 return {"k": "ptr", "v": src["v"], "ty": src.get("ty", "i32"),
-                        "signed": src.get("signed", True)}
+                        "signed": src.get("signed", True), "en": src.get("en")}
             ty = src["k"] if src["k"] in INT_LL else "i32"
             slot = g.tmp(); g.emit(f"  {slot} = alloca {ty}")   # spill own SSA to make addressable
             g.emit(f"  store {ty} {src['v']}, ptr {slot}")
             return {"k": "ptr", "v": slot, "ty": ty, "signed": src.get("signed", True)}
         if k == "construct":
             n = e["n"]; flds = e["fields"]
+            # Bool is the degenerate 2-variant tag-only enum, lowered to i1 (its tag IS
+            # the value); True/False are its nullary constructors.
             if n == "True": return {"k": "i1", "v": "true"}
             if n == "False": return {"k": "i1", "v": "false"}
-            if n == "Ok":
-                a = g.expr(flds[0]["atom"])
-                return {"k": "pair", "tag": "false", "val": a["v"],
-                        "vty": a["k"] if a["k"] in INT_LL else "i32",
-                        "vsigned": a.get("signed", True)}
-            if n == "Err": return {"k": "pair", "tag": "true", "val": "0", "vty": "i32", "vsigned": True}
+            # Prelude Option/Result are enums with one word-sized (type-erased) payload.
+            # A directly-constructed variant is an SSA enum value {tag, payload}; the tag
+            # index comes from the same registry as user enums [PRE-1].
+            if n in ("Ok", "Some"):
+                a = g.expr(flds[0]["atom"]); idx = g.venum[n][1]
+                return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": a["v"],
+                        "pty": a["k"] if a["k"] in INT_LL else "i32",
+                        "psigned": a.get("signed", True), "payidx": idx, "en": g.venum[n][0]}
+            if n in ("Err", "None"):
+                idx = g.venum[n][1]
+                return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": "0", "pty": "i32",
+                        "psigned": True, "payidx": idx, "en": g.venum[n][0]}
+            en, _idx = g.venum.get(n, (None, None))
+            if en in g.payenums:                       # payload enum: build {i32 tag, iN payload} [GRAM-8]
+                payll = g.enum_payll(en)
+                slot = g.tmp(); g.emit(f"  {slot} = alloca %{en}")
+                tp = g.tmp(); g.emit(f"  {tp} = getelementptr %{en}, ptr {slot}, i32 0, i32 0")
+                g.emit(f"  store i32 {g.vtag(n)}, ptr {tp}")
+                pp = g.tmp(); g.emit(f"  {pp} = getelementptr %{en}, ptr {slot}, i32 0, i32 1")
+                if flds:                               # payload variant: coerce the field into the word
+                    fv = g.expr(flds[0]["atom"]); stored = g.coerce_int(fv["v"], fv["k"], payll)
+                else:                                  # nullary variant of a payload enum: zero the word
+                    stored = "0"
+                g.emit(f"  store {payll} {stored}, ptr {pp}")
+                return {"k": "enum", "v": slot, "en": en, "slot": True}
             if n in g.structs:                         # struct construct: alloca + store each field [GRAM-8]
                 slot = g.tmp(); g.emit(f"  {slot} = alloca %{n}")
                 for fld in flds:
@@ -481,15 +551,21 @@ class Gen:
             return {"k": "i32", "v": str(g.vtag(n)), "signed": True}
         if k == "ucall":
             args = [g.expr(a) for a in e["args"]]
-            args = [({"k": "struct", "st": x["st"], "v": g.load_struct(x)}   # pass structs by value
-                     if x["k"] == "struct" else x) for x in args]
+            def _passarg(x):                           # pass aggregates (struct/enum) by value
+                if x["k"] == "struct": return {"k": "struct", "st": x["st"], "v": g.load_struct(x)}
+                if x["k"] == "enum": return {"k": "enum", "en": x["en"], "v": g.load_enum(x)}
+                return x
+            args = [_passarg(x) for x in args]
             ret = g.fnret.get(e["n"], "i32")
             argll = ', '.join(f"{g.argty(x)} {x['v']}" for x in args)
             if ret == "void":
                 g.emit(f"  call void @{e['n']}({argll})"); return {"k": "unit"}
             t = g.tmp(); g.emit(f"  {t} = call {ret} @{e['n']}({argll})")
-            if ret.startswith("%"):                    # struct return: an SSA aggregate value
-                return {"k": "struct", "v": t, "st": ret[1:], "slot": False}
+            if ret.startswith("%"):                    # aggregate return: an SSA aggregate value
+                nm = ret[1:]
+                if nm in g.payenums:
+                    return {"k": "enum", "v": t, "en": nm, "slot": False}
+                return {"k": "struct", "v": t, "st": nm, "slot": False}
             return {"k": ret, "v": t, "signed": True}
         return g.op(e)
     def op(g, e):
@@ -507,7 +583,9 @@ class Gen:
             p_ = g.tmp(); g.emit(f"  {p_} = call {{{w}, i1}} @llvm.{iv}.with.overflow.{w}({w} {a[0]['v']}, {w} {a[1]['v']})")
             v = g.tmp(); g.emit(f"  {v} = extractvalue {{{w}, i1}} {p_}, 0")
             o = g.tmp(); g.emit(f"  {o} = extractvalue {{{w}, i1}} {p_}, 1")
-            if mode == "checked": return {"k": "pair", "tag": o, "val": v, "vty": w, "vsigned": signed}
+            if mode == "checked":                      # Result<T, Overflow> as an SSA enum: tag i1 (Ok=0/Err=1)
+                return {"k": "enumv", "tag": o, "tty": "i1", "pay": v, "pty": w,
+                        "psigned": signed, "payidx": 0, "en": "Result"}
             l = g.lbl(); g.emit(f"  br i1 {o}, label %trap, label %{l}"); g.emit(f"{l}:")
             return {"k": w, "v": v, "signed": signed}
         if base in ("idiv", "irem"):                   # trap on zero divisor + signed MIN/-1 [OP-2]
@@ -532,7 +610,8 @@ class Gen:
                 err = g.tmp(); g.emit(f"  {err} = or i1 {dz}, {ov}")
             sb = g.tmp(); g.emit(f"  {sb} = select i1 {err}, {w} 1, {w} {a[1]['v']}")
             q = g.tmp(); g.emit(f"  {q} = {verb} {w} {a[0]['v']}, {sb}")
-            return {"k": "pair", "tag": err, "val": q, "vty": w, "vsigned": signed}
+            return {"k": "enumv", "tag": err, "tty": "i1", "pay": q, "pty": w,
+                    "psigned": signed, "payidx": 0, "en": "Result"}
         BIT = {"iand": "and", "ior": "or", "ixor": "xor"}
         if base in BIT:                                # bitwise: total [OP-8]
             t = g.tmp(); g.emit(f"  {t} = {BIT[base]} {w} {a[0]['v']}, {a[1]['v']}")
@@ -582,7 +661,8 @@ class Gen:
         xe = g.tmp(); g.emit(f"  {xe} = {'sext' if ss else 'zext'} {ls} {x} to {W}")
         ye = g.tmp(); g.emit(f"  {ye} = {'sext' if sd else 'zext'} {ld} {y} to {W}")
         err = g.tmp(); g.emit(f"  {err} = icmp ne {W} {xe}, {ye}")
-        return {"k": "pair", "tag": err, "val": y, "vty": ld, "vsigned": sd}
+        return {"k": "enumv", "tag": err, "tty": "i1", "pay": y, "pty": ld,
+                "psigned": sd, "payidx": 0, "en": "Result"}
     def stmts(g, body):
         for s in body:
             if g.term: break
@@ -611,6 +691,13 @@ class Gen:
                         slot = g.tmp(); g.emit(f"  {slot} = alloca %{v['st']}")
                         g.emit(f"  store %{v['st']} {v['v']}, ptr {slot}")
                         g.env[s["n"]] = {"k": "struct", "v": slot, "st": v["st"], "slot": True}
+                elif v["k"] == "enum":                 # an enum binding is an addressable own local
+                    if v.get("slot"):                  # construct already made the slot -> reuse it
+                        g.env[s["n"]] = v
+                    else:                              # call result (aggregate) -> spill to a slot
+                        slot = g.tmp(); g.emit(f"  {slot} = alloca %{v['en']}")
+                        g.emit(f"  store %{v['en']} {v['v']}, ptr {slot}")
+                        g.env[s["n"]] = {"k": "enum", "v": slot, "en": v["en"], "slot": True}
                 else: g.env[s["n"]] = v
             elif k == "give":
                 v = g.expr(s["e"])
@@ -633,6 +720,7 @@ class Gen:
                 if g.f["name"] == "main": g.emit("  ret i32 0")
                 elif v["k"] == "unit": g.emit("  ret void")
                 elif v["k"] == "struct": g.emit(f"  ret {g.rllty} {g.load_struct(v)}")
+                elif v["k"] == "enum": g.emit(f"  ret {g.rllty} {g.load_enum(v)}")
                 else: g.emit(f"  ret {g.rllty} {v['v']}")
                 g.term = True
             elif k == "region": g.stmts(s["body"])
@@ -657,45 +745,56 @@ class Gen:
                 g.gen_match(s)
             else: g.expr(s["e"])
     def gen_match(g, s):
+        # One dispatcher over the unified {tag, payload} enum model. Scrutinee forms:
+        #   {"k":"i1"}   Bool  -- degenerate 2-variant tag-only enum (special i1 fast path)
+        #   {"k":"i32"}  tag-only user enum       (tag is the bare i32)
+        #   {"k":"enum"} in-memory payload enum    (aggregate %E = { i32, iN } in a slot)
+        #   {"k":"enumv"} SSA enum (prelude Ok/Err, Some/None, checked-op Result)
         sc = g.expr(s["scrut"])
         have = {a["v"] for a in s["arms"]}
-        need = ({"True", "False"} if sc["k"] == "i1" else
-                {"Ok", "Err"} if sc["k"] == "pair" else
-                {vn for en, vs in g.enums.items() for (vn, _) in vs
-                 if g.vtag(s["arms"][0]["v"]) is not None
-                 and any(v2[0] == s["arms"][0]["v"] for v2 in vs)})
+        if sc["k"] == "i1":
+            need = {"True", "False"}
+        else:                                          # every other form dispatches on the registry
+            need = set(g.evariants[g.venum[s["arms"][0]["v"]][0]])
         if have != need:
             raise CheckError("ERR-2",
                 f"non-exhaustive match: have {sorted(have)}, need {sorted(need)}")
         done = g.lbl(); any_open = False
-        if sc["k"] == "i1":
+        if sc["k"] == "i1":                            # Bool: 2-way branch on the value itself
             lt, lf = g.lbl(), g.lbl()
             g.emit(f"  br i1 {sc['v']}, label %{lt}, label %{lf}")
             for a in s["arms"]:
                 l = lt if a["v"] == "True" else lf
                 g.emit(f"{l}:"); g.term = False; g.stmts(a["body"])
                 if not g.term: g.emit(f"  br label %{done}"); any_open = True
-        elif sc["k"] == "pair":
-            lo, le = g.lbl(), g.lbl()
-            g.emit(f"  br i1 {sc['tag']}, label %{le}, label %{lo}")
-            for a in s["arms"]:
-                l = lo if a["v"] == "Ok" else le
-                g.emit(f"{l}:"); g.term = False
-                if a["b"]:
-                    g.env[a["b"][0]["name"]] = ({"k": sc.get("vty", "i32"), "v": sc["val"],
-                                                 "signed": sc.get("vsigned", True)}
-                                                if a["v"] == "Ok" else
-                                                {"k": "i32", "v": "0", "signed": True})
-                g.stmts(a["body"])
-                if not g.term: g.emit(f"  br label %{done}"); any_open = True
         else:
+            kind = sc["k"]
+            if kind == "enum":                         # load the tag word out of the aggregate
+                tp = g.tmp(); g.emit(f"  {tp} = getelementptr %{sc['en']}, ptr {sc['v']}, i32 0, i32 0")
+                tag_ssa = g.tmp(); g.emit(f"  {tag_ssa} = load i32, ptr {tp}"); tty = "i32"
+            else:                                      # "i32" tag-only, or "enumv" SSA
+                tag_ssa = sc["v"] if kind == "i32" else sc["tag"]
+                tty = "i32" if kind == "i32" else sc["tty"]
             nxt = None
             for a in s["arms"]:
                 if nxt: g.emit(f"{nxt}:")
-                tag = g.vtag(a["v"]); la = g.lbl(); nxt = g.lbl()
-                c = g.tmp(); g.emit(f"  {c} = icmp eq i32 {sc['v']}, {tag}")
+                idx = g.venum[a["v"]][1]; la = g.lbl(); nxt = g.lbl()
+                c = g.tmp(); g.emit(f"  {c} = icmp eq {tty} {tag_ssa}, {idx}")
                 g.emit(f"  br i1 {c}, label %{la}, label %{nxt}")
-                g.emit(f"{la}:"); g.term = False; g.stmts(a["body"])
+                g.emit(f"{la}:"); g.term = False
+                if a["b"]:                             # bind the variant's payload (copy) [GRAM-10]
+                    nm = a["b"][0]["name"]
+                    if kind == "enum":                 # extract from the aggregate at the field's type
+                        fll, fsigned = g.variant_field_ll(sc["en"], a["v"])
+                        payll = g.enum_payll(sc["en"])
+                        pp = g.tmp(); g.emit(f"  {pp} = getelementptr %{sc['en']}, ptr {sc['v']}, i32 0, i32 1")
+                        raw = g.tmp(); g.emit(f"  {raw} = load {payll}, ptr {pp}")
+                        g.env[nm] = {"k": fll, "v": g.coerce_int(raw, payll, fll), "signed": fsigned}
+                    elif idx == sc["payidx"]:          # SSA enum: the carried payload belongs to this variant
+                        g.env[nm] = {"k": sc["pty"], "v": sc["pay"], "signed": sc["psigned"]}
+                    else:                              # other variant (e.g. Err's nullary error): no payload
+                        g.env[nm] = {"k": "i32", "v": "0", "signed": True}
+                g.stmts(a["body"])
                 if not g.term: g.emit(f"  br label %{done}"); any_open = True
             g.emit(f"{nxt}:"); g.emit("  unreachable")   # exhaustive [ERR-2]
         g.term = not any_open
@@ -703,12 +802,15 @@ class Gen:
     def run(g):
         ps = []
         for q in g.f["params"]:
-            if q["mode"]["kind"] == "own" and q["ty"] in g.structs:
-                s = q["ty"]; ps.append(f"%{s} %{q['name']}")   # own struct param passed by value
-                slot = g.tmp()                                 # spill to a slot for field access
+            if q["mode"]["kind"] == "own" and (q["ty"] in g.structs or q["ty"] in g.payenums):
+                s = q["ty"]; ps.append(f"%{s} %{q['name']}")   # own aggregate param passed by value
+                slot = g.tmp()                                 # spill to a slot for field/tag access
                 g.prologue.append(f"  {slot} = alloca %{s}")
                 g.prologue.append(f"  store %{s} %{q['name']}, ptr {slot}")
-                g.env[q["name"]] = {"k": "struct", "v": slot, "st": s, "slot": True}
+                if s in g.structs:
+                    g.env[q["name"]] = {"k": "struct", "v": slot, "st": s, "slot": True}
+                else:
+                    g.env[q["name"]] = {"k": "enum", "v": slot, "en": s, "slot": True}
                 continue
             pll = g.llty(q["ty"]); psigned = _is_signed(q["ty"])
             if q["mode"]["kind"] == "own":
@@ -718,8 +820,9 @@ class Gen:
                 at = (" noalias" + ("" if q["mode"]["uniq"] else " readonly")) if g.alias else ""
                 ps.append(f"ptr{at} %{q['name']}")
                 st = q["ty"] if q["ty"] in g.structs else None
+                en = q["ty"] if q["ty"] in g.payenums else None
                 g.env[q["name"]] = {"k": "ptr", "v": f"%{q['name']}", "ty": pll,
-                                    "signed": psigned, "st": st}
+                                    "signed": psigned, "st": st, "en": en}
         rt = ("i32" if g.f["name"] == "main"
               else ("void" if g.f["rty"] == "unit" else g.llty(g.f["rty"])))
         g.rllty = rt
@@ -736,10 +839,11 @@ class Gen:
 def compile_program(src, alias=True):
     structs, enums, fns = parse_program(src)
     check_program(build_prog(structs, enums, fns))
+    payenums = {en for en, vs in enums.items() if _enum_payw(vs) > 0}
     def _ret(f):
         if f["name"] == "main": return "i32"
         if f["rty"] == "unit": return "void"
-        return ("%" + f["rty"]) if f["rty"] in structs else _llty(f["rty"])
+        return ("%" + f["rty"]) if (f["rty"] in structs or f["rty"] in payenums) else _llty(f["rty"])
     fnret = {f["name"]: _ret(f) for f in fns}
     decls = set()
     bodies = [Gen(f, enums, structs, alias, fnret, decls).run() for f in fns]
@@ -747,9 +851,14 @@ def compile_program(src, alias=True):
     # i32/enum output). fields lower to their per-width int / i1 / nested-%T / i32-tag types [TYPE-2].
     styp = [f"%{n} = type {{ " + ", ".join(_field_ll(fl["ty"], structs) for fl in flds) + " }"
             if flds else f"%{n} = type {{}}" for n, flds in structs.items()]
+    # named aggregate per payload-carrying enum: { i32 tag, i<payw> payload } (tag-only enums
+    # stay a bare i32 tag, so this list is empty for tag-only-enum / scalar / struct programs
+    # -> their output is unchanged) [TYPE-2, payload-carrying enums].
+    etyp = [f"%{en} = type {{ i32, i{_enum_payw(vs)} }}"
+            for en, vs in enums.items() if _enum_payw(vs) > 0]
     # fixed header (sadd/ssub/smul.i32 + trap emitted unconditionally for byte-stable i32 output);
     # any other intrinsic used by width/sign-generic codegen is appended, sorted for determinism.
-    hdr = (styp
+    hdr = (styp + etyp
            + [f"declare {{i32, i1}} @llvm.{n}.with.overflow.i32(i32, i32)" for n in ("sadd", "ssub", "smul")]
            + ["declare void @llvm.trap()"] + sorted(decls) + [""])
     return "\n".join(hdr + bodies)

@@ -1,0 +1,34 @@
+enum Val { Small(a: i32); Big(b: u64); Bare(); }
+
+fn classify (v: own Val) -> own i32 traps {
+  doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
+  match v {
+    Small(a: n) => {
+      return iadd.trap<i32>(n, 1_i32);
+    }
+    Big(b: m) => {
+      match ige<u64>(m, 1000000000_u64) {
+        True() => {
+          return 2_i32;
+        }
+        False() => {
+          return 3_i32;
+        }
+      }
+    }
+    Bare() => {
+      return 9_i32;
+    }
+  }
+}
+
+fn main () -> own unit traps {
+  doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
+  let a: own i32 = classify(v: Small(a: 40_i32));
+  let b: own i32 = classify(v: Big(b: 5000000000_u64));
+  let c: own i32 = classify(v: Bare());
+  let s0: own i32 = iadd.trap<i32>(a, b);
+  let s1: own i32 = iadd.trap<i32>(s0, c);
+  check ieq<i32>(s1, 52_i32) else trap "multiwidth drift";
+  return unit;
+}

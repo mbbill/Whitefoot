@@ -1,0 +1,16 @@
+enum Box { Item(n: i32); Empty(); }
+
+fn main () -> own unit traps {
+  doc "A payload-carrying variant is constructed, matched, and its bound payload feeds arithmetic delivered by give; the value-match round-trips the payload through codegen [TYPE-2, GRAM-8, GRAM-10, GIVE-1].";
+  let b: own Box = Item(n: 7_i32);
+  let r: own i32 = match b {
+    Item(n: v) => {
+      give iadd.trap<i32>(v, 35_i32);
+    }
+    Empty() => {
+      give 0_i32;
+    }
+  }
+  check ieq<i32>(r, 42_i32) else trap "payload drift";
+  return unit;
+}

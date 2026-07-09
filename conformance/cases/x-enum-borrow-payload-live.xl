@@ -1,0 +1,29 @@
+enum Cell { Full(v: i32); Void(); }
+
+fn main () -> own unit traps {
+  doc "Borrow-match a payload enum through &'r: the scrutinee stays live for a second read, and each match copies the payload out to feed a later computation [OWN-13, GIVE-1, GRAM-10, OP-1, SCOPE-3].";
+  let c: own Cell = Full(v: 20_i32);
+  region 'r {
+    let p: &'r Cell = &'r c;
+    let a: own i32 = match deref(p) {
+      Full(v: x) => {
+        give iadd.trap<i32>(x, 1_i32);
+      }
+      Void() => {
+        give 0_i32;
+      }
+    }
+    let q: &'r Cell = &'r c;
+    let b: own i32 = match deref(q) {
+      Full(v: y) => {
+        give imul.trap<i32>(y, 2_i32);
+      }
+      Void() => {
+        give 0_i32;
+      }
+    }
+    let t: own i32 = iadd.trap<i32>(a, b);
+    check ieq<i32>(t, 61_i32) else trap "borrow payload drift";
+  }
+  return unit;
+}

@@ -1,0 +1,16 @@
+enum Tagged { Num(n: i32); Nil(); }
+
+fn main () -> own unit traps {
+  doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local and gates a check [TYPE-2, GRAM-10, OWN-13, OP-1].";
+  let t: own Tagged = Num(n: 21_i32);
+  match t {
+    Num(n: v) => {
+      let d: own i32 = imul.trap<i32>(v, 2_i32);
+      check ieq<i32>(d, 42_i32) else trap "num payload drift";
+    }
+    Nil() => {
+      check ieq<i32>(0_i32, 1_i32) else trap "nil";
+    }
+  }
+  return unit;
+}

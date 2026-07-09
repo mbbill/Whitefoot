@@ -45,17 +45,23 @@ L23:
   %t26 = call {i32, i1} @llvm.smul.with.overflow.i32(i32 %t25, i32 2)
   %t27 = extractvalue {i32, i1} %t26, 0
   %t28 = extractvalue {i32, i1} %t26, 1
-  br i1 %t28, label %L31, label %L30
+  %t32 = icmp eq i1 %t28, 0
+  br i1 %t32, label %L30, label %L31
 L30:
   store i32 %t27, ptr %t24
   br label %L29
 L31:
+  %t35 = icmp eq i1 %t28, 1
+  br i1 %t35, label %L33, label %L34
+L33:
   ret i32 0
-L29:
-  %t32 = load i32, ptr %t24
-  %t33 = icmp eq i32 %t32, 20
-  br i1 %t33, label %L34, label %trap
 L34:
+  unreachable
+L29:
+  %t36 = load i32, ptr %t24
+  %t37 = icmp eq i32 %t36, 20
+  br i1 %t37, label %L38, label %trap
+L38:
   ret i32 0
 trap:
   call void @llvm.trap()

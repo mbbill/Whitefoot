@@ -27,43 +27,49 @@ entry:
   %t4 = call {i32, i1} @llvm.sadd.with.overflow.i32(i32 %t3, i32 2)
   %t5 = extractvalue {i32, i1} %t4, 0
   %t6 = extractvalue {i32, i1} %t4, 1
-  br i1 %t6, label %L9, label %L8
+  %t10 = icmp eq i1 %t6, 0
+  br i1 %t10, label %L8, label %L9
 L8:
   store i32 %t5, ptr %t2
   br label %L7
 L9:
+  %t13 = icmp eq i1 %t6, 1
+  br i1 %t13, label %L11, label %L12
+L11:
   ret i32 0
-L7:
-  %t10 = load i32, ptr %t2
-  %t11 = icmp eq i32 %t10, 42
-  br i1 %t11, label %L12, label %trap
 L12:
-  %t13 = load i32, ptr %t2
-  %t14 = call i32 @sign_of(i32 %t13)
-  %t15 = alloca i32
-  store i32 %t14, ptr %t15
-  %t16 = load i32, ptr %t15
-  %t20 = icmp eq i32 %t16, 0
-  br i1 %t20, label %L18, label %L19
-L18:
-  ret i32 0
-L19:
-  %t23 = icmp eq i32 %t16, 1
-  br i1 %t23, label %L21, label %L22
-L21:
-  ret i32 0
-L22:
-  %t26 = icmp eq i32 %t16, 2
-  br i1 %t26, label %L24, label %L25
-L24:
-  %t27 = load i32, ptr %t2
-  %t28 = icmp eq i32 %t27, 42
-  br i1 %t28, label %L29, label %trap
-L29:
-  br label %L17
-L25:
   unreachable
-L17:
+L7:
+  %t14 = load i32, ptr %t2
+  %t15 = icmp eq i32 %t14, 42
+  br i1 %t15, label %L16, label %trap
+L16:
+  %t17 = load i32, ptr %t2
+  %t18 = call i32 @sign_of(i32 %t17)
+  %t19 = alloca i32
+  store i32 %t18, ptr %t19
+  %t20 = load i32, ptr %t19
+  %t24 = icmp eq i32 %t20, 0
+  br i1 %t24, label %L22, label %L23
+L22:
+  ret i32 0
+L23:
+  %t27 = icmp eq i32 %t20, 1
+  br i1 %t27, label %L25, label %L26
+L25:
+  ret i32 0
+L26:
+  %t30 = icmp eq i32 %t20, 2
+  br i1 %t30, label %L28, label %L29
+L28:
+  %t31 = load i32, ptr %t2
+  %t32 = icmp eq i32 %t31, 42
+  br i1 %t32, label %L33, label %trap
+L33:
+  br label %L21
+L29:
+  unreachable
+L21:
   ret i32 0
 trap:
   call void @llvm.trap()
