@@ -110,8 +110,10 @@ def run_cmd(argv, timeout_sec, cwd=ROOT):
         }
 
 
-def verdict_from_runs(task, runs):
+def verdict_from_runs(task, runs, language=None):
     expected = task.get("expected", {})
+    if language is not None:
+        expected = task.get(f"expected_{language}", expected)
     if not runs:
         return False, "no-run"
     last = runs[-1]
@@ -218,7 +220,7 @@ def run_one(task, suite, language, trial, src):
         for _ in range(task.get("runs", 1)):
             runs.append(run_cmd([str(exe)], task["timeout_sec"]))
         record["runs"] = runs
-        ok, reason = verdict_from_runs(task, runs)
+        ok, reason = verdict_from_runs(task, runs, language)
         record["pass"] = ok
         record["verdict"] = "pass" if ok else "fail"
         record["reason"] = reason

@@ -14,20 +14,27 @@ python3 m3/harness/score.py /private/tmp/xlang-m3-reference.jsonl
 | suite | language | runnable | passed | pending | current meaning |
 |---|---:|---:|---:|---:|---|
 | reference | Rust | 7 | 7 | 0 | Rust can express and pass every current task prompt. |
-| reference | xlang | 3 | 3 | 4 | xlang passes the currently expressible smoke tasks but cannot yet express four minimum-sprint tasks. |
+| reference | xlang | 6 | 6 | 1 | xlang passes six of seven minimum-sprint tasks; only the arena task is unexpressed. |
 
-The three runnable xlang tasks are:
+The six runnable xlang tasks are:
 
 - `checked_loop_sum`
 - `value_match_result`
 - `noalias_add`
+- `checked_integer_parser` (unblocked 2026-07-09: buffer<u8>, Result payloads, signed literals)
+- `buffer_index_kernel` (unblocked 2026-07-09: buffer_new/index/len; OOB path shown as a bounds-guarded branch; the executed-trap variant is conformance case op4-trap-index-oob)
+- `error_propagation_chain` (unblocked 2026-07-09: try/ERR-3, same-E enforced)
 
-The four xlang-pending tasks are:
+The one xlang-pending task is:
 
-- `checked_integer_parser`: current democ lacks byte-string values, buffers/slices, and enough library surface for a realistic byte parser.
-- `arena_ast_builder`: current democ lacks the `pool<T>`/`handle<T>` or arena-backed AST shape required by `compiler/PLAN.md`.
-- `buffer_index_kernel`: UNBLOCKED 2026-07-09 — buffer_new/index/len landed (conformance op4/op9 cases green).
-- `error_propagation_chain`: UNBLOCKED 2026-07-09 — try/ERR-3 landed (same-E enforced; conformance err3 cases green).
+- `arena_ast_builder`: current democ lacks the `pool<T>`/`handle<T>` or arena-backed AST shape required by `compiler/PLAN.md`. Note STOR-1 explicitly rejects untyped index-pool recycling; the xlang shape needs an owner ruling before implementation.
+
+Verification-semantics note: Rust references print `ok` and are checked on stdout;
+xlang has no print surface in the kernel subset, so xlang references are checked on
+exit code (`expected_xlang: {"exit": 0}` in `tasks.jsonl`). Every xlang assertion
+routes failure through `check ... else trap` (abort, nonzero exit), and the
+discriminator was negative-tested: mutating the expected sum in
+`buffer_index_kernel.xl` makes the harness report `fail exit -5 != 0`.
 
 ## Decision Readiness
 
@@ -35,8 +42,8 @@ The current evidence is **not** sufficient for a continue/stop decision.
 
 Two independent blockers remain:
 
-1. **Language/toolchain surface blocker**: xlang cannot yet run the first four minimum decision-sprint tasks. Rust can.
-2. **Model evidence blocker**: no weak/middle/strong generated submissions have been run yet.
+1. **Language/toolchain surface blocker (mostly cleared 2026-07-09)**: xlang now runs six of the seven tasks, including all four previously-blocked minimum-sprint tasks except `arena_ast_builder` (which awaits the STOR-1 pool ruling).
+2. **Model evidence blocker**: no weak/middle/strong generated submissions have been run yet. This is now the dominant blocker.
 
 The strict scorer makes this explicit:
 
@@ -61,20 +68,23 @@ owner decision.
 
 The next decision is therefore smaller than continue/stop:
 
-- either implement the missing xlang subset needed for the four pending tasks,
-- or narrow the sprint to the three runnable smoke tasks and accept that the result
-  cannot decide the full AI-codegen thesis.
+- either resolve STOR-1 (pool/handle owner ruling) so `arena_ast_builder` can be
+  expressed, then run the model-tier sprint on all seven tasks,
+- or run the model-tier sprint on the six runnable tasks now and report the arena
+  task as an explicit expressibility gap.
 
-See `IMPLEMENTATION_GATES.md` for the local audit. The important finding is that
-the four pending tasks are not harness mistakes: they are real democ/subset gaps.
-In particular, implementing `try` without preserving `Result<T,E>` type
-arguments would create a false positive because the checker could miss the ERR-3
-same-error-type rejection.
+See `IMPLEMENTATION_GATES.md` for the original blocker audit (2026-07-08). Its
+key finding held up: the pending tasks were real democ/subset gaps, not harness
+mistakes. The 2026-07-09 unblock implemented `try` with `Result<T,E>` type
+arguments preserved, exactly to avoid the ERR-3 false-positive risk it flagged
+(conformance case err3-neg-try-different-error-type is green).
 
 ## Working Recommendation
 
 Do not proceed to self-hosting compiler work yet.
 
-Continue only if the next unit of work is the minimum M3 unblock: byte/buffer
-support, fixed-capacity pool/handle support, checked indexing, and sound ERR-3
-`try` propagation. If that unblock is not worth doing, stop or pivot now.
+The minimum M3 unblock is now done except for pool/handle support, which is
+gated on an owner ruling (STOR-1 rejects untyped slot recycling; the compliant
+shape needs to be decided, not just coded). The next unit of work is Phase C:
+run the weak/middle/strong model sprint on the six runnable tasks under the
+fixed prompt/repair budget, alongside the Phase B channel benchmarks.

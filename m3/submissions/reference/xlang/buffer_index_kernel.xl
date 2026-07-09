@@ -1,0 +1,42 @@
+fn main () -> own unit traps {
+  doc "Fill 0..1024 by index, sum via checked indexing+adds; sum==523776. The OOB path: index n is only reachable through a bounds guard (False here); the unguarded trap variant is conformance case op4-trap-index-oob.";
+  let n: own u64 = 1024_u64;
+  let b: own buffer<u64> = buffer_new<u64>(n, 0_u64);
+  let i: own u64 = 0_u64;
+  loop @f {
+    match ige<u64>(i, n) {
+      True() => {
+        break @f;
+      }
+      False() => {
+      }
+    }
+    set index<u64>(b, i) = i;
+    set i = iadd.trap<u64>(i, 1_u64);
+  }
+  let sum: own u64 = 0_u64;
+  let j: own u64 = 0_u64;
+  loop @s {
+    match ige<u64>(j, n) {
+      True() => {
+        break @s;
+      }
+      False() => {
+      }
+    }
+    let v: own u64 = index<u64>(b, j);
+    set sum = iadd.trap<u64>(sum, v);
+    set j = iadd.trap<u64>(j, 1_u64);
+  }
+  check ieq<u64>(sum, 523776_u64) else trap "sum drift";
+  let m: own u64 = len<u64>(b);
+  match ilt<u64>(m, m) {
+    True() => {
+      let oob: own u64 = index<u64>(b, m);
+      check ieq<u64>(oob, 0_u64) else trap "unreachable";
+    }
+    False() => {
+    }
+  }
+  return unit;
+}
