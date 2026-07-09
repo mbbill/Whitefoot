@@ -43,3 +43,16 @@ FFI exists for exactly two situations: (1) opaque binaries (source unavailable: 
 
 ## D2a (2026-07-07, owner ruling): W2 deprioritized
 Token/context budget remains a consideration but NOT a top priority: model context windows are growing rapidly, moving this constraint down the list. Consequences: (a) spec token counts remain MEASURED (spec-delta discipline, calibration audits) but no token cap acquires gating authority for the foreseeable future; (b) the round-4 regularity invariants (one spelling, zero context-dependence, empty exception lists, stated-once) are RETAINED — re-grounded on W1 (irregularity is weak-writer error surface, unaffected by window growth) rather than on window size; (c) the resident-vs-total open ruling and spec-size-ablation experiment drop in priority; (d) residual W2 weight: long-context recall degradation and per-token cost/latency, tracked not gating.
+
+## D5 (2026-07-09): Phase C model-tier sprint deprioritized
+
+Owner: model capability is improving fast enough (GPT-5.6, Fable-class models
+usable) that "can a weak AI write it" is a shrinking constraint; do not rush
+the W1 model-tier sprint. Priority low, possibly none. CAVEAT kept by owner:
+context limits still exist — so D2 (spec compactness; the whole spec must fit
+in a prompt) remains binding even as W1's weak-writer bar softens.
+Consequences: R0's criterion needs rewording (it was "self-host iff >=1 robust
+B delta OR C W1 win"); the decision now rests on the B deltas plus the
+frequency/distributional question (how often the channel patterns occur in
+real projects), plus the qualitative W3/determinism case. The trial harness
+and writer's excerpt stay (already built; can run anytime as validation).
