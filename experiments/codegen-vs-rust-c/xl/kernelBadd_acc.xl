@@ -1,0 +1,15 @@
+fn accumulate ['r] (acc: &uniq 'r u64, addend: &'r u64, n: own u64) -> own unit reads('r), writes('r) {
+  let i: own u64 = 0_u64;
+  loop @l {
+    match ige<u64>(i, n) {
+      True() => {
+        break @l;
+      }
+      False() => {
+      }
+    }
+    set deref(acc) = iadd.wrap<u64>(deref(acc), deref(addend));
+    set i = iadd.wrap<u64>(i, 1_u64);
+  }
+  return unit;
+}

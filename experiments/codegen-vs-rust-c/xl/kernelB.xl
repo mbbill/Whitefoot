@@ -1,0 +1,28 @@
+fn accumulate ['r] (acc: &uniq 'r u64, addend: &'r u64, n: own u64) -> own unit reads('r), writes('r) {
+  doc "acc = (acc ^ addend) * K, iterated n times; noalias comes from &uniq/&.";
+  let i: own u64 = 0_u64;
+  loop @l {
+    match ige<u64>(i, n) {
+      True() => {
+        break @l;
+      }
+      False() => {
+      }
+    }
+    let t: own u64 = ixor<u64>(deref(acc), deref(addend));
+    set deref(acc) = imul.wrap<u64>(t, 11400714819323198485_u64);
+    set i = iadd.wrap<u64>(i, 1_u64);
+  }
+  return unit;
+}
+
+fn main () -> own unit traps {
+  doc "Borrow a uniquely, b sharedly; accumulate; then consume via check.";
+  let a: own u64 = 1_u64;
+  let b: own u64 = 3_u64;
+  region 'r {
+    accumulate(acc: &uniq 'r a, addend: &'r b, n: 1000000000_u64);
+  }
+  check ieq<u64>(a, 9001921559172283393_u64) else trap "kernelB drift";
+  return unit;
+}

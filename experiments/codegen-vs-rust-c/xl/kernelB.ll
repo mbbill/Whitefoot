@@ -1,0 +1,51 @@
+declare {i32, i1} @llvm.sadd.with.overflow.i32(i32, i32)
+declare {i32, i1} @llvm.ssub.with.overflow.i32(i32, i32)
+declare {i32, i1} @llvm.smul.with.overflow.i32(i32, i32)
+declare void @llvm.trap()
+
+define void @accumulate(ptr noalias %acc, ptr noalias readonly %addend, i64 %n) {
+entry:
+  %t1 = alloca i64
+  store i64 0, ptr %t1
+  br label %L2
+L2:
+  %t4 = load i64, ptr %t1
+  %t5 = icmp uge i64 %t4, %n
+  br i1 %t5, label %L7, label %L8
+L7:
+  br label %L3
+L8:
+  br label %L6
+L6:
+  %t9 = load i64, ptr %acc
+  %t10 = load i64, ptr %addend
+  %t11 = xor i64 %t9, %t10
+  %t12 = alloca i64
+  store i64 %t11, ptr %t12
+  %t13 = load i64, ptr %t12
+  %t14 = mul i64 %t13, 11400714819323198485
+  store i64 %t14, ptr %acc
+  %t15 = load i64, ptr %t1
+  %t16 = add i64 %t15, 1
+  store i64 %t16, ptr %t1
+  br label %L2
+L3:
+  ret void
+}
+
+define i32 @main() {
+entry:
+  %t1 = alloca i64
+  store i64 1, ptr %t1
+  %t2 = alloca i64
+  store i64 3, ptr %t2
+  call void @accumulate(ptr %t1, ptr %t2, i64 1000000000)
+  %t3 = load i64, ptr %t1
+  %t4 = icmp eq i64 %t3, 9001921559172283393
+  br i1 %t4, label %L5, label %trap
+L5:
+  ret i32 0
+trap:
+  call void @llvm.trap()
+  unreachable
+}

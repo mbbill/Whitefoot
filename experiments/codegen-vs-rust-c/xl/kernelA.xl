@@ -1,0 +1,34 @@
+fn mix_n (seed: own u64, n: own u64) -> own u64 pure {
+  doc "splitmix64-style mixing iterated n times, xor-accumulated.";
+  let z: own u64 = seed;
+  let acc: own u64 = 0_u64;
+  let i: own u64 = 0_u64;
+  loop @l {
+    match ige<u64>(i, n) {
+      True() => {
+        break @l;
+      }
+      False() => {
+      }
+    }
+    set z = iadd.wrap<u64>(z, 11400714819323198485_u64);
+    let s1: own u64 = ishr.wrap<u64>(z, 30_u64);
+    let x1: own u64 = ixor<u64>(z, s1);
+    set z = imul.wrap<u64>(x1, 13787848793156543929_u64);
+    let s2: own u64 = ishr.wrap<u64>(z, 27_u64);
+    let x2: own u64 = ixor<u64>(z, s2);
+    set z = imul.wrap<u64>(x2, 10723151780598845931_u64);
+    let s3: own u64 = ishr.wrap<u64>(z, 31_u64);
+    set z = ixor<u64>(z, s3);
+    set acc = ixor<u64>(acc, z);
+    set i = iadd.wrap<u64>(i, 1_u64);
+  }
+  return acc;
+}
+
+fn main () -> own unit traps {
+  doc "Consume the accumulator via a check so nothing is dead-code-eliminated.";
+  let r: own u64 = mix_n(seed: 81985529216486895_u64, n: 200000000_u64);
+  check ieq<u64>(r, 7363752762991654310_u64) else trap "kernelA drift";
+  return unit;
+}
