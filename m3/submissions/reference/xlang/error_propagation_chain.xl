@@ -1,0 +1,70 @@
+enum ChainError { StepAFailed(); StepBFailed(); }
+
+fn step_a (x: own i64) -> own Result<i64,ChainError> pure {
+  doc "Fails when x is negative; otherwise doubles.";
+  let bad: own Bool = ilt<i64>(x, 0_i64);
+  match bad {
+    True() => {
+      return Err(error: StepAFailed());
+    }
+    False() => {
+    }
+  }
+  let d: own i64 = imul.wrap<i64>(x, 2_i64);
+  return Ok(value: d);
+}
+
+fn step_b (x: own i64) -> own Result<i64,ChainError> pure {
+  doc "Fails when x exceeds 100; otherwise adds 1.";
+  let bad: own Bool = igt<i64>(x, 100_i64);
+  match bad {
+    True() => {
+      return Err(error: StepBFailed());
+    }
+    False() => {
+    }
+  }
+  let d: own i64 = iadd.wrap<i64>(x, 1_i64);
+  return Ok(value: d);
+}
+
+fn chain (x: own i64) -> own Result<i64,ChainError> pure {
+  doc "step_a then step_b, propagating the ORIGINAL error via try [ERR-3].";
+  let ra: own Result<i64,ChainError> = step_a(x: x);
+  let a: own i64 = try ra;
+  let rb: own Result<i64,ChainError> = step_b(x: a);
+  let b: own i64 = try rb;
+  return Ok(value: b);
+}
+
+fn main () -> own unit traps {
+  doc "Good path 20 -> 41; first-error path -1 -> StepAFailed; second-error path 60 -> StepBFailed.";
+  let r1: own Result<i64,ChainError> = chain(x: 20_i64);
+  match r1 {
+    Ok(value: v) => {
+      check ieq<i64>(v, 41_i64) else trap "good path drift";
+    }
+    Err(error: e) => {
+      check ieq<i64>(0_i64, 1_i64) else trap "unexpected err on good path";
+    }
+  }
+  let r2: own Result<i64,ChainError> = chain(x: -1_i64);
+  match r2 {
+    Ok(value: v) => {
+      check ieq<i64>(0_i64, 1_i64) else trap "expected first error";
+    }
+    Err(error: e) => {
+      check ieq<i64>(e, 0_i64) else trap "wrong error kind (want StepAFailed)";
+    }
+  }
+  let r3: own Result<i64,ChainError> = chain(x: 60_i64);
+  match r3 {
+    Ok(value: v) => {
+      check ieq<i64>(0_i64, 1_i64) else trap "expected second error";
+    }
+    Err(error: e) => {
+      check ieq<i64>(e, 1_i64) else trap "wrong error kind (want StepBFailed)";
+    }
+  }
+  return unit;
+}

@@ -13,10 +13,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'checker'))
 from checker import check_program, CheckError, PRELUDE_ENUMS
 
-TOK = re.compile(r'"[^"]*"|\'[a-z][a-z0-9_]*'
-                 r'|[0-9]+_(?:i8|i16|i32|i64|u8|u16|u32|u64)|[0-9]+'
+TOK = re.compile(r'"[^"]*"|\'[a-z][a-z0-9_]*|@[a-z][a-z0-9_]*'
+                 r'|->'
+                 r'|-?[0-9]+_(?:i8|i16|i32|i64|u8|u16|u32|u64)|[0-9]+'
                  r'|[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*|[A-Z][A-Za-z0-9]*'
-                 r'|->|=>|&uniq|&|[(){}<>:;,=\[\]]')
+                 r'|=>|&uniq|&|[(){}<>:;,=\[\]]'
+                 r'|(\S)')                                 # catch-all: unknown byte -> FORM-1
 
 # ---- integer type family: width, signedness, range, LLVM type ----
 INT_LLTY = {"i8": "i8", "i16": "i16", "i32": "i32", "i64": "i64",
@@ -29,7 +31,7 @@ INT_MAX = {"i8": 127, "i16": 32767, "i32": 2147483647,
 INT_MIN = {"i8": -128, "i16": -32768, "i32": -2147483648,
            "i64": -9223372036854775808}
 INT_SUFFIXES = set(INT_LLTY)
-LIT_RE = re.compile(r'([0-9]+)_([iu](?:8|16|32|64))')
+LIT_RE = re.compile(r'(-?)([0-9]+)_([iu](?:8|16|32|64))')
 
 def _is_signed(suf):
     return suf in INT_SUFFIXES and suf[0] == "i"
@@ -105,7 +107,13 @@ def toks(src):
     _check_form2(src)                                       # FORM-2: canonical byte formatting
     if re.search(r'//|/\*', re.sub(r'"[^"]*"', '', src)):   # FORM-4: comments do not exist
         raise CheckError("FORM-4", "comments do not exist; documentation rides the doc field of a declaration")
-    return TOK.findall(src)
+    toks_ = []
+    for m in TOK.finditer(src):
+        if m.group(1) is not None:                     # FORM-1: no silent drops, ever
+            raise CheckError("FORM-1",
+                f"unknown byte {m.group(1)!r} is not part of any canonical token")
+        toks_.append(m.group(0))
+    return toks_
 
 class P:
     def __init__(s, t): s.t = t; s.i = 0
@@ -159,12 +167,16 @@ def parse_expr(p):
     if t == 'unit': p.eat(); return {"e": "unit"}
     m = LIT_RE.fullmatch(t)
     if m:                                              # suffixed integer literal [FORM-5]
-        p.eat(); digits, suf = m.group(1), m.group(2)
+        p.eat(); sign, digits, suf = m.group(1), m.group(2), m.group(3)
         if len(digits) > 1 and digits[0] == '0':       # FORM-7: leading-zero form is illegal (0 is its own form)
             raise CheckError("FORM-7", f"leading-zero integer literal '{t}' is illegal; the single digit 0 is its own form")
-        v = int(digits)
-        if v > INT_MAX[suf]:                           # FORM-7: literal exceeds its suffix type's range
-            raise CheckError("FORM-7", f"integer literal '{t}' is out of range for {suf} (max {INT_MAX[suf]})")
+        if sign and suf[0] == 'u':                     # FORM-5: unsigned literals carry no sign
+            raise CheckError("FORM-7", f"negative literal '{t}' is illegal for unsigned {suf}")
+        if sign and digits == '0':                     # FORM-5: one spelling per value; -0 is not a form
+            raise CheckError("FORM-7", "'-0' is not a canonical integer form; write 0")
+        v = -int(digits) if sign else int(digits)
+        if v > INT_MAX[suf] or (sign and v < INT_MIN[suf]):   # FORM-7 range
+            raise CheckError("FORM-7", f"integer literal '{t}' is out of range for {suf}")
         return {"e": "lit", "v": v, "ty": suf}
     if re.fullmatch(r'[0-9]+', t):                     # FORM-5: a bare integer lacks its mandatory type suffix
         raise CheckError("FORM-5", f"integer literal '{t}' must carry its mandatory type suffix (e.g. {t}_i32)")
@@ -631,6 +643,11 @@ class Gen:
                         "psigned": a.get("signed", True), "payidx": idx, "en": g.venum[n][0]}
             if n in ("Err", "None"):
                 idx = g.venum[n][1]
+                if e["fields"]:                        # Err carries its error payload
+                    a = g.expr(e["fields"][0]["atom"])
+                    return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": a["v"],
+                            "pty": a["k"] if a["k"] in INT_LL else "i32",
+                            "psigned": a.get("signed", True), "payidx": idx, "en": g.venum[n][0]}
                 return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": "0", "pty": "i32",
                         "psigned": True, "payidx": idx, "en": g.venum[n][0]}
             en, _idx = g.venum.get(n, (None, None))
@@ -974,7 +991,8 @@ class Gen:
         ps = []
         for q in g.f["params"]:
             if q["mode"]["kind"] == "own" and (q["ty"].split("<")[0] in g.structs
-                                               or q["ty"].split("<")[0] in g.payenums):
+                                               or q["ty"].split("<")[0] in g.payenums
+                                               or q["ty"].split("<")[0] in ("Result", "Option")):
                 s = q["ty"].split("<")[0]; ps.append(f"%{s} %{q['name']}")   # own aggregate param by value
                 slot = g.tmp()                                 # spill to a slot for field/tag access
                 g.prologue.append(f"  {slot} = alloca %{s}")

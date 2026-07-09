@@ -1,0 +1,139 @@
+enum ParseError { Empty(); BadDigit(); TooBig(); }
+
+fn parse_u64 (b: own buffer<u8>) -> own Result<u64,ParseError> traps {
+  doc "Parse ASCII decimal u64: reject empty, non-digit, and overflow [checked ops].";
+  let n: own u64 = len<u8>(b);
+  match ieq<u64>(n, 0_u64) {
+    True() => {
+      return Err(error: Empty());
+    }
+    False() => {
+    }
+  }
+  let acc: own u64 = 0_u64;
+  let i: own u64 = 0_u64;
+  loop @l {
+    match ige<u64>(i, n) {
+      True() => {
+        break @l;
+      }
+      False() => {
+      }
+    }
+    let d: own u8 = index<u8>(b, i);
+    match ilt<u8>(d, 48_u8) {
+      True() => {
+        return Err(error: BadDigit());
+      }
+      False() => {
+      }
+    }
+    match igt<u8>(d, 57_u8) {
+      True() => {
+        return Err(error: BadDigit());
+      }
+      False() => {
+      }
+    }
+    let dw: own u64 = cvt<u8,u64>(d);
+    let dv: own u64 = isub.wrap<u64>(dw, 48_u64);
+    let acc10: own u64 = match imul.checked<u64>(acc, 10_u64) {
+      Ok(value: v) => {
+        give v;
+      }
+      Err(error: e) => {
+        return Err(error: TooBig());
+      }
+    }
+    let acc11: own u64 = match iadd.checked<u64>(acc10, dv) {
+      Ok(value: v) => {
+        give v;
+      }
+      Err(error: e) => {
+        return Err(error: TooBig());
+      }
+    }
+    set acc = acc11;
+    set i = iadd.trap<u64>(i, 1_u64);
+  }
+  return Ok(value: acc);
+}
+
+fn expect_ok (r: own Result<u64,ParseError>, want: own u64) -> own unit traps {
+  doc "Trap unless r is Ok(want).";
+  match r {
+    Ok(value: v) => {
+      check ieq<u64>(v, want) else trap "wrong parsed value";
+    }
+    Err(error: e) => {
+      check ieq<u64>(0_u64, 1_u64) else trap "expected Ok, got Err";
+    }
+  }
+  return unit;
+}
+
+fn expect_err (r: own Result<u64,ParseError>, want_tag: own i64) -> own unit traps {
+  doc "Trap unless r is Err with the wanted ParseError tag (Empty=0 BadDigit=1 Overflow=2).";
+  match r {
+    Ok(value: v) => {
+      check ieq<u64>(0_u64, 1_u64) else trap "expected Err, got Ok";
+    }
+    Err(error: e) => {
+      check ieq<i64>(e, want_tag) else trap "wrong error kind";
+    }
+  }
+  return unit;
+}
+
+fn digits20 (d0: own u8, d1: own u8, d2: own u8, d3: own u8, d4: own u8, d5: own u8, d6: own u8, d7: own u8, d8: own u8, d9: own u8, d10: own u8, d11: own u8, d12: own u8, d13: own u8, d14: own u8, d15: own u8, d16: own u8, d17: own u8, d18: own u8, d19: own u8) -> own buffer<u8> allocates(heap), traps {
+  doc "Build a 20-byte buffer from arguments.";
+  let b: own buffer<u8> = buffer_new<u8>(20_u64, 0_u8);
+  set index<u8>(b, 0_u64) = d0;
+  set index<u8>(b, 1_u64) = d1;
+  set index<u8>(b, 2_u64) = d2;
+  set index<u8>(b, 3_u64) = d3;
+  set index<u8>(b, 4_u64) = d4;
+  set index<u8>(b, 5_u64) = d5;
+  set index<u8>(b, 6_u64) = d6;
+  set index<u8>(b, 7_u64) = d7;
+  set index<u8>(b, 8_u64) = d8;
+  set index<u8>(b, 9_u64) = d9;
+  set index<u8>(b, 10_u64) = d10;
+  set index<u8>(b, 11_u64) = d11;
+  set index<u8>(b, 12_u64) = d12;
+  set index<u8>(b, 13_u64) = d13;
+  set index<u8>(b, 14_u64) = d14;
+  set index<u8>(b, 15_u64) = d15;
+  set index<u8>(b, 16_u64) = d16;
+  set index<u8>(b, 17_u64) = d17;
+  set index<u8>(b, 18_u64) = d18;
+  set index<u8>(b, 19_u64) = d19;
+  return b;
+}
+
+fn main () -> own unit traps {
+  doc "Six task cases: 0, 42, u64 MAX, MAX+1 overflow, 12x bad digit, empty.";
+  let c1: own buffer<u8> = buffer_new<u8>(1_u64, 48_u8);
+  let r1: own Result<u64,ParseError> = parse_u64(b: c1);
+  let u1: own unit = expect_ok(r: r1, want: 0_u64);
+  let c2: own buffer<u8> = buffer_new<u8>(2_u64, 48_u8);
+  set index<u8>(c2, 0_u64) = 52_u8;
+  set index<u8>(c2, 1_u64) = 50_u8;
+  let r2: own Result<u64,ParseError> = parse_u64(b: c2);
+  let u2: own unit = expect_ok(r: r2, want: 42_u64);
+  let c3: own buffer<u8> = digits20(d0: 49_u8, d1: 56_u8, d2: 52_u8, d3: 52_u8, d4: 54_u8, d5: 55_u8, d6: 52_u8, d7: 52_u8, d8: 48_u8, d9: 55_u8, d10: 51_u8, d11: 55_u8, d12: 48_u8, d13: 57_u8, d14: 53_u8, d15: 53_u8, d16: 49_u8, d17: 54_u8, d18: 49_u8, d19: 53_u8);
+  let r3: own Result<u64,ParseError> = parse_u64(b: c3);
+  let u3: own unit = expect_ok(r: r3, want: 18446744073709551615_u64);
+  let c4: own buffer<u8> = digits20(d0: 49_u8, d1: 56_u8, d2: 52_u8, d3: 52_u8, d4: 54_u8, d5: 55_u8, d6: 52_u8, d7: 52_u8, d8: 48_u8, d9: 55_u8, d10: 51_u8, d11: 55_u8, d12: 48_u8, d13: 57_u8, d14: 53_u8, d15: 53_u8, d16: 49_u8, d17: 54_u8, d18: 49_u8, d19: 54_u8);
+  let r4: own Result<u64,ParseError> = parse_u64(b: c4);
+  let u4: own unit = expect_err(r: r4, want_tag: 2_i64);
+  let c5: own buffer<u8> = buffer_new<u8>(3_u64, 49_u8);
+  set index<u8>(c5, 1_u64) = 50_u8;
+  set index<u8>(c5, 2_u64) = 120_u8;
+  let r5: own Result<u64,ParseError> = parse_u64(b: c5);
+  let u5: own unit = expect_err(r: r5, want_tag: 1_i64);
+  let c6: own buffer<u8> = buffer_new<u8>(0_u64, 48_u8);
+  let r6: own Result<u64,ParseError> = parse_u64(b: c6);
+  let u6: own unit = expect_err(r: r6, want_tag: 0_i64);
+  return unit;
+}
