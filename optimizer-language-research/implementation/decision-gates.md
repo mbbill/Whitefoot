@@ -278,3 +278,38 @@ New gate (per D5 — Phase C deprioritized because model capability is improving
 ## Owner design review: deep-write access + lifetime shape (2026-07-09)
 
 Owner probed two soft spots. (1) Lifetime shape: regions+effects cannot infer the problem away (MLKit precedent: pure region inference degenerated, GC added inside regions; Cyclone hybrid) — design target is phase-shaped-majority coverage: nested region staircases + static-nursery promotion (inner-region alloc, explicit move-out for survivors — expressible today with regions+affine moves) + box for the interleaved residue, with allocates('r)/allocates(heap) rows making the split signature-visible. Card Koka/Cyclone/MLKit (§9 backlog) BEFORE speccing v0.7 arenas. (2) Deep-write: conceded that v0 is STRICTER than Rust in one axis — uniq borrows are affine with no reborrow (T-A), so deep call chains cannot implicitly carry &uniq down and keep it; options are linear threading (verbose, no tuples in v0) or restructuring. Blessed idiom recorded: command-buffer / write-intent pattern — deep code is reads('p)/pure and returns write intents as values; ONE shallow fn is writes('p) and applies them under the single &uniq. Checkable via effect rows; parallelism-ready (D1). Genuine dissolves vs Rust: no receiver methods -> no whole-object borrows (OWN-7 prefix rule permits cross-call disjoint field borrows, incl. &uniq one + & another); &uniq subsumes read + value copy-outs -> no long-lived interior refs. Relief valves if evidence demands (carded, evidence-first): Rust-style reborrow (D1a-rejected for checker complexity), split_uniq disjoint views by construction, checked Cell-for-copy-types. Honest residue: in-place mutation interleaved with traversal of the same structure stays awkward-or-rejected (OWN-8 bet).
+
+## Owner review: totality economics + AoS path + evidence bar (2026-07-10)
+
+(1) TOTALITY IS INFECTIOUS — owner flag, must not be forgotten. willreturn
+requires may-abort-free: ONE trapping op in a leaf (e.g. a bounds check in a
+low-level API) strips derived totality from every transitive caller, killing
+call-hoisting/CSE for the whole tower above it. Rust suffers identically
+(panic paths block LLVM willreturn inference) but offers no lever; we have
+four, only one built: (a) BUILT — non-trapping modes exist for all arithmetic
+(.wrap/.sat/.checked); the unavoidable trap source is bounds checks; (b)
+CONST-TRIP TIER (unbuilt): a loop with literal-bounded trip count is
+willreturn — sound, cheap, extends compute_total beyond loop-free; (c)
+PROOF-ELIDED CHECKS (spec'd in OP-4, unbuilt): when OUR checker/proof artifact
+proves in-bounds, the trap is not emitted at all and the fn re-enters the
+total tier — proof-driven elision is the totality-restoration lever, not just
+a speed lever; (d) DIAGNOSTIC TIER (unbuilt): surface "this fn is N traps away
+from total" / totality-blocker attribution so writers (and the pattern
+doctrine) can steer hot towers toward total leaves. Backlog-registered;
+priority rises with any real port study.
+
+(2) AoS PATH: v0 buffers hold copy primitives only, forcing SoA (3 columns for
+Ast). SoA is doctrine-blessed (P2) and usually the FASTER layout, but
+buffer<PodStruct> (AoS) needs a COPY-STRUCT TIER (a struct of copy fields may
+be declared copy) — smaller than the SS5-blocked affine-element cluster;
+carded as the v0.x path when AoS is genuinely wanted.
+
+(3) EVIDENCE BAR RAISED (owner): the conventions-erode/W3 argument and the
+channel deltas remain HYPOTHESES until shown on a non-trivial program. Agreed
+two-legged plan: leg A = the queued channel-pattern frequency study over real
+Rust corpora; leg B = PORT STUDY — reimplement a small real Rust program in
+xlang (target must fit the subset: compute-bound, fixed-size data, byte-level
+IO at most; candidate class: bytecode VM / protocol codec / table-driven
+interpreter, i.e. compiler-adjacent workloads) and measure end-to-end: runtime
+vs rustc -O3, code size, guard/versioned-loop counts, emitted-fact census,
+and audit metrics (what fraction of behavior is signature-determined).
