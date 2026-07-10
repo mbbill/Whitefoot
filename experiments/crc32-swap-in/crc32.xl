@@ -1,0 +1,62 @@
+fn crc32_mktab () -> own buffer<u32> allocates(heap), traps {
+  doc "CRC-32 (reflected 0xEDB88320) table, generated at init like zlib's DYNAMIC_CRC_TABLE; branchless entry math.";
+  let tab: own buffer<u32> = buffer_new<u32>(256_u64, 0_u32);
+  let n: own u64 = 0_u64;
+  let cn: own u32 = 0_u32;
+  loop @e {
+    match ige<u64>(n, 256_u64) {
+      True() => {
+        break @e;
+      }
+      False() => {
+      }
+    }
+    let c: own u32 = cn;
+    let k: own u64 = 0_u64;
+    loop @b {
+      match ige<u64>(k, 8_u64) {
+        True() => {
+          break @b;
+        }
+        False() => {
+        }
+      }
+      let bit: own u32 = iand<u32>(c, 1_u32);
+      let mask: own u32 = isub.wrap<u32>(0_u32, bit);
+      let poly: own u32 = iand<u32>(mask, 3988292384_u32);
+      let sh: own u32 = ishr.wrap<u32>(c, 1_u32);
+      set c = ixor<u32>(sh, poly);
+      set k = iadd.trap<u64>(k, 1_u64);
+    }
+    set index<u32>(tab, n) = c;
+    set n = iadd.trap<u64>(n, 1_u64);
+    set cn = iadd.wrap<u32>(cn, 1_u32);
+  }
+  return tab;
+}
+
+fn crc32_upd (tab: own buffer<u32>, crc: own u32, data: own buffer<u8>) -> own u32 traps {
+  doc "zlib-semantics update: pre/post conditioning inside; one table lookup per byte.";
+  let m: own u64 = len<u8>(data);
+  let c: own u32 = ixor<u32>(crc, 4294967295_u32);
+  let i: own u64 = 0_u64;
+  loop @l {
+    match ige<u64>(i, m) {
+      True() => {
+        break @l;
+      }
+      False() => {
+      }
+    }
+    let b: own u8 = index<u8>(data, i);
+    let b32: own u32 = cvt<u8, u32>(b);
+    let x: own u32 = ixor<u32>(c, b32);
+    let lo: own u32 = iand<u32>(x, 255_u32);
+    let idx: own u64 = cvt<u32, u64>(lo);
+    let te: own u32 = index<u32>(tab, idx);
+    let cs: own u32 = ishr.wrap<u32>(c, 8_u32);
+    set c = ixor<u32>(te, cs);
+    set i = iadd.trap<u64>(i, 1_u64);
+  }
+  return ixor<u32>(c, 4294967295_u32);
+}
