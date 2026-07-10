@@ -515,6 +515,34 @@ def compute_total(fns):
                     total[f["name"]] = True
     return {k for k, v in total.items() if v}
 
+def totality_report(fns):
+    """[EFF-3 / willreturn tier] the totality-economics lint: which fns earn the
+    derived willreturn attribute, and exactly what blocks each of the rest —
+    traps are INFECTIOUS (one trapping leaf strips hoisting/CSE rights from
+    every transitive caller), so blockers are named per fn."""
+    total = compute_total(fns)
+    names = {f["name"] for f in fns}
+    out = ["totality report (derived willreturn: loop-free + pure row + total callees):"]
+    w = max((len(f["name"]) for f in fns), default=1)
+    for f in fns:
+        if f["name"] in total:
+            out.append(f"  {f['name']:<{w}}  TOTAL -> willreturn")
+            continue
+        blockers = []
+        if _has_loop(f["body"]): blockers.append("loop (const-trip tier not yet derived)")
+        eff = f.get("effects", [])
+        if eff != ["pure"]:
+            words = [e for e in eff if e and e[0].isalpha()]
+            soft = [wd for wd in words if wd not in ("traps", "pure")]
+            if "traps" in words: blockers.append("traps row (may abort; infectious upward)")
+            if soft: blockers.append(f"row [{', '.join(soft)}] (tier conservatism: termination-irrelevant)")
+        cs = sorted(_calls(f["body"], set()))
+        bad = [c for c in cs if c in names and c not in total]
+        if bad: blockers.append("non-total callees: " + ", ".join(bad))
+        out.append(f"  {f['name']:<{w}}  blocked: " + "; ".join(blockers))
+    out.append(f"  {len(total)}/{len(fns)} functions willreturn")
+    return "\n".join(out)
+
 # ---- LLVM IR ----
 INT_LL = {"i8", "i16", "i32", "i64"}            # the LLVM integer types democ emits
 
@@ -1464,7 +1492,7 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith('-')]
     flags = {a for a in sys.argv[1:] if a.startswith('-')}
     if not args:
-        print("usage: democ.py FILE.xl [--no-facts] [--asm] [--run]"); sys.exit(0)
+        print("usage: democ.py FILE.xl [--no-facts] [--asm] [--run] [--totality]"); sys.exit(0)
     src_path = Path(args[0])
     try:
         ir = compile_program(src_path.read_text(), alias='--no-facts' not in flags)
@@ -1472,6 +1500,9 @@ if __name__ == "__main__":
         print(f"{src_path.name}: REJECTED {e}"); sys.exit(1)
     out = src_path.with_suffix('.ll'); out.write_text(ir)
     print(f"{src_path.name}: OK -> {out}")
+    if '--totality' in flags:
+        _s, _e, _f = parse_program(src_path.read_text())[:3]
+        print(totality_report(_f))
     cc = "/usr/bin/clang" if Path("/usr/bin/clang").exists() else "clang"
     if '--asm' in flags:
         s = src_path.with_suffix('.s')
