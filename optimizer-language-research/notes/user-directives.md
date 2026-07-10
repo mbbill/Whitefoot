@@ -75,3 +75,18 @@ mid-design discovering that a familiar architecture (e.g. scattered deep
 writes) is unrepresentable. Catalog artifact: PATTERNS.md (normative,
 spec-adjacent). Trigger: owner review of the deep-write discussion — the
 command-buffer idiom must be doctrine, not folklore.
+
+## D7 (2026-07-10): Impact target — swap-in everyday artifact, not niche VM
+
+Owner (who has personally built high-performance wasm interpreters/JITs —
+Silverfir-rs, Silverfir-nano, mitey-jit in ~/Dev; mitey-jit hand-implements
+the musttail register-pinning trick channel 4 would automate): "a fast wasm
+interpreter" is not attractive to most people — they don't know what it means.
+The advertising-grade demonstration is REBUILDING AN EVERYDAY APP OR LIBRARY
+that users can swap into their existing workflow/toolchain and FEEL the
+performance difference. Consequences for the port-study ladder: candidates are
+ranked by (subset fit) x (felt-by-users) x (swap-in-ability), not by benchmark
+canon. Swap-in credibility protocol: bit-identical outputs vs the incumbent +
+fuzz-diff harness (fits the conformance culture). Channel-4's eventual real
+experiment: port the dispatch core of the owner's own engine (Silverfir
+in-place tier), owner referees equivalence.
