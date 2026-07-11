@@ -92,7 +92,7 @@ class Checker:
 
     # -- entry ---------------------------------------------------------------
     def check(self):
-        requirements = self.fn.get("requires", [])
+        requirements = (self.fn.get("requires") or [])
         if requirements:
             # [FN-8] A requires clause is a checked, parameter-only prologue.
             # Its helper bindings are clause-local: they neither collide with
@@ -658,9 +658,13 @@ def check_requires(fn):
     diagnostics remain stable; this pass rejects only the clause's structure and
     authority surface.
     """
-    requirements = fn.get("requires", [])
-    if not requirements:
+    requirements = fn.get("requires")
+    if requirements is None:
         return
+    if not requirements:                       # block present but no effective statements
+        raise CheckError("FN-8",
+            "requires must contain zero or more lets followed by one final check "
+            "(doc statements alone do not form a clause)")
     fnname = fn.get("name", "<anonymous>")
     params = {p["name"]: p for p in fn.get("params", [])}
     available = set(params)
@@ -715,7 +719,7 @@ class TypeChecker:
 
     def check(self):
         params = {p["name"]: (p["mode"], p["ty"]) for p in self.fn["params"]}
-        requirements = self.fn.get("requires", [])
+        requirements = (self.fn.get("requires") or [])
         if requirements:
             # [FN-8] Constants and body locals are outside the clause.  Discard
             # every clause-local binding before checking the ordinary body.
@@ -1173,7 +1177,7 @@ def _exhibits_traps(fn, declared_traps):
             for b in s.get("body", []):
                 stmt(b)
 
-    for s in fn.get("requires", []):
+    for s in (fn.get("requires") or []):
         stmt(s)
     for s in fn["body"]:
         stmt(s)

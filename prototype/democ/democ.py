@@ -446,7 +446,7 @@ def parse_program(src):
             eff = []
             while p.peek() not in ('requires', '{'):
                 eff.append(p.eat())                       # effect row [EFF-1/EFF-2]
-            requires = []
+            requires = None
             if p.peek() == 'requires':
                 p.eat('requires')
                 requires = parse_stmt_block(p)            # restricted + checked by FN-8
@@ -557,7 +557,7 @@ def build_prog(structs, enums, fns, consts=()):
                        for q in f["params"]],
             "rmode": f["rmode"], "rty": ttype(f["rty"]),
             "effects": f.get("effects", []),
-            "requires": tstmts(f.get("requires", [])),
+            "requires": (tstmts(f["requires"]) if f.get("requires") is not None else None),
             "body": tstmts(f["body"]),
         }
     return prog
@@ -1441,7 +1441,7 @@ class Gen:
         # emitting the guard.  The check itself always remains (OP-5); only
         # downstream operations may be discharged by proof.
         body_env = dict(g.env)
-        g.stmts(g.f.get("requires", []))
+        g.stmts(g.f.get("requires") or [])
         g.env = body_env
         g.stmts(g.f["body"])
         if not g.term:
@@ -1800,7 +1800,9 @@ def _bounded_offset_vars(stmts, ivar, limit, whole_body):
                 or e.get("op") != "iadd.wrap" or len(e.get("args", [])) != 2:
             continue
         base, amount = e["args"]
+        if e.get("tyargs") != ["u64"]: continue         # WG-1: pin width — no narrow-wrap laundering
         if _direct_place_name(base) != ivar or amount.get("e") != "lit": continue
+        if amount.get("ty") != "u64": continue
         d = amount["v"]
         if 0 <= d < limit and not _moved_or_reset(whole_body, st["n"]):
             offsets[st["n"]] = d
@@ -1852,7 +1854,7 @@ def _capacity_requirement(f):
     therefore exactly N <= 3*floor(C/4), not a trusted interpretation of an
     arbitrary writer expression.
     """
-    req = f.get("requires", [])
+    req = (f.get("requires") or [])
     if len(req) != 5 or any(st.get("s") == "doc" for st in req): return None
     lets, final = req[:-1], req[-1]
     if any(st.get("s") != "let" for st in lets) or final.get("s") != "check":
@@ -1921,8 +1923,11 @@ def _exact_direct_inc(st, name, amount):
             and e["args"][1].get("v") == amount)
 
 def _linear_statements(stmts):
-    """The v1 lockstep proof admits no nested control in a group body."""
-    return all(st.get("s") not in ("loop", "region", "match", "break", "return", "give", "try")
+    """The v1 lockstep proof admits no nested control in a group body.
+    WHITELIST: only statement kinds proven straight-line may appear (check and
+    expr can abort but never skip forward); any new statement kind fails
+    closed until it is audited for dominance."""
+    return all(st.get("s") in ("doc", "let", "set", "check", "expr")
                and "match" not in st for st in stmts)
 
 def _mark_capacity_place(pl, out, offsets):

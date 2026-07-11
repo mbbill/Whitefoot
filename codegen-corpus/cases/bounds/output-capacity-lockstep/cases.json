@@ -1,44 +1,523 @@
 {
-  "schema": 1,
-  "family": "bounds/output-capacity-lockstep",
-  "tags": ["bounds", "proof-2", "output-capacity-lockstep"],
-  "hypothesis": "A checked N <= 3*floor(C/4) signature fact proves only exact base64-shaped i=3k/o=4k output groups; every changed dependency, stride, target, offset, mutation, call, or tail premise fails closed.",
-  "measurement": {
-    "function": "probe",
-    "metric": "proof.sites",
-    "opt": "O2",
-    "facts_on": "compile_program(source, alias=true, proof_report=report)",
-    "facts_off": "compile_program(source, alias=false, proof_report=report)",
-    "note": "Structured per-site accounting is the oracle; retained boundary checks remain visible independently of backend optimization."
+ "schema": 1,
+ "family": "bounds/output-capacity-lockstep",
+ "tags": [
+  "bounds",
+  "proof-2",
+  "output-capacity-lockstep"
+ ],
+ "hypothesis": "A checked N <= 3*floor(C/4) signature fact proves only exact base64-shaped i=3k/o=4k output groups; every changed dependency, stride, target, offset, mutation, call, or tail premise fails closed.",
+ "measurement": {
+  "function": "probe",
+  "metric": "proof.sites",
+  "opt": "O2",
+  "facts_on": "compile_program(source, alias=true, proof_report=report)",
+  "facts_off": "compile_program(source, alias=false, proof_report=report)",
+  "note": "Structured per-site accounting is the oracle; retained boundary checks remain visible independently of backend optimization."
+ },
+ "cases": [
+  {
+   "id": "p01-full-loop-o",
+   "source": "p01-full-loop-o.xl",
+   "hypothesis": "The checked 3:4 capacity relation plus exact i/o lockstep proves the full-loop out[o] store.",
+   "tags": [
+    "positive",
+    "full-loop",
+    "offset-0"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "elided",
+    "bounds_sites": 1
+   }
   },
-  "cases": [
-    {"id":"p01-full-loop-o","source":"p01-full-loop-o.xl","hypothesis":"The checked 3:4 capacity relation plus exact i/o lockstep proves the full-loop out[o] store.","tags":["positive","full-loop","offset-0"],"maturity":"gate","expected":{"proof_classification":"elided","bounds_sites":1}},
-    {"id":"p02-full-loop-o3","source":"p02-full-loop-o3.xl","hypothesis":"The same induction proves the boundary full-loop out[o+3] store.","tags":["positive","full-loop","offset-3","boundary"],"maturity":"gate","expected":{"proof_classification":"elided","bounds_sites":1}},
-    {"id":"p03-tail-one","source":"p03-tail-one.xl","hypothesis":"The exact tail==1 arm inherits one final output group from the checked capacity relation.","tags":["positive","tail-1","offset-0"],"maturity":"gate","expected":{"proof_classification":"elided","bounds_sites":1}},
-    {"id":"p04-tail-two","source":"p04-tail-two.xl","hypothesis":"The exact tail==2 arm proves its boundary out[o+3] store.","tags":["positive","tail-2","offset-3","boundary"],"maturity":"gate","expected":{"proof_classification":"elided","bounds_sites":1}},
-    {"id":"p05-complete-groups","source":"p05-complete-groups.xl","hypothesis":"The base64-shaped four full-loop, four tail-1, and four tail-2 stores are all proved.","tags":["positive","base64-shape","full-loop","tails"],"maturity":"gate","expected":{"proof_classification":"elided","bounds_sites":12}},
-    {"id":"m01-o3-o4","source":"m01-o3-o4.xl","hypothesis":"Per-site accounting proves o+3 and retains the off-by-one o+4 store in one canonical loop.","tags":["mixed","offset-3","offset-4","off-by-one"],"maturity":"gate","expected":{"proof_classification":"mixed","bounds_sites":2,"proved_sites":1,"retained_sites":1}},
-    {"id":"m02-sibling-offset-mutation","source":"m02-sibling-offset-mutation.xl","hypothesis":"Sibling tail arms have lexical offset facts: the stable slot is proved and the same-spelled mutated sibling is retained.","tags":["mixed","sibling-scope","name-reuse","mutation"],"maturity":"gate","expected":{"proof_classification":"mixed","bounds_sites":2,"proved_sites":1,"retained_sites":1}},
-    {"id":"n01-missing-relation","source":"n01-missing-relation.xl","hypothesis":"No checked signature relation means the output store remains checked despite exact lockstep.","tags":["negative","missing-relation","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n02-wrong-relation-comparator","source":"n02-wrong-relation-comparator.xl","hypothesis":"A strict comparison is outside the one normalized capacity predicate and is retained conservatively.","tags":["negative","wrong-relation","comparator","conservative"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n03-wrong-output-buffer","source":"n03-wrong-output-buffer.xl","hypothesis":"Capacity checked for a distinct buffer cannot prove a store through out.","tags":["negative","wrong-buffer","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n04-wrong-source-buffer","source":"n04-wrong-source-buffer.xl","hypothesis":"A relation using another source length cannot bound the loop driven by src.","tags":["negative","wrong-source","wrong-bound","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n05-nonzero-output-init","source":"n05-nonzero-output-init.xl","hypothesis":"The o=4k induction requires literal zero initialization.","tags":["negative","wrong-init","output-index","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n06-wrong-input-stride","source":"n06-wrong-input-stride.xl","hypothesis":"i+=2 can execute more output groups than the 3:4 relation funds.","tags":["negative","wrong-stride","input","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n07-wrong-output-stride","source":"n07-wrong-output-stride.xl","hypothesis":"o+=5 breaks the exact output lockstep and may cross capacity.","tags":["negative","wrong-stride","output","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n08-input-increment-before-store","source":"n08-input-increment-before-store.xl","hypothesis":"Moving the input synchronization point before the store is outside the exact paired-final-increment shape.","tags":["negative","mutation-order","input-increment","conservative"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n09-output-increment-before-store","source":"n09-output-increment-before-store.xl","hypothesis":"A store after o+=4 may begin at capacity and must remain checked.","tags":["negative","mutation-order","output-increment","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n10-output-offset-four","source":"n10-output-offset-four.xl","hypothesis":"The funded group covers offsets zero through three, never o+4.","tags":["negative","offset-4","off-by-one","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n11-conditional-output-increment","source":"n11-conditional-output-increment.xl","hypothesis":"A conditional extra output increment desynchronizes i and o and invalidates the induction.","tags":["negative","conditional","desynchronized","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n12-output-index-uniq-alias-mutation","source":"n12-output-index-uniq-alias-mutation.xl","hypothesis":"Mutating o through a uniq-borrow holder invalidates the zero-based output induction.","tags":["negative","uniq-alias","output-index","mutation","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n13-tail-zero-output","source":"n13-tail-zero-output.xl","hypothesis":"tail==0 funds no additional group, so a post-tail store at o remains checked.","tags":["negative","tail-0","extra-group","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n14-duplicate-tail-one","source":"n14-duplicate-tail-one.xl","hypothesis":"A duplicate tail==1 block runs after the canonical arm has advanced o and cannot spend a second group.","tags":["negative","tail-1","duplicate","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n15-tail-mutation-between-arms","source":"n15-tail-mutation-between-arms.xl","hypothesis":"Mutating tail between its equality arms destroys their mutual exclusion and invalidates all output proofs.","tags":["negative","tail","mutation","mutual-exclusion","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n16-false-tail-arm-mutates-output","source":"n16-false-tail-arm-mutates-output.xl","hypothesis":"An o mutation in a False tail arm can advance the later True arm beyond capacity.","tags":["negative","tail","false-arm","output-mutation","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n17-wrong-tail-expression","source":"n17-wrong-tail-expression.xl","hypothesis":"A tail detached from n-i cannot connect loop exit to the final output group.","tags":["negative","wrong-tail","wrong-bound","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n18-output-offset-uniq-alias-mutation","source":"n18-output-offset-uniq-alias-mutation.xl","hypothesis":"Mutating an o+3 temporary through a uniq alias can turn it into o+4 and must retain the store.","tags":["negative","uniq-alias","offset","mutation","off-by-one","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n19-wrong-relation-multiplier","source":"n19-wrong-relation-multiplier.xl","hypothesis":"Using four input bytes per output group overcredits capacity; only the exact multiplier three relation is admitted.","tags":["negative","wrong-relation","multiplier","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n20-user-call-mentions-output","source":"n20-user-call-mentions-output.xl","hypothesis":"The v1 proof is intraprocedural and fail-closed: even a pure helper call mentioning out invalidates the capacity dependency.","tags":["negative","user-call","interprocedural","conservative"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":1}},
-    {"id":"n21-output-buffer-uniq-reborrow","source":"n21-output-buffer-uniq-reborrow.xl","hypothesis":"A uniq reborrow of the checked output buffer invalidates the direct-place capacity fact and every output access remains checked.","tags":["negative","uniq-alias","output-buffer","mutation","soundness"],"maturity":"gate","expected":{"proof_classification":"checked","bounds_sites":2}}
-  ]
+  {
+   "id": "p02-full-loop-o3",
+   "source": "p02-full-loop-o3.xl",
+   "hypothesis": "The same induction proves the boundary full-loop out[o+3] store.",
+   "tags": [
+    "positive",
+    "full-loop",
+    "offset-3",
+    "boundary"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "elided",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "p03-tail-one",
+   "source": "p03-tail-one.xl",
+   "hypothesis": "The exact tail==1 arm inherits one final output group from the checked capacity relation.",
+   "tags": [
+    "positive",
+    "tail-1",
+    "offset-0"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "elided",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "p04-tail-two",
+   "source": "p04-tail-two.xl",
+   "hypothesis": "The exact tail==2 arm proves its boundary out[o+3] store.",
+   "tags": [
+    "positive",
+    "tail-2",
+    "offset-3",
+    "boundary"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "elided",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "p05-complete-groups",
+   "source": "p05-complete-groups.xl",
+   "hypothesis": "The base64-shaped four full-loop, four tail-1, and four tail-2 stores are all proved.",
+   "tags": [
+    "positive",
+    "base64-shape",
+    "full-loop",
+    "tails"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "elided",
+    "bounds_sites": 12
+   }
+  },
+  {
+   "id": "m01-o3-o4",
+   "source": "m01-o3-o4.xl",
+   "hypothesis": "Per-site accounting proves o+3 and retains the off-by-one o+4 store in one canonical loop.",
+   "tags": [
+    "mixed",
+    "offset-3",
+    "offset-4",
+    "off-by-one"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "mixed",
+    "bounds_sites": 2,
+    "proved_sites": 1,
+    "retained_sites": 1
+   }
+  },
+  {
+   "id": "m02-sibling-offset-mutation",
+   "source": "m02-sibling-offset-mutation.xl",
+   "hypothesis": "Sibling tail arms have lexical offset facts: the stable slot is proved and the same-spelled mutated sibling is retained.",
+   "tags": [
+    "mixed",
+    "sibling-scope",
+    "name-reuse",
+    "mutation"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "mixed",
+    "bounds_sites": 2,
+    "proved_sites": 1,
+    "retained_sites": 1
+   }
+  },
+  {
+   "id": "n01-missing-relation",
+   "source": "n01-missing-relation.xl",
+   "hypothesis": "No checked signature relation means the output store remains checked despite exact lockstep.",
+   "tags": [
+    "negative",
+    "missing-relation",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n02-wrong-relation-comparator",
+   "source": "n02-wrong-relation-comparator.xl",
+   "hypothesis": "A strict comparison is outside the one normalized capacity predicate and is retained conservatively.",
+   "tags": [
+    "negative",
+    "wrong-relation",
+    "comparator",
+    "conservative"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n03-wrong-output-buffer",
+   "source": "n03-wrong-output-buffer.xl",
+   "hypothesis": "Capacity checked for a distinct buffer cannot prove a store through out.",
+   "tags": [
+    "negative",
+    "wrong-buffer",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n04-wrong-source-buffer",
+   "source": "n04-wrong-source-buffer.xl",
+   "hypothesis": "A relation using another source length cannot bound the loop driven by src.",
+   "tags": [
+    "negative",
+    "wrong-source",
+    "wrong-bound",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n05-nonzero-output-init",
+   "source": "n05-nonzero-output-init.xl",
+   "hypothesis": "The o=4k induction requires literal zero initialization.",
+   "tags": [
+    "negative",
+    "wrong-init",
+    "output-index",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n06-wrong-input-stride",
+   "source": "n06-wrong-input-stride.xl",
+   "hypothesis": "i+=2 can execute more output groups than the 3:4 relation funds.",
+   "tags": [
+    "negative",
+    "wrong-stride",
+    "input",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n07-wrong-output-stride",
+   "source": "n07-wrong-output-stride.xl",
+   "hypothesis": "o+=5 breaks the exact output lockstep and may cross capacity.",
+   "tags": [
+    "negative",
+    "wrong-stride",
+    "output",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n08-input-increment-before-store",
+   "source": "n08-input-increment-before-store.xl",
+   "hypothesis": "Moving the input synchronization point before the store is outside the exact paired-final-increment shape.",
+   "tags": [
+    "negative",
+    "mutation-order",
+    "input-increment",
+    "conservative"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n09-output-increment-before-store",
+   "source": "n09-output-increment-before-store.xl",
+   "hypothesis": "A store after o+=4 may begin at capacity and must remain checked.",
+   "tags": [
+    "negative",
+    "mutation-order",
+    "output-increment",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n10-output-offset-four",
+   "source": "n10-output-offset-four.xl",
+   "hypothesis": "The funded group covers offsets zero through three, never o+4.",
+   "tags": [
+    "negative",
+    "offset-4",
+    "off-by-one",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n11-conditional-output-increment",
+   "source": "n11-conditional-output-increment.xl",
+   "hypothesis": "A conditional extra output increment desynchronizes i and o and invalidates the induction.",
+   "tags": [
+    "negative",
+    "conditional",
+    "desynchronized",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n12-output-index-uniq-alias-mutation",
+   "source": "n12-output-index-uniq-alias-mutation.xl",
+   "hypothesis": "Mutating o through a uniq-borrow holder invalidates the zero-based output induction.",
+   "tags": [
+    "negative",
+    "uniq-alias",
+    "output-index",
+    "mutation",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n13-tail-zero-output",
+   "source": "n13-tail-zero-output.xl",
+   "hypothesis": "tail==0 funds no additional group, so a post-tail store at o remains checked.",
+   "tags": [
+    "negative",
+    "tail-0",
+    "extra-group",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n14-duplicate-tail-one",
+   "source": "n14-duplicate-tail-one.xl",
+   "hypothesis": "A duplicate tail==1 block runs after the canonical arm has advanced o and cannot spend a second group.",
+   "tags": [
+    "negative",
+    "tail-1",
+    "duplicate",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n15-tail-mutation-between-arms",
+   "source": "n15-tail-mutation-between-arms.xl",
+   "hypothesis": "Mutating tail between its equality arms destroys their mutual exclusion and invalidates all output proofs.",
+   "tags": [
+    "negative",
+    "tail",
+    "mutation",
+    "mutual-exclusion",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n16-false-tail-arm-mutates-output",
+   "source": "n16-false-tail-arm-mutates-output.xl",
+   "hypothesis": "An o mutation in a False tail arm can advance the later True arm beyond capacity.",
+   "tags": [
+    "negative",
+    "tail",
+    "false-arm",
+    "output-mutation",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n17-wrong-tail-expression",
+   "source": "n17-wrong-tail-expression.xl",
+   "hypothesis": "A tail detached from n-i cannot connect loop exit to the final output group.",
+   "tags": [
+    "negative",
+    "wrong-tail",
+    "wrong-bound",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n18-output-offset-uniq-alias-mutation",
+   "source": "n18-output-offset-uniq-alias-mutation.xl",
+   "hypothesis": "Mutating an o+3 temporary through a uniq alias can turn it into o+4 and must retain the store.",
+   "tags": [
+    "negative",
+    "uniq-alias",
+    "offset",
+    "mutation",
+    "off-by-one",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n19-wrong-relation-multiplier",
+   "source": "n19-wrong-relation-multiplier.xl",
+   "hypothesis": "Using four input bytes per output group overcredits capacity; only the exact multiplier three relation is admitted.",
+   "tags": [
+    "negative",
+    "wrong-relation",
+    "multiplier",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n20-user-call-mentions-output",
+   "source": "n20-user-call-mentions-output.xl",
+   "hypothesis": "The v1 proof is intraprocedural and fail-closed: even a pure helper call mentioning out invalidates the capacity dependency.",
+   "tags": [
+    "negative",
+    "user-call",
+    "interprocedural",
+    "conservative"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n21-output-buffer-uniq-reborrow",
+   "source": "n21-output-buffer-uniq-reborrow.xl",
+   "hypothesis": "A uniq reborrow of the checked output buffer invalidates the direct-place capacity fact and every output access remains checked.",
+   "tags": [
+    "negative",
+    "uniq-alias",
+    "output-buffer",
+    "mutation",
+    "soundness"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 2
+   }
+  },
+  {
+   "id": "n23-wrong-guard-literal-low",
+   "source": "n23-wrong-guard-literal-low.xl",
+   "hypothesis": "A loop guard of rem < 2 breaks the i<=n wrap-safety invariant; the prover must pin the guard literal to the input stride (3) and retain.",
+   "tags": [
+    "negative",
+    "guard-literal",
+    "soundness",
+    "panel-gap"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n24-wrong-guard-literal-high",
+   "source": "n24-wrong-guard-literal-high.xl",
+   "hypothesis": "A loop guard of rem < 4 desynchronizes tail accounting from the capacity relation; retained.",
+   "tags": [
+    "negative",
+    "guard-literal",
+    "conservative",
+    "panel-gap"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  },
+  {
+   "id": "n25-wrong-requires-shift",
+   "source": "n25-wrong-requires-shift.xl",
+   "hypothesis": "groups = out_len >> 1 credits ~1.5x the real output capacity; the shift amount is part of the pinned relation and must retain.",
+   "tags": [
+    "negative",
+    "wrong-relation",
+    "shift-amount",
+    "soundness",
+    "panel-gap"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1
+   }
+  }
+ ]
 }
