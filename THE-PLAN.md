@@ -94,6 +94,11 @@ Measured non-wins (equally load-bearing):
    mutation, relation, stride, ordering, and tail adversaries. Contract
    refinement remains deferred; prototype artifact-embedded proof references,
    gated FFI frames, and machine-readable trap reports remain explicit debt.
+   REVIEW DRAFT 2026-07-11: the follow-up design for obligation-driven proof
+   discovery, guarded checked fallbacks, enforceable retained-check accounting,
+   and non-overrestrictive variable-output `requires` guidance is recorded in
+   `optimizer-language-research/implementation/requires-check-accounting-design.md`;
+   it changes no normative rule until reviewed.
 2. **Leg-A frequency study** — never run, cheap, decision-relevant: how often
    do the channel patterns (alias-guard versioning, opaque hot calls, manual
    reassociation idioms) occur in real Rust corpora. Directly answers the
