@@ -1,9 +1,39 @@
+# Python/tool caches and local environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# OS/editor litter
+.DS_Store
+*.swp
+*.swo
+*~
+
 # build artifacts and benchmark data (regenerable; see each experiment's Makefile/RESULTS)
 *.o
 *.s
+*.a
+*.so
+*.so.*
+*.dylib
+*.rlib
+*.exe
+*.dSYM/
+*.profraw
+*.profdata
+target/
 experiments/**/big.txt
 experiments/**/xwc*
 experiments/**/xchunkwc*
+experiments/**/bench
 experiments/**/bench_*
 experiments/**/btrees_*
 experiments/**/probe_*
@@ -11,4 +41,20 @@ experiments/**/kernel_bin
 experiments/**/memchr_ref
 experiments/**/rust_chunk_wc
 experiments/**/c_chunk_wc
+experiments/**/cref
+experiments/**/fuzzdiff
+experiments/**/conv_*
+experiments/**/xb64*
 experiments/port-study/*/fuzz/
+
+# Extensionless executables emitted beside checked source/IR fixtures
+conformance/cases/*
+!conformance/cases/*.xl
+prototype/democ/examples/*
+!prototype/democ/examples/*.xl
+!prototype/democ/examples/*.ll
+!prototype/democ/examples/*.md
+m3/submissions/reference/xlang/*
+!m3/submissions/reference/xlang/*.xl
+!m3/submissions/reference/xlang/*.ll
+!m3/submissions/reference/xlang/*.md
