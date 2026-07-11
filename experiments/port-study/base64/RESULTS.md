@@ -45,3 +45,17 @@ with the platform-tuned BSD tool.
 - Driver slurps; a streaming/chunked driver would confirm the warm numbers.
 - The table lookup is scalar; SIMD base64 (which BSD approximates) is a
   blessed-pattern opportunity, not attempted.
+
+## Elision-ceiling experiment (2026-07-10)
+
+`--elide-bounds-experiment` (perfect-prover upper bound; experiment-only
+flag, never a shipping mode): encode kernel 2.44 -> 4.2 GB/s (**1.7x**),
+hot-loop branches 41 -> 9, outputs byte-identical to system base64 on random
+data. Still ZERO auto-vectorization even fully elided — the SIMD base64
+algorithm (wide tables + tbl shuffles) is not vectorizer-discoverable, so
+elision's honest value here is scalar: shorter dependency chains, no
+side-exits. Checks in this kernel divide into two provable classes:
+(a) loop-guard-dominated source reads (`rem >= 3` implies i, i+1, i+2 < n) —
+a structural prover covers these; (b) output writes bounded by a CALLER
+guarantee (out capacity >= 4*ceil(n/3)) — needs a precondition surface;
+LLVM cannot know it and the checker can. Design card: gates 2026-07-10.

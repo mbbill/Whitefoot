@@ -74,7 +74,10 @@ Measured non-wins (equally load-bearing):
    reductions stay scalar; ~18 surviving bounds branches block base64
    vectorization (controlled elision experiment designed in gates, no gain
    claimed until run). This is also the principled answer to "bad code
-   exists": never push writers to `.wrap`.
+   exists": never push writers to `.wrap`. STATUS 2026-07-10: ceiling
+   MEASURED — 1.7x on base64 (scalar; no SIMD unlock), design card in gates;
+   PROOF-1 structural prover is the next build unit, PROOF-2 preconditions
+   need owner ratification as spec surface.
 2. **Leg-A frequency study** — never run, cheap, decision-relevant: how often
    do the channel patterns (alias-guard versioning, opaque hot calls, manual
    reassociation idioms) occur in real Rust corpora. Directly answers the

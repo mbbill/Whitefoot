@@ -617,13 +617,14 @@ def _field_ll(tyname, structs):
 
 class Gen:
     def __init__(g, f, enums, structs=None, alias=True, fnret=None, decls=None, total=frozenset(),
-                 mdefs=None, mdctr=None):
+                 mdefs=None, mdctr=None, elide=False):
         g.f = f; g.enums = enums; g.structs = structs or {}; g.alias = alias
         g.fnret = fnret or {}          # fn name -> LLVM return type (for cross-fn calls)
         g.fnrty = getattr(Gen, "_fnrty", {})
         g.decls = decls if decls is not None else set()   # extra intrinsic declares used
         g.n = 0; g.lines = []; g.env = {}; g.traps = False; g.term = False
         g.loopstk = []
+        g.elide = elide                # EXPERIMENT ONLY: emit no bounds checks (perfect-prover ceiling)
         g.mdefs = mdefs                # module-level scoped-alias metadata lines [F003 channel]
         g.mdctr = mdctr                # shared metadata id counter (one numbering per module)
         g.pmode = {}                   # param name -> 'uniq' | 'shared' | 'own'
@@ -750,9 +751,10 @@ class Gen:
         if cinfo and cinfo[0] != "scalar":             # [CONST-2] const-array index: GEP the global, bounds-checked
             ell, n, sg = cinfo
             iv = g.expr(pl["index"]["atom"])
-            g.traps = True
-            c = g.tmp(); g.emit(f"  {c} = icmp ult i64 {iv['v']}, {n}")
-            l = g.lbl(); g.emit(f"  br i1 {c}, label %{l}, label %trap"); g.emit(f"{l}:")
+            if not g.elide:                            # [OP-4]; elide-experiment skips (ceiling probe)
+                g.traps = True
+                c = g.tmp(); g.emit(f"  {c} = icmp ult i64 {iv['v']}, {n}")
+                l = g.lbl(); g.emit(f"  br i1 {c}, label %{l}, label %trap"); g.emit(f"{l}:")
             ptr = g.tmp()
             g.emit(f"  {ptr} = getelementptr [{n} x {ell}], ptr @__const_{ipl['base']}, i64 0, i64 {iv['v']}")
             return ptr, ell, sg, ""
@@ -770,9 +772,10 @@ class Gen:
             pair = g.scopes.get(key)
             if pair: md = f", !alias.scope !{pair[0]}, !noalias !{pair[1]}"
         iv = g.expr(pl["index"]["atom"])
-        g.traps = True
-        c = g.tmp(); g.emit(f"  {c} = icmp ult i64 {iv['v']}, {buf['len']}")
-        l = g.lbl(); g.emit(f"  br i1 {c}, label %{l}, label %trap"); g.emit(f"{l}:")
+        if not g.elide:                                # [OP-4] check; elide-experiment skips (ceiling probe)
+            g.traps = True
+            c = g.tmp(); g.emit(f"  {c} = icmp ult i64 {iv['v']}, {buf['len']}")
+            l = g.lbl(); g.emit(f"  br i1 {c}, label %{l}, label %trap"); g.emit(f"{l}:")
         ptr = g.tmp(); g.emit(f"  {ptr} = getelementptr {buf['ell']}, ptr {buf['ptr']}, i64 {iv['v']}")
         return ptr, buf["ell"], buf["esigned"], md
 
@@ -1533,7 +1536,10 @@ def reassociate_reductions(fns, proved):
     for f in fns:
         f["body"] = walk(f["body"])
 
-def compile_program(src, alias=True):
+def compile_program(src, alias=True, elide_bounds=False):
+    # elide_bounds is an EXPERIMENT-ONLY ceiling probe (perfect-prover upper
+    # bound): never a shipping mode; real elision arrives via the OP-4 proof
+    # tier (THE-PLAN.md bet 1).
     structs, enums, fns, contracts, conforms, consts = parse_program(src)
     check_program(build_prog(structs, enums, fns, consts))
     proved = discharge_laws(contracts, conforms, fns)
@@ -1567,7 +1573,8 @@ def compile_program(src, alias=True):
         else:                                          # scalar const: fold to its literal at use sites
             cmap[c["name"]] = ("scalar", _litval(c["vals"][0]), _is_signed(c["ty"]))
     Gen._consts = cmap
-    bodies = [Gen(f, enums, structs, alias, fnret, decls, total, mdefs, mdctr).run() for f in fns]
+    bodies = [Gen(f, enums, structs, alias, fnret, decls, total, mdefs, mdctr,
+                  elide=elide_bounds).run() for f in fns]
     if cglobals: bodies.insert(0, "\n".join(cglobals) + "\n")
     if mdefs: bodies.append("\n".join(mdefs) + "\n")
     # named aggregate type per used struct, emitted once (only when structs exist -> byte-stable
@@ -1598,7 +1605,8 @@ if __name__ == "__main__":
         print("usage: democ.py FILE.xl [--no-facts] [--asm] [--run] [--totality]"); sys.exit(0)
     src_path = Path(args[0])
     try:
-        ir = compile_program(src_path.read_text(), alias='--no-facts' not in flags)
+        ir = compile_program(src_path.read_text(), alias='--no-facts' not in flags,
+                             elide_bounds='--elide-bounds-experiment' in flags)
     except CheckError as e:
         print(f"{src_path.name}: REJECTED {e}"); sys.exit(1)
     out = src_path.with_suffix('.ll'); out.write_text(ir)
