@@ -1,0 +1,155 @@
+struct Summary {
+  lines: u64;
+  words: u64;
+  bytes: u64;
+  first_space: u64;
+  last_space: u64;
+}
+
+fn summarize ['r] (out: &uniq 'r Summary, b: own buffer<u8>) -> own unit writes('r), traps {
+  doc "Summarize one ordered byte chunk; empty chunks use bytes=0 as the identity marker.";
+  let n: own u64 = len<u8>(b);
+  let i: own u64 = 0_u64;
+  let lines: own u64 = 0_u64;
+  let words: own u64 = 0_u64;
+  let prevspace: own u8 = 1_u8;
+  let firstspace: own u64 = 1_u64;
+  match ieq<u64>(n, 0_u64) {
+    True() => {
+    }
+    False() => {
+      let firstc: own u8 = index<u8>(b, 0_u64);
+      let firstge9: own Bool = ige<u8>(firstc, 9_u8);
+      let firstle13: own Bool = ile<u8>(firstc, 13_u8);
+      let firstinrange: own Bool = match firstge9 {
+        True() => {
+          give move firstle13;
+        }
+        False() => {
+          give False();
+        }
+      }
+      let firstissp: own Bool = match firstinrange {
+        True() => {
+          give True();
+        }
+        False() => {
+          give ieq<u8>(firstc, 32_u8);
+        }
+      }
+      match firstissp {
+        True() => {
+          set firstspace = 1_u64;
+        }
+        False() => {
+          set firstspace = 0_u64;
+        }
+      }
+    }
+  }
+  loop @scan {
+    match ige<u64>(i, n) {
+      True() => {
+        break @scan;
+      }
+      False() => {
+      }
+    }
+    let c: own u8 = index<u8>(b, i);
+    match ieq<u8>(c, 10_u8) {
+      True() => {
+        set lines = iadd.wrap<u64>(lines, 1_u64);
+      }
+      False() => {
+      }
+    }
+    let ge9: own Bool = ige<u8>(c, 9_u8);
+    let le13: own Bool = ile<u8>(c, 13_u8);
+    let inrange: own Bool = match ge9 {
+      True() => {
+        give move le13;
+      }
+      False() => {
+        give False();
+      }
+    }
+    let issp: own Bool = match inrange {
+      True() => {
+        give True();
+      }
+      False() => {
+        give ieq<u8>(c, 32_u8);
+      }
+    }
+    match issp {
+      True() => {
+        set prevspace = 1_u8;
+      }
+      False() => {
+        let prevwide: own u64 = cvt<u8, u64>(prevspace);
+        set words = iadd.wrap<u64>(words, prevwide);
+        set prevspace = 0_u8;
+      }
+    }
+    set i = iadd.wrap<u64>(i, 1_u64);
+  }
+  set deref(out).lines = lines;
+  set deref(out).words = words;
+  set deref(out).bytes = n;
+  set deref(out).first_space = firstspace;
+  let lastspace: own u64 = cvt<u8, u64>(prevspace);
+  set deref(out).last_space = lastspace;
+  return unit;
+}
+
+fn combine ['r] (out: &uniq 'r Summary, a: &'r Summary, b: &'r Summary) -> own unit reads('r), writes('r) {
+  doc "Ordered associative merge. It is deliberately not commutative.";
+  match ieq<u64>(deref(a).bytes, 0_u64) {
+    True() => {
+      set deref(out).lines = deref(b).lines;
+      set deref(out).words = deref(b).words;
+      set deref(out).bytes = deref(b).bytes;
+      set deref(out).first_space = deref(b).first_space;
+      set deref(out).last_space = deref(b).last_space;
+      return unit;
+    }
+    False() => {
+    }
+  }
+  match ieq<u64>(deref(b).bytes, 0_u64) {
+    True() => {
+      set deref(out).lines = deref(a).lines;
+      set deref(out).words = deref(a).words;
+      set deref(out).bytes = deref(a).bytes;
+      set deref(out).first_space = deref(a).first_space;
+      set deref(out).last_space = deref(a).last_space;
+      return unit;
+    }
+    False() => {
+    }
+  }
+  let lines: own u64 = iadd.wrap<u64>(deref(a).lines, deref(b).lines);
+  let rawwords: own u64 = iadd.wrap<u64>(deref(a).words, deref(b).words);
+  let joined: own u64 = 0_u64;
+  match ieq<u64>(deref(a).last_space, 0_u64) {
+    True() => {
+      match ieq<u64>(deref(b).first_space, 0_u64) {
+        True() => {
+          set joined = 1_u64;
+        }
+        False() => {
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  let words: own u64 = isub.wrap<u64>(rawwords, joined);
+  let bytes: own u64 = iadd.wrap<u64>(deref(a).bytes, deref(b).bytes);
+  set deref(out).lines = lines;
+  set deref(out).words = words;
+  set deref(out).bytes = bytes;
+  set deref(out).first_space = deref(a).first_space;
+  set deref(out).last_space = deref(b).last_space;
+  return unit;
+}

@@ -1,20 +1,14 @@
-# Session tooling snapshot (not project content)
-.playwright-mcp/
-
-# Compiled demo binaries — regenerate with `make examples`
-prototype/democ/examples/ex1
-prototype/democ/examples/ex2
-
-# OS / editor / Python cruft
-.DS_Store
-__pycache__/
-*.pyc
-
-# Rust benchmark build output
-target/
-
-# conformance: artifacts from running democ directly on a case (the runner uses a tempdir)
-conformance/cases/*.ll
-conformance/cases/*.s
-conformance/cases/*
-!conformance/cases/*.xl
+# build artifacts and benchmark data (regenerable; see each experiment's Makefile/RESULTS)
+*.o
+*.s
+experiments/**/big.txt
+experiments/**/xwc*
+experiments/**/xchunkwc*
+experiments/**/bench_*
+experiments/**/btrees_*
+experiments/**/probe_*
+experiments/**/kernel_bin
+experiments/**/memchr_ref
+experiments/**/rust_chunk_wc
+experiments/**/c_chunk_wc
+experiments/port-study/*/fuzz/
