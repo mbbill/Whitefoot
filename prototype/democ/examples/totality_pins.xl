@@ -1,0 +1,24 @@
+fn spin () -> own u64 pure {
+  let x: own u64 = match ieq<u64>(0_u64, 0_u64) {
+    True() => {
+      loop @l {
+      }
+    }
+    False() => {
+      give 1_u64;
+    }
+  }
+  return x;
+}
+
+fn caller () -> own u64 pure {
+  let y: own u64 = match ieq<u64>(0_u64, 0_u64) {
+    True() => {
+      give spin();
+    }
+    False() => {
+      give 2_u64;
+    }
+  }
+  return y;
+}

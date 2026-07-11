@@ -971,6 +971,8 @@ def _exhibits_traps(fn, declared_traps):
             match(s)
         elif k in ("return", "give", "expr"):
             expr(s.get("expr"))
+        elif k == "try":                       # [ERR-3] scrutinee can trap (e.g. index in a try)
+            expr(s.get("expr"))
         elif k == "set":
             place(s.get("place")); expr(s.get("expr"))
         elif k in ("region", "loop"):

@@ -1,0 +1,9 @@
+fn g ['r] (buf: &'r buffer<i32>, i: own u64) -> own Result<i32,Overflow> reads('r), traps {
+  doc "EFF-2: the try-scrutinee index trap is declared; row and body agree.";
+  let r: own i32 = try iadd.checked<i32>(index<i32>(buf, i), 1_i32);
+  return Ok(value: r);
+}
+
+fn main () -> own unit pure {
+  return unit;
+}

@@ -524,6 +524,7 @@ def _has_loop(body):
         if k == "loop": return True
         if k in ("region",) and _has_loop(s["body"]): return True
         if k == "match" and any(_has_loop(a["body"]) for a in s["arms"]): return True
+        if "match" in s and any(_has_loop(a["body"]) for a in s["match"]["arms"]): return True
     return False
 
 def _calls(body, out):
@@ -537,19 +538,27 @@ def _calls(body, out):
         if s.get("s") == "region": _calls(s["body"], out)
         if s.get("s") == "match":
             for a in s["arms"]: _calls(a["body"], out)
+        if "match" in s:                       # give-match let: scrutinee + arm bodies
+            ex(s["match"]["scrut"])
+            for a in s["match"]["arms"]: _calls(a["body"], out)
     return out
 
 def compute_total(fns):
+    """Derived willreturn tier: loop-free + trap-free + all callees total.
+    Trap-freedom is read off the effect row — sound because EFF-2's exhibits
+    discipline (checker-enforced) forces every may-abort source (index bounds,
+    .trap arithmetic, buffer_new size check, check-else-trap) to declare
+    `traps`. Memory rows (reads/writes/allocates) are termination-irrelevant
+    and do not block the tier."""
     total = {}
     for _ in range(len(fns) + 1):
         for f in fns:
             if f["name"] in total: continue
             if _has_loop(f["body"]): total[f["name"]] = False; continue
-            if f.get("effects") != ["pure"]: total[f["name"]] = False; continue
+            if "traps" in f.get("effects", []): total[f["name"]] = False; continue
             cs = _calls(f["body"], set())
-            if all(total.get(c) is True for c in cs) or not cs:
-                if all(total.get(c, None) is True for c in cs):
-                    total[f["name"]] = True
+            if all(total.get(c, None) is True for c in cs):
+                total[f["name"]] = True
     return {k for k, v in total.items() if v}
 
 def totality_report(fns):
@@ -559,7 +568,7 @@ def totality_report(fns):
     every transitive caller), so blockers are named per fn."""
     total = compute_total(fns)
     names = {f["name"] for f in fns}
-    out = ["totality report (derived willreturn: loop-free + pure row + total callees):"]
+    out = ["totality report (derived willreturn: loop-free + trap-free + total callees):"]
     w = max((len(f["name"]) for f in fns), default=1)
     for f in fns:
         if f["name"] in total:
@@ -567,12 +576,8 @@ def totality_report(fns):
             continue
         blockers = []
         if _has_loop(f["body"]): blockers.append("loop (const-trip tier not yet derived)")
-        eff = f.get("effects", [])
-        if eff != ["pure"]:
-            words = [e for e in eff if e and e[0].isalpha()]
-            soft = [wd for wd in words if wd not in ("traps", "pure")]
-            if "traps" in words: blockers.append("traps row (may abort; infectious upward)")
-            if soft: blockers.append(f"row [{', '.join(soft)}] (tier conservatism: termination-irrelevant)")
+        if "traps" in f.get("effects", []):
+            blockers.append("traps row (may abort; infectious upward)")
         cs = sorted(_calls(f["body"], set()))
         bad = [c for c in cs if c in names and c not in total]
         if bad: blockers.append("non-total callees: " + ", ".join(bad))

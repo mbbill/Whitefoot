@@ -39,3 +39,10 @@ _n = _d.compile_program(_src, alias=False).count("uadd.sat")
 print(f"sat-reduce uadd.sat sites with facts={_f} without={_n}")
 assert _f >= 8 and _n <= 3, "PERF REGRESSION: checked-law reassociation changed"
 print("OK: checked-law (FN-4) reassociation intact")
+
+# Fourth pin: willreturn tier soundness. The give-match counterexamples from
+# the adversarial review (a loop hidden in a give-match arm; a call to that fn
+# from another give-match arm) must NEVER earn willreturn.
+_tp = _d.compile_program(Path("examples/totality_pins.xl").read_text())
+assert "willreturn" not in _tp, "SOUNDNESS REGRESSION: willreturn on a divergent give-match fn"
+print("OK: willreturn tier soundness pins intact")
