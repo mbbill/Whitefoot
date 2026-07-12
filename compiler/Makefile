@@ -14,6 +14,7 @@ check:
 	$(PY) test_semantic_prelude.py
 	$(PY) test_semantic_facts.py
 	$(PY) test_semantic_body.py
+	$(PY) test_semantic_buffer.py
 	$(PY) test_semantic_types.py
 	$(PY) test_semantic_globals.py
 	$(PY) test_semantic_type_resolve.py

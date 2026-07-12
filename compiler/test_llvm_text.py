@@ -35,9 +35,12 @@ NO_ARG_EMITTERS = (
     "llvm_text_emit_i64",
     "llvm_text_emit_ptr",
     "llvm_text_emit_buffer_type",
+    "llvm_text_emit_overflow_pair_type",
     "llvm_text_emit_space",
     "llvm_text_emit_newline",
     "llvm_text_emit_at",
+    "llvm_text_emit_uadd_overflow_i64",
+    "llvm_text_emit_llvm_trap",
     "llvm_text_emit_left_paren",
     "llvm_text_emit_right_paren",
     "llvm_text_emit_comma",
@@ -46,19 +49,25 @@ NO_ARG_EMITTERS = (
     "llvm_text_emit_left_brace",
     "llvm_text_emit_right_brace",
     "llvm_text_emit_define",
+    "llvm_text_emit_declare",
+    "llvm_text_emit_void",
     "llvm_text_emit_entry",
     "llvm_text_emit_alloca",
     "llvm_text_emit_store",
     "llvm_text_emit_load",
+    "llvm_text_emit_extractvalue",
+    "llvm_text_emit_getelementptr",
     "llvm_text_emit_br",
     "llvm_text_emit_label",
     "llvm_text_emit_true",
     "llvm_text_emit_icmp_uge",
     "llvm_text_emit_icmp_ule",
     "llvm_text_emit_icmp_eq",
+    "llvm_text_emit_icmp_ult",
     "llvm_text_emit_and",
     "llvm_text_emit_or",
     "llvm_text_emit_ret",
+    "llvm_text_emit_unreachable",
 )
 
 ID_EMITTERS = (
@@ -93,6 +102,30 @@ bb0:
   ret i1 true
 bb1:
   ret i1 %p0
+}
+"""
+
+CHECKED_EXPECTED = b"""declare { i64, i1 } @llvm.uadd.with.overflow.i64(i64, i64)
+declare void @llvm.trap()
+
+define i8 @checked({ ptr, i64 } %p0, i64 %p1) {
+entry:
+  %v0 = call { i64, i1 } @llvm.uadd.with.overflow.i64(i64 %p1, i64 1)
+  %v1 = extractvalue { i64, i1 } %v0, 0
+  %v2 = extractvalue { i64, i1 } %v0, 1
+  br i1 %v2, label %bb2, label %bb0
+bb0:
+  %v3 = extractvalue { ptr, i64 } %p0, 0
+  %v4 = extractvalue { ptr, i64 } %p0, 1
+  %v5 = icmp ult i64 %v1, %v4
+  br i1 %v5, label %bb1, label %bb2
+bb1:
+  %v6 = getelementptr i8, ptr %v3, i64 %v1
+  %v7 = load i8, ptr %v6
+  ret i8 %v7
+bb2:
+  call void @llvm.trap()
+  unreachable
 }
 """
 
@@ -373,6 +406,232 @@ def emit_branch_skeleton(library, source, tokens, out):
     atom("llvm_text_emit_newline")
 
 
+def emit_checked_skeleton(library, source, tokens, out):
+    out_pointer = ctypes.byref(out)
+
+    def atom(name):
+        getattr(library, name)(out_pointer)
+
+    def identifier(name, value):
+        getattr(library, name)(out_pointer, value)
+
+    def space():
+        atom("llvm_text_emit_space")
+
+    def indent():
+        space()
+        space()
+
+    def number(value):
+        library.byte_tape_emit_u64(out_pointer, value)
+
+    def value(value_id):
+        identifier("llvm_text_emit_value", value_id)
+
+    def place(place_id):
+        identifier("llvm_text_emit_place", place_id)
+
+    def block_label(block_id):
+        identifier("llvm_text_emit_block", block_id)
+        atom("llvm_text_emit_colon")
+        atom("llvm_text_emit_newline")
+
+    def branch(condition, true_block, false_block):
+        indent()
+        atom("llvm_text_emit_br")
+        space()
+        atom("llvm_text_emit_i1")
+        space()
+        value(condition)
+        atom("llvm_text_emit_comma")
+        space()
+        atom("llvm_text_emit_label")
+        space()
+        identifier("llvm_text_emit_block_ref", true_block)
+        atom("llvm_text_emit_comma")
+        space()
+        atom("llvm_text_emit_label")
+        space()
+        identifier("llvm_text_emit_block_ref", false_block)
+        atom("llvm_text_emit_newline")
+
+    atom("llvm_text_emit_declare")
+    space()
+    atom("llvm_text_emit_overflow_pair_type")
+    space()
+    atom("llvm_text_emit_uadd_overflow_i64")
+    atom("llvm_text_emit_left_paren")
+    atom("llvm_text_emit_i64")
+    atom("llvm_text_emit_comma")
+    space()
+    atom("llvm_text_emit_i64")
+    atom("llvm_text_emit_right_paren")
+    atom("llvm_text_emit_newline")
+
+    atom("llvm_text_emit_declare")
+    space()
+    atom("llvm_text_emit_void")
+    space()
+    atom("llvm_text_emit_llvm_trap")
+    atom("llvm_text_emit_left_paren")
+    atom("llvm_text_emit_right_paren")
+    atom("llvm_text_emit_newline")
+    atom("llvm_text_emit_newline")
+
+    atom("llvm_text_emit_define")
+    space()
+    atom("llvm_text_emit_i8")
+    space()
+    atom("llvm_text_emit_at")
+    library.llvm_text_emit_token(source, ctypes.byref(tokens), 0, out_pointer)
+    atom("llvm_text_emit_left_paren")
+    atom("llvm_text_emit_buffer_type")
+    space()
+    place(0)
+    atom("llvm_text_emit_comma")
+    space()
+    atom("llvm_text_emit_i64")
+    space()
+    place(1)
+    atom("llvm_text_emit_right_paren")
+    space()
+    atom("llvm_text_emit_left_brace")
+    atom("llvm_text_emit_newline")
+    atom("llvm_text_emit_entry")
+    atom("llvm_text_emit_newline")
+
+    indent()
+    value(0)
+    space()
+    atom("llvm_text_emit_equal")
+    space()
+    atom("llvm_text_emit_call")
+    space()
+    atom("llvm_text_emit_overflow_pair_type")
+    space()
+    atom("llvm_text_emit_uadd_overflow_i64")
+    atom("llvm_text_emit_left_paren")
+    atom("llvm_text_emit_i64")
+    space()
+    place(1)
+    atom("llvm_text_emit_comma")
+    space()
+    atom("llvm_text_emit_i64")
+    space()
+    number(1)
+    atom("llvm_text_emit_right_paren")
+    atom("llvm_text_emit_newline")
+
+    for result, field in ((1, 0), (2, 1)):
+        indent()
+        value(result)
+        space()
+        atom("llvm_text_emit_equal")
+        space()
+        atom("llvm_text_emit_extractvalue")
+        space()
+        atom("llvm_text_emit_overflow_pair_type")
+        space()
+        value(0)
+        atom("llvm_text_emit_comma")
+        space()
+        number(field)
+        atom("llvm_text_emit_newline")
+    branch(2, 2, 0)
+
+    block_label(0)
+    for result, field in ((3, 0), (4, 1)):
+        indent()
+        value(result)
+        space()
+        atom("llvm_text_emit_equal")
+        space()
+        atom("llvm_text_emit_extractvalue")
+        space()
+        atom("llvm_text_emit_buffer_type")
+        space()
+        place(0)
+        atom("llvm_text_emit_comma")
+        space()
+        number(field)
+        atom("llvm_text_emit_newline")
+
+    indent()
+    value(5)
+    space()
+    atom("llvm_text_emit_equal")
+    space()
+    atom("llvm_text_emit_icmp_ult")
+    space()
+    atom("llvm_text_emit_i64")
+    space()
+    value(1)
+    atom("llvm_text_emit_comma")
+    space()
+    value(4)
+    atom("llvm_text_emit_newline")
+    branch(5, 1, 2)
+
+    block_label(1)
+    indent()
+    value(6)
+    space()
+    atom("llvm_text_emit_equal")
+    space()
+    atom("llvm_text_emit_getelementptr")
+    space()
+    atom("llvm_text_emit_i8")
+    atom("llvm_text_emit_comma")
+    space()
+    atom("llvm_text_emit_ptr")
+    space()
+    value(3)
+    atom("llvm_text_emit_comma")
+    space()
+    atom("llvm_text_emit_i64")
+    space()
+    value(1)
+    atom("llvm_text_emit_newline")
+
+    indent()
+    value(7)
+    space()
+    atom("llvm_text_emit_equal")
+    space()
+    atom("llvm_text_emit_load")
+    space()
+    atom("llvm_text_emit_i8")
+    atom("llvm_text_emit_comma")
+    space()
+    atom("llvm_text_emit_ptr")
+    space()
+    value(6)
+    atom("llvm_text_emit_newline")
+    indent()
+    atom("llvm_text_emit_ret")
+    space()
+    atom("llvm_text_emit_i8")
+    space()
+    value(7)
+    atom("llvm_text_emit_newline")
+
+    block_label(2)
+    indent()
+    atom("llvm_text_emit_call")
+    space()
+    atom("llvm_text_emit_void")
+    space()
+    atom("llvm_text_emit_llvm_trap")
+    atom("llvm_text_emit_left_paren")
+    atom("llvm_text_emit_right_paren")
+    atom("llvm_text_emit_newline")
+    indent()
+    atom("llvm_text_emit_unreachable")
+    atom("llvm_text_emit_newline")
+    atom("llvm_text_emit_right_brace")
+    atom("llvm_text_emit_newline")
+
+
 def assert_id_vocabulary(library):
     cases = (
         ("llvm_text_emit_value", U64_MAX, b"%v18446744073709551615"),
@@ -396,6 +655,18 @@ def assert_operation_vocabulary(library):
         ("llvm_text_emit_label", b"label"),
         ("llvm_text_emit_colon", b":"),
         ("llvm_text_emit_true", b"true"),
+        ("llvm_text_emit_extractvalue", b"extractvalue"),
+        ("llvm_text_emit_getelementptr", b"getelementptr"),
+        ("llvm_text_emit_icmp_ult", b"icmp ult"),
+        ("llvm_text_emit_declare", b"declare"),
+        ("llvm_text_emit_void", b"void"),
+        ("llvm_text_emit_unreachable", b"unreachable"),
+        ("llvm_text_emit_overflow_pair_type", b"{ i64, i1 }"),
+        (
+            "llvm_text_emit_uadd_overflow_i64",
+            b"@llvm.uadd.with.overflow.i64",
+        ),
+        ("llvm_text_emit_llvm_trap", b"@llvm.trap"),
     )
     for name, expected in cases:
         storage, tape = make_output(len(expected))
@@ -474,6 +745,38 @@ def assert_branch_skeleton(library, directory):
     assert source_storage and token_storage
 
 
+def assert_checked_skeleton(library, directory):
+    source_storage, source = make_source(b"checked")
+    token_storage, tokens = make_tokens([(0, 7)])
+
+    measured_storage, measured = make_output(0)
+    emit_checked_skeleton(library, source, tokens, measured)
+    assert (measured.status, measured.count) == (
+        BYTE_NEED_CAPACITY,
+        len(CHECKED_EXPECTED),
+    )
+    assert measured_storage[0] == GUARD
+
+    exact_storage, exact = make_output(len(CHECKED_EXPECTED))
+    emit_checked_skeleton(library, source, tokens, exact)
+    assert (exact.status, exact.count) == (BYTE_CLEAN, len(CHECKED_EXPECTED))
+    assert bytes(exact_storage[:exact.count]) == CHECKED_EXPECTED
+    assert exact_storage[len(CHECKED_EXPECTED)] == GUARD
+
+    short_capacity = len(CHECKED_EXPECTED) - 13
+    short_storage, short = make_output(short_capacity)
+    emit_checked_skeleton(library, source, tokens, short)
+    assert (short.status, short.count) == (
+        BYTE_NEED_CAPACITY,
+        len(CHECKED_EXPECTED),
+    )
+    assert bytes(short_storage[:short_capacity]) == CHECKED_EXPECTED[:short_capacity]
+    assert short_storage[short_capacity] == GUARD
+
+    assert_assembled_ir(directory, CHECKED_EXPECTED, "llvm_text_checked")
+    assert source_storage and token_storage
+
+
 def main():
     with tempfile.TemporaryDirectory() as raw_directory:
         directory = Path(raw_directory)
@@ -522,13 +825,15 @@ def main():
         assert_id_vocabulary(library)
         assert_operation_vocabulary(library)
         assert_branch_skeleton(library, directory)
+        assert_checked_skeleton(library, directory)
         assert_invalid_tokens(library, source)
         assert_assembled_ir(directory, EXPECTED)
 
         assert source_storage and token_storage
         print(
             "self-hosted LLVM text: compositional vocabulary, exact straight-line/branch "
-            "skeletons, measure/exact/short capacity, invalid tokens/spans, repeat, "
+            "skeletons, checked add/load/trap, measure/exact/short capacity, "
+            "invalid tokens/spans, repeat, "
             "and LLVM parse pass"
         )
 

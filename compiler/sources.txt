@@ -14,6 +14,7 @@ src/symbols.xl
 src/semantic_prelude.xl
 src/semantic_facts.xl
 src/semantic_body.xl
+src/semantic_buffer.xl
 src/semantic_types.xl
 src/semantic_globals.xl
 src/semantic_type_resolve.xl
