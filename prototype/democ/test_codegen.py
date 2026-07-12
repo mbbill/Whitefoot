@@ -99,6 +99,53 @@ fn main () -> own unit allocates(heap), traps {
 compile_native(terminating_buffer, run=True)
 
 
+nested_field_borrow = """struct Inner {
+  value: u64;
+}
+
+struct Outer {
+  inner: Inner;
+  values: buffer<u64>;
+}
+
+fn increment ['i] (inner: &uniq 'i Inner) -> own unit reads('i), writes('i), traps {
+  let before: own u64 = deref(inner).value;
+  set deref(inner).value = iadd.trap<u64>(before, 1_u64);
+  return unit;
+}
+
+fn write_first ['v] (values: &uniq 'v buffer<u64>) -> own unit reads('v), writes('v), traps {
+  set index<u64>(deref(values), 0_u64) = 9_u64;
+  return unit;
+}
+
+fn route ['o] (outer: &uniq 'o Outer) -> own unit reads('o), writes('o), traps {
+  region 'inner_field {
+    increment(inner: &uniq 'inner_field deref(outer).inner);
+  }
+  region 'buffer_field {
+    write_first(values: &uniq 'buffer_field deref(outer).values);
+  }
+  return unit;
+}
+
+fn main () -> own unit allocates(heap), traps {
+  let inner: own Inner = Inner(value: 6_u64);
+  let values: own buffer<u64> = buffer_new<u64>(1_u64, 0_u64);
+  let outer: own Outer = Outer(inner: move inner, values: move values);
+  region 'outer_borrow {
+    route(outer: &uniq 'outer_borrow outer);
+  }
+  check ieq<u64>(outer.inner.value, 7_u64) else trap "nested field borrow used the root pointer";
+  let first: own u64 = index<u64>(outer.values, 0_u64);
+  check ieq<u64>(first, 9_u64) else trap "buffer field borrow lost its checked header";
+  return unit;
+}
+"""
+nested_field_ir = compile_native(nested_field_borrow, run=True)
+assert "getelementptr %Outer" in nested_field_ir
+
+
 aggregate_payloads = [
     """struct Pair {
   value: u64;

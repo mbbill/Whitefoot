@@ -1,0 +1,214 @@
+enum SemanticTypeKind {
+  SemanticTypeUnknown();
+  SemanticTypeUnit();
+  SemanticTypeU8();
+  SemanticTypeU64();
+  SemanticTypeBool();
+  SemanticTypeEnum();
+  SemanticTypeStruct();
+  SemanticTypeBuffer();
+  SemanticTypeArray();
+}
+
+enum SemanticValueMode {
+  SemanticModeNone();
+  SemanticModeOwn();
+  SemanticModeShared();
+  SemanticModeUniq();
+}
+
+enum SemanticOperation {
+  SemanticOperationNone();
+  SemanticOperationIaddTrap();
+  SemanticOperationIsubWrap();
+  SemanticOperationIdivTrap();
+  SemanticOperationIremTrap();
+  SemanticOperationIeq();
+  SemanticOperationIlt();
+  SemanticOperationIle();
+  SemanticOperationIgt();
+  SemanticOperationIge();
+  SemanticOperationBand();
+  SemanticOperationBor();
+  SemanticOperationBnot();
+  SemanticOperationLen();
+  SemanticOperationBufferNew();
+}
+
+enum SemanticFactsStatus {
+  SemanticFactsClean();
+  SemanticFactsInvalidShape();
+  SemanticFactsCapacity();
+}
+
+const semantic_facts_none: u64 = 18446744073709551615_u64;
+
+struct TypeTape {
+  kinds: buffer<SemanticTypeKind>;
+  declarations: buffer<u64>;
+  element_types: buffer<u64>;
+  array_lengths: buffer<u64>;
+  source_nodes: buffer<u64>;
+  prelude_types: buffer<PreludeTypeCode>;
+  count: u64;
+  status: SemanticFactsStatus;
+  node: u64;
+  related: u64;
+}
+
+struct NodeFacts {
+  type_ids: buffer<u64>;
+  resolved_declarations: buffer<u64>;
+  ordinals: buffer<u64>;
+  operations: buffer<SemanticOperation>;
+  constant_values: buffer<u64>;
+  control_targets: buffer<u64>;
+  modes: buffer<SemanticValueMode>;
+  prelude_constructors: buffer<PreludeConstructorCode>;
+  count: u64;
+  status: SemanticFactsStatus;
+  node: u64;
+  related: u64;
+}
+
+fn semantic_type_tape_reset ['f] (types: &uniq 'f TypeTape) -> own unit writes('f) {
+  set deref(types).count = 0_u64;
+  set deref(types).status = SemanticFactsClean();
+  set deref(types).node = semantic_facts_none;
+  set deref(types).related = semantic_facts_none;
+  return unit;
+}
+
+fn semantic_type_tape_shape_valid ['f] (types: &'f TypeTape) -> own Bool reads('f) {
+  let count: own u64 = deref(types).count;
+  let kinds_length: own u64 = len<SemanticTypeKind>(deref(types).kinds);
+  let declarations_length: own u64 = len<u64>(deref(types).declarations);
+  let elements_length: own u64 = len<u64>(deref(types).element_types);
+  let lengths_length: own u64 = len<u64>(deref(types).array_lengths);
+  let nodes_length: own u64 = len<u64>(deref(types).source_nodes);
+  let prelude_length: own u64 = len<PreludeTypeCode>(deref(types).prelude_types);
+  let kinds_ok: own Bool = ile<u64>(count, kinds_length);
+  let declarations_ok: own Bool = ile<u64>(count, declarations_length);
+  let elements_ok: own Bool = ile<u64>(count, elements_length);
+  let lengths_ok: own Bool = ile<u64>(count, lengths_length);
+  let nodes_ok: own Bool = ile<u64>(count, nodes_length);
+  let prelude_ok: own Bool = ile<u64>(count, prelude_length);
+  let first: own Bool = band<Bool>(kinds_ok, declarations_ok);
+  let second: own Bool = band<Bool>(elements_ok, lengths_ok);
+  let first_four: own Bool = band<Bool>(first, second);
+  let first_five: own Bool = band<Bool>(first_four, nodes_ok);
+  return band<Bool>(first_five, prelude_ok);
+}
+
+fn semantic_type_tape_capacity_valid ['f] (types: &'f TypeTape, needed: own u64) -> own Bool reads('f) {
+  let shape_valid: own Bool = semantic_type_tape_shape_valid(types: types);
+  match shape_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let count: own u64 = deref(types).count;
+  let kinds_length: own u64 = len<SemanticTypeKind>(deref(types).kinds);
+  let declarations_length: own u64 = len<u64>(deref(types).declarations);
+  let elements_length: own u64 = len<u64>(deref(types).element_types);
+  let lengths_length: own u64 = len<u64>(deref(types).array_lengths);
+  let nodes_length: own u64 = len<u64>(deref(types).source_nodes);
+  let prelude_length: own u64 = len<PreludeTypeCode>(deref(types).prelude_types);
+  let kinds_available: own u64 = isub.wrap<u64>(kinds_length, count);
+  let declarations_available: own u64 = isub.wrap<u64>(declarations_length, count);
+  let elements_available: own u64 = isub.wrap<u64>(elements_length, count);
+  let lengths_available: own u64 = isub.wrap<u64>(lengths_length, count);
+  let nodes_available: own u64 = isub.wrap<u64>(nodes_length, count);
+  let prelude_available: own u64 = isub.wrap<u64>(prelude_length, count);
+  let kinds_fit: own Bool = ile<u64>(needed, kinds_available);
+  let declarations_fit: own Bool = ile<u64>(needed, declarations_available);
+  let elements_fit: own Bool = ile<u64>(needed, elements_available);
+  let lengths_fit: own Bool = ile<u64>(needed, lengths_available);
+  let nodes_fit: own Bool = ile<u64>(needed, nodes_available);
+  let prelude_fit: own Bool = ile<u64>(needed, prelude_available);
+  let first: own Bool = band<Bool>(kinds_fit, declarations_fit);
+  let second: own Bool = band<Bool>(elements_fit, lengths_fit);
+  let first_four: own Bool = band<Bool>(first, second);
+  let first_five: own Bool = band<Bool>(first_four, nodes_fit);
+  return band<Bool>(first_five, prelude_fit);
+}
+
+fn semantic_node_facts_reset ['f] (facts: &uniq 'f NodeFacts) -> own unit writes('f) {
+  set deref(facts).count = 0_u64;
+  set deref(facts).status = SemanticFactsClean();
+  set deref(facts).node = semantic_facts_none;
+  set deref(facts).related = semantic_facts_none;
+  return unit;
+}
+
+fn semantic_node_facts_shape_valid ['f] (facts: &'f NodeFacts) -> own Bool reads('f) {
+  let count: own u64 = deref(facts).count;
+  let types_length: own u64 = len<u64>(deref(facts).type_ids);
+  let declarations_length: own u64 = len<u64>(deref(facts).resolved_declarations);
+  let ordinals_length: own u64 = len<u64>(deref(facts).ordinals);
+  let operations_length: own u64 = len<SemanticOperation>(deref(facts).operations);
+  let constants_length: own u64 = len<u64>(deref(facts).constant_values);
+  let targets_length: own u64 = len<u64>(deref(facts).control_targets);
+  let modes_length: own u64 = len<SemanticValueMode>(deref(facts).modes);
+  let prelude_length: own u64 = len<PreludeConstructorCode>(deref(facts).prelude_constructors);
+  let types_ok: own Bool = ile<u64>(count, types_length);
+  let declarations_ok: own Bool = ile<u64>(count, declarations_length);
+  let ordinals_ok: own Bool = ile<u64>(count, ordinals_length);
+  let operations_ok: own Bool = ile<u64>(count, operations_length);
+  let constants_ok: own Bool = ile<u64>(count, constants_length);
+  let targets_ok: own Bool = ile<u64>(count, targets_length);
+  let modes_ok: own Bool = ile<u64>(count, modes_length);
+  let prelude_ok: own Bool = ile<u64>(count, prelude_length);
+  let first: own Bool = band<Bool>(types_ok, declarations_ok);
+  let second: own Bool = band<Bool>(ordinals_ok, operations_ok);
+  let third: own Bool = band<Bool>(constants_ok, targets_ok);
+  let first_four: own Bool = band<Bool>(first, second);
+  let first_six: own Bool = band<Bool>(first_four, third);
+  let first_seven: own Bool = band<Bool>(first_six, modes_ok);
+  return band<Bool>(first_seven, prelude_ok);
+}
+
+fn semantic_node_facts_capacity_valid ['f] (facts: &'f NodeFacts, needed: own u64) -> own Bool reads('f) {
+  let shape_valid: own Bool = semantic_node_facts_shape_valid(facts: facts);
+  match shape_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let count: own u64 = deref(facts).count;
+  let types_length: own u64 = len<u64>(deref(facts).type_ids);
+  let declarations_length: own u64 = len<u64>(deref(facts).resolved_declarations);
+  let ordinals_length: own u64 = len<u64>(deref(facts).ordinals);
+  let operations_length: own u64 = len<SemanticOperation>(deref(facts).operations);
+  let constants_length: own u64 = len<u64>(deref(facts).constant_values);
+  let targets_length: own u64 = len<u64>(deref(facts).control_targets);
+  let modes_length: own u64 = len<SemanticValueMode>(deref(facts).modes);
+  let prelude_length: own u64 = len<PreludeConstructorCode>(deref(facts).prelude_constructors);
+  let types_available: own u64 = isub.wrap<u64>(types_length, count);
+  let declarations_available: own u64 = isub.wrap<u64>(declarations_length, count);
+  let ordinals_available: own u64 = isub.wrap<u64>(ordinals_length, count);
+  let operations_available: own u64 = isub.wrap<u64>(operations_length, count);
+  let constants_available: own u64 = isub.wrap<u64>(constants_length, count);
+  let targets_available: own u64 = isub.wrap<u64>(targets_length, count);
+  let modes_available: own u64 = isub.wrap<u64>(modes_length, count);
+  let prelude_available: own u64 = isub.wrap<u64>(prelude_length, count);
+  let types_fit: own Bool = ile<u64>(needed, types_available);
+  let declarations_fit: own Bool = ile<u64>(needed, declarations_available);
+  let ordinals_fit: own Bool = ile<u64>(needed, ordinals_available);
+  let operations_fit: own Bool = ile<u64>(needed, operations_available);
+  let constants_fit: own Bool = ile<u64>(needed, constants_available);
+  let targets_fit: own Bool = ile<u64>(needed, targets_available);
+  let modes_fit: own Bool = ile<u64>(needed, modes_available);
+  let prelude_fit: own Bool = ile<u64>(needed, prelude_available);
+  let first: own Bool = band<Bool>(types_fit, declarations_fit);
+  let second: own Bool = band<Bool>(ordinals_fit, operations_fit);
+  let third: own Bool = band<Bool>(constants_fit, targets_fit);
+  let first_four: own Bool = band<Bool>(first, second);
+  let first_six: own Bool = band<Bool>(first_four, third);
+  let first_seven: own Bool = band<Bool>(first_six, modes_fit);
+  return band<Bool>(first_seven, prelude_fit);
+}

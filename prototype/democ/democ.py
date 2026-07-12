@@ -1021,6 +1021,16 @@ class Gen:
             if pl.get("index"):                       # borrow of an element still performs OP-4
                 ptr, ell, signed, _md = g.index_addr(pl)
                 return {"k": "ptr", "v": ptr, "ty": ell, "signed": signed}
+            if pl.get("path") or pl.get("post"):      # borrow of a struct field must point at that field
+                ptr, fll, signed, sub, tyn = g.place_addr(pl)
+                if sub is not None:
+                    return {"k": "ptr", "v": ptr, "ty": "%" + sub, "st": sub}
+                el = _buf_elem(tyn)
+                if el:
+                    return g.load_buffield(ptr, el, pl)
+                if tyn in g.enums:
+                    return {"k": "ptr", "v": ptr, "ty": "%" + tyn, "en": tyn}
+                return {"k": "ptr", "v": ptr, "ty": fll, "signed": signed}
             src = g.env[pl["base"]]
             if src["k"] == "buffer":                  # reborrow of a buffer keeps its checked header value
                 return dict(src)                       # (whole-buffer replacement is rejected by STOR-1)

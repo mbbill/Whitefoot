@@ -23,6 +23,15 @@ struct FrontendReport {
   function_count: u64;
 }
 
+struct AnalyzedUnit {
+  tokens: TokenTape;
+  ast: AstTape;
+  validation: AstValidationReport;
+  symbols: SymbolTape;
+  types: TypeTape;
+  facts: NodeFacts;
+}
+
 fn frontend_lex_status_code (status: own LexStatus) -> own u64 pure {
   match status {
     LexClean() => {
@@ -355,6 +364,98 @@ fn frontend_function_symbols_status_code (status: own SemanticFunctionSymbolsSta
   }
 }
 
+fn frontend_token_tape_reset ['t] (tokens: &uniq 't TokenTape) -> own unit writes('t) {
+  set deref(tokens).count = 0_u64;
+  set deref(tokens).status = LexClean();
+  set deref(tokens).error_start = 0_u64;
+  set deref(tokens).error_end = 0_u64;
+  return unit;
+}
+
+fn frontend_ast_tape_reset ['a] (ast: &uniq 'a AstTape) -> own unit writes('a) {
+  set deref(ast).count = 0_u64;
+  set deref(ast).root = ast_none;
+  set deref(ast).status = ParseClean();
+  set deref(ast).error_start = 0_u64;
+  set deref(ast).error_end = 0_u64;
+  return unit;
+}
+
+fn frontend_validation_reset ['v] (validation: &uniq 'v AstValidationReport) -> own unit writes('v) {
+  set deref(validation).status = AstValidationEmpty();
+  set deref(validation).node = ast_none;
+  set deref(validation).related = ast_none;
+  return unit;
+}
+
+fn frontend_unit_new (capacity: own u64) -> own AnalyzedUnit allocates(heap), traps {
+  let token_kinds: own buffer<TokenKind> = buffer_new<TokenKind>(capacity, TokEnd());
+  let token_starts: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let token_ends: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let tokens: own TokenTape = TokenTape(kinds: move token_kinds, starts: move token_starts, ends: move token_ends, count: 0_u64, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+
+  let ast_kinds: own buffer<AstKind> = buffer_new<AstKind>(capacity, AstProgram());
+  let ast_heads: own buffer<u64> = buffer_new<u64>(capacity, ast_none);
+  let ast_starts: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let ast_ends: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let ast_first_children: own buffer<u64> = buffer_new<u64>(capacity, ast_none);
+  let ast_last_children: own buffer<u64> = buffer_new<u64>(capacity, ast_none);
+  let ast_next_siblings: own buffer<u64> = buffer_new<u64>(capacity, ast_none);
+  let ast: own AstTape = AstTape(kinds: move ast_kinds, heads: move ast_heads, starts: move ast_starts, ends: move ast_ends, first_children: move ast_first_children, last_children: move ast_last_children, next_siblings: move ast_next_siblings, count: 0_u64, root: ast_none, status: ParseClean(), error_start: 0_u64, error_end: 0_u64);
+
+  let validation_marks: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let validation_stack: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let validation: own AstValidationReport = AstValidationReport(marks: move validation_marks, stack: move validation_stack, status: AstValidationEmpty(), node: ast_none, related: ast_none);
+
+  let symbol_namespaces: own buffer<SymbolNamespace> = buffer_new<SymbolNamespace>(capacity, SymbolValue());
+  let symbol_scopes: own buffer<u64> = buffer_new<u64>(capacity, symbol_none);
+  let symbol_name_tokens: own buffer<u64> = buffer_new<u64>(capacity, symbol_none);
+  let symbol_declarations: own buffer<u64> = buffer_new<u64>(capacity, symbol_none);
+  let symbols: own SymbolTape = SymbolTape(namespaces: move symbol_namespaces, scopes: move symbol_scopes, name_tokens: move symbol_name_tokens, declarations: move symbol_declarations, count: 0_u64, status: SymbolClean(), related: symbol_none);
+
+  let type_kinds: own buffer<SemanticTypeKind> = buffer_new<SemanticTypeKind>(capacity, SemanticTypeUnknown());
+  let type_declarations: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let type_element_types: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let type_array_lengths: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let type_source_nodes: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let type_prelude_types: own buffer<PreludeTypeCode> = buffer_new<PreludeTypeCode>(capacity, PreludeTypeUnknown());
+  let types: own TypeTape = TypeTape(kinds: move type_kinds, declarations: move type_declarations, element_types: move type_element_types, array_lengths: move type_array_lengths, source_nodes: move type_source_nodes, prelude_types: move type_prelude_types, count: 0_u64, status: SemanticFactsClean(), node: semantic_facts_none, related: semantic_facts_none);
+
+  let fact_type_ids: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let fact_resolved_declarations: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let fact_ordinals: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let fact_operations: own buffer<SemanticOperation> = buffer_new<SemanticOperation>(capacity, SemanticOperationNone());
+  let fact_constant_values: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
+  let fact_control_targets: own buffer<u64> = buffer_new<u64>(capacity, semantic_facts_none);
+  let fact_modes: own buffer<SemanticValueMode> = buffer_new<SemanticValueMode>(capacity, SemanticModeNone());
+  let fact_prelude_constructors: own buffer<PreludeConstructorCode> = buffer_new<PreludeConstructorCode>(capacity, PreludeConstructorUnknown());
+  let facts: own NodeFacts = NodeFacts(type_ids: move fact_type_ids, resolved_declarations: move fact_resolved_declarations, ordinals: move fact_ordinals, operations: move fact_operations, constant_values: move fact_constant_values, control_targets: move fact_control_targets, modes: move fact_modes, prelude_constructors: move fact_prelude_constructors, count: 0_u64, status: SemanticFactsClean(), node: semantic_facts_none, related: semantic_facts_none);
+
+  return AnalyzedUnit(tokens: move tokens, ast: move ast, validation: move validation, symbols: move symbols, types: move types, facts: move facts);
+}
+
+fn frontend_unit_reset ['u] (analyzed: &uniq 'u AnalyzedUnit) -> own unit writes('u) {
+  region 'frontend_reset_tokens {
+    frontend_token_tape_reset(tokens: &uniq 'frontend_reset_tokens deref(analyzed).tokens);
+  }
+  region 'frontend_reset_ast {
+    frontend_ast_tape_reset(ast: &uniq 'frontend_reset_ast deref(analyzed).ast);
+  }
+  region 'frontend_reset_validation {
+    frontend_validation_reset(validation: &uniq 'frontend_reset_validation deref(analyzed).validation);
+  }
+  region 'frontend_reset_symbols {
+    symbol_tape_reset(symbols: &uniq 'frontend_reset_symbols deref(analyzed).symbols);
+  }
+  region 'frontend_reset_types {
+    semantic_type_tape_reset(types: &uniq 'frontend_reset_types deref(analyzed).types);
+  }
+  region 'frontend_reset_facts {
+    semantic_node_facts_reset(facts: &uniq 'frontend_reset_facts deref(analyzed).facts);
+  }
+  return unit;
+}
+
 fn frontend_report_reset ['r] (report: &uniq 'r FrontendReport) -> own unit writes('r) {
   set deref(report).stage = FrontendLex();
   set deref(report).status = 0_u64;
@@ -383,103 +484,76 @@ fn frontend_report_ast_span ['a, 'r] (ast: &'a AstTape, node: own u64, report: &
   return unit;
 }
 
-fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendReport) -> own unit reads('s 'r), writes('r), allocates(heap), traps {
+fn frontend_analyze_parts ['s, 't, 'a, 'v, 'y, 'r] (source: &'s buffer<u8>, tokens: &uniq 't TokenTape, ast: &uniq 'a AstTape, validation: &uniq 'v AstValidationReport, symbols: &uniq 'y SymbolTape, report: &uniq 'r FrontendReport) -> own unit reads('s 't 'a 'v 'y 'r), writes('t 'a 'v 'y 'r), traps {
   region 'frontend_reset {
     frontend_report_reset(report: &uniq 'frontend_reset deref(report));
   }
 
   let source_length: own u64 = len<u8>(deref(source));
-  let token_capacity: own u64 = iadd.trap<u64>(source_length, 1_u64);
-  let token_kinds: own buffer<TokenKind> = buffer_new<TokenKind>(token_capacity, TokEnd());
-  let token_starts: own buffer<u64> = buffer_new<u64>(token_capacity, 0_u64);
-  let token_ends: own buffer<u64> = buffer_new<u64>(token_capacity, 0_u64);
-  let tokens: own TokenTape = TokenTape(kinds: move token_kinds, starts: move token_starts, ends: move token_ends, count: 0_u64, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
   region 'frontend_lex {
-    lexer_run(source: source, out: &uniq 'frontend_lex tokens);
+    lexer_run(source: source, out: &uniq 'frontend_lex deref(tokens));
   }
-  set deref(report).token_count = tokens.count;
+  set deref(report).token_count = deref(tokens).count;
   let lex_clean_tag: own LexStatus = LexClean();
-  let lex_clean: own Bool = ieq<LexStatus>(tokens.status, lex_clean_tag);
+  let lex_clean: own Bool = ieq<LexStatus>(deref(tokens).status, lex_clean_tag);
   match lex_clean {
     True() => {
     }
     False() => {
-      let lex_code: own u64 = frontend_lex_status_code(status: tokens.status);
+      let lex_code: own u64 = frontend_lex_status_code(status: deref(tokens).status);
       set deref(report).stage = FrontendLex();
       set deref(report).status = lex_code;
-      set deref(report).error_start = tokens.error_start;
-      set deref(report).error_end = tokens.error_end;
+      set deref(report).error_start = deref(tokens).error_start;
+      set deref(report).error_end = deref(tokens).error_end;
       return unit;
     }
   }
 
-  let ast_capacity: own u64 = tokens.count;
-  let ast_kinds: own buffer<AstKind> = buffer_new<AstKind>(ast_capacity, AstProgram());
-  let ast_heads: own buffer<u64> = buffer_new<u64>(ast_capacity, ast_none);
-  let ast_starts: own buffer<u64> = buffer_new<u64>(ast_capacity, 0_u64);
-  let ast_ends: own buffer<u64> = buffer_new<u64>(ast_capacity, 0_u64);
-  let ast_first_children: own buffer<u64> = buffer_new<u64>(ast_capacity, ast_none);
-  let ast_last_children: own buffer<u64> = buffer_new<u64>(ast_capacity, ast_none);
-  let ast_next_siblings: own buffer<u64> = buffer_new<u64>(ast_capacity, ast_none);
-  let ast: own AstTape = AstTape(kinds: move ast_kinds, heads: move ast_heads, starts: move ast_starts, ends: move ast_ends, first_children: move ast_first_children, last_children: move ast_last_children, next_siblings: move ast_next_siblings, count: 0_u64, root: ast_none, status: ParseClean(), error_start: 0_u64, error_end: 0_u64);
   region 'frontend_parse {
-    parser_run(source: source, tokens: &'frontend_parse tokens, out: &uniq 'frontend_parse ast);
+    parser_run(source: source, tokens: &'frontend_parse deref(tokens), out: &uniq 'frontend_parse deref(ast));
   }
-  set deref(report).node_count = ast.count;
+  set deref(report).node_count = deref(ast).count;
   let parse_clean_tag: own ParseStatus = ParseClean();
-  let parse_clean: own Bool = ieq<ParseStatus>(ast.status, parse_clean_tag);
+  let parse_clean: own Bool = ieq<ParseStatus>(deref(ast).status, parse_clean_tag);
   match parse_clean {
     True() => {
     }
     False() => {
-      let parse_code: own u64 = frontend_parse_status_code(status: ast.status);
+      let parse_code: own u64 = frontend_parse_status_code(status: deref(ast).status);
       set deref(report).stage = FrontendParse();
       set deref(report).status = parse_code;
-      set deref(report).error_start = ast.error_start;
-      set deref(report).error_end = ast.error_end;
+      set deref(report).error_start = deref(ast).error_start;
+      set deref(report).error_end = deref(ast).error_end;
       return unit;
     }
   }
 
-  let validation_marks: own buffer<u64> = buffer_new<u64>(tokens.count, 0_u64);
-  let validation_stack: own buffer<u64> = buffer_new<u64>(ast.count, 0_u64);
-  let validation: own AstValidationReport = AstValidationReport(marks: move validation_marks, stack: move validation_stack, status: AstValidationEmpty(), node: ast_none, related: ast_none);
   region 'frontend_validate {
-    ast_validate(source_length: source_length, token_count: tokens.count, ast: &'frontend_validate ast, report: &uniq 'frontend_validate validation);
+    ast_validate(source_length: source_length, token_count: deref(tokens).count, ast: &'frontend_validate deref(ast), report: &uniq 'frontend_validate deref(validation));
   }
   let validation_clean_tag: own AstValidationStatus = AstValidationClean();
-  let validation_clean: own Bool = ieq<AstValidationStatus>(validation.status, validation_clean_tag);
+  let validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, validation_clean_tag);
   match validation_clean {
     True() => {
     }
     False() => {
-      let validation_code: own u64 = frontend_ast_validation_status_code(status: validation.status);
+      let validation_code: own u64 = frontend_ast_validation_status_code(status: deref(validation).status);
       set deref(report).stage = FrontendAstValidation();
       set deref(report).status = validation_code;
-      set deref(report).node = validation.node;
-      set deref(report).related = validation.related;
+      set deref(report).node = deref(validation).node;
+      set deref(report).related = deref(validation).related;
       region 'frontend_validation_span {
-        frontend_report_ast_span(ast: &'frontend_validation_span ast, node: validation.node, report: &uniq 'frontend_validation_span deref(report));
+        frontend_report_ast_span(ast: &'frontend_validation_span deref(ast), node: deref(validation).node, report: &uniq 'frontend_validation_span deref(report));
       }
       return unit;
     }
   }
 
-  let symbol_capacity: own u64 = ast.count;
-  let symbol_namespaces: own buffer<SymbolNamespace> = buffer_new<SymbolNamespace>(symbol_capacity, SymbolValue());
-  let symbol_scopes: own buffer<u64> = buffer_new<u64>(symbol_capacity, symbol_none);
-  let symbol_name_tokens: own buffer<u64> = buffer_new<u64>(symbol_capacity, symbol_none);
-  let symbol_declarations: own buffer<u64> = buffer_new<u64>(symbol_capacity, symbol_none);
-  let symbols: own SymbolTape = SymbolTape(namespaces: move symbol_namespaces, scopes: move symbol_scopes, name_tokens: move symbol_name_tokens, declarations: move symbol_declarations, count: 0_u64, status: SymbolClean(), related: symbol_none);
-  region 'frontend_symbol_reset {
-    symbol_tape_reset(symbols: &uniq 'frontend_symbol_reset symbols);
-  }
-
   let globals_report: own SemanticGlobalsReport = SemanticGlobalsReport(status: SemanticGlobalsInvalidAstTape(), declaration: ast_none, related: symbol_none);
   region 'frontend_globals {
-    semantic_index_globals(source: source, tokens: &'frontend_globals tokens, ast: &'frontend_globals ast, symbols: &uniq 'frontend_globals symbols, report: &uniq 'frontend_globals globals_report);
+    semantic_index_globals(source: source, tokens: &'frontend_globals deref(tokens), ast: &'frontend_globals deref(ast), symbols: &uniq 'frontend_globals deref(symbols), report: &uniq 'frontend_globals globals_report);
   }
-  set deref(report).symbol_count = symbols.count;
+  set deref(report).symbol_count = deref(symbols).count;
   let globals_clean_tag: own SemanticGlobalsStatus = SemanticGlobalsClean();
   let globals_clean: own Bool = ieq<SemanticGlobalsStatus>(globals_report.status, globals_clean_tag);
   match globals_clean {
@@ -492,7 +566,7 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
       set deref(report).node = globals_report.declaration;
       set deref(report).related = globals_report.related;
       region 'frontend_globals_span {
-        frontend_report_ast_span(ast: &'frontend_globals_span ast, node: globals_report.declaration, report: &uniq 'frontend_globals_span deref(report));
+        frontend_report_ast_span(ast: &'frontend_globals_span deref(ast), node: globals_report.declaration, report: &uniq 'frontend_globals_span deref(report));
       }
       return unit;
     }
@@ -500,9 +574,9 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
 
   let type_members_report: own SemanticTypeMembersReport = SemanticTypeMembersReport(status: SemanticTypeMembersInvalidAstTape(), declaration: ast_none, related: symbol_none, variant_count: 0_u64, field_count: 0_u64);
   region 'frontend_type_members {
-    semantic_index_type_members(source: source, tokens: &'frontend_type_members tokens, ast: &'frontend_type_members ast, symbols: &uniq 'frontend_type_members symbols, report: &uniq 'frontend_type_members type_members_report);
+    semantic_index_type_members(source: source, tokens: &'frontend_type_members deref(tokens), ast: &'frontend_type_members deref(ast), symbols: &uniq 'frontend_type_members deref(symbols), report: &uniq 'frontend_type_members type_members_report);
   }
-  set deref(report).symbol_count = symbols.count;
+  set deref(report).symbol_count = deref(symbols).count;
   let type_members_clean_tag: own SemanticTypeMembersStatus = SemanticTypeMembersClean();
   let type_members_clean: own Bool = ieq<SemanticTypeMembersStatus>(type_members_report.status, type_members_clean_tag);
   match type_members_clean {
@@ -515,7 +589,7 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
       set deref(report).node = type_members_report.declaration;
       set deref(report).related = type_members_report.related;
       region 'frontend_type_members_span {
-        frontend_report_ast_span(ast: &'frontend_type_members_span ast, node: type_members_report.declaration, report: &uniq 'frontend_type_members_span deref(report));
+        frontend_report_ast_span(ast: &'frontend_type_members_span deref(ast), node: type_members_report.declaration, report: &uniq 'frontend_type_members_span deref(report));
       }
       return unit;
     }
@@ -523,10 +597,10 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
 
   let types_report: own SemanticAllTypesReport = SemanticAllTypesReport(status: SemanticAllTypesResolveFailed(), type_node: ast_none, resolved_count: 0_u64, resolve_status: SemanticTypeResolveInvalidAstTape(), resolve_related: symbol_none);
   region 'frontend_types {
-    semantic_resolve_all_types(source: source, tokens: &'frontend_types tokens, ast: &'frontend_types ast, symbols: &uniq 'frontend_types symbols, validation: &uniq 'frontend_types validation, report: &uniq 'frontend_types types_report);
+    semantic_resolve_all_types(source: source, tokens: &'frontend_types deref(tokens), ast: &'frontend_types deref(ast), symbols: &uniq 'frontend_types deref(symbols), validation: &uniq 'frontend_types deref(validation), report: &uniq 'frontend_types types_report);
   }
   set deref(report).type_count = types_report.resolved_count;
-  set deref(report).symbol_count = symbols.count;
+  set deref(report).symbol_count = deref(symbols).count;
   let types_clean_tag: own SemanticAllTypesStatus = SemanticAllTypesClean();
   let types_clean: own Bool = ieq<SemanticAllTypesStatus>(types_report.status, types_clean_tag);
   match types_clean {
@@ -539,7 +613,7 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
       set deref(report).node = types_report.type_node;
       set deref(report).related = types_report.resolve_related;
       region 'frontend_types_span {
-        frontend_report_ast_span(ast: &'frontend_types_span ast, node: types_report.type_node, report: &uniq 'frontend_types_span deref(report));
+        frontend_report_ast_span(ast: &'frontend_types_span deref(ast), node: types_report.type_node, report: &uniq 'frontend_types_span deref(report));
       }
       return unit;
     }
@@ -548,21 +622,21 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
   let function_cursor: own u64 = 0_u64;
   let indexed_functions: own u64 = 0_u64;
   loop @frontend_functions {
-    match ige<u64>(function_cursor, ast.count) {
+    match ige<u64>(function_cursor, deref(ast).count) {
       True() => {
         break @frontend_functions;
       }
       False() => {
       }
     }
-    let function_kind: own AstKind = index<AstKind>(ast.kinds, function_cursor);
+    let function_kind: own AstKind = index<AstKind>(deref(ast).kinds, function_cursor);
     let function_tag: own AstKind = AstFunction();
     let is_function: own Bool = ieq<AstKind>(function_kind, function_tag);
     match is_function {
       True() => {
         let function_report: own SemanticFunctionSymbolsReport = SemanticFunctionSymbolsReport(status: SemanticFunctionSymbolsExpectedFunction(), declaration: function_cursor, related: symbol_none);
         region 'frontend_function_symbols {
-          semantic_index_function_symbols(source: source, tokens: &'frontend_function_symbols tokens, ast: &'frontend_function_symbols ast, function: function_cursor, symbols: &uniq 'frontend_function_symbols symbols, report: &uniq 'frontend_function_symbols function_report);
+          semantic_index_function_symbols(source: source, tokens: &'frontend_function_symbols deref(tokens), ast: &'frontend_function_symbols deref(ast), function: function_cursor, symbols: &uniq 'frontend_function_symbols deref(symbols), report: &uniq 'frontend_function_symbols function_report);
         }
         let function_clean_tag: own SemanticFunctionSymbolsStatus = SemanticFunctionSymbolsClean();
         let function_clean: own Bool = ieq<SemanticFunctionSymbolsStatus>(function_report.status, function_clean_tag);
@@ -570,7 +644,7 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
           True() => {
             set indexed_functions = iadd.trap<u64>(indexed_functions, 1_u64);
             set deref(report).function_count = indexed_functions;
-            set deref(report).symbol_count = symbols.count;
+            set deref(report).symbol_count = deref(symbols).count;
           }
           False() => {
             let function_code: own u64 = frontend_function_symbols_status_code(status: function_report.status);
@@ -578,9 +652,9 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
             set deref(report).status = function_code;
             set deref(report).node = function_report.declaration;
             set deref(report).related = function_report.related;
-            set deref(report).symbol_count = symbols.count;
+            set deref(report).symbol_count = deref(symbols).count;
             region 'frontend_function_span {
-              frontend_report_ast_span(ast: &'frontend_function_span ast, node: function_report.declaration, report: &uniq 'frontend_function_span deref(report));
+              frontend_report_ast_span(ast: &'frontend_function_span deref(ast), node: function_report.declaration, report: &uniq 'frontend_function_span deref(report));
             }
             return unit;
           }
@@ -598,10 +672,30 @@ fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendR
   set deref(report).error_end = 0_u64;
   set deref(report).node = ast_none;
   set deref(report).related = ast_none;
-  set deref(report).token_count = tokens.count;
-  set deref(report).node_count = ast.count;
+  set deref(report).token_count = deref(tokens).count;
+  set deref(report).node_count = deref(ast).count;
   set deref(report).type_count = types_report.resolved_count;
-  set deref(report).symbol_count = symbols.count;
+  set deref(report).symbol_count = deref(symbols).count;
   set deref(report).function_count = indexed_functions;
+  return unit;
+}
+
+fn frontend_analyze_into ['s, 'u, 'r] (source: &'s buffer<u8>, analyzed: &uniq 'u AnalyzedUnit, report: &uniq 'r FrontendReport) -> own unit reads('s 'u 'r), writes('u 'r), traps {
+  region 'frontend_unit_reset {
+    frontend_unit_reset(analyzed: &uniq 'frontend_unit_reset deref(analyzed));
+  }
+  region 'frontend_parts {
+    frontend_analyze_parts(source: source, tokens: &uniq 'frontend_parts deref(analyzed).tokens, ast: &uniq 'frontend_parts deref(analyzed).ast, validation: &uniq 'frontend_parts deref(analyzed).validation, symbols: &uniq 'frontend_parts deref(analyzed).symbols, report: &uniq 'frontend_parts deref(report));
+  }
+  return unit;
+}
+
+fn xlc_frontend_run ['s, 'r] (source: &'s buffer<u8>, report: &uniq 'r FrontendReport) -> own unit reads('s 'r), writes('r), allocates(heap), traps {
+  let source_length: own u64 = len<u8>(deref(source));
+  let capacity: own u64 = iadd.trap<u64>(source_length, 1_u64);
+  let analyzed: own AnalyzedUnit = frontend_unit_new(capacity: capacity);
+  region 'frontend_wrapper_analyze {
+    frontend_analyze_into(source: source, analyzed: &uniq 'frontend_wrapper_analyze analyzed, report: &uniq 'frontend_wrapper_analyze deref(report));
+  }
   return unit;
 }

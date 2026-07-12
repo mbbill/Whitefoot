@@ -34,19 +34,26 @@ to the current closed-suffix `OPNAME` rule, so fields are `word . word` while on
 That distinction is intentional: OP-1 reserves every mode word and dotless operation
 name from user binding sites, so `value.trap` is never a legal field place.
 Type names and unqualified constructor names also have distinct symbol namespaces:
-PRE-1 deliberately permits shapes such as `enum Overflow { Overflow(); }`, while
-constructor names must still be unique across enum declarations.
+generic shapes such as `enum Marker { Marker(); }` are legal, while PRE-1 type and
+constructor spellings are reserved and constructor names must still be unique across
+enum declarations.
 
 `lexer_run`, `parser_run`, and their tape structs are internal compiler/test seams.
 The parser trusts the lexer's typed token tags and byte classification, while validating
 tape lengths, ordered spans, and the unique source-end token before building any AST.
-`xlc_frontend_run(source, report)` is the first owned public seam: it allocates bounded
-token, AST, validation, and symbol tapes, then runs lexing, parsing, structural
-validation, global and type-member indexing, whole-unit type resolution, and
-function-scope indexing.
+`AnalyzedUnit` retains the bounded token, AST, validation, symbol, type, and node-fact
+tapes needed by later compilation stages. `frontend_unit_new` allocates those tapes
+once and `frontend_analyze_into` resets and reuses them across lexing, parsing,
+structural validation, global and type-member indexing, whole-unit type resolution,
+and function-scope indexing. Type and node-fact tapes intentionally remain empty until
+the body-semantic pass populates them. `xlc_frontend_run(source, report)` remains the
+public convenience seam by allocating an `AnalyzedUnit` and forwarding to the retained
+pipeline.
 Its report identifies the first failed stage and preserves spans, node references, and
 the counts completed so far. `test_frontend.py` drives both a mixed unit and the exact
-compiler source through this one ABI and checks deterministic counts. The final public
+compiler source through this one ABI and checks deterministic counts;
+`test_frontend_retained.py` proves successful and failed analyses leave reusable,
+guarded internal tapes accessible to the next compiler stage. The final public
 ABI remains `xlc_compile(source, output, report)`, which will add LLVM output without
 accepting caller-forged internal tapes.
 

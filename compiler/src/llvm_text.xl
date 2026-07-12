@@ -1,0 +1,225 @@
+fn llvm_text_emit_token ['s, 't, 'o] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64, out: &uniq 'o ByteTape) -> own unit reads('s 't 'o), writes('o), traps {
+  let token_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: token);
+  match token_valid {
+    True() => {
+    }
+    False() => {
+      set deref(out).status = ByteInvalidState();
+      return unit;
+    }
+  }
+  let token_start: own u64 = index<u64>(deref(tokens).starts, token);
+  let token_end: own u64 = index<u64>(deref(tokens).ends, token);
+  region 'token_span {
+    byte_tape_emit_span(source: source, start: token_start, end: token_end, out: &uniq 'token_span deref(out));
+  }
+  return unit;
+}
+
+fn llvm_text_emit_value ['o] (out: &uniq 'o ByteTape, id: own u64) -> own unit reads('o), writes('o), traps {
+  region 'value_prefix {
+    byte_tape_emit_chunk(out: &uniq 'value_prefix deref(out), count: 2_u64, b0: 37_u8, b1: 118_u8, b2: 32_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  region 'value_id {
+    byte_tape_emit_u64(out: &uniq 'value_id deref(out), value: id);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_place ['o] (out: &uniq 'o ByteTape, id: own u64) -> own unit reads('o), writes('o), traps {
+  region 'place_prefix {
+    byte_tape_emit_chunk(out: &uniq 'place_prefix deref(out), count: 2_u64, b0: 37_u8, b1: 112_u8, b2: 32_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  region 'place_id {
+    byte_tape_emit_u64(out: &uniq 'place_id deref(out), value: id);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_block ['o] (out: &uniq 'o ByteTape, id: own u64) -> own unit reads('o), writes('o), traps {
+  region 'block_prefix {
+    byte_tape_emit_chunk(out: &uniq 'block_prefix deref(out), count: 2_u64, b0: 98_u8, b1: 98_u8, b2: 32_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  region 'block_id {
+    byte_tape_emit_u64(out: &uniq 'block_id deref(out), value: id);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_i1 ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'i1_text {
+    byte_tape_emit_chunk(out: &uniq 'i1_text deref(out), count: 2_u64, b0: 105_u8, b1: 49_u8, b2: 32_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_i8 ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'i8_text {
+    byte_tape_emit_chunk(out: &uniq 'i8_text deref(out), count: 2_u64, b0: 105_u8, b1: 56_u8, b2: 32_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_i16 ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'i16_text {
+    byte_tape_emit_chunk(out: &uniq 'i16_text deref(out), count: 3_u64, b0: 105_u8, b1: 49_u8, b2: 54_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_i32 ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'i32_text {
+    byte_tape_emit_chunk(out: &uniq 'i32_text deref(out), count: 3_u64, b0: 105_u8, b1: 51_u8, b2: 50_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_i64 ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'i64_text {
+    byte_tape_emit_chunk(out: &uniq 'i64_text deref(out), count: 3_u64, b0: 105_u8, b1: 54_u8, b2: 52_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_ptr ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'ptr_text {
+    byte_tape_emit_chunk(out: &uniq 'ptr_text deref(out), count: 3_u64, b0: 112_u8, b1: 116_u8, b2: 114_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_buffer_type ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'buffer_type_head {
+    byte_tape_emit_chunk(out: &uniq 'buffer_type_head deref(out), count: 8_u64, b0: 123_u8, b1: 32_u8, b2: 112_u8, b3: 116_u8, b4: 114_u8, b5: 44_u8, b6: 32_u8, b7: 105_u8);
+  }
+  region 'buffer_type_tail {
+    byte_tape_emit_chunk(out: &uniq 'buffer_type_tail deref(out), count: 4_u64, b0: 54_u8, b1: 52_u8, b2: 32_u8, b3: 125_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_space ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'space_text {
+    byte_tape_push(out: &uniq 'space_text deref(out), byte: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_newline ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'newline_text {
+    byte_tape_push(out: &uniq 'newline_text deref(out), byte: 10_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_at ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'at_text {
+    byte_tape_push(out: &uniq 'at_text deref(out), byte: 64_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_left_paren ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'left_paren_text {
+    byte_tape_push(out: &uniq 'left_paren_text deref(out), byte: 40_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_right_paren ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'right_paren_text {
+    byte_tape_push(out: &uniq 'right_paren_text deref(out), byte: 41_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_comma ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'comma_text {
+    byte_tape_push(out: &uniq 'comma_text deref(out), byte: 44_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_equal ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'equal_text {
+    byte_tape_push(out: &uniq 'equal_text deref(out), byte: 61_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_left_brace ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'left_brace_text {
+    byte_tape_push(out: &uniq 'left_brace_text deref(out), byte: 123_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_right_brace ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'right_brace_text {
+    byte_tape_push(out: &uniq 'right_brace_text deref(out), byte: 125_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_define ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'define_text {
+    byte_tape_emit_chunk(out: &uniq 'define_text deref(out), count: 6_u64, b0: 100_u8, b1: 101_u8, b2: 102_u8, b3: 105_u8, b4: 110_u8, b5: 101_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_entry ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'entry_text {
+    byte_tape_emit_chunk(out: &uniq 'entry_text deref(out), count: 6_u64, b0: 101_u8, b1: 110_u8, b2: 116_u8, b3: 114_u8, b4: 121_u8, b5: 58_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_alloca ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'alloca_text {
+    byte_tape_emit_chunk(out: &uniq 'alloca_text deref(out), count: 6_u64, b0: 97_u8, b1: 108_u8, b2: 108_u8, b3: 111_u8, b4: 99_u8, b5: 97_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_store ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'store_text {
+    byte_tape_emit_chunk(out: &uniq 'store_text deref(out), count: 5_u64, b0: 115_u8, b1: 116_u8, b2: 111_u8, b3: 114_u8, b4: 101_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_load ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'load_text {
+    byte_tape_emit_chunk(out: &uniq 'load_text deref(out), count: 4_u64, b0: 108_u8, b1: 111_u8, b2: 97_u8, b3: 100_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_icmp_uge ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'icmp_uge_text {
+    byte_tape_emit_chunk(out: &uniq 'icmp_uge_text deref(out), count: 8_u64, b0: 105_u8, b1: 99_u8, b2: 109_u8, b3: 112_u8, b4: 32_u8, b5: 117_u8, b6: 103_u8, b7: 101_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_icmp_ule ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'icmp_ule_text {
+    byte_tape_emit_chunk(out: &uniq 'icmp_ule_text deref(out), count: 8_u64, b0: 105_u8, b1: 99_u8, b2: 109_u8, b3: 112_u8, b4: 32_u8, b5: 117_u8, b6: 108_u8, b7: 101_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_and ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'and_text {
+    byte_tape_emit_chunk(out: &uniq 'and_text deref(out), count: 3_u64, b0: 97_u8, b1: 110_u8, b2: 100_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}
+
+fn llvm_text_emit_ret ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
+  region 'ret_text {
+    byte_tape_emit_chunk(out: &uniq 'ret_text deref(out), count: 3_u64, b0: 114_u8, b1: 101_u8, b2: 116_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
+  }
+  return unit;
+}

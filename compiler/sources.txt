@@ -12,6 +12,7 @@ src/output.xl
 src/source_names.xl
 src/symbols.xl
 src/semantic_prelude.xl
+src/semantic_facts.xl
 src/semantic_types.xl
 src/semantic_globals.xl
 src/semantic_type_resolve.xl
@@ -19,3 +20,4 @@ src/semantic_all_types.xl
 src/semantic_function_symbols.xl
 src/semantic_type_members.xl
 src/frontend.xl
+src/llvm_text.xl
