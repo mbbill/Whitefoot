@@ -1,5 +1,5 @@
 # xlang verification stack — `make check` runs all six layers.
-PY=python3
+PY=python3 -B
 check: spec rules soundness perf parity conformance
 	@echo "== ALL SIX VERIFICATION LAYERS GREEN =="
 spec:                      # layer 1: spec integrity (META rules, ledger coverage)
@@ -12,8 +12,10 @@ perf:                      # layer 4: pinned optimizer-fact effects
 	cd prototype/democ && $(PY) perf_regress.py
 	$(PY) experiments/port-study/base64/verify.py
 parity:                    # layer 5: xlang/facts-off/C/Rust codegen properties + visible debt
-	$(PY) tools/codegen_parity.py --corpus
+	$(PY) tools/test_checked_automation.py
+	$(PY) tools/codegen_parity.py --corpus --promotion
 corpus:                    # focused proof/codegen corpus; positive + adversarial gates
+	$(PY) tools/test_checked_automation.py
 	$(PY) tools/codegen_parity.py --corpus --tag bounds
 conformance:               # layer 6: spec-anchored rule-keyed conformance suite (source -> verdict)
 	$(PY) conformance/runner.py all

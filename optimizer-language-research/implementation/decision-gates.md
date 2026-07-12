@@ -552,3 +552,61 @@ guard versioning or counterexample search was added, and no approval/promotion
 authority is implemented. The next major implementation is the obligation-
 backed checked-automation promotion gate from review B2, using the existing
 parity artifact rather than a parallel policy system.
+
+## Obligation-backed checked-automation bounds-v1 build subgate implemented (2026-07-11)
+
+The existing parity harness now carries review B2's bounds-v1 build policy without
+changing source acceptance. Every implicit bounds site starts with incomplete
+obligation analysis. The compiler iterates a schema-versioned registry containing
+`output-capacity-lockstep-v1`, records the exact successful analyzer set, and
+only then permits an affirmative `not-applicable` result. Valid frontend proofs
+are `automatically-accounted`; retained sites explicitly outside the analyzer
+families are the passing `intrinsic-dynamic` safety floor; derived obligations
+with missing/mismatched facts are `hard-finding`; failed premises, unknown or
+incomplete provenance, matched-but-retained sites, ceiling mode, and unverified
+backend credit are `unaccounted`. Hard and unaccounted findings fail the build
+subgate while leaving every runtime check intact. Malformed reports/compiler
+errors are a distinct exit-2 class, not policy findings.
+
+Base64/facts is the first root. Dual repository pins duplicate case, variant,
+function, source, source SHA-256, and `closed-unit` scope in the manifest and
+harness review set. `--promotion` requires the full corpus plus default
+manifest, rejects all case/tag/mode filters, and verifies that every pin ran.
+Accounting uses the unfiltered whole compilation-unit report, so same-unit
+helper extraction cannot hide debt. Base64 passes with 27 automatically
+accounted sites and zero findings. Ordinary corpus `maturity: gate` remains
+diagnostic maturity, never build-root authority; 15 capacity cases pin policy
+pass/fail distributions in facts mode. Protected external owner review is still required for coordinated
+changes to both pins; the repository mechanism alone is not GATE-1 authority.
+
+Adversarial review found a class of laundering and coverage escapes before
+landing. `n27` perturbs remainder syntax; n28–n31 move output state through a
+cursor field, aggregate path, owned buffer, or helper-return alias; n32 moves an
+owned alias; and n33 exposed a real indexed-borrow lowering bug that previously
+ignored the index. The compiler now covers every nonliteral indexed write plus
+accesses through current unique-reference roots, lowers indexed borrows through
+the checked element-address path, and fails unrecognized candidates closed.
+FN-4 cloning had also copied source obligation metadata into generated indexes;
+generated origins now start incomplete. A final-AST invariant requires every
+enumerated index origin to emit exactly one report record, with matching total
+cardinality. The callable analyzer registry supplies the recorded completion
+set. These defenses close the enumerated current-AST attacks, not arbitrary
+user control/`Result` rewrites, imported calls, or fixed-literal forms.
+
+Evidence: 21 policy/authority/provenance unit tests; 44 PROOF-2 diagnostic cases;
+94 total bounds cases; 190/190 byte-identical report/no-report compiler runs
+over all 95 corpus `.xl` files in both facts modes; 15 review-pinned policy
+oracles; base64 27/27; approvals hard-fixed to `[]`; facts-off and ceiling roots
+rejected; invalid/duplicate/unknown analyzer states rejected. `make parity` is
+the dedicated authenticated bounds-v1 subgate run.
+The slice remains authorization-free: review B1 per-site dependency-cone
+identity must exist before any retained-site approval, and repository
+permissions/review must protect coordinated changes to the separately pinned
+root set; that external control is required before claiming GATE-1. The saved
+JSON separately records validated invocation, pass/fail verdict, policy, roots,
+and oracle digest. B3 explicit checks, B4 versioning, domain records, backend
+provenance, imported/transitive closure, overflow/allocation/FFI accounting, and
+counterexamples remain deferred. There is also no automated known-hot-outside-
+scope tripwire or approval-governance telemetry; root reconciliation is manual
+and approvals remain absent. The next experiment remains caller-owned streaming
+QOI decode.

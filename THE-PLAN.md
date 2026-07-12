@@ -86,21 +86,35 @@ Measured non-wins (equally load-bearing):
    perfect-prover time gap; all 12 remaining sites are output-capacity writes.
    PROOF-2 was owner-approved and implemented 2026-07-11 as the concrete-only
    checked `requires { let_stmt* check_stmt }` first slice (FN-8); its semantics
-   are selected and its spelling remains R3-provisional. The exact checked
+   are selected and its spelling remains R3-provisional. The checked 3:4
    capacity relation plus i=3k/o=4k proof discharges base64 27/27 sites, reaches
    the perfect-index-elision ceiling (77 instructions, one retained entry trap),
-   and measures 2.480 -> 4.233 GB/s (1.71x). The combined bounds corpus is 87
-   cases: 50 PROOF-1 plus 37 PROOF-2 capacity/lockstep cases, including alias,
+   and measures 2.480 -> 4.233 GB/s (1.71x). The combined bounds corpus is 94
+   cases: 50 PROOF-1 plus 44 PROOF-2 capacity/lockstep cases, including alias,
    mutation, relation, stride, ordering, and tail adversaries. Contract
    refinement remains deferred; prototype artifact-embedded proof references,
    gated FFI frames, and machine-readable trap reports remain explicit debt.
    FIRST REVIEWED SLICE IMPLEMENTED 2026-07-11: PROOF-2 now derives its
    obligation from the body before independently normalizing `requires`, emits
    deterministic first-missing-fact / first-failed-premise site diagnostics,
-   and gates those diagnostics in both facts modes across all 37 adversarial
-   cases. The refactor is byte-transparent across all 88 corpus programs in
-   both facts modes. The checked-automation, approval, guard-versioning, and
-   variable-output work remains staged by
+   and gates those diagnostics in both facts modes across all 44 cases. The
+   reporting path is byte-transparent in 190/190 report/no-report compilations
+   over all 95 corpus `.xl` files in both facts modes. CHECKED-AUTOMATION
+   BOUNDS-V1 IMPLEMENTED 2026-07-11: the facts-on site report carries complete
+   schema-versioned analyzer provenance; the B2 classifier passes proved and
+   affirmatively intrinsic-dynamic sites, fails
+   missing/mismatched obligations as hard findings, and fails every
+   indeterminate state closed. The unfilterable `--promotion` invocation
+   dual-pins base64's source/function/digest and checks its whole compilation
+   unit (27 automatically accounted, zero findings). Fifteen review-pinned corpus policy
+   oracles, including the n27–n33 syntax/alias frontier, plus 21 unit tests
+   separate diagnostic regression maturity from bounds-v1 build evaluation.
+   This is an authorization-free enforcement slice: approvals remain forbidden
+   until per-site dependency-cone identity exists, backend credit and
+   explicit-check enforcement are absent,
+   and protected external owner review must govern coordinated changes to both
+   repository pins. The subgate is not canonical DIAG-2 or complete artifact
+   promotion. Guard versioning and variable-output work remain staged by
    `optimizer-language-research/implementation/requires-check-accounting-REVIEW.md`;
    no normative language rule changed.
 2. **Leg-A frequency study** — never run, cheap, decision-relevant: how often

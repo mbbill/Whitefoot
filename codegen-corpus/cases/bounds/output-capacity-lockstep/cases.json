@@ -112,6 +112,13 @@
    "expected": {
     "proof_classification": "elided",
     "bounds_sites": 12,
+    "checked_automation_ready": true,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 12,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 0
+    },
     "obligation_status": "derived",
     "obligation_exactness": "exact",
     "requirement_relation": "equivalent",
@@ -135,6 +142,13 @@
     "bounds_sites": 2,
     "proved_sites": 1,
     "retained_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 1,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
     "obligation_status_counts": {
      "derived": 1,
      "failed-premise": 1
@@ -202,6 +216,13 @@
    "expected": {
     "proof_classification": "checked",
     "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 1,
+     "unaccounted": 0
+    },
     "obligation_status": "derived",
     "obligation_exactness": "sufficient",
     "requirement_relation": "missing",
@@ -230,6 +251,13 @@
    "expected": {
     "proof_classification": "checked",
     "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 1,
+     "unaccounted": 0
+    },
     "obligation_status": "derived",
     "obligation_exactness": "sufficient",
     "requirement_relation": "mismatch",
@@ -360,6 +388,13 @@
    "expected": {
     "proof_classification": "checked",
     "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
     "obligation_status": "failed-premise",
     "obligation_exactness": "unknown",
     "requirement_relation": "unknown",
@@ -667,6 +702,13 @@
    "expected": {
     "proof_classification": "checked",
     "bounds_sites": 2,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 1,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
     "obligation_status_counts": {
      "failed-premise": 1,
      "not-applicable": 1
@@ -794,6 +836,13 @@
     "bounds_sites": 2,
     "proved_sites": 1,
     "retained_sites": 1,
+    "checked_automation_ready": true,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 1,
+     "intrinsic-dynamic": 1,
+     "hard-finding": 0,
+     "unaccounted": 0
+    },
     "obligation_status_counts": {
      "derived": 1,
      "not-applicable": 1
@@ -853,6 +902,203 @@
    }
   },
   {
+   "id": "n27-double-remainder-decoy",
+   "source": "n27-double-remainder-decoy.xl",
+   "hypothesis": "Two harmless remainder-shaped lets cannot launder a variable-index unique-output candidate into affirmative not-applicability.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "syntax-perturbation",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
+   "id": "n28-cursor-field-escape",
+   "source": "n28-cursor-field-escape.xl",
+   "hypothesis": "Moving the output cursor into a struct field cannot evade the conservative capacity-candidate frontier.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "cursor-field",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
+   "id": "n29-aggregate-output-path-escape",
+   "source": "n29-aggregate-output-path-escape.xl",
+   "hypothesis": "Placing the output buffer behind a unique aggregate path cannot evade the conservative capacity-candidate frontier.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "aggregate-path",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
+   "id": "n30-owned-output-escape",
+   "source": "n30-owned-output-escape.xl",
+   "hypothesis": "Changing the output parameter from a unique reference to an owned buffer cannot evade the conservative capacity-candidate frontier.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "owned-output",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
+   "id": "n31-helper-return-alias-escape",
+   "source": "n31-helper-return-alias-escape.xl",
+   "hypothesis": "A unique buffer alias returned by a helper cannot evade the conservative capacity-candidate frontier.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "helper-alias",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
+   "id": "n32-moved-owned-output-escape",
+   "source": "n32-moved-owned-output-escape.xl",
+   "hypothesis": "Moving an owned output buffer into a local binding cannot evade the conservative capacity-candidate frontier.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "owned-move",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
+   "id": "n33-indexed-borrow-output-escape",
+   "source": "n33-indexed-borrow-output-escape.xl",
+   "hypothesis": "Borrowing a dynamic output element for a helper call must emit and report the same OP-4 bounds origin as a direct access.",
+   "tags": [
+    "negative",
+    "candidate-frontier",
+    "indexed-borrow",
+    "origin-coverage",
+    "fail-closed"
+   ],
+   "maturity": "gate",
+   "expected": {
+    "proof_classification": "checked",
+    "bounds_sites": 1,
+    "checked_automation_ready": false,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 0,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 1
+    },
+    "obligation_status": "failed-premise",
+    "obligation_exactness": "unknown",
+    "requirement_relation": "unknown",
+    "first_failed_premise": "body.obligation-candidate",
+    "first_missing_fact": null
+   }
+  },
+  {
    "id": "p08-preempted-complete-groups",
    "source": "p08-preempted-complete-groups.xl",
    "hypothesis": "All twelve funded output stores may remain proved after explicit trapping checks, but preemption makes the obligation only sufficient and never exact in any region.",
@@ -867,6 +1113,13 @@
    "expected": {
     "proof_classification": "elided",
     "bounds_sites": 12,
+    "checked_automation_ready": true,
+    "checked_automation_disposition_counts": {
+     "automatically-accounted": 12,
+     "intrinsic-dynamic": 0,
+     "hard-finding": 0,
+     "unaccounted": 0
+    },
     "obligation_status": "derived",
     "obligation_exactness": "sufficient",
     "requirement_relation": "equivalent",

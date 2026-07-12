@@ -58,6 +58,11 @@ python3 tools/codegen_parity.py --corpus --tag proof-2
 - `bounds_sites` is the exact number of lowered/codegen bounds sites expected
   in both facts-on and facts-off variants; this prevents a missing site from
   disappearing symmetrically and escaping the gate.
+- Optional `checked_automation_ready` plus the complete four-key
+  `checked_automation_disposition_counts` map pins the facts-on policy result.
+  These are diagnostic oracles: a negative case is green when it produces the
+  expected hard/unaccounted promotion failure. They never nominate a promoted
+  root, and facts-off is never a promotion candidate.
 
 Paths in `source` are relative to the fragment containing them and must remain
 inside the repository. Source and recipes are tracked; generated IR, assembly,
@@ -68,3 +73,7 @@ fact-driven AST transform; they are not source locations or cross-variant IDs.
 Promotion is deliberate: an `explore` case becomes `audit` once its target is
 understood, and becomes `gate` only after the property is implemented, verified
 against adversarial near-misses, and stable on the supported toolchain.
+This corpus-maturity promotion is distinct from the checked-automation
+bounds-v1 build subgate. Only the dual-pinned review roots described in
+[`CODEGEN-PARITY.md`](../CODEGEN-PARITY.md) receive that evaluation, and
+protected external owner review is still required for coordinated pin changes.

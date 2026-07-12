@@ -1,0 +1,23 @@
+struct Cursor {
+  o: u64;
+}
+
+fn probe ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes('r), traps {
+  let n: own u64 = len<u8>(src);
+  let i: own u64 = 0_u64;
+  let c: own Cursor = Cursor(o: 0_u64);
+  loop @groups {
+    let rem: own u64 = isub.wrap<u64>(n, i);
+    match ilt<u64>(rem, 3_u64) {
+      True() => {
+        break @groups;
+      }
+      False() => {
+      }
+    }
+    set index<u8>(deref(out), c.o) = 0_u8;
+    set i = iadd.wrap<u64>(i, 3_u64);
+    set c.o = iadd.wrap<u64>(c.o, 4_u64);
+  }
+  return c.o;
+}

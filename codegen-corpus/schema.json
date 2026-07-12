@@ -63,6 +63,23 @@
             "bounds_sites": {"type": "integer", "minimum": 1},
             "proved_sites": {"type": "integer", "minimum": 1},
             "retained_sites": {"type": "integer", "minimum": 1},
+            "checked_automation_ready": {"type": "boolean"},
+            "checked_automation_disposition_counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "automatically-accounted",
+                "intrinsic-dynamic",
+                "hard-finding",
+                "unaccounted"
+              ],
+              "properties": {
+                "automatically-accounted": {"type": "integer", "minimum": 0},
+                "intrinsic-dynamic": {"type": "integer", "minimum": 0},
+                "hard-finding": {"type": "integer", "minimum": 0},
+                "unaccounted": {"type": "integer", "minimum": 0}
+              }
+            },
             "obligation_status": {
               "enum": ["derived", "failed-premise", "not-applicable", "unknown"]
             },
@@ -127,6 +144,10 @@
             "first_failed_premise_reason": {
               "type": ["string", "null"]
             }
+          },
+          "dependentRequired": {
+            "checked_automation_ready": ["checked_automation_disposition_counts"],
+            "checked_automation_disposition_counts": ["checked_automation_ready"]
           },
           "additionalProperties": true
         }

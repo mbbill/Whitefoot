@@ -44,6 +44,12 @@ def _litval(tok):                                  # integer value of a suffixed
 
 _TAGONLY2 = {}    # 2-variant tag-only enums: Bool-isomorphic, lowered i1 (name -> (v0, v1))
 
+# Versioned, closed analyzer set behind the first checked-automation policy.
+# A site may be called `not-applicable` only after every analyzer in this set
+# has run.  Codegen's fallback report is deliberately incomplete/unknown so a
+# future AST rewrite cannot acquire promotion credit by skipping this pass.
+_OBLIGATION_ANALYSIS_SCOPE = "frontend-implicit-bounds-v1"
+
 def _llty(name):
     """LLVM type for a democ type name; Bool and 2-variant tag-only enums are i1;
     other non-int named types are i32 tags."""
@@ -796,14 +802,8 @@ class Gen:
         if g.proof_report is not None:
             atom = pl["index"]["atom"]
             index_name = atom.get("p", {}).get("base") if atom.get("e") == "place" else None
-            obligation = pl["index"].get("obligation_info", {
-                "obligation": None,
-                "obligation_status": "not-applicable",
-                "obligation_exactness": None,
-                "requirement_relation": "not-applicable",
-                "first_missing_fact": None,
-                "first_failed_premise": None,
-            })
+            obligation = pl["index"].get(
+                "obligation_info", _indeterminate_obligation_info())
             g.proof_report.append({
                 "function": g.f["name"],
                 "site": g.bounds_site,
@@ -814,6 +814,9 @@ class Gen:
                 "index": index_name,
                 **obligation,
             })
+            pl["index"]["_proof_report_emissions"] = (
+                pl["index"].get("_proof_report_emissions", 0) + 1
+            )
         g.bounds_site += 1
         if cinfo and cinfo[0] != "scalar":             # [CONST-2] const-array index: GEP the global, bounds-checked
             ell, n, sg = cinfo
@@ -902,7 +905,11 @@ class Gen:
                 return {"k": ty, "v": t, "signed": v.get("signed", True)}
             return v
         if k == "borrow":                              # &'r p / &uniq 'r p -> pointer to place
-            src = g.env[e["place"]["base"]]
+            pl = e["place"]
+            if pl.get("index"):                       # borrow of an element still performs OP-4
+                ptr, ell, signed, _md = g.index_addr(pl)
+                return {"k": "ptr", "v": ptr, "ty": ell, "signed": signed}
+            src = g.env[pl["base"]]
             if src["k"] == "buffer":                  # reborrow of a buffer keeps its checked header value
                 return dict(src)                       # (whole-buffer replacement is rejected by STOR-1)
             if src["k"] == "enum":                     # borrow of an own enum local: ptr to its slot
@@ -2033,17 +2040,69 @@ def _indexed_access_nodes(node):
             for item in value: walk(item)
             return
         if not isinstance(value, dict): return
-        if value.get("e") in ("place", "move") \
-                and value.get("p", {}).get("index"):
-            ix = value["p"]["index"]
-            if id(ix) not in seen:
-                seen.add(id(ix)); out.append(ix)
-        if value.get("s") == "set" and value.get("p", {}).get("index"):
-            ix = value["p"]["index"]
+        # Context-independent place enumeration: every grammar form eventually
+        # contains the same place dictionary, including reads, moves, writes,
+        # borrows, calls, and future expression containers.
+        ix = value.get("index")
+        if isinstance(ix, dict) and "place" in ix and "atom" in ix:
             if id(ix) not in seen:
                 seen.add(id(ix)); out.append(ix)
         for child in value.values(): walk(child)
     walk(node)
+    return out
+
+def _lowered_indexed_access_nodes(stmts):
+    """Enumerate exactly the index origins Gen.stmts will attempt to lower.
+
+    The parser/checker permits syntactically unreachable statements after a
+    terminator, while Gen.stmts deliberately stops lowering them.  Coverage
+    accounting must retain that distinction: every reachable final-AST origin
+    emits once, and an unreachable origin emits zero records without making
+    report collection reject an otherwise accepted program.
+    """
+    out, seen = [], set()
+
+    def add(node):
+        for ix in _indexed_access_nodes(node):
+            if id(ix) not in seen:
+                seen.add(id(ix)); out.append(ix)
+
+    def walk_match(match):
+        add(match.get("scrut"))
+        terms = [walk_stmts(arm.get("body", [])) for arm in match.get("arms", [])]
+        return bool(terms) and all(terms)
+
+    def walk_stmts(body):
+        terminated = False
+        for stmt in body:
+            if terminated: break
+            kind = stmt.get("s")
+            if kind == "doc":
+                continue
+            if kind == "let" and "match" in stmt:
+                terminated = walk_match(stmt["match"])
+            elif kind in {"let", "give", "try", "return", "check"}:
+                add(stmt.get("e"))
+                terminated = kind == "return"
+            elif kind == "set":
+                # Gen evaluates the value before computing an indexed address.
+                add(stmt.get("e")); add(stmt.get("p"))
+            elif kind == "region":
+                terminated = walk_stmts(stmt.get("body", []))
+            elif kind == "loop":
+                walk_stmts(stmt.get("body", []))
+                # Gen always emits the loop end block and resumes lowering,
+                # even when it has no predecessor.
+                terminated = False
+            elif kind == "break":
+                terminated = True
+            elif kind == "match":
+                terminated = walk_match(stmt)
+            else:
+                add(stmt.get("e"))
+        return terminated
+
+    walk_stmts(stmts)
     return out
 
 def _direct_increment_name(st):
@@ -2133,6 +2192,61 @@ def _capacity_failure(writes, reason, path, expected=None, observed=None,
         "first_failed_premise": _proof_premise(
             reason, path, expected=expected, observed=observed),
     }
+
+def _capacity_candidate_frontier(f):
+    """Conservative per-site frontier for the registered capacity family.
+
+    A non-literal index through any unique reference, or any non-literal indexed
+    write at all—including cursor fields, aggregate paths, and moved owned
+    buffers—may be a cursor-funded output site.
+    Failure of the exact recognizer is therefore indeterminate, not affirmative
+    not-applicability. Fixed-literal accesses and non-indexed control are
+    explicitly outside this v1 family. False detention is intentional until a
+    narrower negative proof is implemented.
+    """
+    roots = {
+        p["name"] for p in f.get("params", [])
+        if p.get("mode", {}).get("kind") == "ref"
+        and p.get("mode", {}).get("uniq")
+    }
+
+    def discover(value):
+        if isinstance(value, list):
+            for item in value: discover(item)
+            return
+        if not isinstance(value, dict): return
+        if value.get("s") == "let" and isinstance(value.get("m"), dict) \
+                and value["m"].get("kind") == "ref" \
+                and value["m"].get("uniq"):
+            roots.add(value["n"])
+        for child in value.values(): discover(child)
+
+    discover(f["body"])
+
+    write_sites = set()
+    def collect_writes(value):
+        if isinstance(value, list):
+            for item in value: collect_writes(item)
+            return
+        if not isinstance(value, dict): return
+        if value.get("s") == "set" and value.get("p", {}).get("index"):
+            write_sites.add(id(value["p"]["index"]))
+        if value.get("e") == "borrow" and value.get("uniq") \
+                and value.get("place", {}).get("index"):
+            write_sites.add(id(value["place"]["index"]))
+        for child in value.values(): collect_writes(child)
+    collect_writes(f["body"])
+
+    frontier = set()
+    for ix in _indexed_access_nodes(f["body"]):
+        target = ix.get("place", {})
+        base = target.get("base")
+        through_unique = base in roots and target.get("deref", 0) == 1
+        dynamic_write = id(ix) in write_sites
+        if (through_unique or dynamic_write) \
+                and ix.get("atom", {}).get("e") != "lit":
+            frontier.add(id(ix))
+    return frontier
 
 def _analyze_capacity_lockstep_body(f):
     """Derive PROOF-2's candidate obligation from the body, never `requires`.
@@ -2470,8 +2584,45 @@ def _capacity_missing_fact(plan, out):
         "condition": "len(source) <= 3 * floor(len(output) / 4)",
     }
 
+def _obligation_analysis(completed=()):
+    expected = [name for name, _analyzer in _OBLIGATION_ANALYZER_REGISTRY]
+    completed = list(completed)
+    complete = completed == expected
+    return {
+        "scope": _OBLIGATION_ANALYSIS_SCOPE if complete else None,
+        "complete": complete,
+        "analyzers": completed,
+    }
+
+def _not_applicable_obligation_info(completed):
+    """Affirmative result after the complete v1 analyzer set examined a site."""
+    return {
+        "obligation_analysis": _obligation_analysis(completed),
+        "obligation": None,
+        "obligation_status": "not-applicable",
+        "obligation_exactness": None,
+        "requirement_relation": "not-applicable",
+        "first_missing_fact": None,
+        "first_failed_premise": None,
+    }
+
+def _indeterminate_obligation_info():
+    """Fail-closed fallback for a lowered site absent from analyzer input."""
+    return {
+        "obligation_analysis": _obligation_analysis(),
+        "obligation": None,
+        "obligation_status": "unknown",
+        "obligation_exactness": "unknown",
+        "requirement_relation": "unknown",
+        "first_missing_fact": None,
+        "first_failed_premise": None,
+    }
+
 def _capacity_info(status, exactness=None, relation="unknown", missing=None, failed=None):
     return {
+        # The orchestration layer stamps completion only after every analyzer
+        # in the registry returns successfully.
+        "obligation_analysis": _obligation_analysis(),
         "obligation": "output-capacity-lockstep",
         "obligation_status": status,
         "obligation_exactness": exactness,
@@ -2569,6 +2720,13 @@ def _analyze_capacity_obligation(f, apply_proofs, annotate=True):
 def _prove_capacity_lockstep(f, fact=None):
     """Compatibility entry: body-first analysis owns legacy marker application."""
     _analyze_capacity_obligation(f, apply_proofs=True, annotate=False)
+
+# The names used in proof reports are derived from the callables actually
+# iterated here.  Adding an analyzer therefore cannot silently claim complete
+# coverage without also registering and executing it.
+_OBLIGATION_ANALYZER_REGISTRY = (
+    ("output-capacity-lockstep-v1", _analyze_capacity_obligation),
+)
 
 def _prove_remainder_loops(stmts, lens, whole_body):
     """Pattern B: prove an exact fixed-stride remainder loop.
@@ -2792,6 +2950,10 @@ def reassociate_reductions(fns, proved):
             def elem_at(iname, xname):                 # let x_k = index<T>(buf, i_k)
                 e2 = {"e": "place", "p": json.loads(json.dumps(elem_let["e"]["p"]))}
                 e2["p"]["index"]["atom"] = _pl(iname)
+                # This is a new access origin.  It must not inherit proof or
+                # obligation-analysis credit from the source index it cloned.
+                e2["p"]["index"].pop("proof", None)
+                e2["p"]["index"].pop("obligation_info", None)
                 return {"s": "let", "n": xname, "m": None, "ty": T, "e": e2}
             wide = {"s": "loop", "l": f"@{u}", "body": [
                 {"s": "match", "scrut": _mkop("ige", "u64", [_pl(iv), _pl(f"{u}lim")]),
@@ -2840,7 +3002,36 @@ def compile_program(src, alias=True, elide_bounds=False, proof_report=None):
         # Snapshot source-derived obligation diagnostics before any facts-only
         # AST rewrite.  Later proof application may set markers but must not
         # reinterpret this diagnostic control oracle.
-        for f in fns: _analyze_capacity_obligation(f, apply_proofs=False)
+        for f in fns:
+            # Begin fail-closed, run every registered analyzer, and only then
+            # finalize untouched sites as affirmatively not applicable.
+            # Any later-introduced index retains Gen's indeterminate fallback.
+            sites = _indexed_access_nodes((f.get("requires") or []) + f["body"])
+            for ix in sites:
+                ix["obligation_info"] = _indeterminate_obligation_info()
+            completed = []
+            for analyzer_name, analyzer in _OBLIGATION_ANALYZER_REGISTRY:
+                analyzer(f, apply_proofs=False)
+                completed.append(analyzer_name)
+            candidate_frontier = _capacity_candidate_frontier(f)
+            for ix in sites:
+                info = ix["obligation_info"]
+                if info["obligation"] is None \
+                        and info["obligation_status"] == "unknown":
+                    if id(ix) in candidate_frontier:
+                        info = _capacity_info(
+                            "failed-premise", exactness="unknown", relation="unknown",
+                            failed=_proof_premise(
+                                "body.obligation-candidate", "body.indexed-access",
+                                "recognized capacity shape or explicit exclusion"))
+                        info["obligation_analysis"] = _obligation_analysis(completed)
+                        ix["obligation_info"] = info
+                    else:
+                        ix["obligation_info"] = (
+                            _not_applicable_obligation_info(completed)
+                        )
+                else:
+                    info["obligation_analysis"] = _obligation_analysis(completed)
     if alias: reassociate_reductions(fns, proved)      # [FN-4] facts channel; --no-facts is the control
     payenums = {en for en, vs in enums.items() if _enum_payw(vs) > 0}
     _TAGONLY2.clear()
@@ -2873,8 +3064,35 @@ def compile_program(src, alias=True, elide_bounds=False, proof_report=None):
     Gen._consts = cmap
     if alias:
         prove_inbounds(fns, cmap)                      # [OP-4 PROOF-1/2] facts channel
+    final_report_sites = None
+    if proof_report is not None:
+        final_report_sites = {
+            f["name"]: _lowered_indexed_access_nodes(
+                (f.get("requires") or []) + f["body"]
+            )
+            for f in fns
+        }
+        for sites in final_report_sites.values():
+            for ix in sites: ix["_proof_report_emissions"] = 0
     bodies = [Gen(f, enums, structs, alias, fnret, decls, total, mdefs, mdctr,
                   elide=elide_bounds, proof_report=proof_report).run() for f in fns]
+    if final_report_sites is not None:
+        expected_report_sites = sum(len(sites) for sites in final_report_sites.values())
+        missed = [
+            f"{function}:{ordinal}={ix.get('_proof_report_emissions', 0)}"
+            for function, sites in final_report_sites.items()
+            for ordinal, ix in enumerate(sites)
+            if ix.get("_proof_report_emissions") != 1
+        ]
+        if missed:
+            raise ValueError(
+                "proof-report origin coverage invariant failed: " + ", ".join(missed)
+            )
+        if len(proof_report) != expected_report_sites:
+            raise ValueError(
+                "proof-report cardinality invariant failed: "
+                f"expected {expected_report_sites}, observed {len(proof_report)}"
+            )
     if cglobals: bodies.insert(0, "\n".join(cglobals) + "\n")
     if mdefs: bodies.append("\n".join(mdefs) + "\n")
     # named aggregate type per used struct, emitted once (only when structs exist -> byte-stable

@@ -11,13 +11,18 @@ outputs.
 Review disposition:
 [requires-check-accounting-REVIEW.md](requires-check-accounting-REVIEW.md).
 Prototype progress on 2026-07-11: the accepted body-first analyzer, structured
-relationship diagnostics, facts/facts-off equality check, and 37-case
-diagnostic oracle are implemented.  Existing accepted programs and emitted IR
-remain unchanged.  Guard versioning, counterexample generation, approval
-records, and the checked-automation promotion policy are not implemented.
+relationship diagnostics, facts/facts-off equality check, 44-case diagnostic
+oracle, and the review-B2 bounds-v1 checked-automation policy are implemented.
+Base64 is the first dual-pinned whole-unit review root: 27 sites are
+automatically accounted and no finding remains. Source acceptance is unchanged,
+and report collection is byte-transparent. One independent correctness fix does
+change indexed-element borrows from the erroneous base pointer to the checked
+element address. Guard versioning, counterexample generation, domain records,
+backend proof credit, and retained-site approvals are not implemented; the
+manifest therefore requires `approvals: []`.
 
 This draft exists because PROOF-2 exposed two different failure modes that the
-current prototype safely retains but does not yet explain or govern:
+prototype originally retained safely but did not explain or govern:
 
 1. a checked entry fact and the body can drift apart (`3:4` capacity versus an
    `o += 5` body), leaving inner checks retained; and
@@ -36,9 +41,10 @@ The proposed direction is:
   spelling;
 - generate a proven fast path plus the original checked fallback when doing so
   preserves semantics;
-- make every remaining implicit check an artifact-accounted state;
-- reject **unaccounted performance debt** at a promotion gate, while permitting
-  exact approval-gated retained checks for legitimate dynamic cases;
+- give every in-scope implicit-bounds site a B2 disposition: proved,
+  affirmatively intrinsic-dynamic, hard finding, or unaccounted;
+- reject obligation-backed and indeterminate debt at the checked-automation
+  subgate while preserving intrinsic-dynamic checks as the safety floor;
 - withhold promotion credit from unapproved or overconstrained requirement
   domains, even when their checked facts make codegen sound; and
 - teach that `requires` states an actual caller violation, never a mere common
@@ -62,19 +68,23 @@ Already selected and not reopened here:
   proofs, and check density to be visible in the canonical artifact/report
   family.
 
-Open for review in this document:
+Resolved by review and prototyped here:
 
 1. obligation-driven body analysis;
-2. compiler-generated guard versioning with a checked fallback;
-3. the states and authority model of a performance check-accounting gate;
-4. treatment of weaker, stronger, incomparable, and unknown requirements;
-5. guidance for exact, data-dependent, streaming, and allocating output APIs;
-6. whether the provisional `requires` spelling communicates the selected
-   semantics accurately; and
-7. experiments required before any of these additions become normative.
+2. review-B2 states for the bounds-v1 checked-automation subgate; and
+3. writer guidance for exact versus variable-output APIs.
 
-No rule ID, syntax, manifest format, or trap-ordering change is selected by
-this draft.
+Deferred after review:
+
+1. compiler-generated guard versioning and its frequency/size instruments;
+2. B1 approvals, normalized domain records, and real GATE-1 audit authority;
+3. backend, explicit, allocation, overflow, imported/transitive accounting;
+4. the provisional `requires` spelling decision; and
+5. experiments required before any addition becomes normative.
+
+No normative rule ID, syntax, manifest format, or trap-ordering change is
+selected by this draft. The checked-automation schema described below is a
+prototype build-policy format only.
 
 ## 2. Constitutional and rule grounding
 
@@ -98,8 +108,10 @@ isolation:
   all performance debt must place approval outside that writer's ordinary
   authority.
 - **ERR-4:** expected capacity shortage is not laundered into a contract trap.
-- **DIAG-2/3:** enforcement consumes byte-stable artifact facts, not optimizer
-  remarks or advisory prose.
+- **DIAG-2/3:** final enforcement must consume byte-stable canonical artifact
+  facts, not optimizer remarks or advisory prose. The current external
+  `proof_report` is an interim build-subgate input and does not yet satisfy the
+  canonical DIAG-2 boundary.
 
 The [Constitution](../../CONSTITUTION.md) makes safety and cheat-proofness
 floors. Performance pressure can create proof, guarded execution, or explicit
@@ -345,49 +357,51 @@ proof/provenance reference; until then report `backend-eliminated-unverified`.
 Its dynamic cost is zero, but neither W3 proof credit nor artifact-honesty credit
 may be invented.
 
-The selected performance profile then gives each origin one policy disposition:
+Review B2 narrows the first policy slice to obligation-backed implicit-bounds
+debt. Its implemented disposition is:
 
 | Policy disposition | Meaning | Promotion default |
 |---|---|---|
-| `automatically-accounted` | Proved/versioned or verified-backend-eliminated, every dependency is policy-valid, and any version meets frequency/size limits | Accept |
-| `authorized-retained` | Exact retained origin has privileged authorization | Accept with authorization record |
-| `domain-unauthorized` | Codegen proof is sound but depends on an unapproved or disallowed source-domain restriction | Hard promotion failure |
-| `unaccounted` | No accepted proof, version, or authorization covers it | Hard promotion failure |
+| `automatically-accounted` | A valid admitted frontend proof removed the implicit check, after the complete schema-versioned analyzer set ran | Accept |
+| `intrinsic-dynamic` | The site remains checked and every registered obligation analyzer affirmatively excludes it | Accept as the safety floor |
+| `hard-finding` | The analyzer derived a dischargeable obligation but the source fact is missing or mismatched | Fail |
+| `unaccounted` | Analysis/provenance is incomplete, a premise failed, state is unknown, a matched obligation remained checked, ceiling mode was used, or only unverified backend elimination claims credit | Fail closed |
 
-`retained-unaccounted` is therefore shorthand for elaboration state `unproved`,
-an emitted origin, and policy disposition `unaccounted`; the final backend
-presence is still reported separately. It is not a source-language state. A
-versioned origin is never reported as simply proved/eliminated because its
-checked fallback still exists.
+Malformed state is a compiler/harness error, not a policy disposition. A valid
+hard or unaccounted report yields “performance promotion failed,” never “unsafe
+program.” Missing a fact still leaves the runtime check and never changes
+language acceptance.
 
-Elaboration state `proved` is not sufficient for automatic accounting. The
-artifact preserves the dependency closure from that site through its proof to
-every source requirement. If a required domain record is absent, stale, or
-disallowed as overconstrained, the disposition is `domain-unauthorized` even
-though codegen remains sound for calls admitted by the source check.
+`not-applicable` is evidence, not a default. Every site begins with incomplete
+analysis; the compiler iterates the schema-versioned analyzer registry, records
+the exact analyzers that returned, and only then may an explicitly excluded site
+become intrinsic-dynamic. A conservative candidate frontier covers every
+nonliteral indexed write plus accesses through current unique-reference roots;
+unrecognized candidate sites stay indeterminate. Fact-generated origins do not
+inherit source-site analysis. These rules close the enumerated n27–n33
+syntax/alias escapes and FN-4 metadata-copy escape found by adversarial review,
+not every possible user control, call, import, or fixed-literal rewrite.
 
-Frequency/profitability evidence used by the profile is independently measured,
-content-addressed, and pinned to the promotion decision. It may change artifact
-promotion, never source validity, safety classification, or proof truth. The
-ordinary writer cannot choose the corpus, hot root set, counters, or digest
-used to judge its own output.
+Versioning is absent from this slice per B4. It cannot become automatically
+accounted until independently measured hit-rate and size gates exist.
+Backend-eliminated checks receive no credit without verified provenance.
 
-Profile scope is privileged and transitive. Starting from each in-scope root,
-accounting closes over reachable function instances, monomorphizations, clones,
-runtime helpers, and gated external edges; alternatively the caller must import
-an exact callee-debt summary. Outlining a check into an ungated helper cannot
-remove it from scope, and the ordinary writer cannot shrink the root set or
-reachability closure.
+Profile scope is intended to be owner-selected. The current implementation
+duplicates pins for base64's case, facts-on variant, function, source, SHA-256,
+and closed-unit scope. The dedicated `--promotion` invocation requires the full
+corpus plus default manifest, forbids filters, and verifies every pinned root
+ran. It conservatively accounts the whole compilation unit rather than only the selected function, preventing
+same-unit helper extraction from hiding debt. Exact reachable-instance/imported
+closure remains deferred. These are two coordinated repository edits, not an
+implemented authority boundary: protected external owner review must govern
+changes to both pins before the workflow satisfies GATE-1.
 
-Explicit source checks are reported separately because OP-5 always retains
-them. First-slice proposal: every `check`/FN-8 origin and final trap edge is
-inventoried; an FN-8 origin needs the requirement-domain record described
-below, while another explicit check must match a profile-approved mandatory
-boundary/domain role or exact runtime-check authorization. An unmatched
-explicit origin is a hard performance-profile failure. Candidate report states
-include `explicit-consumed`, `explicit-domain-only`, `explicit-unused`, and
-`explicit-overconstrained`; names remain open, but “explicit means free” is not
-an admissible policy.
+Explicit source checks are outside the first classifier. Review B3 requires
+them to be counted and cost-reported but always passing; no policy may create
+an incentive to delete a defensive check. The current harness has only coarse
+IR/assembly trap counts, so complete per-origin explicit inventory remains
+deferred. They escalate only with independent profile evidence plus an
+available proof/guard alternative.
 
 This inventory is not omniscient. A writer can rewrite a check as ordinary
 conditional/`Result` control that is not generally identifiable as a safety
@@ -398,13 +412,13 @@ The gate error is not “unsafe program.” It is:
 
 ```text
 performance acceptance failed:
-  function encode has 12 retained-unaccounted bounds checks
+  function encode has 12 hard-finding bounds sites
   candidate obligation: output-capacity-lockstep
   first missing fact: len(src) <= 3*floor(len(out)/4)
 ```
 
-This distinction keeps language acceptance stable while making the promoted
-artifact enforceably deliberate.
+This distinction keeps language acceptance stable while making the pinned
+build's bounds-v1 disposition enforceable inside the prototype subgate.
 
 ### 8.1 Approval properties
 
@@ -416,39 +430,37 @@ Candidate approval record:
 
 ```json
 {
-  "artifact_hash": "...",
   "function": "decode_chunk",
-  "node_path": "body.loop@decode.index[3]",
+  "stable_site_id": "body.loop@decode.index[3]",
+  "dependency_cone_digest": "<64 lowercase hex>",
   "fact_class": "bounds",
-  "elaboration_proof_state": "unproved",
-  "final_lowering_state": "present",
-  "policy_disposition": "authorized-retained",
+  "obligation": "output-capacity-lockstep",
+  "reason_class": "prover-debt",
+  "reason_detail": "source NeedMoreOutput guard dominates; prover did not consume it",
   "dominating_recoverable_guard_ref": "body.loop@decode.capacity-match",
-  "reason": "redundant OP-4 check remains after the source NeedMoreOutput guard; prover debt",
-  "approver": "owner-gate-record-id",
-  "source_context_hash": "..."
+  "gate_record": "owner-gate-record-id"
 }
 ```
 
 Required properties:
 
 - no source-level `allow`, warning suppression, or blanket function exemption;
-- exact function, check kind, node path, and source/artifact identity;
+- exact function, stable site, reason class, and dependency-cone identity;
 - a nonempty reason from a closed reason class plus prose detail;
 - a reason that states the retained edge's actual failure semantics; claiming a
   recoverable result requires a dominating source guard reference—the OP-4 edge
   itself traps;
-- code changes invalidate stale approvals;
+- changes inside the dependency cone invalidate stale approvals; unrelated
+  artifact edits do not;
 - approval never removes the runtime check or adds a trusted optimizer fact;
 - approval affects performance promotion only, never safety acceptance; and
-- who may approve, and whether this extends GATE-1 or uses a distinct owner
-  policy gate, requires an explicit owner decision.
+- approval is a GATE-1 operation outside ordinary writer authority.
 
-First-slice identity should bind the whole artifact plus compiler/proof-policy
-and workload/profile corpus digests. This is intentionally expensive—any
-artifact change requires renewed authorization—but avoids stale-site drift.
-A future function/dependency-cone digest may reduce churn only after it proves
-that every relevant control/data/call dependency is included.
+Whole-artifact approval identity was rejected by review B1 because routine
+churn would train rubber-stamping. A conservative dependency cone may
+over-include control/data/call dependencies, but it must never omit one. No
+approval is accepted by the current implementation; `approvals` is fixed to an
+empty list until this identity and GATE-1 audit record exist.
 
 The existing [codegen-parity gate](../../CODEGEN-PARITY.md) already pins
 per-site proof counts for selected cases. This proposal generalizes that model
@@ -484,7 +496,7 @@ counterexample_ref (when constructively available)
 This is a proposed DIAG-3 delta, not an implemented claim. The prototype's
 current external `proof_report` is not yet the DIAG-2 canonical artifact.
 
-### 8.3 Protecting the accepted domain
+### 8.3 Protecting the accepted domain (general mechanism deferred)
 
 Check accounting creates a second attack unless requirement domains are
 protected. A writer can make local codegen look perfect by adding a predicate
@@ -517,6 +529,15 @@ This is intentionally stronger than retained-check authorization. The latter
 accepts a runtime cost while preserving behavior; a requirement-domain change
 can remove valid behavior from the function and export cost to every caller.
 
+The implemented base64 pilot does not generalize this mechanism. Its review pin
+binds the complete reviewed source digest, including the canonical 3:4 checked
+condition that the analyzer classifies as equivalent to its derived sufficient
+obligation; the digest is admission identity, not an exactness proof. Any
+source or requirement edit invalidates that pin and needs protected owner
+review. Before arbitrary roots or independently evolving public
+APIs are promoted, the normalized domain record and caller-cost evidence above
+must replace that pilot-level whole-source admission.
+
 ### 8.4 Candidate review invariants
 
 The following are proposed rule sketches, not assigned spec IDs:
@@ -533,16 +554,17 @@ The following are proposed rule sketches, not assigned spec IDs:
 4. **Source-check preservation.** The compiler never synthesizes, removes,
    weakens, or strengthens an explicit FN-8 check. A generated guard never
    acquires OP-5 semantics.
-5. **Check-state completeness.** Every explicit and implicit check origin,
-   including cloned and monomorphized instances, appears in the canonical
-   artifact with its proof/guard/fallback references and final backend presence;
-   backend elimination receives credit only with verified provenance.
-6. **Performance acceptance.** Every in-scope origin is automatically
-   accounted, exactly authorized as retained, or a hard profile failure;
-   scope is privileged and transitively closed over reachable instances.
+5. **Bounds-v1 completeness.** Every implicit bounds origin in the closed
+   compilation unit has exact analyzer provenance and a B2 disposition;
+   generated sites begin incomplete, and backend elimination receives no credit
+   without verified provenance. Broader explicit/transitive completeness is
+   deferred.
+6. **Performance acceptance.** Every in-scope bounds origin is automatically
+   accounted, affirmatively intrinsic-dynamic, or a hard/unaccounted promotion
+   failure. Authorization is absent from the implemented slice.
 7. **Exact authorization.** Wildcards, count-only allowances, writer-issued
-   authorizations, and source suppression are invalid; policy/compiler/digest
-   changes invalidate stale records.
+   authorizations, and source suppression are invalid; any future approval is a
+   GATE-1 record bound to a per-site dependency-cone digest.
 8. **Domain protection.** A performance-gated requirement earns credit only
    under an approved exact domain record; strengthening is a reviewed domain
    change, not a local optimization edit.
@@ -920,25 +942,27 @@ proof-obligation-unknown:
   no semantic defect is claimed
 ```
 
-Diagnostic names and severity are provisional. The byte-stable artifact state,
-not whether the terminal paints a line yellow or red, is the enforcement input.
+Diagnostic names and severity are provisional. The deterministic structured
+report state—not whether the terminal paints a line yellow or red—is the
+interim build-subgate input. Canonical byte-stable DIAG-2 state remains deferred.
 
 ## 12. Threat model: how a bad writer might game this
 
 | Attempt | Required response |
 |---|---|
-| Ignore warnings | Promotion consumes artifact states and fails on `retained-unaccounted` |
+| Ignore warnings | The build subgate consumes structured policy states; known missing/mismatch obligations and every indeterminate state fail regardless of warning handling |
 | Add `check true` | It entails no obligation; sites remain unaccounted |
-| Add `requires false` or demand maximum/absurd capacity | Privileged domain record, exact-condition comparison, and representative workload execution prevent domain shrinking from earning credit |
-| Write a weaker relation | Proof does not discharge; checks remain/version |
-| Rewrite into an unrecognized shape | OP-4 checks remain and are still counted |
+| Add `requires false` or demand maximum/absurd capacity | Current pinned-source digest forces review for the base64 pilot; general domain records and representative workload enforcement are required but not implemented |
+| Write a weaker relation | Proof does not discharge; the check remains and the obligation finding fails promotion |
+| Rewrite into an unrecognized shape | OP-4 checks remain; conservative candidate-frontier sites become unaccounted rather than `not-applicable` |
 | Add source suppression | No source-level suppression is admitted |
-| Edit the approval manifest | Writer lacks approval authority; source/artifact hashes invalidate stale entries |
-| Hide the check through user calls | Interprocedural uncertainty retains and accounts checks |
-| Move checks into explicit source checks | Inventory counts every explicit check/trap edge; explicit is not free |
+| Delete/repoint the promoted root | `--promotion` requires the dual-pinned source/function/digest set and forbids filters; protected external owner review is still required for changes to both repository pins |
+| Edit the approval manifest | Approvals must be empty until GATE-1 dependency-cone records exist |
+| Hide the check through same-unit helpers | Whole-unit closure still sees it; imported/transitive closure remains deferred and receives no claimed credit |
+| Move checks into explicit source checks | B3 requires explicit checks to remain passing; current coarse trap metrics are not a complete per-origin inventory, so independent profile enforcement is deferred |
 | Encode equivalent work as ordinary conditional/`Result` control | Static check inventory does not claim completeness; codegen and end-to-end workload gates must catch the cost |
 | Claim a guard is hot | Guard frequency comes from independent measurement, not writer metadata |
-| Force worst-case caller allocation | Whole-workload allocation, memory, and latency gates expose exported cost |
+| Force worst-case caller allocation | Not covered by bounds-v1; future whole-workload allocation, memory, and latency gates must expose exported cost |
 | Use unchecked access | No writer-emittable unchecked index exists |
 
 A performance approval is not a trusted safety assertion: the dynamic check
@@ -955,7 +979,7 @@ pathology impossible.
 
 ### 13.1 Base64 obligation/diagnostic matrix
 
-Reuse and extend the 28-case output-capacity corpus:
+Reuse and extend the 44-case output-capacity corpus:
 
 - exact requirement + exact body -> direct proof;
 - missing requirement + exact body -> versioning candidate;
@@ -1085,11 +1109,24 @@ Measure whether writers:
 - attempt to silence the gate or strengthen the contract; and
 - understand the provisional `requires` spelling consistently.
 
+### 13.5 Governance tripwire and telemetry (deferred)
+
+The pilot has no automatic inventory of known-hot roots outside the selected
+scope. Until that tripwire exists, review must manually reconcile the project's
+hot-function inventory with the dual-pinned root list; this is a process check,
+not a writer-proof mechanism. Retained-site approvals are forbidden, so there
+are no approval-action metrics yet. When additional roots or approvals are
+introduced, record policy revisions, false detentions/precision, reviewer
+actions, and time to promotion. The n27–n33 frontier hardening is the first
+policy-revision evidence, not proof that the frontier is complete.
+
 ## 14. Proposed implementation sequence after review
 
-Progress note (2026-07-11): items 1 and 2 are implemented; item 3's
-deterministic diagnostic oracle is implemented, while constructive
-counterexamples remain deferred.  Item 4 is next.
+Progress note (2026-07-11): items 1–4 are implemented in the narrowed,
+authorization-free bounds-v1 slice. Constructive counterexamples, domain
+records, backend credit, and per-site approvals remain deferred. The next
+experiment is caller-owned streaming QOI decode; versioning remains blocked by
+review B4's hit-rate and code-size prerequisites.
 
 1. Refactor PROOF-2 into a body analyzer producing obligations and failed
    premises, without changing codegen.
@@ -1098,18 +1135,28 @@ counterexamples remain deferred.  Item 4 is next.
 4. Generalize codegen parity into a reviewable performance-accounting manifest;
    keep all retention and requirement-domain approvals external to ordinary
    source authorship.
-5. Prototype guard versioning as an experiment-only lowering and measure
-   performance plus code size.
-6. Either implement multi-field/aggregate result lowering and the required
+5. Either implement multi-field/aggregate result lowering and the required
    grow/replace/history storage features, or explicitly scope the first decoder
    experiment to caller-owned streaming chunks and mark other variants host-only.
-7. Run the synthetic and then real-format variable-output decoder comparisons.
-8. Run the authorship/repair experiment, including the worst-case-requirement
+6. Run the synthetic and then real-format QOI decoder comparisons.
+7. Run the authorship/repair experiment, including the worst-case-requirement
    trap.
-9. Only then decide spec deltas, approval authority, syntax/spelling, and
-   promotion defaults.
+8. Build a dependency-cone identity only when a legitimate retained-site
+   authorization is needed; until then keep `approvals: []`.
+9. Prototype guard versioning only after the independent hit-rate and code-size
+   instruments required by B4 exist.
+10. Only then decide spec deltas, syntax/spelling, and broader promotion
+    defaults.
 
-## 15. Review questions
+## 15. Review questions and dispositions
+
+The review resolved the first-slice choices: owner-selected roots; B2
+obligation-backed debt; GATE-1 per-site dependency-cone approval identity; no
+automatic versioning credit; QOI for the decoder experiment; bounds only;
+constant-time policy out of scope; explicit checks passing under B3; and no
+backend credit without verified provenance. The remaining numbered questions
+below are historical design prompts or deferred expansion questions, not
+license to revert those decisions.
 
 1. Should performance accounting apply to every function or only an owner-
    selected root set of promoted/hot functions? In either case the root set is
@@ -1131,8 +1178,10 @@ counterexamples remain deferred.  Item 4 is next.
 8. Does GATE-1 cover adding or strengthening `requires` in every performance-
    gated function? This draft recommends yes; what is the privileged statement
    of the accepted domain while FN-8 remains absent from `fn_sig`?
-9. After the whole-artifact first slice, can a function/dependency-cone digest
-   survive unrelated edits without allowing stale approval drift?
+9. Historical prompt, rejected by review B1: after a whole-artifact first
+   slice, could a function/dependency-cone digest survive unrelated edits
+   without allowing stale approval drift? The accepted direction starts with a
+   conservative dependency cone; it does not ship whole-artifact approvals.
 10. How should public/FFI APIs publish checked requirements before gated boundary
    frames and machine-readable trap reports exist?
 11. What validated-plan representation can bind content-derived output size to
@@ -1155,17 +1204,25 @@ counterexamples remain deferred.  Item 4 is next.
 19. Which explicit check roles are automatically mandatory versus individually
     authorized in the first performance profile?
 
-## 16. Recommended review disposition
+## 16. Implemented review disposition
 
-Advance the following as experiment candidates, not yet language law:
+Implemented as non-normative compiler/harness policy:
 
 - obligation-driven proof discovery;
-- guarded fast path plus checked fallback;
-- artifact-level `retained-unaccounted` promotion failure;
-- exact, approval-gated retained-check exceptions;
-- privileged domain accounting so stronger `requires` cannot game the gate; and
+- obligation-backed hard/unaccounted promotion failure for implicit bounds;
+- affirmative intrinsic-dynamic safety-floor acceptance;
+- dual-pinned, unfilterable whole-unit bounds-v1 evaluation of base64; and
 - the writer rule that expected shortage is a value and common-case predicates
   are guards, not `requires`.
+
+Deferred rather than silently credited:
+
+- guarded fast paths/versioning;
+- retained-check approvals and their B1 dependency-cone identity;
+- privileged general domain records;
+- backend elimination provenance;
+- explicit/overflow/allocation/transitive/FFI accounting; and
+- exact reachable-instance closure beyond the closed compilation unit.
 
 Do not promote:
 
