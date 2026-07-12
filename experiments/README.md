@@ -29,6 +29,6 @@ and gitignored. Chronology and decisions live in
   sites and improves the kernel 2.50 -> 2.93 GB/s, with PROOF-2 debt isolated.
 
 ## Earlier corpus-era studies
-- `codegen-vs-rust-c/`, `regions-effects-vs-safe-rust/`,
-  `ai-native-parallelism/` — the pre-plan evidence base (noalias collapse,
-  scatter residual, guarded-plan measurements) feeding the corpus notes.
+Moved to `../archive/experiments/` (noalias collapse, scatter residual,
+guarded-plan measurements); conclusions absorbed into the corpus notes and
+THE-PLAN's evidence ledger.

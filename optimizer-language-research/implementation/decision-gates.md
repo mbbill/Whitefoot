@@ -635,3 +635,7 @@ does not clear D9. It is a provisional go to stop frequency analysis and test a
 cluster of relational proofs in a real workload; alias/law frequency is not the
 next priority. Full caveats and raw directional counts are in
 `experiments/frequency-study/RESULTS.md`.
+
+## Repo restructured for agent onboarding (2026-07-12, owner-directed)
+
+Clean-base pass: (1) CLAUDE.md created at root — auto-loaded agent onboarding: read order (THE-PLAN -> gates tail), both verification gates, standing rules (durability protocol, adversarial-review-before-ship, proof-not-weakening, tiering, plain-language reporting), layout map, current focus. (2) README.md rewritten as a router table. (3) archive/ created: DECISION_SPRINT.md + ROADMAP.md (superseded by THE-PLAN), research era (debates/sources/matrices/synthesis), corpus-era experiments (codegen-vs-rust-c, regions-effects-vs-safe-rust, ai-native-parallelism), and m3 (shelf-ready per D5); archive/README.md explains each. Verified zero live tool/gate references into archived trees before moving; active-doc references fixed; historical log text left untouched (pre-archive paths are labels, precedent per the history rewrite). (4) THE-PLAN status: build track ACTIVE — compiler/ hosts xlc, the production compiler written in xlang (SoA-tape per P2, democ as stage 0, self-parse gate); bet-1 adversary resolved (assert-refuted / expert-iterators-tie / QOI is the leg-B decider). Both gates green post-move.

@@ -1,8 +1,8 @@
 # THE PLAN (consolidated 2026-07-12)
 
 The single current-state document: what this project believes, what it has
-proven, and what it does next. Supersedes DECISION_SPRINT.md's phase plan
-(kept as history). Law lives in CONSTITUTION.md; rulings in
+proven, and what it does next. Supersedes the DECISION_SPRINT/ROADMAP phase plans
+(kept in archive/). Law lives in CONSTITUTION.md; rulings in
 `optimizer-language-research/notes/user-directives.md`; the lab notebook in
 `optimizer-language-research/implementation/decision-gates.md`. This file is
 the map, re-derived from those sources; on conflict, they win in that order.
@@ -138,6 +138,15 @@ Measured non-wins (equally load-bearing):
 4. **Coreutils ladder** (D7a): wc, base64 done; next utilities need the I/O
    frame (first D4 FFI instance) and chunked-driver parity. The AI-authorship
    headline runs through the shelved trial harness when the time comes.
+
+STATUS UPDATES (2026-07-12): bet 1's owed adversary ran — assert-up-front
+recovers NOTHING (elision is checker-attributable), but expert iterator
+restructuring ties on base64's regular shape, so the leg-B decider is QOI
+decode (variable-size writes have no iterator escape). Leg A still pending.
+THE BUILD TRACK IS ACTIVE: `compiler/` hosts xlc, the production compiler
+written in xlang itself (SoA-tape architecture per P2, fixed-capacity
+buffers, no generics needed), bootstrapped by prototype/democ as stage 0,
+with its own gate (`make -C compiler check`, incl. the self-parse gate).
 
 ## 5. The pivot clause (pre-registered)
 
