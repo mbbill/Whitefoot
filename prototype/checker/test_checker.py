@@ -5,7 +5,8 @@ matching the DIAG-1 contract (diagnostics cite one rule ID).
 """
 
 import unittest
-from checker import check_fn, CheckError, check_program
+from checker import (check_fn, CheckError, check_program,
+                     RESERVED_BINDING_IDENTS)
 
 
 def own():
@@ -472,6 +473,81 @@ class ProgramLayer(unittest.TestCase):
         self.ok({"structs": POINT, "enums": SIGN,
                  "fns": {"sign_of": SIGN_OF, "main": main}})
 
+    def test_form3_every_op1_reserved_identifier_rejected(self):
+        for name in sorted(RESERVED_BINDING_IDENTS):
+            with self.subTest(name=name):
+                self.expect("FORM-3", {"structs": {}, "enums": {},
+                            "fns": {name: pfn([
+                                {"kind": "return", "expr": lit(UNIT)}
+                            ])}})
+
+    def test_form3_reservation_covers_every_binding_shape(self):
+        return_unit = {"kind": "return", "expr": lit(UNIT)}
+        cases = {
+            "struct field": {
+                "structs": {"S": [{"name": "trap", "ty": I32}]},
+                "enums": {}, "fns": {},
+            },
+            "variant field": {
+                "structs": {},
+                "enums": {"E": [{"variant": "V", "fields": [
+                    {"name": "trap", "ty": I32}
+                ]}]},
+                "fns": {},
+            },
+            "parameter": {
+                "structs": {}, "enums": {},
+                "fns": {"f": pfn([return_unit], params=[
+                    {"name": "trap", "mode": own(), "ty": I32}
+                ])},
+            },
+            "region parameter": {
+                "structs": {}, "enums": {},
+                "fns": {"f": pfn([return_unit], regions=["trap"])},
+            },
+            "let binder": {
+                "structs": {}, "enums": {},
+                "fns": {"f": pfn([
+                    {"kind": "let", "name": "trap", "mode": own(),
+                     "ty": I32, "init": lit()},
+                    return_unit,
+                ])},
+            },
+            "try binder": {
+                "structs": {}, "enums": {},
+                "fns": {"f": pfn([
+                    {"kind": "try", "name": "trap", "mode": own(),
+                     "ty": I32, "expr": lit()},
+                    return_unit,
+                ])},
+            },
+            "match binder": {
+                "structs": {}, "enums": {},
+                "fns": {"f": pfn([
+                    {"kind": "match", "arms": [{
+                        "variant": "Ok",
+                        "binders": [{"field": "value", "name": "trap"}],
+                        "body": [],
+                    }]},
+                    return_unit,
+                ])},
+            },
+            "local region": {
+                "structs": {}, "enums": {},
+                "fns": {"f": pfn([
+                    {"kind": "region", "name": "trap", "body": []},
+                    return_unit,
+                ])},
+            },
+            "const": {
+                "structs": {}, "enums": {}, "fns": {},
+                "consts": {"trap": I32},
+            },
+        }
+        for shape, prog in cases.items():
+            with self.subTest(shape=shape):
+                self.expect("FORM-3", prog)
+
     def test_gram8_wrong_field_name(self):
         self.expect("GRAM-8", {"structs": POINT, "enums": {}, "fns": {"f": pfn(
             [{"kind": "return", "expr": construct("Point", [("x", lit()), ("z", lit())])}],
@@ -583,6 +659,33 @@ class ProgramLayer(unittest.TestCase):
                     "fns": {"sign_of": SIGN_OF, "g": pfn(
             [{"kind": "return", "expr": ucall("sign_of", ["x"], [lit(UNIT)])}],
             rmode=own(), rty=named("Sign"))}})
+
+    def test_type5_context_free_result_constructor(self):
+        flag = {"Flag": [{"variant": "First", "fields": []},
+                         {"variant": "Second", "fields": []}]}
+        direct = {"kind": "match",
+                  "scrut": construct("Err", [("error", construct("First", []))]),
+                  "arms": [
+                      {"variant": "Ok",
+                       "binders": [{"field": "value", "name": "value"}], "body": []},
+                      {"variant": "Err",
+                       "binders": [{"field": "error", "name": "error"}], "body": []},
+                  ]}
+        self.expect("TYPE-5", {"structs": {}, "enums": flag,
+                    "fns": {"f": pfn([direct, {"kind": "return", "expr": lit(UNIT)}])}})
+
+    def test_type5_context_free_option_constructor(self):
+        flag = {"Flag": [{"variant": "First", "fields": []},
+                         {"variant": "Second", "fields": []}]}
+        direct = {"kind": "match",
+                  "scrut": construct("Some", [("value", construct("First", []))]),
+                  "arms": [
+                      {"variant": "None", "binders": [], "body": []},
+                      {"variant": "Some",
+                       "binders": [{"field": "value", "name": "value"}], "body": []},
+                  ]}
+        self.expect("TYPE-5", {"structs": {}, "enums": flag,
+                    "fns": {"f": pfn([direct, {"kind": "return", "expr": lit(UNIT)}])}})
 
     def test_type6_unknown_constructor(self):
         self.expect("TYPE-6", {"structs": {}, "enums": {}, "fns": {"f": pfn(

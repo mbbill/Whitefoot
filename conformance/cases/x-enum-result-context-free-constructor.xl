@@ -1,0 +1,11 @@
+enum Flag { First(); Second(); }
+
+fn main () -> own unit pure {
+  match Err(error: First()) {
+    Ok(value: value) => {
+    }
+    Err(error: error) => {
+    }
+  }
+  return unit;
+}

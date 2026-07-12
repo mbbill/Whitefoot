@@ -1,0 +1,9 @@
+enum Flag { First(); Second(); }
+
+fn bad () -> own Result<u64,Flag> pure {
+  return Err(error: 1_u64);
+}
+
+fn main () -> own unit pure {
+  return unit;
+}

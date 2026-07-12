@@ -12,7 +12,8 @@ Temporary tool (owner ruling): endgame is a self-hosted compiler.
 import re, sys, subprocess, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'checker'))
-from checker import check_program, CheckError, PRELUDE_ENUMS, _parse_effect_row
+from checker import (check_program, CheckError, PRELUDE_ENUMS, _parse_effect_row,
+                     RESERVED_BINDING_IDENTS, OPERATION_MODE_WORDS)
 
 TOK = re.compile(r'"[^"]*"|\'[a-z][a-z0-9_]*|@[a-z][a-z0-9_]*'
                  r'|->'
@@ -64,6 +65,23 @@ def _arr_parts(name):                              # array<T,N> -> (T, N) else N
         elem, n = name[6:-1].split(",", 1)
         return elem, int(n)
     return None
+
+def _named_args(name, base):                       # Result<T,E>/Option<T> -> [args]
+    prefix = base + "<"
+    if not isinstance(name, str) or not name.startswith(prefix) or not name.endswith(">"):
+        return None
+    inner = name[len(prefix):-1]
+    args, start, depth = [], 0, 0
+    for index, char in enumerate(inner):
+        if char == "<":
+            depth += 1
+        elif char == ">":
+            depth -= 1
+        elif char == "," and depth == 0:
+            args.append(inner[start:index])
+            start = index + 1
+    args.append(inner[start:])
+    return args
 
 def _tybytes(name):
     """sizeof(T) for buffer_new's OP-9 byte-size computation (monomorphization-time)."""
@@ -168,12 +186,19 @@ class P:
 
 def is_typeid(t): return bool(t) and t[0].isupper()
 
-def binding_ident(p, context):
-    name = p.eat()
-    if name == "requires":
+def check_binding_ident(name, context):
+    if name in RESERVED_BINDING_IDENTS:
+        source_rule = "FN-8" if name == "requires" else "OP-1"
         raise CheckError("FORM-3",
-            f"'{name}' is a reserved grammar word and cannot bind a {context}")
+            f"'{name}' is reserved by {source_rule} and cannot bind a {context}")
     return name
+
+def binding_ident(p, context):
+    return check_binding_ident(p.eat(), context)
+
+def binding_region(p, context):
+    token = p.eat()
+    return check_binding_ident(token[1:], context)
 
 def parse_mode(p):
     if p.peek() == '&uniq': p.eat(); return {"kind": "ref", "region": p.eat()[1:], "uniq": True}
@@ -195,6 +220,8 @@ def parse_type(p):
         return f"array<{inner[0]},{inner[1]}>"
     if base == 'Result' and len(inner) == 2:           # retain payload types [ERR-3]
         return f"Result<{inner[0]},{inner[1]}>"
+    if base == 'Option' and len(inner) == 1:           # retain payload type [PRE-1]
+        return f"Option<{inner[0]}>"
     return base
 
 def parse_place(p):
@@ -209,10 +236,18 @@ def parse_place(p):
         pl = inner
     else:
         # a field path rides the identifier token: `base.f.g` tokenizes as one word [GRAM-5 psuffix]
-        parts = p.eat().split('.')
+        token = p.eat()
+        parts = token.split('.')
+        if len(parts) == 2 and parts[1] in OPERATION_MODE_WORDS:
+            raise CheckError("FORM-3",
+                f"OPNAME '{token}' cannot be used as a place; operation mode words are reserved")
+        for field in parts[1:]:
+            check_binding_ident(field, "field name")
         pl = {"base": parts[0], "path": parts[1:], "deref": 0}
     while p.peek() == '.':                             # psuffix after deref(...)/index<...>(...) [GRAM-5]
-        p.eat('.'); pl.setdefault("post", []).append(p.eat())
+        p.eat('.')
+        field = check_binding_ident(p.eat(), "field name")
+        pl.setdefault("post", []).append(field)
     return pl
 
 def parse_expr(p):
@@ -315,7 +350,7 @@ def parse_stmt(p):
     if t == 'break':
         p.eat(); lb = p.eat(); p.eat(';'); return {"s": "break", "l": lb}
     if t == 'region':
-        p.eat(); r = p.eat()[1:]; p.eat('{'); b = []
+        p.eat(); r = binding_region(p, "region"); p.eat('{'); b = []
         while p.peek() != '}': b.append(parse_stmt(p))
         p.eat('}'); return {"s": "region", "r": r, "body": b}
     if t == 'check':
@@ -378,7 +413,7 @@ def parse_program(src):
                 if p.peek() == '[':
                     p.eat()
                     while p.peek() != ']':
-                        sig_regions.append(p.eat()[1:])
+                        sig_regions.append(binding_region(p, "region parameter"))
                         if p.peek() == ',': p.eat()
                     p.eat(']')
                 p.eat('(')
@@ -440,7 +475,7 @@ def parse_program(src):
             if p.peek() == '[':
                 p.eat()
                 while p.peek() != ']':
-                    regions.append(p.eat()[1:])
+                    regions.append(binding_region(p, "region parameter"))
                     if p.peek() == ',': p.eat()
                 p.eat(']')
             p.eat('('); params = []
@@ -473,8 +508,11 @@ def ttype(base):
     if base.startswith("buffer<"):
         return {"kind": "buffer", "elem": ttype(_buf_elem(base))}
     if base.startswith("Result<"):
-        ok, err = base[7:-1].split(",", 1)
+        ok, err = _named_args(base, "Result")
         return {"kind": "named", "name": "Result", "args": [ttype(ok), ttype(err)]}
+    if base.startswith("Option<"):
+        (value,) = _named_args(base, "Option")
+        return {"kind": "named", "name": "Option", "args": [ttype(value)]}
     if base.startswith("array<"):
         elem, n = _arr_parts(base)
         return {"kind": "array", "elem": ttype(elem), "n": n}
@@ -675,7 +713,7 @@ class Gen:
         g.mdefs = mdefs                # module-level scoped-alias metadata lines [F003 channel]
         g.mdctr = mdctr                # shared metadata id counter (one numbering per module)
         g.pmode = {}                   # param name -> 'uniq' | 'shared' | 'own'
-        g.consts = getattr(Gen, "_consts", {})   # [CONST-2] const name -> (ell, N, signed) | ('scalar', v, signed)
+        g.consts = getattr(Gen, "_consts", {})   # [CONST-2] array tuple or ('scalar', value, signed, LLVM type)
         g.scopes = {}                  # provenance key -> (alias.scope list id, noalias list id)
         g.total = total; g.give_slot = None; g.give_ty = "i32"
         g.prologue = []                # entry-block setup (own struct params spilled to a slot)
@@ -703,8 +741,14 @@ class Gen:
         if en not in g.enums:                          # prelude Result/Option: word-erased payload
             return "i64"
         return "i" + str(_enum_payw(g.enums[en]))
-    def variant_field_ll(g, en, variant):          # (LLVM type, signed) of a variant's payload field
-        if en not in g.enums:                          # prelude: word-erased i64 payloads
+    def variant_field_ll(g, en, variant, type_args=None):  # instantiated field LLVM type
+        if en == "Result" and type_args:
+            ty = type_args[0] if variant == "Ok" else type_args[1]
+            return g.llty(ty), _is_signed(ty)
+        if en == "Option" and type_args and variant == "Some":
+            ty = type_args[0]
+            return g.llty(ty), _is_signed(ty)
+        if en not in g.enums:                          # erased prelude fallback
             return "i64", True
         for vn, flds in g.enums[en]:
             if vn == variant and flds:
@@ -889,7 +933,7 @@ class Gen:
                 return {"k": fll, "v": t, "signed": fsigned}
             cinfo = g.consts.get(pl["base"])           # [CONST-2] scalar const: fold to its literal
             if cinfo and cinfo[0] == "scalar":
-                return {"k": _llty(pl.get("ty", "i32")), "v": str(cinfo[1]), "signed": cinfo[2]}
+                return {"k": cinfo[3], "v": str(cinfo[1]), "signed": cinfo[2]}
             if cinfo:                                  # bare use of a const array: len operand marker
                 return {"k": "constarr", "n": cinfo[1]}
             v = g.env[pl["base"]]
@@ -899,7 +943,8 @@ class Gen:
                 return v
             if v["k"] in ("ptr", "slot"):
                 if v.get("en"):                        # &'r E: reading/deref yields the enum aggregate
-                    return {"k": "enum", "v": v["v"], "en": v["en"], "slot": True}
+                    return {"k": "enum", "v": v["v"], "en": v["en"], "slot": True,
+                            "type_args": v.get("type_args")}
                 ty = v.get("ty", "i32")
                 t = g.tmp(); g.emit(f"  {t} = load {ty}, ptr {v['v']}")
                 return {"k": ty, "v": t, "signed": v.get("signed", True)}
@@ -913,12 +958,14 @@ class Gen:
             if src["k"] == "buffer":                  # reborrow of a buffer keeps its checked header value
                 return dict(src)                       # (whole-buffer replacement is rejected by STOR-1)
             if src["k"] == "enum":                     # borrow of an own enum local: ptr to its slot
-                return {"k": "ptr", "v": src["v"], "ty": "%" + src["en"], "en": src["en"]}
+                return {"k": "ptr", "v": src["v"], "ty": "%" + src["en"], "en": src["en"],
+                        "type_args": src.get("type_args")}
             if src["k"] == "struct":                   # borrow of an own struct local: ptr to its slot
                 return {"k": "ptr", "v": src["v"], "ty": "%" + src["st"], "st": src["st"]}
             if src["k"] in ("slot", "ptr"):
                 return {"k": "ptr", "v": src["v"], "ty": src.get("ty", "i32"),
-                        "signed": src.get("signed", True), "en": src.get("en")}
+                        "signed": src.get("signed", True), "en": src.get("en"),
+                        "type_args": src.get("type_args")}
             ty = src["k"] if src["k"] in INT_LL else "i32"
             slot = g.tmp(); g.emit(f"  {slot} = alloca {ty}")   # spill own SSA to make addressable
             g.emit(f"  store {ty} {src['v']}, ptr {slot}")
@@ -938,7 +985,7 @@ class Gen:
             if n in ("Ok", "Some"):
                 a = g.expr(flds[0]["atom"]); idx = g.venum[n][1]
                 return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": a["v"],
-                        "pty": a["k"] if a["k"] in INT_LL else "i32",
+                        "pty": a["k"] if a["k"] in INT_LL or a["k"] == "i1" else "i32",
                         "psigned": a.get("signed", True), "payidx": idx, "en": g.venum[n][0]}
             if n in ("Err", "None"):
                 idx = g.venum[n][1]
@@ -949,7 +996,7 @@ class Gen:
                         raise SystemExit("democ: a payload-carrying enum value inside Err()/Ok() is not in "
                                          "the subset; use nullary error variants (e.g. BadDigit() not BadDigit(pos: ...))")
                     return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": a["v"],
-                            "pty": a["k"] if a["k"] in INT_LL else "i32",
+                            "pty": a["k"] if a["k"] in INT_LL or a["k"] == "i1" else "i32",
                             "psigned": a.get("signed", True), "payidx": idx, "en": g.venum[n][0]}
                 return {"k": "enumv", "tag": str(idx), "tty": "i32", "pay": "0", "pty": "i32",
                         "psigned": True, "payidx": idx, "en": g.venum[n][0]}
@@ -1015,7 +1062,9 @@ class Gen:
                 if nm in g.payenums or nm in ("Result", "Option"):
                     sl = g.tmp(); g.emit(f"  {sl} = alloca %{nm}")
                     g.emit(f"  store %{nm} {t}, ptr {sl}")
-                    return {"k": "enum", "v": sl, "en": nm, "slot": True}
+                    type_args = _named_args(rstr, nm) if nm in ("Result", "Option") else None
+                    return {"k": "enum", "v": sl, "en": nm, "slot": True,
+                            "type_args": type_args}
                 return {"k": "struct", "v": t, "st": nm, "slot": False}
             return {"k": ret, "v": t, "signed": True}
         return g.op(e)
@@ -1183,15 +1232,41 @@ class Gen:
             if k == "doc": continue
             if k == "let":
                 if "match" in s:                       # value-match with give [GIVE-1]
-                    gty = _llty(s["ty"]); gsigned = _is_signed(s["ty"])
-                    slot = g.tmp(); g.emit(f"  {slot} = alloca {gty}")
+                    decl_base = s["ty"].split("<", 1)[0]
+                    gty = g.llty(s["ty"]); gsigned = _is_signed(s["ty"])
+                    slot = None
+                    if s["ty"] != "unit":
+                        slot = g.tmp(); g.emit(f"  {slot} = alloca {gty}")
                     prev, prevt = g.give_slot, g.give_ty
-                    g.give_slot = slot; g.give_ty = gty
+                    g.give_slot = slot; g.give_ty = "unit" if s["ty"] == "unit" else gty
                     g.gen_match(s["match"])
                     g.give_slot, g.give_ty = prev, prevt
-                    g.env[s["n"]] = {"k": "slot", "v": slot, "ty": gty, "signed": gsigned}
+                    if s["ty"] == "unit":
+                        g.env[s["n"]] = {"k": "unit"}
+                    elif decl_base in g.payenums or decl_base in ("Result", "Option"):
+                        type_args = (_named_args(s["ty"], decl_base)
+                                     if decl_base in ("Result", "Option") else None)
+                        g.env[s["n"]] = {"k": "enum", "v": slot, "en": decl_base,
+                                         "slot": True, "type_args": type_args}
+                    elif decl_base in g.structs:
+                        g.env[s["n"]] = {"k": "struct", "v": slot, "st": decl_base,
+                                         "slot": True}
+                    elif _buf_elem(s["ty"]):
+                        packed = g.tmp(); g.emit(f"  {packed} = load {{ptr, i64}}, ptr {slot}")
+                        bp = g.tmp(); g.emit(f"  {bp} = extractvalue {{ptr, i64}} {packed}, 0")
+                        bl = g.tmp(); g.emit(f"  {bl} = extractvalue {{ptr, i64}} {packed}, 1")
+                        elem = _buf_elem(s["ty"])
+                        g.env[s["n"]] = {"k": "buffer", "ptr": bp, "len": bl,
+                                         "ell": _llty(elem), "esigned": _is_signed(elem)}
+                    else:
+                        g.env[s["n"]] = {"k": "slot", "v": slot, "ty": gty,
+                                         "signed": gsigned}
                     continue
                 v = g.expr(s["e"])
+                decl_base = s["ty"].split("<", 1)[0]
+                if v.get("k") in ("enum", "enumv") and decl_base in ("Result", "Option"):
+                    v = dict(v)
+                    v["type_args"] = _named_args(s["ty"], decl_base)
                 if v["k"] in INT_LL or v["k"] == "i1":   # i1: mutable Bool locals [OWN-1 amendment]
                     slot = g.tmp(); g.emit(f"  {slot} = alloca {v['k']}")
                     g.emit(f"  store {v['k']} {v['v']}, ptr {slot}")
@@ -1210,11 +1285,25 @@ class Gen:
                     else:                              # call result (aggregate) -> spill to a slot
                         slot = g.tmp(); g.emit(f"  {slot} = alloca %{v['en']}")
                         g.emit(f"  store %{v['en']} {v['v']}, ptr {slot}")
-                        g.env[s["n"]] = {"k": "enum", "v": slot, "en": v["en"], "slot": True}
+                        g.env[s["n"]] = {"k": "enum", "v": slot, "en": v["en"], "slot": True,
+                                         "type_args": v.get("type_args")}
                 else: g.env[s["n"]] = v
             elif k == "give":
                 v = g.expr(s["e"])
-                g.emit(f"  store {g.give_ty} {v['v']}, ptr {g.give_slot}")
+                if v["k"] == "unit":
+                    continue
+                if v["k"] == "enumv":
+                    value = g.pack_enumv(v)
+                elif v["k"] == "enum":
+                    value = g.load_enum(v)
+                elif v["k"] == "struct":
+                    value = g.load_struct(v)
+                elif v["k"] == "buffer":
+                    p0 = g.tmp(); g.emit(f"  {p0} = insertvalue {{ptr, i64}} undef, ptr {v['ptr']}, 0")
+                    value = g.tmp(); g.emit(f"  {value} = insertvalue {{ptr, i64}} {p0}, i64 {v['len']}, 1")
+                else:
+                    value = v["v"]
+                g.emit(f"  store {g.give_ty} {value}, ptr {g.give_slot}")
             elif k == "try":                           # [ERR-3] -> match{Ok bind; Err re-return}
                 g.stmts([{"s": "match", "scrut": s["e"], "arms": [
                     {"v": "Ok", "b": [{"field": "value", "name": s["n"]}], "body": []},
@@ -1329,7 +1418,8 @@ class Gen:
                 if a["b"]:                             # bind the variant's payload (copy) [GRAM-10]
                     nm = a["b"][0]["name"]
                     if kind == "enum":                 # extract from the aggregate at the field's type
-                        fll, fsigned = g.variant_field_ll(sc["en"], a["v"])
+                        fll, fsigned = g.variant_field_ll(
+                            sc["en"], a["v"], sc.get("type_args"))
                         payll = g.enum_payll(sc["en"])
                         pp = g.tmp(); g.emit(f"  {pp} = getelementptr %{sc['en']}, ptr {sc['v']}, i32 0, i32 1")
                         raw = g.tmp(); g.emit(f"  {raw} = load {payll}, ptr {pp}")
@@ -1396,7 +1486,9 @@ class Gen:
                 if s in g.structs:
                     g.env[q["name"]] = {"k": "struct", "v": slot, "st": s, "slot": True}
                 else:
-                    g.env[q["name"]] = {"k": "enum", "v": slot, "en": s, "slot": True}
+                    type_args = _named_args(q["ty"], s) if s in ("Result", "Option") else None
+                    g.env[q["name"]] = {"k": "enum", "v": slot, "en": s, "slot": True,
+                                         "type_args": type_args}
                 continue
             pll = g.llty(q["ty"]); psigned = _is_signed(q["ty"])
             if q["mode"]["kind"] == "own":
@@ -1424,10 +1516,13 @@ class Gen:
                     sa = _size_align(q["ty"], g.structs)   # borrows are always valid+aligned (checker fact)
                     if sa: at += f" dereferenceable({sa[0]}) align {sa[1]}"
                 ps.append(f"ptr{at} %{q['name']}")
+                base = q["ty"].split("<", 1)[0]
                 st = q["ty"] if q["ty"] in g.structs else None
-                en = q["ty"] if q["ty"] in g.payenums else None
+                en = base if base in g.payenums or base in ("Result", "Option") else None
+                type_args = _named_args(q["ty"], base) if base in ("Result", "Option") else None
                 g.env[q["name"]] = {"k": "ptr", "v": f"%{q['name']}", "ty": pll,
-                                    "signed": psigned, "st": st, "en": en}
+                                    "signed": psigned, "st": st, "en": en,
+                                    "type_args": type_args}
         rt = ("i32" if g.f["name"] == "main"
               else ("void" if g.f["rty"] == "unit" else g.llty(g.f["rty"])))
         g.rllty = rt
@@ -3060,7 +3155,9 @@ def compile_program(src, alias=True, elide_bounds=False, proof_report=None):
             cglobals.append(f"@__const_{c['name']} = private unnamed_addr constant [{n} x {ell}] [{vals}]")
             cmap[c["name"]] = (ell, n, _is_signed(elem))
         else:                                          # scalar const: fold to its literal at use sites
-            cmap[c["name"]] = ("scalar", _litval(c["vals"][0]), _is_signed(c["ty"]))
+            cmap[c["name"]] = (
+                "scalar", _litval(c["vals"][0]), _is_signed(c["ty"]), _llty(c["ty"])
+            )
     Gen._consts = cmap
     if alias:
         prove_inbounds(fns, cmap)                      # [OP-4 PROOF-1/2] facts channel

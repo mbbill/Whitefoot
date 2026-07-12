@@ -37,6 +37,17 @@ fn chain (x: own i64) -> own Result<i64,ChainError> pure {
   return Ok(value: b);
 }
 
+fn chain_error_code (error: own ChainError) -> own i64 pure {
+  match error {
+    StepAFailed() => {
+      return 0_i64;
+    }
+    StepBFailed() => {
+      return 1_i64;
+    }
+  }
+}
+
 fn main () -> own unit traps {
   doc "Good path 20 -> 41; first-error path -1 -> StepAFailed; second-error path 60 -> StepBFailed.";
   let r1: own Result<i64,ChainError> = chain(x: 20_i64);
@@ -54,7 +65,8 @@ fn main () -> own unit traps {
       check ieq<i64>(0_i64, 1_i64) else trap "expected first error";
     }
     Err(error: e) => {
-      check ieq<i64>(e, 0_i64) else trap "wrong error kind (want StepAFailed)";
+      let error_code: own i64 = chain_error_code(error: e);
+      check ieq<i64>(error_code, 0_i64) else trap "wrong error kind (want StepAFailed)";
     }
   }
   let r3: own Result<i64,ChainError> = chain(x: 60_i64);
@@ -63,7 +75,8 @@ fn main () -> own unit traps {
       check ieq<i64>(0_i64, 1_i64) else trap "expected second error";
     }
     Err(error: e) => {
-      check ieq<i64>(e, 1_i64) else trap "wrong error kind (want StepBFailed)";
+      let error_code: own i64 = chain_error_code(error: e);
+      check ieq<i64>(error_code, 1_i64) else trap "wrong error kind (want StepBFailed)";
     }
   }
   return unit;

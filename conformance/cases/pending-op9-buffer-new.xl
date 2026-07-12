@@ -1,5 +1,5 @@
 fn main () -> own unit traps {
-  doc "buffer_new size-overflow trap [OP-9] — pending democ buffer support.";
+  doc "buffer_new size-overflow trap [OP-9] - pending democ buffer support.";
   let b: own buffer<i32> = buffer_new<i32>(4_u64, 0_i32);
   return unit;
 }

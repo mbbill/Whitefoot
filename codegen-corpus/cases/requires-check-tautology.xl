@@ -1,4 +1,4 @@
-fn checked (x: own u64) -> own u64 traps requires {
+fn guarded (x: own u64) -> own u64 traps requires {
   let same: own Bool = ieq<u64>(x, x);
   check same else trap "explicit check remains observable";
 } {

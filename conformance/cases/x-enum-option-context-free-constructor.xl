@@ -1,0 +1,11 @@
+enum Flag { First(); Second(); }
+
+fn main () -> own unit pure {
+  match Some(value: First()) {
+    None() => {
+    }
+    Some(value: value) => {
+    }
+  }
+  return unit;
+}

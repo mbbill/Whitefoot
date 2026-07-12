@@ -228,7 +228,7 @@
           "name": "facts",
           "kind": "xlang",
           "source": "codegen-corpus/cases/requires-check-tautology.xl",
-          "function": "checked",
+          "function": "guarded",
           "opt": "O3"
         }
       ],

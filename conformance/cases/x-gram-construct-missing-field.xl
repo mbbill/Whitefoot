@@ -1,7 +1,7 @@
 enum Pair { P(a: i32, b: i32); }
 
 fn main () -> own unit pure {
-  doc "GRAM-8: constructing P with only field a (b missing) is rejected — every declared field must be written exactly once.";
+  doc "GRAM-8: constructing P with only field a (b missing) is rejected - every declared field must be written exactly once.";
   let x: own Pair = P(a: 1_i32);
   return unit;
 }

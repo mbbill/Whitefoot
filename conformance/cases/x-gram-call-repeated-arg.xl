@@ -3,7 +3,7 @@ fn add2 (x: own i32, y: own i32) -> own i32 pure {
 }
 
 fn main () -> own unit pure {
-  doc "GRAM-11: a call to add2 repeating parameter x (x, x) is rejected — the second slot must be y; a repeat is never a reordering license.";
+  doc "GRAM-11: a call to add2 repeating parameter x (x, x) is rejected - the second slot must be y; a repeat is never a reordering license.";
   let r: own i32 = add2(x: 1_i32, x: 2_i32);
   return unit;
 }

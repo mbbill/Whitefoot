@@ -1,0 +1,7 @@
+const maximum: u64 = 18446744073709551615_u64;
+
+fn main () -> own unit traps {
+  let copy: own u64 = maximum;
+  check ieq<u64>(copy, 18446744073709551615_u64) else trap "scalar const width changed";
+  return unit;
+}

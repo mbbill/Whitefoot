@@ -72,14 +72,29 @@ fn expect_ok (r: own Result<u64,ParseError>, want: own u64) -> own unit traps {
   return unit;
 }
 
+fn parse_error_code (error: own ParseError) -> own i64 pure {
+  match error {
+    Empty() => {
+      return 0_i64;
+    }
+    BadDigit() => {
+      return 1_i64;
+    }
+    TooBig() => {
+      return 2_i64;
+    }
+  }
+}
+
 fn expect_err (r: own Result<u64,ParseError>, want_tag: own i64) -> own unit traps {
-  doc "Trap unless r is Err with the wanted ParseError tag (Empty=0 BadDigit=1 Overflow=2).";
+  doc "Trap unless r is Err with the wanted ParseError tag (Empty=0 BadDigit=1 TooBig=2).";
   match r {
     Ok(value: v) => {
       check ieq<u64>(0_u64, 1_u64) else trap "expected Err, got Ok";
     }
     Err(error: e) => {
-      check ieq<i64>(e, want_tag) else trap "wrong error kind";
+      let actual_tag: own i64 = parse_error_code(error: e);
+      check ieq<i64>(actual_tag, want_tag) else trap "wrong error kind";
     }
   }
   return unit;

@@ -1,4 +1,4 @@
-fn checked (x: own i32) -> own i32 traps {
+fn guarded (x: own i32) -> own i32 traps {
   doc "Declares traps and exhibits a check.";
   check ilt<i32>(x, 100_i32) else trap "range";
   return x;
@@ -6,7 +6,7 @@ fn checked (x: own i32) -> own i32 traps {
 
 fn f (x: own i32) -> own i32 pure {
   doc "Declares pure but calls a traps fn [EFF-2] undeclared-but-exhibited.";
-  let a: own i32 = checked(x: x);
+  let a: own i32 = guarded(x: x);
   return a;
 }
 

@@ -93,7 +93,7 @@ def run_cases(cases):
         if status == "xfail":
             outcome = "XPASS" if m else "XFAIL"
         elif v[0] == "unsupported":
-            outcome = "SKIP"                     # runnable, but the toolchain can't process it yet
+            outcome = "FAIL"                     # runnable means supported; gaps belong in pending
         else:
             outcome = "PASS" if m else "FAIL"
         results.append((c, outcome, v))

@@ -1,5 +1,5 @@
 fn main () -> own unit traps {
-  doc "GRAM-6: no operators/if/while/for — arithmetic is named ops, conditional is match, iteration is loop+break.";
+  doc "GRAM-6: no operators/if/while/for - arithmetic is named ops, conditional is match, iteration is loop+break.";
   let n: own i32 = 4_i32;
   let acc: own i32 = 0_i32;
   loop @l {

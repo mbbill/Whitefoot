@@ -32,6 +32,25 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# [OP-1/FORM-3] These spellings name table operations or operation modes, so
+# they cannot bind user identifiers.  Keeping the inventory here gives both
+# the source parser and direct checker clients one closed source of truth.
+DOTLESS_OPERATION_IDENTS = frozenset({
+    "ieq", "ine", "ilt", "ile", "igt", "ige",
+    "feq", "flt", "fle", "fgt", "fge", "fne",
+    "band", "bor", "bxor", "bnot",
+    "cvt", "len", "slice_of", "box_new", "arena_new", "array_new", "buffer_new",
+    "iand", "ior", "ixor", "inot", "irotl", "irotr", "ipopcount", "iclz", "ictz",
+    "ibswap", "imulhi", "imin", "imax", "reinterpret",
+    "fneg", "fabs", "fcopysign", "fmin", "fmax", "ffloor", "fceil", "ftrunc",
+    "froundeven", "frem", "finf", "fnan",
+})
+OPERATION_MODE_WORDS = frozenset({"wrap", "trap", "checked", "sat", "strict"})
+RESERVED_BINDING_IDENTS = (
+    DOTLESS_OPERATION_IDENTS | OPERATION_MODE_WORDS | frozenset({"requires"})
+)
+
+
 class CheckError(Exception):
     def __init__(self, rule: str, msg: str):
         self.rule = rule
@@ -844,6 +863,13 @@ class TypeChecker:
                 decl = self.P.variant_of[vname][1]
             else:
                 raise CheckError("TYPE-6", f"unknown variant {vname}")
+            args = scrut_ty.get("args") if scrut_ty.get("kind") == "named" else None
+            if scrut_ty.get("name") == "Result" and args is not None:
+                payload = args[0] if vname == "Ok" else args[1]
+                decl = ([{"name": "value", "ty": payload}] if vname == "Ok"
+                        else [{"name": "error", "ty": payload}])
+            elif scrut_ty.get("name") == "Option" and args is not None:
+                decl = ([{"name": "value", "ty": args[0]}] if vname == "Some" else [])
             # GRAM-10: binder field names equal declared field names in order
             self._check_field_names(
                 [{"name": b["field"]} for b in arm["binders"]], decl,
@@ -864,7 +890,15 @@ class TypeChecker:
         place here is not an OWN-1 affine-use error; other scrutinees type normally."""
         if e["kind"] in ("use", "move"):
             return self.place_desc(e["place"])
-        return self.expr_desc(e)
+        d = self.expr_desc(e)
+        ty = d.get("ty", {})
+        if (ty.get("kind") == "named"
+                and ty.get("name") in ("Result", "Option")
+                and ty.get("args") is None):
+            raise CheckError("TYPE-5",
+                f"match scrutinee {ty['name']} lacks instantiated payload types; "
+                "bind the constructor to an explicitly typed value before matching")
+        return d
 
     def _is_copy(self, desc):                               # OWN-1 copy classification
         # prim/unit copy; borrows copy; tag-only enums copy (resource-free; OWN-1
@@ -958,10 +992,13 @@ class TypeChecker:
         else:
             raise CheckError("TYPE-6", f"unknown constructor {name}")
         self._check_field_names(e["fields"], decl, "GRAM-8", name)
+        field_descs = []
         for fld, df in zip(e["fields"], decl):
             d = self.expr_desc(fld["atom"])
             self.expect_value(d, df["ty"], f"field {name}.{df['name']}")
-        return {"cat": "val", "ty": result_ty}
+            field_descs.append(d)
+        return {"cat": "val", "ty": result_ty,
+                "constructor": name, "field_descs": field_descs}
 
     def check_call(self, e):
         callee = e["callee"]
@@ -1019,6 +1056,19 @@ class TypeChecker:
             raise CheckError("TYPE-7",
                 f"{ctx}: borrow used where value of type {_ty_str(ty)} "
                 f"expected; use deref(.)")
+        constructor = desc.get("constructor")
+        args = ty.get("args") if ty.get("kind") == "named" else None
+        expected_payload = None
+        if args is not None and ty.get("name") == "Result":
+            if constructor == "Ok":
+                expected_payload = args[0]
+            elif constructor == "Err":
+                expected_payload = args[1]
+        elif args is not None and ty.get("name") == "Option" and constructor == "Some":
+            expected_payload = args[0]
+        if expected_payload is not None and desc.get("field_descs"):
+            self.expect_value(desc["field_descs"][0], expected_payload,
+                              f"{ctx} payload")
         if not _ty_eq(desc["ty"], ty):
             dt = desc["ty"]
             if dt.get("kind") in ("box", "arena") and _ty_eq(dt["elem"], ty):
@@ -1204,6 +1254,58 @@ def check_effects(prog):
                 f"{name}: row declares traps but the body does not exhibit it (declared-but-unexhibited)")
 
 
+def _check_binding_ident(name, context):
+    if name in RESERVED_BINDING_IDENTS:
+        source_rule = "FN-8" if name == "requires" else "OP-1"
+        raise CheckError("FORM-3",
+            f"'{name}' is reserved by {source_rule} and cannot bind a {context}")
+
+
+def _check_reserved_match(match):
+    for arm in match.get("arms", []):
+        for binder in arm.get("binders", []):
+            name = binder.get("name") if isinstance(binder, dict) else binder
+            _check_binding_ident(name, "match binder")
+        _check_reserved_block(arm.get("body", []))
+
+
+def _check_reserved_block(body):
+    for stmt in body:
+        kind = stmt.get("kind")
+        if kind in ("let", "try"):
+            _check_binding_ident(stmt.get("name"), f"{kind} binder")
+        if kind == "let" and stmt.get("init", {}).get("kind") == "match":
+            _check_reserved_match(stmt["init"])
+        elif kind == "match":
+            _check_reserved_match(stmt)
+        elif kind == "region":
+            _check_binding_ident(stmt.get("name"), "region")
+            _check_reserved_block(stmt.get("body", []))
+        elif kind == "loop":
+            _check_reserved_block(stmt.get("body", []))
+
+
+def _check_reserved_bindings(prog):
+    """Enforce OP-1's closed identifier reservation for every binding site."""
+    for fields in prog.get("structs", {}).values():
+        for field in fields:
+            _check_binding_ident(field.get("name"), "struct field")
+    for variants in prog.get("enums", {}).values():
+        for variant in variants:
+            for field in variant.get("fields", []):
+                _check_binding_ident(field.get("name"), "variant field")
+    for name in prog.get("consts", {}):
+        _check_binding_ident(name, "const")
+    for name, fn in prog.get("fns", {}).items():
+        _check_binding_ident(name, "function")
+        for region in fn.get("regions", []):
+            _check_binding_ident(region, "region parameter")
+        for param in fn.get("params", []):
+            _check_binding_ident(param.get("name"), "parameter")
+        _check_reserved_block(fn.get("requires") or [])
+        _check_reserved_block(fn.get("body", []))
+
+
 def check_program(prog: dict):
     """Type layer + ownership over a whole program.
 
@@ -1213,6 +1315,7 @@ def check_program(prog: dict):
                              "rmode","rty","body":[STMT]}}}
     Returns None on acceptance; raises CheckError(rule_id, msg) on rejection.
     """
+    _check_reserved_bindings(prog)
     P = Program(prog)
     for name, fn in prog["fns"].items():
         check_requires({**fn, "name": name})         # FN-8 checked parameter-only prologue

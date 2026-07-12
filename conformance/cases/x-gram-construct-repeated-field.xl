@@ -1,7 +1,7 @@
 enum Pair { P(a: i32, b: i32); }
 
 fn main () -> own unit pure {
-  doc "GRAM-8: constructing P writing field a twice (a, a) is rejected — the second slot must be b, and a repeat is not a spelling of it.";
+  doc "GRAM-8: constructing P writing field a twice (a, a) is rejected - the second slot must be b, and a repeat is not a spelling of it.";
   let x: own Pair = P(a: 1_i32, a: 2_i32);
   return unit;
 }

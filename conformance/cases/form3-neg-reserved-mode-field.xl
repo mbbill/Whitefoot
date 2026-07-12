@@ -1,0 +1,7 @@
+struct Bad {
+  trap: i32;
+}
+
+fn main () -> own unit pure {
+  return unit;
+}
