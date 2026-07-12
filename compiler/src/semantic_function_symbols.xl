@@ -1,0 +1,1190 @@
+enum SemanticFunctionSymbolsStatus {
+  SemanticFunctionSymbolsClean();
+  SemanticFunctionSymbolsInvalidTokenTape();
+  SemanticFunctionSymbolsInvalidAstTape();
+  SemanticFunctionSymbolsExpectedFunction();
+  SemanticFunctionSymbolsMalformedFunction();
+  SemanticFunctionSymbolsInvalidNameToken();
+  SemanticFunctionSymbolsDuplicate();
+  SemanticFunctionSymbolsCapacity();
+  SemanticFunctionSymbolsInvalidSymbolTape();
+}
+
+struct SemanticFunctionSymbolsReport {
+  status: SemanticFunctionSymbolsStatus;
+  declaration: u64;
+  related: u64;
+}
+
+fn semantic_function_node_valid ['a] (ast: &'a AstTape, node: own u64) -> own Bool reads('a) {
+  return ilt<u64>(node, deref(ast).count);
+}
+
+fn semantic_function_leaf_valid ['a] (ast: &'a AstTape, node: own u64) -> own Bool reads('a), traps {
+  let node_valid: own Bool = semantic_function_node_valid(ast: ast, node: node);
+  match node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let first_child: own u64 = index<u64>(deref(ast).first_children, node);
+  let last_child: own u64 = index<u64>(deref(ast).last_children, node);
+  let first_none: own Bool = ieq<u64>(first_child, ast_none);
+  let last_none: own Bool = ieq<u64>(last_child, ast_none);
+  return band<Bool>(first_none, last_none);
+}
+
+fn semantic_function_kind_is ['a] (ast: &'a AstTape, node: own u64, want: own AstKind) -> own Bool reads('a), traps {
+  let node_valid: own Bool = semantic_function_node_valid(ast: ast, node: node);
+  match node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let observed_kind: own AstKind = index<AstKind>(deref(ast).kinds, node);
+  return ieq<AstKind>(observed_kind, want);
+}
+
+fn semantic_function_head_token_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64, want_kind: own u64) -> own Bool reads('s 't 'a), traps {
+  let node_valid: own Bool = semantic_function_node_valid(ast: ast, node: node);
+  match node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let head_token: own u64 = index<u64>(deref(ast).heads, node);
+  return symbol_name_token_valid(source: source, tokens: tokens, token: head_token, want_kind: want_kind);
+}
+
+fn semantic_function_region_leaf_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64) -> own Bool reads('s 't 'a), traps {
+  let region_kind: own Bool = semantic_function_kind_is(ast: ast, node: node, want: AstRegion());
+  match region_kind {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let region_leaf: own Bool = semantic_function_leaf_valid(ast: ast, node: node);
+  match region_leaf {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  return semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: node, want_kind: 4_u64);
+}
+
+fn semantic_function_mode_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64) -> own Bool reads('s 't 'a), traps {
+  let mode_node_valid: own Bool = semantic_function_node_valid(ast: ast, node: node);
+  match mode_node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let mode_kind: own AstKind = index<AstKind>(deref(ast).kinds, node);
+  let own_tag: own AstKind = AstOwnMode();
+  let shared_tag: own AstKind = AstSharedMode();
+  let uniq_tag: own AstKind = AstUniqMode();
+  let own_mode: own Bool = ieq<AstKind>(mode_kind, own_tag);
+  let shared_mode: own Bool = ieq<AstKind>(mode_kind, shared_tag);
+  let uniq_mode: own Bool = ieq<AstKind>(mode_kind, uniq_tag);
+  match own_mode {
+    True() => {
+      let own_leaf: own Bool = semantic_function_leaf_valid(ast: ast, node: node);
+      match own_leaf {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let own_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: node, want_kind: 1_u64);
+      match own_head_valid {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let own_head: own u64 = index<u64>(deref(ast).heads, node);
+      return parser_word3(source: source, tokens: tokens, token: own_head, a: 111_u8, b: 119_u8, c: 110_u8);
+    }
+    False() => {
+    }
+  }
+  let borrow_mode: own Bool = bor<Bool>(shared_mode, uniq_mode);
+  match borrow_mode {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let borrow_head: own u64 = index<u64>(deref(ast).heads, node);
+  let borrow_token_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: borrow_head);
+  match borrow_token_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let borrow_want_kind: own u64 = 10_u64;
+  match uniq_mode {
+    True() => {
+      set borrow_want_kind = 11_u64;
+    }
+    False() => {
+    }
+  }
+  let borrow_kind_valid: own Bool = parser_kind_at_is(tokens: tokens, token: borrow_head, want: borrow_want_kind);
+  match borrow_kind_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let borrow_first: own u64 = index<u64>(deref(ast).first_children, node);
+  let borrow_last: own u64 = index<u64>(deref(ast).last_children, node);
+  let one_region: own Bool = ieq<u64>(borrow_first, borrow_last);
+  match one_region {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let borrow_region_valid: own Bool = semantic_function_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: borrow_first);
+  match borrow_region_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let borrow_region_next: own u64 = index<u64>(deref(ast).next_siblings, borrow_first);
+  return ieq<u64>(borrow_region_next, ast_none);
+}
+
+fn semantic_function_type_root_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64, want: own AstKind) -> own Bool reads('s 't 'a), traps {
+  let type_kind_valid: own Bool = semantic_function_kind_is(ast: ast, node: node, want: want);
+  match type_kind_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let type_head: own u64 = index<u64>(deref(ast).heads, node);
+  let type_head_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: type_head);
+  match type_head_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let word_type: own Bool = parser_kind_at_is(tokens: tokens, token: type_head, want: 1_u64);
+  let named_type: own Bool = parser_kind_at_is(tokens: tokens, token: type_head, want: 3_u64);
+  return bor<Bool>(word_type, named_type);
+}
+
+fn semantic_function_region_children_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, parent: own u64) -> own Bool reads('s 't 'a), traps {
+  let region_parent_valid: own Bool = semantic_function_node_valid(ast: ast, node: parent);
+  match region_parent_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let region_first: own u64 = index<u64>(deref(ast).first_children, parent);
+  let region_last: own u64 = index<u64>(deref(ast).last_children, parent);
+  let region_first_none: own Bool = ieq<u64>(region_first, ast_none);
+  let region_last_none: own Bool = ieq<u64>(region_last, ast_none);
+  let region_pair_valid: own Bool = ieq<Bool>(region_first_none, region_last_none);
+  match region_pair_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  match region_first_none {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  let region_cursor: own u64 = region_first;
+  let region_previous: own u64 = ast_none;
+  let region_steps: own u64 = 0_u64;
+  let ast_count: own u64 = deref(ast).count;
+  loop @semantic_region_children {
+    match ilt<u64>(region_steps, ast_count) {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    let region_valid: own Bool = semantic_function_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: region_cursor);
+    match region_valid {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    set region_previous = region_cursor;
+    let region_next: own u64 = index<u64>(deref(ast).next_siblings, region_cursor);
+    match ieq<u64>(region_next, ast_none) {
+      True() => {
+        return ieq<u64>(region_previous, region_last);
+      }
+      False() => {
+      }
+    }
+    let region_next_valid: own Bool = semantic_function_node_valid(ast: ast, node: region_next);
+    match region_next_valid {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    set region_cursor = region_next;
+    set region_steps = iadd.trap<u64>(region_steps, 1_u64);
+  }
+}
+
+fn semantic_function_parameter_shape_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, parameter: own u64) -> own Bool reads('s 't 'a), traps {
+  let parameter_kind: own Bool = semantic_function_kind_is(ast: ast, node: parameter, want: AstParameter());
+  match parameter_kind {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let parameter_name_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: parameter, want_kind: 1_u64);
+  match parameter_name_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let parameter_mode: own u64 = index<u64>(deref(ast).first_children, parameter);
+  let parameter_type: own u64 = index<u64>(deref(ast).last_children, parameter);
+  let mode_valid: own Bool = semantic_function_mode_valid(source: source, tokens: tokens, ast: ast, node: parameter_mode);
+  match mode_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let parameter_type_valid: own Bool = semantic_function_type_root_valid(source: source, tokens: tokens, ast: ast, node: parameter_type, want: AstParameterType());
+  match parameter_type_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let after_mode: own u64 = index<u64>(deref(ast).next_siblings, parameter_mode);
+  let mode_then_type: own Bool = ieq<u64>(after_mode, parameter_type);
+  match mode_then_type {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let after_parameter_type: own u64 = index<u64>(deref(ast).next_siblings, parameter_type);
+  return ieq<u64>(after_parameter_type, ast_none);
+}
+
+fn semantic_function_prior_region_duplicate ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, first: own u64, current: own u64, current_name: own u64) -> own u64 reads('s 't 'a), traps {
+  let prior_region: own u64 = first;
+  let duplicate_steps: own u64 = 0_u64;
+  let duplicate_limit: own u64 = deref(ast).count;
+  loop @prior_regions {
+    match ieq<u64>(prior_region, current) {
+      True() => {
+        return ast_none;
+      }
+      False() => {
+      }
+    }
+    match ilt<u64>(duplicate_steps, duplicate_limit) {
+      True() => {
+      }
+      False() => {
+        return ast_none;
+      }
+    }
+    let prior_region_name: own u64 = index<u64>(deref(ast).heads, prior_region);
+    let same_region_name: own Bool = token_text_equal(source: source, tokens: tokens, left: prior_region_name, right: current_name);
+    match same_region_name {
+      True() => {
+        return prior_region;
+      }
+      False() => {
+      }
+    }
+    set prior_region = index<u64>(deref(ast).next_siblings, prior_region);
+    set duplicate_steps = iadd.trap<u64>(duplicate_steps, 1_u64);
+  }
+}
+
+fn semantic_function_prior_parameter_duplicate ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, first: own u64, current: own u64, current_name: own u64) -> own u64 reads('s 't 'a), traps {
+  let prior_parameter: own u64 = first;
+  let parameter_steps: own u64 = 0_u64;
+  let parameter_limit: own u64 = deref(ast).count;
+  loop @prior_parameters {
+    match ieq<u64>(prior_parameter, current) {
+      True() => {
+        return ast_none;
+      }
+      False() => {
+      }
+    }
+    match ilt<u64>(parameter_steps, parameter_limit) {
+      True() => {
+      }
+      False() => {
+        return ast_none;
+      }
+    }
+    let prior_parameter_name: own u64 = index<u64>(deref(ast).heads, prior_parameter);
+    let same_parameter_name: own Bool = token_text_equal(source: source, tokens: tokens, left: prior_parameter_name, right: current_name);
+    match same_parameter_name {
+      True() => {
+        return prior_parameter;
+      }
+      False() => {
+      }
+    }
+    set prior_parameter = index<u64>(deref(ast).next_siblings, prior_parameter);
+    set parameter_steps = iadd.trap<u64>(parameter_steps, 1_u64);
+  }
+}
+
+fn semantic_function_effect_word_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64, code: own u64) -> own Bool reads('s 't 'a), traps {
+  let effect_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: node, want_kind: 1_u64);
+  match effect_head_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let effect_head: own u64 = index<u64>(deref(ast).heads, node);
+  match ieq<u64>(code, 0_u64) {
+    True() => {
+      return parser_word4(source: source, tokens: tokens, token: effect_head, a: 112_u8, b: 117_u8, c: 114_u8, d: 101_u8);
+    }
+    False() => {
+    }
+  }
+  match ieq<u64>(code, 1_u64) {
+    True() => {
+      return parser_word5(source: source, tokens: tokens, token: effect_head, a: 114_u8, b: 101_u8, c: 97_u8, d: 100_u8, e: 115_u8);
+    }
+    False() => {
+    }
+  }
+  match ieq<u64>(code, 2_u64) {
+    True() => {
+      return parser_word6(source: source, tokens: tokens, token: effect_head, a: 119_u8, b: 114_u8, c: 105_u8, d: 116_u8, e: 101_u8, f: 115_u8);
+    }
+    False() => {
+    }
+  }
+  return parser_word5(source: source, tokens: tokens, token: effect_head, a: 116_u8, b: 114_u8, c: 97_u8, d: 112_u8, e: 115_u8);
+}
+
+fn semantic_function_allocation_children_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, parent: own u64) -> own Bool reads('s 't 'a), traps {
+  let allocation_parent_valid: own Bool = semantic_function_node_valid(ast: ast, node: parent);
+  match allocation_parent_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let storage_first: own u64 = index<u64>(deref(ast).first_children, parent);
+  let storage_last: own u64 = index<u64>(deref(ast).last_children, parent);
+  let storage_first_valid: own Bool = semantic_function_node_valid(ast: ast, node: storage_first);
+  let storage_last_valid: own Bool = semantic_function_node_valid(ast: ast, node: storage_last);
+  let storage_pair_valid: own Bool = band<Bool>(storage_first_valid, storage_last_valid);
+  match storage_pair_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let storage_cursor: own u64 = storage_first;
+  let storage_previous: own u64 = ast_none;
+  let storage_steps: own u64 = 0_u64;
+  let storage_limit: own u64 = deref(ast).count;
+  loop @semantic_allocation_children {
+    match ilt<u64>(storage_steps, storage_limit) {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    let storage_kind: own AstKind = index<AstKind>(deref(ast).kinds, storage_cursor);
+    let heap_tag: own AstKind = AstHeapStorage();
+    let arena_tag: own AstKind = AstArenaStorage();
+    let heap_storage: own Bool = ieq<AstKind>(storage_kind, heap_tag);
+    let arena_storage: own Bool = ieq<AstKind>(storage_kind, arena_tag);
+    match heap_storage {
+      True() => {
+        let heap_leaf_valid: own Bool = semantic_function_leaf_valid(ast: ast, node: storage_cursor);
+        let heap_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: storage_cursor, want_kind: 1_u64);
+        let heap_shape_valid: own Bool = band<Bool>(heap_leaf_valid, heap_head_valid);
+        match heap_shape_valid {
+          True() => {
+          }
+          False() => {
+            return False();
+          }
+        }
+        let heap_head: own u64 = index<u64>(deref(ast).heads, storage_cursor);
+        let heap_word_valid: own Bool = parser_word4(source: source, tokens: tokens, token: heap_head, a: 104_u8, b: 101_u8, c: 97_u8, d: 112_u8);
+        match heap_word_valid {
+          True() => {
+          }
+          False() => {
+            return False();
+          }
+        }
+      }
+      False() => {
+        match arena_storage {
+          True() => {
+            let arena_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: storage_cursor, want_kind: 1_u64);
+            match arena_head_valid {
+              True() => {
+              }
+              False() => {
+                return False();
+              }
+            }
+            let arena_head: own u64 = index<u64>(deref(ast).heads, storage_cursor);
+            let arena_word_valid: own Bool = parser_word5(source: source, tokens: tokens, token: arena_head, a: 97_u8, b: 114_u8, c: 101_u8, d: 110_u8, e: 97_u8);
+            match arena_word_valid {
+              True() => {
+              }
+              False() => {
+                return False();
+              }
+            }
+            let arena_region: own u64 = index<u64>(deref(ast).first_children, storage_cursor);
+            let arena_region_last: own u64 = index<u64>(deref(ast).last_children, storage_cursor);
+            let arena_one_region: own Bool = ieq<u64>(arena_region, arena_region_last);
+            match arena_one_region {
+              True() => {
+              }
+              False() => {
+                return False();
+              }
+            }
+            let arena_region_valid: own Bool = semantic_function_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: arena_region);
+            match arena_region_valid {
+              True() => {
+              }
+              False() => {
+                return False();
+              }
+            }
+            let after_arena_region: own u64 = index<u64>(deref(ast).next_siblings, arena_region);
+            match ieq<u64>(after_arena_region, ast_none) {
+              True() => {
+              }
+              False() => {
+                return False();
+              }
+            }
+          }
+          False() => {
+            return False();
+          }
+        }
+      }
+    }
+    set storage_previous = storage_cursor;
+    let storage_next: own u64 = index<u64>(deref(ast).next_siblings, storage_cursor);
+    match ieq<u64>(storage_next, ast_none) {
+      True() => {
+        return ieq<u64>(storage_previous, storage_last);
+      }
+      False() => {
+      }
+    }
+    let storage_next_valid: own Bool = semantic_function_node_valid(ast: ast, node: storage_next);
+    match storage_next_valid {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    set storage_cursor = storage_next;
+    set storage_steps = iadd.trap<u64>(storage_steps, 1_u64);
+  }
+}
+
+fn semantic_index_function_symbols ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, function: own u64, symbols: &uniq 'w SymbolTape, report: &uniq 'w SemanticFunctionSymbolsReport) -> own unit reads('c 'w), writes('w), traps {
+  set deref(report).status = SemanticFunctionSymbolsInvalidTokenTape();
+  set deref(report).declaration = function;
+  set deref(report).related = symbol_none;
+
+  let function_token_tape_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
+  match function_token_tape_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).related = deref(tokens).count;
+      return unit;
+    }
+  }
+
+  let function_ast_tape_valid: own Bool = semantic_globals_ast_tape_valid(ast: ast);
+  match function_ast_tape_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsInvalidAstTape();
+      set deref(report).related = deref(ast).count;
+      return unit;
+    }
+  }
+
+  let function_symbols_valid: own Bool = False();
+  region 'function_symbols_validate {
+    set function_symbols_valid = symbol_tape_entries_valid(source: source, tokens: tokens, symbols: &uniq 'function_symbols_validate deref(symbols));
+  }
+  match function_symbols_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsInvalidSymbolTape();
+      set deref(report).related = deref(symbols).count;
+      return unit;
+    }
+  }
+
+  let function_ref_valid: own Bool = semantic_function_node_valid(ast: ast, node: function);
+  match function_ref_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsExpectedFunction();
+      set deref(report).related = function;
+      return unit;
+    }
+  }
+  let function_kind_valid: own Bool = semantic_function_kind_is(ast: ast, node: function, want: AstFunction());
+  match function_kind_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsExpectedFunction();
+      set deref(report).related = function;
+      return unit;
+    }
+  }
+  let function_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: function, want_kind: 1_u64);
+  match function_head_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = function;
+      return unit;
+    }
+  }
+  let function_head: own u64 = index<u64>(deref(ast).heads, function);
+  let function_word_valid: own Bool = parser_word2(source: source, tokens: tokens, token: function_head, a: 102_u8, b: 110_u8);
+  match function_word_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = function_head;
+      return unit;
+    }
+  }
+
+  let function_first: own u64 = index<u64>(deref(ast).first_children, function);
+  let function_last: own u64 = index<u64>(deref(ast).last_children, function);
+  let function_children_present: own Bool = semantic_function_node_valid(ast: ast, node: function_first);
+  let function_last_valid: own Bool = semantic_function_node_valid(ast: ast, node: function_last);
+  let function_children_valid: own Bool = band<Bool>(function_children_present, function_last_valid);
+  match function_children_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = function_first;
+      return unit;
+    }
+  }
+
+  let function_name_kind: own Bool = semantic_function_kind_is(ast: ast, node: function_first, want: AstFunctionName());
+  let function_name_leaf: own Bool = semantic_function_leaf_valid(ast: ast, node: function_first);
+  let function_name_shape: own Bool = band<Bool>(function_name_kind, function_name_leaf);
+  match function_name_shape {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = function_first;
+      return unit;
+    }
+  }
+  let function_name_token_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: function_first, want_kind: 1_u64);
+  match function_name_token_valid {
+    True() => {
+    }
+    False() => {
+      let invalid_function_name_token: own u64 = index<u64>(deref(ast).heads, function_first);
+      set deref(report).status = SemanticFunctionSymbolsInvalidNameToken();
+      set deref(report).declaration = function_first;
+      set deref(report).related = invalid_function_name_token;
+      return unit;
+    }
+  }
+
+  let direct_cursor: own u64 = index<u64>(deref(ast).next_siblings, function_first);
+  let region_parameters: own u64 = ast_none;
+  let needed_symbols: own u64 = 0_u64;
+  let direct_steps: own u64 = 0_u64;
+  let function_ast_count: own u64 = deref(ast).count;
+  let direct_ref_valid: own Bool = semantic_function_node_valid(ast: ast, node: direct_cursor);
+  match direct_ref_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = direct_cursor;
+      return unit;
+    }
+  }
+
+  let first_direct_kind: own AstKind = index<AstKind>(deref(ast).kinds, direct_cursor);
+  let region_parameters_tag: own AstKind = AstRegionParameters();
+  let have_region_parameters: own Bool = ieq<AstKind>(first_direct_kind, region_parameters_tag);
+  match have_region_parameters {
+    True() => {
+      set region_parameters = direct_cursor;
+      let region_parameters_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: region_parameters, want_kind: 12_u64);
+      match region_parameters_head_valid {
+        True() => {
+        }
+        False() => {
+          set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+          set deref(report).related = region_parameters;
+          return unit;
+        }
+      }
+      let region_parameters_head: own u64 = index<u64>(deref(ast).heads, region_parameters);
+      let region_parameters_bracket: own Bool = parser_symbol_is(source: source, tokens: tokens, token: region_parameters_head, want: 91_u8);
+      let region_parameters_children_valid: own Bool = semantic_function_region_children_valid(source: source, tokens: tokens, ast: ast, parent: region_parameters);
+      let region_parameters_shape_valid: own Bool = band<Bool>(region_parameters_bracket, region_parameters_children_valid);
+      match region_parameters_shape_valid {
+        True() => {
+        }
+        False() => {
+          set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+          set deref(report).related = region_parameters;
+          return unit;
+        }
+      }
+      let declared_region: own u64 = index<u64>(deref(ast).first_children, region_parameters);
+      let first_declared_region: own u64 = declared_region;
+      let declared_region_steps: own u64 = 0_u64;
+      loop @validate_declared_regions {
+        match ilt<u64>(declared_region_steps, function_ast_count) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+            set deref(report).related = declared_region;
+            return unit;
+          }
+        }
+        let declared_region_token: own u64 = index<u64>(deref(ast).heads, declared_region);
+        let prior_region_duplicate: own u64 = semantic_function_prior_region_duplicate(source: source, tokens: tokens, ast: ast, first: first_declared_region, current: declared_region, current_name: declared_region_token);
+        match ieq<u64>(prior_region_duplicate, ast_none) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticFunctionSymbolsDuplicate();
+            set deref(report).declaration = declared_region;
+            set deref(report).related = prior_region_duplicate;
+            return unit;
+          }
+        }
+        let existing_region_slot: own u64 = symbol_none;
+        region 'find_existing_region {
+          set existing_region_slot = symbol_find_slot(source: source, tokens: tokens, symbols: &uniq 'find_existing_region deref(symbols), space_code: 2_u64, scope: function, name_token: declared_region_token);
+        }
+        match ieq<u64>(existing_region_slot, symbol_none) {
+          True() => {
+          }
+          False() => {
+            let existing_region_declaration: own u64 = index<u64>(deref(symbols).declarations, existing_region_slot);
+            set deref(report).status = SemanticFunctionSymbolsDuplicate();
+            set deref(report).declaration = declared_region;
+            set deref(report).related = existing_region_declaration;
+            return unit;
+          }
+        }
+        set needed_symbols = iadd.trap<u64>(needed_symbols, 1_u64);
+        set declared_region_steps = iadd.trap<u64>(declared_region_steps, 1_u64);
+        let after_declared_region: own u64 = index<u64>(deref(ast).next_siblings, declared_region);
+        match ieq<u64>(after_declared_region, ast_none) {
+          True() => {
+            break @validate_declared_regions;
+          }
+          False() => {
+            set declared_region = after_declared_region;
+          }
+        }
+      }
+      set direct_cursor = index<u64>(deref(ast).next_siblings, region_parameters);
+    }
+    False() => {
+    }
+  }
+
+  let first_parameter: own u64 = ast_none;
+  loop @validate_parameters {
+    match ilt<u64>(direct_steps, function_ast_count) {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+        set deref(report).related = direct_cursor;
+        return unit;
+      }
+    }
+    let parameter_ref_valid: own Bool = semantic_function_node_valid(ast: ast, node: direct_cursor);
+    match parameter_ref_valid {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+        set deref(report).related = direct_cursor;
+        return unit;
+      }
+    }
+    let direct_kind: own AstKind = index<AstKind>(deref(ast).kinds, direct_cursor);
+    let parameter_tag: own AstKind = AstParameter();
+    let is_parameter: own Bool = ieq<AstKind>(direct_kind, parameter_tag);
+    match is_parameter {
+      True() => {
+      }
+      False() => {
+        break @validate_parameters;
+      }
+    }
+    let parameter_name_token: own u64 = index<u64>(deref(ast).heads, direct_cursor);
+    let parameter_name_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: direct_cursor, want_kind: 1_u64);
+    match parameter_name_valid {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticFunctionSymbolsInvalidNameToken();
+        set deref(report).declaration = direct_cursor;
+        set deref(report).related = parameter_name_token;
+        return unit;
+      }
+    }
+    let parameter_shape_valid: own Bool = semantic_function_parameter_shape_valid(source: source, tokens: tokens, ast: ast, parameter: direct_cursor);
+    match parameter_shape_valid {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+        set deref(report).declaration = direct_cursor;
+        set deref(report).related = direct_cursor;
+        return unit;
+      }
+    }
+    match ieq<u64>(first_parameter, ast_none) {
+      True() => {
+        set first_parameter = direct_cursor;
+      }
+      False() => {
+        let prior_parameter_duplicate: own u64 = semantic_function_prior_parameter_duplicate(source: source, tokens: tokens, ast: ast, first: first_parameter, current: direct_cursor, current_name: parameter_name_token);
+        match ieq<u64>(prior_parameter_duplicate, ast_none) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticFunctionSymbolsDuplicate();
+            set deref(report).declaration = direct_cursor;
+            set deref(report).related = prior_parameter_duplicate;
+            return unit;
+          }
+        }
+      }
+    }
+    let existing_parameter_slot: own u64 = symbol_none;
+    region 'find_existing_parameter {
+      set existing_parameter_slot = symbol_find_slot(source: source, tokens: tokens, symbols: &uniq 'find_existing_parameter deref(symbols), space_code: 0_u64, scope: function, name_token: parameter_name_token);
+    }
+    match ieq<u64>(existing_parameter_slot, symbol_none) {
+      True() => {
+      }
+      False() => {
+        let existing_parameter_declaration: own u64 = index<u64>(deref(symbols).declarations, existing_parameter_slot);
+        set deref(report).status = SemanticFunctionSymbolsDuplicate();
+        set deref(report).declaration = direct_cursor;
+        set deref(report).related = existing_parameter_declaration;
+        return unit;
+      }
+    }
+    set needed_symbols = iadd.trap<u64>(needed_symbols, 1_u64);
+    set direct_cursor = index<u64>(deref(ast).next_siblings, direct_cursor);
+    set direct_steps = iadd.trap<u64>(direct_steps, 1_u64);
+  }
+
+  let return_mode_valid: own Bool = semantic_function_mode_valid(source: source, tokens: tokens, ast: ast, node: direct_cursor);
+  match return_mode_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = direct_cursor;
+      return unit;
+    }
+  }
+  let return_type_node: own u64 = index<u64>(deref(ast).next_siblings, direct_cursor);
+  let return_type_valid: own Bool = semantic_function_type_root_valid(source: source, tokens: tokens, ast: ast, node: return_type_node, want: AstReturnType());
+  match return_type_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = return_type_node;
+      return unit;
+    }
+  }
+
+  let effect_cursor: own u64 = index<u64>(deref(ast).next_siblings, return_type_node);
+  let effect_stage: own u64 = 0_u64;
+  let effect_count: own u64 = 0_u64;
+  let effect_steps: own u64 = 0_u64;
+  loop @validate_function_effects {
+    match ilt<u64>(effect_steps, function_ast_count) {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+        set deref(report).related = effect_cursor;
+        return unit;
+      }
+    }
+    let effect_ref_valid: own Bool = semantic_function_node_valid(ast: ast, node: effect_cursor);
+    match effect_ref_valid {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+        set deref(report).related = effect_cursor;
+        return unit;
+      }
+    }
+    let effect_kind: own AstKind = index<AstKind>(deref(ast).kinds, effect_cursor);
+    let block_tag: own AstKind = AstBlock();
+    let at_block: own Bool = ieq<AstKind>(effect_kind, block_tag);
+    match at_block {
+      True() => {
+        break @validate_function_effects;
+      }
+      False() => {
+      }
+    }
+    let pure_tag: own AstKind = AstPureEffect();
+    let reads_tag: own AstKind = AstReadsEffect();
+    let writes_tag: own AstKind = AstWritesEffect();
+    let allocates_tag: own AstKind = AstAllocatesEffect();
+    let traps_tag: own AstKind = AstTrapsEffect();
+    let is_pure_effect: own Bool = ieq<AstKind>(effect_kind, pure_tag);
+    let is_reads_effect: own Bool = ieq<AstKind>(effect_kind, reads_tag);
+    let is_writes_effect: own Bool = ieq<AstKind>(effect_kind, writes_tag);
+    let is_allocates_effect: own Bool = ieq<AstKind>(effect_kind, allocates_tag);
+    let is_traps_effect: own Bool = ieq<AstKind>(effect_kind, traps_tag);
+    match is_pure_effect {
+      True() => {
+        let pure_stage_valid: own Bool = ieq<u64>(effect_stage, 0_u64);
+        let pure_count_valid: own Bool = ieq<u64>(effect_count, 0_u64);
+        let pure_position_valid: own Bool = band<Bool>(pure_stage_valid, pure_count_valid);
+        let pure_leaf_valid: own Bool = semantic_function_leaf_valid(ast: ast, node: effect_cursor);
+        let pure_word_valid: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: effect_cursor, code: 0_u64);
+        let pure_shape_pair: own Bool = band<Bool>(pure_position_valid, pure_leaf_valid);
+        let pure_shape_valid: own Bool = band<Bool>(pure_shape_pair, pure_word_valid);
+        match pure_shape_valid {
+          True() => {
+            set effect_stage = 4_u64;
+          }
+          False() => {
+            set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+            set deref(report).related = effect_cursor;
+            return unit;
+          }
+        }
+      }
+      False() => {
+        match is_reads_effect {
+          True() => {
+            let reads_stage_valid: own Bool = ieq<u64>(effect_stage, 0_u64);
+            let reads_regions_valid: own Bool = semantic_function_region_children_valid(source: source, tokens: tokens, ast: ast, parent: effect_cursor);
+            let reads_word_valid: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: effect_cursor, code: 1_u64);
+            let reads_shape_pair: own Bool = band<Bool>(reads_stage_valid, reads_regions_valid);
+            let reads_shape_valid: own Bool = band<Bool>(reads_shape_pair, reads_word_valid);
+            match reads_shape_valid {
+              True() => {
+                set effect_stage = 1_u64;
+              }
+              False() => {
+                set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+                set deref(report).related = effect_cursor;
+                return unit;
+              }
+            }
+          }
+          False() => {
+            match is_writes_effect {
+              True() => {
+                let writes_stage_valid: own Bool = ile<u64>(effect_stage, 1_u64);
+                let writes_regions_valid: own Bool = semantic_function_region_children_valid(source: source, tokens: tokens, ast: ast, parent: effect_cursor);
+                let writes_word_valid: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: effect_cursor, code: 2_u64);
+                let writes_shape_pair: own Bool = band<Bool>(writes_stage_valid, writes_regions_valid);
+                let writes_shape_valid: own Bool = band<Bool>(writes_shape_pair, writes_word_valid);
+                match writes_shape_valid {
+                  True() => {
+                    set effect_stage = 2_u64;
+                  }
+                  False() => {
+                    set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+                    set deref(report).related = effect_cursor;
+                    return unit;
+                  }
+                }
+              }
+              False() => {
+                match is_allocates_effect {
+                  True() => {
+                    let allocates_stage_valid: own Bool = ile<u64>(effect_stage, 2_u64);
+                    let allocates_children_valid: own Bool = semantic_function_allocation_children_valid(source: source, tokens: tokens, ast: ast, parent: effect_cursor);
+                    let allocates_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: effect_cursor, want_kind: 1_u64);
+                    let allocates_shape_pair: own Bool = band<Bool>(allocates_stage_valid, allocates_children_valid);
+                    let allocates_shape_valid: own Bool = band<Bool>(allocates_shape_pair, allocates_head_valid);
+                    match allocates_shape_valid {
+                      True() => {
+                        set effect_stage = 3_u64;
+                      }
+                      False() => {
+                        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+                        set deref(report).related = effect_cursor;
+                        return unit;
+                      }
+                    }
+                    let allocates_head: own u64 = index<u64>(deref(ast).heads, effect_cursor);
+                    let allocates_word_valid: own Bool = parser_signature_allocates_word(source: source, tokens: tokens, token: allocates_head);
+                    match allocates_word_valid {
+                      True() => {
+                      }
+                      False() => {
+                        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+                        set deref(report).related = effect_cursor;
+                        return unit;
+                      }
+                    }
+                  }
+                  False() => {
+                    match is_traps_effect {
+                      True() => {
+                        let traps_stage_valid: own Bool = ile<u64>(effect_stage, 3_u64);
+                        let traps_leaf_valid: own Bool = semantic_function_leaf_valid(ast: ast, node: effect_cursor);
+                        let traps_word_valid: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: effect_cursor, code: 3_u64);
+                        let traps_shape_pair: own Bool = band<Bool>(traps_stage_valid, traps_leaf_valid);
+                        let traps_shape_valid: own Bool = band<Bool>(traps_shape_pair, traps_word_valid);
+                        match traps_shape_valid {
+                          True() => {
+                            set effect_stage = 4_u64;
+                          }
+                          False() => {
+                            set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+                            set deref(report).related = effect_cursor;
+                            return unit;
+                          }
+                        }
+                      }
+                      False() => {
+                        set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+                        set deref(report).related = effect_cursor;
+                        return unit;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    set effect_count = iadd.trap<u64>(effect_count, 1_u64);
+    set effect_cursor = index<u64>(deref(ast).next_siblings, effect_cursor);
+    set effect_steps = iadd.trap<u64>(effect_steps, 1_u64);
+  }
+
+  let have_effect: own Bool = igt<u64>(effect_count, 0_u64);
+  match have_effect {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = effect_cursor;
+      return unit;
+    }
+  }
+  let block_head_valid: own Bool = semantic_function_head_token_valid(source: source, tokens: tokens, ast: ast, node: effect_cursor, want_kind: 12_u64);
+  match block_head_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = effect_cursor;
+      return unit;
+    }
+  }
+  let block_head: own u64 = index<u64>(deref(ast).heads, effect_cursor);
+  let block_brace_valid: own Bool = parser_symbol_is(source: source, tokens: tokens, token: block_head, want: 123_u8);
+  let block_is_last: own Bool = ieq<u64>(effect_cursor, function_last);
+  let after_block: own u64 = index<u64>(deref(ast).next_siblings, effect_cursor);
+  let block_chain_done: own Bool = ieq<u64>(after_block, ast_none);
+  let block_shape_pair: own Bool = band<Bool>(block_brace_valid, block_is_last);
+  let block_shape_valid: own Bool = band<Bool>(block_shape_pair, block_chain_done);
+  match block_shape_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsMalformedFunction();
+      set deref(report).related = effect_cursor;
+      return unit;
+    }
+  }
+
+  let function_capacity_valid: own Bool = False();
+  region 'function_capacity_check {
+    set function_capacity_valid = semantic_globals_capacity_valid(symbols: &uniq 'function_capacity_check deref(symbols), needed: needed_symbols);
+  }
+  match function_capacity_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticFunctionSymbolsCapacity();
+      set deref(report).declaration = ast_none;
+      set deref(report).related = needed_symbols;
+      return unit;
+    }
+  }
+
+  let function_symbol_base: own u64 = deref(symbols).count;
+  let committed_symbols: own u64 = 0_u64;
+  match ieq<u64>(region_parameters, ast_none) {
+    True() => {
+    }
+    False() => {
+      let commit_region: own u64 = index<u64>(deref(ast).first_children, region_parameters);
+      loop @commit_function_regions {
+        let region_slot: own u64 = iadd.trap<u64>(function_symbol_base, committed_symbols);
+        let commit_region_name: own u64 = index<u64>(deref(ast).heads, commit_region);
+        set index<SymbolNamespace>(deref(symbols).namespaces, region_slot) = SymbolRegion();
+        set index<u64>(deref(symbols).scopes, region_slot) = function;
+        set index<u64>(deref(symbols).name_tokens, region_slot) = commit_region_name;
+        set index<u64>(deref(symbols).declarations, region_slot) = commit_region;
+        set committed_symbols = iadd.trap<u64>(committed_symbols, 1_u64);
+        let next_commit_region: own u64 = index<u64>(deref(ast).next_siblings, commit_region);
+        match ieq<u64>(next_commit_region, ast_none) {
+          True() => {
+            break @commit_function_regions;
+          }
+          False() => {
+            set commit_region = next_commit_region;
+          }
+        }
+      }
+    }
+  }
+
+  match ieq<u64>(first_parameter, ast_none) {
+    True() => {
+    }
+    False() => {
+      let commit_parameter: own u64 = first_parameter;
+      loop @commit_function_parameters {
+        let parameter_slot: own u64 = iadd.trap<u64>(function_symbol_base, committed_symbols);
+        let commit_parameter_name: own u64 = index<u64>(deref(ast).heads, commit_parameter);
+        set index<SymbolNamespace>(deref(symbols).namespaces, parameter_slot) = SymbolValue();
+        set index<u64>(deref(symbols).scopes, parameter_slot) = function;
+        set index<u64>(deref(symbols).name_tokens, parameter_slot) = commit_parameter_name;
+        set index<u64>(deref(symbols).declarations, parameter_slot) = commit_parameter;
+        set committed_symbols = iadd.trap<u64>(committed_symbols, 1_u64);
+        let next_commit_parameter: own u64 = index<u64>(deref(ast).next_siblings, commit_parameter);
+        let next_commit_valid: own Bool = semantic_function_node_valid(ast: ast, node: next_commit_parameter);
+        match next_commit_valid {
+          True() => {
+            let next_commit_kind: own AstKind = index<AstKind>(deref(ast).kinds, next_commit_parameter);
+            let commit_parameter_tag: own AstKind = AstParameter();
+            let next_is_parameter: own Bool = ieq<AstKind>(next_commit_kind, commit_parameter_tag);
+            match next_is_parameter {
+              True() => {
+                set commit_parameter = next_commit_parameter;
+              }
+              False() => {
+                break @commit_function_parameters;
+              }
+            }
+          }
+          False() => {
+            break @commit_function_parameters;
+          }
+        }
+      }
+    }
+  }
+
+  let function_symbol_count: own u64 = iadd.trap<u64>(function_symbol_base, committed_symbols);
+  set deref(symbols).count = function_symbol_count;
+  set deref(symbols).status = SymbolClean();
+  set deref(symbols).related = symbol_none;
+  set deref(report).status = SemanticFunctionSymbolsClean();
+  set deref(report).declaration = ast_none;
+  set deref(report).related = symbol_none;
+  return unit;
+}

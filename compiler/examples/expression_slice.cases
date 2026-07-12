@@ -7,6 +7,7 @@ index<u64>(deref(tokens).starts, token)	AstIndexPlace
 unit	AstUnitLiteral
 &'s source	AstSharedBorrow
 &uniq 'a deref(out).kinds	AstUniqBorrow
+move value	AstMove
 True()	AstConstructor
 ParserNodeResult(node: value, next: 1_u64)	AstConstructor
 iadd.trap<u64>(left, right)	AstTableCall

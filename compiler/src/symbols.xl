@@ -3,6 +3,7 @@ enum SymbolNamespace {
   SymbolType();
   SymbolRegion();
   SymbolLabel();
+  SymbolConstructor();
 }
 
 enum SymbolStatus {
@@ -40,6 +41,9 @@ fn symbol_namespace_code (space: own SymbolNamespace) -> own u64 pure {
     SymbolLabel() => {
       return 3_u64;
     }
+    SymbolConstructor() => {
+      return 4_u64;
+    }
   }
 }
 
@@ -65,7 +69,14 @@ fn symbol_namespace_from_code (code: own u64) -> own SymbolNamespace pure {
     False() => {
     }
   }
-  return SymbolLabel();
+  match ieq<u64>(code, 3_u64) {
+    True() => {
+      return SymbolLabel();
+    }
+    False() => {
+    }
+  }
+  return SymbolConstructor();
 }
 
 fn symbol_namespace_token_kind_code (space_code: own u64) -> own u64 pure {
@@ -90,7 +101,14 @@ fn symbol_namespace_token_kind_code (space_code: own u64) -> own u64 pure {
     False() => {
     }
   }
-  return 5_u64;
+  match ieq<u64>(space_code, 3_u64) {
+    True() => {
+      return 5_u64;
+    }
+    False() => {
+    }
+  }
+  return 3_u64;
 }
 
 fn symbol_token_kind_code (kind: own TokenKind) -> own u64 pure {

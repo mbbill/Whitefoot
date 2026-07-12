@@ -6,10 +6,49 @@ fn parser_v2_word_is_index ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTa
   return parser_word5(source: source, tokens: tokens, token: token, a: 105_u8, b: 110_u8, c: 100_u8, d: 101_u8, e: 120_u8);
 }
 
+fn parser_v2_word_is_move ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  return parser_word4(source: source, tokens: tokens, token: token, a: 109_u8, b: 111_u8, c: 118_u8, d: 101_u8);
+}
+
 fn parser_v2_finish_at_token ['t, 'a] (tokens: &'t TokenTape, out: &uniq 'a AstTape, node: own u64, token: own u64) -> own unit reads('t 'a), writes('a), traps {
   let finish: own u64 = index<u64>(deref(tokens).ends, token);
   set index<u64>(deref(out).ends, node) = finish;
   return unit;
+}
+
+fn parser_parse_move_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, out: &uniq 'a AstTape, cursor: own u64) -> own ParserNodeResult reads('s 't 'a), writes('a), traps {
+  let move_node: own u64 = ast_none;
+  region 'v2_move_alloc {
+    set move_node = parser_push_token(tokens: tokens, out: &uniq 'v2_move_alloc deref(out), kind: AstMove(), token: cursor);
+  }
+  match ieq<u64>(move_node, ast_none) {
+    True() => {
+      return ParserNodeResult(node: ast_none, next: cursor);
+    }
+    False() => {
+    }
+  }
+  let place_cursor: own u64 = iadd.trap<u64>(cursor, 1_u64);
+  let place_node: own u64 = ast_none;
+  let place_next: own u64 = place_cursor;
+  region 'v2_move_place_parse {
+    let parsed_move_place: own ParserNodeResult = parser_parse_place_v2(source: source, tokens: tokens, out: &uniq 'v2_move_place_parse deref(out), cursor: place_cursor);
+    set place_node = parsed_move_place.node;
+    set place_next = parsed_move_place.next;
+  }
+  match ieq<u64>(place_node, ast_none) {
+    True() => {
+      return ParserNodeResult(node: ast_none, next: place_next);
+    }
+    False() => {
+    }
+  }
+  region 'v2_move_place_attach {
+    parser_append_child(out: &uniq 'v2_move_place_attach deref(out), parent: move_node, child: place_node);
+  }
+  let place_end: own u64 = index<u64>(deref(out).ends, place_node);
+  set index<u64>(deref(out).ends, move_node) = place_end;
+  return ParserNodeResult(node: move_node, next: place_next);
 }
 
 fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, out: &uniq 'a AstTape, cursor: own u64) -> own ParserNodeResult reads('s 't 'a), writes('a), traps {
@@ -54,6 +93,16 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
   let word: own Bool = parser_kind_at_is(tokens: tokens, token: cursor, want: 1_u64);
   match word {
     True() => {
+      let move_word: own Bool = parser_v2_word_is_move(source: source, tokens: tokens, token: cursor);
+      match move_word {
+        True() => {
+          region 'v2_move_atom {
+            return parser_parse_move_v2(source: source, tokens: tokens, out: &uniq 'v2_move_atom deref(out), cursor: cursor);
+          }
+        }
+        False() => {
+        }
+      }
       let is_unit: own Bool = parser_word4(source: source, tokens: tokens, token: cursor, a: 117_u8, b: 110_u8, c: 105_u8, d: 116_u8);
       match is_unit {
         True() => {
@@ -263,6 +312,18 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
     True() => {
       region 'v2_unit_place_error {
         parser_fail(tokens: tokens, out: &uniq 'v2_unit_place_error deref(out), status: ParseExpectedPlace(), token: cursor);
+      }
+      return ParserNodeResult(node: ast_none, next: cursor);
+    }
+    False() => {
+    }
+  }
+
+  let move_word: own Bool = parser_v2_word_is_move(source: source, tokens: tokens, token: cursor);
+  match move_word {
+    True() => {
+      region 'v2_move_place_error {
+        parser_fail(tokens: tokens, out: &uniq 'v2_move_place_error deref(out), status: ParseExpectedPlace(), token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -817,6 +878,16 @@ fn parser_parse_expression_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
   let word: own Bool = parser_kind_at_is(tokens: tokens, token: cursor, want: 1_u64);
   match word {
     True() => {
+      let move_word: own Bool = parser_v2_word_is_move(source: source, tokens: tokens, token: cursor);
+      match move_word {
+        True() => {
+          region 'v2_move_expression {
+            return parser_parse_move_v2(source: source, tokens: tokens, out: &uniq 'v2_move_expression deref(out), cursor: cursor);
+          }
+        }
+        False() => {
+        }
+      }
       let after_word: own u64 = iadd.trap<u64>(cursor, 1_u64);
       let generic_shape: own Bool = parser_symbol_is(source: source, tokens: tokens, token: after_word, want: 60_u8);
       match generic_shape {

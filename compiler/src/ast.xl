@@ -54,6 +54,10 @@ enum AstKind {
   AstRegionBlock();
   AstMatch();
   AstMatchArm();
+  AstAllocatesEffect();
+  AstHeapStorage();
+  AstArenaStorage();
+  AstMove();
 }
 
 enum ParseStatus {
@@ -97,6 +101,7 @@ enum ParseStatus {
   ParseExpectedPlace();
   ParseExpectedLabel();
   ParseExpectedFatArrow();
+  ParseExpectedStorage();
 }
 
 const ast_none: u64 = 18446744073709551615_u64;

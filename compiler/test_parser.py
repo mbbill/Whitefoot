@@ -39,6 +39,9 @@ AST_REGION_PARAMETERS = 25
 AST_READS_EFFECT = 26
 AST_WRITES_EFFECT = 27
 AST_TRAPS_EFFECT = 28
+AST_ALLOCATES_EFFECT = 55
+AST_HEAP_STORAGE = 56
+AST_ARENA_STORAGE = 57
 
 PARSE_CLEAN = 0
 PARSE_LEX_ERROR = 1
@@ -65,6 +68,7 @@ PARSE_EXPECTED_REGION = 29
 PARSE_EXPECTED_CONST_ARGUMENT = 30
 PARSE_EXPECTED_EFFECT = 31
 PARSE_EXPECTED_RIGHT_SQUARE = 32
+PARSE_EXPECTED_STORAGE = 40
 
 
 class AstTape(ctypes.Structure):
@@ -387,6 +391,37 @@ def assert_signature_tree(library):
         assert data[starts[node]:ends[node]] == expected
 
 
+def assert_allocation_effect_tree(library):
+    data = (
+        b"fn allocate ['r] () -> own unit "
+        b"allocates(heap arena 'r), traps { return unit; }\n"
+    )
+    _, token_storage, tokens, columns, ast = parse(library, data)
+    kinds, heads, starts, ends, _, _, _ = columns
+    _, token_starts, token_ends = token_storage
+    assert ast.status == PARSE_CLEAN
+    assert_head_invariant(tokens, columns, ast)
+    for node in range(ast.count):
+        token = heads[node]
+        assert starts[node] <= token_starts[token]
+        assert token_ends[token] <= ends[node]
+
+    allocation = next(
+        node for node in range(ast.count) if kinds[node] == AST_ALLOCATES_EFFECT
+    )
+    heap = next(node for node in range(ast.count) if kinds[node] == AST_HEAP_STORAGE)
+    arena = next(node for node in range(ast.count) if kinds[node] == AST_ARENA_STORAGE)
+    traps = next(node for node in range(ast.count) if kinds[node] == AST_TRAPS_EFFECT)
+    assert children_of(columns, allocation) == [heap, arena]
+    arena_children = children_of(columns, arena)
+    assert len(arena_children) == 1
+    assert kinds[arena_children[0]] == AST_REGION
+    assert data[starts[allocation]:ends[allocation]] == b"allocates(heap arena 'r)"
+    assert data[starts[heap]:ends[heap]] == b"heap"
+    assert data[starts[arena]:ends[arena]] == b"arena 'r"
+    assert data[starts[traps]:ends[traps]] == b"traps"
+
+
 def assert_failures(library):
     cases = [
         (
@@ -551,6 +586,21 @@ def assert_signature_failures(library):
     cases.append((data, PARSE_EXPECTED_EFFECT, located(data, b"reads")))
     data = function(effects=b"pure,")
     cases.append((data, PARSE_EXPECTED_EFFECT, located(data, b"{")))
+    data = function(effects=b"allocates()")
+    cases.append((data, PARSE_EXPECTED_STORAGE, located(data, b")", b"allocates")))
+    data = function(effects=b"allocates(arena)")
+    cases.append((data, PARSE_EXPECTED_REGION, located(data, b")", b"allocates")))
+    data = function(effects=b"allocates(other)")
+    cases.append((data, PARSE_EXPECTED_STORAGE, located(data, b"other")))
+    data = function(effects=b"allocates(heap,)")
+    cases.append((data, PARSE_EXPECTED_STORAGE, located(data, b",", b"allocates")))
+    data = function(effects=b"traps, allocates(heap)")
+    cases.append((data, PARSE_EXPECTED_EFFECT, located(data, b"allocates")))
+    data = function(effects=b"allocates(heap), allocates(heap)")
+    second_allocate = data.rindex(b"allocates")
+    cases.append(
+        (data, PARSE_EXPECTED_EFFECT, (second_allocate, second_allocate + len(b"allocates")))
+    )
 
     for data, status, expected_error in cases:
         _, _, tokens, columns, ast = parse(library, data)
@@ -568,6 +618,7 @@ def main():
         assert_multiple_functions(library)
         assert_scalar_add_tree(library)
         assert_signature_tree(library)
+        assert_allocation_effect_tree(library)
         assert_failures(library)
         assert_malformed_tapes(library)
         assert_scalar_failures(library)

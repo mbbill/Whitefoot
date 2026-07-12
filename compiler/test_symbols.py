@@ -18,6 +18,7 @@ SYMBOL_VALUE = 0
 SYMBOL_TYPE = 1
 SYMBOL_REGION = 2
 SYMBOL_LABEL = 3
+SYMBOL_CONSTRUCTOR = 4
 
 SYMBOL_CLEAN = 0
 SYMBOL_NOT_FOUND = 1
@@ -179,13 +180,14 @@ def assert_basic_semantics(library, source, tokens):
         (SYMBOL_TYPE, 10, 2, 102),
         (SYMBOL_REGION, 10, 3, 103),
         (SYMBOL_LABEL, 10, 4, 104),
+        (SYMBOL_CONSTRUCTOR, 10, 2, 105),
     )
     for slot, case in enumerate(cases, 1):
         assert insert(library, source, tokens, symbols, *case) == (
             SYMBOL_CLEAN,
             slot,
         )
-    assert symbols.count == 5
+    assert symbols.count == 6
     for slot, (space, scope, name_token, _) in enumerate(cases, 1):
         assert find(library, source, tokens, symbols, space, scope, name_token) == (
             SYMBOL_CLEAN,
@@ -198,6 +200,7 @@ def assert_basic_semantics(library, source, tokens):
         (SYMBOL_TYPE, 0),
         (SYMBOL_REGION, 4),
         (SYMBOL_LABEL, 3),
+        (SYMBOL_CONSTRUCTOR, 0),
         (SYMBOL_VALUE, 6),
         (SYMBOL_VALUE, 99),
     ):
@@ -205,7 +208,7 @@ def assert_basic_semantics(library, source, tokens):
             SYMBOL_INVALID_TOKEN,
             wrong_token,
         )
-    assert symbols.count == 5
+    assert symbols.count == 6
     assert column_snapshot(storage, physical) == before_invalid
     assert_guards(storage, physical)
 

@@ -1,0 +1,853 @@
+enum SemanticTypeResolveStatus {
+  SemanticTypeResolveClean();
+  SemanticTypeResolveInvalidTokenTape();
+  SemanticTypeResolveInvalidAstTape();
+  SemanticTypeResolveInvalidSymbolTape();
+  SemanticTypeResolveInvalidScratch();
+  SemanticTypeResolveMalformedType();
+  SemanticTypeResolveUnknownNamedType();
+  SemanticTypeResolveInvalidArrayConst();
+}
+
+struct SemanticTypeResolveReport {
+  status: SemanticTypeResolveStatus;
+  node: u64;
+  related: u64;
+}
+
+const semantic_type_u64_max_digits: array<u8, 20> = [49_u8, 56_u8, 52_u8, 52_u8, 54_u8, 55_u8, 52_u8, 52_u8, 48_u8, 55_u8, 51_u8, 55_u8, 48_u8, 57_u8, 53_u8, 53_u8, 49_u8, 54_u8, 49_u8, 53_u8];
+
+fn semantic_type_resolve_set_report ['w] (report: &uniq 'w SemanticTypeResolveReport, status: own SemanticTypeResolveStatus, node: own u64, related: own u64) -> own unit writes('w) {
+  set deref(report).status = status;
+  set deref(report).node = node;
+  set deref(report).related = related;
+  return unit;
+}
+
+fn semantic_type_resolve_kind_valid (kind: own AstKind) -> own Bool pure {
+  let return_tag: own AstKind = AstReturnType();
+  match ieq<AstKind>(kind, return_tag) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let parameter_tag: own AstKind = AstParameterType();
+  match ieq<AstKind>(kind, parameter_tag) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let binding_tag: own AstKind = AstBindingType();
+  match ieq<AstKind>(kind, binding_tag) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let argument_tag: own AstKind = AstTypeArgument();
+  match ieq<AstKind>(kind, argument_tag) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let nested_tag: own AstKind = AstNestedType();
+  match ieq<AstKind>(kind, nested_tag) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let field_tag: own AstKind = AstFieldType();
+  match ieq<AstKind>(kind, field_tag) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let const_tag: own AstKind = AstConstType();
+  return ieq<AstKind>(kind, const_tag);
+}
+
+fn semantic_type_resolve_prelude_leaf_allowed (code: own PreludeTypeCode) -> own Bool pure {
+  match code {
+    PreludeTypeUnknown() => {
+      return False();
+    }
+    PreludeTypeBool() => {
+      return True();
+    }
+    PreludeTypeOption() => {
+      return False();
+    }
+    PreludeTypeResult() => {
+      return False();
+    }
+    PreludeTypeOverflow() => {
+      return True();
+    }
+    PreludeTypeDivError() => {
+      return True();
+    }
+    PreludeTypeNarrowError() => {
+      return True();
+    }
+  }
+}
+
+fn semantic_type_resolve_leaf ['a] (ast: &'a AstTape, node: own u64) -> own Bool reads('a), traps {
+  let first: own u64 = index<u64>(deref(ast).first_children, node);
+  let last: own u64 = index<u64>(deref(ast).last_children, node);
+  let first_none: own Bool = ieq<u64>(first, ast_none);
+  let last_none: own Bool = ieq<u64>(last, ast_none);
+  return band<Bool>(first_none, last_none);
+}
+
+fn semantic_type_resolve_integer_word ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let i8_type: own Bool = parser_word2(source: source, tokens: tokens, token: token, a: 105_u8, b: 56_u8);
+  match i8_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let u8_type: own Bool = parser_word2(source: source, tokens: tokens, token: token, a: 117_u8, b: 56_u8);
+  match u8_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let i16_type: own Bool = parser_word3(source: source, tokens: tokens, token: token, a: 105_u8, b: 49_u8, c: 54_u8);
+  match i16_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let u16_type: own Bool = parser_word3(source: source, tokens: tokens, token: token, a: 117_u8, b: 49_u8, c: 54_u8);
+  match u16_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let i32_type: own Bool = parser_word3(source: source, tokens: tokens, token: token, a: 105_u8, b: 51_u8, c: 50_u8);
+  match i32_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let u32_type: own Bool = parser_word3(source: source, tokens: tokens, token: token, a: 117_u8, b: 51_u8, c: 50_u8);
+  match u32_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  let i64_type: own Bool = parser_word3(source: source, tokens: tokens, token: token, a: 105_u8, b: 54_u8, c: 52_u8);
+  match i64_type {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  return parser_word3(source: source, tokens: tokens, token: token, a: 117_u8, b: 54_u8, c: 52_u8);
+}
+
+fn semantic_type_resolve_decimal_const ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let number_token: own Bool = parser_kind_at_is(tokens: tokens, token: token, want: 6_u64);
+  match number_token {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let end: own u64 = index<u64>(deref(tokens).ends, token);
+  let width: own u64 = isub.wrap<u64>(end, start);
+  match ieq<u64>(width, 0_u64) {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  let first: own u8 = index<u8>(deref(source), start);
+  let leading_zero: own Bool = ieq<u8>(first, 48_u8);
+  let multiple_digits: own Bool = igt<u64>(width, 1_u64);
+  let noncanonical_zero: own Bool = band<Bool>(leading_zero, multiple_digits);
+  match noncanonical_zero {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  match igt<u64>(width, 20_u64) {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  let offset: own u64 = 0_u64;
+  loop @decimal_const_digits {
+    match ige<u64>(offset, width) {
+      True() => {
+        break @decimal_const_digits;
+      }
+      False() => {
+      }
+    }
+    let position: own u64 = iadd.trap<u64>(start, offset);
+    let digit: own u8 = index<u8>(deref(source), position);
+    match lexer_is_digit(c: digit) {
+      True() => {
+        set offset = iadd.trap<u64>(offset, 1_u64);
+      }
+      False() => {
+        return False();
+      }
+    }
+  }
+  match ilt<u64>(width, 20_u64) {
+    True() => {
+      return True();
+    }
+    False() => {
+    }
+  }
+  set offset = 0_u64;
+  loop @decimal_const_range {
+    match ige<u64>(offset, width) {
+      True() => {
+        return True();
+      }
+      False() => {
+      }
+    }
+    let range_position: own u64 = iadd.trap<u64>(start, offset);
+    let range_digit: own u8 = index<u8>(deref(source), range_position);
+    let maximum: own u8 = index<u8>(semantic_type_u64_max_digits, offset);
+    match ilt<u8>(range_digit, maximum) {
+      True() => {
+        return True();
+      }
+      False() => {
+      }
+    }
+    match igt<u8>(range_digit, maximum) {
+      True() => {
+        return False();
+      }
+      False() => {
+        set offset = iadd.trap<u64>(offset, 1_u64);
+      }
+    }
+  }
+}
+
+fn semantic_type_resolve_integer_const_decl ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, declaration: own u64, use_node: own u64) -> own Bool reads('s 't 'a), traps {
+  let count: own u64 = deref(ast).count;
+  let declaration_valid: own Bool = ilt<u64>(declaration, count);
+  let use_valid: own Bool = ilt<u64>(use_node, count);
+  let nodes_valid: own Bool = band<Bool>(declaration_valid, use_valid);
+  match nodes_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let declaration_kind: own AstKind = index<AstKind>(deref(ast).kinds, declaration);
+  let declaration_tag: own AstKind = AstConstDecl();
+  match ieq<AstKind>(declaration_kind, declaration_tag) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let declaration_end: own u64 = index<u64>(deref(ast).ends, declaration);
+  let use_start: own u64 = index<u64>(deref(ast).starts, use_node);
+  match ile<u64>(declaration_end, use_start) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let name_node: own u64 = index<u64>(deref(ast).first_children, declaration);
+  match ilt<u64>(name_node, count) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let type_node: own u64 = index<u64>(deref(ast).next_siblings, name_node);
+  match ilt<u64>(type_node, count) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let value_node: own u64 = index<u64>(deref(ast).next_siblings, type_node);
+  let last_node: own u64 = index<u64>(deref(ast).last_children, declaration);
+  let value_valid: own Bool = ilt<u64>(value_node, count);
+  let exact_last: own Bool = ieq<u64>(value_node, last_node);
+  let children_valid: own Bool = band<Bool>(value_valid, exact_last);
+  match children_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let after_value: own u64 = index<u64>(deref(ast).next_siblings, value_node);
+  match ieq<u64>(after_value, ast_none) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let name_kind: own AstKind = index<AstKind>(deref(ast).kinds, name_node);
+  let name_tag: own AstKind = AstConstName();
+  let name_ok: own Bool = ieq<AstKind>(name_kind, name_tag);
+  let type_kind: own AstKind = index<AstKind>(deref(ast).kinds, type_node);
+  let type_tag: own AstKind = AstConstType();
+  let type_ok: own Bool = ieq<AstKind>(type_kind, type_tag);
+  let roles_ok: own Bool = band<Bool>(name_ok, type_ok);
+  match roles_ok {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  match semantic_type_resolve_leaf(ast: ast, node: type_node) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let type_head: own u64 = index<u64>(deref(ast).heads, type_node);
+  let type_head_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: type_head);
+  match type_head_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  return semantic_type_resolve_integer_word(source: source, tokens: tokens, token: type_head);
+}
+
+fn semantic_resolve_type ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &uniq 'w SymbolTape, type_node: own u64, validation: &uniq 'w AstValidationReport, report: &uniq 'w SemanticTypeResolveReport) -> own unit reads('c 'w), writes('w), traps {
+  region 'type_report_begin {
+    semantic_type_resolve_set_report(report: &uniq 'type_report_begin deref(report), status: SemanticTypeResolveInvalidTokenTape(), node: ast_none, related: symbol_none);
+  }
+
+  let tokens_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
+  match tokens_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).related = deref(tokens).count;
+      return unit;
+    }
+  }
+
+  let parse_clean_tag: own ParseStatus = ParseClean();
+  let parse_clean: own Bool = ieq<ParseStatus>(deref(ast).status, parse_clean_tag);
+  match parse_clean {
+    True() => {
+    }
+    False() => {
+      region 'type_parse_status_error {
+        semantic_type_resolve_set_report(report: &uniq 'type_parse_status_error deref(report), status: SemanticTypeResolveInvalidAstTape(), node: deref(ast).root, related: deref(ast).count);
+      }
+      return unit;
+    }
+  }
+
+  let validation_clean_tag: own AstValidationStatus = AstValidationClean();
+  let validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, validation_clean_tag);
+  match validation_clean {
+    True() => {
+    }
+    False() => {
+      let scratch_tag: own AstValidationStatus = AstValidationScratchCapacity();
+      let scratch_error: own Bool = ieq<AstValidationStatus>(deref(validation).status, scratch_tag);
+      match scratch_error {
+        True() => {
+          region 'type_scratch_error {
+            semantic_type_resolve_set_report(report: &uniq 'type_scratch_error deref(report), status: SemanticTypeResolveInvalidScratch(), node: deref(validation).node, related: deref(validation).related);
+          }
+        }
+        False() => {
+          region 'type_ast_error {
+            semantic_type_resolve_set_report(report: &uniq 'type_ast_error deref(report), status: SemanticTypeResolveInvalidAstTape(), node: deref(validation).node, related: deref(validation).related);
+          }
+        }
+      }
+      return unit;
+    }
+  }
+
+  let ast_columns_base: own Bool = semantic_type_ast_columns_valid(tokens: tokens, ast: ast);
+  let ast_count: own u64 = deref(ast).count;
+  let kinds_length: own u64 = len<AstKind>(deref(ast).kinds);
+  let starts_length: own u64 = len<u64>(deref(ast).starts);
+  let ends_length: own u64 = len<u64>(deref(ast).ends);
+  let kinds_ok: own Bool = ige<u64>(kinds_length, ast_count);
+  let starts_ok: own Bool = ige<u64>(starts_length, ast_count);
+  let ends_ok: own Bool = ige<u64>(ends_length, ast_count);
+  let offsets_ok: own Bool = band<Bool>(starts_ok, ends_ok);
+  let ast_extra_columns: own Bool = band<Bool>(kinds_ok, offsets_ok);
+  let ast_columns_valid: own Bool = band<Bool>(ast_columns_base, ast_extra_columns);
+  match ast_columns_valid {
+    True() => {
+    }
+    False() => {
+      region 'type_ast_columns_error {
+        semantic_type_resolve_set_report(report: &uniq 'type_ast_columns_error deref(report), status: SemanticTypeResolveInvalidAstTape(), node: ast_none, related: ast_count);
+      }
+      return unit;
+    }
+  }
+
+  let stack_length: own u64 = len<u64>(deref(validation).stack);
+  match ige<u64>(stack_length, ast_count) {
+    True() => {
+    }
+    False() => {
+      region 'type_local_scratch_error {
+        semantic_type_resolve_set_report(report: &uniq 'type_local_scratch_error deref(report), status: SemanticTypeResolveInvalidScratch(), node: stack_length, related: ast_count);
+      }
+      return unit;
+    }
+  }
+
+  let symbols_columns_valid: own Bool = False();
+  region 'type_validate_symbol_columns {
+    set symbols_columns_valid = symbol_tape_columns_valid(symbols: &uniq 'type_validate_symbol_columns deref(symbols));
+  }
+  let symbols_clean_tag: own SymbolStatus = SymbolClean();
+  let symbols_clean: own Bool = ieq<SymbolStatus>(deref(symbols).status, symbols_clean_tag);
+  let symbols_valid: own Bool = band<Bool>(symbols_columns_valid, symbols_clean);
+  match symbols_valid {
+    True() => {
+    }
+    False() => {
+      region 'type_symbol_error {
+        semantic_type_resolve_set_report(report: &uniq 'type_symbol_error deref(report), status: SemanticTypeResolveInvalidSymbolTape(), node: ast_none, related: deref(symbols).count);
+      }
+      return unit;
+    }
+  }
+
+  match ilt<u64>(type_node, ast_count) {
+    True() => {
+    }
+    False() => {
+      region 'type_root_error {
+        semantic_type_resolve_set_report(report: &uniq 'type_root_error deref(report), status: SemanticTypeResolveMalformedType(), node: type_node, related: ast_count);
+      }
+      return unit;
+    }
+  }
+  let root_kind: own AstKind = index<AstKind>(deref(ast).kinds, type_node);
+  match semantic_type_resolve_kind_valid(kind: root_kind) {
+    True() => {
+    }
+    False() => {
+      region 'type_root_kind_error {
+        semantic_type_resolve_set_report(report: &uniq 'type_root_kind_error deref(report), status: SemanticTypeResolveMalformedType(), node: type_node, related: index<u64>(deref(ast).heads, type_node));
+      }
+      return unit;
+    }
+  }
+
+  set index<u64>(deref(validation).stack, 0_u64) = type_node;
+  let stack_count: own u64 = 1_u64;
+  let processed: own u64 = 0_u64;
+  loop @resolve_type_nodes {
+    match ieq<u64>(stack_count, 0_u64) {
+      True() => {
+        region 'type_resolve_success {
+          semantic_type_resolve_set_report(report: &uniq 'type_resolve_success deref(report), status: SemanticTypeResolveClean(), node: ast_none, related: symbol_none);
+        }
+        return unit;
+      }
+      False() => {
+      }
+    }
+    match ilt<u64>(processed, ast_count) {
+      True() => {
+      }
+      False() => {
+        region 'type_walk_error {
+          semantic_type_resolve_set_report(report: &uniq 'type_walk_error deref(report), status: SemanticTypeResolveMalformedType(), node: type_node, related: processed);
+        }
+        return unit;
+      }
+    }
+    set stack_count = isub.wrap<u64>(stack_count, 1_u64);
+    let current: own u64 = index<u64>(deref(validation).stack, stack_count);
+    set processed = iadd.trap<u64>(processed, 1_u64);
+    let head: own u64 = index<u64>(deref(ast).heads, current);
+    let head_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: head);
+    match head_valid {
+      True() => {
+      }
+      False() => {
+        region 'type_head_error {
+          semantic_type_resolve_set_report(report: &uniq 'type_head_error deref(report), status: SemanticTypeResolveInvalidTokenTape(), node: current, related: head);
+        }
+        return unit;
+      }
+    }
+
+    let primitive: own Bool = parser_signature_primitive_type(source: source, tokens: tokens, token: head);
+    let buffer_type: own Bool = parser_word6(source: source, tokens: tokens, token: head, a: 98_u8, b: 117_u8, c: 102_u8, d: 102_u8, e: 101_u8, f: 114_u8);
+    let array_type: own Bool = parser_word5(source: source, tokens: tokens, token: head, a: 97_u8, b: 114_u8, c: 114_u8, d: 97_u8, e: 121_u8);
+    match primitive {
+      True() => {
+        match semantic_type_resolve_leaf(ast: ast, node: current) {
+          True() => {
+          }
+          False() => {
+            region 'primitive_shape_error {
+              semantic_type_resolve_set_report(report: &uniq 'primitive_shape_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: index<u64>(deref(ast).first_children, current));
+            }
+            return unit;
+          }
+        }
+      }
+      False() => {
+        match buffer_type {
+          True() => {
+            let child: own u64 = index<u64>(deref(ast).first_children, current);
+            let last: own u64 = index<u64>(deref(ast).last_children, current);
+            let same_child: own Bool = ieq<u64>(child, last);
+            match same_child {
+              True() => {
+              }
+              False() => {
+                region 'buffer_arity_error {
+                  semantic_type_resolve_set_report(report: &uniq 'buffer_arity_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: last);
+                }
+                return unit;
+              }
+            }
+            match ilt<u64>(child, ast_count) {
+              True() => {
+              }
+              False() => {
+                region 'buffer_child_error {
+                  semantic_type_resolve_set_report(report: &uniq 'buffer_child_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: child);
+                }
+                return unit;
+              }
+            }
+            let child_kind: own AstKind = index<AstKind>(deref(ast).kinds, child);
+            let nested_tag: own AstKind = AstNestedType();
+            let nested: own Bool = ieq<AstKind>(child_kind, nested_tag);
+            let child_next: own u64 = index<u64>(deref(ast).next_siblings, child);
+            let chain_end: own Bool = ieq<u64>(child_next, ast_none);
+            let child_shape: own Bool = band<Bool>(nested, chain_end);
+            match child_shape {
+              True() => {
+                set index<u64>(deref(validation).stack, stack_count) = child;
+                set stack_count = iadd.trap<u64>(stack_count, 1_u64);
+              }
+              False() => {
+                region 'buffer_nested_error {
+                  semantic_type_resolve_set_report(report: &uniq 'buffer_nested_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: child);
+                }
+                return unit;
+              }
+            }
+          }
+          False() => {
+            match array_type {
+              True() => {
+                let nested_child: own u64 = index<u64>(deref(ast).first_children, current);
+                let const_child: own u64 = ast_none;
+                match ilt<u64>(nested_child, ast_count) {
+                  True() => {
+                    set const_child = index<u64>(deref(ast).next_siblings, nested_child);
+                  }
+                  False() => {
+                    region 'array_nested_reference_error {
+                      semantic_type_resolve_set_report(report: &uniq 'array_nested_reference_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: nested_child);
+                    }
+                    return unit;
+                  }
+                }
+                let declared_last: own u64 = index<u64>(deref(ast).last_children, current);
+                let exact_last: own Bool = ieq<u64>(const_child, declared_last);
+                match exact_last {
+                  True() => {
+                  }
+                  False() => {
+                    region 'array_arity_error {
+                      semantic_type_resolve_set_report(report: &uniq 'array_arity_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: declared_last);
+                    }
+                    return unit;
+                  }
+                }
+                match ilt<u64>(const_child, ast_count) {
+                  True() => {
+                  }
+                  False() => {
+                    region 'array_const_reference_error {
+                      semantic_type_resolve_set_report(report: &uniq 'array_const_reference_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: const_child);
+                    }
+                    return unit;
+                  }
+                }
+                let nested_kind: own AstKind = index<AstKind>(deref(ast).kinds, nested_child);
+                let nested_tag: own AstKind = AstNestedType();
+                let nested_ok: own Bool = ieq<AstKind>(nested_kind, nested_tag);
+                let const_kind: own AstKind = index<AstKind>(deref(ast).kinds, const_child);
+                let const_tag: own AstKind = AstConstArgument();
+                let const_kind_ok: own Bool = ieq<AstKind>(const_kind, const_tag);
+                let const_next: own u64 = index<u64>(deref(ast).next_siblings, const_child);
+                let chain_end: own Bool = ieq<u64>(const_next, ast_none);
+                let roles_ok: own Bool = band<Bool>(nested_ok, const_kind_ok);
+                let shape_ok: own Bool = band<Bool>(roles_ok, chain_end);
+                match shape_ok {
+                  True() => {
+                  }
+                  False() => {
+                    region 'array_roles_error {
+                      semantic_type_resolve_set_report(report: &uniq 'array_roles_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: const_child);
+                    }
+                    return unit;
+                  }
+                }
+                match semantic_type_resolve_leaf(ast: ast, node: const_child) {
+                  True() => {
+                  }
+                  False() => {
+                    region 'array_const_shape_error {
+                      semantic_type_resolve_set_report(report: &uniq 'array_const_shape_error deref(report), status: SemanticTypeResolveMalformedType(), node: const_child, related: index<u64>(deref(ast).first_children, const_child));
+                    }
+                    return unit;
+                  }
+                }
+                let const_head: own u64 = index<u64>(deref(ast).heads, const_child);
+                let const_head_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: const_head);
+                match const_head_valid {
+                  True() => {
+                  }
+                  False() => {
+                    region 'array_const_token_error {
+                      semantic_type_resolve_set_report(report: &uniq 'array_const_token_error deref(report), status: SemanticTypeResolveInvalidTokenTape(), node: const_child, related: const_head);
+                    }
+                    return unit;
+                  }
+                }
+                let const_token_kind: own TokenKind = index<TokenKind>(deref(tokens).kinds, const_head);
+                let const_token_code: own u64 = symbol_token_kind_code(kind: const_token_kind);
+                match ieq<u64>(const_token_code, 6_u64) {
+                  True() => {
+                    let digits: own Bool = semantic_type_resolve_decimal_const(source: source, tokens: tokens, token: const_head);
+                    match digits {
+                      True() => {
+                      }
+                      False() => {
+                        region 'array_digits_error {
+                          semantic_type_resolve_set_report(report: &uniq 'array_digits_error deref(report), status: SemanticTypeResolveInvalidArrayConst(), node: const_child, related: const_head);
+                        }
+                        return unit;
+                      }
+                    }
+                  }
+                  False() => {
+                    let const_name_valid: own Bool = symbol_name_token_valid(source: source, tokens: tokens, token: const_head, want_kind: 1_u64);
+                    match const_name_valid {
+                      True() => {
+                      }
+                      False() => {
+                        region 'array_const_name_error {
+                          semantic_type_resolve_set_report(report: &uniq 'array_const_name_error deref(report), status: SemanticTypeResolveInvalidArrayConst(), node: const_child, related: const_head);
+                        }
+                        return unit;
+                      }
+                    }
+                    let const_slot: own u64 = symbol_none;
+                    region 'array_const_lookup {
+                      set const_slot = symbol_find_slot(source: source, tokens: tokens, symbols: &uniq 'array_const_lookup deref(symbols), space_code: 0_u64, scope: symbol_none, name_token: const_head);
+                    }
+                    match ieq<u64>(const_slot, symbol_none) {
+                      True() => {
+                        region 'array_const_unknown {
+                          semantic_type_resolve_set_report(report: &uniq 'array_const_unknown deref(report), status: SemanticTypeResolveInvalidArrayConst(), node: const_child, related: const_head);
+                        }
+                        return unit;
+                      }
+                      False() => {
+                      }
+                    }
+                    let const_declaration: own u64 = index<u64>(deref(symbols).declarations, const_slot);
+                    match ilt<u64>(const_declaration, ast_count) {
+                      True() => {
+                      }
+                      False() => {
+                        region 'array_const_symbol_error {
+                          semantic_type_resolve_set_report(report: &uniq 'array_const_symbol_error deref(report), status: SemanticTypeResolveInvalidSymbolTape(), node: const_child, related: const_declaration);
+                        }
+                        return unit;
+                      }
+                    }
+                    let declaration_kind: own AstKind = index<AstKind>(deref(ast).kinds, const_declaration);
+                    let const_declaration_tag: own AstKind = AstConstDecl();
+                    match ieq<AstKind>(declaration_kind, const_declaration_tag) {
+                      True() => {
+                      }
+                      False() => {
+                        region 'array_non_const_error {
+                          semantic_type_resolve_set_report(report: &uniq 'array_non_const_error deref(report), status: SemanticTypeResolveInvalidArrayConst(), node: const_child, related: const_declaration);
+                        }
+                        return unit;
+                      }
+                    }
+                    let const_declaration_valid: own Bool = semantic_type_resolve_integer_const_decl(source: source, tokens: tokens, ast: ast, declaration: const_declaration, use_node: current);
+                    match const_declaration_valid {
+                      True() => {
+                      }
+                      False() => {
+                        region 'array_const_declaration_error {
+                          semantic_type_resolve_set_report(report: &uniq 'array_const_declaration_error deref(report), status: SemanticTypeResolveInvalidArrayConst(), node: const_child, related: const_declaration);
+                        }
+                        return unit;
+                      }
+                    }
+                  }
+                }
+                set index<u64>(deref(validation).stack, stack_count) = nested_child;
+                set stack_count = iadd.trap<u64>(stack_count, 1_u64);
+              }
+              False() => {
+                let named: own Bool = symbol_name_token_valid(source: source, tokens: tokens, token: head, want_kind: 3_u64);
+                match named {
+                  True() => {
+                  }
+                  False() => {
+                    region 'type_spelling_error {
+                      semantic_type_resolve_set_report(report: &uniq 'type_spelling_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: head);
+                    }
+                    return unit;
+                  }
+                }
+                match semantic_type_resolve_leaf(ast: ast, node: current) {
+                  True() => {
+                  }
+                  False() => {
+                    region 'named_shape_error {
+                      semantic_type_resolve_set_report(report: &uniq 'named_shape_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: index<u64>(deref(ast).first_children, current));
+                    }
+                    return unit;
+                  }
+                }
+                let prelude_type_code: own PreludeTypeCode = semantic_prelude_type_code(source: source, tokens: tokens, token: head);
+                let prelude_leaf_allowed: own Bool = semantic_type_resolve_prelude_leaf_allowed(code: prelude_type_code);
+                match prelude_leaf_allowed {
+                  True() => {
+                  }
+                  False() => {
+                    let prelude_unknown_tag: own PreludeTypeCode = PreludeTypeUnknown();
+                    let prelude_unknown: own Bool = ieq<PreludeTypeCode>(prelude_type_code, prelude_unknown_tag);
+                    match prelude_unknown {
+                      True() => {
+                        let type_slot: own u64 = symbol_none;
+                        region 'named_type_lookup {
+                          set type_slot = symbol_find_slot(source: source, tokens: tokens, symbols: &uniq 'named_type_lookup deref(symbols), space_code: 1_u64, scope: symbol_none, name_token: head);
+                        }
+                        match ieq<u64>(type_slot, symbol_none) {
+                          True() => {
+                            region 'named_type_unknown {
+                              semantic_type_resolve_set_report(report: &uniq 'named_type_unknown deref(report), status: SemanticTypeResolveUnknownNamedType(), node: current, related: head);
+                            }
+                            return unit;
+                          }
+                          False() => {
+                          }
+                        }
+                        let type_declaration: own u64 = index<u64>(deref(symbols).declarations, type_slot);
+                        match ilt<u64>(type_declaration, ast_count) {
+                          True() => {
+                          }
+                          False() => {
+                            region 'named_type_symbol_reference_error {
+                              semantic_type_resolve_set_report(report: &uniq 'named_type_symbol_reference_error deref(report), status: SemanticTypeResolveInvalidSymbolTape(), node: current, related: type_declaration);
+                            }
+                            return unit;
+                          }
+                        }
+                        let type_declaration_kind: own AstKind = index<AstKind>(deref(ast).kinds, type_declaration);
+                        let type_declaration_valid: own Bool = semantic_globals_is_type_declaration(kind: type_declaration_kind);
+                        match type_declaration_valid {
+                          True() => {
+                          }
+                          False() => {
+                            region 'named_type_symbol_kind_error {
+                              semantic_type_resolve_set_report(report: &uniq 'named_type_symbol_kind_error deref(report), status: SemanticTypeResolveInvalidSymbolTape(), node: current, related: type_declaration);
+                            }
+                            return unit;
+                          }
+                        }
+                        let type_declaration_start: own u64 = index<u64>(deref(ast).starts, type_declaration);
+                        let type_use_start: own u64 = index<u64>(deref(ast).starts, current);
+                        match ilt<u64>(type_declaration_start, type_use_start) {
+                          True() => {
+                          }
+                          False() => {
+                            region 'named_type_order_error {
+                              semantic_type_resolve_set_report(report: &uniq 'named_type_order_error deref(report), status: SemanticTypeResolveUnknownNamedType(), node: current, related: head);
+                            }
+                            return unit;
+                          }
+                        }
+                      }
+                      False() => {
+                        region 'prelude_generic_shape_error {
+                          semantic_type_resolve_set_report(report: &uniq 'prelude_generic_shape_error deref(report), status: SemanticTypeResolveMalformedType(), node: current, related: head);
+                        }
+                        return unit;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

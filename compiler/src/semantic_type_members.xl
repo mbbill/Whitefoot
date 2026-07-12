@@ -1,0 +1,797 @@
+enum SemanticTypeMembersStatus {
+  SemanticTypeMembersClean();
+  SemanticTypeMembersInvalidTokenTape();
+  SemanticTypeMembersInvalidAstTape();
+  SemanticTypeMembersExpectedProgram();
+  SemanticTypeMembersMalformedDeclaration();
+  SemanticTypeMembersInvalidNameToken();
+  SemanticTypeMembersDuplicate();
+  SemanticTypeMembersCapacity();
+  SemanticTypeMembersInvalidSymbolTape();
+}
+
+struct SemanticTypeMembersReport {
+  status: SemanticTypeMembersStatus;
+  declaration: u64;
+  related: u64;
+  variant_count: u64;
+  field_count: u64;
+}
+
+fn semantic_type_members_node_valid ['a] (ast: &'a AstTape, node: own u64) -> own Bool reads('a) {
+  return ilt<u64>(node, deref(ast).count);
+}
+
+fn semantic_type_members_kind_is ['a] (ast: &'a AstTape, node: own u64, want: own AstKind) -> own Bool reads('a), traps {
+  let member_node_valid: own Bool = semantic_type_members_node_valid(ast: ast, node: node);
+  match member_node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let member_observed_kind: own AstKind = index<AstKind>(deref(ast).kinds, node);
+  return ieq<AstKind>(member_observed_kind, want);
+}
+
+fn semantic_type_members_leaf_valid ['a] (ast: &'a AstTape, node: own u64) -> own Bool reads('a), traps {
+  let member_leaf_node_valid: own Bool = semantic_type_members_node_valid(ast: ast, node: node);
+  match member_leaf_node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let member_leaf_first: own u64 = index<u64>(deref(ast).first_children, node);
+  let member_leaf_last: own u64 = index<u64>(deref(ast).last_children, node);
+  let member_leaf_first_none: own Bool = ieq<u64>(member_leaf_first, ast_none);
+  let member_leaf_last_none: own Bool = ieq<u64>(member_leaf_last, ast_none);
+  return band<Bool>(member_leaf_first_none, member_leaf_last_none);
+}
+
+fn semantic_type_members_head_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64, want_kind: own u64) -> own Bool reads('s 't 'a), traps {
+  let member_head_node_valid: own Bool = semantic_type_members_node_valid(ast: ast, node: node);
+  match member_head_node_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let member_head_token: own u64 = index<u64>(deref(ast).heads, node);
+  return symbol_name_token_valid(source: source, tokens: tokens, token: member_head_token, want_kind: want_kind);
+}
+
+fn semantic_type_members_prior_variant ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, root: own u64, current: own u64, name_token: own u64) -> own u64 reads('s 't 'a), traps {
+  let variant_top: own u64 = index<u64>(deref(ast).first_children, root);
+  let variant_top_steps: own u64 = 0_u64;
+  let variant_scan_limit: own u64 = deref(ast).count;
+  loop @member_prior_variant_tops {
+    match ieq<u64>(variant_top, ast_none) {
+      True() => {
+        return ast_none;
+      }
+      False() => {
+      }
+    }
+    match ilt<u64>(variant_top_steps, variant_scan_limit) {
+      True() => {
+      }
+      False() => {
+        return ast_none;
+      }
+    }
+    let variant_top_kind: own AstKind = index<AstKind>(deref(ast).kinds, variant_top);
+    let variant_enum_tag: own AstKind = AstEnumDecl();
+    let variant_is_enum: own Bool = ieq<AstKind>(variant_top_kind, variant_enum_tag);
+    match variant_is_enum {
+      True() => {
+        let variant_name_node: own u64 = index<u64>(deref(ast).first_children, variant_top);
+        let variant_cursor: own u64 = index<u64>(deref(ast).next_siblings, variant_name_node);
+        let variant_member_steps: own u64 = 0_u64;
+        loop @member_prior_variants {
+          match ieq<u64>(variant_cursor, ast_none) {
+            True() => {
+              break @member_prior_variants;
+            }
+            False() => {
+            }
+          }
+          match ieq<u64>(variant_cursor, current) {
+            True() => {
+              return ast_none;
+            }
+            False() => {
+            }
+          }
+          match ilt<u64>(variant_member_steps, variant_scan_limit) {
+            True() => {
+            }
+            False() => {
+              return ast_none;
+            }
+          }
+          let prior_variant_token: own u64 = index<u64>(deref(ast).heads, variant_cursor);
+          let prior_variant_same: own Bool = token_text_equal(source: source, tokens: tokens, left: prior_variant_token, right: name_token);
+          match prior_variant_same {
+            True() => {
+              return variant_cursor;
+            }
+            False() => {
+            }
+          }
+          set variant_cursor = index<u64>(deref(ast).next_siblings, variant_cursor);
+          set variant_member_steps = iadd.trap<u64>(variant_member_steps, 1_u64);
+        }
+      }
+      False() => {
+      }
+    }
+    set variant_top = index<u64>(deref(ast).next_siblings, variant_top);
+    set variant_top_steps = iadd.trap<u64>(variant_top_steps, 1_u64);
+  }
+}
+
+fn semantic_type_members_prior_field ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, first: own u64, current: own u64, name_token: own u64) -> own u64 reads('s 't 'a), traps {
+  let prior_field: own u64 = first;
+  let prior_field_steps: own u64 = 0_u64;
+  let prior_field_limit: own u64 = deref(ast).count;
+  loop @member_prior_fields {
+    match ieq<u64>(prior_field, current) {
+      True() => {
+        return ast_none;
+      }
+      False() => {
+      }
+    }
+    match ilt<u64>(prior_field_steps, prior_field_limit) {
+      True() => {
+      }
+      False() => {
+        return ast_none;
+      }
+    }
+    let prior_field_token: own u64 = index<u64>(deref(ast).heads, prior_field);
+    let prior_field_same: own Bool = token_text_equal(source: source, tokens: tokens, left: prior_field_token, right: name_token);
+    match prior_field_same {
+      True() => {
+        return prior_field;
+      }
+      False() => {
+      }
+    }
+    set prior_field = index<u64>(deref(ast).next_siblings, prior_field);
+    set prior_field_steps = iadd.trap<u64>(prior_field_steps, 1_u64);
+  }
+}
+
+fn semantic_type_members_field_shape_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, field: own u64) -> own Bool reads('s 't 'a), traps {
+  let field_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: field, want: AstField());
+  match field_kind_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let field_type: own u64 = index<u64>(deref(ast).first_children, field);
+  let field_last: own u64 = index<u64>(deref(ast).last_children, field);
+  let field_one_type: own Bool = ieq<u64>(field_type, field_last);
+  match field_one_type {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let field_type_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: field_type, want: AstFieldType());
+  match field_type_kind_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let field_type_head: own u64 = index<u64>(deref(ast).heads, field_type);
+  let field_type_head_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: field_type_head);
+  match field_type_head_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let field_type_word: own Bool = parser_kind_at_is(tokens: tokens, token: field_type_head, want: 1_u64);
+  let field_type_named: own Bool = parser_kind_at_is(tokens: tokens, token: field_type_head, want: 3_u64);
+  let field_type_token_valid: own Bool = bor<Bool>(field_type_word, field_type_named);
+  match field_type_token_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let after_field_type: own u64 = index<u64>(deref(ast).next_siblings, field_type);
+  return ieq<u64>(after_field_type, ast_none);
+}
+
+fn semantic_index_type_members ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &uniq 'w SymbolTape, report: &uniq 'w SemanticTypeMembersReport) -> own unit reads('c 'w), writes('w), traps {
+  set deref(report).status = SemanticTypeMembersInvalidTokenTape();
+  set deref(report).declaration = ast_none;
+  set deref(report).related = symbol_none;
+  set deref(report).variant_count = 0_u64;
+  set deref(report).field_count = 0_u64;
+
+  let members_tokens_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
+  match members_tokens_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).related = deref(tokens).count;
+      return unit;
+    }
+  }
+
+  let members_ast_valid: own Bool = semantic_globals_ast_tape_valid(ast: ast);
+  match members_ast_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticTypeMembersInvalidAstTape();
+      set deref(report).related = deref(ast).count;
+      return unit;
+    }
+  }
+
+  let members_symbols_valid: own Bool = False();
+  region 'type_members_symbols_validate {
+    set members_symbols_valid = symbol_tape_entries_valid(source: source, tokens: tokens, symbols: &uniq 'type_members_symbols_validate deref(symbols));
+  }
+  match members_symbols_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticTypeMembersInvalidSymbolTape();
+      set deref(report).related = deref(symbols).count;
+      return unit;
+    }
+  }
+
+  let members_root: own u64 = deref(ast).root;
+  let members_root_kind: own AstKind = index<AstKind>(deref(ast).kinds, members_root);
+  let members_program_tag: own AstKind = AstProgram();
+  let members_is_program: own Bool = ieq<AstKind>(members_root_kind, members_program_tag);
+  match members_is_program {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticTypeMembersExpectedProgram();
+      set deref(report).declaration = members_root;
+      set deref(report).related = members_root;
+      return unit;
+    }
+  }
+
+  let members_first_top: own u64 = index<u64>(deref(ast).first_children, members_root);
+  let members_last_top: own u64 = index<u64>(deref(ast).last_children, members_root);
+  let members_first_none: own Bool = ieq<u64>(members_first_top, ast_none);
+  let members_last_none: own Bool = ieq<u64>(members_last_top, ast_none);
+  let members_top_pair_valid: own Bool = ieq<Bool>(members_first_none, members_last_none);
+  match members_top_pair_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticTypeMembersInvalidAstTape();
+      set deref(report).declaration = members_root;
+      set deref(report).related = members_last_top;
+      return unit;
+    }
+  }
+  match members_first_none {
+    True() => {
+      set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+      set deref(report).declaration = members_root;
+      set deref(report).related = members_root;
+      return unit;
+    }
+    False() => {
+    }
+  }
+
+  let members_top: own u64 = members_first_top;
+  let members_previous_top: own u64 = ast_none;
+  let members_top_steps: own u64 = 0_u64;
+  let members_ast_count: own u64 = deref(ast).count;
+  let members_variant_total: own u64 = 0_u64;
+  let members_field_total: own u64 = 0_u64;
+  loop @validate_type_member_tops {
+    match ilt<u64>(members_top_steps, members_ast_count) {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticTypeMembersInvalidAstTape();
+        set deref(report).declaration = members_previous_top;
+        set deref(report).related = members_top;
+        return unit;
+      }
+    }
+    let members_top_valid: own Bool = semantic_type_members_node_valid(ast: ast, node: members_top);
+    match members_top_valid {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticTypeMembersInvalidAstTape();
+        set deref(report).declaration = members_previous_top;
+        set deref(report).related = members_top;
+        return unit;
+      }
+    }
+    let members_top_kind: own AstKind = index<AstKind>(deref(ast).kinds, members_top);
+    let members_enum_tag: own AstKind = AstEnumDecl();
+    let members_struct_tag: own AstKind = AstStructDecl();
+    let members_function_tag: own AstKind = AstFunction();
+    let members_const_tag: own AstKind = AstConstDecl();
+    let members_is_enum: own Bool = ieq<AstKind>(members_top_kind, members_enum_tag);
+    let members_is_struct: own Bool = ieq<AstKind>(members_top_kind, members_struct_tag);
+    let members_is_function: own Bool = ieq<AstKind>(members_top_kind, members_function_tag);
+    let members_is_const: own Bool = ieq<AstKind>(members_top_kind, members_const_tag);
+    let members_is_type: own Bool = bor<Bool>(members_is_enum, members_is_struct);
+    let members_is_value: own Bool = bor<Bool>(members_is_function, members_is_const);
+    let members_top_recognized: own Bool = bor<Bool>(members_is_type, members_is_value);
+    match members_top_recognized {
+      True() => {
+      }
+      False() => {
+        set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+        set deref(report).declaration = members_top;
+        set deref(report).related = members_top;
+        return unit;
+      }
+    }
+
+    match members_is_enum {
+      True() => {
+        let enum_head_valid: own Bool = semantic_type_members_head_valid(source: source, tokens: tokens, ast: ast, node: members_top, want_kind: 1_u64);
+        match enum_head_valid {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+            set deref(report).declaration = members_top;
+            set deref(report).related = members_top;
+            return unit;
+          }
+        }
+        let enum_head_token: own u64 = index<u64>(deref(ast).heads, members_top);
+        let enum_word_valid: own Bool = parser_word4(source: source, tokens: tokens, token: enum_head_token, a: 101_u8, b: 110_u8, c: 117_u8, d: 109_u8);
+        match enum_word_valid {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+            set deref(report).declaration = members_top;
+            set deref(report).related = enum_head_token;
+            return unit;
+          }
+        }
+        let enum_name: own u64 = index<u64>(deref(ast).first_children, members_top);
+        let enum_last_member: own u64 = index<u64>(deref(ast).last_children, members_top);
+        let enum_name_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: enum_name, want: AstEnumName());
+        let enum_name_leaf_valid: own Bool = semantic_type_members_leaf_valid(ast: ast, node: enum_name);
+        let enum_name_shape_valid: own Bool = band<Bool>(enum_name_kind_valid, enum_name_leaf_valid);
+        match enum_name_shape_valid {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+            set deref(report).declaration = members_top;
+            set deref(report).related = enum_name;
+            return unit;
+          }
+        }
+        let enum_name_token_valid: own Bool = semantic_type_members_head_valid(source: source, tokens: tokens, ast: ast, node: enum_name, want_kind: 3_u64);
+        match enum_name_token_valid {
+          True() => {
+          }
+          False() => {
+            let bad_enum_name_token: own u64 = index<u64>(deref(ast).heads, enum_name);
+            set deref(report).status = SemanticTypeMembersInvalidNameToken();
+            set deref(report).declaration = enum_name;
+            set deref(report).related = bad_enum_name_token;
+            return unit;
+          }
+        }
+        let enum_variant: own u64 = index<u64>(deref(ast).next_siblings, enum_name);
+        let enum_previous_member: own u64 = enum_name;
+        let enum_member_steps: own u64 = 0_u64;
+        loop @validate_enum_members {
+          match ieq<u64>(enum_variant, ast_none) {
+            True() => {
+              break @validate_enum_members;
+            }
+            False() => {
+            }
+          }
+          match ilt<u64>(enum_member_steps, members_ast_count) {
+            True() => {
+            }
+            False() => {
+              set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+              set deref(report).declaration = members_top;
+              set deref(report).related = enum_variant;
+              return unit;
+            }
+          }
+          let enum_variant_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: enum_variant, want: AstVariant());
+          let enum_variant_leaf_valid: own Bool = semantic_type_members_leaf_valid(ast: ast, node: enum_variant);
+          let enum_variant_shape_valid: own Bool = band<Bool>(enum_variant_kind_valid, enum_variant_leaf_valid);
+          match enum_variant_shape_valid {
+            True() => {
+            }
+            False() => {
+              set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+              set deref(report).declaration = enum_variant;
+              set deref(report).related = enum_variant;
+              return unit;
+            }
+          }
+          let enum_variant_token: own u64 = index<u64>(deref(ast).heads, enum_variant);
+          let enum_variant_name_valid: own Bool = semantic_type_members_head_valid(source: source, tokens: tokens, ast: ast, node: enum_variant, want_kind: 3_u64);
+          match enum_variant_name_valid {
+            True() => {
+            }
+            False() => {
+              set deref(report).status = SemanticTypeMembersInvalidNameToken();
+              set deref(report).declaration = enum_variant;
+              set deref(report).related = enum_variant_token;
+              return unit;
+            }
+          }
+          let prelude_constructor_code: own PreludeConstructorCode = semantic_prelude_constructor_code(source: source, tokens: tokens, token: enum_variant_token);
+          let prelude_constructor_unknown_tag: own PreludeConstructorCode = PreludeConstructorUnknown();
+          let prelude_constructor_unknown: own Bool = ieq<PreludeConstructorCode>(prelude_constructor_code, prelude_constructor_unknown_tag);
+          match prelude_constructor_unknown {
+            True() => {
+            }
+            False() => {
+              set deref(report).status = SemanticTypeMembersDuplicate();
+              set deref(report).declaration = enum_variant;
+              set deref(report).related = symbol_none;
+              return unit;
+            }
+          }
+          let enum_prior_variant: own u64 = semantic_type_members_prior_variant(source: source, tokens: tokens, ast: ast, root: members_root, current: enum_variant, name_token: enum_variant_token);
+          match ieq<u64>(enum_prior_variant, ast_none) {
+            True() => {
+            }
+            False() => {
+              set deref(report).status = SemanticTypeMembersDuplicate();
+              set deref(report).declaration = enum_variant;
+              set deref(report).related = enum_prior_variant;
+              return unit;
+            }
+          }
+          let enum_existing_slot: own u64 = symbol_none;
+          region 'type_member_find_variant {
+            set enum_existing_slot = symbol_find_slot(source: source, tokens: tokens, symbols: &uniq 'type_member_find_variant deref(symbols), space_code: 4_u64, scope: symbol_none, name_token: enum_variant_token);
+          }
+          match ieq<u64>(enum_existing_slot, symbol_none) {
+            True() => {
+            }
+            False() => {
+              let enum_existing_declaration: own u64 = index<u64>(deref(symbols).declarations, enum_existing_slot);
+              set deref(report).status = SemanticTypeMembersDuplicate();
+              set deref(report).declaration = enum_variant;
+              set deref(report).related = enum_existing_declaration;
+              return unit;
+            }
+          }
+          set members_variant_total = iadd.trap<u64>(members_variant_total, 1_u64);
+          set deref(report).variant_count = members_variant_total;
+          set enum_previous_member = enum_variant;
+          set enum_variant = index<u64>(deref(ast).next_siblings, enum_variant);
+          set enum_member_steps = iadd.trap<u64>(enum_member_steps, 1_u64);
+        }
+        let enum_last_matches: own Bool = ieq<u64>(enum_previous_member, enum_last_member);
+        match enum_last_matches {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+            set deref(report).declaration = members_top;
+            set deref(report).related = enum_last_member;
+            return unit;
+          }
+        }
+      }
+      False() => {
+        match members_is_struct {
+          True() => {
+            let struct_head_valid: own Bool = semantic_type_members_head_valid(source: source, tokens: tokens, ast: ast, node: members_top, want_kind: 1_u64);
+            match struct_head_valid {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                set deref(report).declaration = members_top;
+                set deref(report).related = members_top;
+                return unit;
+              }
+            }
+            let struct_head_token: own u64 = index<u64>(deref(ast).heads, members_top);
+            let struct_word_valid: own Bool = parser_word6(source: source, tokens: tokens, token: struct_head_token, a: 115_u8, b: 116_u8, c: 114_u8, d: 117_u8, e: 99_u8, f: 116_u8);
+            match struct_word_valid {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                set deref(report).declaration = members_top;
+                set deref(report).related = struct_head_token;
+                return unit;
+              }
+            }
+            let struct_name: own u64 = index<u64>(deref(ast).first_children, members_top);
+            let struct_last_member: own u64 = index<u64>(deref(ast).last_children, members_top);
+            let struct_name_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: struct_name, want: AstStructName());
+            let struct_name_leaf_valid: own Bool = semantic_type_members_leaf_valid(ast: ast, node: struct_name);
+            let struct_name_shape_valid: own Bool = band<Bool>(struct_name_kind_valid, struct_name_leaf_valid);
+            match struct_name_shape_valid {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                set deref(report).declaration = members_top;
+                set deref(report).related = struct_name;
+                return unit;
+              }
+            }
+            let struct_name_token_valid: own Bool = semantic_type_members_head_valid(source: source, tokens: tokens, ast: ast, node: struct_name, want_kind: 3_u64);
+            match struct_name_token_valid {
+              True() => {
+              }
+              False() => {
+                let bad_struct_name_token: own u64 = index<u64>(deref(ast).heads, struct_name);
+                set deref(report).status = SemanticTypeMembersInvalidNameToken();
+                set deref(report).declaration = struct_name;
+                set deref(report).related = bad_struct_name_token;
+                return unit;
+              }
+            }
+            let struct_field: own u64 = index<u64>(deref(ast).next_siblings, struct_name);
+            let struct_first_field: own u64 = struct_field;
+            let struct_previous_member: own u64 = struct_name;
+            let struct_member_steps: own u64 = 0_u64;
+            loop @validate_struct_members {
+              match ieq<u64>(struct_field, ast_none) {
+                True() => {
+                  break @validate_struct_members;
+                }
+                False() => {
+                }
+              }
+              match ilt<u64>(struct_member_steps, members_ast_count) {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                  set deref(report).declaration = members_top;
+                  set deref(report).related = struct_field;
+                  return unit;
+                }
+              }
+              let struct_field_ref_valid: own Bool = semantic_type_members_node_valid(ast: ast, node: struct_field);
+              match struct_field_ref_valid {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                  set deref(report).declaration = members_top;
+                  set deref(report).related = struct_field;
+                  return unit;
+                }
+              }
+              let struct_field_name_token: own u64 = index<u64>(deref(ast).heads, struct_field);
+              let struct_field_name_valid: own Bool = semantic_type_members_head_valid(source: source, tokens: tokens, ast: ast, node: struct_field, want_kind: 1_u64);
+              match struct_field_name_valid {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticTypeMembersInvalidNameToken();
+                  set deref(report).declaration = struct_field;
+                  set deref(report).related = struct_field_name_token;
+                  return unit;
+                }
+              }
+              let struct_field_shape_valid: own Bool = semantic_type_members_field_shape_valid(source: source, tokens: tokens, ast: ast, field: struct_field);
+              match struct_field_shape_valid {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                  set deref(report).declaration = struct_field;
+                  set deref(report).related = struct_field;
+                  return unit;
+                }
+              }
+              match ieq<u64>(struct_field, struct_first_field) {
+                True() => {
+                }
+                False() => {
+                  let struct_prior_field: own u64 = semantic_type_members_prior_field(source: source, tokens: tokens, ast: ast, first: struct_first_field, current: struct_field, name_token: struct_field_name_token);
+                  match ieq<u64>(struct_prior_field, ast_none) {
+                    True() => {
+                    }
+                    False() => {
+                      set deref(report).status = SemanticTypeMembersDuplicate();
+                      set deref(report).declaration = struct_field;
+                      set deref(report).related = struct_prior_field;
+                      return unit;
+                    }
+                  }
+                }
+              }
+              let struct_existing_slot: own u64 = symbol_none;
+              region 'type_member_find_field {
+                set struct_existing_slot = symbol_find_slot(source: source, tokens: tokens, symbols: &uniq 'type_member_find_field deref(symbols), space_code: 0_u64, scope: members_top, name_token: struct_field_name_token);
+              }
+              match ieq<u64>(struct_existing_slot, symbol_none) {
+                True() => {
+                }
+                False() => {
+                  let struct_existing_declaration: own u64 = index<u64>(deref(symbols).declarations, struct_existing_slot);
+                  set deref(report).status = SemanticTypeMembersDuplicate();
+                  set deref(report).declaration = struct_field;
+                  set deref(report).related = struct_existing_declaration;
+                  return unit;
+                }
+              }
+              set members_field_total = iadd.trap<u64>(members_field_total, 1_u64);
+              set deref(report).field_count = members_field_total;
+              set struct_previous_member = struct_field;
+              set struct_field = index<u64>(deref(ast).next_siblings, struct_field);
+              set struct_member_steps = iadd.trap<u64>(struct_member_steps, 1_u64);
+            }
+            let struct_last_matches: own Bool = ieq<u64>(struct_previous_member, struct_last_member);
+            match struct_last_matches {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticTypeMembersMalformedDeclaration();
+                set deref(report).declaration = members_top;
+                set deref(report).related = struct_last_member;
+                return unit;
+              }
+            }
+          }
+          False() => {
+          }
+        }
+      }
+    }
+
+    set members_previous_top = members_top;
+    let members_next_top: own u64 = index<u64>(deref(ast).next_siblings, members_top);
+    match ieq<u64>(members_next_top, ast_none) {
+      True() => {
+        break @validate_type_member_tops;
+      }
+      False() => {
+        set members_top = members_next_top;
+      }
+    }
+    set members_top_steps = iadd.trap<u64>(members_top_steps, 1_u64);
+  }
+
+  let members_last_matches: own Bool = ieq<u64>(members_previous_top, members_last_top);
+  match members_last_matches {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticTypeMembersInvalidAstTape();
+      set deref(report).declaration = members_root;
+      set deref(report).related = members_last_top;
+      return unit;
+    }
+  }
+
+  let members_needed: own u64 = iadd.trap<u64>(members_variant_total, members_field_total);
+  let members_capacity_valid: own Bool = False();
+  region 'type_members_capacity_check {
+    set members_capacity_valid = semantic_globals_capacity_valid(symbols: &uniq 'type_members_capacity_check deref(symbols), needed: members_needed);
+  }
+  match members_capacity_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticTypeMembersCapacity();
+      set deref(report).declaration = ast_none;
+      set deref(report).related = members_needed;
+      return unit;
+    }
+  }
+
+  let members_base: own u64 = deref(symbols).count;
+  let members_committed: own u64 = 0_u64;
+  let commit_top: own u64 = members_first_top;
+  let commit_top_steps: own u64 = 0_u64;
+  loop @commit_type_member_tops {
+    let commit_top_kind: own AstKind = index<AstKind>(deref(ast).kinds, commit_top);
+    let commit_enum_tag: own AstKind = AstEnumDecl();
+    let commit_struct_tag: own AstKind = AstStructDecl();
+    let commit_is_enum: own Bool = ieq<AstKind>(commit_top_kind, commit_enum_tag);
+    let commit_is_struct: own Bool = ieq<AstKind>(commit_top_kind, commit_struct_tag);
+    match commit_is_enum {
+      True() => {
+        let commit_enum_name: own u64 = index<u64>(deref(ast).first_children, commit_top);
+        let commit_variant: own u64 = index<u64>(deref(ast).next_siblings, commit_enum_name);
+        loop @commit_enum_variants {
+          match ieq<u64>(commit_variant, ast_none) {
+            True() => {
+              break @commit_enum_variants;
+            }
+            False() => {
+            }
+          }
+          let commit_variant_slot: own u64 = iadd.trap<u64>(members_base, members_committed);
+          let commit_variant_token: own u64 = index<u64>(deref(ast).heads, commit_variant);
+          set index<SymbolNamespace>(deref(symbols).namespaces, commit_variant_slot) = SymbolConstructor();
+          set index<u64>(deref(symbols).scopes, commit_variant_slot) = symbol_none;
+          set index<u64>(deref(symbols).name_tokens, commit_variant_slot) = commit_variant_token;
+          set index<u64>(deref(symbols).declarations, commit_variant_slot) = commit_variant;
+          set members_committed = iadd.trap<u64>(members_committed, 1_u64);
+          set commit_variant = index<u64>(deref(ast).next_siblings, commit_variant);
+        }
+      }
+      False() => {
+        match commit_is_struct {
+          True() => {
+            let commit_struct_name: own u64 = index<u64>(deref(ast).first_children, commit_top);
+            let commit_field: own u64 = index<u64>(deref(ast).next_siblings, commit_struct_name);
+            loop @commit_struct_fields {
+              match ieq<u64>(commit_field, ast_none) {
+                True() => {
+                  break @commit_struct_fields;
+                }
+                False() => {
+                }
+              }
+              let commit_field_slot: own u64 = iadd.trap<u64>(members_base, members_committed);
+              let commit_field_token: own u64 = index<u64>(deref(ast).heads, commit_field);
+              set index<SymbolNamespace>(deref(symbols).namespaces, commit_field_slot) = SymbolValue();
+              set index<u64>(deref(symbols).scopes, commit_field_slot) = commit_top;
+              set index<u64>(deref(symbols).name_tokens, commit_field_slot) = commit_field_token;
+              set index<u64>(deref(symbols).declarations, commit_field_slot) = commit_field;
+              set members_committed = iadd.trap<u64>(members_committed, 1_u64);
+              set commit_field = index<u64>(deref(ast).next_siblings, commit_field);
+            }
+          }
+          False() => {
+          }
+        }
+      }
+    }
+    let commit_next_top: own u64 = index<u64>(deref(ast).next_siblings, commit_top);
+    set commit_top_steps = iadd.trap<u64>(commit_top_steps, 1_u64);
+    match ieq<u64>(commit_next_top, ast_none) {
+      True() => {
+        break @commit_type_member_tops;
+      }
+      False() => {
+        set commit_top = commit_next_top;
+      }
+    }
+  }
+
+  let members_final_count: own u64 = iadd.trap<u64>(members_base, members_committed);
+  set deref(symbols).count = members_final_count;
+  set deref(symbols).status = SymbolClean();
+  set deref(symbols).related = symbol_none;
+  set deref(report).status = SemanticTypeMembersClean();
+  set deref(report).declaration = ast_none;
+  set deref(report).related = symbol_none;
+  set deref(report).variant_count = members_variant_total;
+  set deref(report).field_count = members_field_total;
+  return unit;
+}

@@ -523,46 +523,10 @@ fn parser_parse_match_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
   let scrutinee_cursor: own u64 = iadd.trap<u64>(cursor, 1_u64);
   let scrutinee_node: own u64 = ast_none;
   let scrutinee_next: own u64 = scrutinee_cursor;
-  let op_table: own Bool = parser_kind_at_is(tokens: tokens, token: scrutinee_cursor, want: 2_u64);
-  match op_table {
-    True() => {
-      region 'control_match_op_table {
-        let parsed_op_table: own ParserNodeResult = parser_parse_expression_v2(source: source, tokens: tokens, out: &uniq 'control_match_op_table deref(out), cursor: scrutinee_cursor);
-        set scrutinee_node = parsed_op_table.node;
-        set scrutinee_next = parsed_op_table.next;
-      }
-    }
-    False() => {
-      let word: own Bool = parser_kind_at_is(tokens: tokens, token: scrutinee_cursor, want: 1_u64);
-      match word {
-        True() => {
-          let after_word: own u64 = iadd.trap<u64>(scrutinee_cursor, 1_u64);
-          let generic: own Bool = parser_symbol_is(source: source, tokens: tokens, token: after_word, want: 60_u8);
-          match generic {
-            True() => {
-              region 'control_match_word_table {
-                let parsed_word_table: own ParserNodeResult = parser_parse_expression_v2(source: source, tokens: tokens, out: &uniq 'control_match_word_table deref(out), cursor: scrutinee_cursor);
-                set scrutinee_node = parsed_word_table.node;
-                set scrutinee_next = parsed_word_table.next;
-              }
-            }
-            False() => {
-              region 'control_match_place {
-                let parsed_place: own ParserNodeResult = parser_parse_place_v2(source: source, tokens: tokens, out: &uniq 'control_match_place deref(out), cursor: scrutinee_cursor);
-                set scrutinee_node = parsed_place.node;
-                set scrutinee_next = parsed_place.next;
-              }
-            }
-          }
-        }
-        False() => {
-          region 'control_match_scrutinee_error {
-            parser_fail(tokens: tokens, out: &uniq 'control_match_scrutinee_error deref(out), status: ParseExpectedPlace(), token: scrutinee_cursor);
-          }
-          return ParserNodeResult(node: ast_none, next: scrutinee_cursor);
-        }
-      }
-    }
+  region 'control_match_expression {
+    let parsed_match_expression: own ParserNodeResult = parser_parse_expression_v2(source: source, tokens: tokens, out: &uniq 'control_match_expression deref(out), cursor: scrutinee_cursor);
+    set scrutinee_node = parsed_match_expression.node;
+    set scrutinee_next = parsed_match_expression.next;
   }
   match ieq<u64>(scrutinee_node, ast_none) {
     True() => {

@@ -34,18 +34,102 @@ fn byte_tape_push ['o] (out: &uniq 'o ByteTape, byte: own u8) -> own unit reads(
   return unit;
 }
 
+fn byte_tape_emit_chunk ['o] (out: &uniq 'o ByteTape, count: own u64, b0: own u8, b1: own u8, b2: own u8, b3: own u8, b4: own u8, b5: own u8, b6: own u8, b7: own u8) -> own unit reads('o), writes('o), traps {
+  let chunk_count_valid: own Bool = ile<u64>(count, 8_u64);
+  match chunk_count_valid {
+    True() => {
+    }
+    False() => {
+      set deref(out).status = ByteInvalidState();
+      return unit;
+    }
+  }
+
+  match ige<u64>(count, 1_u64) {
+    True() => {
+      region 'chunk_b0 {
+        byte_tape_push(out: &uniq 'chunk_b0 deref(out), byte: b0);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 2_u64) {
+    True() => {
+      region 'chunk_b1 {
+        byte_tape_push(out: &uniq 'chunk_b1 deref(out), byte: b1);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 3_u64) {
+    True() => {
+      region 'chunk_b2 {
+        byte_tape_push(out: &uniq 'chunk_b2 deref(out), byte: b2);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 4_u64) {
+    True() => {
+      region 'chunk_b3 {
+        byte_tape_push(out: &uniq 'chunk_b3 deref(out), byte: b3);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 5_u64) {
+    True() => {
+      region 'chunk_b4 {
+        byte_tape_push(out: &uniq 'chunk_b4 deref(out), byte: b4);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 6_u64) {
+    True() => {
+      region 'chunk_b5 {
+        byte_tape_push(out: &uniq 'chunk_b5 deref(out), byte: b5);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 7_u64) {
+    True() => {
+      region 'chunk_b6 {
+        byte_tape_push(out: &uniq 'chunk_b6 deref(out), byte: b6);
+      }
+    }
+    False() => {
+      return unit;
+    }
+  }
+  match ige<u64>(count, 8_u64) {
+    True() => {
+      region 'chunk_b7 {
+        byte_tape_push(out: &uniq 'chunk_b7 deref(out), byte: b7);
+      }
+    }
+    False() => {
+    }
+  }
+  return unit;
+}
+
 fn byte_tape_emit_prefix ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), writes('o), traps {
-  region 'b0 {
-    byte_tape_push(out: &uniq 'b0 deref(out), byte: 120_u8);
-  }
-  region 'b1 {
-    byte_tape_push(out: &uniq 'b1 deref(out), byte: 108_u8);
-  }
-  region 'b2 {
-    byte_tape_push(out: &uniq 'b2 deref(out), byte: 99_u8);
-  }
-  region 'b3 {
-    byte_tape_push(out: &uniq 'b3 deref(out), byte: 32_u8);
+  region 'prefix_chunk {
+    byte_tape_emit_chunk(out: &uniq 'prefix_chunk deref(out), count: 4_u64, b0: 120_u8, b1: 108_u8, b2: 99_u8, b3: 32_u8, b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);
   }
   return unit;
 }

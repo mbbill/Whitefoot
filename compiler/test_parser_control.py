@@ -174,6 +174,17 @@ def assert_empty_block(library):
     assert_head_invariant(tokens, columns, ast)
 
 
+def assert_expression_scrutinee(library):
+    data = b"{ match call(value: x) { True() => {} } }"
+    _, _, tokens, columns, ast = parse_control(library, data)
+    assert ast.status == STATUS["ParseClean"]
+    match_node = only_node(columns, ast, AST["AstMatch"])
+    match_children = children_of(columns, match_node)
+    assert columns[0][match_children[0]] == AST["AstUserCall"]
+    assert columns[0][match_children[1]] == AST["AstMatchArm"]
+    assert_head_invariant(tokens, columns, ast)
+
+
 def assert_failures(library):
     cases = []
     data = b"{ loop {} }"
@@ -194,8 +205,6 @@ def assert_failures(library):
     cases.append((data, "ParseExpectedFatArrow", span(data, b"{", 15)))
     data = b"{ match value { True() => {}, } }"
     cases.append((data, "ParseExpectedTypeName", span(data, b",")))
-    data = b"{ match call(value: x) { True() => {} } }"
-    cases.append((data, "ParseExpectedPlace", span(data, b"call")))
     data = b"{ set = value; }"
     cases.append((data, "ParseExpectedPlace", span(data, b"=")))
     data = b"{ set value other; }"
@@ -245,6 +254,7 @@ def main():
         library.parser_control_run.restype = None
         assert_control_tree(library)
         assert_empty_block(library)
+        assert_expression_scrutinee(library)
         assert_failures(library)
         assert_capacity(library)
     print(

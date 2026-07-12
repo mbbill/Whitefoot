@@ -1,0 +1,164 @@
+enum SemanticAllTypesStatus {
+  SemanticAllTypesClean();
+  SemanticAllTypesResolveFailed();
+}
+
+struct SemanticAllTypesReport {
+  status: SemanticAllTypesStatus;
+  type_node: u64;
+  resolved_count: u64;
+  resolve_status: SemanticTypeResolveStatus;
+  resolve_related: u64;
+}
+
+fn semantic_all_types_fail ['w] (report: &uniq 'w SemanticAllTypesReport, type_node: own u64, resolved_count: own u64, resolve_status: own SemanticTypeResolveStatus, resolve_related: own u64) -> own unit writes('w) {
+  set deref(report).status = SemanticAllTypesResolveFailed();
+  set deref(report).type_node = type_node;
+  set deref(report).resolved_count = resolved_count;
+  set deref(report).resolve_status = resolve_status;
+  set deref(report).resolve_related = resolve_related;
+  return unit;
+}
+
+fn semantic_resolve_all_types ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &uniq 'w SymbolTape, validation: &uniq 'w AstValidationReport, report: &uniq 'w SemanticAllTypesReport) -> own unit reads('c 'w), writes('w), traps {
+  region 'all_types_begin {
+    semantic_all_types_fail(report: &uniq 'all_types_begin deref(report), type_node: ast_none, resolved_count: 0_u64, resolve_status: SemanticTypeResolveInvalidTokenTape(), resolve_related: symbol_none);
+  }
+
+  let tokens_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
+  match tokens_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).resolve_related = deref(tokens).count;
+      return unit;
+    }
+  }
+
+  let parse_clean_tag: own ParseStatus = ParseClean();
+  let parse_clean: own Bool = ieq<ParseStatus>(deref(ast).status, parse_clean_tag);
+  match parse_clean {
+    True() => {
+    }
+    False() => {
+      set deref(report).resolve_status = SemanticTypeResolveInvalidAstTape();
+      set deref(report).resolve_related = deref(ast).count;
+      return unit;
+    }
+  }
+
+  let validation_clean_tag: own AstValidationStatus = AstValidationClean();
+  let validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, validation_clean_tag);
+  match validation_clean {
+    True() => {
+    }
+    False() => {
+      let scratch_tag: own AstValidationStatus = AstValidationScratchCapacity();
+      let scratch_error: own Bool = ieq<AstValidationStatus>(deref(validation).status, scratch_tag);
+      match scratch_error {
+        True() => {
+          set deref(report).resolve_status = SemanticTypeResolveInvalidScratch();
+        }
+        False() => {
+          set deref(report).resolve_status = SemanticTypeResolveInvalidAstTape();
+        }
+      }
+      set deref(report).type_node = deref(validation).node;
+      set deref(report).resolve_related = deref(validation).related;
+      return unit;
+    }
+  }
+
+  let ast_count: own u64 = deref(ast).count;
+  let ast_base_valid: own Bool = semantic_type_ast_columns_valid(tokens: tokens, ast: ast);
+  let kinds_length: own u64 = len<AstKind>(deref(ast).kinds);
+  let starts_length: own u64 = len<u64>(deref(ast).starts);
+  let ends_length: own u64 = len<u64>(deref(ast).ends);
+  let kinds_ok: own Bool = ige<u64>(kinds_length, ast_count);
+  let starts_ok: own Bool = ige<u64>(starts_length, ast_count);
+  let ends_ok: own Bool = ige<u64>(ends_length, ast_count);
+  let offsets_ok: own Bool = band<Bool>(starts_ok, ends_ok);
+  let ast_extra_valid: own Bool = band<Bool>(kinds_ok, offsets_ok);
+  let ast_valid: own Bool = band<Bool>(ast_base_valid, ast_extra_valid);
+  match ast_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).resolve_status = SemanticTypeResolveInvalidAstTape();
+      set deref(report).resolve_related = ast_count;
+      return unit;
+    }
+  }
+
+  let stack_length: own u64 = len<u64>(deref(validation).stack);
+  match ige<u64>(stack_length, ast_count) {
+    True() => {
+    }
+    False() => {
+      set deref(report).resolve_status = SemanticTypeResolveInvalidScratch();
+      set deref(report).type_node = stack_length;
+      set deref(report).resolve_related = ast_count;
+      return unit;
+    }
+  }
+
+  let symbol_columns_valid: own Bool = False();
+  region 'all_types_symbol_columns {
+    set symbol_columns_valid = symbol_tape_columns_valid(symbols: &uniq 'all_types_symbol_columns deref(symbols));
+  }
+  let symbol_clean_tag: own SymbolStatus = SymbolClean();
+  let symbol_clean: own Bool = ieq<SymbolStatus>(deref(symbols).status, symbol_clean_tag);
+  let symbols_valid: own Bool = band<Bool>(symbol_columns_valid, symbol_clean);
+  match symbols_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).resolve_status = SemanticTypeResolveInvalidSymbolTape();
+      set deref(report).resolve_related = deref(symbols).count;
+      return unit;
+    }
+  }
+
+  let cursor: own u64 = 0_u64;
+  let resolved: own u64 = 0_u64;
+  loop @all_type_nodes {
+    match ige<u64>(cursor, ast_count) {
+      True() => {
+        set deref(report).status = SemanticAllTypesClean();
+        set deref(report).type_node = ast_none;
+        set deref(report).resolved_count = resolved;
+        set deref(report).resolve_status = SemanticTypeResolveClean();
+        set deref(report).resolve_related = symbol_none;
+        return unit;
+      }
+      False() => {
+      }
+    }
+
+    let kind: own AstKind = index<AstKind>(deref(ast).kinds, cursor);
+    match semantic_type_resolve_kind_valid(kind: kind) {
+      True() => {
+        let nested: own SemanticTypeResolveReport = SemanticTypeResolveReport(status: SemanticTypeResolveInvalidAstTape(), node: ast_none, related: symbol_none);
+        region 'all_types_resolve_one {
+          semantic_resolve_type(source: source, tokens: tokens, ast: ast, symbols: &uniq 'all_types_resolve_one deref(symbols), type_node: cursor, validation: &uniq 'all_types_resolve_one deref(validation), report: &uniq 'all_types_resolve_one nested);
+        }
+        let clean_tag: own SemanticTypeResolveStatus = SemanticTypeResolveClean();
+        let clean: own Bool = ieq<SemanticTypeResolveStatus>(nested.status, clean_tag);
+        match clean {
+          True() => {
+            set resolved = iadd.trap<u64>(resolved, 1_u64);
+          }
+          False() => {
+            region 'all_types_nested_failure {
+              semantic_all_types_fail(report: &uniq 'all_types_nested_failure deref(report), type_node: cursor, resolved_count: resolved, resolve_status: nested.status, resolve_related: nested.related);
+            }
+            return unit;
+          }
+        }
+      }
+      False() => {
+      }
+    }
+    set cursor = iadd.trap<u64>(cursor, 1_u64);
+  }
+}

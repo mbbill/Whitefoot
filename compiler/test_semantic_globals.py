@@ -221,6 +221,29 @@ def assert_duplicate_namespaces(library):
     )
 
 
+def assert_prelude_type_collisions(library):
+    for name in (b"Bool", b"Option", b"Result", b"Overflow", b"DivError", b"NarrowError"):
+        data = b"struct " + name + b" { value: u64; }\n"
+        source_storage, source, _, tokens, columns, ast = parsed(library, data)
+        declarations = children_of(columns, ast.root)
+        assert len(declarations) == 1
+        storage, physical, symbols = empty_symbols(
+            library, (ast.count, ast.count, ast.count, ast.count)
+        )
+        before = column_snapshot(storage, physical)
+        for _ in range(2):
+            report = invoke(library, source, tokens, ast, symbols)
+            assert (report.status, report.declaration, report.related) == (
+                SEMANTIC_GLOBALS_DUPLICATE,
+                declarations[0],
+                SYMBOL_NONE,
+            ), (name, report.status, report.declaration, report.related)
+            assert symbols.count == 0
+            assert column_snapshot(storage, physical) == before
+            assert_guards(storage, physical)
+        assert source_storage
+
+
 def assert_existing_duplicate(library):
     data = b"fn alpha () -> own unit pure { return unit; }"
     source_storage, source, _, tokens, columns, ast = parsed(library, data)
@@ -434,12 +457,13 @@ def main():
         configure(library)
         assert_mixed_index_and_lookup(library)
         assert_duplicate_namespaces(library)
+        assert_prelude_type_collisions(library)
         assert_existing_duplicate(library)
         assert_asymmetric_capacity_is_atomic(library)
         assert_hostile_inputs(library)
         print(
-            "semantic globals: mixed items, exact lookup, shared namespaces, "
-            "malformed AST/token/symbol tapes, atomic duplicates and capacity pass"
+            "semantic globals: mixed items, exact lookup, prelude type reservations, "
+            "shared namespaces, malformed tapes, atomic duplicates and capacity pass"
         )
 
 

@@ -1,0 +1,451 @@
+enum PreludeTypeCode {
+  PreludeTypeUnknown();
+  PreludeTypeBool();
+  PreludeTypeOption();
+  PreludeTypeResult();
+  PreludeTypeOverflow();
+  PreludeTypeDivError();
+  PreludeTypeNarrowError();
+}
+
+enum PreludeConstructorCode {
+  PreludeConstructorUnknown();
+  PreludeConstructorTrue();
+  PreludeConstructorFalse();
+  PreludeConstructorNone();
+  PreludeConstructorSome();
+  PreludeConstructorOk();
+  PreludeConstructorErr();
+  PreludeConstructorOverflow();
+  PreludeConstructorDivideByZero();
+  PreludeConstructorDivOverflow();
+  PreludeConstructorNarrowError();
+}
+
+fn semantic_prelude_typeid_width ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64, width: own u64) -> own Bool reads('s 't), traps {
+  let ordinal_valid: own Bool = token_ordinal_valid(source: source, tokens: tokens, token: token);
+  match ordinal_valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let kinds_length: own u64 = len<TokenKind>(deref(tokens).kinds);
+  match ilt<u64>(token, kinds_length) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let observed_kind: own TokenKind = index<TokenKind>(deref(tokens).kinds, token);
+  let typeid_kind: own TokenKind = TokTypeId();
+  let correct_kind: own Bool = ieq<TokenKind>(observed_kind, typeid_kind);
+  match correct_kind {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let end: own u64 = index<u64>(deref(tokens).ends, token);
+  let observed_width: own u64 = isub.wrap<u64>(end, start);
+  return ieq<u64>(observed_width, width);
+}
+
+fn semantic_prelude_chunk1 ['s] (source: &'s buffer<u8>, start: own u64, a: own u8) -> own Bool reads('s), traps {
+  let b0: own u8 = index<u8>(deref(source), start);
+  return ieq<u8>(b0, a);
+}
+
+fn semantic_prelude_chunk2 ['s] (source: &'s buffer<u8>, start: own u64, a: own u8, b: own u8) -> own Bool reads('s), traps {
+  let p1: own u64 = iadd.trap<u64>(start, 1_u64);
+  let b0: own u8 = index<u8>(deref(source), start);
+  let b1: own u8 = index<u8>(deref(source), p1);
+  let e0: own Bool = ieq<u8>(b0, a);
+  let e1: own Bool = ieq<u8>(b1, b);
+  return band<Bool>(e0, e1);
+}
+
+fn semantic_prelude_chunk3 ['s] (source: &'s buffer<u8>, start: own u64, a: own u8, b: own u8, c: own u8) -> own Bool reads('s), traps {
+  let p1: own u64 = iadd.trap<u64>(start, 1_u64);
+  let p2: own u64 = iadd.trap<u64>(start, 2_u64);
+  let b0: own u8 = index<u8>(deref(source), start);
+  let b1: own u8 = index<u8>(deref(source), p1);
+  let b2: own u8 = index<u8>(deref(source), p2);
+  let e0: own Bool = ieq<u8>(b0, a);
+  let e1: own Bool = ieq<u8>(b1, b);
+  let e2: own Bool = ieq<u8>(b2, c);
+  let first: own Bool = band<Bool>(e0, e1);
+  return band<Bool>(first, e2);
+}
+
+fn semantic_prelude_chunk4 ['s] (source: &'s buffer<u8>, start: own u64, a: own u8, b: own u8, c: own u8, d: own u8) -> own Bool reads('s), traps {
+  let p1: own u64 = iadd.trap<u64>(start, 1_u64);
+  let p2: own u64 = iadd.trap<u64>(start, 2_u64);
+  let p3: own u64 = iadd.trap<u64>(start, 3_u64);
+  let b0: own u8 = index<u8>(deref(source), start);
+  let b1: own u8 = index<u8>(deref(source), p1);
+  let b2: own u8 = index<u8>(deref(source), p2);
+  let b3: own u8 = index<u8>(deref(source), p3);
+  let e0: own Bool = ieq<u8>(b0, a);
+  let e1: own Bool = ieq<u8>(b1, b);
+  let e2: own Bool = ieq<u8>(b2, c);
+  let e3: own Bool = ieq<u8>(b3, d);
+  let first: own Bool = band<Bool>(e0, e1);
+  let second: own Bool = band<Bool>(e2, e3);
+  return band<Bool>(first, second);
+}
+
+fn semantic_prelude_is_bool ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 4_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  return semantic_prelude_chunk4(source: source, start: start, a: 66_u8, b: 111_u8, c: 111_u8, d: 108_u8);
+}
+
+fn semantic_prelude_is_option ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 6_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let tail: own u64 = iadd.trap<u64>(start, 4_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 79_u8, b: 112_u8, c: 116_u8, d: 105_u8);
+  let second: own Bool = semantic_prelude_chunk2(source: source, start: tail, a: 111_u8, b: 110_u8);
+  return band<Bool>(first, second);
+}
+
+fn semantic_prelude_is_result ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 6_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let tail: own u64 = iadd.trap<u64>(start, 4_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 82_u8, b: 101_u8, c: 115_u8, d: 117_u8);
+  let second: own Bool = semantic_prelude_chunk2(source: source, start: tail, a: 108_u8, b: 116_u8);
+  return band<Bool>(first, second);
+}
+
+fn semantic_prelude_is_overflow ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 8_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let tail: own u64 = iadd.trap<u64>(start, 4_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 79_u8, b: 118_u8, c: 101_u8, d: 114_u8);
+  let second: own Bool = semantic_prelude_chunk4(source: source, start: tail, a: 102_u8, b: 108_u8, c: 111_u8, d: 119_u8);
+  return band<Bool>(first, second);
+}
+
+fn semantic_prelude_is_div_error ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 8_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let tail: own u64 = iadd.trap<u64>(start, 4_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 68_u8, b: 105_u8, c: 118_u8, d: 69_u8);
+  let second: own Bool = semantic_prelude_chunk4(source: source, start: tail, a: 114_u8, b: 114_u8, c: 111_u8, d: 114_u8);
+  return band<Bool>(first, second);
+}
+
+fn semantic_prelude_is_narrow_error ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 11_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let middle: own u64 = iadd.trap<u64>(start, 4_u64);
+  let tail: own u64 = iadd.trap<u64>(start, 8_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 78_u8, b: 97_u8, c: 114_u8, d: 114_u8);
+  let second: own Bool = semantic_prelude_chunk4(source: source, start: middle, a: 111_u8, b: 119_u8, c: 69_u8, d: 114_u8);
+  let third: own Bool = semantic_prelude_chunk3(source: source, start: tail, a: 114_u8, b: 111_u8, c: 114_u8);
+  let first_two: own Bool = band<Bool>(first, second);
+  return band<Bool>(first_two, third);
+}
+
+fn semantic_prelude_is_true ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 4_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  return semantic_prelude_chunk4(source: source, start: start, a: 84_u8, b: 114_u8, c: 117_u8, d: 101_u8);
+}
+
+fn semantic_prelude_is_false ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 5_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let tail: own u64 = iadd.trap<u64>(start, 4_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 70_u8, b: 97_u8, c: 108_u8, d: 115_u8);
+  let second: own Bool = semantic_prelude_chunk1(source: source, start: tail, a: 101_u8);
+  return band<Bool>(first, second);
+}
+
+fn semantic_prelude_is_none ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 4_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  return semantic_prelude_chunk4(source: source, start: start, a: 78_u8, b: 111_u8, c: 110_u8, d: 101_u8);
+}
+
+fn semantic_prelude_is_some ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 4_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  return semantic_prelude_chunk4(source: source, start: start, a: 83_u8, b: 111_u8, c: 109_u8, d: 101_u8);
+}
+
+fn semantic_prelude_is_ok ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 2_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  return semantic_prelude_chunk2(source: source, start: start, a: 79_u8, b: 107_u8);
+}
+
+fn semantic_prelude_is_err ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 3_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  return semantic_prelude_chunk3(source: source, start: start, a: 69_u8, b: 114_u8, c: 114_u8);
+}
+
+fn semantic_prelude_is_divide_by_zero ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 12_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let middle: own u64 = iadd.trap<u64>(start, 4_u64);
+  let tail: own u64 = iadd.trap<u64>(start, 8_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 68_u8, b: 105_u8, c: 118_u8, d: 105_u8);
+  let second: own Bool = semantic_prelude_chunk4(source: source, start: middle, a: 100_u8, b: 101_u8, c: 66_u8, d: 121_u8);
+  let third: own Bool = semantic_prelude_chunk4(source: source, start: tail, a: 90_u8, b: 101_u8, c: 114_u8, d: 111_u8);
+  let first_two: own Bool = band<Bool>(first, second);
+  return band<Bool>(first_two, third);
+}
+
+fn semantic_prelude_is_div_overflow ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
+  let valid: own Bool = semantic_prelude_typeid_width(source: source, tokens: tokens, token: token, width: 11_u64);
+  match valid {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let start: own u64 = index<u64>(deref(tokens).starts, token);
+  let middle: own u64 = iadd.trap<u64>(start, 4_u64);
+  let tail: own u64 = iadd.trap<u64>(start, 8_u64);
+  let first: own Bool = semantic_prelude_chunk4(source: source, start: start, a: 68_u8, b: 105_u8, c: 118_u8, d: 79_u8);
+  let second: own Bool = semantic_prelude_chunk4(source: source, start: middle, a: 118_u8, b: 101_u8, c: 114_u8, d: 102_u8);
+  let third: own Bool = semantic_prelude_chunk3(source: source, start: tail, a: 108_u8, b: 111_u8, c: 119_u8);
+  let first_two: own Bool = band<Bool>(first, second);
+  return band<Bool>(first_two, third);
+}
+
+fn semantic_prelude_type_code ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own PreludeTypeCode reads('s 't), traps {
+  let is_bool: own Bool = semantic_prelude_is_bool(source: source, tokens: tokens, token: token);
+  match is_bool {
+    True() => {
+      return PreludeTypeBool();
+    }
+    False() => {
+    }
+  }
+  let is_option: own Bool = semantic_prelude_is_option(source: source, tokens: tokens, token: token);
+  match is_option {
+    True() => {
+      return PreludeTypeOption();
+    }
+    False() => {
+    }
+  }
+  let is_result: own Bool = semantic_prelude_is_result(source: source, tokens: tokens, token: token);
+  match is_result {
+    True() => {
+      return PreludeTypeResult();
+    }
+    False() => {
+    }
+  }
+  let is_overflow: own Bool = semantic_prelude_is_overflow(source: source, tokens: tokens, token: token);
+  match is_overflow {
+    True() => {
+      return PreludeTypeOverflow();
+    }
+    False() => {
+    }
+  }
+  let is_div_error: own Bool = semantic_prelude_is_div_error(source: source, tokens: tokens, token: token);
+  match is_div_error {
+    True() => {
+      return PreludeTypeDivError();
+    }
+    False() => {
+    }
+  }
+  let is_narrow_error: own Bool = semantic_prelude_is_narrow_error(source: source, tokens: tokens, token: token);
+  match is_narrow_error {
+    True() => {
+      return PreludeTypeNarrowError();
+    }
+    False() => {
+      return PreludeTypeUnknown();
+    }
+  }
+}
+
+fn semantic_prelude_constructor_code ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own PreludeConstructorCode reads('s 't), traps {
+  let is_true: own Bool = semantic_prelude_is_true(source: source, tokens: tokens, token: token);
+  match is_true {
+    True() => {
+      return PreludeConstructorTrue();
+    }
+    False() => {
+    }
+  }
+  let is_false: own Bool = semantic_prelude_is_false(source: source, tokens: tokens, token: token);
+  match is_false {
+    True() => {
+      return PreludeConstructorFalse();
+    }
+    False() => {
+    }
+  }
+  let is_none: own Bool = semantic_prelude_is_none(source: source, tokens: tokens, token: token);
+  match is_none {
+    True() => {
+      return PreludeConstructorNone();
+    }
+    False() => {
+    }
+  }
+  let is_some: own Bool = semantic_prelude_is_some(source: source, tokens: tokens, token: token);
+  match is_some {
+    True() => {
+      return PreludeConstructorSome();
+    }
+    False() => {
+    }
+  }
+  let is_ok: own Bool = semantic_prelude_is_ok(source: source, tokens: tokens, token: token);
+  match is_ok {
+    True() => {
+      return PreludeConstructorOk();
+    }
+    False() => {
+    }
+  }
+  let is_err: own Bool = semantic_prelude_is_err(source: source, tokens: tokens, token: token);
+  match is_err {
+    True() => {
+      return PreludeConstructorErr();
+    }
+    False() => {
+    }
+  }
+  let is_overflow: own Bool = semantic_prelude_is_overflow(source: source, tokens: tokens, token: token);
+  match is_overflow {
+    True() => {
+      return PreludeConstructorOverflow();
+    }
+    False() => {
+    }
+  }
+  let is_divide_by_zero: own Bool = semantic_prelude_is_divide_by_zero(source: source, tokens: tokens, token: token);
+  match is_divide_by_zero {
+    True() => {
+      return PreludeConstructorDivideByZero();
+    }
+    False() => {
+    }
+  }
+  let is_div_overflow: own Bool = semantic_prelude_is_div_overflow(source: source, tokens: tokens, token: token);
+  match is_div_overflow {
+    True() => {
+      return PreludeConstructorDivOverflow();
+    }
+    False() => {
+    }
+  }
+  let is_narrow_error: own Bool = semantic_prelude_is_narrow_error(source: source, tokens: tokens, token: token);
+  match is_narrow_error {
+    True() => {
+      return PreludeConstructorNarrowError();
+    }
+    False() => {
+      return PreludeConstructorUnknown();
+    }
+  }
+}

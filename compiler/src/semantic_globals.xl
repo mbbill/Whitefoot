@@ -373,6 +373,26 @@ fn semantic_index_globals ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
       }
     }
 
+    match is_type {
+      True() => {
+        let prelude_type_code: own PreludeTypeCode = semantic_prelude_type_code(source: source, tokens: tokens, token: name_token);
+        let prelude_type_unknown_tag: own PreludeTypeCode = PreludeTypeUnknown();
+        let prelude_type_unknown: own Bool = ieq<PreludeTypeCode>(prelude_type_code, prelude_type_unknown_tag);
+        match prelude_type_unknown {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticGlobalsDuplicate();
+            set deref(report).declaration = cursor;
+            set deref(report).related = symbol_none;
+            return unit;
+          }
+        }
+      }
+      False() => {
+      }
+    }
+
     let prior_duplicate: own u64 = semantic_globals_prior_duplicate(source: source, tokens: tokens, ast: ast, current: cursor, current_name_token: name_token, current_is_type: is_type);
     match ieq<u64>(prior_duplicate, symbol_none) {
       True() => {

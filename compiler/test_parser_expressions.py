@@ -168,6 +168,24 @@ def assert_constructor_tree(library):
     assert children_of(columns, 3) == [4]
 
 
+def assert_move_tree(library):
+    data = b"ParserNodeResult(node: move value, next: 1_u64)"
+    _, token_storage, tokens, columns, ast, result = parse_entry(library, data)
+    assert_success_invariants(data, token_storage, tokens, columns, ast, result)
+    assert list(columns[0][: ast.count]) == [
+        AST["AstConstructor"],
+        AST["AstNamedArgument"],
+        AST["AstMove"],
+        AST["AstPlaceUse"],
+        AST["AstNamedArgument"],
+        AST["AstNumericLiteral"],
+    ]
+    assert children_of(columns, 0) == [1, 4]
+    assert children_of(columns, 1) == [2]
+    assert children_of(columns, 2) == [3]
+    assert data[columns[2][2] : columns[3][2]] == b"move value"
+
+
 def assert_settable_places(library):
     good = [
         b"value",
@@ -181,7 +199,13 @@ def assert_settable_places(library):
         )
         assert_success_invariants(data, token_storage, tokens, columns, ast, result)
 
-    for data in (b"unit", b"1_u64", b"call(value: x)", b"len<u64>(x)"):
+    for data in (
+        b"unit",
+        b"1_u64",
+        b"move value",
+        b"call(value: x)",
+        b"len<u64>(x)",
+    ):
         _, _, _, _, ast, result = parse_entry(library, data, entry="place")
         assert result.node == AST_NONE
         assert ast.status == STATUS["ParseExpectedPlace"]
@@ -197,6 +221,8 @@ def assert_malformed(library):
         b"index<u64>(x y)": "ParseExpectedCommaOrRightParen",
         b"&'r": "ParseExpectedPlace",
         b"& x": "ParseExpectedRegion",
+        b"move 1_u64": "ParseExpectedPlace",
+        b"move call(value: x)": "ParseExpectedPlace",
         b"True(": "ParseExpectedName",
         b"Pair(left x)": "ParseExpectedColon",
         b"Pair(left: f(x: y))": "ParseExpectedAtom",
@@ -225,6 +251,7 @@ def main():
         assert_fixture_cases(library)
         assert_place_tree(library)
         assert_constructor_tree(library)
+        assert_move_tree(library)
         assert_settable_places(library)
         assert_malformed(library)
         assert_capacity_guard(library)

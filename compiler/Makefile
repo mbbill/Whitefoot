@@ -11,7 +11,13 @@ check:
 	$(PY) test_output.py
 	$(PY) test_source_names.py
 	$(PY) test_symbols.py
+	$(PY) test_semantic_prelude.py
 	$(PY) test_semantic_types.py
 	$(PY) test_semantic_globals.py
+	$(PY) test_semantic_type_resolve.py
+	$(PY) test_semantic_all_types.py
+	$(PY) test_semantic_function_symbols.py
+	$(PY) test_semantic_type_members.py
+	$(PY) test_frontend.py
 
 .PHONY: check
