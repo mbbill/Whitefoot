@@ -83,6 +83,73 @@ def _named_args(name, base):                       # Result<T,E>/Option<T> -> [a
     args.append(inner[start:])
     return args
 
+def _democ_type_spellings(structs, enums, fns, consts=()):
+    """Collect every parsed type spelling that can influence codegen.
+
+    This is a stage-0 profile inventory, not language type inference.  Walking the
+    parsed trees also catches body-local Result/Option uses that signature-only
+    typedef discovery used to miss.
+    """
+    found = []
+    for fields in structs.values():
+        found.extend(field["ty"] for field in fields)
+    for variants in enums.values():
+        for _variant, fields in variants:
+            found.extend(field["ty"] for field in fields)
+    found.extend(const["ty"] for const in consts)
+    def walk(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in ("ty", "rty") and isinstance(child, str):
+                    found.append(child)
+                walk(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                walk(child)
+    walk(fns)
+    return found
+
+def _validate_erased_prelude_payloads(type_spellings, enums):
+    """Fail explicitly when disposable stage 0 cannot represent a generic payload.
+
+    democ's bootstrap ABI erases Result/Option payloads into one i64 word.  Integer
+    and tag-only-enum payloads are lossless in that slot; aggregates, unit, floats,
+    and nested generic values require the production compiler's monomorphized layout.
+    They must never fall through to malformed LLVM or a Python exception.
+    """
+    prelude_copy = {
+        name for name, variants in PRELUDE_ENUMS.items()
+        if all(not variant["fields"] for variant in variants)
+    }
+    user_copy = {
+        name for name, variants in enums.items()
+        if all(not fields for _variant, fields in variants)
+    }
+    allowed = set(INT_LLTY) | prelude_copy | user_copy | {"Bool"}
+    def inspect(spelling):
+        for base in ("Result", "Option"):
+            args = _named_args(spelling, base)
+            if args is None:
+                continue
+            bad = [arg for arg in args if arg not in allowed]
+            if bad:
+                raise SystemExit(
+                    "democ: aggregate Result/Option payloads are outside the "
+                    f"stage-0 word-erased profile ({spelling}: {', '.join(bad)}); "
+                    "compile this shape with xlc"
+                )
+            for arg in args:
+                inspect(arg)
+            return
+        for container in ("buffer", "array"):
+            args = _named_args(spelling, container)
+            if args is not None:
+                for arg in args:
+                    inspect(arg)
+                return
+    for spelling in type_spellings:
+        inspect(spelling)
+
 def _tybytes(name):
     """sizeof(T) for buffer_new's OP-9 byte-size computation (monomorphization-time)."""
     if name == "Bool" or name in _TAGONLY2: return 1   # i1 stores as one byte
@@ -1241,6 +1308,8 @@ class Gen:
                     g.give_slot = slot; g.give_ty = "unit" if s["ty"] == "unit" else gty
                     g.gen_match(s["match"])
                     g.give_slot, g.give_ty = prev, prevt
+                    if g.term:                         # every arm transferred control; no merge value exists
+                        continue
                     if s["ty"] == "unit":
                         g.env[s["n"]] = {"k": "unit"}
                     elif decl_base in g.payenums or decl_base in ("Result", "Option"):
@@ -3092,6 +3161,8 @@ def compile_program(src, alias=True, elide_bounds=False, proof_report=None):
         raise ValueError("proof_report must be a fresh empty list")
     structs, enums, fns, contracts, conforms, consts = parse_program(src)
     check_program(build_prog(structs, enums, fns, consts))
+    type_spellings = _democ_type_spellings(structs, enums, fns, consts)
+    _validate_erased_prelude_payloads(type_spellings, enums)
     proved = discharge_laws(contracts, conforms, fns)
     if proof_report is not None:
         # Snapshot source-derived obligation diagnostics before any facts-only
@@ -3202,8 +3273,7 @@ def compile_program(src, alias=True, elide_bounds=False, proof_report=None):
     etyp = [f"%{en} = type {{ i32, i{_enum_payw(vs)} }}"
             for en, vs in enums.items() if _enum_payw(vs) > 0]
     for pen in ("Result", "Option"):                   # prelude payload enums: word-erased i64
-        used = any(f["rty"].split("<")[0] == pen
-                   or any(q["ty"].split("<")[0] == pen for q in f["params"]) for f in fns)
+        used = any(spelling.split("<", 1)[0] == pen for spelling in type_spellings)
         if used:
             etyp.append(f"%{pen} = type {{ i32, i64 }}")
     # fixed header (sadd/ssub/smul.i32 + trap emitted unconditionally for byte-stable i32 output);

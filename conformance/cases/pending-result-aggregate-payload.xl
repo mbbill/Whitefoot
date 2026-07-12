@@ -1,0 +1,8 @@
+struct Pair {
+  value: u64;
+}
+
+fn make () -> own Result<Pair,u64> pure {
+  let pair: own Pair = Pair(value: 1_u64);
+  return Ok(value: move pair);
+}
