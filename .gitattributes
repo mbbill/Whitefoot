@@ -1,0 +1,2 @@
+# Archived patches preserve reviewed bytes, including whitespace represented by the diff.
+experiments/data-layout-owning-sequence/DETACHED_CANDIDATE.patch whitespace=-blank-at-eol,-blank-at-eof

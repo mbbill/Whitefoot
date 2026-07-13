@@ -35,6 +35,10 @@ Files:
   resolutions.
 - `HOSTILE_REVIEW_1.md` is the independent post-prototype rejection report;
   it records semantic, target, surface, and benchmark-protocol blockers.
+- `DETACHED_CANDIDATE.patch` is the exact 57,547-byte binary diff reviewed by
+  `HOSTILE_REVIEW_1.md`, based on Git `58baa71fb4c36a4728dd42aea6b05ce4be7aa0b1`;
+  its SHA-256 is
+  `bed070414f9552ea105857404d6d1296b98542a28cc65fa6899a197830e6774e`.
 - `HARNESS.md`, `run_baseline.py`, `native/fsoa_sample.c`, and `schemas/`
   define the reproducible native cold-wrapper `F-SOA` recorder.  This is
   isolated experiment infrastructure, not production implementation.

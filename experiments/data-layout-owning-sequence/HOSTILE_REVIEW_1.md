@@ -7,7 +7,9 @@ Reviewed artifact: detached worktree `/private/tmp/xlang-e01a-candidate` at
 parent `58baa71fb4c36a4728dd42aea6b05ce4be7aa0b1`, dirty patch SHA-256
 `bed070414f9552ea105857404d6d1296b98542a28cc65fa6899a197830e6774e`.
 The patch changes only candidate checker/codegen tests and implementation
-(`+968/-21` across four files); it has no feature flag.
+(`+968/-21` across four files); it has no feature flag.  The exact reviewed
+57,547-byte diff is archived as [`DETACHED_CANDIDATE.patch`](DETACHED_CANDIDATE.patch)
+and applies cleanly to the recorded parent.
 
 ## Verdict
 

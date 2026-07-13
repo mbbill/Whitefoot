@@ -1,0 +1,1233 @@
+diff --git a/prototype/checker/checker.py b/prototype/checker/checker.py
+index d1563b9..4706dba 100644
+--- a/prototype/checker/checker.py
++++ b/prototype/checker/checker.py
+@@ -510,6 +510,40 @@ def _ty_eq(a, b) -> bool:
+     return False
+ 
+ 
++def _ty_exact_eq(a, b) -> bool:
++    """Representation-sensitive equality for explicitly typed places.
++
++    `_ty_eq` deliberately permits `any`/erased compatibility.  `index<T>` is
++    a lowering input, so its T must identify the exact element stride instead.
++    """
++    if not isinstance(a, dict) or not isinstance(b, dict):
++        return False
++    if a.get("kind") != b.get("kind"):
++        return False
++    k = a.get("kind")
++    if k == "prim":
++        return a.get("name") == b.get("name")
++    if k == "named":
++        if a.get("name") != b.get("name"):
++            return False
++        aa, ba = a.get("args"), b.get("args")
++        if aa is None or ba is None:
++            return aa is None and ba is None
++        return (len(aa) == len(ba)
++                and all(_ty_exact_eq(x, y) for x, y in zip(aa, ba)))
++    if k in ("unit", "any"):
++        return True
++    if k in ("box", "buffer"):
++        return _ty_exact_eq(a.get("elem"), b.get("elem"))
++    if k == "array":
++        return (a.get("n") == b.get("n")
++                and _ty_exact_eq(a.get("elem"), b.get("elem")))
++    if k in ("slice", "arena"):
++        return (a.get("region") == b.get("region")
++                and _ty_exact_eq(a.get("elem"), b.get("elem")))
++    return False
++
++
+ def _ty_str(t) -> str:
+     if t is None:
+         return "?"
+@@ -716,6 +750,8 @@ class Program:
+             self.enums[en] = list(variants)
+         self.fns = prog.get("fns", {})
+         self.consts = prog.get("consts", {})   # const name -> TY  [CONST-2]
++        # E0.1a candidate only: storage eligibility, deliberately not OWN-1 Copy.
++        self._flat_record_cache = {}
+         self.variant_of = {}   # variant name -> (enum name, fields)  [TYPE-6 global]
+         for en, variants in self.enums.items():
+             for v in variants:
+@@ -725,6 +761,119 @@ class Program:
+                         f"enum variant {name} declared in both "
+                         f"{self.variant_of[name][0]} and {en} (globally unique)")
+                 self.variant_of[name] = (en, v["fields"])
++        self._check_flat_buffer_types(prog)
++
++    # -- E0.1a candidate Flat-record predicate -----------------------------
++    # No marker is added. `buffer<Record>` is the explicit AoS choice; Flat is
++    # recursively derived while every struct remains affine under OWN-1.
++    def _flat_field_error(self, ty, stack):
++        if not isinstance(ty, dict):
++            return "malformed field type"
++        k = ty.get("kind")
++        if k == "prim":
++            name = ty.get("name")
++            if name in PRIMS - {"f32", "f64"}:
++                return None
++            if name in ("f32", "f64"):
++                return f"{name} lacks exact disposable-stage-0 lowering"
++            return f"unknown primitive {name!r}"
++        if k == "named":
++            name = ty.get("name")
++            if ty.get("args") is not None:
++                return f"generic/instantiated named type {name} is outside the first slice"
++            if name in self.structs:
++                ok, why = self._flat_record_shape(name, stack)
++                return None if ok else why
++            variants = self.enums.get(name)
++            if variants is None:
++                return f"unknown named type {name}"
++            if variants and all(not v["fields"] for v in variants):
++                return None
++            return f"payload or empty enum {name} is not a first-slice Flat field"
++        if k == "unit":
++            return "unit/zero-sized fields are outside the first slice"
++        if k == "array":
++            return "array fields are deferred in the first slice"
++        if k == "slice" or k == "ref":
++            return f"{k} carries borrowed provenance"
++        if k in ("box", "buffer", "arena", "cell", "sequence"):
++            return f"{k} carries ownership, provenance, or a drop obligation"
++        if k == "any":
++            return "erased/any fields cannot prove a fixed ownership-free layout"
++        return f"unsupported field type kind {k!r}"
++
++    def _flat_record_shape(self, name, stack=()):
++        cached = self._flat_record_cache.get(name)
++        if cached is not None:
++            return cached
++        if name in stack:
++            cycle = " -> ".join((*stack, name))
++            return False, f"by-value record cycle {cycle} has no finite layout"
++        fields = self.structs.get(name)
++        if fields is None:
++            return False, f"unknown record {name}"
++        if name in self.enums:
++            result = (False,
++                      f"record name {name} collides with an enum and is ambiguous")
++            self._flat_record_cache[name] = result
++            return result
++        if not fields:
++            result = (False,
++                      f"record {name} is zero-sized; zero-stride elements are deferred")
++            self._flat_record_cache[name] = result
++            return result
++        child_stack = (*stack, name)
++        for fld in fields:
++            why = self._flat_field_error(fld.get("ty"), child_stack)
++            if why is not None:
++                result = (False, f"field {name}.{fld.get('name')}: {why}")
++                self._flat_record_cache[name] = result
++                return result
++        result = (True, None)
++        self._flat_record_cache[name] = result
++        return result
++
++    def is_flat_record(self, ty):
++        if not isinstance(ty, dict) or ty.get("kind") != "named":
++            return False
++        name = ty.get("name")
++        if ty.get("args") is not None or name not in self.structs:
++            return False
++        return self._flat_record_shape(name)[0]
++
++    def require_flat_record(self, ty, context):
++        """Validate only the newly admitted named-record element case.
++
++        Existing non-record buffer elements retain the baseline checker path;
++        E0.1a must not silently narrow primitive/tag-enum buffer semantics.
++        """
++        if not (isinstance(ty, dict) and ty.get("kind") == "named"
++                and ty.get("name") in self.structs):
++            return
++        name = ty["name"]
++        if ty.get("args") is not None:
++            raise CheckError("PROTO-FLAT",
++                f"{context}: generic record {name} is outside E0.1a")
++        ok, why = self._flat_record_shape(name)
++        if not ok:
++            raise CheckError("PROTO-FLAT",
++                f"{context}: record {name} is not a first-slice Flat element: {why}")
++
++    def _check_flat_buffer_types(self, prog):
++        """Find every explicit buffer type and fail closed on its element."""
++        def walk(node, path):
++            if isinstance(node, list):
++                for i, item in enumerate(node):
++                    walk(item, f"{path}[{i}]")
++                return
++            if not isinstance(node, dict):
++                return
++            if node.get("kind") == "buffer":
++                self.require_flat_record(node.get("elem"),
++                                         f"buffer element at {path}")
++            for key, value in node.items():
++                walk(value, f"{path}.{key}")
++        walk(prog, "program")
+ 
+ 
+ class TypeChecker:
+@@ -780,6 +929,18 @@ class TypeChecker:
+                 raise CheckError("STOR-1",
+                     "whole-buffer replacement is outside v0 pending the "
+                     "take/replace + old-storage release rule; mutate indexed elements instead")
++            flat_elem = self._flat_buffer_index_elem(s["place"])
++            if flat_elem is not None and not self._is_copy(d):
++                # Candidate slice: aggregate transfer inside a Flat buffer is
++                # only a whole-row overwrite from a fresh construction.
++                fresh_row = (s["place"].get("kind") == "index"
++                             and s["expr"].get("kind") == "construct"
++                             and s["expr"].get("name") == flat_elem.get("name"))
++                if not fresh_row:
++                    raise CheckError("PROTO-FLAT",
++                        "Flat-buffer aggregate overwrite must target one whole row "
++                        "and use a fresh construction; moved/nested aggregate "
++                        "overwrites are deferred")
+             de = self.expr_desc(s["expr"])
+             self.expect_value(de, d["ty"], "set")
+         elif k == "return":
+@@ -921,6 +1082,11 @@ class TypeChecker:
+             return {"cat": "val", "ty": e.get("ty", {"kind": "unit"})}
+         if k == "move":
+             d = self.place_desc(e["place"])
++            if (self._flat_buffer_index_elem(e["place"]) is not None
++                    and not self._is_copy(d)):
++                raise CheckError("PROTO-FLAT",
++                    "moving a Flat record out of a fully initialized fixed buffer "
++                    "would leave a hole; borrow/project fields instead")
+             if self._is_copy(d) and d["cat"] != "ref":     # OWN-1: one spelling — copies are used bare
+                 raise CheckError("OWN-1",
+                     f"move of copy value of type {_ty_str(d['ty'])}; copy values are used bare")
+@@ -928,6 +1094,10 @@ class TypeChecker:
+         if k == "use":                                     # OWN-1: a bare use must be copy
+             d = self.place_desc(e["place"])
+             if not self._is_copy(d):
++                if self._flat_buffer_index_elem(e["place"]) is not None:
++                    raise CheckError("OWN-1",
++                        "bare whole-record read from a Flat buffer would add "
++                        "implicit aggregate Copy; borrow/project fields instead")
+                 if getattr(self, "_place_read_operand", False):   # len/slice_of read their
+                     return d                                       # place operand, never consume
+                 raise CheckError("OWN-1",
+@@ -977,10 +1147,41 @@ class TypeChecker:
+         if k == "index":
+             d = self.place_desc(place["place"])
+             if d["ty"].get("kind") in ("array", "buffer", "slice"):
+-                return {"cat": "val", "ty": d["ty"]["elem"]}
++                actual = d["ty"]["elem"]
++                atom_expr = place.get("atom")
++                if not isinstance(atom_expr, dict) or "kind" not in atom_expr:
++                    raise CheckError("TYPE-5",
++                        "index lacks its required u64 offset atom")
++                atom = self.expr_desc(atom_expr)
++                self.expect_value(atom, {"kind": "prim", "name": "u64"},
++                                  "index offset")
++                spelled = place.get("elem")
++                if spelled is None:
++                    raise CheckError("TYPE-5",
++                        f"index of {_ty_str(d['ty'])} lacks its required exact "
++                        "element-type annotation")
++                if not _ty_exact_eq(spelled, actual):
++                    raise CheckError("TYPE-5",
++                        f"index element annotation {_ty_str(spelled)} != exact "
++                        f"container element type {_ty_str(actual)}")
++                return {"cat": "val", "ty": actual}
+             raise CheckError("TYPE-5", f"index of non-indexable {_ty_str(d['ty'])}")
+         raise CheckError("GRAM-5", f"bad place kind {k}")
+ 
++    def _flat_buffer_index_elem(self, place):
++        """Return the outer Flat-record element for a place under an index."""
++        p = place
++        while isinstance(p, dict):
++            if p.get("kind") == "index":
++                base = self.place_desc(p["place"])
++                bty = base.get("ty", {})
++                if bty.get("kind") == "buffer":
++                    elem = bty.get("elem")
++                    if self.P.is_flat_record(elem):
++                        return elem
++            p = p.get("place")
++        return None
++
+     def check_construct(self, e):
+         name = e["name"]
+         if name in self.P.structs:
+@@ -1026,6 +1227,27 @@ class TypeChecker:
+         if e.get("argnames") is not None:
+             raise CheckError("GRAM-11",
+                 f"table op {callee} takes positional operands, not named")
++        record_tyargs = [t for t in e.get("tyargs", [])
++                         if self.P.is_flat_record(t)]
++        if record_tyargs and callee.split(".")[0] not in {"buffer_new", "len"}:
++            raise CheckError("PROTO-FLAT",
++                f"table op {callee} is not defined on Flat records; "
++                "E0.1a gives no aggregate arithmetic, comparison, "
++                "reinterpretation, or padding semantics")
++        if callee.split(".")[0] == "buffer_new":
++            tyargs = e.get("tyargs", [])
++            if len(tyargs) != 1:
++                raise CheckError("PROTO-FLAT",
++                    "buffer_new in E0.1a requires exactly one explicit Flat "
++                    "element type")
++            elem = tyargs[0]
++            self.P.require_flat_record(elem, "buffer_new element")
++            if self.P.is_flat_record(elem) and len(e.get("args", [])) >= 2:
++                fill = e["args"][1]
++                if fill.get("kind") not in ("construct", "move"):
++                    raise CheckError("PROTO-FLAT",
++                        "buffer_new<Record> fill must be a fresh construction "
++                        "or an explicit move; records remain affine")
+         self._place_read_operand = callee in ("len", "slice_of")
+         try:
+             sig = op_type(callee, e.get("tyargs", []))
+@@ -1037,9 +1259,22 @@ class TypeChecker:
+             if len(e["args"]) != len(params):
+                 raise CheckError("GRAM-11",
+                     f"op {callee} expects {len(params)} operand(s), got {len(e['args'])}")
++            checked_args = []
+             for arg, (_cat, ty) in zip(e["args"], params):
+                 d = self.expr_desc(arg)
+                 self.expect_value(d, ty, f"operand of {callee}")
++                checked_args.append(d)
++            if callee.split(".")[0] == "len":
++                operand_ty = checked_args[0]["ty"]
++                if operand_ty.get("kind") not in ("buffer", "array", "slice"):
++                    raise CheckError("PROTO-FLAT",
++                        f"len operand has non-container type {_ty_str(operand_ty)}")
++                tyargs = e.get("tyargs", [])
++                if (len(tyargs) != 1
++                        or not _ty_exact_eq(tyargs[0], operand_ty["elem"])):
++                    raise CheckError("TYPE-5",
++                        "len element annotation must exactly match the container "
++                        f"element type {_ty_str(operand_ty['elem'])}")
+             return {"cat": rcat, "ty": rty}
+         finally:
+             self._place_read_operand = False
+diff --git a/prototype/checker/test_checker.py b/prototype/checker/test_checker.py
+index fd37396..073e6b4 100644
+--- a/prototype/checker/test_checker.py
++++ b/prototype/checker/test_checker.py
+@@ -381,6 +381,10 @@ class Positive(unittest.TestCase):
+ # ---------------------------------------------------------------------------
+ 
+ I32 = {"kind": "prim", "name": "i32"}
++U8 = {"kind": "prim", "name": "u8"}
++U64 = {"kind": "prim", "name": "u64"}
++F32 = {"kind": "prim", "name": "f32"}
++F64 = {"kind": "prim", "name": "f64"}
+ UNIT = {"kind": "unit"}
+ 
+ 
+@@ -396,6 +400,23 @@ def deref(pl):
+     return {"kind": "deref", "place": pl}
+ 
+ 
++def field(pl, name):
++    return {"kind": "field", "place": pl, "name": name}
++
++
++def index(pl, elem, atom=None):
++    return {"kind": "index", "place": pl, "elem": elem,
++            "atom": atom or lit(U64)}
++
++
++def buffer(elem):
++    return {"kind": "buffer", "elem": elem}
++
++
++def move(pl):
++    return {"kind": "move", "place": pl}
++
++
+ def lit(ty=I32):
+     return {"kind": "lit", "ty": ty}
+ 
+@@ -709,5 +730,328 @@ class ProgramLayer(unittest.TestCase):
+             {"kind": "return", "expr": lit(UNIT)}])}})
+ 
+ 
++class FlatRecordCandidate(unittest.TestCase):
++    """E0.1a detached-candidate semantics; PROTO-FLAT is non-normative."""
++
++    TAG = {"Tag": [{"variant": "Cold", "fields": []},
++                   {"variant": "Hot", "fields": []}]}
++    NESTED = {
++        "Leaf": [{"name": "tag", "ty": named("Tag")},
++                 {"name": "value", "ty": I32}],
++        "Row": [{"name": "leaf", "ty": named("Leaf")},
++                {"name": "offset", "ty": U64}],
++    }
++
++    def expect(self, rule, prog):
++        with self.assertRaises(CheckError) as cm:
++            check_program(prog)
++        self.assertEqual(cm.exception.rule, rule, str(cm.exception))
++
++    def ok(self, prog):
++        self.assertIsNone(check_program(prog))
++
++    @staticmethod
++    def unit_fn(params=(), body=None, regions=()):
++        return pfn(body or [{"kind": "return", "expr": lit(UNIT)}],
++                   params=list(params), regions=list(regions), rty=UNIT)
++
++    def buffer_param_program(self, structs, elem, enums=None):
++        f = self.unit_fn(params=[
++            {"name": "rows", "mode": own(), "ty": buffer(named(elem))}
++        ])
++        return {"structs": structs, "enums": enums or {}, "fns": {"f": f}}
++
++    def test_nested_flat_record_and_tag_enum_are_buffer_eligible(self):
++        self.ok(self.buffer_param_program(self.NESTED, "Row", self.TAG))
++
++    def test_existing_integer_and_tag_enum_buffer_elements_stay_eligible(self):
++        f = self.unit_fn(params=[
++            {"name": "ints", "mode": own(), "ty": buffer(I32)},
++            {"name": "tags", "mode": own(), "ty": buffer(named("Tag"))},
++        ])
++        self.ok({"structs": {}, "enums": self.TAG, "fns": {"f": f}})
++
++    def test_existing_float_buffer_acceptance_is_not_narrowed(self):
++        f = self.unit_fn(body=[
++            {"kind": "let", "name": "f32s", "mode": own(), "ty": buffer(F32),
++             "init": op("buffer_new", [lit(U64), lit(F32)], [F32])},
++            {"kind": "let", "name": "f64s", "mode": own(), "ty": buffer(F64),
++             "init": op("buffer_new", [lit(U64), lit(F64)], [F64])},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.ok({"structs": {}, "enums": {}, "fns": {"f": f}})
++
++    def test_naturally_padded_record_has_no_padding_semantics(self):
++        padded = {"Padded": [
++            {"name": "head", "ty": U8},
++            {"name": "payload", "ty": U64},
++            {"name": "tail", "ty": U8},
++        ]}
++        self.ok(self.buffer_param_program(padded, "Padded"))
++        record = named("Padded")
++        for opname, tyargs in (("ieq", [record]),
++                               ("reinterpret", [record, U64])):
++            with self.subTest(op=opname):
++                f = self.unit_fn(params=[
++                    {"name": "a", "mode": own(), "ty": record},
++                    {"name": "b", "mode": own(), "ty": record},
++                ], body=[
++                    {"kind": "expr",
++                     "expr": op(opname, [move(var("a")), move(var("b"))], tyargs)},
++                    {"kind": "return", "expr": lit(UNIT)},
++                ])
++                self.expect("PROTO-FLAT",
++                            {"structs": padded, "enums": {}, "fns": {"f": f}})
++
++    def test_buffer_new_record_consumes_explicit_move(self):
++        row = named("Row")
++        make = self.unit_fn(params=[
++            {"name": "seed", "mode": own(), "ty": row},
++        ], body=[
++            {"kind": "let", "name": "rows", "mode": own(),
++             "ty": buffer(row),
++             "init": op("buffer_new", [lit(U64), move(var("seed"))], [row])},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.ok({"structs": self.NESTED, "enums": self.TAG,
++                 "fns": {"make": make}})
++
++    def test_buffer_new_record_fresh_construction_is_explicit_fill(self):
++        row = named("Row")
++        fill = construct("Row", [
++            ("leaf", construct("Leaf", [
++                ("tag", construct("Cold", [])), ("value", lit())])),
++            ("offset", lit(U64)),
++        ])
++        make = self.unit_fn(body=[
++            {"kind": "let", "name": "rows", "mode": own(),
++             "ty": buffer(row),
++             "init": op("buffer_new", [lit(U64), fill], [row])},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.ok({"structs": self.NESTED, "enums": self.TAG,
++                 "fns": {"make": make}})
++
++    def test_flat_record_remains_affine_and_bare_fill_is_rejected(self):
++        row = named("Row")
++        plain = self.unit_fn(params=[
++            {"name": "seed", "mode": own(), "ty": row},
++        ], body=[
++            {"kind": "expr", "expr": use(var("seed"))},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.expect("OWN-1", {"structs": self.NESTED, "enums": self.TAG,
++                               "fns": {"plain": plain}})
++
++        fill = self.unit_fn(params=[
++            {"name": "seed", "mode": own(), "ty": row},
++        ], body=[
++            {"kind": "let", "name": "rows", "mode": own(),
++             "ty": buffer(row),
++             "init": op("buffer_new", [lit(U64), use(var("seed"))], [row])},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.expect("PROTO-FLAT", {"structs": self.NESTED, "enums": self.TAG,
++                                    "fns": {"fill": fill}})
++
++    def test_zero_count_still_consumes_fill(self):
++        row = named("Row")
++        f = self.unit_fn(params=[
++            {"name": "seed", "mode": own(), "ty": row},
++        ], body=[
++            {"kind": "let", "name": "rows", "mode": own(), "ty": buffer(row),
++             "init": op("buffer_new", [
++                 {"kind": "lit", "ty": U64, "value": 0}, move(var("seed"))
++             ], [row])},
++            {"kind": "expr", "expr": move(var("seed"))},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.expect("OWN-1", {"structs": self.NESTED, "enums": self.TAG,
++                               "fns": {"f": f}})
++
++    def test_scalar_projection_and_write(self):
++        row = named("Row")
++        value = field(field(index(var("rows"), row, use(var("i"))), "leaf"),
++                      "value")
++        read = pfn([{"kind": "return", "expr": use(value)}], params=[
++            {"name": "rows", "mode": own(), "ty": buffer(row)},
++            {"name": "i", "mode": own(), "ty": U64},
++        ], rty=I32)
++        self.ok({"structs": self.NESTED, "enums": self.TAG,
++                 "fns": {"read": read}})
++
++        target = field(field(index(var("rows"), row), "leaf"), "value")
++        write = self.unit_fn(params=[
++            {"name": "rows", "mode": own(), "ty": buffer(row)},
++        ], body=[
++            {"kind": "set", "place": target, "expr": lit(I32)},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.ok({"structs": self.NESTED, "enums": self.TAG,
++                 "fns": {"write": write}})
++
++    def test_whole_row_overwrite_is_fresh_only(self):
++        row = named("Row")
++        fresh = construct("Row", [
++            ("leaf", construct("Leaf", [
++                ("tag", construct("Hot", [])), ("value", lit())])),
++            ("offset", lit(U64)),
++        ])
++        good = self.unit_fn(params=[
++            {"name": "rows", "mode": own(), "ty": buffer(row)},
++        ], body=[
++            {"kind": "set", "place": index(var("rows"), row), "expr": fresh},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.ok({"structs": self.NESTED, "enums": self.TAG,
++                 "fns": {"good": good}})
++
++        moved = self.unit_fn(params=[
++            {"name": "rows", "mode": own(), "ty": buffer(row)},
++            {"name": "seed", "mode": own(), "ty": row},
++        ], body=[
++            {"kind": "set", "place": index(var("rows"), row),
++             "expr": move(var("seed"))},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.expect("PROTO-FLAT",
++                    {"structs": self.NESTED, "enums": self.TAG,
++                     "fns": {"moved": moved}})
++
++    def test_shared_and_unique_borrows_keep_buffer_root_aliasing(self):
++        row = named("Row")
++        for uniq in (False, True):
++            with self.subTest(uniq=uniq):
++                f = self.unit_fn(params=[
++                    {"name": "rows", "mode": own(), "ty": buffer(row)},
++                ], body=[
++                    {"kind": "region", "name": "r", "body": [
++                        {"kind": "let", "name": "p", "mode": ref("r", uniq),
++                         "ty": row,
++                         "init": {"kind": "borrow", "region": "r", "uniq": uniq,
++                                  "place": index(var("rows"), row)}},
++                    ]},
++                    {"kind": "return", "expr": lit(UNIT)},
++                ])
++                self.ok({"structs": self.NESTED, "enums": self.TAG,
++                         "fns": {"f": f}})
++
++        conflict = self.unit_fn(params=[
++            {"name": "rows", "mode": own(), "ty": buffer(row)},
++        ], body=[
++            {"kind": "region", "name": "r", "body": [
++                {"kind": "let", "name": "p", "mode": ref("r", True), "ty": row,
++                 "init": {"kind": "borrow", "region": "r", "uniq": True,
++                          "place": index(var("rows"), row)}},
++                {"kind": "let", "name": "q", "mode": ref("r", True), "ty": row,
++                 "init": {"kind": "borrow", "region": "r", "uniq": True,
++                          "place": index(var("rows"), row)}},
++            ]},
++            {"kind": "return", "expr": lit(UNIT)},
++        ])
++        self.expect("OWN-5", {"structs": self.NESTED, "enums": self.TAG,
++                               "fns": {"conflict": conflict}})
++
++    def test_whole_record_read_and_move_are_rejected(self):
++        row = named("Row")
++        for expr, rule in ((use(index(var("rows"), row)), "OWN-1"),
++                           (move(index(var("rows"), row)), "PROTO-FLAT")):
++            with self.subTest(rule=rule):
++                f = self.unit_fn(params=[
++                    {"name": "rows", "mode": own(), "ty": buffer(row)},
++                ], body=[
++                    {"kind": "expr", "expr": expr},
++                    {"kind": "return", "expr": lit(UNIT)},
++                ])
++                self.expect(rule, {"structs": self.NESTED, "enums": self.TAG,
++                                   "fns": {"f": f}})
++
++    def test_index_annotation_and_offset_are_exact(self):
++        structs = dict(self.NESTED)
++        structs["Wrong"] = [{"name": "value", "ty": I32}]
++        row = named("Row")
++        cases = [
++            field(index(var("rows"), named("Wrong")), "value"),
++            {"kind": "index", "place": var("rows"), "atom": lit(U64)},
++            index(var("rows"), row, lit(I32)),
++        ]
++        for place_ in cases:
++            with self.subTest(place=place_):
++                f = self.unit_fn(params=[
++                    {"name": "rows", "mode": own(), "ty": buffer(row)},
++                ], body=[
++                    {"kind": "expr", "expr": use(place_)},
++                    {"kind": "return", "expr": lit(UNIT)},
++                ])
++                self.expect("TYPE-5", {"structs": structs, "enums": self.TAG,
++                                        "fns": {"f": f}})
++
++    def test_len_is_exactly_container_only(self):
++        row = named("Row")
++        good = pfn([{
++            "kind": "return", "expr": op("len", [use(var("rows"))], [row])
++        }], params=[
++            {"name": "rows", "mode": own(), "ty": buffer(row)},
++        ], rty=U64)
++        self.ok({"structs": self.NESTED, "enums": self.TAG,
++                 "fns": {"good": good}})
++
++        bad = pfn([{
++            "kind": "return", "expr": op("len", [move(var("row"))], [row])
++        }], params=[
++            {"name": "row", "mode": own(), "ty": row},
++        ], rty=U64)
++        self.expect("PROTO-FLAT", {"structs": self.NESTED, "enums": self.TAG,
++                                    "fns": {"bad": bad}})
++
++    def test_direct_and_mutual_record_cycles_are_rejected(self):
++        cases = [
++            ({"Loop": [{"name": "next", "ty": named("Loop")}]}, "Loop"),
++            ({"A": [{"name": "b", "ty": named("B")}],
++              "B": [{"name": "a", "ty": named("A")}]}, "A"),
++        ]
++        for structs, elem in cases:
++            with self.subTest(elem=elem):
++                self.expect("PROTO-FLAT",
++                            self.buffer_param_program(structs, elem))
++
++    def test_zero_sized_and_ambiguous_records_are_rejected(self):
++        self.expect("PROTO-FLAT",
++                    self.buffer_param_program({"Empty": []}, "Empty"))
++        structs = {"Same": [{"name": "value", "ty": I32}]}
++        enums = {"Same": [{"variant": "OnlySame", "fields": []}]}
++        self.expect("PROTO-FLAT",
++                    self.buffer_param_program(structs, "Same", enums))
++
++    def test_nonflat_record_fields_fail_closed(self):
++        payload = {"Payload": [{"variant": "HasValue", "fields": [
++            {"name": "value", "ty": I32}
++        ]}]}
++        cases = {
++            "slice": ({"kind": "slice", "region": "r", "elem": U8}, {}),
++            "box": ({"kind": "box", "elem": U8}, {}),
++            "buffer": (buffer(U8), {}),
++            "arena": ({"kind": "arena", "region": "r", "elem": U8}, {}),
++            "payload": (named("Payload"), payload),
++            "array": ({"kind": "array", "elem": U8, "n": 4}, {}),
++            "float": (F32, {}),
++            "erased": ({"kind": "any"}, {}),
++            "unknown": (named("Missing"), {}),
++        }
++        for label, (field_ty, enums) in cases.items():
++            with self.subTest(label=label):
++                bad = {"Bad": [{"name": "field", "ty": field_ty}]}
++                self.expect("PROTO-FLAT",
++                            self.buffer_param_program(bad, "Bad", enums))
++
++    def test_nested_nonflat_rejection_propagates(self):
++        structs = {
++            "Inner": [{"name": "owner", "ty": {"kind": "box", "elem": U8}}],
++            "Outer": [{"name": "inner", "ty": named("Inner")}],
++        }
++        self.expect("PROTO-FLAT",
++                    self.buffer_param_program(structs, "Outer"))
++
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)
+diff --git a/prototype/democ/democ.py b/prototype/democ/democ.py
+index 4f0fbb4..f716d26 100644
+--- a/prototype/democ/democ.py
++++ b/prototype/democ/democ.py
+@@ -176,6 +176,81 @@ def _size_align(tyname, structs):
+         return ((off + mx - 1) // mx * mx, mx)
+     return None
+ 
++def _flat_record_layout(name, structs, enums, memo=None, stack=()):
++    """Conservative E0.1a eligibility plus the candidate 64-bit layout model.
++
++    The result is used only for zero-size/alignment rejection.  Allocation uses
++    an LLVM GEP-derived stride, leaving the selected target layout authoritative.
++    """
++    memo = {} if memo is None else memo
++    if name in memo:
++        return memo[name]
++    if name in stack:
++        cycle = " -> ".join((*stack, name))
++        raise SystemExit(
++            f"democ: buffer<{stack[0]}> is outside the E0.1a flat-record "
++            f"candidate (recursive by-value struct cycle: {cycle})"
++        )
++    fields = structs.get(name)
++    if fields is None:
++        raise SystemExit(f"democ: {name} is not a struct in the E0.1a candidate")
++    if not fields:
++        raise SystemExit(
++            f"democ: buffer<{name}> is outside the E0.1a flat-record candidate "
++            "(zero-sized records are rejected)"
++        )
++    if name in enums:
++        raise SystemExit(
++            f"democ: buffer<{name}> is outside the E0.1a flat-record candidate "
++            "(the name collides with an enum)"
++        )
++
++    def leaf_layout(tyname):
++        if tyname in INT_LLTY:
++            width = _tybytes(tyname)
++            return width, width
++        if tyname == "Bool" or tyname in _TAGONLY2:
++            return 1, 1
++        variants = enums.get(tyname)
++        if variants and all(not fields for _variant, fields in variants):
++            return 4, 4
++        variants = PRELUDE_ENUMS.get(tyname)
++        if variants and all(not variant["fields"] for variant in variants):
++            return (1, 1) if tyname == "Bool" else (4, 4)
++        if tyname in structs:
++            return _flat_record_layout(
++                tyname, structs, enums, memo=memo, stack=(*stack, name)
++            )
++        root = stack[0] if stack else name
++        raise SystemExit(
++            f"democ: buffer<{root}> is outside the E0.1a flat-record candidate "
++            f"(field type {tyname} is not a stage-0 integer, tag-only enum, "
++            "or non-empty flat record)"
++        )
++
++    offset, maximum_alignment = 0, 1
++    for field in fields:
++        size, alignment = leaf_layout(field["ty"])
++        offset = (offset + alignment - 1) // alignment * alignment
++        offset += size
++        maximum_alignment = max(maximum_alignment, alignment)
++    size = (offset + maximum_alignment - 1) // maximum_alignment * maximum_alignment
++    if maximum_alignment > 8:
++        raise SystemExit(
++            f"democ: buffer<{name}> requires alignment {maximum_alignment}, above "
++            "the E0.1a candidate allocator guarantee of 8"
++        )
++    memo[name] = (size, maximum_alignment)
++    return memo[name]
++
++def _validate_flat_record_buffers(type_spellings, structs, enums):
++    memo, checked = {}, set()
++    for spelling in type_spellings:
++        element = _buf_elem(spelling)
++        if element in structs and element not in checked:
++            _flat_record_layout(element, structs, enums, memo=memo)
++            checked.add(element)
++
+ # ---- op-name resolution over democ's integer subset [OP-1/2/6/7/8, DIAG-1] ----
+ # ops with a result/amount mode axis -> the modes democ lowers; dotless ops carry
+ # no mode. An illegal op name surfaces as a spec rejection with its rule id.
+@@ -590,8 +665,11 @@ def ttype(base):
+ def tplace(pl):
+     if pl.get("index"):
+         ix = pl["index"]
+-        return {"kind": "index", "place": tplace(ix["place"]),
++        node = {"kind": "index", "place": tplace(ix["place"]),
+                 "elem": ttype(ix["elem"]), "atom": texpr(ix["atom"])}
++        for field in pl.get("post", []):
++            node = {"kind": "field", "place": node, "name": field}
++        return node
+     node = {"kind": "var", "name": pl["base"]}
+     for f in pl.get("path", []):
+         node = {"kind": "field", "place": node, "name": f}
+@@ -804,6 +882,14 @@ class Gen:
+         if name in g.structs or name in g.payenums or name in ("Result", "Option"):
+             return "%" + name
+         return _llty(name)
++    def buffer_elem(g, name):
++        """Exact element lowering carried by each candidate buffer value."""
++        if name in g.structs:
++            size, alignment = _flat_record_layout(name, g.structs, g.enums)
++            return {"ell": "%" + name, "elname": name, "est": name,
++                    "esigned": False, "esize": size, "ealign": alignment}
++        return {"ell": _llty(name), "elname": name, "est": None,
++                "esigned": _is_signed(name)}
+     def enum_payll(g, en):                         # LLVM type of the payload word of enum en
+         if en not in g.enums:                          # prelude Result/Option: word-erased payload
+             return "i64"
+@@ -899,11 +985,11 @@ class Gen:
+         bp = g.tmp(); g.emit(f"  {bp} = load ptr, ptr {pp}{md}")
+         lp = g.tmp(); g.emit(f"  {lp} = getelementptr {{ptr, i64}}, ptr {fp}, i32 0, i32 1")
+         bl = g.tmp(); g.emit(f"  {bl} = load i64, ptr {lp}{md}")
+-        return {"k": "buffer", "ptr": bp, "len": bl, "ell": _llty(elname),
+-                "esigned": _is_signed(elname), "key": g.scope_key(pl)}
++        return {"k": "buffer", "ptr": bp, "len": bl,
++                **g.buffer_elem(elname), "key": g.scope_key(pl)}
+     def index_addr(g, pl):
+         """[OP-4] bounds-checked element address of an index place; traps OOB.
+-        Returns (ptr, elem_llty, signed, metadata-suffix)."""
++        Returns (ptr, elem_llty, signed, metadata-suffix, source-type-name)."""
+         ipl = pl["index"]["place"]
+         cinfo = g.consts.get(ipl["base"]) if not (ipl.get("path") or ipl.get("post")) else None
+         proof = pl["index"].get("proof")
+@@ -938,7 +1024,7 @@ class Gen:
+                 l = g.lbl(); g.emit(f"  br i1 {c}, label %{l}, label %trap"); g.emit(f"{l}:")
+             ptr = g.tmp()
+             g.emit(f"  {ptr} = getelementptr [{n} x {ell}], ptr @__const_{ipl['base']}, i64 0, i64 {iv['v']}")
+-            return ptr, ell, sg, ""
++            return ptr, ell, sg, "", pl["index"]["elem"]
+         if ipl.get("path") or ipl.get("post"):         # buffer behind a struct field
+             fp, fll, _s, _sub, tyn = g.place_addr(ipl)
+             el = _buf_elem(tyn)
+@@ -957,8 +1043,31 @@ class Gen:
+             g.traps = True
+             c = g.tmp(); g.emit(f"  {c} = icmp ult i64 {iv['v']}, {buf['len']}")
+             l = g.lbl(); g.emit(f"  br i1 {c}, label %{l}, label %trap"); g.emit(f"{l}:")
+-        ptr = g.tmp(); g.emit(f"  {ptr} = getelementptr {buf['ell']}, ptr {buf['ptr']}, i64 {iv['v']}")
+-        return ptr, buf["ell"], buf["esigned"], md
++        declared_element = pl["index"]["elem"]
++        if declared_element != buf.get("elname"):
++            raise SystemExit(
++                "democ: index element type does not match the buffer's actual "
++                f"element type ({declared_element} vs {buf.get('elname')})"
++            )
++        ptr = g.tmp()
++        g.emit(f"  {ptr} = getelementptr {buf['ell']}, ptr {buf['ptr']}, i64 {iv['v']}")
++        ell, signed, tyname = buf["ell"], buf["esigned"], buf["elname"]
++        # Post-index fields retain the one allocation scope computed above;
++        # hdr=True would incorrectly describe the inline holder/header memory.
++        for field in pl.get("post", []):
++            if tyname not in g.structs:
++                raise SystemExit(
++                    f"democ: field projection {field} on non-record buffer element {tyname}"
++                )
++            record_name = tyname
++            index, ell, signed, _sub, tyname = g.field_info(record_name, field)
++            field_ptr = g.tmp()
++            g.emit(
++                f"  {field_ptr} = getelementptr %{record_name}, ptr {ptr}, "
++                f"i32 0, i32 {index}"
++            )
++            ptr = field_ptr
++        return ptr, ell, signed, md, tyname
+ 
+     def ovf_decl(g, verb, signed, w):              # {sadd,uadd,...}.with.overflow.iW
+         pfx = "s" if signed else "u"
+@@ -986,7 +1095,12 @@ class Gen:
+         if k == "place":
+             pl = e["p"]
+             if pl.get("index"):                        # bounds-checked element read [OP-4]
+-                ptr, ell, sg, md = g.index_addr(pl)
++                ptr, ell, sg, md, tyname = g.index_addr(pl)
++                if tyname in g.structs:
++                    raise SystemExit(
++                        "democ: whole-record buffer reads, including move index<Record>(...), "
++                        "are outside E0.1a; project a scalar field or borrow the row"
++                    )
+                 t = g.tmp(); g.emit(f"  {t} = load {ell}, ptr {ptr}{md}")
+                 return {"k": ell, "v": t, "signed": sg}
+             if pl.get("path") or pl.get("post"):       # struct field read: GEP + load [TYPE-5]
+@@ -1019,7 +1133,9 @@ class Gen:
+         if k == "borrow":                              # &'r p / &uniq 'r p -> pointer to place
+             pl = e["place"]
+             if pl.get("index"):                       # borrow of an element still performs OP-4
+-                ptr, ell, signed, _md = g.index_addr(pl)
++                ptr, ell, signed, _md, tyname = g.index_addr(pl)
++                if tyname in g.structs:
++                    return {"k": "ptr", "v": ptr, "ty": "%" + tyname, "st": tyname}
+                 return {"k": "ptr", "v": ptr, "ty": ell, "signed": signed}
+             if pl.get("path") or pl.get("post"):      # borrow of a struct field must point at that field
+                 ptr, fll, signed, sub, tyn = g.place_addr(pl)
+@@ -1133,7 +1249,7 @@ class Gen:
+                 bp = g.tmp(); g.emit(f"  {bp} = extractvalue {{ptr, i64}} {t}, 0")
+                 bl = g.tmp(); g.emit(f"  {bl} = extractvalue {{ptr, i64}} {t}, 1")
+                 return {"k": "buffer", "ptr": bp, "len": bl,
+-                        "ell": _llty(el), "esigned": _is_signed(el)}
++                        **g.buffer_elem(el)}
+             if ret.startswith("%"):                    # aggregate return: spill to a slot
+                 nm = ret[1:]
+                 if nm in g.payenums or nm in ("Result", "Option"):
+@@ -1149,10 +1265,32 @@ class Gen:
+         a = [g.expr(x) for x in e["args"]]
+         op = e["op"]; base, _, mode = op.partition(".")
+         ty = e.get("tyargs") or ["i32"]
+-        w = _llty(ty[0]); signed = _is_signed(ty[0])
++        w = g.llty(ty[0]); signed = _is_signed(ty[0])
+         if base == "buffer_new":                       # [OP-9] size-overflow trap, alloc, fill
+             n_, fill = a[0], a[1]
+-            esz = _tybytes(ty[0])
++            elem = g.buffer_elem(ty[0])
++            is_record = elem["est"] is not None
++            fill_expression = e["args"][1]
++            explicit_fill = fill_expression.get("e") in ("construct", "move")
++            if is_record and (fill.get("k") != "struct" or fill.get("st") != ty[0]):
++                raise SystemExit(
++                    f"democ: buffer_new<{ty[0]}> requires a matching fresh "
++                    "construction or explicit move as its fill value"
++                )
++            if is_record and not explicit_fill:
++                raise SystemExit(
++                    f"democ: buffer_new<{ty[0]}> fill must be a fresh "
++                    "construction or explicit move; records remain affine"
++                )
++            if is_record:
++                # Target ABI allocation stride: field gaps plus tail padding.
++                stride_ptr = g.tmp()
++                g.emit(f"  {stride_ptr} = getelementptr %{ty[0]}, ptr null, i64 1")
++                stride = g.tmp()
++                g.emit(f"  {stride} = ptrtoint ptr {stride_ptr} to i64")
++                esz = stride
++            else:
++                esz = str(_tybytes(ty[0]))
+             g.traps = True
+             g.decls.add("declare {i64, i1} @llvm.umul.with.overflow.i64(i64, i64)")
+             g.decls.add("declare ptr @malloc(i64)")
+@@ -1160,7 +1298,26 @@ class Gen:
+             by = g.tmp(); g.emit(f"  {by} = extractvalue {{i64, i1}} {pr}, 0")
+             ov = g.tmp(); g.emit(f"  {ov} = extractvalue {{i64, i1}} {pr}, 1")
+             l = g.lbl(); g.emit(f"  br i1 {ov}, label %trap, label %{l}"); g.emit(f"{l}:")
++            if is_record:
++                fits = g.tmp()
++                g.emit(f"  {fits} = icmp ule i64 {by}, 9223372036854775807")
++                alloc_label = g.lbl()
++                g.emit(f"  br i1 {fits}, label %{alloc_label}, label %trap")
++                g.emit(f"{alloc_label}:")
+             buf = g.tmp(); g.emit(f"  {buf} = call ptr @malloc(i64 {by})")
++            if is_record:
++                zero_bytes = g.tmp()
++                g.emit(f"  {zero_bytes} = icmp eq i64 {by}, 0")
++                allocated = g.tmp()
++                g.emit(f"  {allocated} = icmp ne ptr {buf}, null")
++                allocation_ok = g.tmp()
++                g.emit(f"  {allocation_ok} = or i1 {zero_bytes}, {allocated}")
++                initialized_label = g.lbl()
++                g.emit(
++                    f"  br i1 {allocation_ok}, label %{initialized_label}, label %trap"
++                )
++                g.emit(f"{initialized_label}:")
++            fill_value = g.load_struct(fill) if is_record else fill["v"]
+             # fill loop (alloca counter; mem2reg cleans)
+             cs = g.tmp(); g.emit(f"  {cs} = alloca i64"); g.emit(f"  store i64 0, ptr {cs}")
+             lc, lb, ld = g.lbl(), g.lbl(), g.lbl()
+@@ -1169,11 +1326,11 @@ class Gen:
+             cc = g.tmp(); g.emit(f"  {cc} = icmp ult i64 {cur}, {n_['v']}")
+             g.emit(f"  br i1 {cc}, label %{lb}, label %{ld}"); g.emit(f"{lb}:")
+             ep = g.tmp(); g.emit(f"  {ep} = getelementptr {w}, ptr {buf}, i64 {cur}")
+-            g.emit(f"  store {w} {fill['v']}, ptr {ep}")
++            g.emit(f"  store {w} {fill_value}, ptr {ep}")
+             nx = g.tmp(); g.emit(f"  {nx} = add i64 {cur}, 1")
+             g.emit(f"  store i64 {nx}, ptr {cs}"); g.emit(f"  br label %{lc}")
+             g.emit(f"{ld}:")
+-            return {"k": "buffer", "ptr": buf, "len": n_["v"], "ell": w, "esigned": signed}
++            return {"k": "buffer", "ptr": buf, "len": n_["v"], **elem}
+         if base == "len":                              # len<T>(b) -> own u64 [OP-1]
+             src = a[0]
+             if src.get("k") == "constarr":             # [CONST-2] len of a const array is its static N
+@@ -1336,7 +1493,7 @@ class Gen:
+                         bl = g.tmp(); g.emit(f"  {bl} = extractvalue {{ptr, i64}} {packed}, 1")
+                         elem = _buf_elem(s["ty"])
+                         g.env[s["n"]] = {"k": "buffer", "ptr": bp, "len": bl,
+-                                         "ell": _llty(elem), "esigned": _is_signed(elem)}
++                                         **g.buffer_elem(elem)}
+                     else:
+                         g.env[s["n"]] = {"k": "slot", "v": slot, "ty": gty,
+                                          "signed": gsigned}
+@@ -1394,8 +1551,24 @@ class Gen:
+                 pl = s["p"]
+                 if pl.get("index"):                    # bounds-checked element write [OP-4]
+                     v = g.expr(s["e"])
+-                    ptr, ell, _sg, md = g.index_addr(pl)
+-                    g.emit(f"  store {ell} {v['v']}, ptr {ptr}{md}")
++                    ptr, ell, _sg, md, tyname = g.index_addr(pl)
++                    if tyname in g.structs:
++                        fresh_row = (not pl.get("post")
++                                     and s["e"].get("e") == "construct"
++                                     and s["e"].get("n") == tyname)
++                        if (v.get("k") != "struct" or v.get("st") != tyname
++                                or not fresh_row):
++                            raise SystemExit(
++                                f"democ: whole-row overwrite of {tyname} requires a "
++                                "matching fresh construction"
++                            )
++                        g.emit(f"  store %{tyname} {g.load_struct(v)}, ptr {ptr}{md}")
++                    else:
++                        if v.get("k") == "struct":
++                            raise SystemExit(
++                                f"democ: aggregate value cannot be stored in scalar field {tyname}"
++                            )
++                        g.emit(f"  store {ell} {v['v']}, ptr {ptr}{md}")
+                 elif pl.get("path") or pl.get("post"): # set struct field: GEP + store [TYPE-5]
+                     v = g.expr(s["e"])
+                     ptr, fll, _fs, sub, _tyn = g.place_addr(pl)
+@@ -1577,7 +1750,7 @@ class Gen:
+                     bp = g.tmp(); g.prologue.append(f"  {bp} = extractvalue {{ptr, i64}} %{q['name']}, 0")
+                     bl = g.tmp(); g.prologue.append(f"  {bl} = extractvalue {{ptr, i64}} %{q['name']}, 1")
+                     g.env[q["name"]] = {"k": "buffer", "ptr": bp, "len": bl,
+-                                        "ell": _llty(el), "esigned": _is_signed(el)}
++                                        **g.buffer_elem(el)}
+                     continue
+                 ps.append(f"{pll} %{q['name']}")
+                 g.env[q["name"]] = {"k": pll, "v": f"%{q['name']}", "signed": psigned}
+@@ -1588,7 +1761,7 @@ class Gen:
+                     bp = g.tmp(); g.prologue.append(f"  {bp} = extractvalue {{ptr, i64}} %{q['name']}, 0")  # caller-visible; exclusivity is the checker's job
+                     bl = g.tmp(); g.prologue.append(f"  {bl} = extractvalue {{ptr, i64}} %{q['name']}, 1")
+                     g.env[q["name"]] = {"k": "buffer", "ptr": bp, "len": bl,
+-                                        "ell": _llty(el), "esigned": _is_signed(el)}
++                                        **g.buffer_elem(el)}
+                     continue
+                 at = (" noalias" + ("" if q["mode"]["uniq"] else " readonly")) if g.alias else ""
+                 if g.alias:
+@@ -3213,6 +3386,7 @@ def compile_program(src, alias=True, elide_bounds=False, proof_report=None):
+     _TAGONLY2.clear()
+     _TAGONLY2.update({en: (vs[0][0], vs[1][0]) for en, vs in enums.items()
+                       if len(vs) == 2 and all(not flds for _vn, flds in vs)})
++    _validate_flat_record_buffers(type_spellings, structs, enums)
+     def _ret(f):
+         if f["name"] == "main": return "i32"
+         if f["rty"] == "unit": return "void"
+diff --git a/prototype/democ/test_codegen.py b/prototype/democ/test_codegen.py
+index b5a6656..0a5bfd9 100644
+--- a/prototype/democ/test_codegen.py
++++ b/prototype/democ/test_codegen.py
+@@ -1,6 +1,8 @@
+ #!/usr/bin/env python3
+ """Focused correctness gates for stage-0 aggregate code generation."""
+ 
++import hashlib
++import re
+ import subprocess
+ import tempfile
+ from pathlib import Path
+@@ -174,4 +176,196 @@ for source in aggregate_payloads:
+     else:
+         raise AssertionError("aggregate prelude payload reached stage-0 LLVM codegen")
+ 
+-print("stage-0 codegen: local aggregate give, terminating arms, and payload profile pass")
++
++# E0.1a candidate: Token/Ast-shaped records pin natural 24/56-byte layouts.
++flat_records = """enum RowKind {
++  RowZero();
++  RowOne();
++  RowOther();
++}
++
++struct TokenRow {
++  kind: RowKind;
++  start: u64;
++  end: u64;
++}
++
++struct AstRow {
++  kind: RowKind;
++  parent: u64;
++  first: u64;
++  last: u64;
++  next: u64;
++  start: u64;
++  end: u64;
++}
++
++struct Tapes {
++  tokens: buffer<TokenRow>;
++  ast: buffer<AstRow>;
++}
++
++fn read_end ['row] (row: & 'row TokenRow) -> own u64 reads('row) {
++  return deref(row).end;
++}
++
++fn field_kernel ['tapes] (tapes: &uniq 'tapes Tapes) -> own unit reads('tapes), writes('tapes), traps {
++  let token_start: own u64 = index<TokenRow>(deref(tapes).tokens, 0_u64).start;
++  set index<TokenRow>(deref(tapes).tokens, 0_u64).end = token_start;
++  let ast_parent: own u64 = index<AstRow>(deref(tapes).ast, 0_u64).parent;
++  set index<AstRow>(deref(tapes).ast, 0_u64).end = ast_parent;
++  return unit;
++}
++
++fn main () -> own unit allocates(heap), traps {
++  let tokens: own buffer<TokenRow> = buffer_new<TokenRow>(2_u64, TokenRow(kind: RowZero(), start: 1_u64, end: 2_u64));
++  let ast: own buffer<AstRow> = buffer_new<AstRow>(1_u64, AstRow(kind: RowZero(), parent: 7_u64, first: 0_u64, last: 0_u64, next: 0_u64, start: 8_u64, end: 9_u64));
++  set index<TokenRow>(tokens, 1_u64) = TokenRow(kind: RowOne(), start: 10_u64, end: 11_u64);
++  region 'row_borrow {
++    let row: & 'row_borrow TokenRow = & 'row_borrow index<TokenRow>(tokens, 1_u64);
++    let borrowed_end: own u64 = read_end(row: row);
++    check ieq<u64>(borrowed_end, 11_u64) else trap "row borrow changed stride";
++  }
++  let tapes: own Tapes = Tapes(tokens: move tokens, ast: move ast);
++  region 'tapes_borrow {
++    field_kernel(tapes: &uniq 'tapes_borrow tapes);
++  }
++  let token_end: own u64 = index<TokenRow>(tapes.tokens, 0_u64).end;
++  let ast_end: own u64 = index<AstRow>(tapes.ast, 0_u64).end;
++  check ieq<u64>(token_end, 1_u64) else trap "TokenRow field GEP failed";
++  check ieq<u64>(ast_end, 7_u64) else trap "AstRow field GEP failed";
++  return unit;
++}
++"""
++flat_ir = compile_native(flat_records, run=True)
++flat_structs, flat_enums = democ.parse_program(flat_records)[:2]
++assert democ._flat_record_layout("TokenRow", flat_structs, flat_enums) == (24, 8)
++assert democ._flat_record_layout("AstRow", flat_structs, flat_enums) == (56, 8)
++assert "%TokenRow = type { i32, i64, i64 }" in flat_ir
++assert "%AstRow = type { i32, i64, i64, i64, i64, i64, i64 }" in flat_ir
++assert "getelementptr %TokenRow, ptr null, i64 1" in flat_ir
++assert "getelementptr %AstRow, ptr null, i64 1" in flat_ir
++assert "icmp ule i64" in flat_ir and "9223372036854775807" in flat_ir
++assert re.search(
++    r"call ptr @malloc\(i64 %t\d+\)\n"
++    r"  %t\d+ = icmp eq i64 %t\d+, 0\n"
++    r"  %t\d+ = icmp ne ptr %t\d+, null\n"
++    r"  %t\d+ = or i1 %t\d+, %t\d+\n"
++    r"  br i1 %t\d+, label %L\d+, label %trap",
++    flat_ir,
++), "record allocation must reject nonzero malloc failure before fill"
++assert "llvm.memcpy" not in flat_ir
++assert " byval" not in flat_ir and " sret" not in flat_ir
++
++field_kernel_ir = flat_ir.split("define void @field_kernel", 1)[1].split("\n}\n", 1)[0]
++assert "getelementptr %TokenRow" in field_kernel_ir
++assert "getelementptr %AstRow" in field_kernel_ir
++assert "load %TokenRow" not in field_kernel_ir and "store %TokenRow" not in field_kernel_ir
++assert "load %AstRow" not in field_kernel_ir and "store %AstRow" not in field_kernel_ir
++
++# Resolve the target ABI stride under both frozen 64-bit experiment targets.
++for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"):
++    with tempfile.TemporaryDirectory() as directory:
++        root = Path(directory)
++        source_ir = root / "flat.ll"
++        target_ir = root / "flat-target.ll"
++        source_ir.write_text(flat_ir)
++        lowered = subprocess.run(
++            [CLANG, "-target", target, "-O2", "-S", "-emit-llvm",
++             str(source_ir), "-o", str(target_ir)],
++            capture_output=True,
++            text=True,
++        )
++        assert lowered.returncode == 0, f"{target}: {lowered.stderr}"
++        resolved = target_ir.read_text()
++        assert "@malloc(i64 48)" in resolved, target
++        assert "@malloc(i64 56)" in resolved, target
++        resolved_kernel = resolved.split("@field_kernel", 1)[1].split("\n}", 1)[0]
++        assert "llvm.memcpy" not in resolved_kernel, target
++
++# Facts-on scalar field accesses retain one scope per AoS allocation.
++flat_facts_ir = democ.compile_program(flat_records, alias=True)
++facts_kernel = flat_facts_ir.split("define void @field_kernel", 1)[1].split("\n}\n", 1)[0]
++token_load = re.search(
++    r"(%t\d+) = getelementptr %TokenRow, ptr %t\d+, i32 0, i32 1\n"
++    r"  %t\d+ = load i64, ptr \1, !alias\.scope !(\d+), !noalias !(\d+)",
++    facts_kernel,
++)
++token_store = re.search(
++    r"(%t\d+) = getelementptr %TokenRow, ptr %t\d+, i32 0, i32 2\n"
++    r"  store i64 %t\d+, ptr \1, !alias\.scope !(\d+), !noalias !(\d+)",
++    facts_kernel,
++)
++assert token_load and token_store
++assert token_load.groups()[1:] == token_store.groups()[1:]
++
++
++def reject_flat(source, text):
++    try:
++        democ.compile_program(source, alias=False)
++    except (democ.CheckError, SystemExit) as error:
++        assert text in str(error), str(error)
++    else:
++        raise AssertionError(f"E0.1a candidate accepted forbidden shape: {text}")
++
++
++reject_flat("""struct Empty {
++}
++
++fn reject (rows: own buffer<Empty>) -> own unit pure {
++  return unit;
++}
++""", "zero-sized")
++
++reject_flat("""struct Cycle {
++  next: Cycle;
++}
++
++fn reject (rows: own buffer<Cycle>) -> own unit pure {
++  return unit;
++}
++""", "cycle")
++
++reject_flat("""struct Row {
++  value: u64;
++}
++
++fn main () -> own unit allocates(heap), traps {
++  let rows: own buffer<Row> = buffer_new<Row>(1_u64, Row(value: 1_u64));
++  let wrong: own u64 = index<u64>(rows, 0_u64);
++  return unit;
++}
++""", "element annotation u64 != exact container element type Row")
++
++reject_flat("""struct Row {
++  value: u64;
++}
++
++fn main () -> own unit allocates(heap), traps {
++  let rows: own buffer<Row> = buffer_new<Row>(1_u64, Row(value: 1_u64));
++  let row: own Row = move index<Row>(rows, 0_u64);
++  return unit;
++}
++""", "would leave a hole")
++
++# Candidate changes no existing primitive/full-compiler raw IR.
++ROOT = Path(__file__).resolve().parents[2]
++source_paths = [
++    ROOT / "compiler" / line.strip()
++    for line in (ROOT / "compiler" / "sources.txt").read_text().splitlines()
++    if line.strip()
++]
++compiler_unit = "\n\n".join(path.read_text().rstrip("\n") for path in source_paths) + "\n"
++soa_source = (Path(__file__).resolve().parent / "examples" / "soa_kernel.xl").read_text()
++identity_pins = (
++    (soa_source, False, 3069, "dfe27e6ac18799b2ac5e4d6f382fea3f979be04bd269ef64fe224c3c73d42d7c"),
++    (soa_source, True, 3779, "fa80c462223036a8a2b67d0aabee4e232d326ee6c3327a8a8d6118cdbec20f5d"),
++    (compiler_unit, False, 1860733, "23baa6cce795a7c8c21b66af2c2c01dbbeade8e40b5fe7dda64966db9f8e615a"),
++    (compiler_unit, True, 2229127, "0cde7c30e63ea4e60277ed76fb50940012b9b900d04abfc4385ceb4816e95001"),
++)
++for source, facts, expected_bytes, expected_hash in identity_pins:
++    unchanged = democ.compile_program(source, alias=facts)
++    assert len(unchanged) == expected_bytes
++    assert hashlib.sha256(unchanged.encode()).hexdigest() == expected_hash
++
++print("stage-0 codegen: aggregates, E0.1a candidate records, and raw-IR identity pass")

@@ -909,3 +909,30 @@ satisfied; no third benchmark is needed for this gate.  Any later measurement
 of either source is secondary sensitivity evidence and cannot replace its
 primary campaign.  The experiment track now yields priority back to the xlc
 self-hosting build track.
+
+## E0.1 detached candidate evidence archived; prototype remains rejected (2026-07-13)
+
+The exact unconditional candidate reviewed in
+`experiments/data-layout-owning-sequence/HOSTILE_REVIEW_1.md` is now durable as
+`DETACHED_CANDIDATE.patch`.  It is a 57,547-byte binary diff against Git
+`58baa71fb4c36a4728dd42aea6b05ce4be7aa0b1`, changes four files by
+`+968/-21`, and has SHA-256
+`bed070414f9552ea105857404d6d1296b98542a28cc65fa6899a197830e6774e`.
+An isolated worktree at the recorded parent accepts the archive under
+`git apply --check`.
+
+Archiving does not change the hostile-review verdict: the prototype is
+semantically rejected, contains no scored timing evidence, and grants no
+production implementation, specification, xlc-migration, or default-teaching
+authorization.  The main toolchain still has no E0.1 candidate semantics or
+feature flag.
+
+## OWN-1 index-atom flow omission recorded after mainline repair (2026-07-13)
+
+E0.1 hostile review exposed a pre-existing mainline checker defect: an index
+atom could read a field through an already-moved affine binding without entering
+ownership flow.  Commit `38d642e` makes index atoms pass the normal
+liveness/readability checks and adds the negative conformance case
+`own1-neg-index-atom-after-move`.  This is an independent current-language bug
+fix, not evidence for Flat records and not authorization for E0.1 production
+semantics.
