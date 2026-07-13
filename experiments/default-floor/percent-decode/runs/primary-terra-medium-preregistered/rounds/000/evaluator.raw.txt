@@ -1,0 +1,1 @@
+{"compile":{"diagnostics":[{"code":"XLANG_COMPILE","message":"[FORM-1] unknown construct: expected ';' to end the statement, got 'return'"}],"passed":false},"correctness":{"diagnostics":[{"code":"NOT_RUN","message":"compile failed"}],"passed":false}}

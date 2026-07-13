@@ -1,0 +1,15 @@
+{
+  "compile": {
+    "diagnostics": [],
+    "passed": true
+  },
+  "correctness": {
+    "diagnostics": [
+      {
+        "code": "CORPUS",
+        "message": "correct cases=153014"
+      }
+    ],
+    "passed": true
+  }
+}

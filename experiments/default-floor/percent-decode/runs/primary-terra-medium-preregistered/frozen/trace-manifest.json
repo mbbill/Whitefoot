@@ -1,0 +1,198 @@
+{
+  "config": {
+    "path": "config.json",
+    "sha256": "ee58fabe303c9788f8f705663d0434edb548cb6eed51eb4a0f9de12c6735e23b"
+  },
+  "frozen_round": 2,
+  "protocol_version": 1,
+  "source": {
+    "path": "frozen/percent_decode.xl",
+    "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
+  },
+  "status": "frozen",
+  "trace": {
+    "path": "trace.jsonl",
+    "rounds": [
+      {
+        "artifacts": {
+          "evaluator": {
+            "path": "rounds/000/evaluator.json",
+            "sha256": "8fce6e4c063afea85fff7d5b95f2da30d3ea90d5dc89b7b218c6c7ca8bdbfc50"
+          },
+          "evaluator_process": {
+            "path": "rounds/000/evaluator-process.json",
+            "sha256": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799"
+          },
+          "evaluator_raw": {
+            "path": "rounds/000/evaluator.raw.txt",
+            "sha256": "dece4409516b99fd343abeefa1d87f2536bc4996039a817dad375ede8a3c4ba2"
+          },
+          "evaluator_stderr": {
+            "path": "rounds/000/evaluator.stderr.txt",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "model_process": {
+            "path": "rounds/000/model-process.json",
+            "sha256": "d7f3b866bcc2f6e1bd12196d1bee588b607ebb6205977b127b8acfac579bb4f0"
+          },
+          "model_stderr": {
+            "path": "rounds/000/model.stderr.txt",
+            "sha256": "6c24caea8a81250072e8727ecd0da8defabafba27840b732fcf751bfda067e3e"
+          },
+          "prompt": {
+            "path": "rounds/000/prompt.txt",
+            "sha256": "eab67c75952ae3ee6df74d25d89c316a36eeaad9ae7196977887dc693ffdb66a"
+          },
+          "raw": {
+            "path": "rounds/000/model.raw.txt",
+            "sha256": "918be6958ceec9dfa5dab4a86b4e2f7992ddb743c3120069f19a133e3e4987bd"
+          },
+          "source": {
+            "path": "rounds/000/percent_decode.xl",
+            "sha256": "918be6958ceec9dfa5dab4a86b4e2f7992ddb743c3120069f19a133e3e4987bd"
+          }
+        },
+        "correct": false,
+        "evaluator": {
+          "compile": {
+            "diagnostics": [
+              {
+                "code": "XLANG_COMPILE",
+                "message": "[FORM-1] unknown construct: expected ';' to end the statement, got 'return'"
+              }
+            ],
+            "passed": false
+          },
+          "correctness": {
+            "diagnostics": [
+              {
+                "code": "NOT_RUN",
+                "message": "compile failed"
+              }
+            ],
+            "passed": false
+          }
+        },
+        "protocol_version": 1,
+        "round": 0
+      },
+      {
+        "artifacts": {
+          "evaluator": {
+            "path": "rounds/001/evaluator.json",
+            "sha256": "19f5353ca4446ad99fdaf5ccbf5ecdaf6e2b79be3434a67132056c32ff75c8ec"
+          },
+          "evaluator_process": {
+            "path": "rounds/001/evaluator-process.json",
+            "sha256": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799"
+          },
+          "evaluator_raw": {
+            "path": "rounds/001/evaluator.raw.txt",
+            "sha256": "cf2f8f0070a678a79730a2ee49a42612f0fcebcb8de76b65084e8445f2fc3386"
+          },
+          "evaluator_stderr": {
+            "path": "rounds/001/evaluator.stderr.txt",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "model_process": {
+            "path": "rounds/001/model-process.json",
+            "sha256": "d7f3b866bcc2f6e1bd12196d1bee588b607ebb6205977b127b8acfac579bb4f0"
+          },
+          "model_stderr": {
+            "path": "rounds/001/model.stderr.txt",
+            "sha256": "7f7a48a2f2889df9c8d9cd99705278eaf599b6bc0242fae0872a5f2bf95b8da7"
+          },
+          "prompt": {
+            "path": "rounds/001/prompt.txt",
+            "sha256": "8de909139a50f425adff0cbb43c903700d83b374d5933c345c7836b0a388189f"
+          },
+          "raw": {
+            "path": "rounds/001/model.raw.txt",
+            "sha256": "57209a6a831d5c7a84c81d04ab5aeee101b2b88e745ae6796240c114549ace47"
+          },
+          "source": {
+            "path": "rounds/001/percent_decode.xl",
+            "sha256": "57209a6a831d5c7a84c81d04ab5aeee101b2b88e745ae6796240c114549ace47"
+          }
+        },
+        "correct": false,
+        "evaluator": {
+          "compile": {
+            "diagnostics": [],
+            "passed": true
+          },
+          "correctness": {
+            "diagnostics": [
+              {
+                "code": "DIFFERENTIAL",
+                "message": "percent-pair-30-41/facts-on: input=253041 expected=0a actual=00 returned=1 expected_length=1 sentinel_unchanged=true source_unchanged=true\n"
+              }
+            ],
+            "passed": false
+          }
+        },
+        "protocol_version": 1,
+        "round": 1
+      },
+      {
+        "artifacts": {
+          "evaluator": {
+            "path": "rounds/002/evaluator.json",
+            "sha256": "899a588e2e2f0829d9d2c1d803133b4cc81dcd43358ed1736274f027c3800be6"
+          },
+          "evaluator_process": {
+            "path": "rounds/002/evaluator-process.json",
+            "sha256": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799"
+          },
+          "evaluator_raw": {
+            "path": "rounds/002/evaluator.raw.txt",
+            "sha256": "9fef053951bcaee4e5c99f8e06ed7534a427976b82e835ee5c78a16c1b8558cf"
+          },
+          "evaluator_stderr": {
+            "path": "rounds/002/evaluator.stderr.txt",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "model_process": {
+            "path": "rounds/002/model-process.json",
+            "sha256": "d7f3b866bcc2f6e1bd12196d1bee588b607ebb6205977b127b8acfac579bb4f0"
+          },
+          "model_stderr": {
+            "path": "rounds/002/model.stderr.txt",
+            "sha256": "677beab6083b6ad617ec1a37706f53c8e3247d4f144a00669f23df4825696a34"
+          },
+          "prompt": {
+            "path": "rounds/002/prompt.txt",
+            "sha256": "cd514b6611fca7153c4116caf5389ec4107d85a1420cf709dc29cd4a4d6230c6"
+          },
+          "raw": {
+            "path": "rounds/002/model.raw.txt",
+            "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
+          },
+          "source": {
+            "path": "rounds/002/percent_decode.xl",
+            "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
+          }
+        },
+        "correct": true,
+        "evaluator": {
+          "compile": {
+            "diagnostics": [],
+            "passed": true
+          },
+          "correctness": {
+            "diagnostics": [
+              {
+                "code": "CORPUS",
+                "message": "correct cases=153014"
+              }
+            ],
+            "passed": true
+          }
+        },
+        "protocol_version": 1,
+        "round": 2
+      }
+    ],
+    "sha256": "d8c8138ec2a8d6385b31bea17d3289ed72025cf343ed87ccc34a86ca2df9766d"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "artifacts": {
+    "evaluator": {
+      "path": "rounds/000/evaluator.json",
+      "sha256": "8fce6e4c063afea85fff7d5b95f2da30d3ea90d5dc89b7b218c6c7ca8bdbfc50"
+    },
+    "evaluator_process": {
+      "path": "rounds/000/evaluator-process.json",
+      "sha256": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799"
+    },
+    "evaluator_raw": {
+      "path": "rounds/000/evaluator.raw.txt",
+      "sha256": "dece4409516b99fd343abeefa1d87f2536bc4996039a817dad375ede8a3c4ba2"
+    },
+    "evaluator_stderr": {
+      "path": "rounds/000/evaluator.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "model_process": {
+      "path": "rounds/000/model-process.json",
+      "sha256": "d7f3b866bcc2f6e1bd12196d1bee588b607ebb6205977b127b8acfac579bb4f0"
+    },
+    "model_stderr": {
+      "path": "rounds/000/model.stderr.txt",
+      "sha256": "6c24caea8a81250072e8727ecd0da8defabafba27840b732fcf751bfda067e3e"
+    },
+    "prompt": {
+      "path": "rounds/000/prompt.txt",
+      "sha256": "eab67c75952ae3ee6df74d25d89c316a36eeaad9ae7196977887dc693ffdb66a"
+    },
+    "raw": {
+      "path": "rounds/000/model.raw.txt",
+      "sha256": "918be6958ceec9dfa5dab4a86b4e2f7992ddb743c3120069f19a133e3e4987bd"
+    },
+    "source": {
+      "path": "rounds/000/percent_decode.xl",
+      "sha256": "918be6958ceec9dfa5dab4a86b4e2f7992ddb743c3120069f19a133e3e4987bd"
+    }
+  },
+  "correct": false,
+  "evaluator": {
+    "compile": {
+      "diagnostics": [
+        {
+          "code": "XLANG_COMPILE",
+          "message": "[FORM-1] unknown construct: expected ';' to end the statement, got 'return'"
+        }
+      ],
+      "passed": false
+    },
+    "correctness": {
+      "diagnostics": [
+        {
+          "code": "NOT_RUN",
+          "message": "compile failed"
+        }
+      ],
+      "passed": false
+    }
+  },
+  "protocol_version": 1,
+  "round": 0
+}

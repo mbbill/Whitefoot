@@ -1,0 +1,98 @@
+fn is_hex (byte: own u8) -> own Bool pure {
+  let decimal_low: own Bool = ige<u8>(byte, 48_u8);
+  let decimal_high: own Bool = ile<u8>(byte, 57_u8);
+  let decimal: own Bool = band<Bool>(decimal_low, decimal_high);
+  let upper_low: own Bool = ige<u8>(byte, 65_u8);
+  let upper_high: own Bool = ile<u8>(byte, 70_u8);
+  let upper: own Bool = band<Bool>(upper_low, upper_high);
+  let lower_low: own Bool = ige<u8>(byte, 97_u8);
+  let lower_high: own Bool = ile<u8>(byte, 102_u8);
+  let lower: own Bool = band<Bool>(lower_low, lower_high);
+  let alphabetic: own Bool = bor<Bool>(upper, lower);
+  let result: own Bool = bor<Bool>(decimal, alphabetic);
+  return result;
+}
+
+fn hex_value (byte: own u8) -> own u8 pure {
+  let is_decimal: own Bool = ile<u8>(byte, 57_u8);
+  let result: own u8 = match is_decimal {
+    True() => {
+      let value: own u8 = isub.wrap<u8>(byte, 48_u8);
+      give value;
+    }
+    False() => {
+      let is_upper: own Bool = ile<u8>(byte, 70_u8);
+      let value: own u8 = match is_upper {
+        True() => {
+          let upper_value: own u8 = isub.wrap<u8>(byte, 65_u8);
+          give upper_value;
+        }
+        False() => {
+          let lower_value: own u8 = isub.wrap<u8>(byte, 97_u8);
+          give lower_value;
+        }
+      }
+      give value;
+    }
+  }
+  return result;
+}
+
+fn decode ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
+  let output_length: own u64 = len<u8>(deref(out));
+  let source_length: own u64 = len<u8>(src);
+  let sufficient: own Bool = ige<u64>(output_length, source_length);
+  check sufficient else trap "output too short";
+} {
+  let source_length: own u64 = len<u8>(src);
+  let input_index: own u64 = 0_u64;
+  let output_index: own u64 = 0_u64;
+  loop @decode_loop {
+    let done: own Bool = ieq<u64>(input_index, source_length);
+    match done {
+      True() => {
+        break @decode_loop;
+      }
+      False() => {
+      }
+    }
+    let byte: own u8 = index<u8>(src, input_index);
+    let is_percent: own Bool = ieq<u8>(byte, 37_u8);
+    let remaining: own u64 = isub.wrap<u64>(source_length, input_index);
+    let has_pair: own Bool = ige<u64>(remaining, 3_u64);
+    let candidate: own Bool = band<Bool>(is_percent, has_pair);
+    match candidate {
+      True() => {
+        let next_index: own u64 = iadd.wrap<u64>(input_index, 1_u64);
+        let last_index: own u64 = iadd.wrap<u64>(input_index, 2_u64);
+        let high_byte: own u8 = index<u8>(src, next_index);
+        let low_byte: own u8 = index<u8>(src, last_index);
+        let high_valid: own Bool = is_hex(byte: high_byte);
+        let low_valid: own Bool = is_hex(byte: low_byte);
+        let valid: own Bool = band<Bool>(high_valid, low_valid);
+        match valid {
+          True() => {
+            let high: own u8 = hex_value(byte: high_byte);
+            let low: own u8 = hex_value(byte: low_byte);
+            let shifted: own u8 = imul.wrap<u8>(high, 16_u8);
+            let decoded: own u8 = iadd.wrap<u8>(shifted, low);
+            set index<u8>(deref(out), output_index) = decoded;
+            set input_index = iadd.wrap<u64>(input_index, 3_u64);
+            set output_index = iadd.wrap<u64>(output_index, 1_u64);
+          }
+          False() => {
+            set index<u8>(deref(out), output_index) = byte;
+            set input_index = iadd.wrap<u64>(input_index, 1_u64);
+            set output_index = iadd.wrap<u64>(output_index, 1_u64);
+          }
+        }
+      }
+      False() => {
+        set index<u8>(deref(out), output_index) = byte;
+        set input_index = iadd.wrap<u64>(input_index, 1_u64);
+        set output_index = iadd.wrap<u64>(output_index, 1_u64);
+      }
+    }
+  }
+  return output_index;
+}

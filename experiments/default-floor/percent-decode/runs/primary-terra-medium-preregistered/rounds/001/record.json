@@ -1,0 +1,58 @@
+{
+  "artifacts": {
+    "evaluator": {
+      "path": "rounds/001/evaluator.json",
+      "sha256": "19f5353ca4446ad99fdaf5ccbf5ecdaf6e2b79be3434a67132056c32ff75c8ec"
+    },
+    "evaluator_process": {
+      "path": "rounds/001/evaluator-process.json",
+      "sha256": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799"
+    },
+    "evaluator_raw": {
+      "path": "rounds/001/evaluator.raw.txt",
+      "sha256": "cf2f8f0070a678a79730a2ee49a42612f0fcebcb8de76b65084e8445f2fc3386"
+    },
+    "evaluator_stderr": {
+      "path": "rounds/001/evaluator.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "model_process": {
+      "path": "rounds/001/model-process.json",
+      "sha256": "d7f3b866bcc2f6e1bd12196d1bee588b607ebb6205977b127b8acfac579bb4f0"
+    },
+    "model_stderr": {
+      "path": "rounds/001/model.stderr.txt",
+      "sha256": "7f7a48a2f2889df9c8d9cd99705278eaf599b6bc0242fae0872a5f2bf95b8da7"
+    },
+    "prompt": {
+      "path": "rounds/001/prompt.txt",
+      "sha256": "8de909139a50f425adff0cbb43c903700d83b374d5933c345c7836b0a388189f"
+    },
+    "raw": {
+      "path": "rounds/001/model.raw.txt",
+      "sha256": "57209a6a831d5c7a84c81d04ab5aeee101b2b88e745ae6796240c114549ace47"
+    },
+    "source": {
+      "path": "rounds/001/percent_decode.xl",
+      "sha256": "57209a6a831d5c7a84c81d04ab5aeee101b2b88e745ae6796240c114549ace47"
+    }
+  },
+  "correct": false,
+  "evaluator": {
+    "compile": {
+      "diagnostics": [],
+      "passed": true
+    },
+    "correctness": {
+      "diagnostics": [
+        {
+          "code": "DIFFERENTIAL",
+          "message": "percent-pair-30-41/facts-on: input=253041 expected=0a actual=00 returned=1 expected_length=1 sentinel_unchanged=true source_unchanged=true\n"
+        }
+      ],
+      "passed": false
+    }
+  },
+  "protocol_version": 1,
+  "round": 1
+}

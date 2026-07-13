@@ -1,0 +1,342 @@
+# Generation task
+
+Return only a complete xlang source file, with no Markdown fences or prose.
+
+Implement a function named `decode` with this exact public declaration shape:
+
+```text
+fn decode ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires { ... } { ... }
+```
+
+`src` is an arbitrary byte sequence.  In the result, a `%` byte followed by two
+ASCII hexadecimal digits represents the byte named by those two digits.
+Hexadecimal letters are case-insensitive.  Such a three-byte sequence produces
+one result byte.  A `%` that is not followed by two hexadecimal digits remains
+unchanged and does not remove either following byte.  All other bytes remain
+unchanged and in order.
+
+The required entry condition is that the visible output length is at least the
+source length.  Violation must trap before writing output.  On success, write
+the result starting at output index zero and return its byte length.  Do not
+change the source or any output byte at or after the returned length.
+
+The file may contain helper functions, but it must contain the required
+`decode` function and must not contain `main`.
+
+===== BEGIN COMPLETE XLANG WRITER'S PACK =====
+
+# xlang kernel writer's pack
+
+This is the complete compiler-supported subset needed for a caller-buffer byte
+kernel.  Forms not listed here are unavailable.
+
+## Lexical and file rules
+
+- Use two spaces per brace nesting level, never tabs.
+- Put one construct on each line.  Terminate simple statements such as `let`,
+  `set`, `check`, `return`, `break`, `give`, and `doc` with `;`.  Do not add a
+  semicolon after a closing brace for a function, `requires`, `loop`, `match`,
+  `region`, or match initializer.
+- Separate top-level declarations with one blank line.
+- Integer literals always have a type suffix, such as `0_u8`, `1_u64`, and
+  `255_u64`.  Bare integer literals are rejected.
+- Line and block comments are unavailable.  An optional first body statement
+  can be `doc "text";`.
+- There are no operators, `if`, `while`, `for`, indexing brackets, casts with
+  `as`, closures, iterators, slices, or methods.  Use only the forms below.
+
+Primitive types available here are `u8`, `u32`, `u64`, `i8`, `i32`, `i64`,
+`Bool`, and `unit`.  A fixed-length owned byte buffer has type `buffer<u8>`.
+
+## Functions, ownership, and effects
+
+A function declaration has this shape (`T`, `R`, `EFFECTS`, and `STATEMENTS`
+stand for concrete types, an effect row, and body statements):
+
+```text
+fn name ['r] (x: own T, out: &uniq 'r T) -> own R EFFECTS {
+  STATEMENTS
+}
+```
+
+Parameter modes are `own T`, `&'r T` for a shared borrow, and `&uniq 'r T` for
+an exclusive writable borrow.  Declare a region parameter such as `['r]` when
+the signature contains borrows.  Primitive owned values copy; buffers and
+other aggregate values are affine.
+
+An effect row is either `pure` or the exhibited effects, written in this order:
+`reads('r)`, `writes('r)`, `allocates(heap)`, `traps`.  Reading through a borrow
+exhibits `reads`, writing through one exhibits `writes`, and checked indexing or
+a trapping check exhibits `traps`.  Do not declare an effect the function does
+not exhibit, and do not omit an effect it does exhibit.
+
+Calls use named arguments in declaration order:
+
+```text
+let y: own u64 = helper(x: x, b: move b);
+```
+
+Use `move` when passing an affine owned value.  Borrow arguments are formed
+inside a matching region:
+
+```text
+region 'q {
+  let y: own u64 = helper(out: &uniq 'q data);
+}
+```
+
+For a kernel called by a foreign driver, `main` is not required.
+
+## Entry requirements
+
+Put a `requires` block between the signature and body.  It can contain typed
+`let` bindings and `check` statements.  Its checks run at function entry.
+
+```text
+fn bounded (x: own u64) -> own u64 traps requires {
+  check ile<u64>(x, 100_u64) else trap "limit";
+} {
+  return x;
+}
+```
+
+The effect row covers both the requirement and the body.
+
+## Bindings, mutation, and returns
+
+Every local has an explicit mode and type:
+
+```text
+let count: own u64 = 0_u64;
+set count = iadd.wrap<u64>(count, 1_u64);
+return count;
+```
+
+Do not redeclare or shadow a name.  A binding introduced with `let` is changed
+with `set`.  Operation arguments must be atoms: literals, places, `move place`,
+or borrows.  Nested operations are rejected, so bind each intermediate result
+to a local.
+
+## Buffers and places
+
+For a value or borrow whose referent is a `buffer<u8>`:
+
+```text
+let n: own u64 = len<u8>(b);
+let m: own u64 = len<u8>(deref(out));
+let byte: own u8 = index<u8>(b, i);
+let old: own u8 = index<u8>(deref(out), j);
+set index<u8>(deref(out), j) = byte;
+```
+
+`len<u8>` returns `u64`.  `index<u8>` requires a `u64` index and is a checked
+place: it can be read or assigned.  Use `deref` to reach the referent of a
+borrow.  Indexing outside the buffer traps.
+
+## Control flow
+
+There is one loop form.  Leave it with a matching labeled break:
+
+```text
+loop @again {
+  match ieq<u64>(i, limit) {
+    True() => {
+      break @again;
+    }
+    False() => {
+    }
+  }
+  set i = iadd.wrap<u64>(i, 1_u64);
+}
+```
+
+Conditionals are exhaustive `match` statements on `Bool`; both arms are
+required.  Bind a conditional value with a `match` initializer whose arms end
+in `give`:
+
+```text
+let selected: own u8 = match ile<u8>(a, b) {
+  True() => {
+    give a;
+  }
+  False() => {
+    give b;
+  }
+}
+```
+
+`break` exits only its named loop.  `return value;` exits the function.
+
+## Integer and Boolean operations
+
+All operations are calls with explicit types.  The forms relevant to integer
+code are:
+
+```text
+ieq<T>(a, b)  ine<T>(a, b)
+ilt<T>(a, b)  ile<T>(a, b)  igt<T>(a, b)  ige<T>(a, b)
+
+iadd.wrap<T>(a, b)  isub.wrap<T>(a, b)  imul.wrap<T>(a, b)
+iadd.trap<T>(a, b)  isub.trap<T>(a, b)  imul.trap<T>(a, b)
+idiv.trap<T>(a, b)  irem.trap<T>(a, b)
+
+iand<T>(a, b)  ior<T>(a, b)  ixor<T>(a, b)
+ishl.wrap<T>(a, amount_u32)  ishr.wrap<T>(a, amount_u32)
+
+band<Bool>(a, b)  bor<Bool>(a, b)  bxor<Bool>(a, b)  bnot<Bool>(a)
+cvt<From, To>(value)
+```
+
+`wrap` arithmetic is modular for its result width.  `trap` arithmetic checks
+its exceptional condition and exhibits the `traps` effect.  Comparisons return
+`Bool`.  `cvt` requires distinct numeric source and destination types; for
+example:
+
+```text
+let wide: own u64 = cvt<u8, u64>(small);
+let narrow: own u8 = cvt<u64, u8>(wide);
+```
+
+Combine comparisons by first binding each `Bool`, then applying a Boolean
+operation.  As everywhere else, operation arguments cannot themselves contain
+operations.
+
+## Checks
+
+A nonrecoverable condition uses a Boolean atom:
+
+```text
+let acceptable: own Bool = ile<u64>(used, available);
+check acceptable else trap "contract";
+```
+
+The message is diagnostic text.  A failed check traps; there is no unchecked
+assertion or unsafe escape.
+
+
+DEFAULT-FLOOR OUTPUT CONTRACT
+Return only the complete candidate source on stdout. Do not use Markdown fences, explanations, benchmark results, timing data, or performance measurements.
+
+REPAIR ROUND 2
+Repair the preceding candidate using only the machine feedback below.
+
+PREVIOUS CANDIDATE
+<<<SOURCE
+fn is_hex (byte: own u8) -> own Bool pure {
+  let decimal_low: own Bool = ige<u8>(byte, 48_u8);
+  let decimal_high: own Bool = ile<u8>(byte, 57_u8);
+  let decimal: own Bool = band<Bool>(decimal_low, decimal_high);
+  let upper_low: own Bool = ige<u8>(byte, 65_u8);
+  let upper_high: own Bool = ile<u8>(byte, 70_u8);
+  let upper: own Bool = band<Bool>(upper_low, upper_high);
+  let lower_low: own Bool = ige<u8>(byte, 97_u8);
+  let lower_high: own Bool = ile<u8>(byte, 102_u8);
+  let lower: own Bool = band<Bool>(lower_low, lower_high);
+  let alphabetic: own Bool = bor<Bool>(upper, lower);
+  let result: own Bool = bor<Bool>(decimal, alphabetic);
+  return result;
+}
+
+fn hex_value (byte: own u8) -> own u8 pure {
+  let is_decimal: own Bool = ile<u8>(byte, 57_u8);
+  let result: own u8 = match is_decimal {
+    True() => {
+      let value: own u8 = isub.wrap<u8>(byte, 48_u8);
+      give value;
+    }
+    False() => {
+      let is_upper: own Bool = ile<u8>(byte, 70_u8);
+      let value: own u8 = match is_upper {
+        True() => {
+          let upper_value: own u8 = isub.wrap<u8>(byte, 65_u8);
+          give upper_value;
+        }
+        False() => {
+          let lower_value: own u8 = isub.wrap<u8>(byte, 97_u8);
+          give lower_value;
+        }
+      }
+      give value;
+    }
+  }
+  return result;
+}
+
+fn decode ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
+  let output_length: own u64 = len<u8>(deref(out));
+  let source_length: own u64 = len<u8>(src);
+  let sufficient: own Bool = ige<u64>(output_length, source_length);
+  check sufficient else trap "output too short";
+} {
+  let source_length: own u64 = len<u8>(src);
+  let input_index: own u64 = 0_u64;
+  let output_index: own u64 = 0_u64;
+  loop @decode_loop {
+    let done: own Bool = ieq<u64>(input_index, source_length);
+    match done {
+      True() => {
+        break @decode_loop;
+      }
+      False() => {
+      }
+    }
+    let byte: own u8 = index<u8>(src, input_index);
+    let is_percent: own Bool = ieq<u8>(byte, 37_u8);
+    let remaining: own u64 = isub.wrap<u64>(source_length, input_index);
+    let has_pair: own Bool = ige<u64>(remaining, 3_u64);
+    let candidate: own Bool = band<Bool>(is_percent, has_pair);
+    match candidate {
+      True() => {
+        let next_index: own u64 = iadd.wrap<u64>(input_index, 1_u64);
+        let last_index: own u64 = iadd.wrap<u64>(input_index, 2_u64);
+        let high_byte: own u8 = index<u8>(src, next_index);
+        let low_byte: own u8 = index<u8>(src, last_index);
+        let high_valid: own Bool = is_hex(byte: high_byte);
+        let low_valid: own Bool = is_hex(byte: low_byte);
+        let valid: own Bool = band<Bool>(high_valid, low_valid);
+        match valid {
+          True() => {
+            let high: own u8 = hex_value(byte: high_byte);
+            let low: own u8 = hex_value(byte: low_byte);
+            let shifted: own u8 = imul.wrap<u8>(high, 16_u8);
+            let decoded: own u8 = iadd.wrap<u8>(shifted, low);
+            set index<u8>(deref(out), output_index) = decoded;
+            set input_index = iadd.wrap<u64>(input_index, 3_u64);
+            set output_index = iadd.wrap<u64>(output_index, 1_u64);
+          }
+          False() => {
+            set index<u8>(deref(out), output_index) = byte;
+            set input_index = iadd.wrap<u64>(input_index, 1_u64);
+            set output_index = iadd.wrap<u64>(output_index, 1_u64);
+          }
+        }
+      }
+      False() => {
+        set index<u8>(deref(out), output_index) = byte;
+        set input_index = iadd.wrap<u64>(input_index, 1_u64);
+        set output_index = iadd.wrap<u64>(output_index, 1_u64);
+      }
+    }
+  }
+  return output_index;
+}
+SOURCE
+
+MACHINE EVALUATOR FEEDBACK
+<<<JSON
+{
+  "compile": {
+    "diagnostics": [],
+    "passed": true
+  },
+  "correctness": {
+    "diagnostics": [
+      {
+        "code": "DIFFERENTIAL",
+        "message": "percent-pair-30-41/facts-on: input=253041 expected=0a actual=00 returned=1 expected_length=1 sentinel_unchanged=true source_unchanged=true\n"
+      }
+    ],
+    "passed": false
+  }
+}
+JSON

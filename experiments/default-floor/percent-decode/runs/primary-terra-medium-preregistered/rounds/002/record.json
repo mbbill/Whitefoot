@@ -1,0 +1,58 @@
+{
+  "artifacts": {
+    "evaluator": {
+      "path": "rounds/002/evaluator.json",
+      "sha256": "899a588e2e2f0829d9d2c1d803133b4cc81dcd43358ed1736274f027c3800be6"
+    },
+    "evaluator_process": {
+      "path": "rounds/002/evaluator-process.json",
+      "sha256": "04d87c6904b6726b71c4765f4ee2b1e09e771ad19624d0b2310d6a3093c90799"
+    },
+    "evaluator_raw": {
+      "path": "rounds/002/evaluator.raw.txt",
+      "sha256": "9fef053951bcaee4e5c99f8e06ed7534a427976b82e835ee5c78a16c1b8558cf"
+    },
+    "evaluator_stderr": {
+      "path": "rounds/002/evaluator.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "model_process": {
+      "path": "rounds/002/model-process.json",
+      "sha256": "d7f3b866bcc2f6e1bd12196d1bee588b607ebb6205977b127b8acfac579bb4f0"
+    },
+    "model_stderr": {
+      "path": "rounds/002/model.stderr.txt",
+      "sha256": "677beab6083b6ad617ec1a37706f53c8e3247d4f144a00669f23df4825696a34"
+    },
+    "prompt": {
+      "path": "rounds/002/prompt.txt",
+      "sha256": "cd514b6611fca7153c4116caf5389ec4107d85a1420cf709dc29cd4a4d6230c6"
+    },
+    "raw": {
+      "path": "rounds/002/model.raw.txt",
+      "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
+    },
+    "source": {
+      "path": "rounds/002/percent_decode.xl",
+      "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd"
+    }
+  },
+  "correct": true,
+  "evaluator": {
+    "compile": {
+      "diagnostics": [],
+      "passed": true
+    },
+    "correctness": {
+      "diagnostics": [
+        {
+          "code": "CORPUS",
+          "message": "correct cases=153014"
+        }
+      ],
+      "passed": true
+    }
+  },
+  "protocol_version": 1,
+  "round": 2
+}

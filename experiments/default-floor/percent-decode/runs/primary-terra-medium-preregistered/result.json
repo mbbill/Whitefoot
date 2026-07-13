@@ -1,0 +1,7 @@
+{
+  "manifest": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/trace-manifest.json",
+  "round": 2,
+  "sha256": "b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd",
+  "source": "/Users/bytedance/Dev/xlang/experiments/default-floor/percent-decode/runs/primary-terra-medium-preregistered/frozen/percent_decode.xl",
+  "status": "frozen"
+}

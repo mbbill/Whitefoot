@@ -1,0 +1,266 @@
+{
+  "evaluator_invocation": {
+    "argv_items_without_candidate": 2,
+    "argv_without_candidate_sha256": "0701b7ba57de6251a29d6cda147d554817b282899d55aabb06e0529af9ddf9f4",
+    "public_metadata": {
+      "cargo_config_absence": {
+        "cargo_home": "/Users/bytedance/.cargo",
+        "schema_version": 1,
+        "search_cwd": "/Users/bytedance/Dev/xlang",
+        "searched_paths": [
+          "/Users/bytedance/Dev/xlang/.cargo/config.toml",
+          "/Users/bytedance/Dev/xlang/.cargo/config",
+          "/Users/bytedance/Dev/.cargo/config.toml",
+          "/Users/bytedance/Dev/.cargo/config",
+          "/Users/bytedance/.cargo/config.toml",
+          "/Users/bytedance/.cargo/config",
+          "/Users/.cargo/config.toml",
+          "/Users/.cargo/config",
+          "/.cargo/config.toml",
+          "/.cargo/config"
+        ],
+        "status": "all-search-paths-absent"
+      },
+      "corpus_cases": 153014,
+      "git_status_porcelain_v1": [
+        "M compiler/PLAN.md"
+      ],
+      "host_platform": "macOS-26.5.1-arm64-arm-64bit",
+      "input_hashes": {
+        "experiments/default-floor/PROTOCOL.md": "8861c0063f401540634a3c652d1247732bbd1df03be5e094c27aed3e2e4416c1",
+        "experiments/default-floor/README.md": "180296ef8824186ff8a85cf4a2e4477d47c8ffb4a1adbee2a05a4b03a6f123de",
+        "experiments/default-floor/codex_model_adapter.py": "4ea4205f96b482a38cea34c5c2f1887b66aea1590845eb82d2b825fe8ac51e5b",
+        "experiments/default-floor/generate.py": "7d55d8e9961fc24171591a3a3c5f21d0b98ded5d24cfd2720753d24d78f9c0a1",
+        "experiments/default-floor/percent-decode/.gitignore": "43a11ddf1149899781ed9c385838f311c1094d6d3ff9fca281f1dc73698fcec2",
+        "experiments/default-floor/percent-decode/BENCHMARK.md": "844aee12e4e42870fa1c97c393df3f83b176ace6dab372722c424f3d7f62027e",
+        "experiments/default-floor/percent-decode/PROTOCOL.md": "34f4ad8bf9ae1a8371562a0c2c7562795eb19f56a49ab38c189d54c1a14eda56",
+        "experiments/default-floor/percent-decode/analyze.py": "f1d9c2738a7fe7bac6770c795f7f1a969e7f625cba8e5a2f81f43fd9f300582a",
+        "experiments/default-floor/percent-decode/assemble_prompt.py": "8981a14fc095d343076e643aefd96a5bbb01dff71080275fe44d6b40f44a4405",
+        "experiments/default-floor/percent-decode/base-prompt.txt": "554050441f265d5c290756209a4a911f91004b1d55d73e6dd6a42bdc40d00dc7",
+        "experiments/default-floor/percent-decode/benchmark.py": "a03fe154286e73cf5858a70728355a33102b42b68f6b2d54600a16a187e8e4b0",
+        "experiments/default-floor/percent-decode/boundary.c": "5f96a6954a0dedd6f877460f55b7873cba80faf0aa469e22b8b9421db504d704",
+        "experiments/default-floor/percent-decode/harness/Cargo.lock": "80fdfa152b1faea89906a646110a23ebbdcaae9efb6f3d698007716e8ebcced9",
+        "experiments/default-floor/percent-decode/harness/Cargo.toml": "33904fc7cf9ccd00134c380f9d00aec1a4426ada7a7b46a31925619010991361",
+        "experiments/default-floor/percent-decode/harness/src/bin/bench.rs": "f01b67e693bc9bc87f4a0fe8fe4175a244be4bfe1491e8d9ff152b8386060baf",
+        "experiments/default-floor/percent-decode/harness/src/bin/verify.rs": "ee16143143b24f0a44ecd034da6a08ebc818239b538e08d3fac541a9e686304c",
+        "experiments/default-floor/percent-decode/incidents/2026-07-12-pre-freeze-launch.json": "419a7c88d44ad4daa2184ccc4e207b42da35f718d2f58f8da149c06e250f3c04",
+        "experiments/default-floor/percent-decode/run_generation.py": "b75a6cde3f20cfd3cb6f22702b85e05182c58a7f2c4ef411511b614f55de04af",
+        "experiments/default-floor/percent-decode/rust-baseline/Cargo.lock": "c80ad5f2fa55197d43790732247ef5df82bed6f03fd90fa1e75be562d7ca65a2",
+        "experiments/default-floor/percent-decode/rust-baseline/Cargo.toml": "cb5bf88dc0b36e6868634d05f9873ec583cfab8e51d910d1b2567b3e1965bd64",
+        "experiments/default-floor/percent-decode/rust-baseline/README.md": "64594001c0b214e276580a2b9dc26a1e98fa321c14baa7cc234e20b72a1ceb65",
+        "experiments/default-floor/percent-decode/rust-baseline/src/lib.rs": "e45f55b36b4edc46f3c4c0de7b468a163c93762470cb4d0268bed0fcbd2f3ba4",
+        "experiments/default-floor/percent-decode/task.md": "5ee6fbf0def51248ccc7749855a11c9b6cb8f44a664ff74326d84f91285fc022",
+        "experiments/default-floor/percent-decode/teaching-pack.md": "a4ee1213415af5c56bdbbfa21697388b37f644bbc64a478ff7006fd03dcdfcd5",
+        "experiments/default-floor/percent-decode/verify.py": "66fde35668ed520b7fac60b6fee834fea66416a1e94c359ff16dad57d9747516",
+        "experiments/default-floor/tests/__init__.py": "8e505f5876508d879a8b1d0edbcc2cf539c2308b72054ca748b914ff544bfc37",
+        "experiments/default-floor/tests/mock_codex_cli.py": "569d9a8b5daaf677ad5e623e989ca0a3f23fdafbeba87e021897265d1a9d0e4a",
+        "experiments/default-floor/tests/mock_evaluator.py": "149ef935fff085694d5aad8b12722b61e3ad3d1cfbc8c137f693a778797872fd",
+        "experiments/default-floor/tests/mock_model.py": "1a742cbb855286cfd2d225349a47be859893985c19bf47cf6995cd774311e6b4",
+        "experiments/default-floor/tests/test_codex_model.py": "2e788df86ff39a4197c06ec781a39d40d2ef45a729ca22cbdcc2c046cfabd174",
+        "experiments/default-floor/tests/test_generate.py": "01fa602b46fa6905dd293515bc8f2786344e773806424f9cd4ac7010aa4e300d",
+        "prototype/checker/checker.py": "835e209b8569f0059d5c115dedc4d8ba3a2c98bd7853d401b64a30be0e45e6f4",
+        "prototype/democ/democ.py": "211f7caee393ac5822df71cdd0777a2c9b77dc2fafd47d4f3fd4d0aeed9c5336"
+      },
+      "kind": "percent-decode-compile-and-correctness",
+      "percent_encoding_registry": {
+        "crate_files": [
+          {
+            "path": "/Users/bytedance/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2.crate",
+            "sha256": "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+          }
+        ],
+        "expected_crates_io_sha256": "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220",
+        "package": "percent-encoding",
+        "verified_source_trees": [
+          {
+            "cargo_ok_sha256": "afbf9d0f3560b0fd7795e81c42a0a79ee6b6fc67e064f77826aee642cad28d91",
+            "path": "/Users/bytedance/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/percent-encoding-2.3.2",
+            "tree_directories": [
+              "src"
+            ],
+            "tree_files_sha256": {
+              ".cargo_vcs_info.json": "2ae92ec4c21dd8bca2d5ecb28b40596427d969782a6453a8d2cbb6e9183bfe1c",
+              "Cargo.lock": "e8ebbff29bf764c0f87881e1cc39ed66efe9c7ea61d7e07749d530f7c8eba82c",
+              "Cargo.toml": "e4ea043c47bbd5551fc5fcf8151eab94428b4be6f2337834a0f9020a4392fb19",
+              "Cargo.toml.orig": "36b46b35abb58c4e2dbe2c25bcf64709ed170bd720efd1b4b1280509ca072f5f",
+              "LICENSE-APACHE": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+              "LICENSE-MIT": "b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5",
+              "src/ascii_set.rs": "f75552e4f446ed240cef64c1367e848cf3ae65f77602085459566d835a1d8587",
+              "src/lib.rs": "641903d385581e76f31ef8c991d83c2a5d7fbbc2879d93909c539037e4e1e3e2"
+            }
+          }
+        ],
+        "version": "2.3.2"
+      },
+      "proof_feedback": "disabled-before-freeze",
+      "python": "3.9.6",
+      "repository_revision": "9b6dd9e7ce0f83cfa2914bcf363f3eaf95c6048d",
+      "tool_manifest": {
+        "clang_default_configs": {
+          "cfg_files_sha256": {
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/aarch64-swift-linux-musl-clang++.cfg": "46dee6b61cb6efb3748a08aefe5088961f7435767491e2b719d6e939d9a0dcf0",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/aarch64-swift-linux-musl-clang.cfg": "46dee6b61cb6efb3748a08aefe5088961f7435767491e2b719d6e939d9a0dcf0",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/x86_64-swift-linux-musl-clang++.cfg": "b8ae741f12cebb7e1a4f3782ee75f83c0e4396a9c4dbdbcd3192d6ce48824afa",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/x86_64-swift-linux-musl-clang.cfg": "b8ae741f12cebb7e1a4f3782ee75f83c0e4396a9c4dbdbcd3192d6ce48824afa"
+          },
+          "cfg_symlink_targets": {
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/aarch64-swift-linux-musl-clang++.cfg": "aarch64-swift-linux-musl-clang.cfg",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/x86_64-swift-linux-musl-clang++.cfg": "x86_64-swift-linux-musl-clang.cfg"
+          },
+          "direct_clang_policy": "--no-default-config",
+          "schema_version": 1,
+          "search_directories": {
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
+            "/Users/bytedance/.config/clang": "absent",
+            "/Users/bytedance/Library/Preferences/clang": "absent",
+            "/etc/clang": "absent"
+          },
+          "status": "only-hash-locked-swift-linux-configs-no-macos-match"
+        },
+        "macos_sdk": {
+          "canonical_name": "macosx26.5",
+          "display_name": "macOS 26.5",
+          "version": "26.5"
+        },
+        "paths": {
+          "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+          "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+          "codex_javascript": "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
+          "codex_launcher": "/opt/homebrew/bin/codex",
+          "codex_native": "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+          "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+          "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+          "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
+          "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+        },
+        "sha256": {
+          "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
+          "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
+          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
+          "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
+          "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017"
+        },
+        "versions": {
+          "cargo": "cargo 1.91.1 (ea2d97820 2025-10-10)\nrelease: 1.91.1\ncommit-hash: ea2d97820c16195b0ca3fadb4319fe512c199a43\ncommit-date: 2025-10-10\nhost: aarch64-apple-darwin\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nssl: OpenSSL 3.5.2 5 Aug 2025\nos: Mac OS 26.5.1 [64-bit]",
+          "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)\nTarget: arm64-apple-darwin25.5.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+          "codex": "codex-cli 0.144.0",
+          "codex_native": "codex-cli 0.144.0",
+          "python": "Python 3.9.6",
+          "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)\nbinary: rustc\ncommit-hash: ed61e7d7e242494fb7057f2657300d9e77bb4fcb\ncommit-date: 2025-11-07\nhost: aarch64-apple-darwin\nrelease: 1.91.1\nLLVM version: 21.1.2"
+        }
+      }
+    }
+  },
+  "evaluator_timeout_seconds": 900.0,
+  "max_rounds": 4,
+  "model_invocation": {
+    "argv_items": 12,
+    "argv_sha256": "ead3ba903597dccc3c8b071d10bf1574f0a9e95728d789a6d0358335bfc11db0",
+    "public_metadata": {
+      "cargo_config_absence": {
+        "cargo_home": "/Users/bytedance/.cargo",
+        "schema_version": 1,
+        "search_cwd": "/Users/bytedance/Dev/xlang",
+        "searched_paths": [
+          "/Users/bytedance/Dev/xlang/.cargo/config.toml",
+          "/Users/bytedance/Dev/xlang/.cargo/config",
+          "/Users/bytedance/Dev/.cargo/config.toml",
+          "/Users/bytedance/Dev/.cargo/config",
+          "/Users/bytedance/.cargo/config.toml",
+          "/Users/bytedance/.cargo/config",
+          "/Users/.cargo/config.toml",
+          "/Users/.cargo/config",
+          "/.cargo/config.toml",
+          "/.cargo/config"
+        ],
+        "status": "all-search-paths-absent"
+      },
+      "codex_version": "codex-cli 0.144.0",
+      "ephemeral": true,
+      "event_boundary": "exact-four-event-single-agent-message-no-tools",
+      "git_status_porcelain_v1": [
+        "M compiler/PLAN.md"
+      ],
+      "host_platform": "macOS-26.5.1-arm64-arm-64bit",
+      "input_hashes": {
+        "experiments/default-floor/codex_model_adapter.py": "4ea4205f96b482a38cea34c5c2f1887b66aea1590845eb82d2b825fe8ac51e5b",
+        "experiments/default-floor/generate.py": "7d55d8e9961fc24171591a3a3c5f21d0b98ded5d24cfd2720753d24d78f9c0a1",
+        "experiments/default-floor/percent-decode/base-prompt.txt": "554050441f265d5c290756209a4a911f91004b1d55d73e6dd6a42bdc40d00dc7"
+      },
+      "model": "gpt-5.6-terra",
+      "python": "3.9.6",
+      "reasoning_effort": "medium",
+      "repository_revision": "9b6dd9e7ce0f83cfa2914bcf363f3eaf95c6048d",
+      "repository_rules": "ignored",
+      "sandbox": "read-only",
+      "service_tier": "default",
+      "surface": "codex-cli",
+      "tool_manifest": {
+        "clang_default_configs": {
+          "cfg_files_sha256": {
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/aarch64-swift-linux-musl-clang++.cfg": "46dee6b61cb6efb3748a08aefe5088961f7435767491e2b719d6e939d9a0dcf0",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/aarch64-swift-linux-musl-clang.cfg": "46dee6b61cb6efb3748a08aefe5088961f7435767491e2b719d6e939d9a0dcf0",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/x86_64-swift-linux-musl-clang++.cfg": "b8ae741f12cebb7e1a4f3782ee75f83c0e4396a9c4dbdbcd3192d6ce48824afa",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/x86_64-swift-linux-musl-clang.cfg": "b8ae741f12cebb7e1a4f3782ee75f83c0e4396a9c4dbdbcd3192d6ce48824afa"
+          },
+          "cfg_symlink_targets": {
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/aarch64-swift-linux-musl-clang++.cfg": "aarch64-swift-linux-musl-clang.cfg",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/x86_64-swift-linux-musl-clang++.cfg": "x86_64-swift-linux-musl-clang.cfg"
+          },
+          "direct_clang_policy": "--no-default-config",
+          "schema_version": 1,
+          "search_directories": {
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin": "present",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/etc/clang": "absent",
+            "/Users/bytedance/.config/clang": "absent",
+            "/Users/bytedance/Library/Preferences/clang": "absent",
+            "/etc/clang": "absent"
+          },
+          "status": "only-hash-locked-swift-linux-configs-no-macos-match"
+        },
+        "macos_sdk": {
+          "canonical_name": "macosx26.5",
+          "display_name": "macOS 26.5",
+          "version": "26.5"
+        },
+        "paths": {
+          "cargo": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo",
+          "clang": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+          "codex_javascript": "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
+          "codex_launcher": "/opt/homebrew/bin/codex",
+          "codex_native": "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex",
+          "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+          "macos_sdk_settings": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+          "python": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
+          "rustc": "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+        },
+        "sha256": {
+          "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9": "271143990bc83af0fb2404a255038f5faafb96df1584ed7f085e5018c0f33ffb",
+          "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe",
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
+          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo": "696d29bd6f5a136ef6c7088558e178efcabbd571de90e8169d0f6596c568eea8",
+          "/Users/bytedance/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc": "f556cd7caa76d85ff0e777ba8e96552b33b4e0ea0dda8fbe6cde1d23b6c4df27",
+          "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js": "134063e133f0b4244fa3b251acf973d4fe4b4aeeacbdc135211bf480f59f1477",
+          "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex": "978740e6bcbd9af2f850823b723fb74f16d8d1e44de05f7dd6737ae631f72017"
+        },
+        "versions": {
+          "cargo": "cargo 1.91.1 (ea2d97820 2025-10-10)\nrelease: 1.91.1\ncommit-hash: ea2d97820c16195b0ca3fadb4319fe512c199a43\ncommit-date: 2025-10-10\nhost: aarch64-apple-darwin\nlibgit2: 1.9.1 (sys:0.20.2 vendored)\nlibcurl: 8.7.1 (sys:0.4.83+curl-8.15.0 system ssl:(SecureTransport) LibreSSL/3.3.6)\nssl: OpenSSL 3.5.2 5 Aug 2025\nos: Mac OS 26.5.1 [64-bit]",
+          "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)\nTarget: arm64-apple-darwin25.5.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+          "codex": "codex-cli 0.144.0",
+          "codex_native": "codex-cli 0.144.0",
+          "python": "Python 3.9.6",
+          "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)\nbinary: rustc\ncommit-hash: ed61e7d7e242494fb7057f2657300d9e77bb4fcb\ncommit-date: 2025-11-07\nhost: aarch64-apple-darwin\nrelease: 1.91.1\nLLVM version: 21.1.2"
+        }
+      },
+      "user_config": "ignored"
+    }
+  },
+  "model_timeout_seconds": 660.0,
+  "protocol_version": 1,
+  "repair_budget": 3,
+  "source_name": "percent_decode.xl",
+  "trajectory_count": 1
+}

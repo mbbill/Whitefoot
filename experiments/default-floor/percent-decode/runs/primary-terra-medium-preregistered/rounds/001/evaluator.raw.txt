@@ -1,0 +1,1 @@
+{"compile":{"diagnostics":[],"passed":true},"correctness":{"diagnostics":[{"code":"DIFFERENTIAL","message":"percent-pair-30-41/facts-on: input=253041 expected=0a actual=00 returned=1 expected_length=1 sentinel_unchanged=true source_unchanged=true\n"}],"passed":false}}

@@ -755,3 +755,19 @@ full tool/SDK, Cargo-config, crate/archive/tree, input-hash, run-tree archive,
 and invalid-rerun validation; benchmark smoke marked `not_a_score`; `make check`
 and `make -C compiler check` both green.  No official model output or scoring
 measurement was produced during these checks.
+
+## D9a Terra default-floor source frozen (2026-07-12, before measurement)
+
+The sole preregistered `gpt-5.6-terra`/medium/default-service trajectory ran
+under identity `runs/primary-terra-medium-preregistered`.  Round 0 failed to
+compile on a missing statement terminator.  Round 1 compiled but failed the
+stable differential case `%0A` (`0a` expected, `00` returned).  Round 2 was the
+first correctness-green candidate and froze immediately; no fourth model call
+was made.  Frozen source SHA-256:
+`b67dd2912ba907d64e38fc1044f52a305824b3d9141043a901027b64b94e00bd`.
+
+The frozen manifest validates the exact three-round trace and first-green
+identity.  An independent post-freeze evaluator invocation again reports
+compile green and `correct cases=153014`.  At this entry no proof report, IR,
+assembly, or performance result has been used to alter the source, and the
+preregistered scoring campaign has not yet run.
