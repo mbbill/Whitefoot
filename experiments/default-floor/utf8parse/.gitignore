@@ -1,0 +1,5 @@
+# Regenerable scoring payloads. Keep metadata, schedules, raw rows, proof
+# reports, IR, and logs as durable evidence; omit the 128-MiB corpus and the
+# Cargo target tree.
+results/*/corpus.bin
+results/*/build/cargo-target/

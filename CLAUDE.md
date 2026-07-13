@@ -64,8 +64,10 @@ proof discharges them — speed is earned by proof, never by weakening a check.
   first-green `percent_decode` beats shipped `percent-encoding` 2.3.2 by
   1.653x [1.631, 1.667]. Facts-on/off is practical parity with all six checks
   retained, so this is default-shape evidence, not proof-elision evidence.
-  Next: independently preregister one fresh shipped-library replication before
-  broadening the claim; do not tune the completed candidate or protocol.
+  The independent second target is now preregistered against shipped
+  `utf8parse` 0.2.2: one-shot `Parser`/`Receiver` events, an 84,041-case exact
+  and surplus-capacity gate, and a fixed 128 MiB score. It has not yet been
+  launched. Do not tune either completed/frozen protocol from model output.
 - Proof tier: PROOF-1/2 shipped and adversarially reviewed; the accounting
   design's approved first slice is in
   `optimizer-language-research/implementation/requires-check-accounting-REVIEW.md`.

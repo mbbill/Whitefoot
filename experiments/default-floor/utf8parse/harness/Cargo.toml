@@ -1,0 +1,21 @@
+[package]
+name = "xlang-utf8parse-harness"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+# This feature exists only so `benchmark.py smoke` can exercise every harness
+# path without a generated candidate. The scoring build never enables it.
+smoke-shim = []
+
+[dependencies]
+xlang-utf8parse-rust-baseline = { path = "../rust-baseline" }
+
+[[bin]]
+name = "verify"
+path = "src/bin/verify.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"

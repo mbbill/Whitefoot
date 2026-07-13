@@ -801,3 +801,32 @@ D9a is satisfied for this target, not generalized.  The next evidence step is
 one independently preregistered shipped-library replication; an optional
 post-primary Rust inlining ceiling may explain mechanism but is not required
 to preserve the default-floor conclusion.
+
+## D9a utf8parse replication preregistered (2026-07-12, before generation)
+
+The second shipped-library target is frozen independently against ordinary
+`utf8parse` 0.2.2 defaults and its public `Parser`/`Receiver` API.  The one-shot
+task maps valid scalars and invalid-sequence events into caller-owned `u32`
+storage.  The sole generation identity is again one exact
+`gpt-5.6-terra`/medium/default-service trajectory with an initial response and
+at most three repairs; first correctness-green freezes immediately.
+
+The deterministic gate has 84,041 cases.  Rust/oracle preflight, facts-on, and
+facts-off each run every case at exact `src.len` capacity and at `src.len + 32`;
+a subprocess boundary additionally requires every smaller capacity to trap
+before writing.  The primary score is 30 fresh processes over a fixed 128 MiB
+four-class corpus, with the same balanced ordering, paired ratios, stratified
+bootstrap, and +/-2% verdict band as the first target.  The scope is explicitly
+one-shot and synthetic-corpus-specific, not a claim about chunked streaming or
+typical terminal text.
+
+Prompt SHA-256 is
+`81f023e583987d4610f15faa529b6481805dc4094fda2168146cf9ea9e9c903a`;
+protocol SHA-256 is
+`e786e949d1500c605ef37195dadc60e25380d4e02b7afc9f660d1cf5e062d960`.
+Pre-freeze evidence: private reference candidate passed the full locked
+evaluator (`correct cases=84041`); Rust/harness tests and Clippy are green;
+strict C boundary and Python syntax checks are green; 16 MiB orchestrator smoke
+completed all six non-scoring order blocks with identical counts/digests; root
+`make check` and `make -C compiler check` are green.  No official model output,
+proof report, IR, assembly, or timing result existed at this entry.

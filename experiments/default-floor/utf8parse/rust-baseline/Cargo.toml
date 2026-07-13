@@ -1,0 +1,8 @@
+[package]
+name = "xlang-utf8parse-rust-baseline"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+utf8parse = "=0.2.2"
