@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xlang.local/data-layout-owning-sequence/manifest-v1.schema.json",
+  "title": "Native F-SOA campaign manifest v1",
+  "type": "object",
+  "required": [
+    "schema_version", "kind", "status", "created_utc", "mode",
+    "not_a_score", "variant", "phase", "repository", "binding", "lock",
+    "source", "sample_plan", "samples_completed", "expected_report",
+    "expected_correctness_sha256", "verdict", "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "f-soa-baseline-campaign" },
+    "status": { "enum": ["building", "measuring", "complete", "invalid"] },
+    "created_utc": { "type": "string", "format": "date-time" },
+    "completed_utc": { "type": "string", "format": "date-time" },
+    "invalid_utc": { "type": "string", "format": "date-time" },
+    "error": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["smoke", "score"] },
+    "not_a_score": { "type": "boolean" },
+    "variant": { "const": "F-SOA" },
+    "phase": { "const": "cold-wrapper" },
+    "repository": {
+      "type": "object",
+      "required": ["head", "dirty", "dirty_entries"],
+      "properties": {
+        "head": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "dirty": { "type": "boolean" },
+        "dirty_entries": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "binding": { "type": "object" },
+    "lock": { "type": ["object", "null"] },
+    "source": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "const": "compiler-source.xl" },
+        "bytes": { "const": 1029044 },
+        "sha256": {
+          "const": "17c28914ec3cd109f0411cc8a83423623c1541be239e753e91144a66bea93f65"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sample_plan": {
+      "type": "object",
+      "required": ["samples", "fresh_process_per_sample", "one_wrapper_call_per_process"],
+      "properties": {
+        "samples": { "enum": [2, 30] },
+        "fresh_process_per_sample": { "const": true },
+        "one_wrapper_call_per_process": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "samples_completed": { "type": "integer", "minimum": 0, "maximum": 30 },
+    "expected_report": { "type": "object" },
+    "expected_correctness_sha256": {
+      "const": "0e621454fb1d8822252b422a081f52668d69660c044cc1cf1dbbf0ff2b755a42"
+    },
+    "verdict": { "type": "null" },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "build": { "$ref": "#/$defs/build" },
+    "raw": {
+      "type": "object",
+      "required": ["path", "records", "bytes", "sha256"],
+      "properties": {
+        "path": { "const": "raw.jsonl" },
+        "records": { "enum": [2, 30] },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "sample_pids": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "smoke" } } },
+      "then": {
+        "properties": {
+          "not_a_score": { "const": true },
+          "lock": { "type": "null" },
+          "sample_plan": { "properties": { "samples": { "const": 2 } } }
+        }
+      },
+      "else": {
+        "properties": {
+          "not_a_score": { "const": false },
+          "lock": { "type": "object" },
+          "sample_plan": { "properties": { "samples": { "const": 30 } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "measuring" } } },
+      "then": { "required": ["build"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "complete" } } },
+      "then": { "required": ["build", "completed_utc", "raw", "sample_pids"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "invalid" } } },
+      "then": { "required": ["invalid_utc", "error"] }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "file": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "build": {
+      "type": "object",
+      "required": [
+        "schema_version", "argv", "cwd", "returncode",
+        "stage0_optimizer_facts", "frozen_ir_identity", "main_stack",
+        "forbidden_fact_markers", "ir", "driver", "executable", "stdout",
+        "stderr"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "argv": { "type": "array", "items": { "type": "string" }, "minItems": 7 },
+        "cwd": { "type": "string", "minLength": 1 },
+        "returncode": { "const": 0 },
+        "stage0_optimizer_facts": { "const": false },
+        "frozen_ir_identity": {
+          "type": "object",
+          "required": ["bytes", "sha256"],
+          "properties": {
+            "bytes": { "const": 1860733 },
+            "sha256": {
+              "const": "23baa6cce795a7c8c21b66af2c2c01dbbeade8e40b5fe7dda64966db9f8e615a"
+            }
+          },
+          "additionalProperties": false
+        },
+        "main_stack": {
+          "type": "object",
+          "required": ["bytes", "linker_flag", "protocol_amendment", "equal_for_every_arm"],
+          "properties": {
+            "bytes": { "const": 67108864 },
+            "linker_flag": { "const": "-Wl,-stack_size,0x4000000" },
+            "protocol_amendment": { "const": "PROTOCOL_AMENDMENTS.md#A1" },
+            "equal_for_every_arm": { "const": true }
+          },
+          "additionalProperties": false
+        },
+        "forbidden_fact_markers": { "type": "array", "items": { "type": "string" } },
+        "ir": { "$ref": "#/$defs/file" },
+        "driver": { "$ref": "#/$defs/file" },
+        "executable": { "$ref": "#/$defs/file" },
+        "stdout": { "const": "build/clang.stdout" },
+        "stderr": { "const": "build/clang.stderr" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

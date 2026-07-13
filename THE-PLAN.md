@@ -87,11 +87,17 @@ Measured non-wins (equally load-bearing):
    deterministically reports 15 clean, 462 legal-unsupported, and zero semantic
    rejects, with the first source-order frontier at `lexer_scan_op_suffix`.
    Legal non-profile functions are no longer misreported as type errors, and the
-   existing 15-function LLVM module remains byte-identical. A short E0 dogfood
-   gate now tests three high-frequency, provisionally grounded surface costs
-   exposed by the 23,962-line compiler: Bool match-only control, mandatory local
-   `own`, and no-wrap canonical formatting. After that bounded decision, the next
-   S1 slice adds an acyclic-decision semantic family for
+   existing 15-function LLVM module remains byte-identical. E0 is now an ordered
+   five-part expressiveness validation: flat data layout/owning sequences; closed-unit
+   modules, inherent impl and static contracts; borrowed aggregates plus
+   fact-carrying loops/range match; byte constants/bulk append; and typed SIMD
+   with target dispatch. Exactly one part runs at a time, beginning with the
+   current SoA-vs-AoS/owning-sequence question. Each part freezes a factorial
+   protocol, preserves unchanged-source code shape, measures default-writer
+   selection where applicable, and receives hostile review before any language
+   change. The earlier local-own/Bool-if/formatting observations are parked as
+   surface costs, not treated as evidence of lost performance. After those five
+   decisions, the next S1 slice adds an acyclic-decision semantic family for
    `lexer_scan_op_suffix` plus `lexer_scan_word`, without adding lowering; later
    slices extend copy-scalar, type, ownership, and effect rules across the
    remaining functions. The staged route continues through whole-unit lowering,
@@ -177,8 +183,9 @@ and shipped `utf8parse` 0.2.2 by 1.098x on their locked workloads. Neither win
 comes from proof-elided bounds checks. This supports a replicated default-shape
 thesis while remaining limited to these implementations, corpora, and machine.
 THE BUILD TRACK IS ACTIVE: `compiler/` hosts xlc, the production compiler
-written in xlang itself (SoA-tape architecture per P2, fixed-capacity
-buffers, no generics needed), bootstrapped by prototype/democ as stage 0,
+written in xlang itself (the current baseline remains the P2 SoA-tape
+architecture with fixed-capacity buffers and no generics), bootstrapped by
+prototype/democ as stage 0,
 with its own gate (`make -C compiler check`, incl. the self-parse gate).
 
 ## 5. The pivot clause (pre-registered)
@@ -211,3 +218,6 @@ changes the pitch, not the honesty; it is a finding, not a failure.
 - Claims discipline: verifiers before headlines; report the number that
   survives adversarial review, with the caveat attached.
 - Safe-direction framing: performance and correctness language only.
+- Repository language: every repository-resident artifact and filename uses
+  English only (D10); translated duplicates and language-suffixed reports are
+  forbidden.

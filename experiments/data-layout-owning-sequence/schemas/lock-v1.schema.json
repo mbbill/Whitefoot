@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xlang.local/data-layout-owning-sequence/lock-v1.schema.json",
+  "title": "Native F-SOA score lock v1",
+  "type": "object",
+  "required": [
+    "schema_version", "kind", "created_utc", "campaign", "binding",
+    "expected_report", "expected_correctness_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "f-soa-baseline-lock" },
+    "created_utc": { "type": "string", "format": "date-time" },
+    "campaign": {
+      "type": "object",
+      "required": ["mode", "variant", "phase", "samples"],
+      "properties": {
+        "mode": { "const": "score" },
+        "variant": { "const": "F-SOA" },
+        "phase": { "const": "cold-wrapper" },
+        "samples": { "const": 30 }
+      },
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "required": [
+        "schema_version", "repository_head", "canonical_source",
+        "harness_inputs", "stage0_inputs", "tools", "host", "environment",
+        "build_profile", "binding_sha256"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "repository_head": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "canonical_source": { "type": "object" },
+        "harness_inputs": { "type": "array" },
+        "stage0_inputs": { "type": "array" },
+        "tools": { "type": "object" },
+        "host": { "type": "object" },
+        "environment": { "type": "object" },
+        "build_profile": { "type": "object" },
+        "binding_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "expected_report": { "$ref": "#/$defs/report" },
+    "expected_correctness_sha256": {
+      "const": "0e621454fb1d8822252b422a081f52668d69660c044cc1cf1dbbf0ff2b755a42"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "report": {
+      "type": "object",
+      "required": [
+        "stage", "status", "error_start", "error_end", "node", "related",
+        "token_count", "node_count", "type_count", "symbol_count",
+        "function_count"
+      ],
+      "properties": {
+        "stage": { "const": 0 },
+        "status": { "const": 0 },
+        "error_start": { "const": 0 },
+        "error_end": { "const": 0 },
+        "node": { "const": 18446744073709551615 },
+        "related": { "const": 18446744073709551615 },
+        "token_count": { "const": 211374 },
+        "node_count": { "const": 105550 },
+        "type_count": { "const": 11429 },
+        "symbol_count": { "const": 3629 },
+        "function_count": { "const": 477 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

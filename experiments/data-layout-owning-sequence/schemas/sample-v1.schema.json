@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xlang.local/data-layout-owning-sequence/sample-v1.schema.json",
+  "title": "Native F-SOA cold-wrapper sample v1",
+  "type": "object",
+  "required": [
+    "schema_version", "kind", "variant", "phase", "mode", "not_a_score",
+    "sample_index", "pid", "clock", "corpus_bytes", "corpus_sha256",
+    "executable_sha256", "elapsed_ns", "report", "correctness_schema",
+    "correctness_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "f-soa-baseline-sample" },
+    "variant": { "const": "F-SOA" },
+    "phase": { "const": "cold-wrapper" },
+    "mode": { "enum": ["smoke", "score"] },
+    "not_a_score": { "type": "boolean" },
+    "sample_index": { "$ref": "#/$defs/u64" },
+    "pid": { "type": "integer", "minimum": 1 },
+    "clock": { "enum": ["CLOCK_MONOTONIC_RAW", "CLOCK_MONOTONIC"] },
+    "corpus_bytes": { "const": 1029044 },
+    "corpus_sha256": {
+      "const": "17c28914ec3cd109f0411cc8a83423623c1541be239e753e91144a66bea93f65"
+    },
+    "executable_sha256": { "$ref": "#/$defs/sha256" },
+    "elapsed_ns": { "type": "integer", "minimum": 1 },
+    "report": { "$ref": "#/$defs/report" },
+    "correctness_schema": { "const": "frontend-report-le-v1" },
+    "correctness_sha256": {
+      "const": "0e621454fb1d8822252b422a081f52668d69660c044cc1cf1dbbf0ff2b755a42"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "smoke" } } },
+      "then": { "properties": { "not_a_score": { "const": true } } },
+      "else": { "properties": { "not_a_score": { "const": false } } }
+    }
+  ],
+  "$defs": {
+    "u64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "report": {
+      "type": "object",
+      "required": [
+        "stage", "status", "error_start", "error_end", "node", "related",
+        "token_count", "node_count", "type_count", "symbol_count",
+        "function_count"
+      ],
+      "properties": {
+        "stage": { "const": 0 },
+        "status": { "const": 0 },
+        "error_start": { "const": 0 },
+        "error_end": { "const": 0 },
+        "node": { "const": 18446744073709551615 },
+        "related": { "const": 18446744073709551615 },
+        "token_count": { "const": 211374 },
+        "node_count": { "const": 105550 },
+        "type_count": { "const": 11429 },
+        "symbol_count": { "const": 3629 },
+        "function_count": { "const": 477 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

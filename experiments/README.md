@@ -16,6 +16,13 @@ and gitignored. Chronology and decisions live in
 - `frequency-study/` — completed one-time directional scan of popular Rust
   sources/applications; points the next real port at relational bounds proofs.
 
+## Active expressiveness validation
+
+- `data-layout-owning-sequence/` — E0.1 research plus isolated experiments. Separates
+  fixed SoA/AoS layout from initialized-prefix ownership and growth, protects
+  the compiler's current SoA as the zero-tax baseline, forbids feature-flagged
+  dual semantics, and requires owner review before production implementation.
+
 ## Port studies (real programs; D9 confidence-gate evidence)
 - `default-floor/` — D9a protocol: a fixed low-tier model's first
   correctness-green xlang artifact versus an exact unmodified shipped Rust

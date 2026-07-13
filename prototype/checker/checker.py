@@ -383,6 +383,10 @@ class Checker:
         # accepts the flat form {base,path} (pre-v0.6 AST) and the nested v0.6
         # place tree {kind: var|deref|field|index}. `deref` is transparent to
         # the ownership layer (resolve() models read-through-borrow).
+        # An index place's ATOM is an embedded expression: it must pass the
+        # same liveness/readability discipline as any other read [OWN-1] —
+        # found live on main by the E0.1 hostile review (a dead binding's
+        # field used as an index was accepted).
         if "kind" in place:
             k = place["kind"]
             if k == "var":
@@ -392,6 +396,11 @@ class Checker:
             if k == "field":
                 return (*self.place_key(place["place"]), place["name"])
             if k == "index":
+                atom = place.get("atom")
+                if isinstance(atom, dict) and atom.get("kind") in ("use", "move"):
+                    ak = self.place_key(atom["place"])
+                    self.require_live(ak[0])
+                    self.require_readable(self.resolve(ak), holder=ak[0])
                 return self.place_key(place["place"])
             raise CheckError("GRAM-5", f"bad place kind {k}")
         return (place["base"], *place.get("path", []))

@@ -29,67 +29,116 @@ growable collections, no pool, and no generics.
 - Facts are OFF in stage-0-compiled xlc until xlc's own effect checking is
   complete (conservative ordering; the parity corpus guards democ's facts).
 
-## E0 — dogfood ergonomics checkpoint (active, bounded)
+## E0 — ordered expressiveness validation (research active; E0.1 only)
 
-xlc is now large enough to test xlang's source design against real code rather
-than toy examples. This checkpoint is not a request to make xlang resemble a
-human-first language. A surface fact is worth keeping when it independently
-prevents an AI error, supports local checking, or carries optimizer/soundness
-information. Repetition that carries no independent fact is design debt.
+The 23,962-line compiler exposed a more important question than source ceremony:
+does the current language prevent a zero-cost data structure, abstraction, or
+proof-carrying control shape and thereby force default AI-written code to be
+slower or less maintainable? Five investigations answer that question in a fixed
+order. Only one is active at a time; the next does not start until the current
+one has an evidence-backed adopt/reject/defer decision and an independent
+hostile review. A decision, not adoption, is the exit condition.
 
-Measured signals in the current compiler unit:
+The order is an owner ruling (2026-07-13):
 
-- 1,186 explicit `region` blocks; 1,142 (96.3%) wrap exactly one source line.
-  They pair with roughly 1.2k explicit uniq reborrows. Boundary regions are
-  useful; arbitrary fresh names around statement-scoped reborrows are suspect.
-- 1,458 `True()/False()` matches; at least 1,240 (85.0%) have an empty arm.
-  Match-only Bool control is therefore a high-frequency surface cost, and the
-  no-`if` choice is already R3-provisional in the specification.
-- 4,935 local `let` bindings all spell `own`; 4,628 bind `Bool`, `u64`, or `u8`.
-  The local mode token carries no variation in this corpus. Full local mode/type
-  annotation is already a provisional, unratified part of TYPE-5/OWN-2.
-- 3,788 lines exceed 80 columns, 1,428 exceed 120, and the maximum is 456.
-  FORM-2's mandatory one-statement line and no-wrapping rule directly causes
-  this; canonical bytes do not require canonical bytes to be unreadable.
-- 72.3% of local bindings are used once. Some are forced by GRAM-9 ANF, but
-  `match expr` and `return expr` already accept direct calls, so some are merely
-  old bootstrap style. Do not blame the language until those are normalized.
-- Function names average 25.7 bytes and 124 exceed 30 because the closed unit
-  has no module namespace. This is real debt, but adding modules before the
-  fixpoint would expand the bootstrap target substantially.
+1. **E0.1 — data layout and owning sequences (ACTIVE).** Preserve the current
+   fixed-capacity SoA compiler as the baseline. First isolate compiler-verified
+   flat records and fixed-capacity AoS. Flat aggregate storage neither enlarges
+   the implicit-Copy class nor licenses explicit contraction/Clone; whole-record
+   duplication remains unavailable unless separately designed and approved.
+   Only after that decision closes, separately isolate
+   an affine initialized-prefix owning sequence with capacity, no-grow push,
+   explicit reserve/growth, and atomic replace. General partial initialization,
+   hole-producing take, and arbitrary affine-element drop wait for their own
+   soundness prerequisites. The comparison family covers layout {SoA, AoS} x
+   storage policies {fixed/full-initialized, reserve-exact/initialized-prefix,
+   doubling/initialized-prefix}; each comparison is reported as a total
+   representation/storage-policy effect unless a genuine single-variable
+   diagnostic exists. Workloads include
+   append, single-column scan, mixed-field scan, full-row traversal, retained
+   frontend reuse, and cold construction on the exact `sources.txt` unit. The
+   goal is to add a safe choice, not to presume AoS replaces SoA.
 
-Classification and action:
+E0.1 currently permits research and isolated non-production experiments. No
+checker/compiler feature flag, production candidate implementation, scored run,
+or normative change is authorized. Baseline and experimental candidate use
+separate single-semantics toolchains. Production work starts only after explicit
+owner confirmation following report review; dual language modes never coexist.
 
-1. **Prototype now, one axis at a time:** canonical Bool `if/else` versus
-   Bool `match`; local-`own` elision (`let x: T = ...` means exactly `own`, with
-   no copy/move inference); and deterministic multiline formatting backed by a
-   formatter. Measure source reduction, low-tier model syntax/type errors, and
-   checker complexity before changing the normative grammar. A Bool surface
-   change must keep one canonical spelling and exhaustive control.
-2. **Soundness prototype before any syntax promise:** anonymous call-scoped
-   uniq reborrow. The current one-line region ceremony is costly, but implicit
-   uniq reborrow changes borrow end points and has an unresolved OWN-5/OWN-6/10
-   specification boundary. Keep boundary lifetimes and escaping borrows explicit.
-3. **Keep for now:** named arguments, exact effect rows, explicit signature
-   modes/regions, and ANF in trapping/allocating/borrowing expressions. They
-   carry checked information or preserve evaluation order. Argument punning and
-   pure-expression nesting are candidates only after the first three tests.
-4. **Implementation debt, not language evidence:** fixed-capacity SoA tapes,
-   capability-specific semantic runners, manual report plumbing, and prefixed
-   global names during bootstrap. Refactor these as coverage grows; do not add a
-   language feature merely to hide a temporary compiler architecture.
+The first detached E0.1a prototype closed only a feasibility question: on the
+two frozen 64-bit targets, record-buffer field access can use target stride plus
+row/field GEPs while unchanged SoA fixtures retain raw-IR identity. Hostile
+review rejected the prototype itself: its fill loop duplicated an affine record,
+the checker omitted ownership flow through index atoms, and the backend was not
+32-bit/DataLayout-sound. The next decision is therefore the initialization
+contract (recommended experiment: recursively fresh Copy-leaf row recipe with
+no move), not timing or production landing. `Flat` never implies Copy,
+Repeat, or Clone. The scored protocol is also blocked until endpoint,
+lifetime, and causal-attribution controls are frozen.
 
-E0 exit gate: choose, reject, or defer each of the three surface prototypes with
-recorded evidence; add conformance cases for every chosen change; keep the old
-and new grammar from coexisting as two accepted spellings. This is a short gate
-before the next large S1 semantic family, not a new open-ended project.
+2. **E0.2 — namespaces and zero-cost API abstraction.** Logical closed-unit
+   modules, private-by-default fields, type-owned inherent `impl`, qualified
+   variants, then a genuinely callable static `contract`/`conform` path. Calls
+   remain monomorphized direct calls; no auto-borrow/deref, extension-method
+   lookup, vtable, or implicit dynamic dispatch enters this phase.
+3. **E0.3 — borrowed aggregates and fact-carrying control.** Region-generic
+   aggregates with mode-bearing fields and sound holder provenance, disjoint
+   slice splitting, then counted/index loops and integer/range match as real
+   core nodes. Each sub-axis must separately account for retained bounds checks,
+   alias facts, branch shape, and vectorization.
+4. **E0.4 — byte constants and bulk output.** Canonical runtime `b"..."`
+   constants plus a checked bulk-append operation. Compare rodata/bulk-copy
+   lowering against the existing eight-byte scalar chunk path without changing
+   output bytes or capacity/trap semantics.
+5. **E0.5 — explicit SIMD and target dispatch.** Typed vectors, checked
+   loads/stores, target-feature specialization, and deterministic dispatch are
+   researched only after the scalar abstraction/data stack closes. The ordinary
+   default call path must reach tuned kernels without writer-visible unsafe.
+
+Every E0 phase uses the same non-regression discipline:
+
+- **Unchanged-shape pin.** A program not using the candidate feature must retain
+  byte-identical raw IR and the existing optimized-IR/assembly gate results.
+  New capabilities are additive and explicit until their default-writer behavior
+  is measured. In particular, E0.1 does not infer structural Copy and does not
+  change the current SoA tapes.
+- **Frozen factorial protocol.** Correctness corpus, source hashes, compiler and
+  target flags, allocator/alignment, capacity/growth policy, measurement blocks,
+  non-inferiority margin, and attribution counters are fixed before scored
+  timing. Construction and retained steady state are reported separately.
+- **Default-shape floor.** No feature becomes a taught/default pattern merely
+  because an expert can use it well. Where a writer must choose among shapes, a
+  separately authorized, benchmark-blind fixed low-tier writer panel must select
+  the measured-appropriate shape without lowering correctness or the registered
+  performance distribution. Until then the feature remains explicit/non-default.
+- **Performance accounting.** Record wall time, instructions where available,
+  allocation/reallocation count, initialized/touched bytes, peak RSS, bounds
+  sites and traps, runtime alias guards, vectorizer remarks, IR/assembly size,
+  vector width, and whole-record copies (`memcpy`, `byval`, `sret`). A win in one
+  column cannot hide a material loss in another registered compiler phase.
+- **Soundness before speed.** Any wrong output, uninitialized read, leak/double
+  drop in production semantics, dangling element borrow across growth, invalid
+  alias fact, missing required trap, observable padding, or failure-atomicity
+  violation rejects the candidate before performance is considered.
+- **Hostile review before landing.** The reviewer sees the protocol and artifacts,
+  not a prose summary, and must audit equivalence, fairness, default-writer risk,
+  ABI/copy/drop behavior, and every claimed attribution. Accepted changes land
+  atomically across spec, stage 0, xlc, conformance, derivation record, teaching
+  material, and code-shape pins; dual old/new canonical spellings never coexist.
+
+The earlier surface observations remain recorded but are parked: 1,186 explicit
+region blocks, 1,458 Bool matches, 4,935 local `own` annotations, and mandatory
+single-line formatting are real source costs, not current evidence of lost
+performance or architectural expressiveness. Local-own elision, Bool `if`,
+multiline formatting, anonymous reborrow, argument punning, and expression
+nesting do not run ahead of E0.1-E0.5.
 
 ## Stages to the fixpoint (each gated; no stage starts before the prior gate)
 
 **S1 — body semantics parity on the compiler unit.**
 Grow ownership/effect/type body checks until xlc's semantic layer renders a
 verdict on every function in `sources.txt`.
-The coverage baseline is complete. After E0, the next functional slice is an
+The coverage baseline is complete. After E0.1-E0.5 close, the next functional slice is an
 independent acyclic-decision semantic family (not an enlargement of the loop
 scanner profile) covering `lexer_scan_op_suffix` and `lexer_scan_word` together.
 It needs nested `let`/`match`/early-return flow, primitive expression typing,
@@ -136,11 +185,10 @@ the byte-identical fixpoint is re-established WITH facts on.
 **S6 — beyond subset S.**
 Only after S5: grow the accepted language beyond what xlc's own source needed
 — in evidence order, not wish order. Standing queue with recorded triggers:
-reborrow deltas OWN-6/OWN-14 (re-run the binary-trees pilot when they land),
-copy-struct tier for AoS buffers, the region arena, the gated I/O frame
-(first D4 boundary instance; unlocks the coreutils ladder), multi-field
-aggregate enum payloads and Result<aggregate, E> lowering (unlocks the
-streaming DecodeStep shape).
+reborrow deltas OWN-6/OWN-14 not selected by E0.3 (re-run the binary-trees pilot
+if they land), the region arena, the gated I/O frame (first D4 boundary
+instance; unlocks the coreutils ladder), multi-field aggregate enum payloads
+and Result<aggregate, E> lowering (unlocks the streaming DecodeStep shape).
 
 ## Standing constraints
 
@@ -151,8 +199,8 @@ streaming DecodeStep shape).
   derivation record together, one surface axis per commit.
 - The self-parse gate and the byte-identical report/no-report property are
   never waived.
-- Anything touching proof emission or fact channels gets hostile review
-  before ship, per the standing process rule.
+- Every E0 candidate and anything touching proof emission or fact channels gets
+  hostile review before ship, per the standing process rule.
 - Owner-gated items stay owner-gated: retained-site approvals need per-site
   cone identity first (review B1); GATE-1 claims need external repository
   controls.

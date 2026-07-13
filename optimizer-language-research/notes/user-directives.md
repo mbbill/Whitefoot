@@ -217,3 +217,13 @@ claim.
 For the first `percent_decode` trajectory, use exact model slug
 `gpt-5.6-terra`, not Luna, at medium reasoning.  The one-trajectory,
 first-correctness-green, benchmark-blind rules above are unchanged.
+
+## D10 (2026-07-13): All repository content is English-only
+
+Every repository-resident artifact must use English: source and test comments,
+documentation, reports, plans, prompts, datasets authored for this project,
+natural-language labels, and filenames.  Do not add translated duplicates or
+language-suffixed report variants.  Mathematical notation, programming-language
+tokens, and proper names are not alternate prose languages, but all surrounding
+explanation remains English.  Repository-wide language scans are part of the
+validation for documentation and report changes.

@@ -3,9 +3,13 @@
 This directory contains the production xlang compiler, written in xlang. Python
 `prototype/democ` is stage 0 only: it compiles xlc until xlc can compile itself.
 
-The compiler uses fixed-capacity structure-of-arrays tapes backed by primitive
-buffers. Token and node counts are bounded from the source size, so bootstrap does
-not require a Rust compiler, growable collections, `pool`, or general generics.
+The compiler currently uses fixed-capacity structure-of-arrays tapes backed by
+primitive buffers. Token and node counts are bounded from the source size, so
+bootstrap does not require a Rust compiler, growable collections, `pool`, or
+general generics. This is the protected E0.1 performance baseline, not a ruling
+that every record workload must use SoA: fixed AoS and growable owning sequences
+are being evaluated as separate, factorially isolated capabilities before either
+can change the language or its taught defaults.
 `sources.txt` is the deterministic declaration order for the current whole-program
 unit.
 
