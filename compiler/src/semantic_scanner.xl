@@ -35,7 +35,8 @@ fn semantic_scanner_label_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenT
 }
 
 fn semantic_scanner_match_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64) -> own Bool reads('c), traps {
-  let scanner_match_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: AstMatch());
+  let ast_match_atom_0362: own AstKind = AstMatch();
+  let scanner_match_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_match_atom_0362);
   let scanner_match_shape: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 3_u64);
   let scanner_match_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
   let scanner_match_first: own Bool = band<Bool>(scanner_match_kind, scanner_match_shape);
@@ -54,7 +55,8 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
   let scanner_tokens_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
   let scanner_ast_valid: own Bool = semantic_globals_ast_tape_valid(ast: ast);
   let scanner_top_level: own Bool = semantic_buffer_top_level_function_valid(ast: ast, function: function);
-  let scanner_function_kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: AstFunction());
+  let ast_function_atom_0363: own AstKind = AstFunction();
+  let scanner_function_kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: ast_function_atom_0363);
   let scanner_function_shape: own Bool = semantic_body_exact_children(ast: ast, node: function, want: 10_u64);
   let scanner_tapes_valid: own Bool = band<Bool>(scanner_tokens_valid, scanner_ast_valid);
   let scanner_function_first: own Bool = band<Bool>(scanner_top_level, scanner_function_kind);
@@ -95,10 +97,12 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
   let scanner_traps: own u64 = semantic_body_child_at(ast: ast, node: function, ordinal: 8_u64);
   let scanner_block: own u64 = semantic_body_child_at(ast: ast, node: function, ordinal: 9_u64);
 
-  let scanner_name_leaf: own Bool = semantic_scanner_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_name, kind: AstFunctionName());
+  let ast_function_name_atom_0364: own AstKind = AstFunctionName();
+  let scanner_name_leaf: own Bool = semantic_scanner_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_name, kind: ast_function_name_atom_0364);
   let scanner_name_word: own Bool = semantic_buffer_declaration_word_valid(source: source, tokens: tokens, ast: ast, node: scanner_name);
   let scanner_name_valid: own Bool = band<Bool>(scanner_name_leaf, scanner_name_word);
-  let scanner_regions_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_regions, want: AstRegionParameters());
+  let ast_region_parameters_atom_0365: own AstKind = AstRegionParameters();
+  let scanner_regions_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_regions, want: ast_region_parameters_atom_0365);
   let scanner_regions_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_regions, want: 1_u64);
   let scanner_regions_token: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: scanner_regions, want: 91_u8);
   let scanner_regions_first: own Bool = band<Bool>(scanner_regions_kind, scanner_regions_shape);
@@ -136,10 +140,12 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  let scanner_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_return_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0366: own AstKind = AstOwnMode();
+  let scanner_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_return_mode, want: ast_own_mode_atom_0366);
   let scanner_return_mode_valid: own Bool = semantic_function_mode_valid(source: source, tokens: tokens, ast: ast, node: scanner_return_mode);
   let scanner_return_mode_ok: own Bool = band<Bool>(scanner_return_mode_kind, scanner_return_mode_valid);
-  let scanner_return_type_valid: own Bool = semantic_buffer_type_node_valid(source: source, tokens: tokens, ast: ast, node: scanner_return_type, kind: AstReturnType(), type_id: semantic_buffer_type_u64);
+  let ast_return_type_atom_0367: own AstKind = AstReturnType();
+  let scanner_return_type_valid: own Bool = semantic_buffer_type_node_valid(source: source, tokens: tokens, ast: ast, node: scanner_return_type, kind: ast_return_type_atom_0367, type_id: semantic_buffer_type_u64);
   match band<Bool>(scanner_return_mode_ok, scanner_return_type_valid) {
     True() => {
     }
@@ -148,7 +154,8 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  let scanner_reads_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_reads, want: AstReadsEffect());
+  let ast_reads_effect_atom_0368: own AstKind = AstReadsEffect();
+  let scanner_reads_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_reads, want: ast_reads_effect_atom_0368);
   let scanner_reads_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_reads, want: 1_u64);
   let scanner_reads_token: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: scanner_reads, code: 1_u64);
   let scanner_reads_first: own Bool = band<Bool>(scanner_reads_kind, scanner_reads_shape);
@@ -163,7 +170,8 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
   let scanner_read_region: own u64 = semantic_body_child_at(ast: ast, node: scanner_reads, ordinal: 0_u64);
   let scanner_read_region_valid: own Bool = semantic_function_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_read_region);
   let scanner_read_region_equal: own Bool = semantic_scanner_nodes_equal(source: source, tokens: tokens, ast: ast, left: scanner_region, right: scanner_read_region);
-  let scanner_traps_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_traps, want: AstTrapsEffect());
+  let ast_traps_effect_atom_0369: own AstKind = AstTrapsEffect();
+  let scanner_traps_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_traps, want: ast_traps_effect_atom_0369);
   let scanner_traps_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_traps, want: 0_u64);
   let scanner_traps_word: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: scanner_traps, code: 3_u64);
   let scanner_traps_first: own Bool = band<Bool>(scanner_traps_kind, scanner_traps_shape);
@@ -178,7 +186,8 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  let scanner_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_block, want: AstBlock());
+  let ast_block_atom_0370: own AstKind = AstBlock();
+  let scanner_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_block, want: ast_block_atom_0370);
   let scanner_block_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_block, want: 3_u64);
   let scanner_block_token: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: scanner_block, want: 123_u8);
   let scanner_block_first: own Bool = band<Bool>(scanner_block_kind, scanner_block_shape);
@@ -186,7 +195,8 @@ fn semantic_scanner_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
 }
 
 fn semantic_scanner_break_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, loop_label: own u64) -> own Bool reads('c), traps {
-  let scanner_break_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: AstBreak());
+  let ast_break_atom_0371: own AstKind = AstBreak();
+  let scanner_break_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_break_atom_0371);
   let scanner_break_shape: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 1_u64);
   let scanner_break_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
   let scanner_break_first: own Bool = band<Bool>(scanner_break_kind, scanner_break_shape);
@@ -201,14 +211,16 @@ fn semantic_scanner_break_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenT
   let scanner_break_head: own u64 = index<u64>(deref(ast).heads, node);
   let scanner_break_word: own Bool = parser_word5(source: source, tokens: tokens, token: scanner_break_head, a: 98_u8, b: 114_u8, c: 101_u8, d: 97_u8, e: 107_u8);
   let scanner_break_label: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 0_u64);
-  let scanner_break_label_valid: own Bool = semantic_scanner_label_valid(source: source, tokens: tokens, ast: ast, node: scanner_break_label, kind: AstBreakLabel());
+  let ast_break_label_atom_0372: own AstKind = AstBreakLabel();
+  let scanner_break_label_valid: own Bool = semantic_scanner_label_valid(source: source, tokens: tokens, ast: ast, node: scanner_break_label, kind: ast_break_label_atom_0372);
   let scanner_break_label_equal: own Bool = semantic_scanner_nodes_equal(source: source, tokens: tokens, ast: ast, left: scanner_break_label, right: loop_label);
   let scanner_break_second: own Bool = band<Bool>(scanner_break_label_valid, scanner_break_label_equal);
   return band<Bool>(scanner_break_word, scanner_break_second);
 }
 
 fn semantic_scanner_arm_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, arm: own u64, truth: own Bool, statement_count: own u64) -> own Bool reads('c), traps {
-  let scanner_arm_kind: own Bool = semantic_body_kind_is(ast: ast, node: arm, want: AstMatchArm());
+  let ast_match_arm_atom_0373: own AstKind = AstMatchArm();
+  let scanner_arm_kind: own Bool = semantic_body_kind_is(ast: ast, node: arm, want: ast_match_arm_atom_0373);
   let scanner_arm_shape: own Bool = semantic_body_exact_children(ast: ast, node: arm, want: 1_u64);
   let scanner_arm_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: arm);
   let scanner_arm_first: own Bool = band<Bool>(scanner_arm_kind, scanner_arm_shape);
@@ -238,7 +250,8 @@ fn semantic_scanner_arm_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTap
     }
   }
   let scanner_arm_block: own u64 = semantic_body_child_at(ast: ast, node: arm, ordinal: 0_u64);
-  let scanner_arm_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_arm_block, want: AstBlock());
+  let ast_block_atom_0374: own AstKind = AstBlock();
+  let scanner_arm_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_arm_block, want: ast_block_atom_0374);
   let scanner_arm_block_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_arm_block, want: statement_count);
   let scanner_arm_block_word: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: scanner_arm_block, want: 123_u8);
   let scanner_arm_block_first: own Bool = band<Bool>(scanner_arm_block_kind, scanner_arm_block_shape);
@@ -246,7 +259,8 @@ fn semantic_scanner_arm_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTap
 }
 
 fn semantic_scanner_ige_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, left_name: own u64, right_name: own u64) -> own Bool reads('c), traps {
-  let scanner_ige_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: AstTableCall());
+  let ast_table_call_atom_0375: own AstKind = AstTableCall();
+  let scanner_ige_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_table_call_atom_0375);
   let scanner_ige_shape: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 3_u64);
   let scanner_ige_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
   let scanner_ige_first: own Bool = band<Bool>(scanner_ige_kind, scanner_ige_shape);
@@ -263,7 +277,8 @@ fn semantic_scanner_ige_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTap
   let scanner_ige_type: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 0_u64);
   let scanner_ige_left: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 1_u64);
   let scanner_ige_right: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 2_u64);
-  let scanner_ige_type_valid: own Bool = semantic_buffer_type_node_valid(source: source, tokens: tokens, ast: ast, node: scanner_ige_type, kind: AstTypeArgument(), type_id: semantic_buffer_type_u64);
+  let ast_type_argument_atom_0376: own AstKind = AstTypeArgument();
+  let scanner_ige_type_valid: own Bool = semantic_buffer_type_node_valid(source: source, tokens: tokens, ast: ast, node: scanner_ige_type, kind: ast_type_argument_atom_0376, type_id: semantic_buffer_type_u64);
   let scanner_ige_left_valid: own Bool = semantic_buffer_place_resolves(source: source, tokens: tokens, ast: ast, place: scanner_ige_left, name_node: left_name);
   let scanner_ige_right_valid: own Bool = semantic_buffer_place_resolves(source: source, tokens: tokens, ast: ast, place: scanner_ige_right, name_node: right_name);
   let scanner_ige_places: own Bool = band<Bool>(scanner_ige_left_valid, scanner_ige_right_valid);
@@ -272,7 +287,8 @@ fn semantic_scanner_ige_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTap
 }
 
 fn semantic_scanner_predicate_callee ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, call: own u64, byte_name: own u64) -> own u64 reads('c), traps {
-  let scanner_call_kind: own Bool = semantic_body_kind_is(ast: ast, node: call, want: AstUserCall());
+  let ast_user_call_atom_0377: own AstKind = AstUserCall();
+  let scanner_call_kind: own Bool = semantic_body_kind_is(ast: ast, node: call, want: ast_user_call_atom_0377);
   let scanner_call_shape: own Bool = semantic_body_exact_children(ast: ast, node: call, want: 1_u64);
   let scanner_call_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: call);
   let scanner_call_first: own Bool = band<Bool>(scanner_call_kind, scanner_call_shape);
@@ -284,7 +300,8 @@ fn semantic_scanner_predicate_callee ['c] (source: &'c buffer<u8>, tokens: &'c T
     }
   }
   let scanner_call_head: own u64 = index<u64>(deref(ast).heads, call);
-  let scanner_callee_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: SymbolValue(), scope: symbol_none, name_token: scanner_call_head);
+  let symbol_value_atom_0378: own SymbolNamespace = SymbolValue();
+  let scanner_callee_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom_0378, scope: symbol_none, name_token: scanner_call_head);
   let scanner_callee_lookup_status: own SymbolLookupStatus = scanner_callee_lookup.status;
   match scanner_callee_lookup_status {
     SymbolLookupFound() => {
@@ -301,7 +318,8 @@ fn semantic_scanner_predicate_callee ['c] (source: &'c buffer<u8>, tokens: &'c T
   }
   let scanner_callee: own u64 = scanner_callee_lookup.declaration;
   let scanner_callee_top_level: own Bool = semantic_buffer_top_level_function_valid(ast: ast, function: scanner_callee);
-  let scanner_callee_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_callee, want: AstFunction());
+  let ast_function_atom_0379: own AstKind = AstFunction();
+  let scanner_callee_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_callee, want: ast_function_atom_0379);
   let scanner_callee_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_callee, want: 6_u64);
   let scanner_callee_first: own Bool = band<Bool>(scanner_callee_top_level, scanner_callee_kind);
   match band<Bool>(scanner_callee_first, scanner_callee_shape) {
@@ -334,19 +352,24 @@ fn semantic_scanner_predicate_callee ['c] (source: &'c buffer<u8>, tokens: &'c T
   let scanner_callee_return_type: own u64 = semantic_body_child_at(ast: ast, node: scanner_callee, ordinal: 3_u64);
   let scanner_callee_effect: own u64 = semantic_body_child_at(ast: ast, node: scanner_callee, ordinal: 4_u64);
   let scanner_callee_block: own u64 = semantic_body_child_at(ast: ast, node: scanner_callee, ordinal: 5_u64);
-  let scanner_callee_name_leaf: own Bool = semantic_scanner_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_name, kind: AstFunctionName());
+  let ast_function_name_atom_0380: own AstKind = AstFunctionName();
+  let scanner_callee_name_leaf: own Bool = semantic_scanner_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_name, kind: ast_function_name_atom_0380);
   let scanner_callee_name_word: own Bool = semantic_buffer_declaration_word_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_name);
   let scanner_callee_name_valid: own Bool = band<Bool>(scanner_callee_name_leaf, scanner_callee_name_word);
   let scanner_callee_name_equal: own Bool = semantic_scanner_nodes_equal(source: source, tokens: tokens, ast: ast, left: call, right: scanner_callee_name);
   let scanner_formal_valid: own Bool = semantic_buffer_own_parameter_any(source: source, tokens: tokens, ast: ast, parameter: scanner_formal, type_id: semantic_buffer_type_u8);
-  let scanner_callee_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_callee_return_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0381: own AstKind = AstOwnMode();
+  let scanner_callee_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_callee_return_mode, want: ast_own_mode_atom_0381);
   let scanner_callee_return_mode_valid: own Bool = semantic_function_mode_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_return_mode);
   let scanner_callee_return_mode_ok: own Bool = band<Bool>(scanner_callee_return_mode_kind, scanner_callee_return_mode_valid);
-  let scanner_callee_return_type_valid: own Bool = semantic_buffer_type_node_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_return_type, kind: AstReturnType(), type_id: semantic_buffer_type_bool);
-  let scanner_callee_effect_shape: own Bool = semantic_scanner_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_effect, kind: AstPureEffect());
+  let ast_return_type_atom_0382: own AstKind = AstReturnType();
+  let scanner_callee_return_type_valid: own Bool = semantic_buffer_type_node_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_return_type, kind: ast_return_type_atom_0382, type_id: semantic_buffer_type_bool);
+  let ast_pure_effect_atom_0383: own AstKind = AstPureEffect();
+  let scanner_callee_effect_shape: own Bool = semantic_scanner_leaf_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_effect, kind: ast_pure_effect_atom_0383);
   let scanner_callee_effect_word: own Bool = semantic_function_effect_word_valid(source: source, tokens: tokens, ast: ast, node: scanner_callee_effect, code: 0_u64);
   let scanner_callee_effect_valid: own Bool = band<Bool>(scanner_callee_effect_shape, scanner_callee_effect_word);
-  let scanner_callee_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_callee_block, want: AstBlock());
+  let ast_block_atom_0384: own AstKind = AstBlock();
+  let scanner_callee_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_callee_block, want: ast_block_atom_0384);
   let scanner_callee_block_word: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: scanner_callee_block, want: 123_u8);
   let scanner_callee_block_valid: own Bool = band<Bool>(scanner_callee_block_kind, scanner_callee_block_word);
   let scanner_callee_name_pair: own Bool = band<Bool>(scanner_callee_name_valid, scanner_callee_name_equal);
@@ -363,7 +386,8 @@ fn semantic_scanner_predicate_callee ['c] (source: &'c buffer<u8>, tokens: &'c T
   }
 
   let scanner_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 0_u64);
-  let scanner_argument_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_argument, want: AstNamedArgument());
+  let ast_named_argument_atom_0385: own AstKind = AstNamedArgument();
+  let scanner_argument_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_argument, want: ast_named_argument_atom_0385);
   let scanner_argument_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_argument, want: 1_u64);
   let scanner_argument_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: scanner_argument);
   let scanner_argument_first: own Bool = band<Bool>(scanner_argument_kind, scanner_argument_shape);
@@ -376,7 +400,8 @@ fn semantic_scanner_predicate_callee ['c] (source: &'c buffer<u8>, tokens: &'c T
   }
   let scanner_formal_equal: own Bool = semantic_scanner_nodes_equal(source: source, tokens: tokens, ast: ast, left: scanner_argument, right: scanner_formal);
   let scanner_argument_head: own u64 = index<u64>(deref(ast).heads, scanner_argument);
-  let scanner_argument_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: SymbolValue(), scope: scanner_callee, name_token: scanner_argument_head);
+  let symbol_value_atom_0386: own SymbolNamespace = SymbolValue();
+  let scanner_argument_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom_0386, scope: scanner_callee, name_token: scanner_argument_head);
   let scanner_argument_lookup_status: own SymbolLookupStatus = scanner_argument_lookup.status;
   match scanner_argument_lookup_status {
     SymbolLookupFound() => {
@@ -447,7 +472,8 @@ fn semantic_scanner_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
     }
   }
 
-  let scanner_loop_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_loop, want: AstLoop());
+  let ast_loop_atom_0387: own AstKind = AstLoop();
+  let scanner_loop_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_loop, want: ast_loop_atom_0387);
   let scanner_loop_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_loop, want: 2_u64);
   let scanner_loop_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: scanner_loop);
   let scanner_loop_first: own Bool = band<Bool>(scanner_loop_kind, scanner_loop_shape);
@@ -463,8 +489,10 @@ fn semantic_scanner_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
   let scanner_loop_word: own Bool = parser_word4(source: source, tokens: tokens, token: scanner_loop_head, a: 108_u8, b: 111_u8, c: 111_u8, d: 112_u8);
   let scanner_loop_label: own u64 = semantic_body_child_at(ast: ast, node: scanner_loop, ordinal: 0_u64);
   let scanner_loop_block: own u64 = semantic_body_child_at(ast: ast, node: scanner_loop, ordinal: 1_u64);
-  let scanner_loop_label_valid: own Bool = semantic_scanner_label_valid(source: source, tokens: tokens, ast: ast, node: scanner_loop_label, kind: AstLoopLabel());
-  let scanner_loop_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_loop_block, want: AstBlock());
+  let ast_loop_label_atom_0388: own AstKind = AstLoopLabel();
+  let scanner_loop_label_valid: own Bool = semantic_scanner_label_valid(source: source, tokens: tokens, ast: ast, node: scanner_loop_label, kind: ast_loop_label_atom_0388);
+  let ast_block_atom_0389: own AstKind = AstBlock();
+  let scanner_loop_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_loop_block, want: ast_block_atom_0389);
   let scanner_loop_block_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_loop_block, want: 4_u64);
   let scanner_loop_block_word: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: scanner_loop_block, want: 123_u8);
   let scanner_loop_second: own Bool = band<Bool>(scanner_loop_label_valid, scanner_loop_block_kind);
@@ -494,8 +522,10 @@ fn semantic_scanner_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
   let scanner_guard_true: own u64 = semantic_body_child_at(ast: ast, node: scanner_guard_match, ordinal: 1_u64);
   let scanner_guard_false: own u64 = semantic_body_child_at(ast: ast, node: scanner_guard_match, ordinal: 2_u64);
   let scanner_guard_call_valid: own Bool = semantic_scanner_ige_valid(source: source, tokens: tokens, ast: ast, node: scanner_guard_call, left_name: scanner_cursor_name, right_name: scanner_body_size);
-  let scanner_guard_true_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_guard_true, truth: True(), statement_count: 1_u64);
-  let scanner_guard_false_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_guard_false, truth: False(), statement_count: 0_u64);
+  let true_atom_0390: own Bool = True();
+  let scanner_guard_true_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_guard_true, truth: true_atom_0390, statement_count: 1_u64);
+  let false_atom_0391: own Bool = False();
+  let scanner_guard_false_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_guard_false, truth: false_atom_0391, statement_count: 0_u64);
   let scanner_guard_arms: own Bool = band<Bool>(scanner_guard_true_valid, scanner_guard_false_valid);
   match band<Bool>(scanner_guard_call_valid, scanner_guard_arms) {
     True() => {
@@ -582,8 +612,10 @@ fn semantic_scanner_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
   let scanner_keep_true: own u64 = semantic_body_child_at(ast: ast, node: scanner_keep_match, ordinal: 1_u64);
   let scanner_keep_false: own u64 = semantic_body_child_at(ast: ast, node: scanner_keep_match, ordinal: 2_u64);
   let scanner_keep_scrutinee_valid: own Bool = semantic_buffer_place_resolves(source: source, tokens: tokens, ast: ast, place: scanner_keep_scrutinee, name_node: scanner_keep_name);
-  let scanner_keep_true_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_keep_true, truth: True(), statement_count: 1_u64);
-  let scanner_keep_false_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_keep_false, truth: False(), statement_count: 1_u64);
+  let true_atom_0392: own Bool = True();
+  let scanner_keep_true_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_keep_true, truth: true_atom_0392, statement_count: 1_u64);
+  let false_atom_0393: own Bool = False();
+  let scanner_keep_false_valid: own Bool = semantic_scanner_arm_valid(source: source, tokens: tokens, ast: ast, arm: scanner_keep_false, truth: false_atom_0393, statement_count: 1_u64);
   let scanner_keep_arms: own Bool = band<Bool>(scanner_keep_true_valid, scanner_keep_false_valid);
   match band<Bool>(scanner_keep_scrutinee_valid, scanner_keep_arms) {
     True() => {
@@ -594,7 +626,8 @@ fn semantic_scanner_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
   }
   let scanner_keep_true_block: own u64 = semantic_body_child_at(ast: ast, node: scanner_keep_true, ordinal: 0_u64);
   let scanner_set: own u64 = semantic_body_child_at(ast: ast, node: scanner_keep_true_block, ordinal: 0_u64);
-  let scanner_set_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_set, want: AstSet());
+  let ast_set_atom_0394: own AstKind = AstSet();
+  let scanner_set_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_set, want: ast_set_atom_0394);
   let scanner_set_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_set, want: 2_u64);
   let scanner_set_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: scanner_set);
   let scanner_set_first: own Bool = band<Bool>(scanner_set_kind, scanner_set_shape);
@@ -631,7 +664,8 @@ fn semantic_scanner_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
     }
   }
 
-  let scanner_return_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_return, want: AstReturn());
+  let ast_return_atom_0395: own AstKind = AstReturn();
+  let scanner_return_kind: own Bool = semantic_body_kind_is(ast: ast, node: scanner_return, want: ast_return_atom_0395);
   let scanner_return_shape: own Bool = semantic_body_exact_children(ast: ast, node: scanner_return, want: 1_u64);
   let scanner_return_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: scanner_return);
   let scanner_return_first: own Bool = band<Bool>(scanner_return_kind, scanner_return_shape);
@@ -693,7 +727,8 @@ fn semantic_scanner_write_predicate_facts ['a, 'w] (ast: &'a AstTape, facts: &un
   set index<u64>(deref(facts).ordinals, scanner_fact_argument) = 0_u64;
   set index<SemanticValueMode>(deref(facts).modes, scanner_fact_argument) = SemanticModeOwn();
   region 'semantic_scanner_predicate_actual_fact {
-    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_predicate_actual_fact deref(facts), node: scanner_fact_actual, type_id: semantic_buffer_type_u8, declaration: byte_declaration, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0396: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_predicate_actual_fact deref(facts), node: scanner_fact_actual, type_id: semantic_buffer_type_u8, declaration: byte_declaration, mode: semantic_mode_own_atom_0396);
   }
   return unit;
 }
@@ -729,7 +764,8 @@ fn semantic_scanner_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape,
       return unit;
     }
   }
-  let scanner_run_validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, AstValidationClean());
+  let ast_validation_clean_atom_0397: own AstValidationStatus = AstValidationClean();
+  let scanner_run_validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, ast_validation_clean_atom_0397);
   match scanner_run_validation_clean {
     True() => {
     }
@@ -911,13 +947,16 @@ fn semantic_scanner_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape,
   set deref(scratch).count = 0_u64;
 
   region 'semantic_scanner_run_source_facts {
-    semantic_buffer_write_parameter_facts(ast: ast, facts: &uniq 'semantic_scanner_run_source_facts deref(facts), parameter: scanner_run_source, type_id: semantic_buffer_type_u8_buffer, ordinal: 0_u64, mode: SemanticModeShared());
+    let semantic_mode_shared_atom_0398: own SemanticValueMode = SemanticModeShared();
+    semantic_buffer_write_parameter_facts(ast: ast, facts: &uniq 'semantic_scanner_run_source_facts deref(facts), parameter: scanner_run_source, type_id: semantic_buffer_type_u8_buffer, ordinal: 0_u64, mode: semantic_mode_shared_atom_0398);
   }
   region 'semantic_scanner_run_start_facts {
-    semantic_buffer_write_parameter_facts(ast: ast, facts: &uniq 'semantic_scanner_run_start_facts deref(facts), parameter: scanner_run_start, type_id: semantic_buffer_type_u64, ordinal: 1_u64, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0399: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_parameter_facts(ast: ast, facts: &uniq 'semantic_scanner_run_start_facts deref(facts), parameter: scanner_run_start, type_id: semantic_buffer_type_u64, ordinal: 1_u64, mode: semantic_mode_own_atom_0399);
   }
   region 'semantic_scanner_run_size_facts {
-    semantic_buffer_write_parameter_facts(ast: ast, facts: &uniq 'semantic_scanner_run_size_facts deref(facts), parameter: scanner_run_size, type_id: semantic_buffer_type_u64, ordinal: 2_u64, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0400: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_parameter_facts(ast: ast, facts: &uniq 'semantic_scanner_run_size_facts deref(facts), parameter: scanner_run_size, type_id: semantic_buffer_type_u64, ordinal: 2_u64, mode: semantic_mode_own_atom_0400);
   }
   set index<u64>(deref(facts).type_ids, scanner_run_return_mode) = semantic_buffer_type_u64;
   set index<SemanticValueMode>(deref(facts).modes, scanner_run_return_mode) = SemanticModeOwn();
@@ -927,10 +966,12 @@ fn semantic_scanner_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape,
     semantic_buffer_write_let_facts(ast: ast, facts: &uniq 'semantic_scanner_run_cursor_let_facts deref(facts), declaration: scanner_run_cursor_let, type_id: semantic_buffer_type_u64, ordinal: 0_u64);
   }
   region 'semantic_scanner_run_cursor_value_facts {
-    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_cursor_value_facts deref(facts), node: scanner_run_cursor_value, type_id: semantic_buffer_type_u64, declaration: scanner_run_start, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0401: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_cursor_value_facts deref(facts), node: scanner_run_cursor_value, type_id: semantic_buffer_type_u64, declaration: scanner_run_start, mode: semantic_mode_own_atom_0401);
   }
   region 'semantic_scanner_run_guard_call_facts {
-    semantic_buffer_write_binary_facts(ast: ast, facts: &uniq 'semantic_scanner_run_guard_call_facts deref(facts), call: scanner_run_guard_call, ordinal: 1_u64, operand_type: semantic_buffer_type_u64, operation: SemanticOperationIge(), left_declaration: scanner_run_cursor_let, right_declaration: scanner_run_size);
+    let semantic_operation_ige_atom_0402: own SemanticOperation = SemanticOperationIge();
+    semantic_buffer_write_binary_facts(ast: ast, facts: &uniq 'semantic_scanner_run_guard_call_facts deref(facts), call: scanner_run_guard_call, ordinal: 1_u64, operand_type: semantic_buffer_type_u64, operation: semantic_operation_ige_atom_0402, left_declaration: scanner_run_cursor_let, right_declaration: scanner_run_size);
   }
   region 'semantic_scanner_run_byte_let_facts {
     semantic_buffer_write_let_facts(ast: ast, facts: &uniq 'semantic_scanner_run_byte_let_facts deref(facts), declaration: scanner_run_byte_let, type_id: semantic_buffer_type_u8, ordinal: 2_u64);
@@ -945,10 +986,12 @@ fn semantic_scanner_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape,
     semantic_scanner_write_predicate_facts(ast: ast, facts: &uniq 'semantic_scanner_run_predicate_facts deref(facts), call: scanner_run_keep_value, callee: scanner_run_predicate, byte_declaration: scanner_run_byte_let);
   }
   region 'semantic_scanner_run_keep_scrutinee_facts {
-    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_keep_scrutinee_facts deref(facts), node: scanner_run_keep_scrutinee, type_id: semantic_buffer_type_bool, declaration: scanner_run_keep_let, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0403: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_keep_scrutinee_facts deref(facts), node: scanner_run_keep_scrutinee, type_id: semantic_buffer_type_bool, declaration: scanner_run_keep_let, mode: semantic_mode_own_atom_0403);
   }
   region 'semantic_scanner_run_set_target_facts {
-    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_set_target_facts deref(facts), node: scanner_run_set_target, type_id: semantic_buffer_type_u64, declaration: scanner_run_cursor_let, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0404: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_set_target_facts deref(facts), node: scanner_run_set_target, type_id: semantic_buffer_type_u64, declaration: scanner_run_cursor_let, mode: semantic_mode_own_atom_0404);
   }
   region 'semantic_scanner_run_set_value_facts {
     semantic_buffer_write_iadd_facts(ast: ast, facts: &uniq 'semantic_scanner_run_set_value_facts deref(facts), call: scanner_run_set_value, ordinal: 4_u64, left_declaration: scanner_run_cursor_let, literal_value: 1_u64);
@@ -973,7 +1016,8 @@ fn semantic_scanner_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape,
   }
   set index<u64>(deref(facts).control_targets, scanner_run_set_value) = scanner_run_guard_call;
   region 'semantic_scanner_run_return_value_facts {
-    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_return_value_facts deref(facts), node: scanner_run_return_value, type_id: semantic_buffer_type_u64, declaration: scanner_run_cursor_let, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0405: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_place_fact(facts: &uniq 'semantic_scanner_run_return_value_facts deref(facts), node: scanner_run_return_value, type_id: semantic_buffer_type_u64, declaration: scanner_run_cursor_let, mode: semantic_mode_own_atom_0405);
   }
   set index<u64>(deref(facts).control_targets, scanner_run_return_value) = scanner_run_return;
   set index<u64>(deref(facts).type_ids, scanner_run_return) = semantic_buffer_type_u64;
@@ -982,22 +1026,28 @@ fn semantic_scanner_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape,
   set index<SemanticValueMode>(deref(facts).modes, scanner_run_return) = SemanticModeOwn();
 
   region 'semantic_scanner_run_scope_source {
-    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_source deref(scratch), slot: 0_u64, name_node: scanner_run_source, declaration: scanner_run_source, type_id: semantic_buffer_type_u8_buffer, mode: SemanticModeShared());
+    let semantic_mode_shared_atom_0406: own SemanticValueMode = SemanticModeShared();
+    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_source deref(scratch), slot: 0_u64, name_node: scanner_run_source, declaration: scanner_run_source, type_id: semantic_buffer_type_u8_buffer, mode: semantic_mode_shared_atom_0406);
   }
   region 'semantic_scanner_run_scope_start {
-    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_start deref(scratch), slot: 1_u64, name_node: scanner_run_start, declaration: scanner_run_start, type_id: semantic_buffer_type_u64, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0407: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_start deref(scratch), slot: 1_u64, name_node: scanner_run_start, declaration: scanner_run_start, type_id: semantic_buffer_type_u64, mode: semantic_mode_own_atom_0407);
   }
   region 'semantic_scanner_run_scope_size {
-    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_size deref(scratch), slot: 2_u64, name_node: scanner_run_size, declaration: scanner_run_size, type_id: semantic_buffer_type_u64, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0408: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_size deref(scratch), slot: 2_u64, name_node: scanner_run_size, declaration: scanner_run_size, type_id: semantic_buffer_type_u64, mode: semantic_mode_own_atom_0408);
   }
   region 'semantic_scanner_run_scope_cursor {
-    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_cursor deref(scratch), slot: 3_u64, name_node: scanner_run_cursor_name, declaration: scanner_run_cursor_let, type_id: semantic_buffer_type_u64, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0409: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_cursor deref(scratch), slot: 3_u64, name_node: scanner_run_cursor_name, declaration: scanner_run_cursor_let, type_id: semantic_buffer_type_u64, mode: semantic_mode_own_atom_0409);
   }
   region 'semantic_scanner_run_scope_byte {
-    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_byte deref(scratch), slot: 4_u64, name_node: scanner_run_byte_name, declaration: scanner_run_byte_let, type_id: semantic_buffer_type_u8, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0410: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_byte deref(scratch), slot: 4_u64, name_node: scanner_run_byte_name, declaration: scanner_run_byte_let, type_id: semantic_buffer_type_u8, mode: semantic_mode_own_atom_0410);
   }
   region 'semantic_scanner_run_scope_keep {
-    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_keep deref(scratch), slot: 5_u64, name_node: scanner_run_keep_name, declaration: scanner_run_keep_let, type_id: semantic_buffer_type_bool, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0411: own SemanticValueMode = SemanticModeOwn();
+    semantic_buffer_write_scratch_row(ast: ast, scratch: &uniq 'semantic_scanner_run_scope_keep deref(scratch), slot: 5_u64, name_node: scanner_run_keep_name, declaration: scanner_run_keep_let, type_id: semantic_buffer_type_bool, mode: semantic_mode_own_atom_0411);
   }
   set deref(scratch).count = 6_u64;
 

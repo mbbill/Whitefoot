@@ -22,7 +22,8 @@ fn semantic_all_types_fail ['w] (report: &uniq 'w SemanticAllTypesReport, type_n
 
 fn semantic_resolve_all_types ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &uniq 'w SymbolTape, validation: &uniq 'w AstValidationReport, report: &uniq 'w SemanticAllTypesReport) -> own unit reads('c 'w), writes('w), traps {
   region 'all_types_begin {
-    semantic_all_types_fail(report: &uniq 'all_types_begin deref(report), type_node: ast_none, resolved_count: 0_u64, resolve_status: SemanticTypeResolveInvalidTokenTape(), resolve_related: symbol_none);
+    let semantic_type_resolve_invalid_token_tape_atom_0468: own SemanticTypeResolveStatus = SemanticTypeResolveInvalidTokenTape();
+    semantic_all_types_fail(report: &uniq 'all_types_begin deref(report), type_node: ast_none, resolved_count: 0_u64, resolve_status: semantic_type_resolve_invalid_token_tape_atom_0468, resolve_related: symbol_none);
   }
 
   let tokens_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
@@ -138,7 +139,8 @@ fn semantic_resolve_all_types ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Toke
     let kind: own AstKind = index<AstKind>(deref(ast).kinds, cursor);
     match semantic_type_resolve_kind_valid(kind: kind) {
       True() => {
-        let nested: own SemanticTypeResolveReport = SemanticTypeResolveReport(status: SemanticTypeResolveInvalidAstTape(), node: ast_none, related: symbol_none);
+        let semantic_type_resolve_invalid_ast_tape_atom_0469: own SemanticTypeResolveStatus = SemanticTypeResolveInvalidAstTape();
+        let nested: own SemanticTypeResolveReport = SemanticTypeResolveReport(status: semantic_type_resolve_invalid_ast_tape_atom_0469, node: ast_none, related: symbol_none);
         region 'all_types_resolve_one {
           semantic_resolve_type(source: source, tokens: tokens, ast: ast, symbols: &uniq 'all_types_resolve_one deref(symbols), type_node: cursor, validation: &uniq 'all_types_resolve_one deref(validation), report: &uniq 'all_types_resolve_one nested);
         }

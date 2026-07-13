@@ -57,7 +57,8 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
       return SemanticCapabilityFailed();
     }
   }
-  let validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, AstValidationClean());
+  let ast_validation_clean_atom_0412: own AstValidationStatus = AstValidationClean();
+  let validation_clean: own Bool = ieq<AstValidationStatus>(deref(validation).status, ast_validation_clean_atom_0412);
   match validation_clean {
     True() => {
     }
@@ -119,7 +120,8 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
     }
   }
   let function_valid: own Bool = semantic_buffer_top_level_function_valid(ast: ast, function: function);
-  let function_kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: AstFunction());
+  let ast_function_atom_0413: own AstKind = AstFunction();
+  let function_kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: ast_function_atom_0413);
   match band<Bool>(function_valid, function_kind) {
     True() => {
     }
@@ -138,7 +140,8 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
   }
   set deref(scratch).count = 0_u64;
 
-  let body: own SemanticBodyReport = SemanticBodyReport(status: SemanticBodyInvalidFunction(), node: function, related: semantic_facts_none);
+  let semantic_body_invalid_function_atom_0414: own SemanticBodyStatus = SemanticBodyInvalidFunction();
+  let body: own SemanticBodyReport = SemanticBodyReport(status: semantic_body_invalid_function_atom_0414, node: function, related: semantic_facts_none);
   let width: own u64 = semantic_buffer_fixed_width_profile(source: source, tokens: tokens, ast: ast, function: function);
   match ieq<u64>(width, semantic_facts_none) {
     True() => {
@@ -168,12 +171,14 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
       set deref(report).status = body.status;
       set deref(report).function = function;
       set deref(report).related = body.related;
-      match ieq<SemanticBodyStatus>(body.status, SemanticBodyClean()) {
+      let semantic_body_clean_atom_0415: own SemanticBodyStatus = SemanticBodyClean();
+      match ieq<SemanticBodyStatus>(body.status, semantic_body_clean_atom_0415) {
         True() => {
           return SemanticCapabilityFixedWidth();
         }
         False() => {
-          match ieq<SemanticBodyStatus>(body.status, SemanticBodyUnsupported()) {
+          let semantic_body_unsupported_atom_0416: own SemanticBodyStatus = SemanticBodyUnsupported();
+          match ieq<SemanticBodyStatus>(body.status, semantic_body_unsupported_atom_0416) {
             True() => {
               return SemanticCapabilityUnsupported();
             }
@@ -203,12 +208,14 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
       set deref(report).status = body.status;
       set deref(report).function = function;
       set deref(report).related = body.related;
-      match ieq<SemanticBodyStatus>(body.status, SemanticBodyClean()) {
+      let semantic_body_clean_atom_0417: own SemanticBodyStatus = SemanticBodyClean();
+      match ieq<SemanticBodyStatus>(body.status, semantic_body_clean_atom_0417) {
         True() => {
           return SemanticCapabilityScanner();
         }
         False() => {
-          match ieq<SemanticBodyStatus>(body.status, SemanticBodyUnsupported()) {
+          let semantic_body_unsupported_atom_0418: own SemanticBodyStatus = SemanticBodyUnsupported();
+          match ieq<SemanticBodyStatus>(body.status, semantic_body_unsupported_atom_0418) {
             True() => {
               return SemanticCapabilityUnsupported();
             }
@@ -242,32 +249,40 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
   let linear_parameter_mode: own u64 = semantic_body_child_at(ast: ast, node: linear_parameter, ordinal: 0_u64);
   let linear_parameter_type: own u64 = semantic_body_child_at(ast: ast, node: linear_parameter, ordinal: 1_u64);
 
-  let linear_name_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_name, want: AstFunctionName());
+  let ast_function_name_atom_0419: own AstKind = AstFunctionName();
+  let linear_name_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_name, want: ast_function_name_atom_0419);
   let linear_name_leaf: own Bool = semantic_body_exact_children(ast: ast, node: linear_name, want: 0_u64);
   let linear_name_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: linear_name);
   let linear_name_first: own Bool = band<Bool>(linear_name_kind, linear_name_leaf);
   let linear_name_valid: own Bool = band<Bool>(linear_name_first, linear_name_token);
-  let linear_parameter_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_parameter, want: AstParameter());
+  let ast_parameter_atom_0420: own AstKind = AstParameter();
+  let linear_parameter_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_parameter, want: ast_parameter_atom_0420);
   let linear_parameter_shape: own Bool = semantic_body_exact_children(ast: ast, node: linear_parameter, want: 2_u64);
   let linear_parameter_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: linear_parameter);
   let linear_parameter_first: own Bool = band<Bool>(linear_parameter_kind, linear_parameter_shape);
   let linear_parameter_valid: own Bool = band<Bool>(linear_parameter_first, linear_parameter_token);
-  let linear_parameter_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_parameter_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0421: own AstKind = AstOwnMode();
+  let linear_parameter_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_parameter_mode, want: ast_own_mode_atom_0421);
   let linear_parameter_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: linear_parameter_mode, want: 0_u64);
   let linear_parameter_mode_valid: own Bool = band<Bool>(linear_parameter_mode_kind, linear_parameter_mode_leaf);
-  let linear_parameter_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_parameter_type, want: AstParameterType());
+  let ast_parameter_type_atom_0422: own AstKind = AstParameterType();
+  let linear_parameter_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_parameter_type, want: ast_parameter_type_atom_0422);
   let linear_parameter_type_text: own Bool = semantic_body_node_is_u8(source: source, tokens: tokens, ast: ast, node: linear_parameter_type);
   let linear_parameter_type_valid: own Bool = band<Bool>(linear_parameter_type_kind, linear_parameter_type_text);
-  let linear_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_return_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0423: own AstKind = AstOwnMode();
+  let linear_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_return_mode, want: ast_own_mode_atom_0423);
   let linear_return_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: linear_return_mode, want: 0_u64);
   let linear_return_mode_valid: own Bool = band<Bool>(linear_return_mode_kind, linear_return_mode_leaf);
-  let linear_return_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_return_type, want: AstReturnType());
+  let ast_return_type_atom_0424: own AstKind = AstReturnType();
+  let linear_return_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_return_type, want: ast_return_type_atom_0424);
   let linear_return_type_text: own Bool = semantic_body_node_is_bool(source: source, tokens: tokens, ast: ast, node: linear_return_type);
   let linear_return_type_valid: own Bool = band<Bool>(linear_return_type_kind, linear_return_type_text);
-  let linear_effect_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_effect, want: AstPureEffect());
+  let ast_pure_effect_atom_0425: own AstKind = AstPureEffect();
+  let linear_effect_kind: own Bool = semantic_body_kind_is(ast: ast, node: linear_effect, want: ast_pure_effect_atom_0425);
   let linear_effect_leaf: own Bool = semantic_body_exact_children(ast: ast, node: linear_effect, want: 0_u64);
   let linear_effect_valid: own Bool = band<Bool>(linear_effect_kind, linear_effect_leaf);
-  let linear_block_valid: own Bool = semantic_body_kind_is(ast: ast, node: linear_block, want: AstBlock());
+  let ast_block_atom_0426: own AstKind = AstBlock();
+  let linear_block_valid: own Bool = semantic_body_kind_is(ast: ast, node: linear_block, want: ast_block_atom_0426);
   let linear_signature0: own Bool = band<Bool>(linear_name_valid, linear_parameter_valid);
   let linear_signature1: own Bool = band<Bool>(linear_parameter_mode_valid, linear_parameter_type_valid);
   let linear_signature2: own Bool = band<Bool>(linear_return_mode_valid, linear_return_type_valid);
@@ -290,12 +305,14 @@ fn semantic_unit_dispatch ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTap
   set deref(report).status = body.status;
   set deref(report).function = function;
   set deref(report).related = body.related;
-  match ieq<SemanticBodyStatus>(body.status, SemanticBodyClean()) {
+  let semantic_body_clean_atom_0427: own SemanticBodyStatus = SemanticBodyClean();
+  match ieq<SemanticBodyStatus>(body.status, semantic_body_clean_atom_0427) {
     True() => {
       return SemanticCapabilityLinear();
     }
     False() => {
-      match ieq<SemanticBodyStatus>(body.status, SemanticBodyUnsupported()) {
+      let semantic_body_unsupported_atom_0428: own SemanticBodyStatus = SemanticBodyUnsupported();
+      match ieq<SemanticBodyStatus>(body.status, semantic_body_unsupported_atom_0428) {
         True() => {
           return SemanticCapabilityUnsupported();
         }
@@ -325,7 +342,8 @@ fn semantic_unit_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
     }
   }
   let ast_valid: own Bool = semantic_globals_ast_tape_valid(ast: ast);
-  let root_kind: own Bool = semantic_body_kind_is(ast: ast, node: deref(ast).root, want: AstProgram());
+  let ast_program_atom_0429: own AstKind = AstProgram();
+  let root_kind: own Bool = semantic_body_kind_is(ast: ast, node: deref(ast).root, want: ast_program_atom_0429);
   match band<Bool>(ast_valid, root_kind) {
     True() => {
     }
@@ -334,7 +352,8 @@ fn semantic_unit_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
       return unit;
     }
   }
-  match ieq<AstValidationStatus>(deref(validation).status, AstValidationClean()) {
+  let ast_validation_clean_atom_0430: own AstValidationStatus = AstValidationClean();
+  match ieq<AstValidationStatus>(deref(validation).status, ast_validation_clean_atom_0430) {
     True() => {
     }
     False() => {
@@ -508,10 +527,12 @@ fn semantic_unit_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
   let cursor: own u64 = first;
   loop @semantic_unit_functions {
     let kind: own AstKind = index<AstKind>(deref(ast).kinds, cursor);
-    match ieq<AstKind>(kind, AstFunction()) {
+    let ast_function_atom_0431: own AstKind = AstFunction();
+    match ieq<AstKind>(kind, ast_function_atom_0431) {
       True() => {
         set total = iadd.trap<u64>(total, 1_u64);
-        let capability_report: own SemanticCapabilityReport = SemanticCapabilityReport(status: SemanticBodyInvalidFunction(), function: cursor, related: semantic_facts_none);
+        let semantic_body_invalid_function_atom_0432: own SemanticBodyStatus = SemanticBodyInvalidFunction();
+        let capability_report: own SemanticCapabilityReport = SemanticCapabilityReport(status: semantic_body_invalid_function_atom_0432, function: cursor, related: semantic_facts_none);
         let capability: own SemanticCapabilityKind = SemanticCapabilityFailed();
         region 'semantic_unit_function_dispatch {
           set capability = semantic_unit_dispatch(source: source, tokens: tokens, ast: ast, validation: validation, symbols: symbols, function: cursor, types: &uniq 'semantic_unit_function_dispatch deref(types), facts: &uniq 'semantic_unit_function_dispatch deref(facts), scratch: &uniq 'semantic_unit_function_dispatch deref(scratch), report: &uniq 'semantic_unit_function_dispatch capability_report);

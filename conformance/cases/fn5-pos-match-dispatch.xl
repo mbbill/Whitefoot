@@ -13,7 +13,8 @@ fn apply (op: own Op, x: own i32) -> own i32 traps {
 }
 
 fn main () -> own unit traps {
-  let r: own i32 = apply(op: Inc(), x: 41_i32);
+  let inc_atom_0001: own Op = Inc();
+  let r: own i32 = apply(op: inc_atom_0001, x: 41_i32);
   check ieq<i32>(r, 42_i32) else trap "dispatch drift";
   return unit;
 }

@@ -1,7 +1,8 @@
 enum Flag { First(); Second(); }
 
 fn main () -> own unit pure {
-  match Some(value: First()) {
+  let first_atom_0001: own Flag = First();
+  match Some(value: first_atom_0001) {
     None() => {
     }
     Some(value: value) => {

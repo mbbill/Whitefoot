@@ -152,8 +152,35 @@ def assert_place_tree(library):
     assert (starts[6], ends[6]) == (deref_start, field_end)
 
 
+def assert_recursive_projection_tree(library):
+    data = b"index<Outer>(rows, slot).inner.value"
+    _, token_storage, tokens, columns, ast, result = parse_entry(library, data)
+    assert_success_invariants(data, token_storage, tokens, columns, ast, result)
+    kinds, heads, starts, ends, _, _, _ = columns
+    assert ast.count == 6
+    assert list(kinds[: ast.count]) == [
+        AST["AstIndexPlace"],
+        AST["AstTypeArgument"],
+        AST["AstPlaceUse"],
+        AST["AstPlaceUse"],
+        AST["AstFieldPlace"],
+        AST["AstFieldPlace"],
+    ]
+    token_text = [
+        data[token_storage[1][token] : token_storage[2][token]]
+        for token in heads[: ast.count]
+    ]
+    assert token_text == [b"index", b"Outer", b"rows", b"slot", b"inner", b"value"]
+    assert children_of(columns, 0) == [1, 2, 3]
+    assert children_of(columns, 4) == [0]
+    assert children_of(columns, 5) == [4]
+    assert result.node == 5
+    assert (starts[4], ends[4]) == (0, data.index(b".value"))
+    assert (starts[5], ends[5]) == (0, len(data))
+
+
 def assert_constructor_tree(library):
-    data = b"ParserNodeResult(node: value, next: True())"
+    data = b"ParserNodeResult(node: value, next: 1_u64)"
     _, token_storage, tokens, columns, ast, result = parse_entry(library, data)
     assert_success_invariants(data, token_storage, tokens, columns, ast, result)
     assert list(columns[0][: ast.count]) == [
@@ -161,7 +188,7 @@ def assert_constructor_tree(library):
         AST["AstNamedArgument"],
         AST["AstPlaceUse"],
         AST["AstNamedArgument"],
-        AST["AstConstructor"],
+        AST["AstNumericLiteral"],
     ]
     assert children_of(columns, 0) == [1, 3]
     assert children_of(columns, 1) == [2]
@@ -226,7 +253,9 @@ def assert_malformed(library):
         b"True(": "ParseExpectedName",
         b"Pair(left x)": "ParseExpectedColon",
         b"Pair(left: f(x: y))": "ParseExpectedAtom",
+        b"Pair(left: True())": "ParseExpectedAtom",
         b"op<u64>(f(x: y))": "ParseExpectedAtom",
+        b"call(value: True())": "ParseExpectedAtom",
         b"op<u64>(x,)": "ParseExpectedAtom",
         b"f(value: x,)": "ParseExpectedName",
     }
@@ -250,6 +279,7 @@ def main():
         configure(library)
         assert_fixture_cases(library)
         assert_place_tree(library)
+        assert_recursive_projection_tree(library)
         assert_constructor_tree(library)
         assert_move_tree(library)
         assert_settable_places(library)

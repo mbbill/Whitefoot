@@ -9,6 +9,7 @@ import democ
 
 
 CLANG = "/usr/bin/clang" if Path("/usr/bin/clang").exists() else "clang"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def compile_native(source, run=False):
@@ -27,6 +28,22 @@ def compile_native(source, run=False):
             executed = subprocess.run([str(output)], capture_output=True)
             assert executed.returncode == 0, executed.returncode
     return ir
+
+
+recursive_projection = (
+    ROOT / "conformance" / "cases" / "gram5-pos-recursive-place-projection.xl"
+).read_text()
+_, _, projection_functions, _, _, _ = democ.parse_program(recursive_projection)
+projection_reader = next(
+    function
+    for function in projection_functions
+    if function["name"] == "read_projection"
+)
+projection_place = projection_reader["body"][0]["e"]["p"]
+assert projection_place["post"] == ["inner", "value"]
+projection_ir = compile_native(recursive_projection, run=True)
+assert "getelementptr %OuterProjection" in projection_ir
+assert "getelementptr %InnerProjection" in projection_ir
 
 
 local_result = """fn main () -> own unit traps {
@@ -90,7 +107,8 @@ terminating_buffer = """fn choose_buffer (flag: own Bool) -> own buffer<u8> allo
 }
 
 fn main () -> own unit allocates(heap), traps {
-  let value: own buffer<u8> = choose_buffer(flag: True());
+  let flag: own Bool = True();
+  let value: own buffer<u8> = choose_buffer(flag: flag);
   let size: own u64 = len<u8>(value);
   check ieq<u64>(size, 1_u64) else trap "wrong buffer";
   return unit;
@@ -174,4 +192,4 @@ for source in aggregate_payloads:
     else:
         raise AssertionError("aggregate prelude payload reached stage-0 LLVM codegen")
 
-print("stage-0 codegen: local aggregate give, terminating arms, and payload profile pass")
+print("stage-0 codegen: recursive projection, local aggregate give, terminating arms, and payload profile pass")

@@ -1,0 +1,13 @@
+enum Inner {
+  InnerValue();
+}
+
+enum Outer {
+  OuterValue(value: Inner);
+}
+
+fn main () -> own unit pure {
+  doc "GRAM-9: a constructor in a constructor-field atom position does not derive; bind the inner constructed value with a preceding let.";
+  let outer: own Outer = OuterValue(value: InnerValue());
+  return unit;
+}

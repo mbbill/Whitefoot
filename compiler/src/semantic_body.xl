@@ -686,7 +686,8 @@ fn semantic_body_analyze_atom ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Toke
 }
 
 fn semantic_body_analyze_table_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, value_ordinal: own u64, u8_type: own u64, bool_type: own u64, facts: &uniq 'w NodeFacts, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
-  let call_kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: AstTableCall());
+  let ast_table_call_atom_0269: own AstKind = AstTableCall();
+  let call_kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_table_call_atom_0269);
   let call_children_ok: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 3_u64);
   let call_token_ok: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
   let call_shape_first: own Bool = band<Bool>(call_kind_ok, call_children_ok);
@@ -704,7 +705,8 @@ fn semantic_body_analyze_table_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'
   let call_type_node: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 0_u64);
   let call_left_node: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 1_u64);
   let call_right_node: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 2_u64);
-  let type_kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: call_type_node, want: AstTypeArgument());
+  let ast_type_argument_atom_0270: own AstKind = AstTypeArgument();
+  let type_kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: call_type_node, want: ast_type_argument_atom_0270);
   match type_kind_ok {
     True() => {
     }
@@ -890,7 +892,8 @@ fn semantic_body_validate_callee ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   let effect: own u64 = semantic_body_child_at(ast: ast, node: callee, ordinal: 4_u64);
   let block: own u64 = semantic_body_child_at(ast: ast, node: callee, ordinal: 5_u64);
 
-  let name_kind: own Bool = semantic_body_kind_is(ast: ast, node: callee_name, want: AstFunctionName());
+  let ast_function_name_atom_0271: own AstKind = AstFunctionName();
+  let name_kind: own Bool = semantic_body_kind_is(ast: ast, node: callee_name, want: ast_function_name_atom_0271);
   let name_leaf: own Bool = semantic_body_exact_children(ast: ast, node: callee_name, want: 0_u64);
   let name_token_valid: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: callee_name);
   let name_first: own Bool = band<Bool>(name_kind, name_leaf);
@@ -918,7 +921,8 @@ fn semantic_body_validate_callee ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
     }
   }
 
-  let formal_kind: own Bool = semantic_body_kind_is(ast: ast, node: formal, want: AstParameter());
+  let ast_parameter_atom_0272: own AstKind = AstParameter();
+  let formal_kind: own Bool = semantic_body_kind_is(ast: ast, node: formal, want: ast_parameter_atom_0272);
   let formal_arity: own Bool = semantic_body_exact_children(ast: ast, node: formal, want: 2_u64);
   let formal_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: formal);
   let formal_first: own Bool = band<Bool>(formal_kind, formal_arity);
@@ -935,22 +939,28 @@ fn semantic_body_validate_callee ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   }
   let formal_mode: own u64 = semantic_body_child_at(ast: ast, node: formal, ordinal: 0_u64);
   let formal_type: own u64 = semantic_body_child_at(ast: ast, node: formal, ordinal: 1_u64);
-  let formal_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: formal_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0273: own AstKind = AstOwnMode();
+  let formal_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: formal_mode, want: ast_own_mode_atom_0273);
   let formal_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: formal_mode, want: 0_u64);
   let formal_mode_ok: own Bool = band<Bool>(formal_mode_kind, formal_mode_leaf);
-  let formal_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: formal_type, want: AstParameterType());
+  let ast_parameter_type_atom_0274: own AstKind = AstParameterType();
+  let formal_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: formal_type, want: ast_parameter_type_atom_0274);
   let formal_type_text: own Bool = semantic_body_node_is_u8(source: source, tokens: tokens, ast: ast, node: formal_type);
   let formal_type_ok: own Bool = band<Bool>(formal_type_kind, formal_type_text);
-  let return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: return_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0275: own AstKind = AstOwnMode();
+  let return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: return_mode, want: ast_own_mode_atom_0275);
   let return_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: return_mode, want: 0_u64);
   let return_mode_ok: own Bool = band<Bool>(return_mode_kind, return_mode_leaf);
-  let return_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: return_type, want: AstReturnType());
+  let ast_return_type_atom_0276: own AstKind = AstReturnType();
+  let return_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: return_type, want: ast_return_type_atom_0276);
   let return_type_text: own Bool = semantic_body_node_is_bool(source: source, tokens: tokens, ast: ast, node: return_type);
   let return_type_ok: own Bool = band<Bool>(return_type_kind, return_type_text);
-  let effect_kind: own Bool = semantic_body_kind_is(ast: ast, node: effect, want: AstPureEffect());
+  let ast_pure_effect_atom_0277: own AstKind = AstPureEffect();
+  let effect_kind: own Bool = semantic_body_kind_is(ast: ast, node: effect, want: ast_pure_effect_atom_0277);
   let effect_leaf: own Bool = semantic_body_exact_children(ast: ast, node: effect, want: 0_u64);
   let effect_ok: own Bool = band<Bool>(effect_kind, effect_leaf);
-  let block_kind: own Bool = semantic_body_kind_is(ast: ast, node: block, want: AstBlock());
+  let ast_block_atom_0278: own AstKind = AstBlock();
+  let block_kind: own Bool = semantic_body_kind_is(ast: ast, node: block, want: ast_block_atom_0278);
   let signature_first: own Bool = band<Bool>(formal_mode_ok, formal_type_ok);
   let signature_second: own Bool = band<Bool>(return_mode_ok, return_type_ok);
   let signature_third: own Bool = band<Bool>(effect_ok, block_kind);
@@ -968,7 +978,8 @@ fn semantic_body_validate_callee ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   }
 
   let formal_head: own u64 = index<u64>(deref(ast).heads, formal);
-  let formal_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: SymbolValue(), scope: callee, name_token: formal_head);
+  let symbol_value_atom_0279: own SymbolNamespace = SymbolValue();
+  let formal_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom_0279, scope: callee, name_token: formal_head);
   let formal_lookup_status: own SymbolLookupStatus = formal_lookup.status;
   match formal_lookup_status {
     SymbolLookupFound() => {
@@ -1006,7 +1017,8 @@ fn semantic_body_validate_callee ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
 }
 
 fn semantic_body_analyze_user_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, node: own u64, value_ordinal: own u64, u8_type: own u64, bool_type: own u64, facts: &uniq 'w NodeFacts, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
-  let call_kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: AstUserCall());
+  let ast_user_call_atom_0280: own AstKind = AstUserCall();
+  let call_kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_user_call_atom_0280);
   let call_token_ok: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
   let call_shape_ok: own Bool = band<Bool>(call_kind_ok, call_token_ok);
   match call_shape_ok {
@@ -1020,7 +1032,8 @@ fn semantic_body_analyze_user_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c
     }
   }
   let call_head: own u64 = index<u64>(deref(ast).heads, node);
-  let callee_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: SymbolValue(), scope: symbol_none, name_token: call_head);
+  let symbol_value_atom_0281: own SymbolNamespace = SymbolValue();
+  let callee_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom_0281, scope: symbol_none, name_token: call_head);
   let callee_lookup_status: own SymbolLookupStatus = callee_lookup.status;
   match callee_lookup_status {
     SymbolLookupFound() => {
@@ -1098,7 +1111,8 @@ fn semantic_body_analyze_user_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c
         return semantic_facts_none;
       }
     }
-    let argument_kind: own Bool = semantic_body_kind_is(ast: ast, node: argument, want: AstNamedArgument());
+    let ast_named_argument_atom_0282: own AstKind = AstNamedArgument();
+    let argument_kind: own Bool = semantic_body_kind_is(ast: ast, node: argument, want: ast_named_argument_atom_0282);
     let argument_arity: own Bool = semantic_body_exact_children(ast: ast, node: argument, want: 1_u64);
     let argument_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: argument);
     let argument_first: own Bool = band<Bool>(argument_kind, argument_arity);
@@ -1114,7 +1128,8 @@ fn semantic_body_analyze_user_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c
       }
     }
     let argument_head: own u64 = index<u64>(deref(ast).heads, argument);
-    let argument_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: SymbolValue(), scope: callee, name_token: argument_head);
+    let symbol_value_atom_0283: own SymbolNamespace = SymbolValue();
+    let argument_lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom_0283, scope: callee, name_token: argument_head);
     let argument_lookup_status: own SymbolLookupStatus = argument_lookup.status;
     match argument_lookup_status {
       SymbolLookupFound() => {
@@ -1298,9 +1313,11 @@ fn semantic_body_analyze_bool_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'
   let expected_valid: own Bool = ilt<u64>(expected_let, ast_count);
   let targets_first: own Bool = band<Bool>(function_valid, continuation_valid);
   let targets_valid: own Bool = band<Bool>(targets_first, expected_valid);
-  let match_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: AstMatch());
+  let ast_match_atom_0284: own AstKind = AstMatch();
+  let match_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_match_atom_0284);
   let match_shape: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 3_u64);
-  let expected_kind: own Bool = semantic_body_kind_is(ast: ast, node: expected_let, want: AstLet());
+  let ast_let_atom_0285: own AstKind = AstLet();
+  let expected_kind: own Bool = semantic_body_kind_is(ast: ast, node: expected_let, want: ast_let_atom_0285);
   let root_first: own Bool = band<Bool>(targets_valid, match_kind);
   let root_second: own Bool = band<Bool>(match_shape, expected_kind);
   match band<Bool>(root_first, root_second) {
@@ -1317,10 +1334,13 @@ fn semantic_body_analyze_bool_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'
   let scrutinee: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 0_u64);
   let true_arm: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 1_u64);
   let false_arm: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 2_u64);
-  let scrutinee_kind: own Bool = semantic_body_kind_is(ast: ast, node: scrutinee, want: AstPlaceUse());
+  let ast_place_use_atom_0286: own AstKind = AstPlaceUse();
+  let scrutinee_kind: own Bool = semantic_body_kind_is(ast: ast, node: scrutinee, want: ast_place_use_atom_0286);
   let scrutinee_leaf: own Bool = semantic_body_exact_children(ast: ast, node: scrutinee, want: 0_u64);
-  let true_arm_kind: own Bool = semantic_body_kind_is(ast: ast, node: true_arm, want: AstMatchArm());
-  let false_arm_kind: own Bool = semantic_body_kind_is(ast: ast, node: false_arm, want: AstMatchArm());
+  let ast_match_arm_atom_0287: own AstKind = AstMatchArm();
+  let true_arm_kind: own Bool = semantic_body_kind_is(ast: ast, node: true_arm, want: ast_match_arm_atom_0287);
+  let ast_match_arm_atom_0288: own AstKind = AstMatchArm();
+  let false_arm_kind: own Bool = semantic_body_kind_is(ast: ast, node: false_arm, want: ast_match_arm_atom_0288);
   let true_arm_shape: own Bool = semantic_body_exact_children(ast: ast, node: true_arm, want: 1_u64);
   let false_arm_shape: own Bool = semantic_body_exact_children(ast: ast, node: false_arm, want: 1_u64);
   let scrutinee_ok: own Bool = band<Bool>(scrutinee_kind, scrutinee_leaf);
@@ -1340,8 +1360,10 @@ fn semantic_body_analyze_bool_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'
 
   let true_block: own u64 = semantic_body_child_at(ast: ast, node: true_arm, ordinal: 0_u64);
   let false_block: own u64 = semantic_body_child_at(ast: ast, node: false_arm, ordinal: 0_u64);
-  let true_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: true_block, want: AstBlock());
-  let false_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: false_block, want: AstBlock());
+  let ast_block_atom_0289: own AstKind = AstBlock();
+  let true_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: true_block, want: ast_block_atom_0289);
+  let ast_block_atom_0290: own AstKind = AstBlock();
+  let false_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: false_block, want: ast_block_atom_0290);
   let true_block_shape: own Bool = semantic_body_exact_children(ast: ast, node: true_block, want: 1_u64);
   let false_block_shape: own Bool = semantic_body_exact_children(ast: ast, node: false_block, want: 0_u64);
   let block_kinds: own Bool = band<Bool>(true_block_kind, false_block_kind);
@@ -1358,10 +1380,12 @@ fn semantic_body_analyze_bool_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'
   }
 
   let early_return: own u64 = semantic_body_child_at(ast: ast, node: true_block, ordinal: 0_u64);
-  let return_kind: own Bool = semantic_body_kind_is(ast: ast, node: early_return, want: AstReturn());
+  let ast_return_atom_0291: own AstKind = AstReturn();
+  let return_kind: own Bool = semantic_body_kind_is(ast: ast, node: early_return, want: ast_return_atom_0291);
   let return_shape: own Bool = semantic_body_exact_children(ast: ast, node: early_return, want: 1_u64);
   let constructor: own u64 = semantic_body_child_at(ast: ast, node: early_return, ordinal: 0_u64);
-  let constructor_kind: own Bool = semantic_body_kind_is(ast: ast, node: constructor, want: AstConstructor());
+  let ast_constructor_atom_0292: own AstKind = AstConstructor();
+  let constructor_kind: own Bool = semantic_body_kind_is(ast: ast, node: constructor, want: ast_constructor_atom_0292);
   let constructor_shape: own Bool = semantic_body_exact_children(ast: ast, node: constructor, want: 0_u64);
   let return_ok: own Bool = band<Bool>(return_kind, return_shape);
   let constructor_ok: own Bool = band<Bool>(constructor_kind, constructor_shape);
@@ -1405,7 +1429,8 @@ fn semantic_body_analyze_bool_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'
   }
   let scrutinee_declaration: own u64 = index<u64>(deref(facts).resolved_declarations, scrutinee);
   let scrutinee_mode: own SemanticValueMode = index<SemanticValueMode>(deref(facts).modes, scrutinee);
-  let scrutinee_own: own Bool = ieq<SemanticValueMode>(scrutinee_mode, SemanticModeOwn());
+  let semantic_mode_own_atom_0293: own SemanticValueMode = SemanticModeOwn();
+  let scrutinee_own: own Bool = ieq<SemanticValueMode>(scrutinee_mode, semantic_mode_own_atom_0293);
   let declaration_matches: own Bool = ieq<u64>(scrutinee_declaration, expected_let);
   let declaration_ordinal: own u64 = index<u64>(deref(facts).ordinals, expected_let);
   let ordinal_dominates: own Bool = ilt<u64>(declaration_ordinal, value_ordinal);
@@ -1590,7 +1615,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
     }
   }
 
-  let body_function_kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: AstFunction());
+  let ast_function_atom_0294: own AstKind = AstFunction();
+  let body_function_kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: ast_function_atom_0294);
   let body_function_arity: own Bool = semantic_body_exact_children(ast: ast, node: function, want: 6_u64);
   let body_function_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: function);
   let body_function_first: own Bool = band<Bool>(body_function_kind, body_function_arity);
@@ -1615,7 +1641,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
   let body_effect_node: own u64 = semantic_body_child_at(ast: ast, node: function, ordinal: 4_u64);
   let body_block_node: own u64 = semantic_body_child_at(ast: ast, node: function, ordinal: 5_u64);
 
-  let body_name_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_name_node, want: AstFunctionName());
+  let ast_function_name_atom_0295: own AstKind = AstFunctionName();
+  let body_name_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_name_node, want: ast_function_name_atom_0295);
   let body_name_leaf: own Bool = semantic_body_exact_children(ast: ast, node: body_name_node, want: 0_u64);
   let body_name_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: body_name_node);
   let body_name_first: own Bool = band<Bool>(body_name_kind, body_name_leaf);
@@ -1633,7 +1660,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
     }
   }
 
-  let body_parameter_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_parameter_node, want: AstParameter());
+  let ast_parameter_atom_0296: own AstKind = AstParameter();
+  let body_parameter_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_parameter_node, want: ast_parameter_atom_0296);
   let body_parameter_arity: own Bool = semantic_body_exact_children(ast: ast, node: body_parameter_node, want: 2_u64);
   let body_parameter_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: body_parameter_node);
   let body_parameter_first: own Bool = band<Bool>(body_parameter_kind, body_parameter_arity);
@@ -1652,7 +1680,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
   }
   let body_parameter_mode_node: own u64 = semantic_body_child_at(ast: ast, node: body_parameter_node, ordinal: 0_u64);
   let body_parameter_type_node: own u64 = semantic_body_child_at(ast: ast, node: body_parameter_node, ordinal: 1_u64);
-  let body_parameter_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_parameter_mode_node, want: AstOwnMode());
+  let ast_own_mode_atom_0297: own AstKind = AstOwnMode();
+  let body_parameter_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_parameter_mode_node, want: ast_own_mode_atom_0297);
   let body_parameter_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: body_parameter_mode_node, want: 0_u64);
   let body_parameter_mode_ok: own Bool = band<Bool>(body_parameter_mode_kind, body_parameter_mode_leaf);
   match body_parameter_mode_ok {
@@ -1667,7 +1696,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
       return unit;
     }
   }
-  let body_parameter_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_parameter_type_node, want: AstParameterType());
+  let ast_parameter_type_atom_0298: own AstKind = AstParameterType();
+  let body_parameter_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_parameter_type_node, want: ast_parameter_type_atom_0298);
   let body_parameter_type_text: own Bool = semantic_body_node_is_u8(source: source, tokens: tokens, ast: ast, node: body_parameter_type_node);
   let body_parameter_type_ok: own Bool = band<Bool>(body_parameter_type_kind, body_parameter_type_text);
   match body_parameter_type_ok {
@@ -1683,16 +1713,20 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
     }
   }
 
-  let body_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_return_mode_node, want: AstOwnMode());
+  let ast_own_mode_atom_0299: own AstKind = AstOwnMode();
+  let body_return_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_return_mode_node, want: ast_own_mode_atom_0299);
   let body_return_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: body_return_mode_node, want: 0_u64);
   let body_return_mode_ok: own Bool = band<Bool>(body_return_mode_kind, body_return_mode_leaf);
-  let body_return_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_return_type_node, want: AstReturnType());
+  let ast_return_type_atom_0300: own AstKind = AstReturnType();
+  let body_return_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_return_type_node, want: ast_return_type_atom_0300);
   let body_return_type_text: own Bool = semantic_body_node_is_bool(source: source, tokens: tokens, ast: ast, node: body_return_type_node);
   let body_return_type_ok: own Bool = band<Bool>(body_return_type_kind, body_return_type_text);
-  let body_effect_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_effect_node, want: AstPureEffect());
+  let ast_pure_effect_atom_0301: own AstKind = AstPureEffect();
+  let body_effect_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_effect_node, want: ast_pure_effect_atom_0301);
   let body_effect_leaf: own Bool = semantic_body_exact_children(ast: ast, node: body_effect_node, want: 0_u64);
   let body_effect_ok: own Bool = band<Bool>(body_effect_kind, body_effect_leaf);
-  let body_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_block_node, want: AstBlock());
+  let ast_block_atom_0302: own AstKind = AstBlock();
+  let body_block_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_block_node, want: ast_block_atom_0302);
   let body_signature_first: own Bool = band<Bool>(body_return_mode_ok, body_return_type_ok);
   let body_signature_second: own Bool = band<Bool>(body_effect_ok, body_block_kind);
   let body_signature_ok: own Bool = band<Bool>(body_signature_first, body_signature_second);
@@ -1745,9 +1779,12 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
       }
     }
     let body_scan_kind: own AstKind = index<AstKind>(deref(ast).kinds, body_scan_statement);
-    let body_scan_is_let: own Bool = ieq<AstKind>(body_scan_kind, AstLet());
-    let body_scan_is_match: own Bool = ieq<AstKind>(body_scan_kind, AstMatch());
-    let body_scan_is_return: own Bool = ieq<AstKind>(body_scan_kind, AstReturn());
+    let ast_let_atom_0303: own AstKind = AstLet();
+    let body_scan_is_let: own Bool = ieq<AstKind>(body_scan_kind, ast_let_atom_0303);
+    let ast_match_atom_0304: own AstKind = AstMatch();
+    let body_scan_is_match: own Bool = ieq<AstKind>(body_scan_kind, ast_match_atom_0304);
+    let ast_return_atom_0305: own AstKind = AstReturn();
+    let body_scan_is_return: own Bool = ieq<AstKind>(body_scan_kind, ast_return_atom_0305);
     let body_scan_at_last: own Bool = ieq<u64>(body_scan_statement, body_last_statement);
     match body_scan_is_let {
       True() => {
@@ -1867,9 +1904,11 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
           False() => {
           }
         }
-        let pair_let_kind: own Bool = semantic_body_kind_is(ast: ast, node: pair_let, want: AstLet());
+        let ast_let_atom_0306: own AstKind = AstLet();
+        let pair_let_kind: own Bool = semantic_body_kind_is(ast: ast, node: pair_let, want: ast_let_atom_0306);
         let pair_match: own u64 = index<u64>(deref(ast).next_siblings, pair_let);
-        let pair_match_kind: own Bool = semantic_body_kind_is(ast: ast, node: pair_match, want: AstMatch());
+        let ast_match_atom_0307: own AstKind = AstMatch();
+        let pair_match_kind: own Bool = semantic_body_kind_is(ast: ast, node: pair_match, want: ast_match_atom_0307);
         let pair_continuation: own u64 = semantic_facts_none;
         match ilt<u64>(pair_match, body_count) {
           True() => {
@@ -1896,7 +1935,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
           }
         }
       }
-      let final_let_kind: own Bool = semantic_body_kind_is(ast: ast, node: pair_let, want: AstLet());
+      let ast_let_atom_0308: own AstKind = AstLet();
+      let final_let_kind: own Bool = semantic_body_kind_is(ast: ast, node: pair_let, want: ast_let_atom_0308);
       let final_return: own u64 = semantic_facts_none;
       match ilt<u64>(pair_let, body_count) {
         True() => {
@@ -1905,7 +1945,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
         False() => {
         }
       }
-      let final_return_kind: own Bool = semantic_body_kind_is(ast: ast, node: final_return, want: AstReturn());
+      let ast_return_atom_0309: own AstKind = AstReturn();
+      let final_return_kind: own Bool = semantic_body_kind_is(ast: ast, node: final_return, want: ast_return_atom_0309);
       let final_return_last: own Bool = ieq<u64>(final_return, body_last_statement);
       let final_pair: own Bool = band<Bool>(final_let_kind, final_return_kind);
       match band<Bool>(final_pair, final_return_last) {
@@ -1978,7 +2019,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
   let body_parameter_head: own u64 = index<u64>(deref(ast).heads, body_parameter_node);
   let body_parameter_pushed: own Bool = False();
   region 'semantic_body_push_parameter {
-    set body_parameter_pushed = semantic_body_scope_push(source: source, tokens: tokens, scratch: &uniq 'semantic_body_push_parameter deref(scratch), name_token: body_parameter_head, declaration: body_parameter_node, type_id: 0_u64, mode: SemanticModeOwn());
+    let semantic_mode_own_atom_0310: own SemanticValueMode = SemanticModeOwn();
+    set body_parameter_pushed = semantic_body_scope_push(source: source, tokens: tokens, scratch: &uniq 'semantic_body_push_parameter deref(scratch), name_token: body_parameter_head, declaration: body_parameter_node, type_id: 0_u64, mode: semantic_mode_own_atom_0310);
   }
   match body_parameter_pushed {
     True() => {
@@ -1998,7 +2040,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
   let body_previous_let: own u64 = semantic_facts_none;
   loop @semantic_body_analyze_statements {
     let body_statement_kind: own AstKind = index<AstKind>(deref(ast).kinds, body_statement);
-    let body_statement_is_let: own Bool = ieq<AstKind>(body_statement_kind, AstLet());
+    let ast_let_atom_0311: own AstKind = AstLet();
+    let body_statement_is_let: own Bool = ieq<AstKind>(body_statement_kind, ast_let_atom_0311);
     match body_statement_is_let {
       True() => {
         let body_let_arity: own Bool = semantic_body_exact_children(ast: ast, node: body_statement, want: 4_u64);
@@ -2018,15 +2061,18 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
         let body_binding_mode: own u64 = semantic_body_child_at(ast: ast, node: body_statement, ordinal: 1_u64);
         let body_binding_type: own u64 = semantic_body_child_at(ast: ast, node: body_statement, ordinal: 2_u64);
         let body_binding_value: own u64 = semantic_body_child_at(ast: ast, node: body_statement, ordinal: 3_u64);
-        let body_binding_name_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_binding_name, want: AstBindingName());
+        let ast_binding_name_atom_0312: own AstKind = AstBindingName();
+        let body_binding_name_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_binding_name, want: ast_binding_name_atom_0312);
         let body_binding_name_leaf: own Bool = semantic_body_exact_children(ast: ast, node: body_binding_name, want: 0_u64);
         let body_binding_name_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: body_binding_name);
         let body_binding_name_first: own Bool = band<Bool>(body_binding_name_kind, body_binding_name_leaf);
         let body_binding_name_ok: own Bool = band<Bool>(body_binding_name_first, body_binding_name_token);
-        let body_binding_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_binding_mode, want: AstOwnMode());
+        let ast_own_mode_atom_0313: own AstKind = AstOwnMode();
+        let body_binding_mode_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_binding_mode, want: ast_own_mode_atom_0313);
         let body_binding_mode_leaf: own Bool = semantic_body_exact_children(ast: ast, node: body_binding_mode, want: 0_u64);
         let body_binding_mode_ok: own Bool = band<Bool>(body_binding_mode_kind, body_binding_mode_leaf);
-        let body_binding_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_binding_type, want: AstBindingType());
+        let ast_binding_type_atom_0314: own AstKind = AstBindingType();
+        let body_binding_type_kind: own Bool = semantic_body_kind_is(ast: ast, node: body_binding_type, want: ast_binding_type_atom_0314);
         let body_binding_type_text: own Bool = semantic_body_node_is_bool(source: source, tokens: tokens, ast: ast, node: body_binding_type);
         let body_binding_type_ok: own Bool = band<Bool>(body_binding_type_kind, body_binding_type_text);
         let body_binding_first: own Bool = band<Bool>(body_binding_name_ok, body_binding_mode_ok);
@@ -2071,7 +2117,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
         let body_binding_head: own u64 = index<u64>(deref(ast).heads, body_binding_name);
         let body_binding_pushed: own Bool = False();
         region 'semantic_body_push_binding {
-          set body_binding_pushed = semantic_body_scope_push(source: source, tokens: tokens, scratch: &uniq 'semantic_body_push_binding deref(scratch), name_token: body_binding_head, declaration: body_statement, type_id: 1_u64, mode: SemanticModeOwn());
+          let semantic_mode_own_atom_0315: own SemanticValueMode = SemanticModeOwn();
+          set body_binding_pushed = semantic_body_scope_push(source: source, tokens: tokens, scratch: &uniq 'semantic_body_push_binding deref(scratch), name_token: body_binding_head, declaration: body_statement, type_id: 1_u64, mode: semantic_mode_own_atom_0315);
         }
         match body_binding_pushed {
           True() => {
@@ -2090,7 +2137,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
         set body_statement = index<u64>(deref(ast).next_siblings, body_statement);
       }
       False() => {
-        let body_statement_is_match: own Bool = ieq<AstKind>(body_statement_kind, AstMatch());
+        let ast_match_atom_0316: own AstKind = AstMatch();
+        let body_statement_is_match: own Bool = ieq<AstKind>(body_statement_kind, ast_match_atom_0316);
         match body_statement_is_match {
           True() => {
             let body_match_continuation: own u64 = index<u64>(deref(ast).next_siblings, body_statement);
@@ -2129,7 +2177,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
             }
             let body_return_value: own u64 = semantic_body_child_at(ast: ast, node: body_statement, ordinal: 0_u64);
             let body_return_value_kind: own AstKind = index<AstKind>(deref(ast).kinds, body_return_value);
-            let body_return_is_place: own Bool = ieq<AstKind>(body_return_value_kind, AstPlaceUse());
+            let ast_place_use_atom_0317: own AstKind = AstPlaceUse();
+            let body_return_is_place: own Bool = ieq<AstKind>(body_return_value_kind, ast_place_use_atom_0317);
             let body_return_value_type: own u64 = semantic_facts_none;
             let body_return_ordinal: own u64 = semantic_facts_none;
             match body_return_is_place {
@@ -2139,7 +2188,8 @@ fn semantic_body_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, as
                 }
                 let body_return_declaration: own u64 = index<u64>(deref(facts).resolved_declarations, body_return_value);
                 let body_return_mode: own SemanticValueMode = index<SemanticValueMode>(deref(facts).modes, body_return_value);
-                let body_return_own: own Bool = ieq<SemanticValueMode>(body_return_mode, SemanticModeOwn());
+                let semantic_mode_own_atom_0318: own SemanticValueMode = SemanticModeOwn();
+                let body_return_own: own Bool = ieq<SemanticValueMode>(body_return_mode, semantic_mode_own_atom_0318);
                 let body_return_expected: own Bool = ieq<u64>(body_return_declaration, body_previous_let);
                 match ilt<u64>(body_return_declaration, body_count) {
                   True() => {

@@ -24,9 +24,12 @@ fn classify (v: own Val) -> own i32 traps {
 
 fn main () -> own unit traps {
   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
-  let a: own i32 = classify(v: Small(a: 40_i32));
-  let b: own i32 = classify(v: Big(b: 5000000000_u64));
-  let c: own i32 = classify(v: Bare());
+  let small_atom_0001: own Val = Small(a: 40_i32);
+  let a: own i32 = classify(v: move small_atom_0001);
+  let big_atom_0002: own Val = Big(b: 5000000000_u64);
+  let b: own i32 = classify(v: move big_atom_0002);
+  let bare_atom_0003: own Val = Bare();
+  let c: own i32 = classify(v: move bare_atom_0003);
   let s0: own i32 = iadd.trap<i32>(a, b);
   let s1: own i32 = iadd.trap<i32>(s0, c);
   check ieq<i32>(s1, 52_i32) else trap "multiwidth drift";

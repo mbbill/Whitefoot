@@ -11,7 +11,8 @@ fn choose (b: own Bool) -> own Result<u64,u64> pure {
 }
 
 fn main () -> own unit traps {
-  let first: own Result<u64,u64> = choose(b: True());
+  let true_atom_0001: own Bool = True();
+  let first: own Result<u64,u64> = choose(b: true_atom_0001);
   match move first {
     Ok(value: value) => {
       check ieq<u64>(value, 1_u64) else trap "wrong Ok payload";
@@ -20,7 +21,8 @@ fn main () -> own unit traps {
       check ieq<u64>(0_u64, 1_u64) else trap "expected Ok";
     }
   }
-  let second: own Result<u64,u64> = choose(b: False());
+  let false_atom_0002: own Bool = False();
+  let second: own Result<u64,u64> = choose(b: false_atom_0002);
   match move second {
     Ok(value: value) => {
       check ieq<u64>(0_u64, 1_u64) else trap "expected Err";

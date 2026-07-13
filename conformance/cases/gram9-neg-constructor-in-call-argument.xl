@@ -1,0 +1,9 @@
+fn consume (value: own Bool) -> own unit pure {
+  return unit;
+}
+
+fn main () -> own unit pure {
+  doc "GRAM-9: a constructor in a call-argument atom position does not derive; bind the constructed value with a preceding let.";
+  consume(value: True());
+  return unit;
+}

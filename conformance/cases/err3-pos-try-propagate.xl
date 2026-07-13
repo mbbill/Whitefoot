@@ -2,7 +2,7 @@ enum MyErr { Bad(); }
 
 fn step (x: own i32) -> own Result<i32, MyErr> pure {
   match ilt<i32>(x, 0_i32) {
-    True() => { return Err(error: Bad()); }
+    True() => { let bad_atom_0001: own MyErr = Bad(); return Err(error: bad_atom_0001); }
     False() => { return Ok(value: x); }
   }
 }

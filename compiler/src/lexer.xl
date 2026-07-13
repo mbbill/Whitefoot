@@ -485,7 +485,9 @@ fn lexer_scan_string ['s] (source: &'s buffer<u8>, start: own u64, size: own u64
   loop @string {
     match ige<u64>(cursor, size) {
       True() => {
-        return ScannedToken(kind: TokEnd(), end: size, status: LexUnterminatedString(), error_start: start, error_end: size);
+        let tok_end_atom_0001: own TokenKind = TokEnd();
+        let lex_unterminated_string_atom_0002: own LexStatus = LexUnterminatedString();
+        return ScannedToken(kind: tok_end_atom_0001, end: size, status: lex_unterminated_string_atom_0002, error_start: start, error_end: size);
       }
       False() => {
       }
@@ -495,7 +497,9 @@ fn lexer_scan_string ['s] (source: &'s buffer<u8>, start: own u64, size: own u64
     match quote {
       True() => {
         let end: own u64 = iadd.trap<u64>(cursor, 1_u64);
-        return ScannedToken(kind: TokString(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+        let tok_string_atom_0003: own TokenKind = TokString();
+        let lex_clean_atom_0004: own LexStatus = LexClean();
+        return ScannedToken(kind: tok_string_atom_0003, end: end, status: lex_clean_atom_0004, error_start: 0_u64, error_end: 0_u64);
       }
       False() => {
       }
@@ -506,7 +510,9 @@ fn lexer_scan_string ['s] (source: &'s buffer<u8>, start: own u64, size: own u64
         let escaped_at: own u64 = iadd.trap<u64>(cursor, 1_u64);
         match ige<u64>(escaped_at, size) {
           True() => {
-            return ScannedToken(kind: TokEnd(), end: size, status: LexUnterminatedString(), error_start: start, error_end: size);
+            let tok_end_atom_0005: own TokenKind = TokEnd();
+            let lex_unterminated_string_atom_0006: own LexStatus = LexUnterminatedString();
+            return ScannedToken(kind: tok_end_atom_0005, end: size, status: lex_unterminated_string_atom_0006, error_start: start, error_end: size);
           }
           False() => {
           }
@@ -523,7 +529,9 @@ fn lexer_scan_string ['s] (source: &'s buffer<u8>, start: own u64, size: own u64
           }
           False() => {
             let invalid_end: own u64 = iadd.trap<u64>(escaped_at, 1_u64);
-            return ScannedToken(kind: TokEnd(), end: invalid_end, status: LexInvalidString(), error_start: cursor, error_end: invalid_end);
+            let tok_end_atom_0007: own TokenKind = TokEnd();
+            let lex_invalid_string_atom_0008: own LexStatus = LexInvalidString();
+            return ScannedToken(kind: tok_end_atom_0007, end: invalid_end, status: lex_invalid_string_atom_0008, error_start: cursor, error_end: invalid_end);
           }
         }
       }
@@ -537,7 +545,9 @@ fn lexer_scan_string ['s] (source: &'s buffer<u8>, start: own u64, size: own u64
           }
           False() => {
             let invalid_end: own u64 = iadd.trap<u64>(cursor, 1_u64);
-            return ScannedToken(kind: TokEnd(), end: invalid_end, status: LexInvalidString(), error_start: cursor, error_end: invalid_end);
+            let tok_end_atom_0009: own TokenKind = TokEnd();
+            let lex_invalid_string_atom_0010: own LexStatus = LexInvalidString();
+            return ScannedToken(kind: tok_end_atom_0009, end: invalid_end, status: lex_invalid_string_atom_0010, error_start: cursor, error_end: invalid_end);
           }
         }
       }
@@ -555,10 +565,14 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       let opname: own Bool = igt<u64>(end, base_end);
       match opname {
         True() => {
-          return ScannedToken(kind: TokOpName(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_op_name_atom_0011: own TokenKind = TokOpName();
+          let lex_clean_atom_0012: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_op_name_atom_0011, end: end, status: lex_clean_atom_0012, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
-          return ScannedToken(kind: TokWord(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_word_atom_0013: own TokenKind = TokWord();
+          let lex_clean_atom_0014: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_word_atom_0013, end: end, status: lex_clean_atom_0014, error_start: 0_u64, error_end: 0_u64);
         }
       }
     }
@@ -569,7 +583,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
   match upper {
     True() => {
       let end: own u64 = lexer_scan_typeid(source: source, start: start, size: size);
-      return ScannedToken(kind: TokTypeId(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+      let tok_type_id_atom_0015: own TokenKind = TokTypeId();
+      let lex_clean_atom_0016: own LexStatus = LexClean();
+      return ScannedToken(kind: tok_type_id_atom_0015, end: end, status: lex_clean_atom_0016, error_start: 0_u64, error_end: 0_u64);
     }
     False() => {
     }
@@ -580,7 +596,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       let body: own u64 = iadd.trap<u64>(start, 1_u64);
       match ige<u64>(body, size) {
         True() => {
-          return ScannedToken(kind: TokEnd(), end: body, status: LexInvalidRegionId(), error_start: start, error_end: body);
+          let tok_end_atom_0017: own TokenKind = TokEnd();
+          let lex_invalid_region_id_atom_0018: own LexStatus = LexInvalidRegionId();
+          return ScannedToken(kind: tok_end_atom_0017, end: body, status: lex_invalid_region_id_atom_0018, error_start: start, error_end: body);
         }
         False() => {
         }
@@ -590,11 +608,15 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match valid {
         True() => {
           let end: own u64 = lexer_scan_ident(source: source, start: body, size: size);
-          return ScannedToken(kind: TokRegionId(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_region_id_atom_0019: own TokenKind = TokRegionId();
+          let lex_clean_atom_0020: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_region_id_atom_0019, end: end, status: lex_clean_atom_0020, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
           let invalid_end: own u64 = iadd.trap<u64>(body, 1_u64);
-          return ScannedToken(kind: TokEnd(), end: invalid_end, status: LexInvalidRegionId(), error_start: start, error_end: invalid_end);
+          let tok_end_atom_0021: own TokenKind = TokEnd();
+          let lex_invalid_region_id_atom_0022: own LexStatus = LexInvalidRegionId();
+          return ScannedToken(kind: tok_end_atom_0021, end: invalid_end, status: lex_invalid_region_id_atom_0022, error_start: start, error_end: invalid_end);
         }
       }
     }
@@ -607,7 +629,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       let body: own u64 = iadd.trap<u64>(start, 1_u64);
       match ige<u64>(body, size) {
         True() => {
-          return ScannedToken(kind: TokEnd(), end: body, status: LexInvalidLabel(), error_start: start, error_end: body);
+          let tok_end_atom_0023: own TokenKind = TokEnd();
+          let lex_invalid_label_atom_0024: own LexStatus = LexInvalidLabel();
+          return ScannedToken(kind: tok_end_atom_0023, end: body, status: lex_invalid_label_atom_0024, error_start: start, error_end: body);
         }
         False() => {
         }
@@ -617,11 +641,15 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match valid {
         True() => {
           let end: own u64 = lexer_scan_ident(source: source, start: body, size: size);
-          return ScannedToken(kind: TokLabel(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_label_atom_0025: own TokenKind = TokLabel();
+          let lex_clean_atom_0026: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_label_atom_0025, end: end, status: lex_clean_atom_0026, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
           let invalid_end: own u64 = iadd.trap<u64>(body, 1_u64);
-          return ScannedToken(kind: TokEnd(), end: invalid_end, status: LexInvalidLabel(), error_start: start, error_end: invalid_end);
+          let tok_end_atom_0027: own TokenKind = TokEnd();
+          let lex_invalid_label_atom_0028: own LexStatus = LexInvalidLabel();
+          return ScannedToken(kind: tok_end_atom_0027, end: invalid_end, status: lex_invalid_label_atom_0028, error_start: start, error_end: invalid_end);
         }
       }
     }
@@ -642,7 +670,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       let next: own u64 = iadd.trap<u64>(start, 1_u64);
       match ige<u64>(next, size) {
         True() => {
-          return ScannedToken(kind: TokEnd(), end: next, status: LexUnknownByte(), error_start: start, error_end: next);
+          let tok_end_atom_0029: own TokenKind = TokEnd();
+          let lex_unknown_byte_atom_0030: own LexStatus = LexUnknownByte();
+          return ScannedToken(kind: tok_end_atom_0029, end: next, status: lex_unknown_byte_atom_0030, error_start: start, error_end: next);
         }
         False() => {
         }
@@ -652,7 +682,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match arrow_tail {
         True() => {
           let end: own u64 = iadd.trap<u64>(next, 1_u64);
-          return ScannedToken(kind: TokArrow(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_arrow_atom_0031: own TokenKind = TokArrow();
+          let lex_clean_atom_0032: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_arrow_atom_0031, end: end, status: lex_clean_atom_0032, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
         }
@@ -661,10 +693,14 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match numeric_tail {
         True() => {
           let end: own u64 = lexer_scan_number(source: source, start: start, size: size);
-          return ScannedToken(kind: TokNumber(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_number_atom_0033: own TokenKind = TokNumber();
+          let lex_clean_atom_0034: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_number_atom_0033, end: end, status: lex_clean_atom_0034, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
-          return ScannedToken(kind: TokEnd(), end: next, status: LexUnknownByte(), error_start: start, error_end: next);
+          let tok_end_atom_0035: own TokenKind = TokEnd();
+          let lex_unknown_byte_atom_0036: own LexStatus = LexUnknownByte();
+          return ScannedToken(kind: tok_end_atom_0035, end: next, status: lex_unknown_byte_atom_0036, error_start: start, error_end: next);
         }
       }
     }
@@ -675,7 +711,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
   match digit {
     True() => {
       let end: own u64 = lexer_scan_number(source: source, start: start, size: size);
-      return ScannedToken(kind: TokNumber(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+      let tok_number_atom_0037: own TokenKind = TokNumber();
+      let lex_clean_atom_0038: own LexStatus = LexClean();
+      return ScannedToken(kind: tok_number_atom_0037, end: end, status: lex_clean_atom_0038, error_start: 0_u64, error_end: 0_u64);
     }
     False() => {
     }
@@ -686,7 +724,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       let next: own u64 = iadd.trap<u64>(start, 1_u64);
       match ige<u64>(next, size) {
         True() => {
-          return ScannedToken(kind: TokSymbol(), end: next, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_symbol_atom_0039: own TokenKind = TokSymbol();
+          let lex_clean_atom_0040: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_symbol_atom_0039, end: next, status: lex_clean_atom_0040, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
         }
@@ -696,10 +736,14 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match arrow_tail {
         True() => {
           let end: own u64 = iadd.trap<u64>(next, 1_u64);
-          return ScannedToken(kind: TokFatArrow(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_fat_arrow_atom_0041: own TokenKind = TokFatArrow();
+          let lex_clean_atom_0042: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_fat_arrow_atom_0041, end: end, status: lex_clean_atom_0042, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
-          return ScannedToken(kind: TokSymbol(), end: next, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_symbol_atom_0043: own TokenKind = TokSymbol();
+          let lex_clean_atom_0044: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_symbol_atom_0043, end: next, status: lex_clean_atom_0044, error_start: 0_u64, error_end: 0_u64);
         }
       }
     }
@@ -713,11 +757,15 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match ampuniq {
         True() => {
           let end: own u64 = iadd.trap<u64>(start, 5_u64);
-          return ScannedToken(kind: TokAmpUniq(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_amp_uniq_atom_0045: own TokenKind = TokAmpUniq();
+          let lex_clean_atom_0046: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_amp_uniq_atom_0045, end: end, status: lex_clean_atom_0046, error_start: 0_u64, error_end: 0_u64);
         }
         False() => {
           let end: own u64 = iadd.trap<u64>(start, 1_u64);
-          return ScannedToken(kind: TokAmp(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+          let tok_amp_atom_0047: own TokenKind = TokAmp();
+          let lex_clean_atom_0048: own LexStatus = LexClean();
+          return ScannedToken(kind: tok_amp_atom_0047, end: end, status: lex_clean_atom_0048, error_start: 0_u64, error_end: 0_u64);
         }
       }
     }
@@ -730,7 +778,9 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       let next: own u64 = iadd.trap<u64>(start, 1_u64);
       match ige<u64>(next, size) {
         True() => {
-          return ScannedToken(kind: TokEnd(), end: next, status: LexUnknownByte(), error_start: start, error_end: next);
+          let tok_end_atom_0049: own TokenKind = TokEnd();
+          let lex_unknown_byte_atom_0050: own LexStatus = LexUnknownByte();
+          return ScannedToken(kind: tok_end_atom_0049, end: next, status: lex_unknown_byte_atom_0050, error_start: start, error_end: next);
         }
         False() => {
         }
@@ -742,10 +792,14 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
       match comment {
         True() => {
           let end: own u64 = iadd.trap<u64>(next, 1_u64);
-          return ScannedToken(kind: TokEnd(), end: end, status: LexComment(), error_start: start, error_end: end);
+          let tok_end_atom_0051: own TokenKind = TokEnd();
+          let lex_comment_atom_0052: own LexStatus = LexComment();
+          return ScannedToken(kind: tok_end_atom_0051, end: end, status: lex_comment_atom_0052, error_start: start, error_end: end);
         }
         False() => {
-          return ScannedToken(kind: TokEnd(), end: next, status: LexUnknownByte(), error_start: start, error_end: next);
+          let tok_end_atom_0053: own TokenKind = TokEnd();
+          let lex_unknown_byte_atom_0054: own LexStatus = LexUnknownByte();
+          return ScannedToken(kind: tok_end_atom_0053, end: next, status: lex_unknown_byte_atom_0054, error_start: start, error_end: next);
         }
       }
     }
@@ -756,11 +810,15 @@ fn lexer_scan_one ['s] (source: &'s buffer<u8>, start: own u64, size: own u64) -
   match symbol {
     True() => {
       let end: own u64 = iadd.trap<u64>(start, 1_u64);
-      return ScannedToken(kind: TokSymbol(), end: end, status: LexClean(), error_start: 0_u64, error_end: 0_u64);
+      let tok_symbol_atom_0055: own TokenKind = TokSymbol();
+      let lex_clean_atom_0056: own LexStatus = LexClean();
+      return ScannedToken(kind: tok_symbol_atom_0055, end: end, status: lex_clean_atom_0056, error_start: 0_u64, error_end: 0_u64);
     }
     False() => {
       let end: own u64 = iadd.trap<u64>(start, 1_u64);
-      return ScannedToken(kind: TokEnd(), end: end, status: LexUnknownByte(), error_start: start, error_end: end);
+      let tok_end_atom_0057: own TokenKind = TokEnd();
+      let lex_unknown_byte_atom_0058: own LexStatus = LexUnknownByte();
+      return ScannedToken(kind: tok_end_atom_0057, end: end, status: lex_unknown_byte_atom_0058, error_start: start, error_end: end);
     }
   }
 }

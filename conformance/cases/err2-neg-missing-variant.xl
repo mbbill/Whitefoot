@@ -9,7 +9,8 @@ fn pick (c: own Color) -> own i32 pure {
 
 fn main () -> own unit traps {
   doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
-  let n: own i32 = pick(c: Red());
+  let red_atom_0001: own Color = Red();
+  let n: own i32 = pick(c: red_atom_0001);
   check ieq<i32>(n, 1_i32) else trap "x";
   return unit;
 }

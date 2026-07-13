@@ -436,10 +436,12 @@ fn llvm_scanner_emit_return_and_trap ['o] (out: &uniq 'o ByteTape) -> own unit r
 fn llvm_scanner_emit_body ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, function: own u64, facts: &'f NodeFacts, out: &uniq 'o ByteTape) -> own unit reads('s 't 'a 'f 'o), writes('o), traps {
   let call: own u64 = llvm_scanner_predicate_call(ast: ast, function: function);
   region 'llvm_scanner_body_data {
-    llvm_buffer_emit_extract(out: &uniq 'llvm_scanner_body_data deref(out), result: 0_u64, aggregate_type: llvm_buffer_type_buffer, aggregate: 0_u64, aggregate_place: True(), field: 0_u64);
+    let true_atom_0662: own Bool = True();
+    llvm_buffer_emit_extract(out: &uniq 'llvm_scanner_body_data deref(out), result: 0_u64, aggregate_type: llvm_buffer_type_buffer, aggregate: 0_u64, aggregate_place: true_atom_0662, field: 0_u64);
   }
   region 'llvm_scanner_body_length {
-    llvm_buffer_emit_extract(out: &uniq 'llvm_scanner_body_length deref(out), result: 1_u64, aggregate_type: llvm_buffer_type_buffer, aggregate: 0_u64, aggregate_place: True(), field: 1_u64);
+    let true_atom_0663: own Bool = True();
+    llvm_buffer_emit_extract(out: &uniq 'llvm_scanner_body_length deref(out), result: 1_u64, aggregate_type: llvm_buffer_type_buffer, aggregate: 0_u64, aggregate_place: true_atom_0663, field: 1_u64);
   }
   region 'llvm_scanner_body_entry_jump {
     llvm_scanner_emit_jump(out: &uniq 'llvm_scanner_body_entry_jump deref(out), block: 0_u64);
@@ -451,7 +453,8 @@ fn llvm_scanner_emit_body ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tokens: 
     llvm_scanner_emit_phi_cursor(out: &uniq 'llvm_scanner_body_phi deref(out));
   }
   region 'llvm_scanner_body_range_guard {
-    llvm_scanner_emit_compare(out: &uniq 'llvm_scanner_body_range_guard deref(out), result: 3_u64, operation: 0_u64, right: 2_u64, right_place: True());
+    let true_atom_0664: own Bool = True();
+    llvm_scanner_emit_compare(out: &uniq 'llvm_scanner_body_range_guard deref(out), result: 3_u64, operation: 0_u64, right: 2_u64, right_place: true_atom_0664);
   }
   region 'llvm_scanner_body_range_branch {
     llvm_buffer_emit_branch(out: &uniq 'llvm_scanner_body_range_branch deref(out), condition: 3_u64, true_block: 4_u64, false_block: 1_u64);
@@ -460,7 +463,8 @@ fn llvm_scanner_emit_body ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tokens: 
     llvm_buffer_emit_block_label(out: &uniq 'llvm_scanner_body_bounds_block deref(out), id: 1_u64);
   }
   region 'llvm_scanner_body_bounds {
-    llvm_scanner_emit_compare(out: &uniq 'llvm_scanner_body_bounds deref(out), result: 4_u64, operation: 1_u64, right: 1_u64, right_place: False());
+    let false_atom_0665: own Bool = False();
+    llvm_scanner_emit_compare(out: &uniq 'llvm_scanner_body_bounds deref(out), result: 4_u64, operation: 1_u64, right: 1_u64, right_place: false_atom_0665);
   }
   region 'llvm_scanner_body_bounds_branch {
     llvm_buffer_emit_branch(out: &uniq 'llvm_scanner_body_bounds_branch deref(out), condition: 4_u64, true_block: 2_u64, false_block: 5_u64);
@@ -469,7 +473,8 @@ fn llvm_scanner_emit_body ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tokens: 
     llvm_buffer_emit_block_label(out: &uniq 'llvm_scanner_body_load_block deref(out), id: 2_u64);
   }
   region 'llvm_scanner_body_load {
-    llvm_buffer_emit_gep_load(out: &uniq 'llvm_scanner_body_load deref(out), pointer: 5_u64, result: 6_u64, index_id: 2_u64, index_place: False());
+    let false_atom_0666: own Bool = False();
+    llvm_buffer_emit_gep_load(out: &uniq 'llvm_scanner_body_load deref(out), pointer: 5_u64, result: 6_u64, index_id: 2_u64, index_place: false_atom_0666);
   }
   region 'llvm_scanner_body_call {
     llvm_scanner_emit_predicate_call(source: source, tokens: tokens, ast: ast, facts: facts, call: call, out: &uniq 'llvm_scanner_body_call deref(out));
@@ -496,11 +501,17 @@ fn llvm_scanner_emit_body ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tokens: 
 }
 
 fn llvm_scanner_control_fact_valid ['f] (facts: &'f NodeFacts, node: own u64, target: own u64) -> own Bool reads('f), traps {
-  return llvm_buffer_fact_row_valid(facts: facts, node: node, type_id: semantic_facts_none, resolution: semantic_facts_none, ordinal: semantic_facts_none, operation: SemanticOperationNone(), constant: semantic_facts_none, target: target, mode: SemanticModeNone(), prelude: PreludeConstructorUnknown());
+  let semantic_operation_none_atom_0667: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_none_atom_0668: own SemanticValueMode = SemanticModeNone();
+  let prelude_constructor_unknown_atom_0669: own PreludeConstructorCode = PreludeConstructorUnknown();
+  return llvm_buffer_fact_row_valid(facts: facts, node: node, type_id: semantic_facts_none, resolution: semantic_facts_none, ordinal: semantic_facts_none, operation: semantic_operation_none_atom_0667, constant: semantic_facts_none, target: target, mode: semantic_mode_none_atom_0668, prelude: prelude_constructor_unknown_atom_0669);
 }
 
 fn llvm_scanner_label_fact_valid ['f] (facts: &'f NodeFacts, node: own u64, declaration: own u64) -> own Bool reads('f), traps {
-  return llvm_buffer_fact_row_valid(facts: facts, node: node, type_id: semantic_facts_none, resolution: declaration, ordinal: semantic_facts_none, operation: SemanticOperationNone(), constant: semantic_facts_none, target: semantic_facts_none, mode: SemanticModeNone(), prelude: PreludeConstructorUnknown());
+  let semantic_operation_none_atom_0670: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_none_atom_0671: own SemanticValueMode = SemanticModeNone();
+  let prelude_constructor_unknown_atom_0672: own PreludeConstructorCode = PreludeConstructorUnknown();
+  return llvm_buffer_fact_row_valid(facts: facts, node: node, type_id: semantic_facts_none, resolution: declaration, ordinal: semantic_facts_none, operation: semantic_operation_none_atom_0670, constant: semantic_facts_none, target: semantic_facts_none, mode: semantic_mode_none_atom_0671, prelude: prelude_constructor_unknown_atom_0672);
 }
 
 fn llvm_scanner_arm_fact_valid ['f] (facts: &'f NodeFacts, node: own u64, truth: own Bool, target: own u64) -> own Bool reads('f), traps {
@@ -516,17 +527,26 @@ fn llvm_scanner_arm_fact_valid ['f] (facts: &'f NodeFacts, node: own u64, truth:
     False() => {
     }
   }
-  return llvm_buffer_fact_row_valid(facts: facts, node: node, type_id: semantic_buffer_type_bool, resolution: semantic_facts_none, ordinal: ordinal, operation: SemanticOperationNone(), constant: constant, target: target, mode: SemanticModeNone(), prelude: prelude);
+  let semantic_operation_none_atom_0673: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_none_atom_0674: own SemanticValueMode = SemanticModeNone();
+  return llvm_buffer_fact_row_valid(facts: facts, node: node, type_id: semantic_buffer_type_bool, resolution: semantic_facts_none, ordinal: ordinal, operation: semantic_operation_none_atom_0673, constant: constant, target: target, mode: semantic_mode_none_atom_0674, prelude: prelude);
 }
 
 fn llvm_scanner_iadd_facts_valid ['a, 'f] (ast: &'a AstTape, facts: &'f NodeFacts, call: own u64, cursor_declaration: own u64, guard_call: own u64) -> own Bool reads('a 'f), traps {
   let type_node: own u64 = llvm_linear_child_at(ast: ast, node: call, ordinal: 0_u64);
   let left: own u64 = llvm_linear_child_at(ast: ast, node: call, ordinal: 1_u64);
   let literal: own u64 = llvm_linear_child_at(ast: ast, node: call, ordinal: 2_u64);
-  let result_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: call, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: 4_u64, operation: SemanticOperationIaddTrap(), constant: semantic_facts_none, target: guard_call, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
+  let semantic_operation_iadd_trap_atom_0675: own SemanticOperation = SemanticOperationIaddTrap();
+  let semantic_mode_own_atom_0676: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0677: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let result_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: call, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: 4_u64, operation: semantic_operation_iadd_trap_atom_0675, constant: semantic_facts_none, target: guard_call, mode: semantic_mode_own_atom_0676, prelude: prelude_constructor_unknown_atom_0677);
   let type_row: own Bool = llvm_buffer_typed_fact_row(facts: facts, node: type_node, type_id: semantic_buffer_type_u64);
-  let left_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: left, type_id: semantic_buffer_type_u64, declaration: cursor_declaration, mode: SemanticModeOwn());
-  let literal_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: literal, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: semantic_facts_none, operation: SemanticOperationNone(), constant: 1_u64, target: semantic_facts_none, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
+  let semantic_mode_own_atom_0678: own SemanticValueMode = SemanticModeOwn();
+  let left_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: left, type_id: semantic_buffer_type_u64, declaration: cursor_declaration, mode: semantic_mode_own_atom_0678);
+  let semantic_operation_none_atom_0679: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0680: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0681: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let literal_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: literal, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: semantic_facts_none, operation: semantic_operation_none_atom_0679, constant: 1_u64, target: semantic_facts_none, mode: semantic_mode_own_atom_0680, prelude: prelude_constructor_unknown_atom_0681);
   let root_rows: own Bool = band<Bool>(result_row, type_row);
   let operand_rows: own Bool = band<Bool>(left_row, literal_row);
   return band<Bool>(root_rows, operand_rows);
@@ -534,7 +554,8 @@ fn llvm_scanner_iadd_facts_valid ['a, 'f] (ast: &'a AstTape, facts: &'f NodeFact
 
 fn llvm_scanner_predicate_facts_valid ['s, 't, 'a, 'm, 'f] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, symbols: &'m SymbolTape, facts: &'f NodeFacts, call: own u64, byte_declaration: own u64) -> own Bool reads('s 't 'a 'm 'f), traps {
   let call_head: own u64 = index<u64>(deref(ast).heads, call);
-  let lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: SymbolValue(), scope: symbol_none, name_token: call_head);
+  let symbol_value_atom_0682: own SymbolNamespace = SymbolValue();
+  let lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom_0682, scope: symbol_none, name_token: call_head);
   let lookup_status: own SymbolLookupStatus = lookup.status;
   match lookup_status {
     SymbolLookupFound() => {
@@ -553,9 +574,16 @@ fn llvm_scanner_predicate_facts_valid ['s, 't, 'a, 'm, 'f] (source: &'s buffer<u
   let formal: own u64 = llvm_linear_child_at(ast: ast, node: callee, ordinal: 1_u64);
   let named: own u64 = llvm_linear_child_at(ast: ast, node: call, ordinal: 0_u64);
   let actual: own u64 = llvm_linear_child_at(ast: ast, node: named, ordinal: 0_u64);
-  let call_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: call, type_id: semantic_buffer_type_bool, resolution: callee, ordinal: 3_u64, operation: SemanticOperationNone(), constant: semantic_facts_none, target: semantic_facts_none, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
-  let named_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: named, type_id: semantic_buffer_type_u8, resolution: formal, ordinal: 0_u64, operation: SemanticOperationNone(), constant: semantic_facts_none, target: semantic_facts_none, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
-  let actual_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: actual, type_id: semantic_buffer_type_u8, declaration: byte_declaration, mode: SemanticModeOwn());
+  let semantic_operation_none_atom_0683: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0684: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0685: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let call_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: call, type_id: semantic_buffer_type_bool, resolution: callee, ordinal: 3_u64, operation: semantic_operation_none_atom_0683, constant: semantic_facts_none, target: semantic_facts_none, mode: semantic_mode_own_atom_0684, prelude: prelude_constructor_unknown_atom_0685);
+  let semantic_operation_none_atom_0686: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0687: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0688: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let named_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: named, type_id: semantic_buffer_type_u8, resolution: formal, ordinal: 0_u64, operation: semantic_operation_none_atom_0686, constant: semantic_facts_none, target: semantic_facts_none, mode: semantic_mode_own_atom_0687, prelude: prelude_constructor_unknown_atom_0688);
+  let semantic_mode_own_atom_0689: own SemanticValueMode = SemanticModeOwn();
+  let actual_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: actual, type_id: semantic_buffer_type_u8, declaration: byte_declaration, mode: semantic_mode_own_atom_0689);
   let first_rows: own Bool = band<Bool>(call_row, named_row);
   return band<Bool>(first_rows, actual_row);
 }
@@ -625,10 +653,16 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
   let keep_declaration: own u64 = llvm_linear_child_at(ast: ast, node: loop_block, ordinal: 2_u64);
   let keep_match: own u64 = llvm_linear_child_at(ast: ast, node: loop_block, ordinal: 3_u64);
 
-  let source_rows: own Bool = llvm_buffer_parameter_facts_valid(ast: ast, facts: facts, parameter: source_parameter, type_id: semantic_buffer_type_u8_buffer, ordinal: 0_u64, mode: SemanticModeShared());
-  let start_rows: own Bool = llvm_buffer_parameter_facts_valid(ast: ast, facts: facts, parameter: start_parameter, type_id: semantic_buffer_type_u64, ordinal: 1_u64, mode: SemanticModeOwn());
-  let size_rows: own Bool = llvm_buffer_parameter_facts_valid(ast: ast, facts: facts, parameter: size_parameter, type_id: semantic_buffer_type_u64, ordinal: 2_u64, mode: SemanticModeOwn());
-  let return_mode_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: return_mode, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: semantic_facts_none, operation: SemanticOperationNone(), constant: semantic_facts_none, target: semantic_facts_none, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
+  let semantic_mode_shared_atom_0690: own SemanticValueMode = SemanticModeShared();
+  let source_rows: own Bool = llvm_buffer_parameter_facts_valid(ast: ast, facts: facts, parameter: source_parameter, type_id: semantic_buffer_type_u8_buffer, ordinal: 0_u64, mode: semantic_mode_shared_atom_0690);
+  let semantic_mode_own_atom_0691: own SemanticValueMode = SemanticModeOwn();
+  let start_rows: own Bool = llvm_buffer_parameter_facts_valid(ast: ast, facts: facts, parameter: start_parameter, type_id: semantic_buffer_type_u64, ordinal: 1_u64, mode: semantic_mode_own_atom_0691);
+  let semantic_mode_own_atom_0692: own SemanticValueMode = SemanticModeOwn();
+  let size_rows: own Bool = llvm_buffer_parameter_facts_valid(ast: ast, facts: facts, parameter: size_parameter, type_id: semantic_buffer_type_u64, ordinal: 2_u64, mode: semantic_mode_own_atom_0692);
+  let semantic_operation_none_atom_0693: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0694: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0695: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let return_mode_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: return_mode, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: semantic_facts_none, operation: semantic_operation_none_atom_0693, constant: semantic_facts_none, target: semantic_facts_none, mode: semantic_mode_own_atom_0694, prelude: prelude_constructor_unknown_atom_0695);
   let return_type_row: own Bool = llvm_buffer_typed_fact_row(facts: facts, node: return_type, type_id: semantic_buffer_type_u64);
   let parameter_rows0: own Bool = band<Bool>(source_rows, start_rows);
   let parameter_rows1: own Bool = band<Bool>(size_rows, return_mode_row);
@@ -644,7 +678,8 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
 
   let cursor_rows: own Bool = llvm_buffer_let_facts_valid(ast: ast, facts: facts, declaration: cursor_declaration, type_id: semantic_buffer_type_u64, ordinal: 0_u64);
   let cursor_initializer: own u64 = llvm_linear_child_at(ast: ast, node: cursor_declaration, ordinal: 3_u64);
-  let cursor_initializer_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: cursor_initializer, type_id: semantic_buffer_type_u64, declaration: start_parameter, mode: SemanticModeOwn());
+  let semantic_mode_own_atom_0696: own SemanticValueMode = SemanticModeOwn();
+  let cursor_initializer_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: cursor_initializer, type_id: semantic_buffer_type_u64, declaration: start_parameter, mode: semantic_mode_own_atom_0696);
   match band<Bool>(cursor_rows, cursor_initializer_row) {
     True() => {
     }
@@ -657,10 +692,15 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
   let guard_type: own u64 = llvm_linear_child_at(ast: ast, node: guard_call, ordinal: 0_u64);
   let guard_left: own u64 = llvm_linear_child_at(ast: ast, node: guard_call, ordinal: 1_u64);
   let guard_right: own u64 = llvm_linear_child_at(ast: ast, node: guard_call, ordinal: 2_u64);
-  let guard_call_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: guard_call, type_id: semantic_buffer_type_bool, resolution: semantic_facts_none, ordinal: 1_u64, operation: SemanticOperationIge(), constant: semantic_facts_none, target: guard_match, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
+  let semantic_operation_ige_atom_0697: own SemanticOperation = SemanticOperationIge();
+  let semantic_mode_own_atom_0698: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0699: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let guard_call_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: guard_call, type_id: semantic_buffer_type_bool, resolution: semantic_facts_none, ordinal: 1_u64, operation: semantic_operation_ige_atom_0697, constant: semantic_facts_none, target: guard_match, mode: semantic_mode_own_atom_0698, prelude: prelude_constructor_unknown_atom_0699);
   let guard_type_row: own Bool = llvm_buffer_typed_fact_row(facts: facts, node: guard_type, type_id: semantic_buffer_type_u64);
-  let guard_left_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: guard_left, type_id: semantic_buffer_type_u64, declaration: cursor_declaration, mode: SemanticModeOwn());
-  let guard_right_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: guard_right, type_id: semantic_buffer_type_u64, declaration: size_parameter, mode: SemanticModeOwn());
+  let semantic_mode_own_atom_0700: own SemanticValueMode = SemanticModeOwn();
+  let guard_left_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: guard_left, type_id: semantic_buffer_type_u64, declaration: cursor_declaration, mode: semantic_mode_own_atom_0700);
+  let semantic_mode_own_atom_0701: own SemanticValueMode = SemanticModeOwn();
+  let guard_right_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: guard_right, type_id: semantic_buffer_type_u64, declaration: size_parameter, mode: semantic_mode_own_atom_0701);
   let guard_root_rows: own Bool = band<Bool>(guard_call_row, guard_type_row);
   let guard_operand_rows: own Bool = band<Bool>(guard_left_row, guard_right_row);
   match band<Bool>(guard_root_rows, guard_operand_rows) {
@@ -680,9 +720,11 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
   let control0: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: loop_node, target: return_node);
   let control1: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: loop_block, target: guard_match);
   let control2: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: guard_match, target: byte_declaration);
-  let control3: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: guard_true_arm, truth: True(), target: guard_break);
+  let true_atom_0702: own Bool = True();
+  let control3: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: guard_true_arm, truth: true_atom_0702, target: guard_break);
   let control4: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: guard_true_block, target: guard_break);
-  let control5: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: guard_false_arm, truth: False(), target: byte_declaration);
+  let false_atom_0703: own Bool = False();
+  let control5: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: guard_false_arm, truth: false_atom_0703, target: byte_declaration);
   let control6: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: guard_false_block, target: byte_declaration);
   let control7: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: guard_break, target: return_node);
   let control8: own Bool = llvm_scanner_label_fact_valid(facts: facts, node: guard_break_label, declaration: loop_label);
@@ -728,11 +770,16 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
   let increment: own u64 = llvm_linear_child_at(ast: ast, node: set_node, ordinal: 1_u64);
   let keep_break: own u64 = llvm_linear_child_at(ast: ast, node: keep_false_block, ordinal: 0_u64);
   let keep_break_label: own u64 = llvm_linear_child_at(ast: ast, node: keep_break, ordinal: 0_u64);
-  let keep_scrutinee_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: keep_scrutinee, type_id: semantic_buffer_type_bool, resolution: keep_declaration, ordinal: semantic_facts_none, operation: SemanticOperationNone(), constant: semantic_facts_none, target: keep_match, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
+  let semantic_operation_none_atom_0704: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0705: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0706: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let keep_scrutinee_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: keep_scrutinee, type_id: semantic_buffer_type_bool, resolution: keep_declaration, ordinal: semantic_facts_none, operation: semantic_operation_none_atom_0704, constant: semantic_facts_none, target: keep_match, mode: semantic_mode_own_atom_0705, prelude: prelude_constructor_unknown_atom_0706);
   let keep_control0: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: keep_match, target: loop_node);
-  let keep_control1: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: keep_true_arm, truth: True(), target: set_node);
+  let true_atom_0707: own Bool = True();
+  let keep_control1: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: keep_true_arm, truth: true_atom_0707, target: set_node);
   let keep_control2: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: keep_true_block, target: set_node);
-  let keep_control3: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: keep_false_arm, truth: False(), target: keep_break);
+  let false_atom_0708: own Bool = False();
+  let keep_control3: own Bool = llvm_scanner_arm_fact_valid(facts: facts, node: keep_false_arm, truth: false_atom_0708, target: keep_break);
   let keep_control4: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: keep_false_block, target: keep_break);
   let keep_control5: own Bool = llvm_scanner_control_fact_valid(facts: facts, node: keep_break, target: return_node);
   let keep_control6: own Bool = llvm_scanner_label_fact_valid(facts: facts, node: keep_break_label, declaration: loop_label);
@@ -750,8 +797,12 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
     }
   }
 
-  let set_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: set_node, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: 4_u64, operation: SemanticOperationNone(), constant: semantic_facts_none, target: loop_node, mode: SemanticModeNone(), prelude: PreludeConstructorUnknown());
-  let set_target_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: set_target, type_id: semantic_buffer_type_u64, declaration: cursor_declaration, mode: SemanticModeOwn());
+  let semantic_operation_none_atom_0709: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_none_atom_0710: own SemanticValueMode = SemanticModeNone();
+  let prelude_constructor_unknown_atom_0711: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let set_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: set_node, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: 4_u64, operation: semantic_operation_none_atom_0709, constant: semantic_facts_none, target: loop_node, mode: semantic_mode_none_atom_0710, prelude: prelude_constructor_unknown_atom_0711);
+  let semantic_mode_own_atom_0712: own SemanticValueMode = SemanticModeOwn();
+  let set_target_row: own Bool = llvm_buffer_place_fact_valid(facts: facts, node: set_target, type_id: semantic_buffer_type_u64, declaration: cursor_declaration, mode: semantic_mode_own_atom_0712);
   let increment_rows: own Bool = llvm_scanner_iadd_facts_valid(ast: ast, facts: facts, call: increment, cursor_declaration: cursor_declaration, guard_call: guard_call);
   let set_rows: own Bool = band<Bool>(set_row, set_target_row);
   match band<Bool>(set_rows, increment_rows) {
@@ -762,8 +813,14 @@ fn llvm_scanner_facts_valid ['s, 't, 'a, 'm, 'y, 'f] (source: &'s buffer<u8>, to
     }
   }
 
-  let return_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: return_node, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: 0_u64, operation: SemanticOperationNone(), constant: semantic_facts_none, target: function, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
-  let return_value_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: return_value, type_id: semantic_buffer_type_u64, resolution: cursor_declaration, ordinal: semantic_facts_none, operation: SemanticOperationNone(), constant: semantic_facts_none, target: return_node, mode: SemanticModeOwn(), prelude: PreludeConstructorUnknown());
+  let semantic_operation_none_atom_0713: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0714: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0715: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let return_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: return_node, type_id: semantic_buffer_type_u64, resolution: semantic_facts_none, ordinal: 0_u64, operation: semantic_operation_none_atom_0713, constant: semantic_facts_none, target: function, mode: semantic_mode_own_atom_0714, prelude: prelude_constructor_unknown_atom_0715);
+  let semantic_operation_none_atom_0716: own SemanticOperation = SemanticOperationNone();
+  let semantic_mode_own_atom_0717: own SemanticValueMode = SemanticModeOwn();
+  let prelude_constructor_unknown_atom_0718: own PreludeConstructorCode = PreludeConstructorUnknown();
+  let return_value_row: own Bool = llvm_buffer_fact_row_valid(facts: facts, node: return_value, type_id: semantic_buffer_type_u64, resolution: cursor_declaration, ordinal: semantic_facts_none, operation: semantic_operation_none_atom_0716, constant: semantic_facts_none, target: return_node, mode: semantic_mode_own_atom_0717, prelude: prelude_constructor_unknown_atom_0718);
   match band<Bool>(return_row, return_value_row) {
     True() => {
     }
@@ -803,7 +860,8 @@ fn llvm_scanner_emit_validated_function ['s, 't, 'a, 'f, 'o] (source: &'s buffer
 }
 
 fn llvm_scanner_append_function ['s, 't, 'a, 'm, 'y, 'f, 'o] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, function: own u64, symbols: &'m SymbolTape, types: &'y TypeTape, facts: &'f NodeFacts, out: &uniq 'o ByteTape) -> own unit reads('s 't 'a 'm 'y 'f 'o), writes('o), traps {
-  match ieq<ByteStatus>(deref(out).status, ByteInvalidState()) {
+  let byte_invalid_state_atom_0719: own ByteStatus = ByteInvalidState();
+  match ieq<ByteStatus>(deref(out).status, byte_invalid_state_atom_0719) {
     True() => {
       return unit;
     }

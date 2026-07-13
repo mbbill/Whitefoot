@@ -63,7 +63,8 @@ fn semantic_function_head_token_valid ['s, 't, 'a] (source: &'s buffer<u8>, toke
 }
 
 fn semantic_function_region_leaf_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, node: own u64) -> own Bool reads('s 't 'a), traps {
-  let region_kind: own Bool = semantic_function_kind_is(ast: ast, node: node, want: AstRegion());
+  let ast_region_atom_0470: own AstKind = AstRegion();
+  let region_kind: own Bool = semantic_function_kind_is(ast: ast, node: node, want: ast_region_atom_0470);
   match region_kind {
     True() => {
     }
@@ -271,7 +272,8 @@ fn semantic_function_region_children_valid ['s, 't, 'a] (source: &'s buffer<u8>,
 }
 
 fn semantic_function_parameter_shape_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, parameter: own u64) -> own Bool reads('s 't 'a), traps {
-  let parameter_kind: own Bool = semantic_function_kind_is(ast: ast, node: parameter, want: AstParameter());
+  let ast_parameter_atom_0471: own AstKind = AstParameter();
+  let parameter_kind: own Bool = semantic_function_kind_is(ast: ast, node: parameter, want: ast_parameter_atom_0471);
   match parameter_kind {
     True() => {
     }
@@ -297,7 +299,8 @@ fn semantic_function_parameter_shape_valid ['s, 't, 'a] (source: &'s buffer<u8>,
       return False();
     }
   }
-  let parameter_type_valid: own Bool = semantic_function_type_root_valid(source: source, tokens: tokens, ast: ast, node: parameter_type, want: AstParameterType());
+  let ast_parameter_type_atom_0472: own AstKind = AstParameterType();
+  let parameter_type_valid: own Bool = semantic_function_type_root_valid(source: source, tokens: tokens, ast: ast, node: parameter_type, want: ast_parameter_type_atom_0472);
   match parameter_type_valid {
     True() => {
     }
@@ -603,7 +606,8 @@ fn semantic_index_function_symbols ['c, 'w] (source: &'c buffer<u8>, tokens: &'c
       return unit;
     }
   }
-  let function_kind_valid: own Bool = semantic_function_kind_is(ast: ast, node: function, want: AstFunction());
+  let ast_function_atom_0473: own AstKind = AstFunction();
+  let function_kind_valid: own Bool = semantic_function_kind_is(ast: ast, node: function, want: ast_function_atom_0473);
   match function_kind_valid {
     True() => {
     }
@@ -650,7 +654,8 @@ fn semantic_index_function_symbols ['c, 'w] (source: &'c buffer<u8>, tokens: &'c
     }
   }
 
-  let function_name_kind: own Bool = semantic_function_kind_is(ast: ast, node: function_first, want: AstFunctionName());
+  let ast_function_name_atom_0474: own AstKind = AstFunctionName();
+  let function_name_kind: own Bool = semantic_function_kind_is(ast: ast, node: function_first, want: ast_function_name_atom_0474);
   let function_name_leaf: own Bool = semantic_function_leaf_valid(ast: ast, node: function_first);
   let function_name_shape: own Bool = band<Bool>(function_name_kind, function_name_leaf);
   match function_name_shape {
@@ -881,7 +886,8 @@ fn semantic_index_function_symbols ['c, 'w] (source: &'c buffer<u8>, tokens: &'c
     }
   }
   let return_type_node: own u64 = index<u64>(deref(ast).next_siblings, direct_cursor);
-  let return_type_valid: own Bool = semantic_function_type_root_valid(source: source, tokens: tokens, ast: ast, node: return_type_node, want: AstReturnType());
+  let ast_return_type_atom_0475: own AstKind = AstReturnType();
+  let return_type_valid: own Bool = semantic_function_type_root_valid(source: source, tokens: tokens, ast: ast, node: return_type_node, want: ast_return_type_atom_0475);
   match return_type_valid {
     True() => {
     }

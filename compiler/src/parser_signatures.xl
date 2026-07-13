@@ -196,7 +196,8 @@ fn parser_parse_signature_type ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'signature_type_error {
-        parser_fail(tokens: tokens, out: &uniq 'signature_type_error deref(out), status: ParseExpectedType(), token: cursor);
+        let parse_expected_type_atom_0104: own ParseStatus = ParseExpectedType();
+        parser_fail(tokens: tokens, out: &uniq 'signature_type_error deref(out), status: parse_expected_type_atom_0104, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -219,7 +220,8 @@ fn parser_parse_signature_type ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'type_left_angle_error {
-        parser_fail(tokens: tokens, out: &uniq 'type_left_angle_error deref(out), status: ParseExpectedLeftAngle(), token: left_angle_cursor);
+        let parse_expected_left_angle_atom_0105: own ParseStatus = ParseExpectedLeftAngle();
+        parser_fail(tokens: tokens, out: &uniq 'type_left_angle_error deref(out), status: parse_expected_left_angle_atom_0105, token: left_angle_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_angle_cursor);
     }
@@ -228,7 +230,8 @@ fn parser_parse_signature_type ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
   let nested_node: own u64 = ast_none;
   let nested_next: own u64 = nested_cursor;
   region 'nested_type_parse {
-    let nested_result: own ParserNodeResult = parser_parse_signature_type(source: source, tokens: tokens, out: &uniq 'nested_type_parse deref(out), cursor: nested_cursor, kind: AstNestedType());
+    let ast_nested_type_atom_0106: own AstKind = AstNestedType();
+    let nested_result: own ParserNodeResult = parser_parse_signature_type(source: source, tokens: tokens, out: &uniq 'nested_type_parse deref(out), cursor: nested_cursor, kind: ast_nested_type_atom_0106);
     set nested_node = nested_result.node;
     set nested_next = nested_result.next;
   }
@@ -250,7 +253,8 @@ fn parser_parse_signature_type ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
         }
         False() => {
           region 'array_comma_error {
-            parser_fail(tokens: tokens, out: &uniq 'array_comma_error deref(out), status: ParseExpectedCommaOrRightParen(), token: nested_next);
+            let parse_expected_comma_or_right_paren_atom_0107: own ParseStatus = ParseExpectedCommaOrRightParen();
+            parser_fail(tokens: tokens, out: &uniq 'array_comma_error deref(out), status: parse_expected_comma_or_right_paren_atom_0107, token: nested_next);
           }
           return ParserNodeResult(node: ast_none, next: nested_next);
         }
@@ -262,14 +266,16 @@ fn parser_parse_signature_type ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
         }
         False() => {
           region 'array_const_error {
-            parser_fail(tokens: tokens, out: &uniq 'array_const_error deref(out), status: ParseExpectedConstArgument(), token: const_cursor);
+            let parse_expected_const_argument_atom_0108: own ParseStatus = ParseExpectedConstArgument();
+            parser_fail(tokens: tokens, out: &uniq 'array_const_error deref(out), status: parse_expected_const_argument_atom_0108, token: const_cursor);
           }
           return ParserNodeResult(node: ast_none, next: const_cursor);
         }
       }
       let const_node: own u64 = ast_none;
       region 'array_const_alloc {
-        set const_node = parser_push_token(tokens: tokens, out: &uniq 'array_const_alloc deref(out), kind: AstConstArgument(), token: const_cursor);
+        let ast_const_argument_atom_0109: own AstKind = AstConstArgument();
+        set const_node = parser_push_token(tokens: tokens, out: &uniq 'array_const_alloc deref(out), kind: ast_const_argument_atom_0109, token: const_cursor);
       }
       match ieq<u64>(const_node, ast_none) {
         True() => {
@@ -292,7 +298,8 @@ fn parser_parse_signature_type ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'type_right_angle_error {
-        parser_fail(tokens: tokens, out: &uniq 'type_right_angle_error deref(out), status: ParseExpectedRightAngle(), token: nested_next);
+        let parse_expected_right_angle_atom_0110: own ParseStatus = ParseExpectedRightAngle();
+        parser_fail(tokens: tokens, out: &uniq 'type_right_angle_error deref(out), status: parse_expected_right_angle_atom_0110, token: nested_next);
       }
       return ParserNodeResult(node: ast_none, next: nested_next);
     }
@@ -309,7 +316,8 @@ fn parser_parse_signature_mode ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     True() => {
       let own_node: own u64 = ast_none;
       region 'signature_own_alloc {
-        set own_node = parser_push_token(tokens: tokens, out: &uniq 'signature_own_alloc deref(out), kind: AstOwnMode(), token: cursor);
+        let ast_own_mode_atom_0111: own AstKind = AstOwnMode();
+        set own_node = parser_push_token(tokens: tokens, out: &uniq 'signature_own_alloc deref(out), kind: ast_own_mode_atom_0111, token: cursor);
       }
       let after_own: own u64 = iadd.trap<u64>(cursor, 1_u64);
       return ParserNodeResult(node: own_node, next: after_own);
@@ -325,7 +333,8 @@ fn parser_parse_signature_mode ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'signature_mode_error {
-        parser_fail(tokens: tokens, out: &uniq 'signature_mode_error deref(out), status: ParseExpectedMode(), token: cursor);
+        let parse_expected_mode_atom_0112: own ParseStatus = ParseExpectedMode();
+        parser_fail(tokens: tokens, out: &uniq 'signature_mode_error deref(out), status: parse_expected_mode_atom_0112, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -356,14 +365,16 @@ fn parser_parse_signature_mode ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'borrow_region_error {
-        parser_fail(tokens: tokens, out: &uniq 'borrow_region_error deref(out), status: ParseExpectedRegion(), token: region_cursor);
+        let parse_expected_region_atom_0113: own ParseStatus = ParseExpectedRegion();
+        parser_fail(tokens: tokens, out: &uniq 'borrow_region_error deref(out), status: parse_expected_region_atom_0113, token: region_cursor);
       }
       return ParserNodeResult(node: ast_none, next: region_cursor);
     }
   }
   let region_node: own u64 = ast_none;
   region 'borrow_region_alloc {
-    set region_node = parser_push_token(tokens: tokens, out: &uniq 'borrow_region_alloc deref(out), kind: AstRegion(), token: region_cursor);
+    let ast_region_atom_0114: own AstKind = AstRegion();
+    set region_node = parser_push_token(tokens: tokens, out: &uniq 'borrow_region_alloc deref(out), kind: ast_region_atom_0114, token: region_cursor);
   }
   match ieq<u64>(region_node, ast_none) {
     True() => {
@@ -384,7 +395,8 @@ fn parser_parse_signature_mode ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
 fn parser_parse_region_parameters ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, out: &uniq 'a AstTape, parent: own u64, cursor: own u64) -> own u64 reads('s 't 'a), writes('a), traps {
   let region_parameters: own u64 = ast_none;
   region 'region_parameters_alloc {
-    set region_parameters = parser_push_token(tokens: tokens, out: &uniq 'region_parameters_alloc deref(out), kind: AstRegionParameters(), token: cursor);
+    let ast_region_parameters_atom_0115: own AstKind = AstRegionParameters();
+    set region_parameters = parser_push_token(tokens: tokens, out: &uniq 'region_parameters_alloc deref(out), kind: ast_region_parameters_atom_0115, token: cursor);
   }
   match ieq<u64>(region_parameters, ast_none) {
     True() => {
@@ -404,14 +416,16 @@ fn parser_parse_region_parameters ['s, 't, 'a] (source: &'s buffer<u8>, tokens: 
       }
       False() => {
         region 'region_parameter_error {
-          parser_fail(tokens: tokens, out: &uniq 'region_parameter_error deref(out), status: ParseExpectedRegion(), token: region_cursor);
+          let parse_expected_region_atom_0116: own ParseStatus = ParseExpectedRegion();
+          parser_fail(tokens: tokens, out: &uniq 'region_parameter_error deref(out), status: parse_expected_region_atom_0116, token: region_cursor);
         }
         return ast_none;
       }
     }
     let region_node: own u64 = ast_none;
     region 'region_parameter_alloc {
-      set region_node = parser_push_token(tokens: tokens, out: &uniq 'region_parameter_alloc deref(out), kind: AstRegion(), token: region_cursor);
+      let ast_region_atom_0117: own AstKind = AstRegion();
+      set region_node = parser_push_token(tokens: tokens, out: &uniq 'region_parameter_alloc deref(out), kind: ast_region_atom_0117, token: region_cursor);
     }
     match ieq<u64>(region_node, ast_none) {
       True() => {
@@ -432,7 +446,8 @@ fn parser_parse_region_parameters ['s, 't, 'a] (source: &'s buffer<u8>, tokens: 
         match trailing_comma {
           True() => {
             region 'region_trailing_comma_error {
-              parser_fail(tokens: tokens, out: &uniq 'region_trailing_comma_error deref(out), status: ParseExpectedRegion(), token: after_comma);
+              let parse_expected_region_atom_0118: own ParseStatus = ParseExpectedRegion();
+              parser_fail(tokens: tokens, out: &uniq 'region_trailing_comma_error deref(out), status: parse_expected_region_atom_0118, token: after_comma);
             }
             return ast_none;
           }
@@ -451,7 +466,8 @@ fn parser_parse_region_parameters ['s, 't, 'a] (source: &'s buffer<u8>, tokens: 
           }
           False() => {
             region 'region_right_square_error {
-              parser_fail(tokens: tokens, out: &uniq 'region_right_square_error deref(out), status: ParseExpectedRightSquare(), token: region_cursor);
+              let parse_expected_right_square_atom_0119: own ParseStatus = ParseExpectedRightSquare();
+              parser_fail(tokens: tokens, out: &uniq 'region_right_square_error deref(out), status: parse_expected_right_square_atom_0119, token: region_cursor);
             }
             return ast_none;
           }
@@ -480,7 +496,8 @@ fn parser_parse_region_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
     }
     False() => {
       region 'region_effect_left_paren_error {
-        parser_fail(tokens: tokens, out: &uniq 'region_effect_left_paren_error deref(out), status: ParseExpectedLeftParen(), token: left_paren_cursor);
+        let parse_expected_left_paren_atom_0120: own ParseStatus = ParseExpectedLeftParen();
+        parser_fail(tokens: tokens, out: &uniq 'region_effect_left_paren_error deref(out), status: parse_expected_left_paren_atom_0120, token: left_paren_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_paren_cursor);
     }
@@ -500,7 +517,8 @@ fn parser_parse_region_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
           }
           False() => {
             region 'empty_region_effect_error {
-              parser_fail(tokens: tokens, out: &uniq 'empty_region_effect_error deref(out), status: ParseExpectedRegion(), token: region_cursor);
+              let parse_expected_region_atom_0121: own ParseStatus = ParseExpectedRegion();
+              parser_fail(tokens: tokens, out: &uniq 'empty_region_effect_error deref(out), status: parse_expected_region_atom_0121, token: region_cursor);
             }
             return ParserNodeResult(node: ast_none, next: region_cursor);
           }
@@ -515,14 +533,16 @@ fn parser_parse_region_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
       }
       False() => {
         region 'effect_region_error {
-          parser_fail(tokens: tokens, out: &uniq 'effect_region_error deref(out), status: ParseExpectedRegion(), token: region_cursor);
+          let parse_expected_region_atom_0122: own ParseStatus = ParseExpectedRegion();
+          parser_fail(tokens: tokens, out: &uniq 'effect_region_error deref(out), status: parse_expected_region_atom_0122, token: region_cursor);
         }
         return ParserNodeResult(node: ast_none, next: region_cursor);
       }
     }
     let region_node: own u64 = ast_none;
     region 'effect_region_alloc {
-      set region_node = parser_push_token(tokens: tokens, out: &uniq 'effect_region_alloc deref(out), kind: AstRegion(), token: region_cursor);
+      let ast_region_atom_0123: own AstKind = AstRegion();
+      set region_node = parser_push_token(tokens: tokens, out: &uniq 'effect_region_alloc deref(out), kind: ast_region_atom_0123, token: region_cursor);
     }
     match ieq<u64>(region_node, ast_none) {
       True() => {
@@ -542,7 +562,8 @@ fn parser_parse_region_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
 fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, out: &uniq 'a AstTape, cursor: own u64) -> own ParserNodeResult reads('s 't 'a), writes('a), traps {
   let effect_node: own u64 = ast_none;
   region 'allocates_effect_alloc {
-    set effect_node = parser_push_token(tokens: tokens, out: &uniq 'allocates_effect_alloc deref(out), kind: AstAllocatesEffect(), token: cursor);
+    let ast_allocates_effect_atom_0124: own AstKind = AstAllocatesEffect();
+    set effect_node = parser_push_token(tokens: tokens, out: &uniq 'allocates_effect_alloc deref(out), kind: ast_allocates_effect_atom_0124, token: cursor);
   }
   match ieq<u64>(effect_node, ast_none) {
     True() => {
@@ -559,7 +580,8 @@ fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
     }
     False() => {
       region 'allocates_left_paren_error {
-        parser_fail(tokens: tokens, out: &uniq 'allocates_left_paren_error deref(out), status: ParseExpectedLeftParen(), token: left_paren_cursor);
+        let parse_expected_left_paren_atom_0125: own ParseStatus = ParseExpectedLeftParen();
+        parser_fail(tokens: tokens, out: &uniq 'allocates_left_paren_error deref(out), status: parse_expected_left_paren_atom_0125, token: left_paren_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_paren_cursor);
     }
@@ -580,7 +602,8 @@ fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
           }
           False() => {
             region 'allocates_empty_error {
-              parser_fail(tokens: tokens, out: &uniq 'allocates_empty_error deref(out), status: ParseExpectedStorage(), token: storage_cursor);
+              let parse_expected_storage_atom_0126: own ParseStatus = ParseExpectedStorage();
+              parser_fail(tokens: tokens, out: &uniq 'allocates_empty_error deref(out), status: parse_expected_storage_atom_0126, token: storage_cursor);
             }
             return ParserNodeResult(node: ast_none, next: storage_cursor);
           }
@@ -595,7 +618,8 @@ fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
       True() => {
         let heap_node: own u64 = ast_none;
         region 'allocation_heap_alloc {
-          set heap_node = parser_push_token(tokens: tokens, out: &uniq 'allocation_heap_alloc deref(out), kind: AstHeapStorage(), token: storage_cursor);
+          let ast_heap_storage_atom_0127: own AstKind = AstHeapStorage();
+          set heap_node = parser_push_token(tokens: tokens, out: &uniq 'allocation_heap_alloc deref(out), kind: ast_heap_storage_atom_0127, token: storage_cursor);
         }
         match ieq<u64>(heap_node, ast_none) {
           True() => {
@@ -616,7 +640,8 @@ fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
           True() => {
             let arena_node: own u64 = ast_none;
             region 'allocation_arena_alloc {
-              set arena_node = parser_push_token(tokens: tokens, out: &uniq 'allocation_arena_alloc deref(out), kind: AstArenaStorage(), token: storage_cursor);
+              let ast_arena_storage_atom_0128: own AstKind = AstArenaStorage();
+              set arena_node = parser_push_token(tokens: tokens, out: &uniq 'allocation_arena_alloc deref(out), kind: ast_arena_storage_atom_0128, token: storage_cursor);
             }
             match ieq<u64>(arena_node, ast_none) {
               True() => {
@@ -632,14 +657,16 @@ fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
               }
               False() => {
                 region 'allocation_arena_region_error {
-                  parser_fail(tokens: tokens, out: &uniq 'allocation_arena_region_error deref(out), status: ParseExpectedRegion(), token: arena_region_cursor);
+                  let parse_expected_region_atom_0129: own ParseStatus = ParseExpectedRegion();
+                  parser_fail(tokens: tokens, out: &uniq 'allocation_arena_region_error deref(out), status: parse_expected_region_atom_0129, token: arena_region_cursor);
                 }
                 return ParserNodeResult(node: ast_none, next: arena_region_cursor);
               }
             }
             let arena_region_node: own u64 = ast_none;
             region 'allocation_arena_region_alloc {
-              set arena_region_node = parser_push_token(tokens: tokens, out: &uniq 'allocation_arena_region_alloc deref(out), kind: AstRegion(), token: arena_region_cursor);
+              let ast_region_atom_0130: own AstKind = AstRegion();
+              set arena_region_node = parser_push_token(tokens: tokens, out: &uniq 'allocation_arena_region_alloc deref(out), kind: ast_region_atom_0130, token: arena_region_cursor);
             }
             match ieq<u64>(arena_region_node, ast_none) {
               True() => {
@@ -661,7 +688,8 @@ fn parser_parse_allocates_effect ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
           }
           False() => {
             region 'allocation_storage_error {
-              parser_fail(tokens: tokens, out: &uniq 'allocation_storage_error deref(out), status: ParseExpectedStorage(), token: storage_cursor);
+              let parse_expected_storage_atom_0131: own ParseStatus = ParseExpectedStorage();
+              parser_fail(tokens: tokens, out: &uniq 'allocation_storage_error deref(out), status: parse_expected_storage_atom_0131, token: storage_cursor);
             }
             return ParserNodeResult(node: ast_none, next: storage_cursor);
           }
@@ -677,7 +705,8 @@ fn parser_parse_effect_row ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Tok
     True() => {
       let pure_node: own u64 = ast_none;
       region 'signature_pure_alloc {
-        set pure_node = parser_push_token(tokens: tokens, out: &uniq 'signature_pure_alloc deref(out), kind: AstPureEffect(), token: cursor);
+        let ast_pure_effect_atom_0132: own AstKind = AstPureEffect();
+        set pure_node = parser_push_token(tokens: tokens, out: &uniq 'signature_pure_alloc deref(out), kind: ast_pure_effect_atom_0132, token: cursor);
       }
       match ieq<u64>(pure_node, ast_none) {
         True() => {
@@ -695,7 +724,8 @@ fn parser_parse_effect_row ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Tok
         True() => {
           let after_pure_comma: own u64 = iadd.trap<u64>(after_pure, 1_u64);
           region 'pure_comma_error {
-            parser_fail(tokens: tokens, out: &uniq 'pure_comma_error deref(out), status: ParseExpectedEffect(), token: after_pure_comma);
+            let parse_expected_effect_atom_0133: own ParseStatus = ParseExpectedEffect();
+            parser_fail(tokens: tokens, out: &uniq 'pure_comma_error deref(out), status: parse_expected_effect_atom_0133, token: after_pure_comma);
           }
           return ast_none;
         }
@@ -727,7 +757,8 @@ fn parser_parse_effect_row ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Tok
     match reads_allowed {
       True() => {
         region 'reads_effect_parse {
-          let reads_result: own ParserNodeResult = parser_parse_region_effect(source: source, tokens: tokens, out: &uniq 'reads_effect_parse deref(out), cursor: effect_cursor, kind: AstReadsEffect());
+          let ast_reads_effect_atom_0134: own AstKind = AstReadsEffect();
+          let reads_result: own ParserNodeResult = parser_parse_region_effect(source: source, tokens: tokens, out: &uniq 'reads_effect_parse deref(out), cursor: effect_cursor, kind: ast_reads_effect_atom_0134);
           set parsed_effect_node = reads_result.node;
           set parsed_effect_next = reads_result.next;
         }
@@ -737,7 +768,8 @@ fn parser_parse_effect_row ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Tok
         match writes_allowed {
           True() => {
             region 'writes_effect_parse {
-              let writes_result: own ParserNodeResult = parser_parse_region_effect(source: source, tokens: tokens, out: &uniq 'writes_effect_parse deref(out), cursor: effect_cursor, kind: AstWritesEffect());
+              let ast_writes_effect_atom_0135: own AstKind = AstWritesEffect();
+              let writes_result: own ParserNodeResult = parser_parse_region_effect(source: source, tokens: tokens, out: &uniq 'writes_effect_parse deref(out), cursor: effect_cursor, kind: ast_writes_effect_atom_0135);
               set parsed_effect_node = writes_result.node;
               set parsed_effect_next = writes_result.next;
             }
@@ -757,14 +789,16 @@ fn parser_parse_effect_row ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Tok
                 match traps_allowed {
                   True() => {
                     region 'traps_effect_alloc {
-                      set parsed_effect_node = parser_push_token(tokens: tokens, out: &uniq 'traps_effect_alloc deref(out), kind: AstTrapsEffect(), token: effect_cursor);
+                      let ast_traps_effect_atom_0136: own AstKind = AstTrapsEffect();
+                      set parsed_effect_node = parser_push_token(tokens: tokens, out: &uniq 'traps_effect_alloc deref(out), kind: ast_traps_effect_atom_0136, token: effect_cursor);
                     }
                     set parsed_effect_next = iadd.trap<u64>(effect_cursor, 1_u64);
                     set effect_stage = 4_u64;
                   }
                   False() => {
                     region 'effect_row_error {
-                      parser_fail(tokens: tokens, out: &uniq 'effect_row_error deref(out), status: ParseExpectedEffect(), token: effect_cursor);
+                      let parse_expected_effect_atom_0137: own ParseStatus = ParseExpectedEffect();
+                      parser_fail(tokens: tokens, out: &uniq 'effect_row_error deref(out), status: parse_expected_effect_atom_0137, token: effect_cursor);
                     }
                     return ast_none;
                   }

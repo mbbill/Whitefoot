@@ -5,8 +5,10 @@ fn llvm_linear_fail ['o] (out: &uniq 'o ByteTape) -> own unit writes('o) {
 
 fn llvm_linear_output_appendable ['o] (out: &'o ByteTape, source_size: own u64, ast_nodes: own u64) -> own Bool reads('o), traps {
   let status: own ByteStatus = deref(out).status;
-  let clean: own Bool = ieq<ByteStatus>(status, ByteClean());
-  let need: own Bool = ieq<ByteStatus>(status, ByteNeedCapacity());
+  let byte_clean_atom_0500: own ByteStatus = ByteClean();
+  let clean: own Bool = ieq<ByteStatus>(status, byte_clean_atom_0500);
+  let byte_need_capacity_atom_0501: own ByteStatus = ByteNeedCapacity();
+  let need: own Bool = ieq<ByteStatus>(status, byte_need_capacity_atom_0501);
   match bor<Bool>(clean, need) {
     True() => {
     }
@@ -157,16 +159,21 @@ fn llvm_linear_child_at ['a] (ast: &'a AstTape, node: own u64, ordinal: own u64)
 }
 
 fn llvm_linear_operation_is_compare (operation: own SemanticOperation) -> own Bool pure {
-  let is_eq: own Bool = ieq<SemanticOperation>(operation, SemanticOperationIeq());
-  let is_ge: own Bool = ieq<SemanticOperation>(operation, SemanticOperationIge());
-  let is_le: own Bool = ieq<SemanticOperation>(operation, SemanticOperationIle());
+  let semantic_operation_ieq_atom_0502: own SemanticOperation = SemanticOperationIeq();
+  let is_eq: own Bool = ieq<SemanticOperation>(operation, semantic_operation_ieq_atom_0502);
+  let semantic_operation_ige_atom_0503: own SemanticOperation = SemanticOperationIge();
+  let is_ge: own Bool = ieq<SemanticOperation>(operation, semantic_operation_ige_atom_0503);
+  let semantic_operation_ile_atom_0504: own SemanticOperation = SemanticOperationIle();
+  let is_le: own Bool = ieq<SemanticOperation>(operation, semantic_operation_ile_atom_0504);
   let ge_or_le: own Bool = bor<Bool>(is_ge, is_le);
   return bor<Bool>(is_eq, ge_or_le);
 }
 
 fn llvm_linear_operation_is_logic (operation: own SemanticOperation) -> own Bool pure {
-  let is_and: own Bool = ieq<SemanticOperation>(operation, SemanticOperationBand());
-  let is_or: own Bool = ieq<SemanticOperation>(operation, SemanticOperationBor());
+  let semantic_operation_band_atom_0505: own SemanticOperation = SemanticOperationBand();
+  let is_and: own Bool = ieq<SemanticOperation>(operation, semantic_operation_band_atom_0505);
+  let semantic_operation_bor_atom_0506: own SemanticOperation = SemanticOperationBor();
+  let is_or: own Bool = ieq<SemanticOperation>(operation, semantic_operation_bor_atom_0506);
   return bor<Bool>(is_and, is_or);
 }
 
@@ -203,11 +210,13 @@ fn llvm_linear_node_is_own ['f] (facts: &'f NodeFacts, node: own u64) -> own Boo
       return False();
     }
   }
-  return ieq<SemanticValueMode>(index<SemanticValueMode>(deref(facts).modes, node), SemanticModeOwn());
+  let semantic_mode_own_atom_0507: own SemanticValueMode = SemanticModeOwn();
+  return ieq<SemanticValueMode>(index<SemanticValueMode>(deref(facts).modes, node), semantic_mode_own_atom_0507);
 }
 
 fn llvm_linear_prior_let_dominates ['a, 'f] (ast: &'a AstTape, facts: &'f NodeFacts, block: own u64, statement: own u64, declaration: own u64, value_ordinal: own u64) -> own Bool reads('a 'f), traps {
-  let declaration_kind: own Bool = llvm_linear_node_is(ast: ast, node: declaration, want: AstLet());
+  let ast_let_atom_0508: own AstKind = AstLet();
+  let declaration_kind: own Bool = llvm_linear_node_is(ast: ast, node: declaration, want: ast_let_atom_0508);
   match declaration_kind {
     True() => {
     }
@@ -268,11 +277,14 @@ fn llvm_linear_place_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape, 
       return False();
     }
   }
-  let want_u8: own Bool = ieq<SemanticTypeKind>(want, SemanticTypeU8());
+  let semantic_type_u8_atom_0509: own SemanticTypeKind = SemanticTypeU8();
+  let want_u8: own Bool = ieq<SemanticTypeKind>(want, semantic_type_u8_atom_0509);
   match ieq<u64>(declaration, parameter) {
     True() => {
-      let parameter_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter, want: AstParameter());
-      let parameter_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter, want: SemanticTypeU8());
+      let ast_parameter_atom_0510: own AstKind = AstParameter();
+      let parameter_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter, want: ast_parameter_atom_0510);
+      let semantic_type_u8_atom_0511: own SemanticTypeKind = SemanticTypeU8();
+      let parameter_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter, want: semantic_type_u8_atom_0511);
       let parameter_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: parameter);
       let parameter_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, parameter), 0_u64);
       let first: own Bool = band<Bool>(want_u8, parameter_kind);
@@ -290,7 +302,8 @@ fn llvm_linear_place_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape, 
     False() => {
     }
   }
-  let declaration_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: declaration, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0512: own SemanticTypeKind = SemanticTypeBool();
+  let declaration_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: declaration, want: semantic_type_bool_atom_0512);
   let declaration_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: declaration);
   let declaration_fact: own Bool = band<Bool>(declaration_type, declaration_mode);
   match declaration_fact {
@@ -318,7 +331,8 @@ fn llvm_linear_operand_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape
   }
   let constant: own u64 = index<u64>(deref(facts).constant_values, operand);
   let resolution: own u64 = index<u64>(deref(facts).resolved_declarations, operand);
-  match llvm_linear_node_is(ast: ast, node: operand, want: AstPlaceUse()) {
+  let ast_place_use_atom_0513: own AstKind = AstPlaceUse();
+  match llvm_linear_node_is(ast: ast, node: operand, want: ast_place_use_atom_0513) {
     True() => {
       match ieq<u64>(constant, semantic_facts_none) {
         True() => {
@@ -332,8 +346,10 @@ fn llvm_linear_operand_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape
     False() => {
     }
   }
-  let numeric: own Bool = llvm_linear_node_is(ast: ast, node: operand, want: AstNumericLiteral());
-  let want_u8: own Bool = ieq<SemanticTypeKind>(want, SemanticTypeU8());
+  let ast_numeric_literal_atom_0514: own AstKind = AstNumericLiteral();
+  let numeric: own Bool = llvm_linear_node_is(ast: ast, node: operand, want: ast_numeric_literal_atom_0514);
+  let semantic_type_u8_atom_0515: own SemanticTypeKind = SemanticTypeU8();
+  let want_u8: own Bool = ieq<SemanticTypeKind>(want, semantic_type_u8_atom_0515);
   let constant_u8: own Bool = ile<u64>(constant, 255_u64);
   let no_resolution: own Bool = ieq<u64>(resolution, semantic_facts_none);
   let numeric_u8: own Bool = band<Bool>(numeric, want_u8);
@@ -351,9 +367,11 @@ fn llvm_linear_table_call_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
       return False();
     }
   }
-  let call_kind: own Bool = llvm_linear_node_is(ast: ast, node: call, want: AstTableCall());
+  let ast_table_call_atom_0516: own AstKind = AstTableCall();
+  let call_kind: own Bool = llvm_linear_node_is(ast: ast, node: call, want: ast_table_call_atom_0516);
   let call_shape: own Bool = llvm_linear_exact_children(ast: ast, node: call, want: 3_u64);
-  let call_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: call, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0517: own SemanticTypeKind = SemanticTypeBool();
+  let call_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: call, want: semantic_type_bool_atom_0517);
   let call_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: call);
   let call_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, call), value_ordinal);
   let no_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, call), semantic_facts_none);
@@ -388,7 +406,8 @@ fn llvm_linear_table_call_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
     False() => {
     }
   }
-  let type_argument_kind: own Bool = llvm_linear_node_is(ast: ast, node: type_argument, want: AstTypeArgument());
+  let ast_type_argument_atom_0518: own AstKind = AstTypeArgument();
+  let type_argument_kind: own Bool = llvm_linear_node_is(ast: ast, node: type_argument, want: ast_type_argument_atom_0518);
   let type_argument_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: type_argument, want: 0_u64);
   let type_argument_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: type_argument, want: operand_kind);
   let type_argument_shape: own Bool = band<Bool>(type_argument_kind, type_argument_leaf);
@@ -407,7 +426,8 @@ fn llvm_linear_function_name_token_valid ['s, 't] (source: &'s buffer<u8>, token
       return False();
     }
   }
-  match ieq<TokenKind>(index<TokenKind>(deref(tokens).kinds, token), TokWord()) {
+  let tok_word_atom_0519: own TokenKind = TokWord();
+  match ieq<TokenKind>(index<TokenKind>(deref(tokens).kinds, token), tok_word_atom_0519) {
     True() => {
     }
     False() => {
@@ -451,7 +471,8 @@ fn llvm_linear_function_name_token_valid ['s, 't] (source: &'s buffer<u8>, token
 }
 
 fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, function: own u64, types: &'y TypeTape, facts: &'f NodeFacts) -> own Bool reads('s 't 'a 'y 'f), traps {
-  let function_kind: own Bool = llvm_linear_node_is(ast: ast, node: function, want: AstFunction());
+  let ast_function_atom_0520: own AstKind = AstFunction();
+  let function_kind: own Bool = llvm_linear_node_is(ast: ast, node: function, want: ast_function_atom_0520);
   let function_shape: own Bool = llvm_linear_exact_children(ast: ast, node: function, want: 6_u64);
   match band<Bool>(function_kind, function_shape) {
     True() => {
@@ -466,7 +487,8 @@ fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
   let return_type: own u64 = llvm_linear_child_at(ast: ast, node: function, ordinal: 3_u64);
   let effect: own u64 = llvm_linear_child_at(ast: ast, node: function, ordinal: 4_u64);
   let block: own u64 = llvm_linear_child_at(ast: ast, node: function, ordinal: 5_u64);
-  let name_kind: own Bool = llvm_linear_node_is(ast: ast, node: name, want: AstFunctionName());
+  let ast_function_name_atom_0521: own AstKind = AstFunctionName();
+  let name_kind: own Bool = llvm_linear_node_is(ast: ast, node: name, want: ast_function_name_atom_0521);
   let name_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: name, want: 0_u64);
   let name_token: own u64 = index<u64>(deref(ast).heads, name);
   let name_valid: own Bool = llvm_linear_function_name_token_valid(source: source, tokens: tokens, token: name_token);
@@ -478,7 +500,8 @@ fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
       return False();
     }
   }
-  let parameter_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter, want: AstParameter());
+  let ast_parameter_atom_0522: own AstKind = AstParameter();
+  let parameter_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter, want: ast_parameter_atom_0522);
   let parameter_shape: own Bool = llvm_linear_exact_children(ast: ast, node: parameter, want: 2_u64);
   match band<Bool>(parameter_kind, parameter_shape) {
     True() => {
@@ -489,9 +512,11 @@ fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
   }
   let parameter_mode: own u64 = llvm_linear_child_at(ast: ast, node: parameter, ordinal: 0_u64);
   let parameter_type: own u64 = llvm_linear_child_at(ast: ast, node: parameter, ordinal: 1_u64);
-  let parameter_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0523: own AstKind = AstOwnMode();
+  let parameter_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter_mode, want: ast_own_mode_atom_0523);
   let parameter_mode_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: parameter_mode, want: 0_u64);
-  let parameter_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter_type, want: AstParameterType());
+  let ast_parameter_type_atom_0524: own AstKind = AstParameterType();
+  let parameter_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: parameter_type, want: ast_parameter_type_atom_0524);
   let parameter_type_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: parameter_type, want: 0_u64);
   let parameter_syntax0: own Bool = band<Bool>(parameter_mode_kind, parameter_mode_leaf);
   let parameter_syntax1: own Bool = band<Bool>(parameter_type_kind, parameter_type_leaf);
@@ -502,12 +527,15 @@ fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
       return False();
     }
   }
-  let parameter_fact_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter, want: SemanticTypeU8());
+  let semantic_type_u8_atom_0525: own SemanticTypeKind = SemanticTypeU8();
+  let parameter_fact_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter, want: semantic_type_u8_atom_0525);
   let parameter_fact_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: parameter);
   let parameter_fact_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, parameter), 0_u64);
-  let parameter_mode_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter_mode, want: SemanticTypeU8());
+  let semantic_type_u8_atom_0526: own SemanticTypeKind = SemanticTypeU8();
+  let parameter_mode_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter_mode, want: semantic_type_u8_atom_0526);
   let parameter_mode_own: own Bool = llvm_linear_node_is_own(facts: facts, node: parameter_mode);
-  let parameter_type_fact: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter_type, want: SemanticTypeU8());
+  let semantic_type_u8_atom_0527: own SemanticTypeKind = SemanticTypeU8();
+  let parameter_type_fact: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: parameter_type, want: semantic_type_u8_atom_0527);
   let parameter_fact0: own Bool = band<Bool>(parameter_fact_type, parameter_fact_mode);
   let parameter_fact1: own Bool = band<Bool>(parameter_fact_ordinal, parameter_mode_type);
   let parameter_fact2: own Bool = band<Bool>(parameter_mode_own, parameter_type_fact);
@@ -519,13 +547,17 @@ fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
       return False();
     }
   }
-  let return_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0528: own AstKind = AstOwnMode();
+  let return_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_mode, want: ast_own_mode_atom_0528);
   let return_mode_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: return_mode, want: 0_u64);
-  let return_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_type, want: AstReturnType());
+  let ast_return_type_atom_0529: own AstKind = AstReturnType();
+  let return_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_type, want: ast_return_type_atom_0529);
   let return_type_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: return_type, want: 0_u64);
-  let effect_kind: own Bool = llvm_linear_node_is(ast: ast, node: effect, want: AstPureEffect());
+  let ast_pure_effect_atom_0530: own AstKind = AstPureEffect();
+  let effect_kind: own Bool = llvm_linear_node_is(ast: ast, node: effect, want: ast_pure_effect_atom_0530);
   let effect_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: effect, want: 0_u64);
-  let block_kind: own Bool = llvm_linear_node_is(ast: ast, node: block, want: AstBlock());
+  let ast_block_atom_0531: own AstKind = AstBlock();
+  let block_kind: own Bool = llvm_linear_node_is(ast: ast, node: block, want: ast_block_atom_0531);
   let return_syntax0: own Bool = band<Bool>(return_mode_kind, return_mode_leaf);
   let return_syntax1: own Bool = band<Bool>(return_type_kind, return_type_leaf);
   let return_syntax2: own Bool = band<Bool>(effect_kind, effect_leaf);
@@ -538,9 +570,11 @@ fn llvm_linear_signature_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
       return False();
     }
   }
-  let return_mode_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: return_mode, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0532: own SemanticTypeKind = SemanticTypeBool();
+  let return_mode_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: return_mode, want: semantic_type_bool_atom_0532);
   let return_mode_own: own Bool = llvm_linear_node_is_own(facts: facts, node: return_mode);
-  let return_type_fact: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: return_type, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0533: own SemanticTypeKind = SemanticTypeBool();
+  let return_type_fact: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: return_type, want: semantic_type_bool_atom_0533);
   let return_mode_fact: own Bool = band<Bool>(return_mode_type, return_mode_own);
   return band<Bool>(return_mode_fact, return_type_fact);
 }
@@ -585,7 +619,8 @@ fn llvm_linear_node_token_is_bool ['s, 't, 'a] (source: &'s buffer<u8>, tokens: 
 
 fn llvm_linear_program_has_direct_child ['a] (ast: &'a AstTape, child: own u64) -> own Bool reads('a), traps {
   let root: own u64 = deref(ast).root;
-  match llvm_linear_node_is(ast: ast, node: root, want: AstProgram()) {
+  let ast_program_atom_0534: own AstKind = AstProgram();
+  match llvm_linear_node_is(ast: ast, node: root, want: ast_program_atom_0534) {
     True() => {
     }
     False() => {
@@ -630,7 +665,8 @@ fn llvm_linear_program_has_direct_child ['a] (ast: &'a AstTape, child: own u64) 
 }
 
 fn llvm_linear_user_callee_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, callee: own u64) -> own Bool reads('s 't 'a), traps {
-  let callee_kind: own Bool = llvm_linear_node_is(ast: ast, node: callee, want: AstFunction());
+  let ast_function_atom_0535: own AstKind = AstFunction();
+  let callee_kind: own Bool = llvm_linear_node_is(ast: ast, node: callee, want: ast_function_atom_0535);
   let callee_shape: own Bool = llvm_linear_exact_children(ast: ast, node: callee, want: 6_u64);
   match band<Bool>(callee_kind, callee_shape) {
     True() => {
@@ -652,7 +688,8 @@ fn llvm_linear_user_callee_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
   let return_type: own u64 = llvm_linear_child_at(ast: ast, node: callee, ordinal: 3_u64);
   let effect: own u64 = llvm_linear_child_at(ast: ast, node: callee, ordinal: 4_u64);
   let block: own u64 = llvm_linear_child_at(ast: ast, node: callee, ordinal: 5_u64);
-  let name_kind: own Bool = llvm_linear_node_is(ast: ast, node: name, want: AstFunctionName());
+  let ast_function_name_atom_0536: own AstKind = AstFunctionName();
+  let name_kind: own Bool = llvm_linear_node_is(ast: ast, node: name, want: ast_function_name_atom_0536);
   let name_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: name, want: 0_u64);
   let name_token: own u64 = index<u64>(deref(ast).heads, name);
   let name_valid: own Bool = llvm_linear_function_name_token_valid(source: source, tokens: tokens, token: name_token);
@@ -664,7 +701,8 @@ fn llvm_linear_user_callee_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
       return False();
     }
   }
-  let formal_kind: own Bool = llvm_linear_node_is(ast: ast, node: formal, want: AstParameter());
+  let ast_parameter_atom_0537: own AstKind = AstParameter();
+  let formal_kind: own Bool = llvm_linear_node_is(ast: ast, node: formal, want: ast_parameter_atom_0537);
   let formal_shape: own Bool = llvm_linear_exact_children(ast: ast, node: formal, want: 2_u64);
   match band<Bool>(formal_kind, formal_shape) {
     True() => {
@@ -683,9 +721,11 @@ fn llvm_linear_user_callee_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
   }
   let formal_mode: own u64 = llvm_linear_child_at(ast: ast, node: formal, ordinal: 0_u64);
   let formal_type: own u64 = llvm_linear_child_at(ast: ast, node: formal, ordinal: 1_u64);
-  let formal_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: formal_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0538: own AstKind = AstOwnMode();
+  let formal_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: formal_mode, want: ast_own_mode_atom_0538);
   let formal_mode_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: formal_mode, want: 0_u64);
-  let formal_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: formal_type, want: AstParameterType());
+  let ast_parameter_type_atom_0539: own AstKind = AstParameterType();
+  let formal_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: formal_type, want: ast_parameter_type_atom_0539);
   let formal_type_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: formal_type, want: 0_u64);
   let formal_type_text: own Bool = llvm_linear_node_token_is_u8(source: source, tokens: tokens, ast: ast, node: formal_type);
   let formal0: own Bool = band<Bool>(formal_mode_kind, formal_mode_leaf);
@@ -698,14 +738,18 @@ fn llvm_linear_user_callee_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &
       return False();
     }
   }
-  let return_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_mode, want: AstOwnMode());
+  let ast_own_mode_atom_0540: own AstKind = AstOwnMode();
+  let return_mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_mode, want: ast_own_mode_atom_0540);
   let return_mode_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: return_mode, want: 0_u64);
-  let return_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_type, want: AstReturnType());
+  let ast_return_type_atom_0541: own AstKind = AstReturnType();
+  let return_type_kind: own Bool = llvm_linear_node_is(ast: ast, node: return_type, want: ast_return_type_atom_0541);
   let return_type_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: return_type, want: 0_u64);
   let return_type_text: own Bool = llvm_linear_node_token_is_bool(source: source, tokens: tokens, ast: ast, node: return_type);
-  let effect_kind: own Bool = llvm_linear_node_is(ast: ast, node: effect, want: AstPureEffect());
+  let ast_pure_effect_atom_0542: own AstKind = AstPureEffect();
+  let effect_kind: own Bool = llvm_linear_node_is(ast: ast, node: effect, want: ast_pure_effect_atom_0542);
   let effect_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: effect, want: 0_u64);
-  let block_kind: own Bool = llvm_linear_node_is(ast: ast, node: block, want: AstBlock());
+  let ast_block_atom_0543: own AstKind = AstBlock();
+  let block_kind: own Bool = llvm_linear_node_is(ast: ast, node: block, want: ast_block_atom_0543);
   let return0: own Bool = band<Bool>(return_mode_kind, return_mode_leaf);
   let return1: own Bool = band<Bool>(return_type_kind, return_type_leaf);
   let return2: own Bool = band<Bool>(return1, return_type_text);
@@ -725,12 +769,15 @@ fn llvm_linear_user_call_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
       return False();
     }
   }
-  let call_kind: own Bool = llvm_linear_node_is(ast: ast, node: call, want: AstUserCall());
+  let ast_user_call_atom_0544: own AstKind = AstUserCall();
+  let call_kind: own Bool = llvm_linear_node_is(ast: ast, node: call, want: ast_user_call_atom_0544);
   let call_shape: own Bool = llvm_linear_exact_children(ast: ast, node: call, want: 1_u64);
-  let call_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: call, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0545: own SemanticTypeKind = SemanticTypeBool();
+  let call_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: call, want: semantic_type_bool_atom_0545);
   let call_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: call);
   let call_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, call), value_ordinal);
-  let call_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, call), SemanticOperationNone());
+  let semantic_operation_none_atom_0546: own SemanticOperation = SemanticOperationNone();
+  let call_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, call), semantic_operation_none_atom_0546);
   let call_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, call), semantic_facts_none);
   let call_shape_type: own Bool = band<Bool>(call_kind, call_shape);
   let call_type_mode: own Bool = band<Bool>(call_type, call_mode);
@@ -754,13 +801,16 @@ fn llvm_linear_user_call_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
   }
   let formal: own u64 = llvm_linear_child_at(ast: ast, node: callee, ordinal: 1_u64);
   let named: own u64 = llvm_linear_child_at(ast: ast, node: call, ordinal: 0_u64);
-  let named_kind: own Bool = llvm_linear_node_is(ast: ast, node: named, want: AstNamedArgument());
+  let ast_named_argument_atom_0547: own AstKind = AstNamedArgument();
+  let named_kind: own Bool = llvm_linear_node_is(ast: ast, node: named, want: ast_named_argument_atom_0547);
   let named_shape: own Bool = llvm_linear_exact_children(ast: ast, node: named, want: 1_u64);
-  let named_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: named, want: SemanticTypeU8());
+  let semantic_type_u8_atom_0548: own SemanticTypeKind = SemanticTypeU8();
+  let named_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: named, want: semantic_type_u8_atom_0548);
   let named_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: named);
   let named_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, named), formal);
   let named_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, named), 0_u64);
-  let named_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, named), SemanticOperationNone());
+  let semantic_operation_none_atom_0549: own SemanticOperation = SemanticOperationNone();
+  let named_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, named), semantic_operation_none_atom_0549);
   let named_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, named), semantic_facts_none);
   let named0: own Bool = band<Bool>(named_kind, named_shape);
   let named1: own Bool = band<Bool>(named_type, named_mode);
@@ -776,13 +826,16 @@ fn llvm_linear_user_call_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
     }
   }
   let actual: own u64 = llvm_linear_child_at(ast: ast, node: named, ordinal: 0_u64);
-  let actual_kind: own Bool = llvm_linear_node_is(ast: ast, node: actual, want: AstPlaceUse());
+  let ast_place_use_atom_0550: own AstKind = AstPlaceUse();
+  let actual_kind: own Bool = llvm_linear_node_is(ast: ast, node: actual, want: ast_place_use_atom_0550);
   let actual_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: actual, want: 0_u64);
-  let actual_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: actual, want: SemanticTypeU8());
+  let semantic_type_u8_atom_0551: own SemanticTypeKind = SemanticTypeU8();
+  let actual_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: actual, want: semantic_type_u8_atom_0551);
   let actual_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: actual);
   let actual_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, actual), parameter);
   let actual_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, actual), semantic_facts_none);
-  let actual_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, actual), SemanticOperationNone());
+  let semantic_operation_none_atom_0552: own SemanticOperation = SemanticOperationNone();
+  let actual_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, actual), semantic_operation_none_atom_0552);
   let actual_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, actual), semantic_facts_none);
   let actual0: own Bool = band<Bool>(actual_kind, actual_leaf);
   let actual1: own Bool = band<Bool>(actual_type, actual_mode);
@@ -794,7 +847,8 @@ fn llvm_linear_user_call_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tok
 }
 
 fn llvm_linear_let_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, types: &'y TypeTape, facts: &'f NodeFacts, statement: own u64, parameter: own u64, block: own u64, value_ordinal: own u64) -> own Bool reads('s 't 'a 'y 'f), traps {
-  let statement_kind: own Bool = llvm_linear_node_is(ast: ast, node: statement, want: AstLet());
+  let ast_let_atom_0553: own AstKind = AstLet();
+  let statement_kind: own Bool = llvm_linear_node_is(ast: ast, node: statement, want: ast_let_atom_0553);
   let statement_shape: own Bool = llvm_linear_exact_children(ast: ast, node: statement, want: 4_u64);
   match band<Bool>(statement_kind, statement_shape) {
     True() => {
@@ -807,11 +861,14 @@ fn llvm_linear_let_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tokens: &
   let mode: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 1_u64);
   let type_node: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 2_u64);
   let value: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 3_u64);
-  let name_kind: own Bool = llvm_linear_node_is(ast: ast, node: name, want: AstBindingName());
+  let ast_binding_name_atom_0554: own AstKind = AstBindingName();
+  let name_kind: own Bool = llvm_linear_node_is(ast: ast, node: name, want: ast_binding_name_atom_0554);
   let name_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: name, want: 0_u64);
-  let mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: mode, want: AstOwnMode());
+  let ast_own_mode_atom_0555: own AstKind = AstOwnMode();
+  let mode_kind: own Bool = llvm_linear_node_is(ast: ast, node: mode, want: ast_own_mode_atom_0555);
   let mode_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: mode, want: 0_u64);
-  let type_kind: own Bool = llvm_linear_node_is(ast: ast, node: type_node, want: AstBindingType());
+  let ast_binding_type_atom_0556: own AstKind = AstBindingType();
+  let type_kind: own Bool = llvm_linear_node_is(ast: ast, node: type_node, want: ast_binding_type_atom_0556);
   let type_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: type_node, want: 0_u64);
   let syntax0: own Bool = band<Bool>(name_kind, name_leaf);
   let syntax1: own Bool = band<Bool>(mode_kind, mode_leaf);
@@ -824,14 +881,18 @@ fn llvm_linear_let_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tokens: &
       return False();
     }
   }
-  let statement_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: statement, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0557: own SemanticTypeKind = SemanticTypeBool();
+  let statement_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: statement, want: semantic_type_bool_atom_0557);
   let statement_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: statement);
   let statement_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, statement), value_ordinal);
   let statement_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, statement), semantic_facts_none);
-  let name_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: name, want: SemanticTypeBool());
-  let mode_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: mode, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0558: own SemanticTypeKind = SemanticTypeBool();
+  let name_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: name, want: semantic_type_bool_atom_0558);
+  let semantic_type_bool_atom_0559: own SemanticTypeKind = SemanticTypeBool();
+  let mode_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: mode, want: semantic_type_bool_atom_0559);
   let mode_own: own Bool = llvm_linear_node_is_own(facts: facts, node: mode);
-  let binding_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: type_node, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0560: own SemanticTypeKind = SemanticTypeBool();
+  let binding_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: type_node, want: semantic_type_bool_atom_0560);
   let fact0: own Bool = band<Bool>(statement_type, statement_mode);
   let fact1: own Bool = band<Bool>(statement_ordinal, statement_resolution);
   let fact2: own Bool = band<Bool>(name_type, mode_type);
@@ -845,14 +906,16 @@ fn llvm_linear_let_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tokens: &
       return False();
     }
   }
-  match llvm_linear_node_is(ast: ast, node: value, want: AstTableCall()) {
+  let ast_table_call_atom_0561: own AstKind = AstTableCall();
+  match llvm_linear_node_is(ast: ast, node: value, want: ast_table_call_atom_0561) {
     True() => {
       return llvm_linear_table_call_valid(ast: ast, types: types, facts: facts, call: value, parameter: parameter, block: block, statement: statement, value_ordinal: value_ordinal);
     }
     False() => {
     }
   }
-  match llvm_linear_node_is(ast: ast, node: value, want: AstUserCall()) {
+  let ast_user_call_atom_0562: own AstKind = AstUserCall();
+  match llvm_linear_node_is(ast: ast, node: value, want: ast_user_call_atom_0562) {
     True() => {
       return llvm_linear_user_call_valid(source: source, tokens: tokens, ast: ast, types: types, facts: facts, call: value, parameter: parameter, value_ordinal: value_ordinal);
     }
@@ -863,7 +926,8 @@ fn llvm_linear_let_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>, tokens: &
 }
 
 fn llvm_linear_return_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape, facts: &'f NodeFacts, statement: own u64, parameter: own u64, block: own u64, value_ordinal: own u64) -> own Bool reads('a 'y 'f), traps {
-  let statement_kind: own Bool = llvm_linear_node_is(ast: ast, node: statement, want: AstReturn());
+  let ast_return_atom_0563: own AstKind = AstReturn();
+  let statement_kind: own Bool = llvm_linear_node_is(ast: ast, node: statement, want: ast_return_atom_0563);
   let statement_shape: own Bool = llvm_linear_exact_children(ast: ast, node: statement, want: 1_u64);
   match band<Bool>(statement_kind, statement_shape) {
     True() => {
@@ -873,7 +937,8 @@ fn llvm_linear_return_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape,
     }
   }
   let value: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 0_u64);
-  let statement_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: statement, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0564: own SemanticTypeKind = SemanticTypeBool();
+  let statement_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: statement, want: semantic_type_bool_atom_0564);
   let statement_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: statement);
   let statement_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, statement), value_ordinal);
   let statement_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, statement), semantic_facts_none);
@@ -890,10 +955,13 @@ fn llvm_linear_return_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape,
 }
 
 fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape, facts: &'f NodeFacts, function: own u64, node: own u64, expected_let: own u64, continuation: own u64) -> own Bool reads('a 'y 'f), traps {
-  let function_kind: own Bool = llvm_linear_node_is(ast: ast, node: function, want: AstFunction());
-  let expected_kind: own Bool = llvm_linear_node_is(ast: ast, node: expected_let, want: AstLet());
+  let ast_function_atom_0565: own AstKind = AstFunction();
+  let function_kind: own Bool = llvm_linear_node_is(ast: ast, node: function, want: ast_function_atom_0565);
+  let ast_let_atom_0566: own AstKind = AstLet();
+  let expected_kind: own Bool = llvm_linear_node_is(ast: ast, node: expected_let, want: ast_let_atom_0566);
   let continuation_valid: own Bool = ilt<u64>(continuation, deref(ast).count);
-  let match_kind: own Bool = llvm_linear_node_is(ast: ast, node: node, want: AstMatch());
+  let ast_match_atom_0567: own AstKind = AstMatch();
+  let match_kind: own Bool = llvm_linear_node_is(ast: ast, node: node, want: ast_match_atom_0567);
   let match_shape: own Bool = llvm_linear_exact_children(ast: ast, node: node, want: 3_u64);
   let root0: own Bool = band<Bool>(function_kind, expected_kind);
   let root1: own Bool = band<Bool>(continuation_valid, match_kind);
@@ -916,13 +984,16 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
   let scrutinee: own u64 = llvm_linear_child_at(ast: ast, node: node, ordinal: 0_u64);
   let true_arm: own u64 = llvm_linear_child_at(ast: ast, node: node, ordinal: 1_u64);
   let false_arm: own u64 = llvm_linear_child_at(ast: ast, node: node, ordinal: 2_u64);
-  let scrutinee_kind: own Bool = llvm_linear_node_is(ast: ast, node: scrutinee, want: AstPlaceUse());
+  let ast_place_use_atom_0568: own AstKind = AstPlaceUse();
+  let scrutinee_kind: own Bool = llvm_linear_node_is(ast: ast, node: scrutinee, want: ast_place_use_atom_0568);
   let scrutinee_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: scrutinee, want: 0_u64);
-  let scrutinee_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: scrutinee, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0569: own SemanticTypeKind = SemanticTypeBool();
+  let scrutinee_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: scrutinee, want: semantic_type_bool_atom_0569);
   let scrutinee_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: scrutinee);
   let scrutinee_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, scrutinee), expected_let);
   let scrutinee_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, scrutinee), semantic_facts_none);
-  let scrutinee_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, scrutinee), SemanticOperationNone());
+  let semantic_operation_none_atom_0570: own SemanticOperation = SemanticOperationNone();
+  let scrutinee_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, scrutinee), semantic_operation_none_atom_0570);
   let scrutinee_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, scrutinee), semantic_facts_none);
   let scrutinee_target: own Bool = ieq<u64>(index<u64>(deref(facts).control_targets, scrutinee), node);
   let scrutinee0: own Bool = band<Bool>(scrutinee_kind, scrutinee_leaf);
@@ -940,8 +1011,10 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
     }
   }
 
-  let true_kind: own Bool = llvm_linear_node_is(ast: ast, node: true_arm, want: AstMatchArm());
-  let false_kind: own Bool = llvm_linear_node_is(ast: ast, node: false_arm, want: AstMatchArm());
+  let ast_match_arm_atom_0571: own AstKind = AstMatchArm();
+  let true_kind: own Bool = llvm_linear_node_is(ast: ast, node: true_arm, want: ast_match_arm_atom_0571);
+  let ast_match_arm_atom_0572: own AstKind = AstMatchArm();
+  let false_kind: own Bool = llvm_linear_node_is(ast: ast, node: false_arm, want: ast_match_arm_atom_0572);
   let true_shape: own Bool = llvm_linear_exact_children(ast: ast, node: true_arm, want: 1_u64);
   let false_shape: own Bool = llvm_linear_exact_children(ast: ast, node: false_arm, want: 1_u64);
   let arm_kinds: own Bool = band<Bool>(true_kind, false_kind);
@@ -955,8 +1028,10 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
   }
   let true_block: own u64 = llvm_linear_child_at(ast: ast, node: true_arm, ordinal: 0_u64);
   let false_block: own u64 = llvm_linear_child_at(ast: ast, node: false_arm, ordinal: 0_u64);
-  let true_block_kind: own Bool = llvm_linear_node_is(ast: ast, node: true_block, want: AstBlock());
-  let false_block_kind: own Bool = llvm_linear_node_is(ast: ast, node: false_block, want: AstBlock());
+  let ast_block_atom_0573: own AstKind = AstBlock();
+  let true_block_kind: own Bool = llvm_linear_node_is(ast: ast, node: true_block, want: ast_block_atom_0573);
+  let ast_block_atom_0574: own AstKind = AstBlock();
+  let false_block_kind: own Bool = llvm_linear_node_is(ast: ast, node: false_block, want: ast_block_atom_0574);
   let true_block_shape: own Bool = llvm_linear_exact_children(ast: ast, node: true_block, want: 1_u64);
   let false_block_shape: own Bool = llvm_linear_exact_children(ast: ast, node: false_block, want: 0_u64);
   let block_kinds: own Bool = band<Bool>(true_block_kind, false_block_kind);
@@ -969,7 +1044,8 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
     }
   }
   let early_return: own u64 = llvm_linear_child_at(ast: ast, node: true_block, ordinal: 0_u64);
-  let return_kind: own Bool = llvm_linear_node_is(ast: ast, node: early_return, want: AstReturn());
+  let ast_return_atom_0575: own AstKind = AstReturn();
+  let return_kind: own Bool = llvm_linear_node_is(ast: ast, node: early_return, want: ast_return_atom_0575);
   let return_shape: own Bool = llvm_linear_exact_children(ast: ast, node: early_return, want: 1_u64);
   match band<Bool>(return_kind, return_shape) {
     True() => {
@@ -979,7 +1055,8 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
     }
   }
   let constructor: own u64 = llvm_linear_child_at(ast: ast, node: early_return, ordinal: 0_u64);
-  let constructor_kind: own Bool = llvm_linear_node_is(ast: ast, node: constructor, want: AstConstructor());
+  let ast_constructor_atom_0576: own AstKind = AstConstructor();
+  let constructor_kind: own Bool = llvm_linear_node_is(ast: ast, node: constructor, want: ast_constructor_atom_0576);
   let constructor_shape: own Bool = llvm_linear_exact_children(ast: ast, node: constructor, want: 0_u64);
   match band<Bool>(constructor_kind, constructor_shape) {
     True() => {
@@ -989,16 +1066,20 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
     }
   }
 
-  let true_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: true_arm, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0577: own SemanticTypeKind = SemanticTypeBool();
+  let true_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: true_arm, want: semantic_type_bool_atom_0577);
   let true_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, true_arm), 0_u64);
   let true_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, true_arm), 1_u64);
   let true_target: own Bool = ieq<u64>(index<u64>(deref(facts).control_targets, true_arm), early_return);
-  let true_code: own Bool = ieq<PreludeConstructorCode>(index<PreludeConstructorCode>(deref(facts).prelude_constructors, true_arm), PreludeConstructorTrue());
-  let false_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: false_arm, want: SemanticTypeBool());
+  let prelude_constructor_true_atom_0578: own PreludeConstructorCode = PreludeConstructorTrue();
+  let true_code: own Bool = ieq<PreludeConstructorCode>(index<PreludeConstructorCode>(deref(facts).prelude_constructors, true_arm), prelude_constructor_true_atom_0578);
+  let semantic_type_bool_atom_0579: own SemanticTypeKind = SemanticTypeBool();
+  let false_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: false_arm, want: semantic_type_bool_atom_0579);
   let false_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, false_arm), 1_u64);
   let false_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, false_arm), 0_u64);
   let false_target: own Bool = ieq<u64>(index<u64>(deref(facts).control_targets, false_arm), continuation);
-  let false_code: own Bool = ieq<PreludeConstructorCode>(index<PreludeConstructorCode>(deref(facts).prelude_constructors, false_arm), PreludeConstructorFalse());
+  let prelude_constructor_false_atom_0580: own PreludeConstructorCode = PreludeConstructorFalse();
+  let false_code: own Bool = ieq<PreludeConstructorCode>(index<PreludeConstructorCode>(deref(facts).prelude_constructors, false_arm), prelude_constructor_false_atom_0580);
   let true0: own Bool = band<Bool>(true_type, true_ordinal);
   let true1: own Bool = band<Bool>(true_constant, true_target);
   let true01: own Bool = band<Bool>(true0, true1);
@@ -1024,20 +1105,24 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
     }
   }
 
-  let early_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: early_return, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0581: own SemanticTypeKind = SemanticTypeBool();
+  let early_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: early_return, want: semantic_type_bool_atom_0581);
   let early_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: early_return);
   let early_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, early_return), semantic_facts_none);
   let early_target: own Bool = ieq<u64>(index<u64>(deref(facts).control_targets, early_return), function);
   let early0: own Bool = band<Bool>(early_type, early_mode);
   let early1: own Bool = band<Bool>(early_ordinal, early_target);
-  let constructor_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: constructor, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0582: own SemanticTypeKind = SemanticTypeBool();
+  let constructor_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: constructor, want: semantic_type_bool_atom_0582);
   let constructor_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: constructor);
   let constructor_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, constructor), semantic_facts_none);
   let constructor_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, constructor), semantic_facts_none);
-  let constructor_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, constructor), SemanticOperationNone());
+  let semantic_operation_none_atom_0583: own SemanticOperation = SemanticOperationNone();
+  let constructor_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, constructor), semantic_operation_none_atom_0583);
   let constructor_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, constructor), 1_u64);
   let constructor_target: own Bool = ieq<u64>(index<u64>(deref(facts).control_targets, constructor), early_return);
-  let constructor_code: own Bool = ieq<PreludeConstructorCode>(index<PreludeConstructorCode>(deref(facts).prelude_constructors, constructor), PreludeConstructorTrue());
+  let prelude_constructor_true_atom_0584: own PreludeConstructorCode = PreludeConstructorTrue();
+  let constructor_code: own Bool = ieq<PreludeConstructorCode>(index<PreludeConstructorCode>(deref(facts).prelude_constructors, constructor), prelude_constructor_true_atom_0584);
   let constructor0: own Bool = band<Bool>(constructor_type, constructor_mode);
   let constructor1: own Bool = band<Bool>(constructor_resolution, constructor_ordinal);
   let constructor2: own Bool = band<Bool>(constructor_operation, constructor_constant);
@@ -1050,9 +1135,12 @@ fn llvm_linear_match_node_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeT
 }
 
 fn llvm_linear_match_return_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y TypeTape, facts: &'f NodeFacts, function: own u64, statement: own u64, final_let: own u64, value_ordinal: own u64) -> own Bool reads('a 'y 'f), traps {
-  let function_kind: own Bool = llvm_linear_node_is(ast: ast, node: function, want: AstFunction());
-  let let_kind: own Bool = llvm_linear_node_is(ast: ast, node: final_let, want: AstLet());
-  let return_kind: own Bool = llvm_linear_node_is(ast: ast, node: statement, want: AstReturn());
+  let ast_function_atom_0585: own AstKind = AstFunction();
+  let function_kind: own Bool = llvm_linear_node_is(ast: ast, node: function, want: ast_function_atom_0585);
+  let ast_let_atom_0586: own AstKind = AstLet();
+  let let_kind: own Bool = llvm_linear_node_is(ast: ast, node: final_let, want: ast_let_atom_0586);
+  let ast_return_atom_0587: own AstKind = AstReturn();
+  let return_kind: own Bool = llvm_linear_node_is(ast: ast, node: statement, want: ast_return_atom_0587);
   let return_shape: own Bool = llvm_linear_exact_children(ast: ast, node: statement, want: 1_u64);
   let root0: own Bool = band<Bool>(function_kind, let_kind);
   let root1: own Bool = band<Bool>(return_kind, return_shape);
@@ -1064,13 +1152,16 @@ fn llvm_linear_match_return_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y Typ
     }
   }
   let value: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 0_u64);
-  let value_kind: own Bool = llvm_linear_node_is(ast: ast, node: value, want: AstPlaceUse());
+  let ast_place_use_atom_0588: own AstKind = AstPlaceUse();
+  let value_kind: own Bool = llvm_linear_node_is(ast: ast, node: value, want: ast_place_use_atom_0588);
   let value_leaf: own Bool = llvm_linear_exact_children(ast: ast, node: value, want: 0_u64);
-  let value_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: value, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0589: own SemanticTypeKind = SemanticTypeBool();
+  let value_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: value, want: semantic_type_bool_atom_0589);
   let value_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: value);
   let value_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, value), final_let);
   let value_ordinal_none: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, value), semantic_facts_none);
-  let value_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, value), SemanticOperationNone());
+  let semantic_operation_none_atom_0590: own SemanticOperation = SemanticOperationNone();
+  let value_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, value), semantic_operation_none_atom_0590);
   let value_constant: own Bool = ieq<u64>(index<u64>(deref(facts).constant_values, value), semantic_facts_none);
   let value_target: own Bool = ieq<u64>(index<u64>(deref(facts).control_targets, value), statement);
   let value0: own Bool = band<Bool>(value_kind, value_leaf);
@@ -1088,7 +1179,8 @@ fn llvm_linear_match_return_valid ['a, 'y, 'f] (ast: &'a AstTape, types: &'y Typ
     }
   }
   let final_let_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, final_let), value_ordinal);
-  let statement_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: statement, want: SemanticTypeBool());
+  let semantic_type_bool_atom_0591: own SemanticTypeKind = SemanticTypeBool();
+  let statement_type: own Bool = llvm_linear_node_type_is(types: types, facts: facts, node: statement, want: semantic_type_bool_atom_0591);
   let statement_mode: own Bool = llvm_linear_node_is_own(facts: facts, node: statement);
   let statement_ordinal: own Bool = ieq<u64>(index<u64>(deref(facts).ordinals, statement), value_ordinal);
   let statement_resolution: own Bool = ieq<u64>(index<u64>(deref(facts).resolved_declarations, statement), semantic_facts_none);
@@ -1131,7 +1223,8 @@ fn llvm_linear_table_function_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>
   let parameter: own u64 = llvm_linear_child_at(ast: ast, node: function, ordinal: 1_u64);
   let block: own u64 = llvm_linear_child_at(ast: ast, node: function, ordinal: 5_u64);
   let statement: own u64 = index<u64>(deref(ast).first_children, block);
-  match llvm_linear_node_is(ast: ast, node: statement, want: AstLet()) {
+  let ast_let_atom_0592: own AstKind = AstLet();
+  match llvm_linear_node_is(ast: ast, node: statement, want: ast_let_atom_0592) {
     True() => {
     }
     False() => {
@@ -1148,7 +1241,8 @@ fn llvm_linear_table_function_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>
         return False();
       }
     }
-    match llvm_linear_node_is(ast: ast, node: statement, want: AstLet()) {
+    let ast_let_atom_0593: own AstKind = AstLet();
+    match llvm_linear_node_is(ast: ast, node: statement, want: ast_let_atom_0593) {
       True() => {
         match llvm_linear_let_valid(source: source, tokens: tokens, ast: ast, types: types, facts: facts, statement: statement, parameter: parameter, block: block, value_ordinal: value_ordinal) {
           True() => {
@@ -1232,8 +1326,10 @@ fn llvm_linear_match_function_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>
       }
     }
     let initializer: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 3_u64);
-    let initializer_kind: own Bool = llvm_linear_node_is(ast: ast, node: initializer, want: AstTableCall());
-    let initializer_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, initializer), SemanticOperationIeq());
+    let ast_table_call_atom_0594: own AstKind = AstTableCall();
+    let initializer_kind: own Bool = llvm_linear_node_is(ast: ast, node: initializer, want: ast_table_call_atom_0594);
+    let semantic_operation_ieq_atom_0595: own SemanticOperation = SemanticOperationIeq();
+    let initializer_operation: own Bool = ieq<SemanticOperation>(index<SemanticOperation>(deref(facts).operations, initializer), semantic_operation_ieq_atom_0595);
     match band<Bool>(initializer_kind, initializer_operation) {
       True() => {
       }
@@ -1249,7 +1345,8 @@ fn llvm_linear_match_function_valid ['s, 't, 'a, 'y, 'f] (source: &'s buffer<u8>
         return False();
       }
     }
-    match llvm_linear_node_is(ast: ast, node: next, want: AstMatch()) {
+    let ast_match_atom_0596: own AstKind = AstMatch();
+    match llvm_linear_node_is(ast: ast, node: next, want: ast_match_atom_0596) {
       True() => {
         let continuation: own u64 = index<u64>(deref(ast).next_siblings, next);
         match llvm_linear_match_node_valid(ast: ast, types: types, facts: facts, function: function, node: next, expected_let: statement, continuation: continuation) {
@@ -1291,7 +1388,8 @@ fn llvm_linear_emit_indent ['o] (out: &uniq 'o ByteTape) -> own unit reads('o), 
 
 fn llvm_linear_emit_operand ['a, 'f, 'o] (ast: &'a AstTape, facts: &'f NodeFacts, operand: own u64, out: &uniq 'o ByteTape) -> own unit reads('a 'f 'o), writes('o), traps {
   let operand_kind: own AstKind = index<AstKind>(deref(ast).kinds, operand);
-  match ieq<AstKind>(operand_kind, AstNumericLiteral()) {
+  let ast_numeric_literal_atom_0597: own AstKind = AstNumericLiteral();
+  match ieq<AstKind>(operand_kind, ast_numeric_literal_atom_0597) {
     True() => {
       let constant: own u64 = index<u64>(deref(facts).constant_values, operand);
       region 'llvm_linear_operand_constant {
@@ -1305,7 +1403,8 @@ fn llvm_linear_emit_operand ['a, 'f, 'o] (ast: &'a AstTape, facts: &'f NodeFacts
   let declaration: own u64 = index<u64>(deref(facts).resolved_declarations, operand);
   let declaration_kind: own AstKind = index<AstKind>(deref(ast).kinds, declaration);
   let declaration_ordinal: own u64 = index<u64>(deref(facts).ordinals, declaration);
-  match ieq<AstKind>(declaration_kind, AstParameter()) {
+  let ast_parameter_atom_0598: own AstKind = AstParameter();
+  match ieq<AstKind>(declaration_kind, ast_parameter_atom_0598) {
     True() => {
       region 'llvm_linear_operand_parameter {
         llvm_text_emit_place(out: &uniq 'llvm_linear_operand_parameter deref(out), id: declaration_ordinal);
@@ -1323,7 +1422,8 @@ fn llvm_linear_emit_operand ['a, 'f, 'o] (ast: &'a AstTape, facts: &'f NodeFacts
 
 fn llvm_linear_emit_operation ['f, 'o] (facts: &'f NodeFacts, call: own u64, out: &uniq 'o ByteTape) -> own unit reads('f 'o), writes('o), traps {
   let operation: own SemanticOperation = index<SemanticOperation>(deref(facts).operations, call);
-  match ieq<SemanticOperation>(operation, SemanticOperationIeq()) {
+  let semantic_operation_ieq_atom_0599: own SemanticOperation = SemanticOperationIeq();
+  match ieq<SemanticOperation>(operation, semantic_operation_ieq_atom_0599) {
     True() => {
       region 'llvm_linear_operation_eq {
         llvm_text_emit_icmp_eq(out: &uniq 'llvm_linear_operation_eq deref(out));
@@ -1333,7 +1433,8 @@ fn llvm_linear_emit_operation ['f, 'o] (facts: &'f NodeFacts, call: own u64, out
     False() => {
     }
   }
-  match ieq<SemanticOperation>(operation, SemanticOperationIge()) {
+  let semantic_operation_ige_atom_0600: own SemanticOperation = SemanticOperationIge();
+  match ieq<SemanticOperation>(operation, semantic_operation_ige_atom_0600) {
     True() => {
       region 'llvm_linear_operation_uge {
         llvm_text_emit_icmp_uge(out: &uniq 'llvm_linear_operation_uge deref(out));
@@ -1343,7 +1444,8 @@ fn llvm_linear_emit_operation ['f, 'o] (facts: &'f NodeFacts, call: own u64, out
     False() => {
     }
   }
-  match ieq<SemanticOperation>(operation, SemanticOperationIle()) {
+  let semantic_operation_ile_atom_0601: own SemanticOperation = SemanticOperationIle();
+  match ieq<SemanticOperation>(operation, semantic_operation_ile_atom_0601) {
     True() => {
       region 'llvm_linear_operation_ule {
         llvm_text_emit_icmp_ule(out: &uniq 'llvm_linear_operation_ule deref(out));
@@ -1353,7 +1455,8 @@ fn llvm_linear_emit_operation ['f, 'o] (facts: &'f NodeFacts, call: own u64, out
     False() => {
     }
   }
-  match ieq<SemanticOperation>(operation, SemanticOperationBand()) {
+  let semantic_operation_band_atom_0602: own SemanticOperation = SemanticOperationBand();
+  match ieq<SemanticOperation>(operation, semantic_operation_band_atom_0602) {
     True() => {
       region 'llvm_linear_operation_and {
         llvm_text_emit_and(out: &uniq 'llvm_linear_operation_and deref(out));
@@ -1491,7 +1594,8 @@ fn llvm_linear_emit_user_call ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, toke
 
 fn llvm_linear_emit_initializer ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, facts: &'f NodeFacts, value: own u64, out: &uniq 'o ByteTape) -> own unit reads('s 't 'a 'f 'o), writes('o), traps {
   let kind: own AstKind = index<AstKind>(deref(ast).kinds, value);
-  match ieq<AstKind>(kind, AstUserCall()) {
+  let ast_user_call_atom_0603: own AstKind = AstUserCall();
+  match ieq<AstKind>(kind, ast_user_call_atom_0603) {
     True() => {
       region 'llvm_linear_initializer_user {
         llvm_linear_emit_user_call(source: source, tokens: tokens, ast: ast, facts: facts, call: value, out: &uniq 'llvm_linear_initializer_user deref(out));
@@ -1733,7 +1837,8 @@ fn llvm_linear_emit_match_body ['s, 't, 'a, 'f, 'o] (source: &'s buffer<u8>, tok
       llvm_linear_emit_initializer(source: source, tokens: tokens, ast: ast, facts: facts, value: initializer, out: &uniq 'llvm_linear_match_emit_let deref(out));
     }
     let next: own u64 = index<u64>(deref(ast).next_siblings, statement);
-    match llvm_linear_node_is(ast: ast, node: next, want: AstMatch()) {
+    let ast_match_atom_0604: own AstKind = AstMatch();
+    match llvm_linear_node_is(ast: ast, node: next, want: ast_match_atom_0604) {
       True() => {
         let false_block: own u64 = iadd.trap<u64>(match_index, 1_u64);
         region 'llvm_linear_match_emit_branch {
@@ -1828,7 +1933,8 @@ fn llvm_linear_append_function ['s, 't, 'a, 'y, 'f, 'o] (source: &'s buffer<u8>,
   let block: own u64 = llvm_linear_child_at(ast: ast, node: function, ordinal: 5_u64);
   let statement: own u64 = index<u64>(deref(ast).first_children, block);
   loop @llvm_linear_emit_statements {
-    match llvm_linear_node_is(ast: ast, node: statement, want: AstLet()) {
+    let ast_let_atom_0605: own AstKind = AstLet();
+    match llvm_linear_node_is(ast: ast, node: statement, want: ast_let_atom_0605) {
       True() => {
         let value: own u64 = llvm_linear_child_at(ast: ast, node: statement, ordinal: 3_u64);
         region 'llvm_linear_append_let {

@@ -3,7 +3,8 @@ enum Wrap { W(inner: Sign); N(); }
 
 fn main () -> own unit pure {
   doc "OWN-1: an affine payload binder is consumed by one inner match; a second inner match of it is a use-after-consume.";
-  let w: own Wrap = W(inner: Pos());
+  let pos_atom_0001: own Sign = Pos();
+  let w: own Wrap = W(inner: pos_atom_0001);
   match w {
     W(inner: s) => {
       match s {

@@ -1,6 +1,6 @@
 fn g ['r] (buf: &'r buffer<i32>, i: own u64) -> own Result<i32,Overflow> reads('r) {
   doc "EFF-2: a bounds-checked index inside a try scrutinee exhibits traps; the row omits it.";
-  let r: own i32 = try iadd.checked<i32>(index<i32>(buf, i), 1_i32);
+  let r: own i32 = try iadd.checked<i32>(index<i32>(deref(buf), i), 1_i32);
   return Ok(value: r);
 }
 

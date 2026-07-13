@@ -19,7 +19,8 @@ fn parser_v2_finish_at_token ['t, 'a] (tokens: &'t TokenTape, out: &uniq 'a AstT
 fn parser_parse_move_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, out: &uniq 'a AstTape, cursor: own u64) -> own ParserNodeResult reads('s 't 'a), writes('a), traps {
   let move_node: own u64 = ast_none;
   region 'v2_move_alloc {
-    set move_node = parser_push_token(tokens: tokens, out: &uniq 'v2_move_alloc deref(out), kind: AstMove(), token: cursor);
+    let ast_move_atom_0173: own AstKind = AstMove();
+    set move_node = parser_push_token(tokens: tokens, out: &uniq 'v2_move_alloc deref(out), kind: ast_move_atom_0173, token: cursor);
   }
   match ieq<u64>(move_node, ast_none) {
     True() => {
@@ -57,7 +58,8 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
     True() => {
       let number_node: own u64 = ast_none;
       region 'v2_number_alloc {
-        set number_node = parser_push_token(tokens: tokens, out: &uniq 'v2_number_alloc deref(out), kind: AstNumericLiteral(), token: cursor);
+        let ast_numeric_literal_atom_0174: own AstKind = AstNumericLiteral();
+        set number_node = parser_push_token(tokens: tokens, out: &uniq 'v2_number_alloc deref(out), kind: ast_numeric_literal_atom_0174, token: cursor);
       }
       let after_number: own u64 = iadd.trap<u64>(cursor, 1_u64);
       return ParserNodeResult(node: number_node, next: after_number);
@@ -73,17 +75,6 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
     True() => {
       region 'v2_borrow_atom {
         return parser_parse_borrow_v2(source: source, tokens: tokens, out: &uniq 'v2_borrow_atom deref(out), cursor: cursor);
-      }
-    }
-    False() => {
-    }
-  }
-
-  let constructor: own Bool = parser_kind_at_is(tokens: tokens, token: cursor, want: 3_u64);
-  match constructor {
-    True() => {
-      region 'v2_constructor_atom {
-        return parser_parse_named_call_v2(source: source, tokens: tokens, out: &uniq 'v2_constructor_atom deref(out), cursor: cursor, kind: AstConstructor());
       }
     }
     False() => {
@@ -108,7 +99,8 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
         True() => {
           let unit_node: own u64 = ast_none;
           region 'v2_unit_alloc {
-            set unit_node = parser_push_token(tokens: tokens, out: &uniq 'v2_unit_alloc deref(out), kind: AstUnitLiteral(), token: cursor);
+            let ast_unit_literal_atom_0175: own AstKind = AstUnitLiteral();
+            set unit_node = parser_push_token(tokens: tokens, out: &uniq 'v2_unit_alloc deref(out), kind: ast_unit_literal_atom_0175, token: cursor);
           }
           let after_unit: own u64 = iadd.trap<u64>(cursor, 1_u64);
           return ParserNodeResult(node: unit_node, next: after_unit);
@@ -133,7 +125,8 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
             }
             False() => {
               region 'v2_nested_atom_error {
-                parser_fail(tokens: tokens, out: &uniq 'v2_nested_atom_error deref(out), status: ParseExpectedAtom(), token: cursor);
+                let parse_expected_atom_atom_0176: own ParseStatus = ParseExpectedAtom();
+                parser_fail(tokens: tokens, out: &uniq 'v2_nested_atom_error deref(out), status: parse_expected_atom_atom_0176, token: cursor);
               }
               return ParserNodeResult(node: ast_none, next: cursor);
             }
@@ -151,7 +144,8 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
   }
 
   region 'v2_atom_error {
-    parser_fail(tokens: tokens, out: &uniq 'v2_atom_error deref(out), status: ParseExpectedAtom(), token: cursor);
+    let parse_expected_atom_atom_0177: own ParseStatus = ParseExpectedAtom();
+    parser_fail(tokens: tokens, out: &uniq 'v2_atom_error deref(out), status: parse_expected_atom_atom_0177, token: cursor);
   }
   return ParserNodeResult(node: ast_none, next: cursor);
 }
@@ -159,7 +153,8 @@ fn parser_parse_atom_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenT
 fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, out: &uniq 'a AstTape, cursor: own u64) -> own ParserNodeResult reads('s 't 'a), writes('a), traps {
   let index_node: own u64 = ast_none;
   region 'v2_index_alloc {
-    set index_node = parser_push_token(tokens: tokens, out: &uniq 'v2_index_alloc deref(out), kind: AstIndexPlace(), token: cursor);
+    let ast_index_place_atom_0178: own AstKind = AstIndexPlace();
+    set index_node = parser_push_token(tokens: tokens, out: &uniq 'v2_index_alloc deref(out), kind: ast_index_place_atom_0178, token: cursor);
   }
   match ieq<u64>(index_node, ast_none) {
     True() => {
@@ -176,7 +171,8 @@ fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'v2_index_left_angle_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_index_left_angle_error deref(out), status: ParseExpectedLeftAngle(), token: left_angle_cursor);
+        let parse_expected_left_angle_atom_0179: own ParseStatus = ParseExpectedLeftAngle();
+        parser_fail(tokens: tokens, out: &uniq 'v2_index_left_angle_error deref(out), status: parse_expected_left_angle_atom_0179, token: left_angle_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_angle_cursor);
     }
@@ -186,7 +182,8 @@ fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
   let type_node: own u64 = ast_none;
   let type_next: own u64 = type_cursor;
   region 'v2_index_type_parse {
-    let parsed_type: own ParserNodeResult = parser_parse_signature_type(source: source, tokens: tokens, out: &uniq 'v2_index_type_parse deref(out), cursor: type_cursor, kind: AstTypeArgument());
+    let ast_type_argument_atom_0180: own AstKind = AstTypeArgument();
+    let parsed_type: own ParserNodeResult = parser_parse_signature_type(source: source, tokens: tokens, out: &uniq 'v2_index_type_parse deref(out), cursor: type_cursor, kind: ast_type_argument_atom_0180);
     set type_node = parsed_type.node;
     set type_next = parsed_type.next;
   }
@@ -207,7 +204,8 @@ fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'v2_index_right_angle_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_index_right_angle_error deref(out), status: ParseExpectedRightAngle(), token: type_next);
+        let parse_expected_right_angle_atom_0181: own ParseStatus = ParseExpectedRightAngle();
+        parser_fail(tokens: tokens, out: &uniq 'v2_index_right_angle_error deref(out), status: parse_expected_right_angle_atom_0181, token: type_next);
       }
       return ParserNodeResult(node: ast_none, next: type_next);
     }
@@ -220,7 +218,8 @@ fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'v2_index_left_paren_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_index_left_paren_error deref(out), status: ParseExpectedLeftParen(), token: left_paren_cursor);
+        let parse_expected_left_paren_atom_0182: own ParseStatus = ParseExpectedLeftParen();
+        parser_fail(tokens: tokens, out: &uniq 'v2_index_left_paren_error deref(out), status: parse_expected_left_paren_atom_0182, token: left_paren_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_paren_cursor);
     }
@@ -251,7 +250,8 @@ fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'v2_index_comma_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_index_comma_error deref(out), status: ParseExpectedCommaOrRightParen(), token: base_next);
+        let parse_expected_comma_or_right_paren_atom_0183: own ParseStatus = ParseExpectedCommaOrRightParen();
+        parser_fail(tokens: tokens, out: &uniq 'v2_index_comma_error deref(out), status: parse_expected_comma_or_right_paren_atom_0183, token: base_next);
       }
       return ParserNodeResult(node: ast_none, next: base_next);
     }
@@ -282,7 +282,8 @@ fn parser_parse_index_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t
     }
     False() => {
       region 'v2_index_right_paren_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_index_right_paren_error deref(out), status: ParseExpectedRightParen(), token: subscript_next);
+        let parse_expected_right_paren_atom_0184: own ParseStatus = ParseExpectedRightParen();
+        parser_fail(tokens: tokens, out: &uniq 'v2_index_right_paren_error deref(out), status: parse_expected_right_paren_atom_0184, token: subscript_next);
       }
       return ParserNodeResult(node: ast_none, next: subscript_next);
     }
@@ -301,7 +302,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
     }
     False() => {
       region 'v2_place_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_place_error deref(out), status: ParseExpectedPlace(), token: cursor);
+        let parse_expected_place_atom_0185: own ParseStatus = ParseExpectedPlace();
+        parser_fail(tokens: tokens, out: &uniq 'v2_place_error deref(out), status: parse_expected_place_atom_0185, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -311,7 +313,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
   match unit_word {
     True() => {
       region 'v2_unit_place_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_unit_place_error deref(out), status: ParseExpectedPlace(), token: cursor);
+        let parse_expected_place_atom_0186: own ParseStatus = ParseExpectedPlace();
+        parser_fail(tokens: tokens, out: &uniq 'v2_unit_place_error deref(out), status: parse_expected_place_atom_0186, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -323,7 +326,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
   match move_word {
     True() => {
       region 'v2_move_place_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_move_place_error deref(out), status: ParseExpectedPlace(), token: cursor);
+        let parse_expected_place_atom_0187: own ParseStatus = ParseExpectedPlace();
+        parser_fail(tokens: tokens, out: &uniq 'v2_move_place_error deref(out), status: parse_expected_place_atom_0187, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -344,7 +348,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
   match deref_shape {
     True() => {
       region 'v2_deref_alloc {
-        set place_node = parser_push_token(tokens: tokens, out: &uniq 'v2_deref_alloc deref(out), kind: AstDerefPlace(), token: cursor);
+        let ast_deref_place_atom_0188: own AstKind = AstDerefPlace();
+        set place_node = parser_push_token(tokens: tokens, out: &uniq 'v2_deref_alloc deref(out), kind: ast_deref_place_atom_0188, token: cursor);
       }
       match ieq<u64>(place_node, ast_none) {
         True() => {
@@ -377,7 +382,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
         }
         False() => {
           region 'v2_deref_right_paren_error {
-            parser_fail(tokens: tokens, out: &uniq 'v2_deref_right_paren_error deref(out), status: ParseExpectedRightParen(), token: target_next);
+            let parse_expected_right_paren_atom_0189: own ParseStatus = ParseExpectedRightParen();
+            parser_fail(tokens: tokens, out: &uniq 'v2_deref_right_paren_error deref(out), status: parse_expected_right_paren_atom_0189, token: target_next);
           }
           return ParserNodeResult(node: ast_none, next: target_next);
         }
@@ -408,7 +414,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
           match reserved_call {
             True() => {
               region 'v2_nonplace_call_error {
-                parser_fail(tokens: tokens, out: &uniq 'v2_nonplace_call_error deref(out), status: ParseExpectedPlace(), token: cursor);
+                let parse_expected_place_atom_0190: own ParseStatus = ParseExpectedPlace();
+                parser_fail(tokens: tokens, out: &uniq 'v2_nonplace_call_error deref(out), status: parse_expected_place_atom_0190, token: cursor);
               }
               return ParserNodeResult(node: ast_none, next: cursor);
             }
@@ -416,7 +423,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
             }
           }
           region 'v2_bare_place_alloc {
-            set place_node = parser_push_token(tokens: tokens, out: &uniq 'v2_bare_place_alloc deref(out), kind: AstPlaceUse(), token: cursor);
+            let ast_place_use_atom_0191: own AstKind = AstPlaceUse();
+            set place_node = parser_push_token(tokens: tokens, out: &uniq 'v2_bare_place_alloc deref(out), kind: ast_place_use_atom_0191, token: cursor);
           }
           set place_next = after_word;
         }
@@ -440,7 +448,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
       }
       False() => {
         region 'v2_field_name_error {
-          parser_fail(tokens: tokens, out: &uniq 'v2_field_name_error deref(out), status: ParseExpectedName(), token: field_cursor);
+          let parse_expected_name_atom_0192: own ParseStatus = ParseExpectedName();
+          parser_fail(tokens: tokens, out: &uniq 'v2_field_name_error deref(out), status: parse_expected_name_atom_0192, token: field_cursor);
         }
         return ParserNodeResult(node: ast_none, next: field_cursor);
       }
@@ -449,7 +458,8 @@ fn parser_parse_place_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Token
     let field_end: own u64 = index<u64>(deref(tokens).ends, field_cursor);
     let field_node: own u64 = ast_none;
     region 'v2_field_alloc {
-      set field_node = parser_push(out: &uniq 'v2_field_alloc deref(out), kind: AstFieldPlace(), head: field_cursor, start: base_start, end: field_end);
+      let ast_field_place_atom_0193: own AstKind = AstFieldPlace();
+      set field_node = parser_push(out: &uniq 'v2_field_alloc deref(out), kind: ast_field_place_atom_0193, head: field_cursor, start: base_start, end: field_end);
     }
     match ieq<u64>(field_node, ast_none) {
       True() => {
@@ -475,7 +485,8 @@ fn parser_parse_borrow_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Toke
     }
     False() => {
       region 'v2_borrow_start_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_borrow_start_error deref(out), status: ParseExpectedAtom(), token: cursor);
+        let parse_expected_atom_atom_0194: own ParseStatus = ParseExpectedAtom();
+        parser_fail(tokens: tokens, out: &uniq 'v2_borrow_start_error deref(out), status: parse_expected_atom_atom_0194, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -508,14 +519,16 @@ fn parser_parse_borrow_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t Toke
     }
     False() => {
       region 'v2_borrow_region_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_borrow_region_error deref(out), status: ParseExpectedRegion(), token: region_cursor);
+        let parse_expected_region_atom_0195: own ParseStatus = ParseExpectedRegion();
+        parser_fail(tokens: tokens, out: &uniq 'v2_borrow_region_error deref(out), status: parse_expected_region_atom_0195, token: region_cursor);
       }
       return ParserNodeResult(node: ast_none, next: region_cursor);
     }
   }
   let region_node: own u64 = ast_none;
   region 'v2_borrow_region_alloc {
-    set region_node = parser_push_token(tokens: tokens, out: &uniq 'v2_borrow_region_alloc deref(out), kind: AstRegion(), token: region_cursor);
+    let ast_region_atom_0196: own AstKind = AstRegion();
+    set region_node = parser_push_token(tokens: tokens, out: &uniq 'v2_borrow_region_alloc deref(out), kind: ast_region_atom_0196, token: region_cursor);
   }
   match ieq<u64>(region_node, ast_none) {
     True() => {
@@ -571,7 +584,8 @@ fn parser_parse_named_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
     }
     False() => {
       region 'v2_named_left_paren_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_named_left_paren_error deref(out), status: ParseExpectedLeftParen(), token: left_paren_cursor);
+        let parse_expected_left_paren_atom_0197: own ParseStatus = ParseExpectedLeftParen();
+        parser_fail(tokens: tokens, out: &uniq 'v2_named_left_paren_error deref(out), status: parse_expected_left_paren_atom_0197, token: left_paren_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_paren_cursor);
     }
@@ -598,14 +612,16 @@ fn parser_parse_named_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
       }
       False() => {
         region 'v2_named_name_error {
-          parser_fail(tokens: tokens, out: &uniq 'v2_named_name_error deref(out), status: ParseExpectedName(), token: argument_cursor);
+          let parse_expected_name_atom_0198: own ParseStatus = ParseExpectedName();
+          parser_fail(tokens: tokens, out: &uniq 'v2_named_name_error deref(out), status: parse_expected_name_atom_0198, token: argument_cursor);
         }
         return ParserNodeResult(node: ast_none, next: argument_cursor);
       }
     }
     let named_node: own u64 = ast_none;
     region 'v2_named_argument_alloc {
-      set named_node = parser_push_token(tokens: tokens, out: &uniq 'v2_named_argument_alloc deref(out), kind: AstNamedArgument(), token: argument_cursor);
+      let ast_named_argument_atom_0199: own AstKind = AstNamedArgument();
+      set named_node = parser_push_token(tokens: tokens, out: &uniq 'v2_named_argument_alloc deref(out), kind: ast_named_argument_atom_0199, token: argument_cursor);
     }
     match ieq<u64>(named_node, ast_none) {
       True() => {
@@ -622,7 +638,8 @@ fn parser_parse_named_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
       }
       False() => {
         region 'v2_named_colon_error {
-          parser_fail(tokens: tokens, out: &uniq 'v2_named_colon_error deref(out), status: ParseExpectedColon(), token: colon_cursor);
+          let parse_expected_colon_atom_0200: own ParseStatus = ParseExpectedColon();
+          parser_fail(tokens: tokens, out: &uniq 'v2_named_colon_error deref(out), status: parse_expected_colon_atom_0200, token: colon_cursor);
         }
         return ParserNodeResult(node: ast_none, next: colon_cursor);
       }
@@ -661,7 +678,8 @@ fn parser_parse_named_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
         match trailing {
           True() => {
             region 'v2_named_trailing_error {
-              parser_fail(tokens: tokens, out: &uniq 'v2_named_trailing_error deref(out), status: ParseExpectedName(), token: after_comma);
+              let parse_expected_name_atom_0201: own ParseStatus = ParseExpectedName();
+              parser_fail(tokens: tokens, out: &uniq 'v2_named_trailing_error deref(out), status: parse_expected_name_atom_0201, token: after_comma);
             }
             return ParserNodeResult(node: ast_none, next: after_comma);
           }
@@ -677,7 +695,8 @@ fn parser_parse_named_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
           }
           False() => {
             region 'v2_named_separator_error {
-              parser_fail(tokens: tokens, out: &uniq 'v2_named_separator_error deref(out), status: ParseExpectedCommaOrRightParen(), token: argument_cursor);
+              let parse_expected_comma_or_right_paren_atom_0202: own ParseStatus = ParseExpectedCommaOrRightParen();
+              parser_fail(tokens: tokens, out: &uniq 'v2_named_separator_error deref(out), status: parse_expected_comma_or_right_paren_atom_0202, token: argument_cursor);
             }
             return ParserNodeResult(node: ast_none, next: argument_cursor);
           }
@@ -696,7 +715,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
     }
     False() => {
       region 'v2_table_callee_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_table_callee_error deref(out), status: ParseExpectedExpression(), token: cursor);
+        let parse_expected_expression_atom_0203: own ParseStatus = ParseExpectedExpression();
+        parser_fail(tokens: tokens, out: &uniq 'v2_table_callee_error deref(out), status: parse_expected_expression_atom_0203, token: cursor);
       }
       return ParserNodeResult(node: ast_none, next: cursor);
     }
@@ -704,7 +724,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
 
   let call_node: own u64 = ast_none;
   region 'v2_table_alloc {
-    set call_node = parser_push_token(tokens: tokens, out: &uniq 'v2_table_alloc deref(out), kind: AstTableCall(), token: cursor);
+    let ast_table_call_atom_0204: own AstKind = AstTableCall();
+    set call_node = parser_push_token(tokens: tokens, out: &uniq 'v2_table_alloc deref(out), kind: ast_table_call_atom_0204, token: cursor);
   }
   match ieq<u64>(call_node, ast_none) {
     True() => {
@@ -721,7 +742,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
     }
     False() => {
       region 'v2_table_left_angle_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_table_left_angle_error deref(out), status: ParseExpectedLeftAngle(), token: left_angle_cursor);
+        let parse_expected_left_angle_atom_0205: own ParseStatus = ParseExpectedLeftAngle();
+        parser_fail(tokens: tokens, out: &uniq 'v2_table_left_angle_error deref(out), status: parse_expected_left_angle_atom_0205, token: left_angle_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_angle_cursor);
     }
@@ -731,7 +753,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
   let type_node: own u64 = ast_none;
   let type_next: own u64 = type_cursor;
   region 'v2_table_type_parse {
-    let parsed_type: own ParserNodeResult = parser_parse_signature_type(source: source, tokens: tokens, out: &uniq 'v2_table_type_parse deref(out), cursor: type_cursor, kind: AstTypeArgument());
+    let ast_type_argument_atom_0206: own AstKind = AstTypeArgument();
+    let parsed_type: own ParserNodeResult = parser_parse_signature_type(source: source, tokens: tokens, out: &uniq 'v2_table_type_parse deref(out), cursor: type_cursor, kind: ast_type_argument_atom_0206);
     set type_node = parsed_type.node;
     set type_next = parsed_type.next;
   }
@@ -752,7 +775,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
     }
     False() => {
       region 'v2_table_right_angle_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_table_right_angle_error deref(out), status: ParseExpectedRightAngle(), token: type_next);
+        let parse_expected_right_angle_atom_0207: own ParseStatus = ParseExpectedRightAngle();
+        parser_fail(tokens: tokens, out: &uniq 'v2_table_right_angle_error deref(out), status: parse_expected_right_angle_atom_0207, token: type_next);
       }
       return ParserNodeResult(node: ast_none, next: type_next);
     }
@@ -765,7 +789,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
     }
     False() => {
       region 'v2_table_left_paren_error {
-        parser_fail(tokens: tokens, out: &uniq 'v2_table_left_paren_error deref(out), status: ParseExpectedLeftParen(), token: left_paren_cursor);
+        let parse_expected_left_paren_atom_0208: own ParseStatus = ParseExpectedLeftParen();
+        parser_fail(tokens: tokens, out: &uniq 'v2_table_left_paren_error deref(out), status: parse_expected_left_paren_atom_0208, token: left_paren_cursor);
       }
       return ParserNodeResult(node: ast_none, next: left_paren_cursor);
     }
@@ -813,7 +838,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
         match trailing {
           True() => {
             region 'v2_table_trailing_error {
-              parser_fail(tokens: tokens, out: &uniq 'v2_table_trailing_error deref(out), status: ParseExpectedAtom(), token: after_comma);
+              let parse_expected_atom_atom_0209: own ParseStatus = ParseExpectedAtom();
+              parser_fail(tokens: tokens, out: &uniq 'v2_table_trailing_error deref(out), status: parse_expected_atom_atom_0209, token: after_comma);
             }
             return ParserNodeResult(node: ast_none, next: after_comma);
           }
@@ -829,7 +855,8 @@ fn parser_parse_table_call_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
           }
           False() => {
             region 'v2_table_separator_error {
-              parser_fail(tokens: tokens, out: &uniq 'v2_table_separator_error deref(out), status: ParseExpectedCommaOrRightParen(), token: argument_cursor);
+              let parse_expected_comma_or_right_paren_atom_0210: own ParseStatus = ParseExpectedCommaOrRightParen();
+              parser_fail(tokens: tokens, out: &uniq 'v2_table_separator_error deref(out), status: parse_expected_comma_or_right_paren_atom_0210, token: argument_cursor);
             }
             return ParserNodeResult(node: ast_none, next: argument_cursor);
           }
@@ -855,7 +882,8 @@ fn parser_parse_expression_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
   match constructor {
     True() => {
       region 'v2_constructor_expression {
-        return parser_parse_named_call_v2(source: source, tokens: tokens, out: &uniq 'v2_constructor_expression deref(out), cursor: cursor, kind: AstConstructor());
+        let ast_constructor_atom_0211: own AstKind = AstConstructor();
+        return parser_parse_named_call_v2(source: source, tokens: tokens, out: &uniq 'v2_constructor_expression deref(out), cursor: cursor, kind: ast_constructor_atom_0211);
       }
     }
     False() => {
@@ -922,7 +950,8 @@ fn parser_parse_expression_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
             }
             False() => {
               region 'v2_user_expression {
-                return parser_parse_named_call_v2(source: source, tokens: tokens, out: &uniq 'v2_user_expression deref(out), cursor: cursor, kind: AstUserCall());
+                let ast_user_call_atom_0212: own AstKind = AstUserCall();
+                return parser_parse_named_call_v2(source: source, tokens: tokens, out: &uniq 'v2_user_expression deref(out), cursor: cursor, kind: ast_user_call_atom_0212);
               }
             }
           }
@@ -950,7 +979,8 @@ fn parser_parse_expression_v2 ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t 
   }
 
   region 'v2_expression_error {
-    parser_fail(tokens: tokens, out: &uniq 'v2_expression_error deref(out), status: ParseExpectedExpression(), token: cursor);
+    let parse_expected_expression_atom_0213: own ParseStatus = ParseExpectedExpression();
+    parser_fail(tokens: tokens, out: &uniq 'v2_expression_error deref(out), status: parse_expected_expression_atom_0213, token: cursor);
   }
   return ParserNodeResult(node: ast_none, next: cursor);
 }

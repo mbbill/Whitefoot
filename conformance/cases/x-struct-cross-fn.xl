@@ -11,7 +11,8 @@ fn sum_xy (v: own Vec2) -> own i32 pure {
 
 fn main () -> own unit traps {
   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
-  let total: own i32 = sum_xy(v: Vec2(x: 20_i32, y: 22_i32));
+  let vec2_atom_0001: own Vec2 = Vec2(x: 20_i32, y: 22_i32);
+  let total: own i32 = sum_xy(v: move vec2_atom_0001);
   check ieq<i32>(total, 42_i32) else trap "cross-fn struct drift";
   return unit;
 }

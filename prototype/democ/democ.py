@@ -313,8 +313,10 @@ def parse_place(p):
         pl = {"base": parts[0], "path": parts[1:], "deref": 0}
     while p.peek() == '.':                             # psuffix after deref(...)/index<...>(...) [GRAM-5]
         p.eat('.')
-        field = check_binding_ident(p.eat(), "field name")
-        pl.setdefault("post", []).append(field)
+        fields = p.eat().split('.')
+        for field in fields:
+            pl.setdefault("post", []).append(
+                check_binding_ident(field, "field name"))
     return pl
 
 def parse_expr(p):
@@ -372,7 +374,9 @@ def parse_expr(p):
         p.eat(')'); return {"e": "ucall", "n": n, "args": args, "argnames": argnames}
     return {"e": "place", "p": parse_place(p)}
 
-def parse_atom(p):                                     # [GRAM-9] atom := literal | place | borrow | deref | construct
+def parse_atom(p):                                     # [GRAM-9] atom := literal | move place | place | borrow
+    if is_typeid(p.peek()):
+        raise CheckError("GRAM-9", "a construct in an atom position does not derive (three-address form); bind it with a preceding let")
     e = parse_expr(p)
     if e["e"] in ("op", "ucall"):                      # a call in an atom position does not derive (three-address/ANF)
         raise CheckError("GRAM-9", "a call in an atom position does not derive (three-address form); bind it with a preceding let")

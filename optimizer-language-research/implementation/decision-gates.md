@@ -936,3 +936,27 @@ liveness/readability checks and adds the negative conformance case
 `own1-neg-index-atom-after-move`.  This is an independent current-language bug
 fix, not evidence for Flat records and not authorization for E0.1 production
 semantics.
+
+## GRAM-9 constructor drift and recursive projection drift repaired (2026-07-13)
+
+Both executable frontends now enforce the selected strict three-address grammar:
+a constructor is an expression and cannot occupy a call-argument or construction-
+field atom position.  Auditing the pre-repair repository found 770 existing
+violations: 745 in the 20 self-hosted compiler source files, 24 in 14 conformance
+sources, and one embedded stage-0 fixture.  Of the compiler violations, 744
+nullary Copy enum constructors are now bound once immediately before use; the
+remaining violation was `AstConstructor()` inside the invalid constructor-as-atom
+parser branch and disappeared with that branch.  The conformance migration
+similarly binds 19 Copy values and binds then explicitly moves five affine
+aggregate/payload values.  The self-hosted compiler pays 744 additional source
+lines; this is measured maintenance evidence for any later GRAM-9 redesign, not
+permission to ignore the current rule.  Existing performance and code-shape gates
+remain authoritative for the generated program.
+
+The same conformance pass repaired stage 0's recursive place suffix handling.
+Its tokenizer deliberately retains dotted lower-case tokens, but the parser had
+treated the suffix token in `index<T>(...).inner.value` as one field.  It now
+expands every segment, while xlc's already-correct lexer/parser is pinned to two
+successive field nodes.  Two negative GRAM-9 cases and one runnable recursive-
+projection case make both boundaries durable.  These are current-language parser
+repairs, not E0.1 record-storage semantics.

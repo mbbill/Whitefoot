@@ -29,7 +29,8 @@ fn llvm_supported_fail ['w] (report: &uniq 'w LlvmSupportedReport, status: own L
 }
 
 fn llvm_supported_analyze_kind ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, validation: &'c AstValidationReport, symbols: &'c SymbolTape, function: own u64, types: &uniq 'w TypeTape, facts: &uniq 'w NodeFacts, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w LlvmSupportedReport) -> own LlvmSupportedKind reads('c 'w), writes('w), traps {
-  let capability_report: own SemanticCapabilityReport = SemanticCapabilityReport(status: SemanticBodyInvalidFunction(), function: function, related: semantic_facts_none);
+  let semantic_body_invalid_function_atom_0720: own SemanticBodyStatus = SemanticBodyInvalidFunction();
+  let capability_report: own SemanticCapabilityReport = SemanticCapabilityReport(status: semantic_body_invalid_function_atom_0720, function: function, related: semantic_facts_none);
   let capability: own SemanticCapabilityKind = SemanticCapabilityFailed();
   region 'llvm_supported_semantic_dispatch {
     set capability = semantic_unit_dispatch(source: source, tokens: tokens, ast: ast, validation: validation, symbols: symbols, function: function, types: &uniq 'llvm_supported_semantic_dispatch deref(types), facts: &uniq 'llvm_supported_semantic_dispatch deref(facts), scratch: &uniq 'llvm_supported_semantic_dispatch deref(scratch), report: &uniq 'llvm_supported_semantic_dispatch capability_report);
@@ -37,13 +38,15 @@ fn llvm_supported_analyze_kind ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
   match capability {
     SemanticCapabilityFailed() => {
       region 'llvm_supported_semantic_failure {
-        llvm_supported_fail(report: &uniq 'llvm_supported_semantic_failure deref(report), status: LlvmSupportedSemanticFailure(), function: function, related: capability_report.related);
+        let llvm_supported_semantic_failure_atom_0721: own LlvmSupportedStatus = LlvmSupportedSemanticFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_semantic_failure deref(report), status: llvm_supported_semantic_failure_atom_0721, function: function, related: capability_report.related);
       }
       return LlvmSupportedKindFailed();
     }
     SemanticCapabilityUnsupported() => {
       region 'llvm_supported_semantic_unsupported {
-        llvm_supported_fail(report: &uniq 'llvm_supported_semantic_unsupported deref(report), status: LlvmSupportedUnsupportedFunction(), function: function, related: capability_report.related);
+        let llvm_supported_unsupported_function_atom_0722: own LlvmSupportedStatus = LlvmSupportedUnsupportedFunction();
+        llvm_supported_fail(report: &uniq 'llvm_supported_semantic_unsupported deref(report), status: llvm_supported_unsupported_function_atom_0722, function: function, related: capability_report.related);
       }
       return LlvmSupportedKindFailed();
     }
@@ -58,7 +61,8 @@ fn llvm_supported_analyze_kind ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
         }
         False() => {
           region 'llvm_supported_fixed_codegen {
-            llvm_supported_fail(report: &uniq 'llvm_supported_fixed_codegen deref(report), status: LlvmSupportedCodegenFailure(), function: function, related: function);
+            let llvm_supported_codegen_failure_atom_0723: own LlvmSupportedStatus = LlvmSupportedCodegenFailure();
+            llvm_supported_fail(report: &uniq 'llvm_supported_fixed_codegen deref(report), status: llvm_supported_codegen_failure_atom_0723, function: function, related: function);
           }
           return LlvmSupportedKindFailed();
         }
@@ -75,7 +79,8 @@ fn llvm_supported_analyze_kind ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
         }
         False() => {
           region 'llvm_supported_scanner_codegen {
-            llvm_supported_fail(report: &uniq 'llvm_supported_scanner_codegen deref(report), status: LlvmSupportedCodegenFailure(), function: function, related: function);
+            let llvm_supported_codegen_failure_atom_0724: own LlvmSupportedStatus = LlvmSupportedCodegenFailure();
+            llvm_supported_fail(report: &uniq 'llvm_supported_scanner_codegen deref(report), status: llvm_supported_codegen_failure_atom_0724, function: function, related: function);
           }
           return LlvmSupportedKindFailed();
         }
@@ -102,7 +107,8 @@ fn llvm_supported_analyze_kind ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
         }
         False() => {
           region 'llvm_supported_linear_unsupported {
-            llvm_supported_fail(report: &uniq 'llvm_supported_linear_unsupported deref(report), status: LlvmSupportedUnsupportedFunction(), function: function, related: function);
+            let llvm_supported_unsupported_function_atom_0725: own LlvmSupportedStatus = LlvmSupportedUnsupportedFunction();
+            llvm_supported_fail(report: &uniq 'llvm_supported_linear_unsupported deref(report), status: llvm_supported_unsupported_function_atom_0725, function: function, related: function);
           }
           return LlvmSupportedKindFailed();
         }
@@ -134,7 +140,8 @@ fn llvm_supported_seen_before ['l] (functions: &'l buffer<u64>, before: own u64,
 
 fn llvm_supported_function_node_valid ['a] (ast: &'a AstTape, function: own u64) -> own Bool reads('a), traps {
   let top_level: own Bool = semantic_buffer_top_level_function_valid(ast: ast, function: function);
-  let kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: AstFunction());
+  let ast_function_atom_0726: own AstKind = AstFunction();
+  let kind: own Bool = semantic_body_kind_is(ast: ast, node: function, want: ast_function_atom_0726);
   return band<Bool>(top_level, kind);
 }
 
@@ -157,7 +164,8 @@ fn llvm_supported_missing_dependency ['a, 'f, 'l] (ast: &'a AstTape, facts: &'f 
       False() => {
         match ilt<u64>(declaration, ast_count) {
           True() => {
-            let function_kind: own Bool = semantic_body_kind_is(ast: ast, node: declaration, want: AstFunction());
+            let ast_function_atom_0727: own AstKind = AstFunction();
+            let function_kind: own Bool = semantic_body_kind_is(ast: ast, node: declaration, want: ast_function_atom_0727);
             match function_kind {
               True() => {
                 let available: own Bool = llvm_supported_seen_before(functions: functions, before: position, want: declaration);
@@ -187,7 +195,8 @@ fn llvm_supported_append_kind ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
   match kind {
     LlvmSupportedKindFailed() => {
       region 'llvm_supported_append_failed {
-        llvm_supported_fail(report: &uniq 'llvm_supported_append_failed deref(report), status: LlvmSupportedCodegenFailure(), function: function, related: function);
+        let llvm_supported_codegen_failure_atom_0728: own LlvmSupportedStatus = LlvmSupportedCodegenFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_append_failed deref(report), status: llvm_supported_codegen_failure_atom_0728, function: function, related: function);
       }
       return False();
     }
@@ -207,10 +216,12 @@ fn llvm_supported_append_kind ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
       }
     }
   }
-  match ieq<ByteStatus>(deref(out).status, ByteInvalidState()) {
+  let byte_invalid_state_atom_0729: own ByteStatus = ByteInvalidState();
+  match ieq<ByteStatus>(deref(out).status, byte_invalid_state_atom_0729) {
     True() => {
       region 'llvm_supported_append_invalid {
-        llvm_supported_fail(report: &uniq 'llvm_supported_append_invalid deref(report), status: LlvmSupportedCodegenFailure(), function: function, related: function);
+        let llvm_supported_codegen_failure_atom_0730: own LlvmSupportedStatus = LlvmSupportedCodegenFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_append_invalid deref(report), status: llvm_supported_codegen_failure_atom_0730, function: function, related: function);
       }
       return False();
     }
@@ -232,7 +243,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     }
     False() => {
       region 'llvm_supported_invalid_tokens {
-        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_tokens deref(report), status: LlvmSupportedSemanticFailure(), function: ast_none, related: deref(tokens).count);
+        let llvm_supported_semantic_failure_atom_0731: own LlvmSupportedStatus = LlvmSupportedSemanticFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_tokens deref(report), status: llvm_supported_semantic_failure_atom_0731, function: ast_none, related: deref(tokens).count);
       }
       return unit;
     }
@@ -243,17 +255,20 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     }
     False() => {
       region 'llvm_supported_invalid_ast {
-        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_ast deref(report), status: LlvmSupportedSemanticFailure(), function: ast_none, related: deref(ast).count);
+        let llvm_supported_semantic_failure_atom_0732: own LlvmSupportedStatus = LlvmSupportedSemanticFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_ast deref(report), status: llvm_supported_semantic_failure_atom_0732, function: ast_none, related: deref(ast).count);
       }
       return unit;
     }
   }
-  match ieq<AstValidationStatus>(deref(validation).status, AstValidationClean()) {
+  let ast_validation_clean_atom_0733: own AstValidationStatus = AstValidationClean();
+  match ieq<AstValidationStatus>(deref(validation).status, ast_validation_clean_atom_0733) {
     True() => {
     }
     False() => {
       region 'llvm_supported_invalid_validation {
-        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_validation deref(report), status: LlvmSupportedSemanticFailure(), function: deref(validation).node, related: deref(validation).related);
+        let llvm_supported_semantic_failure_atom_0734: own LlvmSupportedStatus = LlvmSupportedSemanticFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_validation deref(report), status: llvm_supported_semantic_failure_atom_0734, function: deref(validation).node, related: deref(validation).related);
       }
       return unit;
     }
@@ -264,7 +279,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     }
     False() => {
       region 'llvm_supported_invalid_symbols {
-        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_symbols deref(report), status: LlvmSupportedSemanticFailure(), function: ast_none, related: deref(symbols).count);
+        let llvm_supported_semantic_failure_atom_0735: own LlvmSupportedStatus = LlvmSupportedSemanticFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_invalid_symbols deref(report), status: llvm_supported_semantic_failure_atom_0735, function: ast_none, related: deref(symbols).count);
       }
       return unit;
     }
@@ -278,7 +294,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     }
     False() => {
       region 'llvm_supported_empty_worklist {
-        llvm_supported_fail(report: &uniq 'llvm_supported_empty_worklist deref(report), status: LlvmSupportedInvalidWorklist(), function: ast_none, related: function_count);
+        let llvm_supported_invalid_worklist_atom_0736: own LlvmSupportedStatus = LlvmSupportedInvalidWorklist();
+        llvm_supported_fail(report: &uniq 'llvm_supported_empty_worklist deref(report), status: llvm_supported_invalid_worklist_atom_0736, function: ast_none, related: function_count);
       }
       return unit;
     }
@@ -300,7 +317,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
       }
       False() => {
         region 'llvm_supported_invalid_function {
-          llvm_supported_fail(report: &uniq 'llvm_supported_invalid_function deref(report), status: LlvmSupportedInvalidWorklist(), function: function, related: position);
+          let llvm_supported_invalid_worklist_atom_0737: own LlvmSupportedStatus = LlvmSupportedInvalidWorklist();
+          llvm_supported_fail(report: &uniq 'llvm_supported_invalid_function deref(report), status: llvm_supported_invalid_worklist_atom_0737, function: function, related: position);
         }
         return unit;
       }
@@ -309,7 +327,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     match duplicate {
       True() => {
         region 'llvm_supported_duplicate_function {
-          llvm_supported_fail(report: &uniq 'llvm_supported_duplicate_function deref(report), status: LlvmSupportedDuplicateFunction(), function: function, related: position);
+          let llvm_supported_duplicate_function_atom_0738: own LlvmSupportedStatus = LlvmSupportedDuplicateFunction();
+          llvm_supported_fail(report: &uniq 'llvm_supported_duplicate_function deref(report), status: llvm_supported_duplicate_function_atom_0738, function: function, related: position);
         }
         return unit;
       }
@@ -320,7 +339,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     region 'llvm_supported_validate_analyze {
       set kind = llvm_supported_analyze_kind(source: source, tokens: tokens, ast: ast, validation: validation, symbols: symbols, function: function, types: &uniq 'llvm_supported_validate_analyze deref(types), facts: &uniq 'llvm_supported_validate_analyze deref(facts), scratch: &uniq 'llvm_supported_validate_analyze deref(scratch), report: &uniq 'llvm_supported_validate_analyze deref(report));
     }
-    match ieq<LlvmSupportedStatus>(deref(report).status, LlvmSupportedClean()) {
+    let llvm_supported_clean_atom_0739: own LlvmSupportedStatus = LlvmSupportedClean();
+    match ieq<LlvmSupportedStatus>(deref(report).status, llvm_supported_clean_atom_0739) {
       True() => {
       }
       False() => {
@@ -336,7 +356,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
       }
       False() => {
         region 'llvm_supported_invalid_dependency {
-          llvm_supported_fail(report: &uniq 'llvm_supported_invalid_dependency deref(report), status: LlvmSupportedInvalidWorklist(), function: function, related: missing);
+          let llvm_supported_invalid_worklist_atom_0740: own LlvmSupportedStatus = LlvmSupportedInvalidWorklist();
+          llvm_supported_fail(report: &uniq 'llvm_supported_invalid_dependency deref(report), status: llvm_supported_invalid_worklist_atom_0740, function: function, related: missing);
         }
         return unit;
       }
@@ -359,7 +380,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     False() => {
       set deref(out).status = ByteInvalidState();
       region 'llvm_supported_output_rejected {
-        llvm_supported_fail(report: &uniq 'llvm_supported_output_rejected deref(report), status: LlvmSupportedCodegenFailure(), function: ast_none, related: 0_u64);
+        let llvm_supported_codegen_failure_atom_0741: own LlvmSupportedStatus = LlvmSupportedCodegenFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_output_rejected deref(report), status: llvm_supported_codegen_failure_atom_0741, function: ast_none, related: 0_u64);
       }
       return unit;
     }
@@ -367,10 +389,12 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
   region 'llvm_supported_module_prelude {
     llvm_buffer_emit_prelude(out: &uniq 'llvm_supported_module_prelude deref(out));
   }
-  match ieq<ByteStatus>(deref(out).status, ByteInvalidState()) {
+  let byte_invalid_state_atom_0742: own ByteStatus = ByteInvalidState();
+  match ieq<ByteStatus>(deref(out).status, byte_invalid_state_atom_0742) {
     True() => {
       region 'llvm_supported_prelude_failure {
-        llvm_supported_fail(report: &uniq 'llvm_supported_prelude_failure deref(report), status: LlvmSupportedCodegenFailure(), function: ast_none, related: 0_u64);
+        let llvm_supported_codegen_failure_atom_0743: own LlvmSupportedStatus = LlvmSupportedCodegenFailure();
+        llvm_supported_fail(report: &uniq 'llvm_supported_prelude_failure deref(report), status: llvm_supported_codegen_failure_atom_0743, function: ast_none, related: 0_u64);
       }
       return unit;
     }
@@ -392,7 +416,8 @@ fn llvm_supported_emit_module ['c, 'w, 'o] (source: &'c buffer<u8>, tokens: &'c 
     region 'llvm_supported_emit_analyze {
       set emitted_kind = llvm_supported_analyze_kind(source: source, tokens: tokens, ast: ast, validation: validation, symbols: symbols, function: emitted_function, types: &uniq 'llvm_supported_emit_analyze deref(types), facts: &uniq 'llvm_supported_emit_analyze deref(facts), scratch: &uniq 'llvm_supported_emit_analyze deref(scratch), report: &uniq 'llvm_supported_emit_analyze deref(report));
     }
-    match ieq<LlvmSupportedStatus>(deref(report).status, LlvmSupportedClean()) {
+    let llvm_supported_clean_atom_0744: own LlvmSupportedStatus = LlvmSupportedClean();
+    match ieq<LlvmSupportedStatus>(deref(report).status, llvm_supported_clean_atom_0744) {
       True() => {
       }
       False() => {

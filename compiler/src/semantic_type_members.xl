@@ -168,7 +168,8 @@ fn semantic_type_members_prior_field ['s, 't, 'a] (source: &'s buffer<u8>, token
 }
 
 fn semantic_type_members_field_shape_valid ['s, 't, 'a] (source: &'s buffer<u8>, tokens: &'t TokenTape, ast: &'a AstTape, field: own u64) -> own Bool reads('s 't 'a), traps {
-  let field_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: field, want: AstField());
+  let ast_field_atom_0476: own AstKind = AstField();
+  let field_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: field, want: ast_field_atom_0476);
   match field_kind_valid {
     True() => {
     }
@@ -186,7 +187,8 @@ fn semantic_type_members_field_shape_valid ['s, 't, 'a] (source: &'s buffer<u8>,
       return False();
     }
   }
-  let field_type_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: field_type, want: AstFieldType());
+  let ast_field_type_atom_0477: own AstKind = AstFieldType();
+  let field_type_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: field_type, want: ast_field_type_atom_0477);
   match field_type_kind_valid {
     True() => {
     }
@@ -378,7 +380,8 @@ fn semantic_index_type_members ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
         }
         let enum_name: own u64 = index<u64>(deref(ast).first_children, members_top);
         let enum_last_member: own u64 = index<u64>(deref(ast).last_children, members_top);
-        let enum_name_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: enum_name, want: AstEnumName());
+        let ast_enum_name_atom_0478: own AstKind = AstEnumName();
+        let enum_name_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: enum_name, want: ast_enum_name_atom_0478);
         let enum_name_leaf_valid: own Bool = semantic_type_members_leaf_valid(ast: ast, node: enum_name);
         let enum_name_shape_valid: own Bool = band<Bool>(enum_name_kind_valid, enum_name_leaf_valid);
         match enum_name_shape_valid {
@@ -424,7 +427,8 @@ fn semantic_index_type_members ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
               return unit;
             }
           }
-          let enum_variant_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: enum_variant, want: AstVariant());
+          let ast_variant_atom_0479: own AstKind = AstVariant();
+          let enum_variant_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: enum_variant, want: ast_variant_atom_0479);
           let enum_variant_leaf_valid: own Bool = semantic_type_members_leaf_valid(ast: ast, node: enum_variant);
           let enum_variant_shape_valid: own Bool = band<Bool>(enum_variant_kind_valid, enum_variant_leaf_valid);
           match enum_variant_shape_valid {
@@ -534,7 +538,8 @@ fn semantic_index_type_members ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
             }
             let struct_name: own u64 = index<u64>(deref(ast).first_children, members_top);
             let struct_last_member: own u64 = index<u64>(deref(ast).last_children, members_top);
-            let struct_name_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: struct_name, want: AstStructName());
+            let ast_struct_name_atom_0480: own AstKind = AstStructName();
+            let struct_name_kind_valid: own Bool = semantic_type_members_kind_is(ast: ast, node: struct_name, want: ast_struct_name_atom_0480);
             let struct_name_leaf_valid: own Bool = semantic_type_members_leaf_valid(ast: ast, node: struct_name);
             let struct_name_shape_valid: own Bool = band<Bool>(struct_name_kind_valid, struct_name_leaf_valid);
             match struct_name_shape_valid {

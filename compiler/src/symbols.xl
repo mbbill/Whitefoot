@@ -378,7 +378,8 @@ fn symbol_lookup_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t Toke
     True() => {
     }
     False() => {
-      return SymbolLookupResult(status: SymbolLookupInvalidTape(), declaration: symbol_none);
+      let symbol_lookup_invalid_tape_atom_0251: own SymbolLookupStatus = SymbolLookupInvalidTape();
+      return SymbolLookupResult(status: symbol_lookup_invalid_tape_atom_0251, declaration: symbol_none);
     }
   }
   let entries_valid: own Bool = symbol_lookup_entries_valid(source: source, tokens: tokens, symbols: symbols);
@@ -386,7 +387,8 @@ fn symbol_lookup_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t Toke
     True() => {
     }
     False() => {
-      return SymbolLookupResult(status: SymbolLookupInvalidTape(), declaration: symbol_none);
+      let symbol_lookup_invalid_tape_atom_0252: own SymbolLookupStatus = SymbolLookupInvalidTape();
+      return SymbolLookupResult(status: symbol_lookup_invalid_tape_atom_0252, declaration: symbol_none);
     }
   }
   let space_code: own u64 = symbol_namespace_code(space: space);
@@ -396,19 +398,22 @@ fn symbol_lookup_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t Toke
     True() => {
     }
     False() => {
-      return SymbolLookupResult(status: SymbolLookupInvalidToken(), declaration: symbol_none);
+      let symbol_lookup_invalid_token_atom_0253: own SymbolLookupStatus = SymbolLookupInvalidToken();
+      return SymbolLookupResult(status: symbol_lookup_invalid_token_atom_0253, declaration: symbol_none);
     }
   }
   let found: own u64 = symbol_lookup_find_slot(source: source, tokens: tokens, symbols: symbols, space_code: space_code, scope: scope, name_token: name_token);
   match ieq<u64>(found, symbol_none) {
     True() => {
-      return SymbolLookupResult(status: SymbolLookupNotFound(), declaration: symbol_none);
+      let symbol_lookup_not_found_atom_0254: own SymbolLookupStatus = SymbolLookupNotFound();
+      return SymbolLookupResult(status: symbol_lookup_not_found_atom_0254, declaration: symbol_none);
     }
     False() => {
     }
   }
   let declaration: own u64 = index<u64>(deref(symbols).declarations, found);
-  return SymbolLookupResult(status: SymbolLookupFound(), declaration: declaration);
+  let symbol_lookup_found_atom_0255: own SymbolLookupStatus = SymbolLookupFound();
+  return SymbolLookupResult(status: symbol_lookup_found_atom_0255, declaration: declaration);
 }
 
 fn symbol_tape_entries_valid ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenTape, symbols: &uniq 'y SymbolTape) -> own Bool reads('s 't 'y), traps {
@@ -515,7 +520,8 @@ fn symbol_tape_reset ['y] (symbols: &uniq 'y SymbolTape) -> own unit writes('y) 
 
 fn symbol_find_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenTape, symbols: &uniq 'y SymbolTape, space: own SymbolNamespace, scope: own u64, name_token: own u64) -> own unit reads('s 't 'y), writes('y), traps {
   region 'find_begin {
-    symbol_report(symbols: &uniq 'find_begin deref(symbols), status: SymbolClean(), related: symbol_none);
+    let symbol_clean_atom_0256: own SymbolStatus = SymbolClean();
+    symbol_report(symbols: &uniq 'find_begin deref(symbols), status: symbol_clean_atom_0256, related: symbol_none);
   }
   let token_tape_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
   match token_tape_valid {
@@ -523,7 +529,8 @@ fn symbol_find_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'find_invalid_tokens {
-        symbol_report(symbols: &uniq 'find_invalid_tokens deref(symbols), status: SymbolInvalidTape(), related: symbol_none);
+        let symbol_invalid_tape_atom_0257: own SymbolStatus = SymbolInvalidTape();
+        symbol_report(symbols: &uniq 'find_invalid_tokens deref(symbols), status: symbol_invalid_tape_atom_0257, related: symbol_none);
       }
       return unit;
     }
@@ -537,7 +544,8 @@ fn symbol_find_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'find_invalid_symbols {
-        symbol_report(symbols: &uniq 'find_invalid_symbols deref(symbols), status: SymbolInvalidTape(), related: symbol_none);
+        let symbol_invalid_tape_atom_0258: own SymbolStatus = SymbolInvalidTape();
+        symbol_report(symbols: &uniq 'find_invalid_symbols deref(symbols), status: symbol_invalid_tape_atom_0258, related: symbol_none);
       }
       return unit;
     }
@@ -550,7 +558,8 @@ fn symbol_find_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'find_invalid_query {
-        symbol_report(symbols: &uniq 'find_invalid_query deref(symbols), status: SymbolInvalidToken(), related: name_token);
+        let symbol_invalid_token_atom_0259: own SymbolStatus = SymbolInvalidToken();
+        symbol_report(symbols: &uniq 'find_invalid_query deref(symbols), status: symbol_invalid_token_atom_0259, related: name_token);
       }
       return unit;
     }
@@ -562,12 +571,14 @@ fn symbol_find_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
   match ieq<u64>(found, symbol_none) {
     True() => {
       region 'find_missing {
-        symbol_report(symbols: &uniq 'find_missing deref(symbols), status: SymbolNotFound(), related: symbol_none);
+        let symbol_not_found_atom_0260: own SymbolStatus = SymbolNotFound();
+        symbol_report(symbols: &uniq 'find_missing deref(symbols), status: symbol_not_found_atom_0260, related: symbol_none);
       }
     }
     False() => {
       region 'find_success {
-        symbol_report(symbols: &uniq 'find_success deref(symbols), status: SymbolClean(), related: found);
+        let symbol_clean_atom_0261: own SymbolStatus = SymbolClean();
+        symbol_report(symbols: &uniq 'find_success deref(symbols), status: symbol_clean_atom_0261, related: found);
       }
     }
   }
@@ -576,7 +587,8 @@ fn symbol_find_in_scope ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
 
 fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenTape, symbols: &uniq 'y SymbolTape, space: own SymbolNamespace, scope: own u64, name_token: own u64, declaration: own u64) -> own unit reads('s 't 'y), writes('y), traps {
   region 'insert_begin {
-    symbol_report(symbols: &uniq 'insert_begin deref(symbols), status: SymbolClean(), related: symbol_none);
+    let symbol_clean_atom_0262: own SymbolStatus = SymbolClean();
+    symbol_report(symbols: &uniq 'insert_begin deref(symbols), status: symbol_clean_atom_0262, related: symbol_none);
   }
   let token_tape_valid: own Bool = symbol_token_tape_shape_valid(tokens: tokens);
   match token_tape_valid {
@@ -584,7 +596,8 @@ fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'insert_invalid_tokens {
-        symbol_report(symbols: &uniq 'insert_invalid_tokens deref(symbols), status: SymbolInvalidTape(), related: symbol_none);
+        let symbol_invalid_tape_atom_0263: own SymbolStatus = SymbolInvalidTape();
+        symbol_report(symbols: &uniq 'insert_invalid_tokens deref(symbols), status: symbol_invalid_tape_atom_0263, related: symbol_none);
       }
       return unit;
     }
@@ -598,7 +611,8 @@ fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'insert_invalid_symbols {
-        symbol_report(symbols: &uniq 'insert_invalid_symbols deref(symbols), status: SymbolInvalidTape(), related: symbol_none);
+        let symbol_invalid_tape_atom_0264: own SymbolStatus = SymbolInvalidTape();
+        symbol_report(symbols: &uniq 'insert_invalid_symbols deref(symbols), status: symbol_invalid_tape_atom_0264, related: symbol_none);
       }
       return unit;
     }
@@ -611,7 +625,8 @@ fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'insert_invalid_query {
-        symbol_report(symbols: &uniq 'insert_invalid_query deref(symbols), status: SymbolInvalidToken(), related: name_token);
+        let symbol_invalid_token_atom_0265: own SymbolStatus = SymbolInvalidToken();
+        symbol_report(symbols: &uniq 'insert_invalid_query deref(symbols), status: symbol_invalid_token_atom_0265, related: name_token);
       }
       return unit;
     }
@@ -625,7 +640,8 @@ fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     }
     False() => {
       region 'insert_duplicate {
-        symbol_report(symbols: &uniq 'insert_duplicate deref(symbols), status: SymbolDuplicate(), related: existing);
+        let symbol_duplicate_atom_0266: own SymbolStatus = SymbolDuplicate();
+        symbol_report(symbols: &uniq 'insert_duplicate deref(symbols), status: symbol_duplicate_atom_0266, related: existing);
       }
       return unit;
     }
@@ -640,7 +656,8 @@ fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
     False() => {
       let needed_slot: own u64 = deref(symbols).count;
       region 'insert_capacity_error {
-        symbol_report(symbols: &uniq 'insert_capacity_error deref(symbols), status: SymbolCapacity(), related: needed_slot);
+        let symbol_capacity_atom_0267: own SymbolStatus = SymbolCapacity();
+        symbol_report(symbols: &uniq 'insert_capacity_error deref(symbols), status: symbol_capacity_atom_0267, related: needed_slot);
       }
       return unit;
     }
@@ -653,7 +670,8 @@ fn symbol_insert_unique ['s, 't, 'y] (source: &'s buffer<u8>, tokens: &'t TokenT
   set index<u64>(deref(symbols).declarations, slot) = declaration;
   set deref(symbols).count = iadd.trap<u64>(slot, 1_u64);
   region 'insert_success {
-    symbol_report(symbols: &uniq 'insert_success deref(symbols), status: SymbolClean(), related: slot);
+    let symbol_clean_atom_0268: own SymbolStatus = SymbolClean();
+    symbol_report(symbols: &uniq 'insert_success deref(symbols), status: symbol_clean_atom_0268, related: slot);
   }
   return unit;
 }
