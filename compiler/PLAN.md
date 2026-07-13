@@ -1,144 +1,170 @@
-# xlc — the self-hosting xlang compiler: bootstrap plan
+# xlc — plan to self-hosting and beyond
 
-> Historical design record from 2026-07-08. Its feature inventory and `pool` proposal
-> are stale. See `README.md`, `sources.txt`, and `src/` for the current bootstrap.
+Status: CURRENT (2026-07-13). Supersedes the 2026-07-08 pool/handle bootstrap
+sketch — that architecture is preserved as a rejected alternative in
+`mcts_mem/xlang/toolchain.alt/pool-based-xlc-plan.md` with the reasons it
+lost. What survived from it: the whole-program single-unit model, the
+LLVM-IR-text target, the trusted-shim I/O boundary, and the byte-identical
+fixpoint definition. What replaced it: fixed-capacity structure-of-arrays
+tapes bounded by source size (pattern P2), which is why stage 0 needs no
+growable collections, no pool, and no generics.
 
-*Original status, 2026-07-08: approved as the bootstrap sketch then in force.*
+## Where xlc stands (measured, not aspired)
 
-## Goal
+- 32 xlang source files, 23,962 lines and 477 functions, compiled by stage 0
+  (`prototype/democ`). The exact unit currently parses to 211,374 tokens and
+  105,550 AST nodes.
+- Frontend COMPLETE for xlc's own source: lexer (canonical OPNAME
+  discipline), full parser, AST structural validation, symbol tables with
+  type/constructor namespace separation, whole-unit type resolution,
+  function-scope indexing. Permanent gate: the exact `sources.txt` unit
+  parses twice into identical token and AST tapes (`test_self_parse.py`).
+- Body semantics now have a whole-unit source-order coverage driver. The
+  measured baseline is 15 clean, 462 legal-unsupported, zero semantic rejects;
+  the first frontier is `lexer_scan_op_suffix`. Legal non-profile functions are
+  no longer conflated with type errors.
+- LLVM lowering: by capability family — scalar, linear, buffer, checked
+  scanner loops WITH proof facts — currently composing a 15-function module
+  that compiles through clang and passes native-execution tests.
+- Facts are OFF in stage-0-compiled xlc until xlc's own effect checking is
+  complete (conservative ordering; the parity corpus guards democ's facts).
 
-Bootstrap a **production compiler for xlang, written in xlang itself** (self-hosting is
-the endgame). The Python `prototype/` toolchain (democ + checker) is the **disposable
-bootstrap** that compiles xlc until xlc compiles itself; it is retired at M-D. This
-`compiler/` tree is the product.
+## E0 — dogfood ergonomics checkpoint (active, bounded)
 
-## The subset-S invariant (the load-bearing idea)
+xlc is now large enough to test xlang's source design against real code rather
+than toy examples. This checkpoint is not a request to make xlang resemble a
+human-first language. A surface fact is worth keeping when it independently
+prevents an AI error, supports local checking, or carries optimizer/soundness
+information. Repetition that carries no independent fact is design debt.
 
-xlc **implements** the full v0.6 language, but **its own source is restricted to a frozen
-subset S**. S is finite and listable, so "the bootstrap must compile xlc" reduces to
-"grow democ to exactly S" — a bounded target — and self-compilation becomes mechanical.
-xlc drops the S discipline only at M-E, once it compiles the whole language.
+Measured signals in the current compiler unit:
 
-## Architecture — 15 modules, 2 protected seams
+- 1,186 explicit `region` blocks; 1,142 (96.3%) wrap exactly one source line.
+  They pair with roughly 1.2k explicit uniq reborrows. Boundary regions are
+  useful; arbitrary fresh names around statement-scoped reborrows are suspect.
+- 1,458 `True()/False()` matches; at least 1,240 (85.0%) have an empty arm.
+  Match-only Bool control is therefore a high-frequency surface cost, and the
+  no-`if` choice is already R3-provisional in the specification.
+- 4,935 local `let` bindings all spell `own`; 4,628 bind `Bool`, `u64`, or `u8`.
+  The local mode token carries no variation in this corpus. Full local mode/type
+  annotation is already a provisional, unratified part of TYPE-5/OWN-2.
+- 3,788 lines exceed 80 columns, 1,428 exceed 120, and the maximum is 456.
+  FORM-2's mandatory one-statement line and no-wrapping rule directly causes
+  this; canonical bytes do not require canonical bytes to be unreadable.
+- 72.3% of local bindings are used once. Some are forced by GRAM-9 ANF, but
+  `match expr` and `return expr` already accept direct calls, so some are merely
+  old bootstrap style. Do not blame the language until those are normalized.
+- Function names average 25.7 bytes and 124 exceed 30 because the closed unit
+  has no module namespace. This is real debt, but adding modules before the
+  fixpoint would expand the bootstrap target substantially.
 
-**Front:** `source` (bytes + spans) · `intern` (byte-string arena → integer ids) ·
-`diag` (diagnostics-as-**data**: `enum RuleId` + `pool<Diag>`) · `token` · `lexer`
-(hand-written byte DFA — no regex in xlang).
-**Middle:** `ast` (per-kind arena pools, `handle` children, spans on every node) ·
-`parser` (recursive descent, ~1:1 with democ) · `symbols` · `types` · `check_type` ·
-`check_own` · `check_eff`.
-**Back:** `lower` (thin core IR) · `emit_llvm` (IR → `.ll` text) · `driver`.
+Classification and action:
 
-Two **protected seams** keep growth additive (never a rewrite): the typed-AST↔passes
-boundary, and the thin-core-IR↔backend boundary (**emit never reads the AST**).
-Cross-cutting from day one (cannot be retrofitted): spans on every node; the
-`Result<T, DiagId>` diagnostics-as-data error spine.
+1. **Prototype now, one axis at a time:** canonical Bool `if/else` versus
+   Bool `match`; local-`own` elision (`let x: T = ...` means exactly `own`, with
+   no copy/move inference); and deterministic multiline formatting backed by a
+   formatter. Measure source reduction, low-tier model syntax/type errors, and
+   checker complexity before changing the normative grammar. A Bool surface
+   change must keep one canonical spelling and exhaustive control.
+2. **Soundness prototype before any syntax promise:** anonymous call-scoped
+   uniq reborrow. The current one-line region ceremony is costly, but implicit
+   uniq reborrow changes borrow end points and has an unresolved OWN-5/OWN-6/10
+   specification boundary. Keep boundary lifetimes and escaping borrows explicit.
+3. **Keep for now:** named arguments, exact effect rows, explicit signature
+   modes/regions, and ANF in trapping/allocating/borrowing expressions. They
+   carry checked information or preserve evaluation order. Argument punning and
+   pure-expression nesting are candidates only after the first three tests.
+4. **Implementation debt, not language evidence:** fixed-capacity SoA tapes,
+   capability-specific semantic runners, manual report plumbing, and prefixed
+   global names during bootstrap. Refactor these as coverage grows; do not add a
+   language feature merely to hide a temporary compiler architecture.
 
-## Compile & link model
+E0 exit gate: choose, reject, or defer each of the three surface prototypes with
+recorded evidence; add conformance cases for every chosen change; keep the old
+and new grammar from coexisting as two accepted spellings. This is a short gate
+before the next large S1 semantic family, not a new open-ended project.
 
-- **Whole-program.** Many `.xl` files are source organization only; xlc concatenates them
-  (ordered) into **one `PROG-1` closed unit** and emits **one `.ll`**. No `.ll`-level
-  linking, no linker of ours.
-- **Target: LLVM IR text.** `clang` (in the Makefile / conformance adapter — *never*
-  spawned by xlc) compiles the one `.ll` plus a tiny trusted C runtime shim, drives the
-  system linker, and links libc → native binary:
-  `clang -O2 out.ll runtime/xlrt.c -o xlc`.
-- **I/O = ~5 gated §14 primitives** (`io_read_file`, `io_write_file`, `io_args_len`,
-  `io_arg`, `io_exit`) implemented in `runtime/xlrt.c` over libc; xlc's `.ll` `declare`s
-  and `call`s them; the shim owns C `main(argc,argv)` and stashes argv for `io_arg`.
-  This shim **is** the gated boundary: trusted, human-approved (LEDGER-1), **outside
-  T1/T2** safety, deliberately no process-spawn (clang stays in the Makefile).
-- **Self-hosting = a 3-stage byte-identical `.ll` fixpoint:** democ→xlc0, xlc0→xlc1,
-  xlc1→xlc2; assert `xlc1.ll == xlc2.ll` (byte-stability from insertion-order-only
-  iteration over pools; hashing is lookup-only).
+## Stages to the fixpoint (each gated; no stage starts before the prior gate)
 
-## Subset S
+**S1 — body semantics parity on the compiler unit.**
+Grow ownership/effect/type body checks until xlc's semantic layer renders a
+verdict on every function in `sources.txt`.
+The coverage baseline is complete. After E0, the next functional slice is an
+independent acyclic-decision semantic family (not an enlargement of the loop
+scanner profile) covering `lexer_scan_op_suffix` and `lexer_scan_word` together.
+It needs nested `let`/`match`/early-return flow, primitive expression typing,
+multi-argument user-call checking, named-argument mapping, and effect
+containment. It adds no LLVM lowering; the current 15-function module remains
+byte-identical. Freeze the new total only after implementation because any new
+xlang helper also enters the audited unit. The next expected source-order
+frontier is `lexer_ampuniq_at`.
+GATE: differential accept/reject parity with the stage-0 checker over (a) the
+whole compiler unit and (b) every conformance case whose constructs fall
+inside xlc's own subset — zero verdict disagreements; every disagreement
+found on the way is either an xlc bug fixed or a documented stage-0 bug with
+a conformance case added.
 
-**HAVE today** (democ already compiles): fn decls with `own`/`&'r`/`&uniq 'r` params;
-cross-fn calls; self-recursion; `let`/`set`/`return`; `deref`; exhaustive `match` with
-named binders, own+borrow scrutinees, and `let`-init `give`; `loop`/`break`; `region`;
-`check … else trap`; i32 arith (`iadd`/`isub`/`imul` ×`.wrap`/`.trap`/`.checked`) +
-integer comparisons; tag-only enums + prelude Bool/Option/Result; named construction,
-named call args, ANF; FORM-1/2/3/4/5/7 + EFF-1/2 enforcement; string literals in
-doc/trap-msg; the conformance verdict/exit-code contract.
+**S2 — lowering coverage of the compiler's own source.**
+Extend the `llvm_*` families until every function in `sources.txt` lowers.
+The tracker is `llvm_supported`: its composed-module count climbs from 15 to
+all functions in the unit.
+GATE: `xlc_compile(sources)` under stage 0 emits one complete `.ll` for the
+whole unit; clang accepts it; the emitted module's functions execute their
+existing native tests.
 
-**MUST ADD** (democ codegen unless marked spec):
-1. Multi-width ints `u8/u32/u64/i64` + bit-ops (`iand`/`ior`/`ixor`/`ishl`/`ishr`) +
-   `cvt`/`reinterpret` + `idiv`/`irem` *(idiv/irem required for int→decimal-ASCII in the
-   emitter)*.
-2. **General struct codegen** (democ sets `structs={}`): `%T = type {…}`, alloca/GEP/
-   load/store, construct, field-place set. **Highest leverage — land first.**
-3. **Payload-carrying enum codegen**, word-sized/copy payloads only (no struct-in-variant,
-   no move-out) + prelude Option/Result payload erasure.
-4. `buffer<T>` + `array<T,N>` + `index`(OP-4 bounds-trap)/`len`/`slice_of`.
-5. **[spec]** Byte-**string literals as values** (`array<u8,N>`, viewable as `slice<'r,u8>`),
-   appendable into a `pool<u8>` — narrowest possible (literals only, no String type).
-6. **[spec]** Fixed-capacity **`pool<T>` + `handle<T>`** (construction-sized, append-only,
-   no realloc → no cluster-1C / no growable-pool §5 machinery): OP-1 rows
-   `pool_new/push/at/at_uniq/len`, `handle_eq`; STOR-1; OWN-6 reborrow-through-holder;
-   OWN-14 result-reborrow provenance; OWN-15/16.
-7. Compiler-derived drop/free on region-exit/return/break edges (STOR-3).
-8. A small **builtin-generic monomorphizer** over *only* the concrete instantiations xlc
-   uses (`pool<Token>`, `pool<Node>`, `handle<Node>`, `Option<handle<Node>>`, `buffer<u8>`,
-   `buffer<u32>`, `slice<'r,u8>`, `array<u8,N>`). Keeps general user-generics off the
-   critical path.
-9. `try` / ERR-3 propagation over `Result<T, DiagId>`.
-10. **[spec]** Minimal gated §14 I/O signatures via LEDGER-1 (the ~5 primitives above).
-11. Whole-unit input: ordered multi-file concatenation into one closed unit (PROG-1;
-    v1 uses a naming-prefix convention, a real module system is M-E).
-12. **[convention]** `Result<_, DiagId>` reject spine (diagnostics-as-data, replaces the
-    Python `CheckError` control-flow rejection).
+**S3 — stage 1 runs.**
+The stage-0-compiled xlc binary compiles real programs.
+GATE: the conformance runner gains an xlc adapter and the full suite runs
+through stage-1 xlc with verdicts identical to democ's (the suite is the
+acceptance oracle, as always). Differences triaged exactly as in S1.
 
-## Bootstrap milestones
+**S4 — the fixpoint.**
+xlc1 (stage-0-built) compiles `sources.txt` -> IR2 -> build xlc2; xlc2
+compiles `sources.txt` -> IR3.
+GATE: IR2 == IR3, byte-identical. This is the self-hosting definition and it
+is deliberately byte-level: canonical form end to end, no tolerance band.
+After S4, stage 0 is FROZEN, not deleted — democ remains the differential
+oracle (independent implementations disagreeing is how soundness bugs
+surface), but it stops growing.
 
-- **M0 — Freeze S + apply spec deltas.** This doc + the FORM-1-breaking spec addenda
-  (string-literal values, fixed-cap pool/handle, gated §14 io, Result/DiagId). Matching
-  pending conformance cases promoted to active targets. *Honest caveat: §5 ratification
-  stays BLOCKING on the independent D1a/FR gate (owner ruling #1); the fixed-capacity pool
-  profile is sound and independent of it, so the bootstrap proceeds without waiting.*
-- **M-A — Grow democ to compile S** *(the dominant, throwaway effort — a real second
-  compiler)*. Land the MUST-ADD list in dependency order, each flipping a batch of pending
-  conformance cases. democ codegen stays correctness-only (clang -O2 optimizes). Exit gate:
-  democ compiles a hand-written "read file → build `pool<Node>` → emit bytes → write file"
-  program; make check green.
-- **M-B — Write `xlc.xl` in S**, hosted on grown-democ. Modules bottom-up; `check_own`
-  ported LAST, arm-for-arm from `checker.py` ("do not improve during the port"). Gate:
-  **differential testing** — all 191 conformance sources through both democ/checker.py and
-  democ-compiled-xlc, identical verdict *and* exact cited rule id.
-- **M-C — Full-corpus green.** Point the runner ADAPTER at `xlc0` (democ-compiled xlc);
-  xlc0 reproduces every runnable manifest verdict + rule id. xlc0 is now an independent
-  oracle.
-- **M-D — Self-compile + byte-identical fixpoint** (self-hosting achieved). `xlc1.ll ==
-  xlc2.ll` byte-for-byte. democ demoted to audit oracle, then retired.
-- **M-E — Grow xlc forward, never democ again.** User generics + FN-2 mono; contracts/laws
-  (FN-3/4); floats + full op-table + full cvt matrix; growable pool (post cluster-1C, the
-  §5 take/replace resolution); DIAG-2 elaborated artifact; a real module system. The two
-  seams absorb each additively. Once xlc compiles the whole v0.6 language, its source may
-  drop the "stay inside S" discipline.
+**S5 — facts on.**
+Complete xlc's effect checking; enable the fact channels in xlc's output.
+GATE: the codegen-parity corpus (bounds cases + channel pins) runs against
+xlc-emitted IR with the same per-site proof accounting results as democ, and
+the byte-identical fixpoint is re-established WITH facts on.
 
-## Top risks (and mitigations)
+**S6 — beyond subset S.**
+Only after S5: grow the accepted language beyond what xlc's own source needed
+— in evidence order, not wish order. Standing queue with recorded triggers:
+reborrow deltas OWN-6/OWN-14 (re-run the binary-trees pilot when they land),
+copy-struct tier for AoS buffers, the region arena, the gated I/O frame
+(first D4 boundary instance; unlocks the coreutils ladder), multi-field
+aggregate enum payloads and Result<aggregate, E> lowering (unlocks the
+streaming DecodeStep shape).
 
-- **`check_own` port over provisional §5** — highest-logic-risk. Port arm-for-arm,
-  differential-test against `checker.py` on every OWN/GIVE case, isolate pool-reborrow
-  behind a stable module boundary so §5/D1a ratification touches only `check_own`.
-- **M-A is real, throwaway, largest line-count.** Freeze S tightly (word-sized copy enum
-  payloads, no user generics/floats), keep democ codegen dumb, validate every step against
-  the reusable 191-case oracle.
-- **Fixed-capacity pools trap on large input (possibly xlc.xl itself).** Two-pass sizing
-  (count then allocate), generous multipliers, clear overflow trap; growable pools remove
-  this at M-E.
-- **regex → hand-scanner drift** vs byte-exact FORM-2/5/7 fixtures + DIAG-1 rule ids.
-  Differential-test the scanner's token stream against democ's `TOK` on all 191 cases
-  before building the parser on it.
-- **Byte-identical fixpoint (M-D)** needs stable SSA numbering + iteration order. All
-  user-visible iteration is insertion-order over pools; hashing is lookup-only.
-- **The gated-io shim is outside T1/T2.** Keep it to exactly the ~5 opaque human-approved
-  primitives; no process-spawn.
+## Standing constraints
 
-## Directory layout
+- Every stage lands in small commits, each keeping BOTH gates green
+  (`make check` at root, `make check` here).
+- Dogfood ergonomics changes are language changes, not opportunistic xlc
+  refactors: update spec, stage 0, xlc parsing/semantics, conformance, and the
+  derivation record together, one surface axis per commit.
+- The self-parse gate and the byte-identical report/no-report property are
+  never waived.
+- Anything touching proof emission or fact channels gets hostile review
+  before ship, per the standing process rule.
+- Owner-gated items stay owner-gated: retained-site approvals need per-site
+  cone identity first (review B1); GATE-1 claims need external repository
+  controls.
 
-- `prototype/` — disposable Python bootstrap (democ, checker). Grown during M-A, retired at M-D.
-- `compiler/` — **xlc**, the production xlang-in-xlang compiler.
-  - `PLAN.md` (this doc) · `src/*.xl` (modules, M-B onward) · `runtime/xlrt.c` (gated C shim).
-- `conformance/` — the acceptance oracle (191 cases); the adapter swaps democ→xlc at M-C.
-- `spec/` — the language spec (89 rules); M0 applies the S deltas here.
+## How this composes with THE-PLAN
+
+The experiment track runs beside the build track but does not steer it before
+measurement. D9a now scores one fixed low-tier model's first correctness-green
+xlang artifact against a previously untuned shipped Rust library; base64 is
+ineligible because it already shaped PROOF-1/2, and QOI is deferred until its
+aggregate-result and fixed-array needs arrive through the normal compiler
+roadmap. The selected experiment must run on xlang capabilities that already
+exist when its protocol is frozen. Only a post-freeze result may motivate a
+general compiler feature, which then follows the same staged, gated path as
+everything else.

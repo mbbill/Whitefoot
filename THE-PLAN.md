@@ -87,12 +87,16 @@ Measured non-wins (equally load-bearing):
    deterministically reports 15 clean, 462 legal-unsupported, and zero semantic
    rejects, with the first source-order frontier at `lexer_scan_op_suffix`.
    Legal non-profile functions are no longer misreported as type errors, and the
-   existing 15-function LLVM module remains byte-identical. The next S1 slice
-   grows reusable semantics at that frontier without adding lowering in the same
-   commit; later slices extend copy-scalar, type, ownership, and effect rules
-   across the remaining functions. The staged route continues through whole-unit
-   lowering, a stage-1 compiler, and the byte-identical self-hosting fixpoint;
-   every slice keeps both repository gates green.
+   existing 15-function LLVM module remains byte-identical. A short E0 dogfood
+   gate now tests three high-frequency, provisionally grounded surface costs
+   exposed by the 23,962-line compiler: Bool match-only control, mandatory local
+   `own`, and no-wrap canonical formatting. After that bounded decision, the next
+   S1 slice adds an acyclic-decision semantic family for
+   `lexer_scan_op_suffix` plus `lexer_scan_word`, without adding lowering; later
+   slices extend copy-scalar, type, ownership, and effect rules across the
+   remaining functions. The staged route continues through whole-unit lowering,
+   a stage-1 compiler, and the byte-identical self-hosting fixpoint; every slice
+   keeps both repository gates green.
 2. **Default-floor experiment against shipped Rust (D9a)** — COMPLETE on two
    separately preregistered targets. First-green Terra xlang records paired
    throughput ratios of 1.653x [1.631, 1.667] against `percent-encoding` 2.3.2
