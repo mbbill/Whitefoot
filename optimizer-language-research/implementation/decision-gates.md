@@ -830,3 +830,18 @@ strict C boundary and Python syntax checks are green; 16 MiB orchestrator smoke
 completed all six non-scoring order blocks with identical counts/digests; root
 `make check` and `make -C compiler check` are green.  No official model output,
 proof report, IR, assembly, or timing result existed at this entry.
+
+## D9a utf8parse Terra source frozen (2026-07-13, before measurement)
+
+The sole preregistered `gpt-5.6-terra`/medium/default-service trajectory ran
+under identity `runs/primary-terra-medium-preregistered`.  Round 0 compiled and
+passed all 84,041 locked correctness cases, so it froze immediately; no repair
+prompt or second model call was made.  Frozen source SHA-256:
+`3bb7951995120d24c651b6750ac9ba4c7a8fb9b61bc02fb5d219e64e640c1535`.
+
+The frozen manifest validates the exact one-round trace, every archived
+artifact hash, and the first-green identity.  An independent post-freeze
+evaluator invocation again reports compile green and `correct cases=84041`.
+At this entry no proof report, IR, assembly, or performance result has been
+used to alter the source, and the preregistered scoring campaign has not yet
+run.
