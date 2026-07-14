@@ -1236,3 +1236,46 @@ and reports `PASS`.
 This is demand and implementation-evidence accounting only. Counts are not
 capability counts, do not prove xlang derivability, and select no syntax,
 storage state, trusted transition, standard-library API, or production route.
+
+## G0-Core normalizes the data floor and separates semantic obligations from mechanisms (2026-07-14)
+
+The second D12 research step maps all 5,369 canonical stable Rust 1.97.0
+declarations, including 5,096 safe and 273 unsafe declarations, to one of the
+applicable D01-D25 public systems domains. Every unsafe writer surface remains
+explicit `unsafe_evidence_NG`; its underlying checked need routes separately.
+The same checked classifier maps all 290 reachable modules, using D26 only as
+an explicit holding route for otherwise unclassified modules with zero direct
+stable items. The declaration map SHA-256 is
+`a3907c0fb0d1c24b9651dd49e6d135095fe444f6771b0d8b278bbc8871808f54`;
+the module-domain map SHA-256 is
+`1f217998d974999c3f920dc56b6b2836eade87b500377310f0cdb109b568b2cb`.
+
+The detailed data/text/iteration/ownership/lifecycle seed is normalized into
+224 contract and evidence clusters. An exact 545-row surface map assigns each
+canonical stable-safe inherent declaration to one primary cluster exactly
+once; 35 canonical stable-unsafe declarations are retained only in eight
+unsafe evidence clusters. The contract census SHA-256 is
+`64322a701fe6d84c2631873c35376bc668de7596d7e06d529c7e41db00a7be5a`;
+the exact surface map SHA-256 is
+`8398121eafd71363c14c3eb44bbc2543b5db9506d27fe0b55294c1e6c8555fa6`.
+
+The semantic result is recorded separately from candidate mechanisms: 45
+operational capability obligations, 12 orthogonal proof dimensions, and 16
+global lifecycle, fact, generativity, scope, and protected-performance laws.
+The capability registry SHA-256 is
+`be31ac48a9d3076e7a0cf38a8fe75397851caedd015d868bbfbc4335f34c9ff5`;
+the semantic registry SHA-256 is
+`4dafb78728d3d78fe9fe9088236f43a7ec806fce2a833c65890f35d6dfb4441a`.
+The witness registry freezes seven visible topology witnesses and three exact
+held-out contracts without creating hidden source or scored inputs. E0.1 stays
+suspended, with every historical ownership, layout, capacity, correctness,
+structural, and performance obligation traced into a future family lock.
+
+Focused verification passes: the raw census verifier reports 290 modules and
+16,432 detailed rows; the domain classifier reports 5,369 declarations and 290
+modules accounted; the contract verifier reports 224 clusters, exact 545/35
+seed coverage, no omission, no duplicate primary mapping, and no unknown
+contract; and `git diff --check` passes. This step selects no storage spelling,
+state representation, checked transition, cleanup mechanism, fact channel,
+compiler path, standard container, candidate algorithm, numeric threshold, or
+production change.

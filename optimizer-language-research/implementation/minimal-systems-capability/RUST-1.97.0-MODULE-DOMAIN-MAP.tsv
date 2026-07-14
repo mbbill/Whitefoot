@@ -1,0 +1,291 @@
+crate	module_path	mode	rule_id	domain_id	domain	domain_partition	entry_digest
+alloc	alloc	detailed	DOM-MODULE-ROOT	D25	prelude and reexports	RED	c3ec6849c504e9ef9df4039c5c7dba02dff312f3e0a82cf5e74cd43329aefda0
+alloc	alloc::alloc	detailed	DOM-ALLOC-ALLOC	D07	heap allocation and runtime	FRAME+LATER	9056ea366b591dc9834ade414519a8504d80c209bdca3e6495fa29acd659a60f
+alloc	alloc::borrow	detailed	DOM-BEHAVIOR-BORROW-ALLOC	D08	shared ownership and conversions	LIB+LATER	0b9979680f0a55ea529e4259beb983d3b4acda2a4e83cd0be867bafc3705a86b
+alloc	alloc::boxed	detailed	DOM-DATA-BOX-ALLOC	D07	unique ownership and data structures	G0+LATER	13ebde64c3859bb7b9ddd9212ba76c0aa46c2056d31ba714bebf30743c73b73e
+alloc	alloc::bstr	detailed	DOM-TEXT-BSTR-ALLOC	D11	bytes and text	LIB+LATER	432a92386dd7804037d355dd196f75d626981e241d73035e551f2470b4bb7016
+alloc	alloc::collections	detailed	DOM-DATA-COLLECTIONS-ALLOC	D09	sequential and associative data structures	G0	960efab4fa0e1e17d68ad89afeba265cb39cfc97b215c71d53558876c2e2057a
+alloc	alloc::collections::binary_heap	detailed	DOM-DATA-COLLECTIONS-ALLOC	D09	sequential and associative data structures	G0	a978a60bb0f50dfe3e8c795e9e093b347b4711cb6d2b2dd67e7b195e1c11be02
+alloc	alloc::collections::btree_map	detailed	DOM-DATA-COLLECTIONS-ALLOC	D09	sequential and associative data structures	G0	2704f99d251c7ce85f88427d6e1dbbeb68ebb56069fe80ff67f252e9f11a79e3
+alloc	alloc::collections::btree_set	detailed	DOM-DATA-COLLECTIONS-ALLOC	D09	sequential and associative data structures	G0	b4d9198be8af7a7b039965bd9c8859daf23e326fadb0c06c1cef3a57332fca50
+alloc	alloc::collections::linked_list	detailed	DOM-DATA-COLLECTIONS-ALLOC	D09	sequential and associative data structures	G0	faa86c590cbcd9e4b8e78ff52a4467f541afa9a617cf77145a9eaf37f48f6c7c
+alloc	alloc::collections::vec_deque	detailed	DOM-DATA-COLLECTIONS-ALLOC	D09	sequential and associative data structures	G0	7ad8b148d3709fabc9a165d2f08403fd1b5845a3a3a40f51ed07785086f9c3bb
+alloc	alloc::ffi	detailed	DOM-FFI-ALLOC	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	a2e3a74520419d9f08def3805b3debd4329b6edf98ab4639bafeb5223e67550e
+alloc	alloc::ffi::c_str	detailed	DOM-FFI-ALLOC	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	3855ce3d542b89fef95faf07635f4c202442033331366d5fa2fc45e0e65339d6
+alloc	alloc::fmt	detailed	DOM-FMT-ALLOC	D12	formatting and presentation	LIB+LATER	c9d269198ed8732301ed161582f3f0bda36e4dc827889b41efe434e8e10cd6b6
+alloc	alloc::intrinsics	detailed	DOM-TARGET-INTRINSICS-ALLOC	D24	target intrinsics and dispatch	FRAME+LATER+NG	ee0fb959dfd022da2a097f650025ea2aaa589fd123635f996c4de8fd9eeca0ad
+alloc	alloc::rc	detailed	DOM-SHARED-RC-ALLOC	D08	shared ownership and weak identity	LATER	f6706522724513ce20c7d1061356bc3efda4e9483f717abca76c1badfcbda098
+alloc	alloc::slice	detailed	DOM-DATA-SLICE-ALLOC	D09	sequential data structures	G0+LIB	63c9bcc83170b3eb7029b830b3b1d8124f1761025e0e0a75cf100a581bf01380
+alloc	alloc::str	detailed	DOM-TEXT-STR-ALLOC	D11	bytes and text	G0+LIB+LATER	d5722d3b4b03a16bfbbbbaa842580ab95d225177481e4ad0f3a6eb513549e7f3
+alloc	alloc::str::pattern	detailed	DOM-TEXT-STR-ALLOC	D11	bytes and text	G0+LIB+LATER	efd7467e3d24d835a06471aca2139aa6f7a74fe5f732c90444f52835abf533c3
+alloc	alloc::string	detailed	DOM-TEXT-STRING-ALLOC	D11	bytes and text	G0+LIB+LATER	5ecc19825f90707bc64bab49e1c414e2e670124fb32451d3cacd3d53d4295f40
+alloc	alloc::sync	detailed	DOM-SHARED-ARC-ALLOC	D08	shared ownership and weak identity	LATER	d4008ea2ba80d01e7878362d2f3135cfc015c4bd4a4c4d5891f256bbcabc9fa4
+alloc	alloc::task	detailed	DOM-LANG-TASK-ALLOC	D23	async, tasks, and pinning	LATER	33a681679fe9ca7390ee6d5a0718c7f8aede9e19376128c30fa43011ecb45609
+alloc	alloc::vec	detailed	DOM-DATA-VEC-ALLOC	D09	sequential data structures	G0	e556a4af7d167af7aea3675bf075dc0eb2025057daeb7082ae507b4e44979fd7
+core	core	detailed	DOM-MODULE-ROOT	D25	prelude and reexports	RED	dd483bce1098bb92da69877952057ca0616c3dd019c6e6d3e1da0589cdcd3768
+core	core::alloc	detailed	DOM-ALLOC-CORE	D07	heap allocation and runtime	FRAME+LATER	915bd981a496eb24d71cacf78eab224fcfb77b272828e1a97bcad25c950f179a
+core	core::any	detailed	DOM-REFLECT-CORE	D13	runtime type identity and reflection	LATER	54309e12158e93bb49d8776cac5beb0451b0bab95822dcb4f5cd8a76e5e5e574
+core	core::arch	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	99c7ba449547843ddc6a30c9d127df00ce553ec62c2b691c54f45c5ade46fab2
+core	core::arch::aarch64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	1fe68402b2513961b7b897db647c46601eabfafba357964d23e1c13461246e8e
+core	core::arch::amdgpu	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	8e539d9de7fa28f34aeefc9ed54fd36e69ccd64b62efcb0556691881011b24aa
+core	core::arch::arm	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	2177860ab489b63813827be3183d164db00bf6e5b03728c3070734bc279bea98
+core	core::arch::hexagon	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	92495acd522e40cac3456621208b9d166bec72948136773e0002f03001d2ec6f
+core	core::arch::hexagon::scalar	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	3f57b85895e10ad1c62e4523ad5a755d4e1b3240cd964c504bd0e6e386e123b0
+core	core::arch::hexagon::v128	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	7ec8e95a809117892458c38078ac3e7727e86d93863b64ef58145daf76ed6fb3
+core	core::arch::hexagon::v64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	1447a980fe9e5eacd934a7aa5553bb6bae89b4a2edde111a5e67eea7b3a906f1
+core	core::arch::loongarch32	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	0052ea061e4e54f9cb7879f05eab15b948ceac09ca37b55314d2bb12d5fcbca7
+core	core::arch::loongarch64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	93ac1af11b9f2c6810946daa66fd1c9218e76e285446ed32d537ee29ca7ec8c9
+core	core::arch::mips	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	1887c5bb8f4cd6b756600ac84f0e7d056c4ab16a0a1874578f470c0cea96acd1
+core	core::arch::mips64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	5521f97da3c252028fe6a476f2be4c31791b5dcf4ddc090e18eb5249196b8785
+core	core::arch::nvptx	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	05377f25c1da48edd8d82d019252bd971c42c0a41b5b8299304fbd5dec464102
+core	core::arch::powerpc	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	5e72255dd6479a44fd21acb167acccaed594d36ea0b3f39d1fedcbff3b34a11a
+core	core::arch::powerpc64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	4e1c659d4ddc5e42a9a9a7bd77656bf058a04e79ec49ac94fa025ec54e543d32
+core	core::arch::riscv32	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	2f471d089a3a73bf42338bb688d524a2d71952a07f4bd669d9b734e1f4c86ab5
+core	core::arch::riscv64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	1fe6f21ce45ae13dbc1765341d6efb087337be88190cafcdc865a7581fe06e07
+core	core::arch::s390x	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	90fff64bdc8d18b83c133c1fb20a2dfe4b320326278e4627378c2026d2142968
+core	core::arch::wasm	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	23a485f33f887ebc4eef751a5a51defce9f5aff1816cfe8acfe0bbdc5f6498a3
+core	core::arch::wasm32	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	5ccaaa9ef600fd00af4839dd2a849fb4359a6f81df708800ec358daf2800eb6c
+core	core::arch::wasm64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	4bc50f31480f5563315e5f3fd607842dd12e09e5aa34b0683c383286e9fd6a8d
+core	core::arch::x86	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	d87953a2c26becb6311a1b86fbd302f1099c00807d1ac96428cff93dee5fce9a
+core	core::arch::x86_64	collapsed	DOM-TARGET-ARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	59d2ea730ada76fa46d7615b661926ab50d2a52a2dda8e82a124f7b7f1550015
+core	core::array	detailed	DOM-DATA-ARRAY-CORE	D09	sequential data structures	G0	3b886b010ebbebafab002ac2c88037b44e77995210f1c76785e261a253895296
+core	core::ascii	detailed	DOM-TEXT-ASCII-CORE	D11	bytes and text	LIB	390585b5ac8d6910ec281a837fe13409c8d8cb96629e85787932ccda75f62221
+core	core::async_iter	detailed	DOM-LANG-ASYNC-ITER-CORE	D23	async, tasks, and pinning	LATER	06e42362bc78cfe1bcee7d150f906b991429e7bcb8861222a94ebb72c55d74db
+core	core::autodiff	detailed	DOM-UNSTABLE-AUTODIFF-CORE	D01	numeric values and algorithms	LATER	31ca0bd8219dd347d9ee634ab3d51a747ac0e6fd86e3158ca153fecc5b563a76
+core	core::borrow	detailed	DOM-BEHAVIOR-BORROW-CORE	D03	static behavior and views	G0+LIB	834c877c1fa336e3b4ab5bdb634d61b4ffdce1f407f4f70726f754ad53e7d109
+core	core::bstr	detailed	DOM-TEXT-BSTR-CORE	D11	bytes and text	LIB+LATER	fb288c9ab10f24853d74992d49c7ce57e6e06b54cca493b33c0581bbbd939676
+core	core::cell	detailed	DOM-SHARED-CELL-CORE	D08	interior mutability and dynamic aliasing	G0+LATER+NG	7bd95e26ba49c388cdbe875ef1e56100431924459a6b5e8b8179d00843ef963d
+core	core::char	detailed	DOM-TEXT-CHAR-CORE	D11	bytes and text	G0+LIB+LATER	d5576babb7287e268cb38cf5d7f240f3b16f5b1d7a04509cfe58e0021741a687
+core	core::clone	detailed	DOM-BEHAVIOR-CLONE-CORE	D03	static behavior contracts	G0+LIB	1c9fb24f44fde9eeb7591ca6b1003e6c47ca5d154b6674400e11943caea7ad4e
+core	core::cmp	detailed	DOM-BEHAVIOR-CMP-CORE	D03	static behavior contracts	G0+LIB	96fe228654cd74bcd3c0ae73989d9ede03ab72cb38f8566f6620ee3a8dc4d027
+core	core::contracts	detailed	DOM-UNSTABLE-LANG-CONTRACTS	D02	language organization and abstraction	LATER	1e892d11fe07e443b81e2aabc7adbf54128b22a189325ce03b0cbad4733ada22
+core	core::convert	detailed	DOM-BEHAVIOR-CONVERT-CORE	D03	conversion and behavior	LIB+RED	3877fd0292fe50072dbf9a0189adaafa7857f34f09d0d1a1e27a1991c651efb1
+core	core::default	detailed	DOM-BEHAVIOR-DEFAULT-CORE	D03	conversion and behavior	LIB+RED	1aa56ff28f9a780063c51bf8b29db9fc7fe02e7399ab3a74f53dbdd588bf0881
+core	core::error	detailed	DOM-ERROR-CORE	D05	error presentation and chaining	LIB+LATER	364d20aac15e1e7aba876352b387821002911e5e1f2fb0d07adca5fa83bdbba3
+core	core::f128	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	8ac18a084c4523482b9cc115a06cf08de1a0fd18bca4d7f3892dc6d9856c9495
+core	core::f128::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	283fb0c518dc609169a79f52cd7ae6c32125e1757c034103f81a32f2ee3d8374
+core	core::f16	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	56628567c72c54b9d615b30ae1773372fe5cff212bf308f80fd0d49143c21cb4
+core	core::f16::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	8b86afe9a66788e390a735417f65d26a995059e3c0416b6be8098c22fb1a5929
+core	core::f32	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	6131be71a5fcc29f4c29b406dd742a7ddae493ba4cab8f64eb83f66029bdbf05
+core	core::f32::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	7da31875dd925cd4c5e74149253ba8be96fbf3f431c76781d3ea37492cd45707
+core	core::f32::math	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	f26dd2dc8515f5da3e048c1d79564af854923f2b9ed44e4f9f9d394bab2923b6
+core	core::f64	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	8e4cba0ee9c78ee2d40b779dd0babb1f1f1c43d527a145e7d2d45e663e57476a
+core	core::f64::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	3ae95c13af4c39687ba737e2a2738d2c42989b14a4f5e478031e185b2ef28e5e
+core	core::f64::math	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	1c9887b3d4f1821a0293da1a7eb888df820da0b212c8d0e6ea0f8cd205dccb24
+core	core::ffi	detailed	DOM-FFI-CORE	D18	FFI, ABI, and OS resources	FRAME+LATER+NG	8b0ac1bbd7b3385fc77ef5f56d8941c3d3df4fd052804e1a0e077dbfab1c87ac
+core	core::ffi::c_str	detailed	DOM-FFI-CORE	D18	FFI, ABI, and OS resources	FRAME+LATER+NG	37ca3a3a1be9c549b3de0774ca36a888c4dd785f5a5e2f414f91623be0dd6b45
+core	core::field	detailed	DOM-UNSTABLE-LANG-FIELD	D02	language organization and abstraction	LATER	4c09dae66451d050ceb151625c2c65131726f2a72092125a3f25b7bf5d05dad9
+core	core::fmt	detailed	DOM-FMT-CORE	D12	formatting and presentation	LIB+LATER	98fb9c275c87cd8cfa3eda755ef14ede45dae69bc04b0b2f78f355aeeaf234bc
+core	core::from	detailed	DOM-UNSTABLE-LANG-FROM	D03	conversion and behavior	LATER	fd6ae991737b3d06ff6b3705694cfb6c8d7f95575fe30271fc329bf7621027ae
+core	core::future	detailed	DOM-LANG-FUTURE-CORE	D23	async, tasks, and pinning	LATER	1eed01244a2bb9551f409a27dcd71cdedf80fa9c6593a803cafc8744c85e3853
+core	core::hash	detailed	DOM-BEHAVIOR-HASH-CORE	D03	static behavior contracts	G0+LIB+LATER	cf635b0cbfe158c870eaf84e0cc8fca3f89d97f483af7f79e3bc80e43b519b33
+core	core::hint	detailed	DOM-TARGET-HINT-CORE	D24	target/compiler hints	FRAME+LATER+NG	c0e13d279f061bc5630ba7d3b23b05eea85c735b4578e9eb1d0a3d4bddbd47ed
+core	core::i128	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	080452d8d8439652954cc08787f90395c3227b4d1bf238e846ad9073c95e675b
+core	core::i16	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	2ab6a1a1d75b50abe9e5ccba9f87006e5adb7b53261f01e51b73b9723b5ab517
+core	core::i32	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	fe92c8d0ea6a47ee4c31f063eb031a3fa15e9b3cae0c0a743b0fdd32c077a917
+core	core::i64	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	42c2190f1a4f33c2ac49a023d6a33c85b0a2ce5c09ead6596fdf0d3c58f5a5ed
+core	core::i8	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	383a130f1906109fa33c0747c928d8f9b354de51dffe6c73d3dfa92dece9706a
+core	core::index	detailed	DOM-UNSTABLE-LANG-INDEX	D02	language organization and abstraction	LATER	d5e4c42d4c255e3c739ca795ac5482e21f22bcce6c6099af1338d87567236fd3
+core	core::intrinsics	collapsed	DOM-TARGET-INTRINSICS-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	eeea939c6a49569ed61103d26a8ec62f350dedae4c2cda5e3f59974b75420273
+core	core::intrinsics::fallback	collapsed	DOM-TARGET-INTRINSICS-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::intrinsics::mir	collapsed	DOM-TARGET-INTRINSICS-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	5ff86715ab765dc1bd2bdbef8a42e6644412265d4bbfc1d298d02a80e244ef2f
+core	core::intrinsics::simd	collapsed	DOM-TARGET-INTRINSICS-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	914498ee26135fa1c7b972b40137f22ce3a57b817ba2a93db5c08d549b38fa8c
+core	core::intrinsics::simd::scalable	collapsed	DOM-TARGET-INTRINSICS-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	31902e8dc36f5970b8154544caa2a8ab5741f23569f50339bc116fa4e013483f
+core	core::io	detailed	DOM-IO-CORE	D15	synchronous I/O	LIB+LATER	eca0da56dc19d895fc63e80ac66920cc3c625b157407f7ebe66d5bf29673e358
+core	core::isize	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	36a8a3cc66604d36a81b7c5d0afa4d301ffdcd2e30b32867a24f5e5329a63a4e
+core	core::iter	detailed	DOM-ITER-CORE	D10	synchronous iteration	G0+LIB	304bb317b49f43b0d7f80c1f149e26c13e8d888ea00e6305b6798557b6be0c1b
+core	core::marker	detailed	DOM-OWN-MARKER-CORE	D03	ownership and capability predicates	G0+LATER+RED	cd0362acef266eaadc1f5db5f625c7ed48b25f7f54ef0e8aeebf53e87b6b9fe8
+core	core::mem	detailed	DOM-OWN-MEM-CORE	D04	ownership, layout, and value transitions	G0+LATER+NG	5c439d2ccb9781a59da1729b7a56f16ad52fe319a26bc04fc6bda43237955b5a
+core	core::mem::type_info	detailed	DOM-OWN-MEM-CORE	D04	ownership, layout, and value transitions	G0+LATER+NG	4e47e9013f41b6f9ade1cd4ea5fd9d296d89a424d408b463eb3b8b742f6671e9
+core	core::net	detailed	DOM-NET-CORE	D19	networking	LIB+LATER	b21ba61ce5d5720f8938191795841a6580d44a0f6f99fd2fe336020be70f608e
+core	core::num	detailed	DOM-NUMERIC-CORE	D01	numeric values and algorithms	G0+LIB+LATER	291b852349ea7f91ce12ea8081aefa460b35974d4c033b25325a9fe7e5ca3c05
+core	core::ops	detailed	DOM-LANG-OPS-CORE	D02	language organization and abstraction	G0+LATER+RED	3fb8a9c0d2e38a202a98979b012df3230b174b38354bbd79c2690a038e4003ce
+core	core::option	detailed	DOM-ERROR-OPTION-CORE	D05	recoverable results and variants	G0+LIB	9eb0b62ee7cba1cf947c334a3b9e1083eab01990e1002774e89d0cccbc8fdd48
+core	core::os	detailed	DOM-OS-CORE	D18	FFI, ABI, and OS resources	FRAME+LATER	bbaf52c4325261a1e631506ba6e20b734c18b4ee7029f2a639626d5837829dd0
+core	core::os::darwin	detailed	DOM-OS-CORE	D18	FFI, ABI, and OS resources	FRAME+LATER	04ae60124fda59718d63693d4c0d5bf32a686d4b6be2396819c056310b5fd3f3
+core	core::os::darwin::objc	detailed	DOM-OS-CORE	D18	FFI, ABI, and OS resources	FRAME+LATER	aa60aefb9098cb33d6b9066838faf547a372e9ec6d88ae7a8fba49f9adbdb40b
+core	core::panic	detailed	DOM-PANIC-CORE	D06	trap, panic, and diagnostics	G0+FRAME+NG	a2db60790f3bc6ce64b7338ed938e5d84ad02ec4d85d8da745fd3d06a4a36f31
+core	core::panicking	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	32187c0083f8697c02f2a0cd1ded18d86cc2306334872ac8c7483de3a721c683
+core	core::pat	detailed	DOM-UNSTABLE-LANG-PAT	D02	language organization and abstraction	LATER	81cf68b0c204bd78855f2e8194d2a4b16abe3f2e0b82d3dca80f87cffc53c4e2
+core	core::pin	detailed	DOM-LANG-PIN-CORE	D23	pinning and address-sensitive values	LATER	6a63f02de43fc740191be011d629615f6bb3733b363faa91464c3303e4bd61b0
+core	core::prelude	detailed	DOM-PRELUDE-CORE	D25	prelude and reexports	RED	af0f9efda92779d694bcc2abab0bc0ed7fbef20443572970b66df1309b76faec
+core	core::prelude::rust_2015	detailed	DOM-PRELUDE-CORE	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::prelude::rust_2018	detailed	DOM-PRELUDE-CORE	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::prelude::rust_2021	detailed	DOM-PRELUDE-CORE	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::prelude::rust_2024	detailed	DOM-PRELUDE-CORE	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::prelude::v1	detailed	DOM-PRELUDE-CORE	D25	prelude and reexports	RED	8106b4085337101b5913cde8e90a1c6f71da296f714745a286a3503a730ae4e2
+core	core::primitive	detailed	DOM-PRIMITIVE-CORE	D01	scalar and aggregate values	G0+LATER+RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::process	detailed	DOM-PROCESS-CORE	D17	process environment	FRAME+LATER	d071dae1e92c4b5c8dd35629827e5a9cd0aaace79341bd827f4f6bc30327229a
+core	core::profiling	detailed	DOM-UNSTABLE-TARGET-PROFILING	D24	target/compiler hints	FRAME+LATER+NG	e4cfc9af5f6f9620efe96be6d5d20ef858338a82969dd9766ad3f98bd69570c4
+core	core::ptr	detailed	DOM-RAW-PTR-CORE	D04	raw pointers and provenance	FRAME+NG	c81ff3ef901e0f2850225e5423f99a85dfb49c77e917cde252572c7a1a47a2e1
+core	core::random	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	f6c5614ccb3c71e2cb2bec177f0575f8d04a09dc79932e6ccbab8c7ee2a15ae5
+core	core::range	detailed	DOM-RANGE-CORE	D10	ranges and traversal	G0+LIB	efc412ba0a5727334ac955f0c81c7a94ad0dde0313b1a2c5b7547f1f8484c7b5
+core	core::range::legacy	detailed	DOM-RANGE-CORE	D10	ranges and traversal	G0+LIB	a0d90106fab0d399a31123dc6e117ab232038765a6a1f7dffd6187e9f609f282
+core	core::result	detailed	DOM-ERROR-RESULT-CORE	D05	recoverable results and variants	G0+LIB	07cbe6a092123584f028a81d114c53ed43a856ca3f027a6081f7dd27dea703db
+core	core::simd	detailed	DOM-UNSTABLE-TARGET-SIMD-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	99ad410486a8de621c41403d4d13487193b18922c9926e6f3fe2d272881cfaa0
+core	core::simd::cmp	detailed	DOM-UNSTABLE-TARGET-SIMD-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	5d337cdaef75229386bbe8dd80e7ba220d24fd0589a07e1fdb1d92592d53facf
+core	core::simd::num	detailed	DOM-UNSTABLE-TARGET-SIMD-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	196960547ded427b483570f33f8ad6e5652b019e8787c6d52d37562af1c8299e
+core	core::simd::prelude	detailed	DOM-UNSTABLE-TARGET-SIMD-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+core	core::simd::ptr	detailed	DOM-UNSTABLE-TARGET-SIMD-CORE	D24	target intrinsics and dispatch	FRAME+LATER+NG	68d36b8aea437b43330b1e374f62ad9221f7bc1aff907ffd408178827e15ad5c
+core	core::slice	detailed	DOM-DATA-SLICE-CORE	D09	sequential data structures	G0	cd19af8e6aa40f6ca689eb2679639ec8c1db88a948dcb90ddd48aa76100bd847
+core	core::str	detailed	DOM-TEXT-STR-CORE	D11	bytes and text	G0+LIB+LATER	bd8c42cc6000687ef2258c6bf17c5f3f6d01bf42e9e37454c5ad6d3759151839
+core	core::str::pattern	detailed	DOM-TEXT-STR-CORE	D11	bytes and text	G0+LIB+LATER	f9ea1435f14a98f4d9853ed0587fda3c3e93a00ea1650bb563477f5f8fb2d8ab
+core	core::sync	detailed	DOM-SYNC-CORE	D22	atomics and synchronization	FRAME+LATER	5e340cc72ae8afc23ad99ec2f34f75413b16e08e7a6c7632663b384d326809fa
+core	core::sync::atomic	detailed	DOM-SYNC-CORE	D22	atomics and synchronization	FRAME+LATER	c509fd6f5048599ee1f1e38d90723ee00fb92d97d3fc21ec2d9a101ea8bd3270
+core	core::task	detailed	DOM-LANG-TASK-CORE	D23	async, tasks, and pinning	LATER	bcb128a41b71f47814795eb8302d9cbf92ae511484dae42865a915d202c30d00
+core	core::time	detailed	DOM-TIME-CORE	D20	time and clocks	LIB+LATER	02671d3563482c01a559ea1badd1b678bc513bb859f00864cf24c6a4f854fd59
+core	core::u128	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	f16b8c04035bc5f4f8c8b2911e277d9b9bc11930b38a7e99c53497d246c14809
+core	core::u16	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	40479369d5142cf65348409c98efdae7e9309132537dc25565db3a90743774d6
+core	core::u32	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	6a6d90d9e88fc18c592cb6109a532e7e734a37efbb5730d35035dbd46db471bc
+core	core::u64	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	932f32ac4f63ae8118836d89ffc597b9f05e32f872f418656d41e88f30ecaf6b
+core	core::u8	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	1a902ae2d51bed89897505741068ec6bcd56d1c8085c81d261e7d2fe4cd15bfe
+core	core::ub_checks	detailed	DOM-UNSTABLE-TARGET-UB-CHECKS	D24	target/compiler hints	FRAME+LATER+NG	cc04d19edeec5cfa2df0b7857409d42ded2f4131848efa1310d3160cf7a373d0
+core	core::unsafe_binder	detailed	DOM-UNSTABLE-TARGET-BINDER	D02	language organization and abstraction	LATER+NG	ee2ccf673d64b043bca9018eb3fbc129a88e8520509f87cf426f064c338fd196
+core	core::usize	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	82b595e81562399d18d6bf258b199cf4c398db60a4a06f29834c514a58a65cdf
+std	std	detailed	DOM-MODULE-ROOT	D25	prelude and reexports	RED	968a3572bfaead578a8e77343798b1b0ffb728b1cf1699bb8fc9d50f69325358
+std	std::alloc	detailed	DOM-ALLOC-STD	D07	heap allocation and runtime	FRAME+LATER	e547df4bbaa46b4b8a0ac991014e55e1bfd410cf3ea27dc278e8457b9449e8b1
+std	std::any	detailed	DOM-REFLECT-STD	D13	runtime type identity and reflection	LATER	81619a8759f585b393331f774b190ebcd627b11ed685d2883a7178135fd3fe48
+std	std::arch	detailed	DOM-TARGET-STDARCH	D24	target intrinsics and dispatch	FRAME+LATER+NG	db898bbee91d11c5dceae54189184304ba1f2ce86ecc2a09e0883557517d2d84
+std	std::array	detailed	DOM-DATA-ARRAY-STD	D09	sequential data structures	G0	f44ea9a407b271001e88691a8c4f92c0a264cde708c7bec5d3958a45d82b8aa0
+std	std::ascii	detailed	DOM-TEXT-ASCII-STD	D11	bytes and text	LIB	565a58bc9a81ff8b3599582b1608e81c41fde167c0419b4b54496656fc2a0b6d
+std	std::async_iter	detailed	DOM-LANG-ASYNC-ITER-STD	D23	async, tasks, and pinning	LATER	371635d27693ad30e751278f95aecfec7a9cd8dff2bb417da74a383685bd8e6d
+std	std::autodiff	detailed	DOM-UNSTABLE-AUTODIFF-STD	D01	numeric values and algorithms	LATER	ca65e5c9ff4cebd7b33e552f105420888f1eca1e49023852b8e2bab6eb0c8b37
+std	std::backtrace	detailed	DOM-PANIC-BACKTRACE	D06	trap, panic, and diagnostics	FRAME+LATER	87d041c3e23bb07c2491da90442f05c2c66b731e22bbbbd284e70982e60b2634
+std	std::borrow	detailed	DOM-BEHAVIOR-BORROW-STD	D03	static behavior and views	G0+LIB+RED	b34b9adacb4df3938878e6423506de26d90af8c92070fb8d3ab78455bf373cf1
+std	std::boxed	detailed	DOM-DATA-BOX-STD	D07	unique ownership and data structures	G0+RED	d03b333a68ab80d1c8d5c4c31c0e54d5c8b676153a43d88fc86b2e593ebdc320
+std	std::bstr	detailed	DOM-TEXT-BSTR-STD	D11	bytes and text	LIB+LATER	00f843366c028441bc3479faee9b1795388ab6a18a3156fd33bd362b24f3a766
+std	std::cell	detailed	DOM-SHARED-CELL-STD	D08	interior mutability and dynamic aliasing	LATER+RED	1e1c2264c484dacca939c9b0a160ee7948363499335597d1189ed61463ec5f8e
+std	std::char	detailed	DOM-TEXT-CHAR-STD	D11	bytes and text	G0+LIB+LATER	f1402baf1dcc8a56eb0dca79906dad97c422097abce610d17546adb6bd0f42e6
+std	std::clone	detailed	DOM-BEHAVIOR-CLONE-STD	D03	static behavior contracts	G0+LIB+RED	2a313552e72d96975dcae9951a39312f3680ff6ef4c607bb0f2b54f5fd956efd
+std	std::cmp	detailed	DOM-BEHAVIOR-CMP-STD	D03	static behavior contracts	G0+LIB+RED	873dd2673f95aae14c0dadd3fee6066340fd55fe8e2a7440b6751f949b1eb1d2
+std	std::collections	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	34ca4a6b837e4e06ebb51cc47398f9c34f4ab34510432a985204c6ff4a18faa3
+std	std::collections::binary_heap	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	94c6e92471bd59320daef56c8e65bb13911f62cb458834a64b9a7794fafa9c51
+std	std::collections::btree_map	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	a5a08612e4c646b81859e3a7473ffcbcc8a483b022eb2b152dbc0b1aa0d9cc98
+std	std::collections::btree_set	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	6df7322beae2b51a731fccf8d8b07deec7490ae793e366f0493e670537d88c68
+std	std::collections::hash_map	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	16519a39c9a5ebaf13e9e9a979760694321f11d0c42e2494ae3335d56fbece0f
+std	std::collections::hash_set	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	09b528d8097670eb815316c6a84c4a935bff6fa00399353b98eee67558279d5f
+std	std::collections::linked_list	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	80ebef88357dc9f337c749b9233ff4a0bb67c35c18d2662b6d0bb414680ab44f
+std	std::collections::vec_deque	detailed	DOM-DATA-COLLECTIONS-STD	D09	sequential and associative data structures	G0	e9befce52232ae3a8a9b5ff67f2c3a1e6a51712ccf40b8fa405b2a8311c2eb4a
+std	std::convert	detailed	DOM-BEHAVIOR-CONVERT-STD	D03	conversion and behavior	LIB+RED	32cd43e89b27876dc2cbe5a931ea2cf2e1616e7611f0fadea7e6a3c2924cdd49
+std	std::default	detailed	DOM-BEHAVIOR-DEFAULT-STD	D03	conversion and behavior	LIB+RED	d76f50b9d246fe1023e713e694c1e15e494f044d0d5c4e4d15935a6585b2c851
+std	std::env	detailed	DOM-ENV	D17	process environment	FRAME+LIB+LATER	6730cc705819dfa0ed5c27c1e85fd609cfc167c4c2809843ade7535225199722
+std	std::env::consts	detailed	DOM-ENV	D17	process environment	FRAME+LIB+LATER	0d0b7ed40608323bd0caa38bb3574c474f7c15b4bd506c2687dffcab23ba8047
+std	std::error	detailed	DOM-ERROR-STD	D05	error presentation and chaining	LIB+LATER	a6fc90ba348261d9244d7dc0f16712c8496dbe5bb7c1e00e39145739eaa5fcc9
+std	std::f128	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	f9566801ca145d56785bbda9179413871408ce5b24575169e6c9e604c7b6bfbf
+std	std::f128::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	6176a1b5f03b22fecba1e3278a4341797208cd38d55a0a978f8c4a82da547715
+std	std::f16	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	c649d24af57889380b93fb690252557a77a0edcec74e7fe402e21266314808da
+std	std::f16::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	6526a67786cba25402d97951aa49694101a436f9d85a50cbea589ff298c410cf
+std	std::f32	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	513da0430258332c535423038c7e24598c7d2b319c4d77ca2e22bafed6d08d2a
+std	std::f32::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	c29f9aa4779a120ecebf3ac08ce11c3ae224f0b4b8577053e2d275eaff755cd1
+std	std::f64	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	3946a54be2c9c4d27ab5e1bd4d29bc42d6b9e49283b6828328f5326fa06209df
+std	std::f64::consts	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	15a4ad84d3d8f9745d6f75758af28740375f0d23ccada752afea9fb2f441111e
+std	std::ffi	detailed	DOM-FFI-STD	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	ffd908f5cecdd3b806c8cd96653a366bfda2f8b2416c64225b38b494546df621
+std	std::ffi::c_str	detailed	DOM-FFI-STD	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	9440e236b6325c72536fa74ccb51041966c8f7c55fc4c267c8d77b6fa065687d
+std	std::ffi::os_str	detailed	DOM-FFI-STD	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	3850874ff3c5adc63152fa25ae8eb456673b647b77f3d8357ebcfd2408a7dd62
+std	std::field	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	0cc5fb00527698bbf14f484c4a225a717d247567c4fb221ab455a88bd3ed5125
+std	std::fmt	detailed	DOM-FMT-STD	D12	formatting and presentation	LIB+LATER	36e0714d97814d8eeb27799e5ce6d6c46c671c797c16720a70cdf12211bf835c
+std	std::from	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	64dedc1ee89384784e84321a47cdef53cd51e49b432ed45056abee5f9e9fb232
+std	std::fs	detailed	DOM-FS	D16	filesystems and paths	FRAME+LIB+LATER	3520a7adf7768ccf38e024f6c39ae99a068df8db09a7ca658a1e33ae63601fb5
+std	std::future	detailed	DOM-LANG-FUTURE-STD	D23	async, tasks, and pinning	LATER+RED	981d9409e508d55c3cfa7dde8f66e15bb18244c14179a04a5b98bddaff9dba4d
+std	std::hash	detailed	DOM-BEHAVIOR-HASH-STD	D03	static behavior contracts	G0+LIB+LATER	1a176a9a6c4b0a154c363dcebf0cbba0e2bf765fdc32e69598438d1292ecbd1f
+std	std::hint	detailed	DOM-TARGET-HINT-STD	D24	target/compiler hints	FRAME+LATER+NG	c17d98e176f1a669e39ca9c35d9080a6bfbef88ece30d63aa70986c14afede93
+std	std::i128	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	748350f752799240029509c0aa5f53d3c7c5f4c20bf90acec1125695bbbafdc0
+std	std::i16	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	dcf1675289cb15c34d565e26f54d3985c0842eb7f18327d8c8e568b16e37fcf0
+std	std::i32	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	1aec13102f3b5abc93c080144199593002f9358b9ff136f49a468d2de0e67d93
+std	std::i64	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	a2b76bf7c6135c4b1b9e46417677dcffe9ef89980c78946fe0718187cb099357
+std	std::i8	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	ead09a1f1779ee6575a27c2aaaa74c429125f226ad0567931122610804fb6911
+std	std::intrinsics	detailed	DOM-TARGET-INTRINSICS-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	54bacf101563428c8b7d474daa537094ede0a046e506791f146823ecf84783f5
+std	std::intrinsics::fallback	detailed	DOM-TARGET-INTRINSICS-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::intrinsics::mir	detailed	DOM-TARGET-INTRINSICS-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	f4dde35222c089e3182ed8559ae45a301a14328a3900845f3ec218047cf58386
+std	std::intrinsics::simd	detailed	DOM-TARGET-INTRINSICS-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	35c66dd17cacdee19e82e3c4193911930908a98c95ab18974b4a94b4646c4197
+std	std::intrinsics::simd::scalable	detailed	DOM-TARGET-INTRINSICS-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	f773919c132fd5f6c8d829320c01dc29801d8ba2ec63e180d57c56bb450469c2
+std	std::io	detailed	DOM-IO-STD	D15	synchronous I/O	FRAME+LIB+LATER	cb56ba08cf762331937480151470f455017b2658b23ca2ef2d4cafa3dbd0af9f
+std	std::io::prelude	detailed	DOM-IO-STD	D15	synchronous I/O	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::isize	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	c46f7e1d9178665a88e5628ff6490f7840a7f90ccfadf79e494219a6c5c88ec1
+std	std::iter	detailed	DOM-ITER-STD	D10	synchronous iteration	G0+LIB+RED	d1244d09613d5b45533213a408e2774acc60d2fc70449cec568de7ed92205029
+std	std::marker	detailed	DOM-OWN-MARKER-STD	D03	ownership and capability predicates	G0+LATER+RED	6f6e9befdfc2af1ce838367ef2d287e5241c3fdc46979416b9097aa3e4a5480e
+std	std::mem	detailed	DOM-OWN-MEM-STD	D04	ownership, layout, and value transitions	G0+LATER+NG	3a4953fd1abd1b1f48b17da0815331ecad54d07252b6d7526c78dc7f94946992
+std	std::mem::type_info	detailed	DOM-OWN-MEM-STD	D04	ownership, layout, and value transitions	G0+LATER+NG	7ad7e3b9f44fdce3fbd96027d1d2ccad05a3a1799ee46f43f6db0462f80fb211
+std	std::net	detailed	DOM-NET-STD	D19	networking	FRAME+LIB+LATER	733b566800197777b540fee585a1a33a8400e974c7627b4b4e3b2c88f0e2b26a
+std	std::num	detailed	DOM-NUMERIC-STD	D01	numeric values and algorithms	G0+LIB+LATER	828875c5a3350c64485f9a647c1483257c1a84f4524d993d07d3c88ab3b56d90
+std	std::ops	detailed	DOM-LANG-OPS-STD	D02	language organization and abstraction	G0+LATER+RED	285cd9dd77e94a0f03b0cae89ac2d6a0a4133ce41a63520b707e7973c3fcd1c4
+std	std::option	detailed	DOM-ERROR-OPTION-STD	D05	recoverable results and variants	G0+LIB+RED	4c2d3bf78d30496a5bb120b6bd4d4b982f54102e595fa51ebfb5b0df42ce6016
+std	std::os	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	97e3dda2019e54667d8f3c842412ded9253ec03119ac36f1c53c07b5d6723161
+std	std::os::darwin	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	4dfebd4ac8d7e84afcd7dfaf9f6ebbd7cc7ba60f3b96254f6d4f295c3907a065
+std	std::os::darwin::fs	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	8564555286a58b78f6a1757b77fc0430edf37e3e866f75682320bbb881e7f892
+std	std::os::darwin::objc	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::fd	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	ea4cfd45e77cd3584e035bcaa53d3d31c7a6175c583dcede8e9643508d1bf2f7
+std	std::os::linux	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	8eab0c072f193a8b638e1c000215a04b59c6a6481c0db09f5f39a64f935d865e
+std	std::os::linux::fs	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	f489f5feaa09ed24035e26b76c4ea176584ec1c8b4935e542c1c6c231fdab615
+std	std::os::linux::net	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	5d7f5fcfd281f6647a8dcd928ed8965e6dd542bfa7b5c5aca0c9f8f42de7de38
+std	std::os::linux::process	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	ce8141dc3d5dafbd3cb614bedd95b67eb073fa638070e04ffeb5d3490608165a
+std	std::os::macos	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	beb0f81e10e78996d6c73e4344bb30bf4708be8fc26968747aeb5e17684c7a79
+std	std::os::macos::fs	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::raw	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	6e278808dc859b3038f058ce9040393c7382e2c954a8ef79110a9097e836498d
+std	std::os::unix	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	8a5ca84743f227d2b45292d79f16510eb286b8bd513ee05fe0a38617c04f63a3
+std	std::os::unix::ffi	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e5cabe1ef29743e631f14b5c4542a28a211a162bf77ae2e91f9a63e4b6e49a68
+std	std::os::unix::fs	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	7488e982e543bade3f841520a6a353de6a4b9af6e7c65862e0307020e6bb4281
+std	std::os::unix::io	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::unix::net	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	75db9e9bfba6500cebf8e223878ed77ec0b0bf6936b22c6c7ea945bbcb71c15d
+std	std::os::unix::prelude	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::unix::process	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	8f3dd26b771085ef65b94edd629ca84de155d1c90664ec1980b7e0a8d666705f
+std	std::os::unix::thread	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	91ff7b47682a8bba66536e07409e023976c807bf612a621b2779e96cc2e5eaba
+std	std::os::wasi	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	7d7e43e3b096d1b1796e2ef44645903ea56c1530c88e3a5728ac1be44d7466b6
+std	std::os::wasi::ffi	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	7459124cd2ce99568259b1df15c305c35d10013e9d32f25eeedbf0e15c548fa6
+std	std::os::wasi::fs	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	3bf760587b3f96a39d819f2b1142d1a180a9d1ba155b5fd647a965f17bd3e01d
+std	std::os::wasi::io	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::wasi::prelude	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::wasip2	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::windows	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	04fca48139f07ee683320f952e8e6fb2c6701226807f2ba7ab21bd45869db7b8
+std	std::os::windows::ffi	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	916d699232ed4e945376a7c52a0f28a48823ba8f0cfe2a4f395b8cae3d784bd6
+std	std::os::windows::fs	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	ecf9aa5aa6351533dc897290ae6cdf85f7fc73ac61e4faf4a6d74fa9f35beab5
+std	std::os::windows::io	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	421f46bbfa533def367e10f52004cdb23f94e118b4496e50425604930ed3c21f
+std	std::os::windows::prelude	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::windows::process	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	ced2311c2f29ad5eedfc81fd6e4c308722139078d7570cc360f714a69b94c03d
+std	std::os::windows::raw	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::os::windows::thread	detailed	DOM-OS	D18	FFI, ABI, and OS resources	FRAME+LIB+LATER	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::panic	detailed	DOM-PANIC-STD	D06	trap, panic, and diagnostics	G0+FRAME+NG	c08a623d5683d18188874b9c16f0c407488d82cb245942c3df5158ea54f802d0
+std	std::pat	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	5eee8577abeca7504a87dfb3474ffcd5c02ae500ee9decd73693ac93f042a133
+std	std::path	detailed	DOM-PATH	D16	filesystems and paths	LIB+LATER	88f1675e398825aca932f924fc98906753ac2456cd63f6577d5ab7440115abf0
+std	std::pin	detailed	DOM-LANG-PIN-STD	D23	pinning and address-sensitive values	LATER+RED	62ea9372108b0130516e48ac46e4129c410df9432b05a46bf7d230577d55155e
+std	std::prelude	detailed	DOM-PRELUDE-STD	D25	prelude and reexports	RED	e586abda7611e76bbe8085738627767c6be6aecfdbc6a9b24d51aa781ad3b369
+std	std::prelude::rust_2015	detailed	DOM-PRELUDE-STD	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::prelude::rust_2018	detailed	DOM-PRELUDE-STD	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::prelude::rust_2021	detailed	DOM-PRELUDE-STD	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::prelude::rust_2024	detailed	DOM-PRELUDE-STD	D25	prelude and reexports	RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::prelude::v1	detailed	DOM-PRELUDE-STD	D25	prelude and reexports	RED	d0cb631fec7079380fb524b7a328baa7861ea1c152fc8771b01058281feb9bf5
+std	std::primitive	detailed	DOM-PRIMITIVE-STD	D01	scalar and aggregate values	G0+LATER+RED	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+std	std::process	detailed	DOM-PROCESS	D17	process environment	FRAME+LIB+LATER	46e099b9399f02b5802bd99f68cea90001f62fafb33a1444627fb52f6c1fde6b
+std	std::ptr	detailed	DOM-RAW-PTR-STD	D04	raw pointers and provenance	FRAME+NG	95b903c352657e67440fcc34cec602b01418731a56d453d8b18526a341856c2d
+std	std::random	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	51190e2902e55d727a655f4574198aa061844bab08137b6750c0e726baec9b5c
+std	std::range	detailed	DOM-RANGE-STD	D10	ranges and traversal	G0+LIB+RED	8540271e2c66efd8ec3ff35acd55ef4121dab5a7e5ede589d3325126506e13de
+std	std::range::legacy	detailed	DOM-RANGE-STD	D10	ranges and traversal	G0+LIB+RED	a1d34d447a8be8d5ff65a203453fef1d18b3b59612efa5a6096442bcaf9b3a21
+std	std::rc	detailed	DOM-SHARED-RC-STD	D08	shared ownership and weak identity	LATER+RED	5ef9d7c34982c6b83680779eb6caa8bdcef3cc0f8eb6cc403eeeadc2d7b39fd5
+std	std::result	detailed	DOM-ERROR-RESULT-STD	D05	recoverable results and variants	G0+LIB+RED	9b04f74e4ca39eee114c4293dca38e1b4cfb116c0940d32d4c8c5b5dc45b5c3c
+std	std::simd	detailed	DOM-UNSTABLE-TARGET-SIMD-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	01d596032b3d02368cb5cd327d7722c7fad239e4f733e620ce85bf3153f230dc
+std	std::simd::cmp	detailed	DOM-UNSTABLE-TARGET-SIMD-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	64873ec8622363a53be26a9641739b9652221480477c5d83aba02f3f2754105c
+std	std::simd::num	detailed	DOM-UNSTABLE-TARGET-SIMD-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	416bad8cf271ca4aec0804935b002aa82dfc475c833a05716d02a3d7b8294207
+std	std::simd::prelude	detailed	DOM-UNSTABLE-TARGET-SIMD-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	24eca8d5ed9b9877d773b5c0b3804c4054c5f9d716b7414a9e2a476d46970f31
+std	std::simd::ptr	detailed	DOM-UNSTABLE-TARGET-SIMD-STD	D24	target intrinsics and dispatch	FRAME+LATER+NG	d7c7d6ad5e788ab1db039a99962272de6b6fdf68847bc6680103691bae325990
+std	std::slice	detailed	DOM-DATA-SLICE-STD	D09	sequential data structures	G0+LIB	d25fdcce824841d43fb9e12b23a4c1b96b2f4df493ca8b7b7fe89605e687dcde
+std	std::str	detailed	DOM-TEXT-STR-STD	D11	bytes and text	G0+LIB+LATER	a4ae1414d7707fc19408efd59e1bdd66bf58011514a78ebdd9e16982d11be2ef
+std	std::str::pattern	detailed	DOM-TEXT-STR-STD	D11	bytes and text	G0+LIB+LATER	c4282ad46f488e09d679356b6c62db42b7ea1008f1e8188eb495882b01b4bcbd
+std	std::string	detailed	DOM-TEXT-STRING-STD	D11	bytes and text	G0+LIB+LATER	60d132bda43c1d7902337c685308fe9478229b8750ee5c2e4e1094adb3d0e75d
+std	std::sync	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	d8ae7ff5c492f9fd268f665eb68ccff2f87f24b4c7bb6f81fef1882c0faa6c99
+std	std::sync::atomic	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	d6c194400371b74e6d3d9e059d9981365dce80e277f6f1d398be6053b39c9920
+std	std::sync::mpmc	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	caddf24bd70f3d6c27144cd6dbd848f578f7b8b9ed9c14ba0e75427c97aff711
+std	std::sync::mpsc	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	16fe12a04163121a6365a543d4a2eba9f0da114d64f22a2c30341ca00c19fe43
+std	std::sync::nonpoison	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	18d042f98ac01e2fff6a6fc4f7c78b61dd79c36f751ef7a42bc3bfd3d06e5bb8
+std	std::sync::oneshot	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	2e42a90bb996654d66c75108a8ec517b8d6254dcd34d7cafeed12183c2397102
+std	std::sync::poison	detailed	DOM-SYNC-STD	D22	atomics and synchronization	FRAME+LIB+LATER	6417c098cc4d790423bcfb07a3ef93efff5738850b70ce0a57d3a419c0341cb3
+std	std::task	detailed	DOM-LANG-TASK-STD	D23	async, tasks, and pinning	LATER+RED	c33e007208b8b3945d68ab7fc1d997270038a4593d309b0f344989aefd40f9ab
+std	std::thread	detailed	DOM-THREAD	D21	threads and thread-local state	FRAME+LATER	de0623cfe5f7333c60be5b0e5ca37a98e9b502eac9308e21b3b748c72d2caf9e
+std	std::time	detailed	DOM-TIME-STD	D20	time and clocks	FRAME+LIB+LATER	43335cef4125d64c2d2b9af65c99ad17fccc47bfa2f85a21d7dc17f613317aea
+std	std::u128	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	5a6c5f9395fc6f3ab361dccf9c597b77ef88ba54fb38722e72c72207cda3bb93
+std	std::u16	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	21b5377f2933d1a0913c564a2dd5e1a96c29ad8313eb90a9eecdd8ce8cc7f5ec
+std	std::u32	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	95465c7b5464fe70ef0644708525916f62ae2883ee731127f82ee136f2adb257
+std	std::u64	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	35559505b9787fe350e376a3d3a9eda6e6bdcd44a2740e67d2653b2e4582adc4
+std	std::u8	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	a914d862b74e7ace5377ea2adda87507be9876848abb6227d4c739728d4d64ae
+std	std::unsafe_binder	detailed	DOM-UNSTABLE-RUNTIME-HOLDING	D26	compiler and runtime support	FRAME+LATER+NG	a629b5c4c181faa98d198e08f35ff05753029526e4949714f167563bb1202c89
+std	std::usize	detailed	DOM-NUMERIC-PRIMITIVES	D01	numeric values and algorithms	G0+LIB+LATER	bf2b31298fe4819a2922ada7ee449fe71605f746b81cd55b0f5e36db9eacc5fc
+std	std::vec	detailed	DOM-DATA-VEC-STD	D09	sequential data structures	G0+RED	3c1f850a0cbb19c35919f5f0d622f04fc202afb6573150a4a4f12599ef69d125

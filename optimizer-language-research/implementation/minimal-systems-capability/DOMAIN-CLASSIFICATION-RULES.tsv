@@ -1,0 +1,136 @@
+rule_id	match	domain	domain_partition	canonical_route_or_blocked_claim	rationale
+DOM-TARGET-ARCH	path:core::arch	target intrinsics and dispatch	FRAME+LATER+NG	Separate target/SIMD lock; raw unsafe intrinsic surface is not admissible.	Architecture catalogs are target-specific implementation evidence, not portable data contracts.
+DOM-TARGET-STDARCH	path:std::arch	target intrinsics and dispatch	FRAME+LATER+NG	Separate target/SIMD lock; raw unsafe intrinsic surface is not admissible.	The std module reexports target facilities and feature detection.
+DOM-TARGET-HINT-CORE	path:core::hint	target/compiler hints	FRAME+LATER+NG	Proof-derived lowering or separate target lock.	Writer assertions and unreachable hints cannot weaken checks.
+DOM-TARGET-HINT-STD	path:std::hint	target/compiler hints	FRAME+LATER+NG	Proof-derived lowering or separate target lock.	Writer assertions and unreachable hints cannot weaken checks.
+DOM-TARGET-INTRINSICS-CORE	path:core::intrinsics	target intrinsics and dispatch	FRAME+LATER+NG	Compiler/runtime evidence only; writer-callable intrinsic authority is inadmissible.	The collapsed unstable catalog is retained by digest and target family.
+DOM-TARGET-INTRINSICS-ALLOC	path:alloc::intrinsics	target intrinsics and dispatch	FRAME+LATER+NG	Compiler/runtime evidence only; writer-callable intrinsic authority is inadmissible.	The unstable allocation intrinsic module is implementation evidence.
+DOM-TARGET-INTRINSICS-STD	path:std::intrinsics	target intrinsics and dispatch	FRAME+LATER+NG	Compiler/runtime evidence only; writer-callable intrinsic authority is inadmissible.	The std path exposes compiler-facing implementation evidence.
+DOM-NUMERIC-CORE	path:core::num	numeric values and algorithms	G0+LIB+LATER	Protect current checked scalar operations; broad numeric/libm work needs a numeric lock.	Wrappers and parsing can be libraries, while complete floating and numeric behavior is separate.
+DOM-NUMERIC-STD	path:std::num	numeric values and algorithms	G0+LIB+LATER	Protect current checked scalar operations; broad numeric/libm work needs a numeric lock.	The std surface largely reexports or extends core numeric contracts.
+DOM-NUMERIC-PRIMITIVES	regex:^(?:core|std)::(?:[iu](?:8|16|32|64|128|size)|f(?:16|32|64|128))(?:::.+)?$	numeric values and algorithms	G0+LIB+LATER	Protect current checked scalar operations; broad numeric/libm work needs a numeric lock.	Primitive method multiplicity is a contract family, not one language primitive per method.
+DOM-TEXT-CHAR-CORE	path:core::char	bytes and text	G0+LIB+LATER	Byte/UTF-8 storage is in the data floor; complete Unicode/text needs its own lock.	Character decoding and Unicode tables exceed initialized-byte storage.
+DOM-TEXT-CHAR-STD	path:std::char	bytes and text	G0+LIB+LATER	Byte/UTF-8 storage is in the data floor; complete Unicode/text needs its own lock.	Character decoding and Unicode tables exceed initialized-byte storage.
+DOM-TEXT-ASCII-CORE	path:core::ascii	bytes and text	LIB	Ordinary checked byte/text library.	ASCII helpers add no independent storage topology.
+DOM-TEXT-ASCII-STD	path:std::ascii	bytes and text	LIB	Ordinary checked byte/text library.	ASCII helpers add no independent storage topology.
+DOM-TEXT-STR-CORE	path:core::str	bytes and text	G0+LIB+LATER	UTF-8 validity and boundary-safe views are detailed; full text semantics remain later.	String refinement validity is orthogonal to slot initialization.
+DOM-TEXT-STR-ALLOC	path:alloc::str	bytes and text	G0+LIB+LATER	UTF-8 validity and owned conversions are detailed; full text semantics remain later.	Allocation-backed str helpers depend on dense byte storage.
+DOM-TEXT-STR-STD	path:std::str	bytes and text	G0+LIB+LATER	UTF-8 validity and boundary-safe views are detailed; full text semantics remain later.	The std surface includes core and alloc string contracts.
+DOM-TEXT-STRING-ALLOC	path:alloc::string	bytes and text	G0+LIB+LATER	Dense byte owner plus checked UTF-8 refinement; full Unicode remains later.	String is storage plus a validity invariant, not a separate raw allocator.
+DOM-TEXT-STRING-STD	path:std::string	bytes and text	G0+LIB+LATER	Dense byte owner plus checked UTF-8 refinement; full Unicode remains later.	The std module reexports the alloc string family.
+DOM-TEXT-BSTR-CORE	path:core::bstr	bytes and text	LIB+LATER	Future byte-string normalization in the text family.	Unstable byte-string modules remain evidence rather than stable demand.
+DOM-TEXT-BSTR-ALLOC	path:alloc::bstr	bytes and text	LIB+LATER	Future byte-string normalization in the text family.	Unstable byte-string modules remain evidence rather than stable demand.
+DOM-TEXT-BSTR-STD	path:std::bstr	bytes and text	LIB+LATER	Future byte-string normalization in the text family.	Unstable byte-string modules remain evidence rather than stable demand.
+DOM-DATA-ARRAY-CORE	path:core::array	sequential data structures	G0	Fixed arrays and owning/borrowed array traversal.	Fixed initialized storage is a protected prerequisite.
+DOM-DATA-ARRAY-STD	path:std::array	sequential data structures	G0	Fixed arrays and owning/borrowed array traversal.	The std module reexports core array contracts.
+DOM-DATA-SLICE-CORE	path:core::slice	sequential data structures	G0	Borrowed contiguous access, partition, algorithms, and iteration.	Slice operations expose access and disjointness obligations without owning growth.
+DOM-DATA-SLICE-ALLOC	path:alloc::slice	sequential data structures	G0+LIB	Allocation-backed conversions and clones over slices.	These derive from dense ownership plus slice access.
+DOM-DATA-SLICE-STD	path:std::slice	sequential data structures	G0+LIB	Combined core/alloc slice contract surface.	The std rendering is canonicalized against its source declarations.
+DOM-DATA-VEC-ALLOC	path:alloc::vec	sequential data structures	G0	Dense owning sequence and helper protocols.	This is a principal detailed contract seed.
+DOM-DATA-VEC-STD	path:std::vec	sequential data structures	G0+RED	Dense sequence contracts; std reexport spelling is redundant.	The source declaration lives in alloc.
+DOM-DATA-COLLECTIONS-ALLOC	path:alloc::collections	sequential and associative data structures	G0	Deque, list, heap, B-tree map/set, and allocation errors.	This is the principal detailed collection surface.
+DOM-DATA-COLLECTIONS-STD	path:std::collections	sequential and associative data structures	G0	Hash map/set plus reexported alloc collection contracts.	Contract normalization preserves order and complexity differences.
+DOM-DATA-BOX-ALLOC	path:alloc::boxed	unique ownership and data structures	G0+LATER	Unique heap owner/extraction is detailed; raw and custom allocation remain later or inadmissible.	Box exposes ownership atoms used by recursive structures.
+DOM-DATA-BOX-STD	path:std::boxed	unique ownership and data structures	G0+RED	Unique heap owner contracts; std spelling is a reexport.	The source declaration lives in alloc.
+DOM-ITER-CORE	path:core::iter	synchronous iteration	G0+LIB	Shared, uniq, and owning protocols required by data families; adapters are library compositions.	Iterator spelling is not itself a required xlang mechanism.
+DOM-ITER-STD	path:std::iter	synchronous iteration	G0+LIB+RED	Core iteration protocols plus reexported adapters.	Repeated standard spellings do not create storage capabilities.
+DOM-RANGE-CORE	path:core::range	ranges and traversal	G0+LIB	Checked range values and iteration.	Ranges are ordinary value/protocol contracts.
+DOM-RANGE-STD	path:std::range	ranges and traversal	G0+LIB+RED	Checked range values and iteration.	The std path reexports core range contracts.
+DOM-BEHAVIOR-CMP-CORE	path:core::cmp	static behavior contracts	G0+LIB	Statically callable ordering/equality needed by collections.	Rust trait spelling is evidence, not the required xlang interface.
+DOM-BEHAVIOR-CMP-STD	path:std::cmp	static behavior contracts	G0+LIB+RED	Statically callable ordering/equality needed by collections.	The std path reexports core comparison contracts.
+DOM-BEHAVIOR-HASH-CORE	path:core::hash	static behavior contracts	G0+LIB+LATER	Hash protocol for keyed collections; seeding/default algorithm is later platform/library policy.	Broken laws must remain contained logic errors.
+DOM-BEHAVIOR-HASH-STD	path:std::hash	static behavior contracts	G0+LIB+LATER	Hash protocol for keyed collections; seeding/default algorithm is later platform/library policy.	The std module adds default ecosystem choices without selecting xlang syntax.
+DOM-BEHAVIOR-CLONE-CORE	path:core::clone	static behavior contracts	G0+LIB	Explicit cloning distinct from relocation.	Partial clone cleanup is a storage obligation.
+DOM-BEHAVIOR-CLONE-STD	path:std::clone	static behavior contracts	G0+LIB+RED	Explicit cloning distinct from relocation.	The std path reexports core cloning.
+DOM-BEHAVIOR-BORROW-CORE	path:core::borrow	static behavior and views	G0+LIB	Borrowed lookup/view contracts.	Rust blanket borrowing hierarchy is not required one for one.
+DOM-BEHAVIOR-BORROW-ALLOC	path:alloc::borrow	shared ownership and conversions	LIB+LATER	Owned/borrowed conversion and copy-on-write after dense/shared dependencies.	Cow sharing behavior belongs to the shared-ownership lock.
+DOM-BEHAVIOR-BORROW-STD	path:std::borrow	static behavior and views	G0+LIB+RED	Borrowed lookup/view contracts.	The std path reexports core/alloc behavior.
+DOM-BEHAVIOR-CONVERT-CORE	path:core::convert	conversion and behavior	LIB+RED	Explicit canonical conversions.	Rust's blanket trait graph is surface, not one capability per impl.
+DOM-BEHAVIOR-CONVERT-STD	path:std::convert	conversion and behavior	LIB+RED	Explicit canonical conversions.	The std path reexports core conversions.
+DOM-BEHAVIOR-DEFAULT-CORE	path:core::default	conversion and behavior	LIB+RED	Explicit construction when a contract needs a default.	Default is not a substitute for dead storage or move-out.
+DOM-BEHAVIOR-DEFAULT-STD	path:std::default	conversion and behavior	LIB+RED	Explicit construction when a contract needs a default.	The std path reexports core default behavior.
+DOM-OWN-MEM-CORE	path:core::mem	ownership, layout, and value transitions	G0+LATER+NG	Safe swap/replace/drop/layout are detailed; raw initialization/leak/bit reinterpretation need later or are inadmissible.	Rust safe and unsafe internals separate observable transitions from privilege.
+DOM-OWN-MEM-STD	path:std::mem	ownership, layout, and value transitions	G0+LATER+NG	Safe swap/replace/drop/layout are detailed; raw initialization/leak/bit reinterpretation need later or are inadmissible.	The std path reexports core memory contracts.
+DOM-OWN-MARKER-CORE	path:core::marker	ownership and capability predicates	G0+LATER+RED	Copy/size predicates as needed; Send/Sync/Unpin belong to later locks.	Rust marker trait vocabulary is not copied by default.
+DOM-OWN-MARKER-STD	path:std::marker	ownership and capability predicates	G0+LATER+RED	Copy/size predicates as needed; Send/Sync/Unpin belong to later locks.	The std path reexports core marker contracts.
+DOM-RAW-PTR-CORE	path:core::ptr	raw pointers and provenance	FRAME+NG	Compiler/runtime internals only; checked owners/places/transitions for ordinary code.	Arbitrary pointer arithmetic and unchecked reads are not admissible writer capabilities.
+DOM-RAW-PTR-STD	path:std::ptr	raw pointers and provenance	FRAME+NG	Compiler/runtime internals only; checked owners/places/transitions for ordinary code.	The std path reexports raw pointer evidence.
+DOM-RAW-POINTER-CORE	path:core::pointer	raw pointers and provenance	FRAME+NG	Compiler/runtime internals only; checked owners/places/transitions for ordinary code.	Primitive pointer methods are not ordinary xlang surface authority.
+DOM-RAW-POINTER-STD	path:std::pointer	raw pointers and provenance	FRAME+NG	Compiler/runtime internals only; checked owners/places/transitions for ordinary code.	Primitive pointer methods are not ordinary xlang surface authority.
+DOM-ALLOC-CORE	path:core::alloc	heap allocation and runtime	FRAME+LATER	Default allocation frame now; custom allocator family later.	Alignment, provenance, grow/shrink, and failure policy need a separate lock.
+DOM-ALLOC-ALLOC	path:alloc::alloc	heap allocation and runtime	FRAME+LATER	Default allocation frame now; custom allocator family later.	The alloc crate exposes runtime allocation evidence.
+DOM-ALLOC-STD	path:std::alloc	heap allocation and runtime	FRAME+LATER	Default allocation frame now; custom allocator family later.	The std allocator API does not authorize writer-visible unsafe.
+DOM-SHARED-RC-ALLOC	path:alloc::rc	shared ownership and weak identity	LATER	Separate shared-ownership lock.	Strong/weak payload/allocation lifetimes are not solved by stable handles.
+DOM-SHARED-RC-STD	path:std::rc	shared ownership and weak identity	LATER+RED	Separate shared-ownership lock; std path is a reexport.	No reference-count tax is allowed on unique-owner data structures.
+DOM-SHARED-ARC-ALLOC	path:alloc::sync	shared ownership and weak identity	LATER	Shared ownership plus concurrency locks.	Arc/Weak require atomics and separate payload/allocation lifetimes.
+DOM-SHARED-CELL-CORE	path:core::cell	interior mutability and dynamic aliasing	G0+LATER+NG	RefCell is detailed demand evidence; shared mutation receives a later lock and UnsafeCell-like escape is inadmissible.	Runtime borrow guards expose cleanup/invalidation obligations.
+DOM-SHARED-CELL-STD	path:std::cell	interior mutability and dynamic aliasing	LATER+RED	Separate interior-mutability lock; std path is a reexport.	Unique-owner container closure cannot claim shared mutation.
+DOM-ERROR-OPTION-CORE	path:core::option	recoverable results and variants	G0+LIB	Existing Option plus library combinators.	Ownership on each branch remains a detailed prerequisite.
+DOM-ERROR-OPTION-STD	path:std::option	recoverable results and variants	G0+LIB+RED	Existing Option plus library combinators.	The std path reexports core Option.
+DOM-ERROR-RESULT-CORE	path:core::result	recoverable results and variants	G0+LIB	Existing Result, propagation, and branch ownership.	Failure atomicity is family-specific and not implied by Result syntax.
+DOM-ERROR-RESULT-STD	path:std::result	recoverable results and variants	G0+LIB+RED	Existing Result, propagation, and branch ownership.	The std path reexports core Result.
+DOM-ERROR-CORE	path:core::error	error presentation and chaining	LIB+LATER	Ordinary error values now; dynamic chains/downcasts later.	Data-floor closure does not imply an application error ecosystem.
+DOM-ERROR-STD	path:std::error	error presentation and chaining	LIB+LATER	Ordinary error values now; dynamic chains/downcasts later.	Backtraces and dynamic errors require other domains.
+DOM-PANIC-CORE	path:core::panic	trap, panic, and diagnostics	G0+FRAME+NG	Preserve aborting traps; unwinding and recovery are non-goals under current law.	No-unwind removes exception cleanup but not normal-exit ownership.
+DOM-PANIC-STD	path:std::panic	trap, panic, and diagnostics	G0+FRAME+NG	Preserve aborting traps; catch/unwind APIs are non-goals under current law.	Rust unwind safety does not become xlang data law.
+DOM-PANIC-BACKTRACE	path:std::backtrace	trap, panic, and diagnostics	FRAME+LATER	Best-effort platform/toolchain diagnostic service.	Symbolization is not part of collection correctness.
+DOM-FMT-CORE	path:core::fmt	formatting and presentation	LIB+LATER	Ordinary libraries after text/static behavior; compile-time format checking is separate.	Formatting is not a storage topology.
+DOM-FMT-ALLOC	path:alloc::fmt	formatting and presentation	LIB+LATER	Allocation-backed formatting after dense text.	Allocation and float formatting policies remain explicit.
+DOM-FMT-STD	path:std::fmt	formatting and presentation	LIB+LATER	Formatting plus I/O integration.	Printing depends on a platform I/O frame.
+DOM-REFLECT-CORE	path:core::any	runtime type identity and reflection	LATER	Separate reflection/interface decision; current xlang has no reflection.	Compile-time layout does not imply writer-visible runtime type metadata.
+DOM-REFLECT-STD	path:std::any	runtime type identity and reflection	LATER	Separate reflection/interface decision; current xlang has no reflection.	Rust downcasting is not a data-structure prerequisite.
+DOM-LANG-OPS-CORE	path:core::ops	language organization and abstraction	G0+LATER+RED	Only statically callable behavior needed by data families is current scope.	Rust operator/closure/trait spellings are not capability requirements.
+DOM-LANG-OPS-STD	path:std::ops	language organization and abstraction	G0+LATER+RED	Only statically callable behavior needed by data families is current scope.	The std path reexports core operation traits.
+DOM-LANG-FUTURE-CORE	path:core::future	async, tasks, and pinning	LATER	Separate async/cancellation lock.	Suspension and cancellation are not synchronous iterator contracts.
+DOM-LANG-FUTURE-STD	path:std::future	async, tasks, and pinning	LATER+RED	Separate async/cancellation lock; std path is a reexport.	Future requires pin/task semantics.
+DOM-LANG-ASYNC-ITER-CORE	path:core::async_iter	async, tasks, and pinning	LATER	Separate async-iteration and cancellation lock.	The unstable module is future demand evidence, not synchronous iteration closure.
+DOM-LANG-ASYNC-ITER-STD	path:std::async_iter	async, tasks, and pinning	LATER	Separate async-iteration and cancellation lock.	The unstable module is future demand evidence, not synchronous iteration closure.
+DOM-LANG-TASK-CORE	path:core::task	async, tasks, and pinning	LATER	Separate async/runtime lock.	Wakers and polling cross runtime and concurrency boundaries.
+DOM-LANG-TASK-ALLOC	path:alloc::task	async, tasks, and pinning	LATER	Separate async/runtime and shared-ownership locks.	Allocation-backed wakers are not data-floor evidence.
+DOM-LANG-TASK-STD	path:std::task	async, tasks, and pinning	LATER+RED	Separate async/runtime lock; std path is a reexport.	Task scheduling is not a synchronous collection capability.
+DOM-LANG-PIN-CORE	path:core::pin	pinning and address-sensitive values	LATER	Separate pin/address-stability lock.	Logical stable identity does not imply stable physical address.
+DOM-LANG-PIN-STD	path:std::pin	pinning and address-sensitive values	LATER+RED	Separate pin/address-stability lock; std path is a reexport.	Intrusive/self-referential structures remain blocked.
+DOM-SYNC-CORE	path:core::sync	atomics and synchronization	FRAME+LATER	Separate memory-model/concurrency lock.	Race freedom, ordering, and progress are outside sequential data closure.
+DOM-SYNC-STD	path:std::sync	atomics and synchronization	FRAME+LIB+LATER	Separate concurrency lock; higher-level structures may later be libraries.	Locks, atomics, channels, and safe reclamation need independent evidence.
+DOM-THREAD	path:std::thread	threads and thread-local state	FRAME+LATER	Separate concurrency/runtime lock.	Spawn/join/TLS/parking and stack behavior are platform contracts.
+DOM-THREAD-LOCAL	path:std::thread_local	threads and thread-local state	FRAME+LATER+RED	Separate concurrency/runtime lock; macro spelling is redundant.	TLS lifetime and destruction are not ordinary globals.
+DOM-IO-CORE	path:core::io	synchronous I/O	LIB+LATER	Interface evidence; platform frame lives under std I/O lock.	Partial reads/writes and resources are not data-floor claims.
+DOM-IO-STD	path:std::io	synchronous I/O	FRAME+LIB+LATER	Narrow platform frame plus checked adapters after dense sequences.	EOF, interruption, vectored I/O, errors, and resource ownership need a lock.
+DOM-FS	path:std::fs	filesystems and paths	FRAME+LIB+LATER	Filesystem/resource lock.	Files, directories, metadata, races, and atomic operations remain blocked.
+DOM-PATH	path:std::path	filesystems and paths	LIB+LATER	Lexical path library plus platform-string policy.	Path parsing alone does not establish filesystem capability.
+DOM-ENV	path:std::env	process environment	FRAME+LIB+LATER	Process/platform lock.	Arguments, environment mutation, and global concurrency behavior remain blocked.
+DOM-PROCESS	path:std::process	process environment	FRAME+LIB+LATER	Process/resource lock.	Spawn/wait/kill/pipes and exit semantics are platform contracts.
+DOM-FFI-CORE	path:core::ffi	FFI, ABI, and OS resources	FRAME+LATER+NG	Narrow gated FFI/resource lock; rich object interop and raw escape are non-goals.	C scalar/string values do not establish safe foreign ownership.
+DOM-FFI-ALLOC	path:alloc::ffi	FFI, ABI, and OS resources	FRAME+LIB+LATER	Checked owned foreign-string helpers plus gated boundary.	Allocation and ownership transfer remain explicit.
+DOM-FFI-STD	path:std::ffi	FFI, ABI, and OS resources	FRAME+LIB+LATER	Checked foreign/platform-string helpers plus gated boundary.	Callbacks, foreign threads, and ABI fact attenuation remain separate.
+DOM-OS	path:std::os	FFI, ABI, and OS resources	FRAME+LIB+LATER	Platform extension and owned-resource locks.	Descriptors/handles, close semantics, platform strings, and ABI details remain blocked.
+DOM-OS-CORE	path:core::os	FFI, ABI, and OS resources	FRAME+LATER	Future platform boundary family.	The unstable core module is implementation evidence, not a stable contract.
+DOM-PROCESS-CORE	path:core::process	process environment	FRAME+LATER	Future process/platform family.	The unstable core module is implementation evidence, not a stable contract.
+DOM-NET-CORE	path:core::net	networking	LIB+LATER	Address values and parsing; socket operations require a platform lock.	Pure address values do not establish networking I/O.
+DOM-NET-STD	path:std::net	networking	FRAME+LIB+LATER	Socket/networking/resource lock.	DNS, blocking, options, timeouts, and lifecycle remain blocked.
+DOM-TIME-CORE	path:core::time	time and clocks	LIB+LATER	Duration value arithmetic.	Clock reads and timers require platform semantics.
+DOM-TIME-STD	path:std::time	time and clocks	FRAME+LIB+LATER	Clock/platform lock plus ordinary duration algorithms.	Monotonicity, wall-clock jumps, resolution, and sleep remain blocked.
+DOM-BOOL-CORE	path:core::bool	scalar and aggregate values	G0	Protected copy Bool and scalar operations.	The measured copy amendment is current evidence.
+DOM-BOOL-STD	path:std::bool	scalar and aggregate values	G0+RED	Protected copy Bool; std primitive path is redundant.	The source declaration is core.
+DOM-PRIMITIVE-CORE	path:core::primitive	scalar and aggregate values	G0+LATER+RED	Existing primitives plus explicit later family dispositions.	The primitive module is a namespace/reexport surface.
+DOM-PRIMITIVE-STD	path:std::primitive	scalar and aggregate values	G0+LATER+RED	Existing primitives plus explicit later family dispositions.	The std primitive module is a namespace/reexport surface.
+DOM-REFERENCE-CORE	path:core::reference	ownership and borrowing	G0	Checked shared/uniq borrow semantics.	Rust reference methods are demand evidence, not borrow-inference authority.
+DOM-FN-CORE	path:core::fn	language organization and abstraction	G0+LATER+RED	Static direct calls now; general function values/closures remain later.	Rust function-trait spelling is not required.
+DOM-PRELUDE-CORE	path:core::prelude	prelude and reexports	RED	Canonical underlying domains.	Prelude packaging adds no capability.
+DOM-PRELUDE-STD	path:std::prelude	prelude and reexports	RED	Canonical underlying domains.	Edition-specific imports add no capability.
+DOM-SURFACE-MACRO	kind:macro	macros and convenience surface	RED+LATER	Map each macro to its owning domain; macro-system/build work is separate.	A macro name is not an independent semantic capability.
+DOM-SURFACE-KEYWORD	kind:keyword	language organization and abstraction	G0+LATER+RED	Map current control/value keywords to existing language rules and later keywords to their family.	Rust keyword documentation is not a standard-library capability list.
+DOM-SURFACE-ATTR	kind:attr	build-time metadata and code generation	LATER+RED	Separate module/build/toolchain work.	Attribute spelling is not a data capability.
+DOM-SURFACE-DERIVE	kind:derive	build-time metadata and code generation	LATER+RED	Compiler-generated explicit behavior or ordinary code.	Rust derive spelling is not required one for one.
+DOM-UNSTABLE-AUTODIFF-CORE	path:core::autodiff	numeric values and algorithms	LATER	Separate numeric and differentiation family.	Unstable automatic differentiation is not part of the stable demand anchor.
+DOM-UNSTABLE-AUTODIFF-STD	path:std::autodiff	numeric values and algorithms	LATER	Separate numeric and differentiation family.	Unstable automatic differentiation is not part of the stable demand anchor.
+DOM-UNSTABLE-LANG-CONTRACTS	path:core::contracts	language organization and abstraction	LATER	Separate language-contract surface review.	An unstable Rust spelling does not select an xlang mechanism.
+DOM-UNSTABLE-LANG-FIELD	path:core::field	language organization and abstraction	LATER	Separate language-abstraction review.	An unstable Rust spelling does not select an xlang mechanism.
+DOM-UNSTABLE-LANG-FROM	path:core::from	conversion and behavior	LATER	Separate conversion-protocol review.	An unstable Rust spelling does not select an xlang mechanism.
+DOM-UNSTABLE-LANG-INDEX	path:core::index	language organization and abstraction	LATER	Separate indexing-protocol review.	An unstable Rust spelling does not select an xlang mechanism.
+DOM-UNSTABLE-LANG-PAT	path:core::pat	language organization and abstraction	LATER	Separate pattern-protocol review.	An unstable Rust spelling does not select an xlang mechanism.
+DOM-UNSTABLE-TARGET-SIMD-CORE	path:core::simd	target intrinsics and dispatch	FRAME+LATER+NG	Separate portable-SIMD and target lock; unchecked intrinsics remain inadmissible.	The unstable catalog is implementation and future-demand evidence.
+DOM-UNSTABLE-TARGET-SIMD-STD	path:std::simd	target intrinsics and dispatch	FRAME+LATER+NG	Separate portable-SIMD and target lock; unchecked intrinsics remain inadmissible.	The unstable catalog is implementation and future-demand evidence.
+DOM-UNSTABLE-TARGET-PROFILING	path:core::profiling	target/compiler hints	FRAME+LATER+NG	Separate tooling/target lock.	Writer-selected profiling intrinsics cannot become unchecked optimizer facts.
+DOM-UNSTABLE-TARGET-UB-CHECKS	path:core::ub_checks	target/compiler hints	FRAME+LATER+NG	Compiler/runtime evidence only.	Writer code cannot weaken or forge validity checks.
+DOM-UNSTABLE-TARGET-BINDER	path:core::unsafe_binder	language organization and abstraction	LATER+NG	Unsafe binder authority is inadmissible; any checked need requires separate normalization.	Unstable Rust syntax is not an xlang capability.

@@ -1,0 +1,83 @@
+domain_id	domain	caller_safety	domain_partition	canonical_stable_declarations
+D01	numeric values and algorithms	safe	G0+LIB+LATER	1950
+D01	numeric values and algorithms	unsafe	G0+LIB+LATER	69
+D01	scalar and aggregate values	safe	G0	2
+D01	scalar and aggregate values	safe	G0+LATER+RED	2
+D02	language organization and abstraction	safe	G0+LATER+RED	152
+D03	conversion and behavior	safe	LIB+RED	23
+D03	ownership and borrowing	safe	G0	1
+D03	ownership and capability predicates	safe	G0+LATER+RED	10
+D03	static behavior and views	safe	G0+LIB	5
+D03	static behavior and views	safe	G0+LIB+RED	1
+D03	static behavior contracts	safe	G0+LIB	42
+D03	static behavior contracts	safe	G0+LIB+LATER	31
+D03	static behavior contracts	safe	G0+LIB+RED	2
+D04	ownership, layout, and value transitions	safe	G0+LATER+NG	25
+D04	ownership, layout, and value transitions	unsafe	G0+LATER+NG	10
+D04	raw pointers and provenance	safe	FRAME+NG	75
+D04	raw pointers and provenance	unsafe	FRAME+NG	85
+D05	error presentation and chaining	safe	LIB+LATER	17
+D05	recoverable results and variants	safe	G0+LIB	91
+D05	recoverable results and variants	safe	G0+LIB+RED	2
+D05	recoverable results and variants	unsafe	G0+LIB	3
+D06	trap, panic, and diagnostics	safe	FRAME+LATER	7
+D06	trap, panic, and diagnostics	safe	G0+FRAME+NG	28
+D07	heap allocation and runtime	safe	FRAME+LATER	20
+D07	heap allocation and runtime	unsafe	FRAME+LATER	10
+D07	unique ownership and data structures	safe	G0+LATER	15
+D07	unique ownership and data structures	safe	G0+RED	1
+D07	unique ownership and data structures	unsafe	G0+LATER	3
+D08	interior mutability and dynamic aliasing	safe	G0+LATER+NG	60
+D08	interior mutability and dynamic aliasing	safe	LATER+RED	1
+D08	interior mutability and dynamic aliasing	unsafe	G0+LATER+NG	1
+D08	shared ownership and conversions	safe	LIB+LATER	8
+D08	shared ownership and weak identity	safe	LATER	58
+D08	shared ownership and weak identity	safe	LATER+RED	1
+D08	shared ownership and weak identity	unsafe	LATER	12
+D09	sequential and associative data structures	safe	G0	331
+D09	sequential and associative data structures	unsafe	G0	1
+D09	sequential data structures	safe	G0	214
+D09	sequential data structures	safe	G0+LIB	14
+D09	sequential data structures	safe	G0+RED	1
+D09	sequential data structures	unsafe	G0	17
+D10	ranges and traversal	safe	G0+LIB	17
+D10	ranges and traversal	safe	G0+LIB+RED	1
+D10	synchronous iteration	safe	G0+LIB	131
+D10	synchronous iteration	safe	G0+LIB+RED	1
+D11	bytes and text	safe	G0+LIB+LATER	220
+D11	bytes and text	safe	LIB	4
+D11	bytes and text	unsafe	G0+LIB+LATER	15
+D12	formatting and presentation	safe	LIB+LATER	79
+D13	runtime type identity and reflection	safe	LATER	17
+D14	build-time metadata and code generation	safe	LATER+RED	1
+D14	macros and convenience surface	safe	RED+LATER	36
+D15	synchronous I/O	safe	FRAME+LIB+LATER	120
+D15	synchronous I/O	safe	LIB+LATER	14
+D16	filesystems and paths	safe	FRAME+LIB+LATER	78
+D16	filesystems and paths	safe	LIB+LATER	77
+D17	process environment	safe	FRAME+LIB+LATER	75
+D17	process environment	unsafe	FRAME+LIB+LATER	2
+D18	FFI, ABI, and OS resources	safe	FRAME+LATER+NG	27
+D18	FFI, ABI, and OS resources	safe	FRAME+LIB+LATER	340
+D18	FFI, ABI, and OS resources	unsafe	FRAME+LATER+NG	2
+D18	FFI, ABI, and OS resources	unsafe	FRAME+LIB+LATER	19
+D19	networking	safe	FRAME+LIB+LATER	66
+D19	networking	safe	LIB+LATER	64
+D20	time and clocks	safe	FRAME+LIB+LATER	18
+D20	time and clocks	safe	LIB+LATER	39
+D21	threads and thread-local state	safe	FRAME+LATER	45
+D21	threads and thread-local state	safe	FRAME+LATER+RED	1
+D21	threads and thread-local state	unsafe	FRAME+LATER	1
+D22	atomics and synchronization	safe	FRAME+LATER	256
+D22	atomics and synchronization	safe	FRAME+LIB+LATER	94
+D22	atomics and synchronization	unsafe	FRAME+LATER	13
+D23	async, tasks, and pinning	safe	LATER	42
+D23	async, tasks, and pinning	safe	LATER+RED	2
+D23	async, tasks, and pinning	unsafe	LATER	3
+D23	pinning and address-sensitive values	safe	LATER	14
+D23	pinning and address-sensitive values	safe	LATER+RED	1
+D23	pinning and address-sensitive values	unsafe	LATER	5
+D24	target intrinsics and dispatch	safe	FRAME+LATER+NG	6
+D24	target/compiler hints	safe	FRAME+LATER+NG	6
+D24	target/compiler hints	unsafe	FRAME+LATER+NG	2
+D25	prelude and reexports	safe	RED	14
