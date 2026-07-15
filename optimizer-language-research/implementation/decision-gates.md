@@ -1542,3 +1542,45 @@ reference pilot, candidate construction, Candidate Freeze B, execution,
 scoring, held-out access, selection, language or specification decision,
 compiler implementation, production adoption, production fact channel, E0.1
 restart, xlc migration, or default teaching.
+
+## D13-R6 closes Dense Unique-Owner Family Lock A for owner review (2026-07-15)
+
+The research-only Dense Unique-Owner Family Lock A revision
+`F-DENSE-LOCK-A-R5` passes independent exact-byte whole-lock hostile review.
+The canonical manifest contains 74 artifacts, eight current controls, seven
+artifact-class records, and 13 explicit mixed PASS/BLOCKED completion rows. Its
+SHA-256 is
+`0bff36e75a41575ae16bd51fc12ef5c0fcdb819288aa7755eeea320741a5ad97`;
+the build summary is
+`a9584bc10ba6414a94d10cce2ba95ff066ef9e0632f8d2167b57b17bd31b9ea2`.
+The dossier, builder, and verifier hashes are respectively
+`2a7114b82a6cf97d81a6bcf4695cfcd50b28a3b15aa5e2048dbfa039ad5a1f13`,
+`02290bc605aeb6c956c114cf2a9fcd6f3d0c434c27ceb2e732adb06d31f75afb`,
+and `e610888c724753e83d995b150238d8605cfaf723a3db1fd6054bf9dd7fddf282`.
+
+The durable layer-review identities are coverage
+`d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798`,
+contract/soundness
+`20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7`,
+corrected performance v5
+`e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1`,
+and whole lock
+`27534e0c792daf7970bbf5ee53de0fec2dd77d1e577daf17359ce61260cfff93`.
+The final review independently reconstructed the 13-input/93-member E0.1
+partition, the 27-blocker owner-branch stage closure, every authority boundary,
+and all artifact/reviewer/completion joins. Sixty-five pre-report whole-lock
+attacks and 13 report-parser attacks were rejected. `verify_dense_lock.py`,
+`make check`, the separate `make -C compiler check`, Python 3.9 compilation,
+`git diff --check`, AGENTS/CLAUDE byte identity, and the English-only scan all
+pass on the exact reviewed bytes; both repository gates also passed before and
+after the external review report was added.
+
+This closes only the D13 research draft. The next action is owner review and
+explicit resolution of OD-0 through OD-5. Approval of those decisions alone
+still authorizes no reference pilot, candidate construction, Candidate Freeze
+B, candidate or held-out execution, held-out access, candidate selection or
+scoring, language or specification change or decision, compiler or production
+implementation, production adoption, production fact channel, E0.1 restart,
+xlc migration, or default teaching. Every operational or production action
+requires a later separate owner authorization and its exact prerequisite
+closure.

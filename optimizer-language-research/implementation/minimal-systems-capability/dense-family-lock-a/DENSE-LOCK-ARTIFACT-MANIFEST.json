@@ -1,0 +1,1055 @@
+{
+  "artifact_class_records": [
+    {
+      "artifact_class": "INSTANTIATED_FAMILY_LOCK_A",
+      "path_sha256_map_sha256": "a9f78521ee7db07e74c893f0ae6eea4f7da9ac33a24cb4d61b68dc5ec9063a16",
+      "paths": [
+        "DENSE-UNIQUE-OWNER-FAMILY-LOCK-A.md"
+      ],
+      "producer": "/root",
+      "reviewer": "/root/whole_lock_hostile",
+      "sha256_by_path": {
+        "DENSE-UNIQUE-OWNER-FAMILY-LOCK-A.md": "2a7114b82a6cf97d81a6bcf4695cfcd50b28a3b15aa5e2048dbfa039ad5a1f13"
+      },
+      "status": "EXTERNAL_EXACT_HASH_WHOLE_LOCK_REVIEW_REQUIRED"
+    },
+    {
+      "artifact_class": "FAIL_CLOSED_LOCK_VALIDATOR",
+      "path_sha256_map_sha256": "088a7f1eea262b47a4baf73b97fcecb28bb3c16f94739c631329f7e6498d33bc",
+      "paths": [
+        "build_dense_lock.py",
+        "verify_dense_lock.py"
+      ],
+      "producer": "/root",
+      "reviewer": "/root/whole_lock_hostile",
+      "sha256_by_path": {
+        "build_dense_lock.py": "02290bc605aeb6c956c114cf2a9fcd6f3d0c434c27ceb2e732adb06d31f75afb",
+        "verify_dense_lock.py": "e610888c724753e83d995b150238d8605cfaf723a3db1fd6054bf9dd7fddf282"
+      },
+      "status": "EXTERNAL_EXACT_HASH_WHOLE_LOCK_REVIEW_REQUIRED"
+    },
+    {
+      "artifact_class": "CONTRACT_TABLES",
+      "path_sha256_map_sha256": "b06ca17a1080ff84c4b26a61f62c4809ada409bc3993ba128500db1049eb8098",
+      "paths": [
+        "DENSE-CANDIDATE-CONTRACT-BINDINGS.tsv",
+        "DENSE-CANDIDATE-DISTINCTION-REGISTRY.tsv",
+        "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv",
+        "DENSE-CANDIDATE-OPERATION-REGISTRY.tsv",
+        "DENSE-COMMON-SUBSTRATE-REGISTRY.tsv",
+        "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv",
+        "DENSE-FACT-CHANNEL-REGISTRY.tsv",
+        "DENSE-OD1-POLICY-REGISTRY.tsv",
+        "DENSE-OD4-POLICY-REGISTRY.tsv",
+        "DENSE-OWNER-ROLE-REGISTRY.tsv",
+        "DENSE-STORED-BORROW-ROUTE-REGISTRY.tsv",
+        "DENSE-SYNTHETIC-UNIT-REGISTRY.tsv",
+        "DENSE-ZST-POLICY-REGISTRY.tsv"
+      ],
+      "producer": "dense_contract_registry.py@31dda5ccfd33202860022946fdf456404b104a14118ffcd286406595e2da2d06",
+      "reviewer": "CONTRACT-SOUNDNESS-REVIEW-R1@20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "sha256_by_path": {
+        "DENSE-CANDIDATE-CONTRACT-BINDINGS.tsv": "efb9336256340fd4b49177ba738fa3de1099f3e9f8157e77b6232979afee01d3",
+        "DENSE-CANDIDATE-DISTINCTION-REGISTRY.tsv": "5b1a4fd41658cfd21f9330c79c8914ed9107aede3c5ffe619d5fa5216580c018",
+        "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv": "63f6c1e0cad521ea718b40b9570857e2401a2e83e4d36d1d58785b7276a041df",
+        "DENSE-CANDIDATE-OPERATION-REGISTRY.tsv": "e6309a06014fbc573974786e91597344d29c665b463bd4589553d1e8a55812bd",
+        "DENSE-COMMON-SUBSTRATE-REGISTRY.tsv": "99fa5fc0c0ad44033c360027a0b2d5caf2bdb65253013776995f21e145e28e3f",
+        "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv": "3016206708a63b858b655e81de0e5c08e21055b0c4aa4c1ce37c2561c73e3418",
+        "DENSE-FACT-CHANNEL-REGISTRY.tsv": "8f6cb60bfb657a695168992e825cd75b45f2702b278d4755afa8b54b1843868f",
+        "DENSE-OD1-POLICY-REGISTRY.tsv": "558e4d11dc9ba6d97f9f1de537e4f9f528167836f9e5a7b4036380dd7aad9379",
+        "DENSE-OD4-POLICY-REGISTRY.tsv": "073c206be16fb9d85cfd7d90bd3743c21633b30ef1a93fd21828d3a1a5938bdd",
+        "DENSE-OWNER-ROLE-REGISTRY.tsv": "c35f15e6f63b5e1067246aaa555329294b753a294009dc5c17154b54eadef971",
+        "DENSE-STORED-BORROW-ROUTE-REGISTRY.tsv": "6af02ae6c410d9ae08e802eb2733eeab80d94e905bf5593ab6ce29327fa9ddf8",
+        "DENSE-SYNTHETIC-UNIT-REGISTRY.tsv": "d03491046d15c96f42e04c80a27c98b4547895fc687d3b929bcc53183d3a87a3",
+        "DENSE-ZST-POLICY-REGISTRY.tsv": "7f8d3d4cd12e5e35fc773388458d028f306aba3f1a2445a0b08378737d765059"
+      },
+      "status": "PASS_EXACT_BYTES_CONTRACT_SOUNDNESS_ONLY"
+    },
+    {
+      "artifact_class": "SOUNDNESS_FIXTURES_AND_GENERATORS",
+      "path_sha256_map_sha256": "1d2d2cfd389f482a04f6e9ba539c0cc86fe12ad6648aeaedb6bcf5ea919f2a9a",
+      "paths": [
+        "DENSE-MATHEMATICAL-SOUNDNESS-TRACES.jsonl",
+        "DENSE-SOUNDNESS-PROTOCOL-MANIFEST.json",
+        "dense_contract_registry.py",
+        "dense_soundness_oracle.py"
+      ],
+      "producer": "dense_contract_registry.py@31dda5ccfd33202860022946fdf456404b104a14118ffcd286406595e2da2d06;dense_soundness_oracle.py@9a750e9a01a3dc7329ed26393df1fbcad233509dc8cbc05079c1d317b81e68c2",
+      "reviewer": "CONTRACT-SOUNDNESS-REVIEW-R1@20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "sha256_by_path": {
+        "DENSE-MATHEMATICAL-SOUNDNESS-TRACES.jsonl": "be4b755f44b244ba12338d96d483e3c7de5b282858b23beefc02ec32e95d1052",
+        "DENSE-SOUNDNESS-PROTOCOL-MANIFEST.json": "692f235334ef16798bc3722c67d3205364ab7033a0b5f8a110abc286d6f0a991",
+        "dense_contract_registry.py": "31dda5ccfd33202860022946fdf456404b104a14118ffcd286406595e2da2d06",
+        "dense_soundness_oracle.py": "9a750e9a01a3dc7329ed26393df1fbcad233509dc8cbc05079c1d317b81e68c2"
+      },
+      "status": "PASS_EXACT_BYTES_CONTRACT_SOUNDNESS_ONLY"
+    },
+    {
+      "artifact_class": "PERFORMANCE_PROTOCOL_AND_TOOLS",
+      "path_sha256_map_sha256": "114c32bc0c5c7d4b1462c9cabbc7c6bcb6b5a842ccd617b8af794265a7bbdd5b",
+      "paths": [
+        "DENSE-CANDIDATE-CONTRACT-BINDINGS.tsv",
+        "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv",
+        "DENSE-CANDIDATE-OPERATION-REGISTRY.tsv",
+        "DENSE-COMMON-SUBSTRATE-REGISTRY.tsv",
+        "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv",
+        "DENSE-OD4-POLICY-REGISTRY.tsv",
+        "DENSE-PERFORMANCE-ALGORITHMS.tsv",
+        "DENSE-PERFORMANCE-ALLOCATORS.tsv",
+        "DENSE-PERFORMANCE-BLOCKERS.tsv",
+        "DENSE-PERFORMANCE-COMMON-SUBSTRATE.tsv",
+        "DENSE-PERFORMANCE-CONTROLS.tsv",
+        "DENSE-PERFORMANCE-COUNTER-POLICIES.tsv",
+        "DENSE-PERFORMANCE-DISPOSITIONS.tsv",
+        "DENSE-PERFORMANCE-DISTRIBUTIONS.tsv",
+        "DENSE-PERFORMANCE-ENDPOINTS.tsv",
+        "DENSE-PERFORMANCE-FACTS-POLICIES.tsv",
+        "DENSE-PERFORMANCE-FAILURE-POLICIES.tsv",
+        "DENSE-PERFORMANCE-GENERATORS.tsv",
+        "DENSE-PERFORMANCE-GROWTH-POLICIES.tsv",
+        "DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl",
+        "DENSE-PERFORMANCE-INPUTS.jsonl",
+        "DENSE-PERFORMANCE-LAYOUTS.tsv",
+        "DENSE-PERFORMANCE-MATRIX.tsv",
+        "DENSE-PERFORMANCE-OPERATION-GATES.tsv",
+        "DENSE-PERFORMANCE-OWNER-BRANCHES.tsv",
+        "DENSE-PERFORMANCE-PAYLOADS.tsv",
+        "DENSE-PERFORMANCE-PROTOCOL.md",
+        "DENSE-PERFORMANCE-REFERENCE-ROUTES.tsv",
+        "DENSE-PERFORMANCE-REGISTRY-SUMMARY.json",
+        "DENSE-PERFORMANCE-REPETITIONS.tsv",
+        "DENSE-PERFORMANCE-SCHEDULES.tsv",
+        "DENSE-PERFORMANCE-STATISTICS.json",
+        "DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv",
+        "DENSE-PERFORMANCE-TARGETS.tsv",
+        "DENSE-PERFORMANCE-WARMUPS.tsv",
+        "dense_contract_registry.py",
+        "dense_performance_registry.py",
+        "generate_dense_performance_inputs.py",
+        "verify_dense_performance.py"
+      ],
+      "producer": "dense_performance_registry.py@0f42684374dd7927edfab9af3452286bd75a9703eeb36dbbcb413ba20a67a919;generate_dense_performance_inputs.py@47a2bfd1bcd0e7a7d96a39f21080a8f3ca61e0bc906a55042c76200d4ed36c81",
+      "reviewer": "PERFORMANCE-REVIEW-V5@e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "sha256_by_path": {
+        "DENSE-CANDIDATE-CONTRACT-BINDINGS.tsv": "efb9336256340fd4b49177ba738fa3de1099f3e9f8157e77b6232979afee01d3",
+        "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv": "63f6c1e0cad521ea718b40b9570857e2401a2e83e4d36d1d58785b7276a041df",
+        "DENSE-CANDIDATE-OPERATION-REGISTRY.tsv": "e6309a06014fbc573974786e91597344d29c665b463bd4589553d1e8a55812bd",
+        "DENSE-COMMON-SUBSTRATE-REGISTRY.tsv": "99fa5fc0c0ad44033c360027a0b2d5caf2bdb65253013776995f21e145e28e3f",
+        "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv": "3016206708a63b858b655e81de0e5c08e21055b0c4aa4c1ce37c2561c73e3418",
+        "DENSE-OD4-POLICY-REGISTRY.tsv": "073c206be16fb9d85cfd7d90bd3743c21633b30ef1a93fd21828d3a1a5938bdd",
+        "DENSE-PERFORMANCE-ALGORITHMS.tsv": "65c531a4b77338d1b651b539c2ca8c6aa2e122f92168b3c234a814973a3ef887",
+        "DENSE-PERFORMANCE-ALLOCATORS.tsv": "cc218b4330640a9cad12eb5c9c2c14e5cfdaf912fdfd3bf6cb96e753d6f5e5df",
+        "DENSE-PERFORMANCE-BLOCKERS.tsv": "3fda2ab4a24189f58ddd83e425a2504be4b52f3a7830721e413015695d0f8af3",
+        "DENSE-PERFORMANCE-COMMON-SUBSTRATE.tsv": "23b2b1f652f7d28f6d9722ae082f10bef8c797c59a63d507fba579ede87fbc3e",
+        "DENSE-PERFORMANCE-CONTROLS.tsv": "1bc594003697c3868e0ac42720de56df1680922f22426b090ad12fa029eeea09",
+        "DENSE-PERFORMANCE-COUNTER-POLICIES.tsv": "89a9212a6982b4e37c211e2dcc3641be55bd64fcdaa9e1d70720761c16768117",
+        "DENSE-PERFORMANCE-DISPOSITIONS.tsv": "5899086d5ed5b9ac75397b21994d741972f2fef41a443a7e577f0e33e87bb8c6",
+        "DENSE-PERFORMANCE-DISTRIBUTIONS.tsv": "54dc16eec707b918321872ce7c05afee4ceafe258a87a8080df998c4a1be1c72",
+        "DENSE-PERFORMANCE-ENDPOINTS.tsv": "0018182e1e15f1a18725742cf0fa3ee08dbf05e900603e29b13a4faa74934c5a",
+        "DENSE-PERFORMANCE-FACTS-POLICIES.tsv": "899925e9744f472732a8efa102cd53306772706f0fb9ead369969bcae2e319cc",
+        "DENSE-PERFORMANCE-FAILURE-POLICIES.tsv": "bd6331cc05d6af867a77a416644a92ed143cab669c9145cea4e39089128af742",
+        "DENSE-PERFORMANCE-GENERATORS.tsv": "bf9ff60553e0157ba6a92fbf0cfa672e81b0b8668db8abdcc3c56c631f543f9e",
+        "DENSE-PERFORMANCE-GROWTH-POLICIES.tsv": "768645fd68ed1de1699dac7f92d30b51ebb3ba99efc1b8a294368255f0f4c431",
+        "DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl": "880a1231311bb8e1132e7d0237c844455cd6f7c99a30eb8bff4d396ad8d12722",
+        "DENSE-PERFORMANCE-INPUTS.jsonl": "65ed14b61cf2f016bf75c49abe165e5a6b2245e451acafb67d693512bc83119f",
+        "DENSE-PERFORMANCE-LAYOUTS.tsv": "de5a054494d944ab70cd3aac56c2dfff6ddfa6f2271f030064ed2642ff198768",
+        "DENSE-PERFORMANCE-MATRIX.tsv": "8d9f376ed9cb90f3fe8aa9c55c3861bc775430d948521a264630178cac28a187",
+        "DENSE-PERFORMANCE-OPERATION-GATES.tsv": "2a6faa63f95b9140c0f8203022c9526a83681bf4f27b6fd0a270b151b35245a9",
+        "DENSE-PERFORMANCE-OWNER-BRANCHES.tsv": "c48bbc27e51db13094cd4486dddf09001b8c2725cd38c2922f7dbbf3b94f09f5",
+        "DENSE-PERFORMANCE-PAYLOADS.tsv": "68ccb0cb9e85e2b83e6cdb4e586a8fd789f264966f1d9f71881b42338dfd52e0",
+        "DENSE-PERFORMANCE-PROTOCOL.md": "8b63a7f495799547bc8b9481d80ff9c7cb41104f7e4cfe410b6a3758edfee0b1",
+        "DENSE-PERFORMANCE-REFERENCE-ROUTES.tsv": "ae89b2b13e4e438de70a70006c43d8d0f7044227f54dc81bf5df513c094cf6a7",
+        "DENSE-PERFORMANCE-REGISTRY-SUMMARY.json": "c5683859c6f3c137b1aada7b95c1581842436b47b808452c37727e91da570609",
+        "DENSE-PERFORMANCE-REPETITIONS.tsv": "0ad5eb53324573507e9f4db7f5afdabd29c053334595ae6d2e40a3b03397c359",
+        "DENSE-PERFORMANCE-SCHEDULES.tsv": "06e0a002f799fa82dc4e77d9f46914fb1762ac9659ab6a18d0a145c24f3bbc94",
+        "DENSE-PERFORMANCE-STATISTICS.json": "08987857f7e52ab258536b8d8763d689e3ad1feb243b369241b3d82e286ab4b0",
+        "DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv": "6196995de9b7f1ad2518c38c730a4c081ddb465a2bb00cff52734e9b351c9f32",
+        "DENSE-PERFORMANCE-TARGETS.tsv": "9dcc86dc85fdcf87c77f7c1e6c411c22761b44aac50a7973348df335997dcf94",
+        "DENSE-PERFORMANCE-WARMUPS.tsv": "0b048f6ab95c9c48d6bb963f0a4be6d648258b86c88dd6944ed0251ad908c41b",
+        "dense_contract_registry.py": "31dda5ccfd33202860022946fdf456404b104a14118ffcd286406595e2da2d06",
+        "dense_performance_registry.py": "0f42684374dd7927edfab9af3452286bd75a9703eeb36dbbcb413ba20a67a919",
+        "generate_dense_performance_inputs.py": "47a2bfd1bcd0e7a7d96a39f21080a8f3ca61e0bc906a55042c76200d4ed36c81",
+        "verify_dense_performance.py": "c94765af32878649a053511e7bd89e9bb32b2b2432f06caab0b258f6e790ead2"
+      },
+      "status": "PASS_EXACT_BYTES_PERFORMANCE_PROTOCOL_ONLY"
+    },
+    {
+      "artifact_class": "META5_LEDGER",
+      "path_sha256_map_sha256": "d1af98789deb820755980caf416187a07a52ade298ff62ff3ad1d76d02613b7f",
+      "paths": [
+        "dense_meta5.py"
+      ],
+      "producer": "dense_meta5.py@40c684507e1a5c3592da2ede792be2fb1bcc8679eb659de97d72ead92e6ae376",
+      "reviewer": "CONTRACT-SOUNDNESS-REVIEW-R1@20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "sha256_by_path": {
+        "dense_meta5.py": "40c684507e1a5c3592da2ede792be2fb1bcc8679eb659de97d72ead92e6ae376"
+      },
+      "status": "PASS_RESEARCH_DELTAS_UNSELECTED_NO_PRODUCTION_CHANGE"
+    },
+    {
+      "artifact_class": "HELD_OUT_CUSTODY_RECORD",
+      "blocker_id": "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+      "hidden_source_or_hash_claimed": false,
+      "path_sha256_map_sha256": "7bb73b9290ba6e8af74ae31c1805a552587bee06d1cad11f8a37c64ebf210103",
+      "paths": [
+        "DENSE-PERFORMANCE-BLOCKERS.tsv"
+      ],
+      "producer": "PENDING_EXTERNAL_CUSTODIAN",
+      "reviewer": "PENDING_EXTERNAL_INDEPENDENT_CUSTODY_AUDITOR",
+      "sha256_by_path": {
+        "DENSE-PERFORMANCE-BLOCKERS.tsv": "3fda2ab4a24189f58ddd83e425a2504be4b52f3a7830721e413015695d0f8af3"
+      },
+      "status": "BLOCKED_PENDING_EXTERNAL_H_FLATSET_CUSTODY"
+    }
+  ],
+  "artifact_count": 74,
+  "artifacts": [
+    {
+      "bytes": 695983,
+      "path": "DENSE-CANDIDATE-CONTRACT-BINDINGS.tsv",
+      "sha256": "efb9336256340fd4b49177ba738fa3de1099f3e9f8157e77b6232979afee01d3"
+    },
+    {
+      "bytes": 3311,
+      "path": "DENSE-CANDIDATE-DISTINCTION-REGISTRY.tsv",
+      "sha256": "5b1a4fd41658cfd21f9330c79c8914ed9107aede3c5ffe619d5fa5216580c018"
+    },
+    {
+      "bytes": 8657,
+      "path": "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv",
+      "sha256": "63f6c1e0cad521ea718b40b9570857e2401a2e83e4d36d1d58785b7276a041df"
+    },
+    {
+      "bytes": 605495,
+      "path": "DENSE-CANDIDATE-OPERATION-REGISTRY.tsv",
+      "sha256": "e6309a06014fbc573974786e91597344d29c665b463bd4589553d1e8a55812bd"
+    },
+    {
+      "bytes": 218016,
+      "path": "DENSE-CAPABILITY-UNIT-AUTHORITY.tsv",
+      "sha256": "e58a922be6b9c917c69f813b29362d0cfed8e94b9a4709ae33a7d3ecaa774dd0"
+    },
+    {
+      "bytes": 2944,
+      "path": "DENSE-COMMON-SUBSTRATE-REGISTRY.tsv",
+      "sha256": "99fa5fc0c0ad44033c360027a0b2d5caf2bdb65253013776995f21e145e28e3f"
+    },
+    {
+      "bytes": 3848,
+      "path": "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-2-FAIL.md",
+      "sha256": "d7e09f117238f0e47fc6696b27d59947b431c9ed473cc7ae8d57c19b85243a52"
+    },
+    {
+      "bytes": 10629,
+      "path": "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+      "sha256": "d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798"
+    },
+    {
+      "bytes": 19245,
+      "path": "DENSE-E01-DISPOSITION-AUTHORITY.tsv",
+      "sha256": "2a7323064b7eea74fca0bc11ab442327fb870718ed959a837ffec50b29d6eb40"
+    },
+    {
+      "bytes": 29983,
+      "path": "DENSE-E01-MEMBER-CLASSIFICATION.tsv",
+      "sha256": "7a1853e34a385e0322ad1741d809763554f87e7d1476936ea192de042851fc56"
+    },
+    {
+      "bytes": 318130,
+      "path": "DENSE-EVIDENCE-MEMBER-AUTHORITY.tsv",
+      "sha256": "34b1e14f611b7eee1f069bf9dbf31b0beab706fcb1dfa70b807e692b9dd53e2d"
+    },
+    {
+      "bytes": 663850,
+      "path": "DENSE-EVIDENCE-TARGET-AUTHORITY.tsv",
+      "sha256": "687aecfaa3ef122ee1a9270a97a4ab614e4693d62a32eb69e93a9a33ad56866e"
+    },
+    {
+      "bytes": 708227,
+      "path": "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv",
+      "sha256": "3016206708a63b858b655e81de0e5c08e21055b0c4aa4c1ce37c2561c73e3418"
+    },
+    {
+      "bytes": 11383,
+      "path": "DENSE-FACT-CHANNEL-REGISTRY.tsv",
+      "sha256": "8f6cb60bfb657a695168992e825cd75b45f2702b278d4755afa8b54b1843868f"
+    },
+    {
+      "bytes": 3790,
+      "path": "DENSE-FROZEN-G0-INPUT-AUTHORITY.tsv",
+      "sha256": "95aaa6196c5e78506c7a9f4755c04bf9a8eea02aa669d30f3f6e9d1d672f3330"
+    },
+    {
+      "bytes": 6607,
+      "path": "DENSE-HOSTILE-REVIEW-ROUND-1.md",
+      "sha256": "d7167467af6d27255d590de0293571c2d64a02856865013c6ad24398a7d854c2"
+    },
+    {
+      "bytes": 655,
+      "path": "DENSE-LOCAL-DECLARATIVE-INPUT-AUTHORITY.tsv",
+      "sha256": "e7c0835510f220e86e9ea6b23bf52dde4d55cff142cd5ebd8ae586d76b4162bd"
+    },
+    {
+      "bytes": 10848754,
+      "path": "DENSE-MATHEMATICAL-SOUNDNESS-TRACES.jsonl",
+      "sha256": "be4b755f44b244ba12338d96d483e3c7de5b282858b23beefc02ec32e95d1052"
+    },
+    {
+      "bytes": 18873,
+      "path": "DENSE-OD1-POLICY-REGISTRY.tsv",
+      "sha256": "558e4d11dc9ba6d97f9f1de537e4f9f528167836f9e5a7b4036380dd7aad9379"
+    },
+    {
+      "bytes": 3564,
+      "path": "DENSE-OD4-POLICY-REGISTRY.tsv",
+      "sha256": "073c206be16fb9d85cfd7d90bd3743c21633b30ef1a93fd21828d3a1a5938bdd"
+    },
+    {
+      "bytes": 57580,
+      "path": "DENSE-OVERLAY-BRANCH-AUTHORITY.tsv",
+      "sha256": "2d1d737501c75903fe564e46af334700703a61a00c1e7f1fac8f0058c4638738"
+    },
+    {
+      "bytes": 356301,
+      "path": "DENSE-OWNER-ROLE-REGISTRY.tsv",
+      "sha256": "c35f15e6f63b5e1067246aaa555329294b753a294009dc5c17154b54eadef971"
+    },
+    {
+      "bytes": 136786,
+      "path": "DENSE-PERFORMANCE-ALGORITHMS.tsv",
+      "sha256": "65c531a4b77338d1b651b539c2ca8c6aa2e122f92168b3c234a814973a3ef887"
+    },
+    {
+      "bytes": 1556,
+      "path": "DENSE-PERFORMANCE-ALLOCATORS.tsv",
+      "sha256": "cc218b4330640a9cad12eb5c9c2c14e5cfdaf912fdfd3bf6cb96e753d6f5e5df"
+    },
+    {
+      "bytes": 13658,
+      "path": "DENSE-PERFORMANCE-BLOCKERS.tsv",
+      "sha256": "3fda2ab4a24189f58ddd83e425a2504be4b52f3a7830721e413015695d0f8af3"
+    },
+    {
+      "bytes": 7176,
+      "path": "DENSE-PERFORMANCE-COMMON-SUBSTRATE.tsv",
+      "sha256": "23b2b1f652f7d28f6d9722ae082f10bef8c797c59a63d507fba579ede87fbc3e"
+    },
+    {
+      "bytes": 5077,
+      "path": "DENSE-PERFORMANCE-CONTROLS.tsv",
+      "sha256": "1bc594003697c3868e0ac42720de56df1680922f22426b090ad12fa029eeea09"
+    },
+    {
+      "bytes": 2494,
+      "path": "DENSE-PERFORMANCE-COUNTER-POLICIES.tsv",
+      "sha256": "89a9212a6982b4e37c211e2dcc3641be55bd64fcdaa9e1d70720761c16768117"
+    },
+    {
+      "bytes": 238023,
+      "path": "DENSE-PERFORMANCE-DISPOSITIONS.tsv",
+      "sha256": "5899086d5ed5b9ac75397b21994d741972f2fef41a443a7e577f0e33e87bb8c6"
+    },
+    {
+      "bytes": 9240,
+      "path": "DENSE-PERFORMANCE-DISTRIBUTIONS.tsv",
+      "sha256": "54dc16eec707b918321872ce7c05afee4ceafe258a87a8080df998c4a1be1c72"
+    },
+    {
+      "bytes": 4863,
+      "path": "DENSE-PERFORMANCE-ENDPOINTS.tsv",
+      "sha256": "0018182e1e15f1a18725742cf0fa3ee08dbf05e900603e29b13a4faa74934c5a"
+    },
+    {
+      "bytes": 1231,
+      "path": "DENSE-PERFORMANCE-FACTS-POLICIES.tsv",
+      "sha256": "899925e9744f472732a8efa102cd53306772706f0fb9ead369969bcae2e319cc"
+    },
+    {
+      "bytes": 815,
+      "path": "DENSE-PERFORMANCE-FAILURE-POLICIES.tsv",
+      "sha256": "bd6331cc05d6af867a77a416644a92ed143cab669c9145cea4e39089128af742"
+    },
+    {
+      "bytes": 769,
+      "path": "DENSE-PERFORMANCE-GENERATORS.tsv",
+      "sha256": "bf9ff60553e0157ba6a92fbf0cfa672e81b0b8668db8abdcc3c56c631f543f9e"
+    },
+    {
+      "bytes": 1813,
+      "path": "DENSE-PERFORMANCE-GROWTH-POLICIES.tsv",
+      "sha256": "768645fd68ed1de1699dac7f92d30b51ebb3ba99efc1b8a294368255f0f4c431"
+    },
+    {
+      "bytes": 24386,
+      "path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+      "sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1"
+    },
+    {
+      "bytes": 1382806,
+      "path": "DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl",
+      "sha256": "880a1231311bb8e1132e7d0237c844455cd6f7c99a30eb8bff4d396ad8d12722"
+    },
+    {
+      "bytes": 265676,
+      "path": "DENSE-PERFORMANCE-INPUTS.jsonl",
+      "sha256": "65ed14b61cf2f016bf75c49abe165e5a6b2245e451acafb67d693512bc83119f"
+    },
+    {
+      "bytes": 1445,
+      "path": "DENSE-PERFORMANCE-LAYOUTS.tsv",
+      "sha256": "de5a054494d944ab70cd3aac56c2dfff6ddfa6f2271f030064ed2642ff198768"
+    },
+    {
+      "bytes": 963557,
+      "path": "DENSE-PERFORMANCE-MATRIX.tsv",
+      "sha256": "8d9f376ed9cb90f3fe8aa9c55c3861bc775430d948521a264630178cac28a187"
+    },
+    {
+      "bytes": 71499,
+      "path": "DENSE-PERFORMANCE-OPERATION-GATES.tsv",
+      "sha256": "2a6faa63f95b9140c0f8203022c9526a83681bf4f27b6fd0a270b151b35245a9"
+    },
+    {
+      "bytes": 5478,
+      "path": "DENSE-PERFORMANCE-OWNER-BRANCHES.tsv",
+      "sha256": "c48bbc27e51db13094cd4486dddf09001b8c2725cd38c2922f7dbbf3b94f09f5"
+    },
+    {
+      "bytes": 2356,
+      "path": "DENSE-PERFORMANCE-PAYLOADS.tsv",
+      "sha256": "68ccb0cb9e85e2b83e6cdb4e586a8fd789f264966f1d9f71881b42338dfd52e0"
+    },
+    {
+      "bytes": 8432,
+      "path": "DENSE-PERFORMANCE-PROTOCOL.md",
+      "sha256": "8b63a7f495799547bc8b9481d80ff9c7cb41104f7e4cfe410b6a3758edfee0b1"
+    },
+    {
+      "bytes": 7325,
+      "path": "DENSE-PERFORMANCE-REFERENCE-ROUTES.tsv",
+      "sha256": "ae89b2b13e4e438de70a70006c43d8d0f7044227f54dc81bf5df513c094cf6a7"
+    },
+    {
+      "bytes": 16385,
+      "path": "DENSE-PERFORMANCE-REGISTRY-SUMMARY.json",
+      "sha256": "c5683859c6f3c137b1aada7b95c1581842436b47b808452c37727e91da570609"
+    },
+    {
+      "bytes": 1097,
+      "path": "DENSE-PERFORMANCE-REPETITIONS.tsv",
+      "sha256": "0ad5eb53324573507e9f4db7f5afdabd29c053334595ae6d2e40a3b03397c359"
+    },
+    {
+      "bytes": 10917,
+      "path": "DENSE-PERFORMANCE-SCHEDULES.tsv",
+      "sha256": "06e0a002f799fa82dc4e77d9f46914fb1762ac9659ab6a18d0a145c24f3bbc94"
+    },
+    {
+      "bytes": 172659,
+      "path": "DENSE-PERFORMANCE-STATISTICS.json",
+      "sha256": "08987857f7e52ab258536b8d8763d689e3ad1feb243b369241b3d82e286ab4b0"
+    },
+    {
+      "bytes": 4770,
+      "path": "DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv",
+      "sha256": "6196995de9b7f1ad2518c38c730a4c081ddb465a2bb00cff52734e9b351c9f32"
+    },
+    {
+      "bytes": 1489,
+      "path": "DENSE-PERFORMANCE-TARGETS.tsv",
+      "sha256": "9dcc86dc85fdcf87c77f7c1e6c411c22761b44aac50a7973348df335997dcf94"
+    },
+    {
+      "bytes": 643,
+      "path": "DENSE-PERFORMANCE-WARMUPS.tsv",
+      "sha256": "0b048f6ab95c9c48d6bb963f0a4be6d648258b86c88dd6944ed0251ad908c41b"
+    },
+    {
+      "bytes": 27465,
+      "path": "DENSE-ROLE-UNIT-AUTHORITY.tsv",
+      "sha256": "f949d1ca7f05d742eccb3264702591e1cc5ba559c4867c3b175796afe633f824"
+    },
+    {
+      "bytes": 312079,
+      "path": "DENSE-SELECTOR-EXPANSION-AUTHORITY.tsv",
+      "sha256": "3879e7bf3896c466b38a46c719ae6acf0f6113aab3e4606cb4593bc0baace9a9"
+    },
+    {
+      "bytes": 10032,
+      "path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+      "sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7"
+    },
+    {
+      "bytes": 13400,
+      "path": "DENSE-SOUNDNESS-PROTOCOL-MANIFEST.json",
+      "sha256": "692f235334ef16798bc3722c67d3205364ab7033a0b5f8a110abc286d6f0a991"
+    },
+    {
+      "bytes": 8630,
+      "path": "DENSE-STORED-BORROW-ROUTE-REGISTRY.tsv",
+      "sha256": "6af02ae6c410d9ae08e802eb2733eeab80d94e905bf5593ab6ce29327fa9ddf8"
+    },
+    {
+      "bytes": 1407,
+      "path": "DENSE-SYNTHETIC-UNIT-REGISTRY.tsv",
+      "sha256": "d03491046d15c96f42e04c80a27c98b4547895fc687d3b929bcc53183d3a87a3"
+    },
+    {
+      "bytes": 29185,
+      "path": "DENSE-UNIQUE-OWNER-FAMILY-LOCK-A.md",
+      "sha256": "2a7114b82a6cf97d81a6bcf4695cfcd50b28a3b15aa5e2048dbfa039ad5a1f13"
+    },
+    {
+      "bytes": 2656,
+      "path": "DENSE-ZST-POLICY-REGISTRY.tsv",
+      "sha256": "7f8d3d4cd12e5e35fc773388458d028f306aba3f1a2445a0b08378737d765059"
+    },
+    {
+      "bytes": 41004,
+      "path": "build_dense_lock.py",
+      "sha256": "02290bc605aeb6c956c114cf2a9fcd6f3d0c434c27ceb2e732adb06d31f75afb"
+    },
+    {
+      "bytes": 187462,
+      "path": "dense_contract_registry.py",
+      "sha256": "31dda5ccfd33202860022946fdf456404b104a14118ffcd286406595e2da2d06"
+    },
+    {
+      "bytes": 112983,
+      "path": "dense_coverage_authority.py",
+      "sha256": "f353f65815de96d0e0d3c198b22bb1707e3ee64a418e046ddf65f966d1e58d31"
+    },
+    {
+      "bytes": 208297,
+      "path": "dense_coverage_closed_registry.py",
+      "sha256": "84bc687641746607ba3798b8cf419f427ef4a4fe7b3a402e377287804f1024a3"
+    },
+    {
+      "bytes": 27109,
+      "path": "dense_e01_disposition.py",
+      "sha256": "6fa5571afb16b5e83fe3c8dbac2949a8a256caab3b577803ede89e851b33f191"
+    },
+    {
+      "bytes": 2072,
+      "path": "dense_literal_registry.py",
+      "sha256": "a8eb255184ebf560f2fcd5eab659405b08185431a224cee69bfca9e32233cdc2"
+    },
+    {
+      "bytes": 33477,
+      "path": "dense_meta5.py",
+      "sha256": "40c684507e1a5c3592da2ede792be2fb1bcc8679eb659de97d72ead92e6ae376"
+    },
+    {
+      "bytes": 15710,
+      "path": "dense_owner_decisions.py",
+      "sha256": "93f3d22ce02ea3b654177a80d1a46a50af4ed6e38bfee6f45dd4af23c72ed4bc"
+    },
+    {
+      "bytes": 245123,
+      "path": "dense_performance_registry.py",
+      "sha256": "0f42684374dd7927edfab9af3452286bd75a9703eeb36dbbcb413ba20a67a919"
+    },
+    {
+      "bytes": 105081,
+      "path": "dense_soundness_oracle.py",
+      "sha256": "9a750e9a01a3dc7329ed26393df1fbcad233509dc8cbc05079c1d317b81e68c2"
+    },
+    {
+      "bytes": 3042,
+      "path": "generate_dense_performance_inputs.py",
+      "sha256": "47a2bfd1bcd0e7a7d96a39f21080a8f3ca61e0bc906a55042c76200d4ed36c81"
+    },
+    {
+      "bytes": 22887,
+      "path": "test_dense_coverage_authority.py",
+      "sha256": "554613c73347dedc6dced8e850cf79881d3a7981828810ab45eabfef6ecb3c68"
+    },
+    {
+      "bytes": 26508,
+      "path": "verify_dense_lock.py",
+      "sha256": "e610888c724753e83d995b150238d8605cfaf723a3db1fd6054bf9dd7fddf282"
+    },
+    {
+      "bytes": 102392,
+      "path": "verify_dense_performance.py",
+      "sha256": "c94765af32878649a053511e7bd89e9bb32b2b2432f06caab0b258f6e790ead2"
+    }
+  ],
+  "authority_boundary": "This manifest closes a research dossier and executable preregistration for owner review only. It grants no candidate construction, observation, selection, language decision, compiler work, or production authority.",
+  "authorization": {
+    "ancestor_of_head": true,
+    "commit": "c4ca5437fc90f3ce833fb026f2e794f4f758d011",
+    "directive_bytes": 1082,
+    "directive_path": "optimizer-language-research/notes/user-directives.md",
+    "directive_sha256": "3a209c195f575408a65d1a81b9e3e01b4c95dd406b589fab801c64b3ed29c64c"
+  },
+  "authorization_commit": "c4ca5437fc90f3ce833fb026f2e794f4f758d011",
+  "authorization_granted_by_approving_this_lock": "SIX_OWNER_RESEARCH_PROTOCOL_DECISIONS_ONLY; no pilot, candidate construction, execution, language or specification decision, compiler implementation, or production adoption without a later separate authorization.",
+  "caller_visible_family_claim": "Ordinary no-unsafe xlang libraries can implement the frozen sequential, unique-owner dense-prefix contracts for region-free, borrow-free, non-address-sensitive affine payloads with the frozen ownership, failure, destruction, asymptotic, structural, and target-local performance bounds, while protected B-FIX and B-P2 paths remain unchanged.",
+  "candidate_construction_authorized": false,
+  "candidate_execution_authorized": false,
+  "candidate_freeze_b_authorized": false,
+  "claim_summary": {
+    "contract_soundness": {
+      "candidate_binding_count": 1515,
+      "candidate_count": 5,
+      "contract_count": 303,
+      "hostile_case_count": 262,
+      "registered_mutation_count": 32,
+      "trace_count": 2002
+    },
+    "coverage": {
+      "audit_cluster_count": 65,
+      "capability_binding_count": 1267,
+      "direct_evidence_identity_count": 456,
+      "evidence_member_binding_count": 780,
+      "overlay_binding_count": 101,
+      "role_binding_count": 85,
+      "selector_child_count": 426,
+      "target_terminal_count": 1400
+    },
+    "e0_1_disposition_count": 13,
+    "e0_1_member_classification_count": 93,
+    "e0_1_member_classification_counts": {
+      "LAZY_LIFECYCLE_EVIDENCE_NOT_PROMOTED": 3,
+      "NEW_MANDATORY_EXACT_CONTRACT": 84,
+      "RAW_OR_INITIALIZATION_AUTHORITY_EVIDENCE": 6
+    },
+    "performance": {
+      "active_owner_branch_count": 8,
+      "disposition_counts": {
+        "EXCLUDED": 9,
+        "FUNCTIONAL_ONLY": 144,
+        "STRUCTURAL_ONLY": 13,
+        "TIMED_PRIMARY": 137
+      },
+      "explicit_blocker_count": 27,
+      "matrix_cell_count": 520,
+      "operation_gate_count": 97,
+      "timed_primary_cell_count": 502
+    },
+    "unresolved_owner_decision_count": 6
+  },
+  "compiler_implementation_authorized": false,
+  "compiler_or_production_implementation_authorized": false,
+  "completion_record": [
+    {
+      "blocker_ids": [],
+      "completion_item": "ALL_FIELD_MARKERS_RESOLVED",
+      "evidence_paths": [
+        "DENSE-UNIQUE-OWNER-FAMILY-LOCK-A.md",
+        "build_dense_lock.py"
+      ],
+      "status": "PASS_RESEARCH_INSTANTIATION"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE"
+      ],
+      "completion_item": "CONTRACT_CAPABILITY_WITNESS_CLOSURE",
+      "evidence_paths": [
+        "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv",
+        "DENSE-ROLE-UNIT-AUTHORITY.tsv"
+      ],
+      "status": "PASS_RESEARCH_FREEZE_FAMILY_CLOSURE_NOT_CLAIMED"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "SOUNDNESS_FIXTURE_FREEZE",
+      "evidence_paths": [
+        "DENSE-SOUNDNESS-PROTOCOL-MANIFEST.json",
+        "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md"
+      ],
+      "status": "PASS_EXACT_BYTES_CONTRACT_SOUNDNESS_ONLY"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+        "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+        "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+        "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+        "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+        "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+        "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+        "PENDING_EXTERNAL_HARNESS",
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_I686_TOOLCHAIN",
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+        "PENDING_EXTERNAL_REFERENCE_PILOT",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+        "PENDING_EXTERNAL_X86_RUNNER"
+      ],
+      "completion_item": "CONSTRUCTION_CORRECTION_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-STATISTICS.json",
+        "DENSE-PERFORMANCE-BLOCKERS.tsv"
+      ],
+      "status": "BLOCKED_BEFORE_FIRST_CANDIDATE_PROMPT"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_AARCH64_CANDIDATE_MODULES",
+        "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+        "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+        "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+        "PENDING_EXTERNAL_CANDIDATE_BUILDS",
+        "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+        "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+        "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+        "PENDING_EXTERNAL_FACT_REPORTS",
+        "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+        "PENDING_EXTERNAL_HARNESS",
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_I686_TOOLCHAIN",
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+        "PENDING_EXTERNAL_REFERENCE_PILOT",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+        "PENDING_EXTERNAL_X86_RUNNER"
+      ],
+      "completion_item": "PERFORMANCE_AND_SELECTION_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-PROTOCOL.md",
+        "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md"
+      ],
+      "status": "PASS_PROTOCOL_ONLY_EXECUTION_AND_SELECTION_BLOCKED"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_AARCH64_CANDIDATE_MODULES",
+        "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+        "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+        "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+        "PENDING_EXTERNAL_CANDIDATE_BUILDS",
+        "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+        "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+        "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+        "PENDING_EXTERNAL_FACT_REPORTS",
+        "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+        "PENDING_EXTERNAL_HARNESS",
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_I686_TOOLCHAIN",
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+        "PENDING_EXTERNAL_REFERENCE_PILOT",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+        "PENDING_EXTERNAL_X86_RUNNER"
+      ],
+      "completion_item": "B_FIX_B_P2_NO_TAX_ORACLE_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-CONTROLS.tsv",
+        "DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv"
+      ],
+      "status": "PASS_PROTOCOL_ONLY_CANDIDATE_COMPARISON_BLOCKED"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY"
+      ],
+      "completion_item": "HELD_OUT_CUSTODY_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-BLOCKERS.tsv"
+      ],
+      "status": "BLOCKED_NO_HIDDEN_ARTIFACT_CLAIMED"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS"
+      ],
+      "completion_item": "META5_CLOSURE",
+      "evidence_paths": [
+        "dense_meta5.py",
+        "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv"
+      ],
+      "status": "PASS_RESEARCH_DELTAS_UNSELECTED_PRODUCTION_ARTIFACTS_BLOCKED"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "E0_1_DISPOSITION",
+      "evidence_paths": [
+        "DENSE-E01-DISPOSITION-AUTHORITY.tsv",
+        "DENSE-E01-MEMBER-CLASSIFICATION.tsv"
+      ],
+      "status": "PASS_13_INPUTS_93_MEMBERS_NO_RESTART"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "INDEPENDENT_HOSTILE_REVIEWS",
+      "evidence_paths": [
+        "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+        "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+        "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md"
+      ],
+      "status": "LAYER_PASSES_EXTERNAL_WHOLE_LOCK_REVIEW_REQUIRED"
+    },
+    {
+      "blocker_ids": [],
+      "commands": [
+        "make check",
+        "make -C compiler check",
+        "git diff --check"
+      ],
+      "completion_item": "REPOSITORY_VERIFICATION",
+      "evidence_paths": [
+        "verify_dense_lock.py"
+      ],
+      "status": "REQUIRED_ON_FINAL_BYTES_BEFORE_AND_AFTER_EXTERNAL_REVIEW"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION"
+      ],
+      "completion_item": "OWNER_AUTHORIZATION",
+      "evidence_paths": [
+        "dense_owner_decisions.py"
+      ],
+      "status": "BLOCKED_SIX_OWNER_DECISIONS_UNRESOLVED"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "DURABILITY",
+      "evidence_paths": [],
+      "status": "EXTERNAL_FINAL_COMMIT_AND_DECISION_GATE_REQUIRED"
+    }
+  ],
+  "cross_family_import_rule": "Candidate partial states and optimizer facts are sealed and unselected. No later family may import dense capability until a separate production adoption decision closes it.",
+  "cross_family_state_or_fact_exposure": "NONE",
+  "current_control_count": 8,
+  "current_controls": [
+    {
+      "bytes": 5788,
+      "path": "AGENTS.md",
+      "sha256": "c3e4d24bd02afcc76517afbbfc2311e5ca54000c302369c0ac72def249c45013"
+    },
+    {
+      "bytes": 5788,
+      "path": "CLAUDE.md",
+      "sha256": "c3e4d24bd02afcc76517afbbfc2311e5ca54000c302369c0ac72def249c45013"
+    },
+    {
+      "bytes": 18566,
+      "path": "THE-PLAN.md",
+      "sha256": "ead51568d97de34a21609b9a4a2da2a21fc63970e6a481c5f321a875e3abcbf2"
+    },
+    {
+      "bytes": 25838,
+      "path": "optimizer-language-research/notes/user-directives.md",
+      "sha256": "93b6451942d87e8c5b639d383f4adb864a155963dca4011ca4b3bca2d9eb7155"
+    },
+    {
+      "bytes": 12992,
+      "path": "mcts_mem/xlang.md",
+      "sha256": "f859bbc51f17810a6c0fc84339ee879c7067f936c0bfe2907d0be51eea46242d"
+    },
+    {
+      "bytes": 10484,
+      "path": "mcts_mem/xlang/data-model.md",
+      "sha256": "366d5b2390f45f89a05bb6f068937c8313ce9e5c36e4dd308337f2382cd8ee37"
+    },
+    {
+      "bytes": 12177,
+      "path": "mcts_mem/xlang/ownership.md",
+      "sha256": "38b815d58842078807134210b5ada058f65f0088780517c6b3282900e3095a98"
+    },
+    {
+      "bytes": 3540,
+      "path": "mcts_mem/xlang/fact-channels.md",
+      "sha256": "73961a3b807d2fd67bb5e5aecd6b8df74248e9a79d17db76684f3adb13b49012"
+    }
+  ],
+  "current_g0_core_status": {
+    "artifact_manifest_path": "optimizer-language-research/implementation/minimal-systems-capability/G0-CORE-ARTIFACT-MANIFEST.json",
+    "artifact_manifest_sha256": "f0eced756688affef1732a133c43fb39ab6fc672334dca27b26129ddb5123719",
+    "closing_commit": "a4de0eb70c345dcd198b11f435a5538ccc863113",
+    "decision_gate_heading": "G0-Core capability accounting is complete; mechanisms remain unselected (2026-07-14)",
+    "relationship_to_family_lock": "FROZEN_RESEARCH_INPUT_NOT_A_COMPLETED_FAMILY_PREDECESSOR",
+    "status": "COMPLETE_MECHANISMS_UNSELECTED"
+  },
+  "default_teaching_authorized": false,
+  "e0_1_restart_authorized": false,
+  "explicitly_excluded_claims": [
+    "borrow-bearing or region-bearing payloads",
+    "nonlocal lifetime storage",
+    "shared ownership",
+    "dynamic borrowing",
+    "concurrency",
+    "pinning or address-sensitive values",
+    "custom allocators",
+    "FFI resources",
+    "async cancellation",
+    "panic unwind, exception handling, or recoverable cleanup after traps",
+    "complete text semantics",
+    "target intrinsics",
+    "platforms other than the selected exact native targets",
+    "universal platform or architecture claims",
+    "cyclic collection",
+    "complete standard library",
+    "iteration-family W-PIPE"
+  ],
+  "family_name": "dense unique-owner",
+  "frozen_at": "2026-07-15T01:11:35-07:00",
+  "held_out_access_authorized": false,
+  "integrating_author_task_identity": "/root",
+  "language_or_specification_change_authorized": false,
+  "language_or_specification_decision_authorized": false,
+  "lock_id": "F-DENSE-LOCK-A",
+  "lock_revision": "F-DENSE-LOCK-A-R5",
+  "owner_authorization_record": {
+    "activities_authorized_after_owner_approval": "SIX_OWNER_RESEARCH_PROTOCOL_DECISIONS_ONLY",
+    "activities_still_prohibited": [
+      "reference pilot",
+      "candidate construction",
+      "Candidate Freeze B",
+      "candidate-primary execution",
+      "scored or held-out execution",
+      "held-out access",
+      "candidate selection or scoring",
+      "language or specification change",
+      "language or specification decision",
+      "compiler implementation",
+      "production implementation",
+      "production adoption",
+      "E0.1 restart",
+      "xlc migration",
+      "default teaching",
+      "complete-floor claim",
+      "whole systems-language claim"
+    ],
+    "candidate_freeze_b_approval_requirement": "Separate explicit owner authorization after candidate construction, all applicable cumulative CANDIDATE_FREEZE_B blockers, and a fresh independent exact-hash construction review close.",
+    "complete_floor_claim": "PROHIBITED_UNTIL_ALL_MANDATORY_FAMILIES_CLOSE",
+    "default_teaching_gate": "SEPARATE_BENCHMARK_BLIND_WRITER_EVIDENCE_AND_OWNER_DECISION",
+    "family_closure_criterion": "One owner-selected branch must close all 303 exact contracts, every applicable mandatory M/W/H role and protected B control, mathematical proof, structural and measured Rust-floor gates, fact-channel reports, and independent exact-hash reviews; the selection rule must return one candidate rather than NO-SELECTION.",
+    "production_adoption_gate": "SEPARATE_OWNER_DECISION_AFTER_FAMILY_CLOSURE",
+    "scored_and_held_out_approval_requirement": "Separate explicit owner authorization after Candidate Freeze B pins every candidate hash and an independent custody audit freezes held-out source, tests, traces, disclosure, access, leak, and rotation records.",
+    "specification_or_compiler_gate": "SEPARATE_OWNER_DECISION",
+    "whole_systems_language_claim": "PROHIBITED_UNTIL_ALL_OWNER_REQUIRED_DEFERRED_DOMAINS_CLOSE",
+    "xlc_migration_gate": "SEPARATE_OWNER_DECISION_AND_WORKLOAD_EVIDENCE"
+  },
+  "predecessor_lock_basis": "This is the first owning-storage Family Lock. G0-Core is a frozen research input, not a completed family predecessor.",
+  "production_adoption_authorized": false,
+  "production_implementation_authorized": false,
+  "reference_pilot_execution_authorized": false,
+  "required_predecessor_locks": [],
+  "review_identities": {
+    "contract_soundness": {
+      "durable_identity": "CONTRACT-SOUNDNESS-REVIEW-R1@20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "historical_personal_or_task_identity_retained": false,
+      "independent_review": true,
+      "independent_review_evidence": {
+        "review_path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+        "review_sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7"
+      },
+      "no_edit_attestation": "PRESENT_IN_EXACT_REVIEW_REPORT",
+      "review_path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "reviewed_bytes_edited_by_reviewer": false,
+      "role": "independent contract and mathematical soundness reviewer"
+    },
+    "coverage": {
+      "durable_identity": "COVERAGE-REVIEW-R3@d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798",
+      "historical_personal_or_task_identity_retained": false,
+      "independent_review": true,
+      "independent_review_evidence": {
+        "attested_property": "INDEPENDENT_G0_ONLY_ORACLE_AND_REVIEW",
+        "commit": "32c01e188ba55f652700cf8547187fe462302f0b",
+        "decision_gate_entry_sha256": "08b5322c032d878f1f2ac2055095d6c14d71756320d5a9ef3ddd8121232e7be2",
+        "decision_gate_heading": "D13-R3 closes the exact dense coverage authority (2026-07-14)"
+      },
+      "no_edit_attestation": "NOT_RETAINED_IN_DURABLE_COVERAGE_REPORT",
+      "review_path": "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+      "review_sha256": "d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798",
+      "reviewed_bytes_edited_by_reviewer": "NOT_RETAINED",
+      "role": "independent coverage and provenance reviewer"
+    },
+    "final_whole_lock_reviewer": {
+      "report_hash_location": "external report; excluded to avoid a hash cycle",
+      "reviewed_bytes_edited_by_reviewer": false,
+      "role": "independent final exact-byte whole-lock reviewer",
+      "task_identity": "/root/whole_lock_hostile"
+    },
+    "historical_identity_rule": "Coverage and contract-soundness personal/task identities were not retained; their durable identity is the exact review artifact and hash. The performance reviewer task identity is retained in its report.",
+    "integrating_author": {
+      "role": "research lock integrator and artifact author",
+      "task_identity": "/root"
+    },
+    "performance_protocol": {
+      "durable_identity": "PERFORMANCE-REVIEW-V5@e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "historical_personal_or_task_identity_retained": true,
+      "independent_review": true,
+      "independent_review_evidence": {
+        "review_path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+        "review_sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1"
+      },
+      "no_edit_attestation": "PRESENT_IN_EXACT_REVIEW_REPORT",
+      "review_path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "reviewed_bytes_edited_by_reviewer": false,
+      "role": "independent performance and statistics reviewer",
+      "task_identity": "/root/repair_soundness_protocol"
+    }
+  },
+  "review_layers": {
+    "contract_soundness": {
+      "review_path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "reviewed_current_artifact_count": 27,
+      "reviewed_current_artifact_map_sha256": "f9d3d7ab1a23e4011198aca040869f7cfce5921dc22b44a695b443a9a8930326",
+      "status": "PASS_EXACT_BYTES_CONTRACT_SOUNDNESS_ONLY"
+    },
+    "coverage": {
+      "review_path": "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+      "review_sha256": "d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798",
+      "reviewed_current_artifact_count": 12,
+      "reviewed_current_artifact_map_sha256": "0d0fef1f9aa3b70673c867efe987c608b2220ce7a72e9cfe96fb5b517685dbee",
+      "status": "PASS_EXACT_BYTES_COVERAGE_ONLY"
+    },
+    "performance_protocol": {
+      "review_path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "reviewed_current_artifact_count": 39,
+      "reviewed_current_artifact_map_sha256": "114c32bc0c5c7d4b1462c9cabbc7c6bcb6b5a842ccd617b8af794265a7bbdd5b",
+      "status": "PASS_EXACT_BYTES_PERFORMANCE_PROTOCOL_ONLY"
+    },
+    "whole_lock": {
+      "review_path": "DENSE-WHOLE-LOCK-HOSTILE-REVIEW-PASS.md",
+      "status": "EXTERNAL_EXACT_HASH_REVIEW_REQUIRED"
+    }
+  },
+  "schema": "xlang-dense-family-lock-a-closure-manifest-v4",
+  "selection_or_scoring_authorized": false,
+  "status": "OWNER_REVIEW_READY_RESEARCH_ONLY",
+  "timezone": "America/Los_Angeles",
+  "unresolved_owner_decisions": [
+    "OD-0",
+    "OD-1",
+    "OD-2",
+    "OD-3",
+    "OD-4",
+    "OD-5"
+  ],
+  "xlc_migration_authorized": false
+}

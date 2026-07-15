@@ -1,0 +1,431 @@
+{
+  "artifact_class_record_count": 7,
+  "artifact_count": 74,
+  "authorization_granted_by_approving_this_lock": "SIX_OWNER_RESEARCH_PROTOCOL_DECISIONS_ONLY; no pilot, candidate construction, execution, language or specification decision, compiler implementation, or production adoption without a later separate authorization.",
+  "caller_visible_family_claim": "Ordinary no-unsafe xlang libraries can implement the frozen sequential, unique-owner dense-prefix contracts for region-free, borrow-free, non-address-sensitive affine payloads with the frozen ownership, failure, destruction, asymptotic, structural, and target-local performance bounds, while protected B-FIX and B-P2 paths remain unchanged.",
+  "candidate_construction_authorized": false,
+  "candidate_execution_authorized": false,
+  "candidate_freeze_b_authorized": false,
+  "claim_summary": {
+    "contract_soundness": {
+      "candidate_binding_count": 1515,
+      "candidate_count": 5,
+      "contract_count": 303,
+      "hostile_case_count": 262,
+      "registered_mutation_count": 32,
+      "trace_count": 2002
+    },
+    "coverage": {
+      "audit_cluster_count": 65,
+      "capability_binding_count": 1267,
+      "direct_evidence_identity_count": 456,
+      "evidence_member_binding_count": 780,
+      "overlay_binding_count": 101,
+      "role_binding_count": 85,
+      "selector_child_count": 426,
+      "target_terminal_count": 1400
+    },
+    "e0_1_disposition_count": 13,
+    "e0_1_member_classification_count": 93,
+    "e0_1_member_classification_counts": {
+      "LAZY_LIFECYCLE_EVIDENCE_NOT_PROMOTED": 3,
+      "NEW_MANDATORY_EXACT_CONTRACT": 84,
+      "RAW_OR_INITIALIZATION_AUTHORITY_EVIDENCE": 6
+    },
+    "performance": {
+      "active_owner_branch_count": 8,
+      "disposition_counts": {
+        "EXCLUDED": 9,
+        "FUNCTIONAL_ONLY": 144,
+        "STRUCTURAL_ONLY": 13,
+        "TIMED_PRIMARY": 137
+      },
+      "explicit_blocker_count": 27,
+      "matrix_cell_count": 520,
+      "operation_gate_count": 97,
+      "timed_primary_cell_count": 502
+    },
+    "unresolved_owner_decision_count": 6
+  },
+  "compiler_implementation_authorized": false,
+  "compiler_or_production_implementation_authorized": false,
+  "completion_record": [
+    {
+      "blocker_ids": [],
+      "completion_item": "ALL_FIELD_MARKERS_RESOLVED",
+      "evidence_paths": [
+        "DENSE-UNIQUE-OWNER-FAMILY-LOCK-A.md",
+        "build_dense_lock.py"
+      ],
+      "status": "PASS_RESEARCH_INSTANTIATION"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE"
+      ],
+      "completion_item": "CONTRACT_CAPABILITY_WITNESS_CLOSURE",
+      "evidence_paths": [
+        "DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv",
+        "DENSE-ROLE-UNIT-AUTHORITY.tsv"
+      ],
+      "status": "PASS_RESEARCH_FREEZE_FAMILY_CLOSURE_NOT_CLAIMED"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "SOUNDNESS_FIXTURE_FREEZE",
+      "evidence_paths": [
+        "DENSE-SOUNDNESS-PROTOCOL-MANIFEST.json",
+        "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md"
+      ],
+      "status": "PASS_EXACT_BYTES_CONTRACT_SOUNDNESS_ONLY"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+        "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+        "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+        "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+        "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+        "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+        "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+        "PENDING_EXTERNAL_HARNESS",
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_I686_TOOLCHAIN",
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+        "PENDING_EXTERNAL_REFERENCE_PILOT",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+        "PENDING_EXTERNAL_X86_RUNNER"
+      ],
+      "completion_item": "CONSTRUCTION_CORRECTION_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-STATISTICS.json",
+        "DENSE-PERFORMANCE-BLOCKERS.tsv"
+      ],
+      "status": "BLOCKED_BEFORE_FIRST_CANDIDATE_PROMPT"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_AARCH64_CANDIDATE_MODULES",
+        "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+        "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+        "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+        "PENDING_EXTERNAL_CANDIDATE_BUILDS",
+        "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+        "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+        "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+        "PENDING_EXTERNAL_FACT_REPORTS",
+        "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+        "PENDING_EXTERNAL_HARNESS",
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_I686_TOOLCHAIN",
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+        "PENDING_EXTERNAL_REFERENCE_PILOT",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+        "PENDING_EXTERNAL_X86_RUNNER"
+      ],
+      "completion_item": "PERFORMANCE_AND_SELECTION_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-PROTOCOL.md",
+        "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md"
+      ],
+      "status": "PASS_PROTOCOL_ONLY_EXECUTION_AND_SELECTION_BLOCKED"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_AARCH64_CANDIDATE_MODULES",
+        "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+        "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+        "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+        "PENDING_EXTERNAL_CANDIDATE_BUILDS",
+        "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+        "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+        "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+        "PENDING_EXTERNAL_FACT_REPORTS",
+        "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+        "PENDING_EXTERNAL_HARNESS",
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+        "PENDING_EXTERNAL_I686_TOOLCHAIN",
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+        "PENDING_EXTERNAL_REFERENCE_PILOT",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+        "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+        "PENDING_EXTERNAL_X86_RUNNER"
+      ],
+      "completion_item": "B_FIX_B_P2_NO_TAX_ORACLE_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-CONTROLS.tsv",
+        "DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv"
+      ],
+      "status": "PASS_PROTOCOL_ONLY_CANDIDATE_COMPARISON_BLOCKED"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_H_FLATSET_CUSTODY"
+      ],
+      "completion_item": "HELD_OUT_CUSTODY_FREEZE",
+      "evidence_paths": [
+        "DENSE-PERFORMANCE-BLOCKERS.tsv"
+      ],
+      "status": "BLOCKED_NO_HIDDEN_ARTIFACT_CLAIMED"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS"
+      ],
+      "completion_item": "META5_CLOSURE",
+      "evidence_paths": [
+        "dense_meta5.py",
+        "DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv"
+      ],
+      "status": "PASS_RESEARCH_DELTAS_UNSELECTED_PRODUCTION_ARTIFACTS_BLOCKED"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "E0_1_DISPOSITION",
+      "evidence_paths": [
+        "DENSE-E01-DISPOSITION-AUTHORITY.tsv",
+        "DENSE-E01-MEMBER-CLASSIFICATION.tsv"
+      ],
+      "status": "PASS_13_INPUTS_93_MEMBERS_NO_RESTART"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "INDEPENDENT_HOSTILE_REVIEWS",
+      "evidence_paths": [
+        "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+        "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+        "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md"
+      ],
+      "status": "LAYER_PASSES_EXTERNAL_WHOLE_LOCK_REVIEW_REQUIRED"
+    },
+    {
+      "blocker_ids": [],
+      "commands": [
+        "make check",
+        "make -C compiler check",
+        "git diff --check"
+      ],
+      "completion_item": "REPOSITORY_VERIFICATION",
+      "evidence_paths": [
+        "verify_dense_lock.py"
+      ],
+      "status": "REQUIRED_ON_FINAL_BYTES_BEFORE_AND_AFTER_EXTERNAL_REVIEW"
+    },
+    {
+      "blocker_ids": [
+        "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION"
+      ],
+      "completion_item": "OWNER_AUTHORIZATION",
+      "evidence_paths": [
+        "dense_owner_decisions.py"
+      ],
+      "status": "BLOCKED_SIX_OWNER_DECISIONS_UNRESOLVED"
+    },
+    {
+      "blocker_ids": [],
+      "completion_item": "DURABILITY",
+      "evidence_paths": [],
+      "status": "EXTERNAL_FINAL_COMMIT_AND_DECISION_GATE_REQUIRED"
+    }
+  ],
+  "cross_family_state_or_fact_exposure": "NONE",
+  "current_control_count": 8,
+  "current_g0_core_status": {
+    "artifact_manifest_path": "optimizer-language-research/implementation/minimal-systems-capability/G0-CORE-ARTIFACT-MANIFEST.json",
+    "artifact_manifest_sha256": "f0eced756688affef1732a133c43fb39ab6fc672334dca27b26129ddb5123719",
+    "closing_commit": "a4de0eb70c345dcd198b11f435a5538ccc863113",
+    "decision_gate_heading": "G0-Core capability accounting is complete; mechanisms remain unselected (2026-07-14)",
+    "relationship_to_family_lock": "FROZEN_RESEARCH_INPUT_NOT_A_COMPLETED_FAMILY_PREDECESSOR",
+    "status": "COMPLETE_MECHANISMS_UNSELECTED"
+  },
+  "default_teaching_authorized": false,
+  "e0_1_restart_authorized": false,
+  "explicitly_excluded_claims": [
+    "borrow-bearing or region-bearing payloads",
+    "nonlocal lifetime storage",
+    "shared ownership",
+    "dynamic borrowing",
+    "concurrency",
+    "pinning or address-sensitive values",
+    "custom allocators",
+    "FFI resources",
+    "async cancellation",
+    "panic unwind, exception handling, or recoverable cleanup after traps",
+    "complete text semantics",
+    "target intrinsics",
+    "platforms other than the selected exact native targets",
+    "universal platform or architecture claims",
+    "cyclic collection",
+    "complete standard library",
+    "iteration-family W-PIPE"
+  ],
+  "family_name": "dense unique-owner",
+  "frozen_at": "2026-07-15T01:11:35-07:00",
+  "held_out_access_authorized": false,
+  "integrating_author_task_identity": "/root",
+  "language_or_specification_change_authorized": false,
+  "language_or_specification_decision_authorized": false,
+  "lock_id": "F-DENSE-LOCK-A",
+  "lock_revision": "F-DENSE-LOCK-A-R5",
+  "manifest_bytes": 46343,
+  "manifest_path": "DENSE-LOCK-ARTIFACT-MANIFEST.json",
+  "manifest_sha256": "0bff36e75a41575ae16bd51fc12ef5c0fcdb819288aa7755eeea320741a5ad97",
+  "next_action": "OWNER_REVIEW_AND_SIX_EXPLICIT_DECISIONS",
+  "owner_authorization_record": {
+    "activities_authorized_after_owner_approval": "SIX_OWNER_RESEARCH_PROTOCOL_DECISIONS_ONLY",
+    "activities_still_prohibited": [
+      "reference pilot",
+      "candidate construction",
+      "Candidate Freeze B",
+      "candidate-primary execution",
+      "scored or held-out execution",
+      "held-out access",
+      "candidate selection or scoring",
+      "language or specification change",
+      "language or specification decision",
+      "compiler implementation",
+      "production implementation",
+      "production adoption",
+      "E0.1 restart",
+      "xlc migration",
+      "default teaching",
+      "complete-floor claim",
+      "whole systems-language claim"
+    ],
+    "candidate_freeze_b_approval_requirement": "Separate explicit owner authorization after candidate construction, all applicable cumulative CANDIDATE_FREEZE_B blockers, and a fresh independent exact-hash construction review close.",
+    "complete_floor_claim": "PROHIBITED_UNTIL_ALL_MANDATORY_FAMILIES_CLOSE",
+    "default_teaching_gate": "SEPARATE_BENCHMARK_BLIND_WRITER_EVIDENCE_AND_OWNER_DECISION",
+    "family_closure_criterion": "One owner-selected branch must close all 303 exact contracts, every applicable mandatory M/W/H role and protected B control, mathematical proof, structural and measured Rust-floor gates, fact-channel reports, and independent exact-hash reviews; the selection rule must return one candidate rather than NO-SELECTION.",
+    "production_adoption_gate": "SEPARATE_OWNER_DECISION_AFTER_FAMILY_CLOSURE",
+    "scored_and_held_out_approval_requirement": "Separate explicit owner authorization after Candidate Freeze B pins every candidate hash and an independent custody audit freezes held-out source, tests, traces, disclosure, access, leak, and rotation records.",
+    "specification_or_compiler_gate": "SEPARATE_OWNER_DECISION",
+    "whole_systems_language_claim": "PROHIBITED_UNTIL_ALL_OWNER_REQUIRED_DEFERRED_DOMAINS_CLOSE",
+    "xlc_migration_gate": "SEPARATE_OWNER_DECISION_AND_WORKLOAD_EVIDENCE"
+  },
+  "production_adoption_authorized": false,
+  "production_implementation_authorized": false,
+  "reference_pilot_execution_authorized": false,
+  "required_predecessor_locks": [],
+  "review_identities": {
+    "contract_soundness": {
+      "durable_identity": "CONTRACT-SOUNDNESS-REVIEW-R1@20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "historical_personal_or_task_identity_retained": false,
+      "independent_review": true,
+      "independent_review_evidence": {
+        "review_path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+        "review_sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7"
+      },
+      "no_edit_attestation": "PRESENT_IN_EXACT_REVIEW_REPORT",
+      "review_path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "reviewed_bytes_edited_by_reviewer": false,
+      "role": "independent contract and mathematical soundness reviewer"
+    },
+    "coverage": {
+      "durable_identity": "COVERAGE-REVIEW-R3@d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798",
+      "historical_personal_or_task_identity_retained": false,
+      "independent_review": true,
+      "independent_review_evidence": {
+        "attested_property": "INDEPENDENT_G0_ONLY_ORACLE_AND_REVIEW",
+        "commit": "32c01e188ba55f652700cf8547187fe462302f0b",
+        "decision_gate_entry_sha256": "08b5322c032d878f1f2ac2055095d6c14d71756320d5a9ef3ddd8121232e7be2",
+        "decision_gate_heading": "D13-R3 closes the exact dense coverage authority (2026-07-14)"
+      },
+      "no_edit_attestation": "NOT_RETAINED_IN_DURABLE_COVERAGE_REPORT",
+      "review_path": "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+      "review_sha256": "d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798",
+      "reviewed_bytes_edited_by_reviewer": "NOT_RETAINED",
+      "role": "independent coverage and provenance reviewer"
+    },
+    "final_whole_lock_reviewer": {
+      "report_hash_location": "external report; excluded to avoid a hash cycle",
+      "reviewed_bytes_edited_by_reviewer": false,
+      "role": "independent final exact-byte whole-lock reviewer",
+      "task_identity": "/root/whole_lock_hostile"
+    },
+    "historical_identity_rule": "Coverage and contract-soundness personal/task identities were not retained; their durable identity is the exact review artifact and hash. The performance reviewer task identity is retained in its report.",
+    "integrating_author": {
+      "role": "research lock integrator and artifact author",
+      "task_identity": "/root"
+    },
+    "performance_protocol": {
+      "durable_identity": "PERFORMANCE-REVIEW-V5@e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "historical_personal_or_task_identity_retained": true,
+      "independent_review": true,
+      "independent_review_evidence": {
+        "review_path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+        "review_sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1"
+      },
+      "no_edit_attestation": "PRESENT_IN_EXACT_REVIEW_REPORT",
+      "review_path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "reviewed_bytes_edited_by_reviewer": false,
+      "role": "independent performance and statistics reviewer",
+      "task_identity": "/root/repair_soundness_protocol"
+    }
+  },
+  "review_layers": {
+    "contract_soundness": {
+      "review_path": "DENSE-SOUNDNESS-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "20b6325366c961a5d608066da8acd9a9c19352290fdaa44e3666f2e14430c7c7",
+      "reviewed_current_artifact_count": 27,
+      "reviewed_current_artifact_map_sha256": "f9d3d7ab1a23e4011198aca040869f7cfce5921dc22b44a695b443a9a8930326",
+      "status": "PASS_EXACT_BYTES_CONTRACT_SOUNDNESS_ONLY"
+    },
+    "coverage": {
+      "review_path": "DENSE-COVERAGE-HOSTILE-REVIEW-ROUND-3-PASS.md",
+      "review_sha256": "d8ee4c161e84a3996c0167b54576893074a16775b30994ab8236e79fa63d4798",
+      "reviewed_current_artifact_count": 12,
+      "reviewed_current_artifact_map_sha256": "0d0fef1f9aa3b70673c867efe987c608b2220ce7a72e9cfe96fb5b517685dbee",
+      "status": "PASS_EXACT_BYTES_COVERAGE_ONLY"
+    },
+    "performance_protocol": {
+      "review_path": "DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md",
+      "review_sha256": "e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1",
+      "reviewed_current_artifact_count": 39,
+      "reviewed_current_artifact_map_sha256": "114c32bc0c5c7d4b1462c9cabbc7c6bcb6b5a842ccd617b8af794265a7bbdd5b",
+      "status": "PASS_EXACT_BYTES_PERFORMANCE_PROTOCOL_ONLY"
+    },
+    "whole_lock": {
+      "review_path": "DENSE-WHOLE-LOCK-HOSTILE-REVIEW-PASS.md",
+      "status": "EXTERNAL_EXACT_HASH_REVIEW_REQUIRED"
+    }
+  },
+  "schema": "xlang-dense-family-lock-a-build-summary-v4",
+  "selection_or_scoring_authorized": false,
+  "status": "OWNER_REVIEW_READY_RESEARCH_ONLY",
+  "unresolved_owner_decisions": [
+    "OD-0",
+    "OD-1",
+    "OD-2",
+    "OD-3",
+    "OD-4",
+    "OD-5"
+  ],
+  "xlc_migration_authorized": false
+}

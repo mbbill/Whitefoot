@@ -68,27 +68,22 @@ proof discharges them — speed is earned by proof, never by weakening a check.
 - `archive/` — superseded plans, the research-era record, shelved harnesses.
   Read-only context; nothing in it gates anything.
 
-## Current focus (2026-07-14)
+## Current focus (2026-07-15)
 
-- G0-Core research synthesis is complete for owner review: 5,555 canonical
-  stable Rust 1.97.0 declarations route through the 26-domain envelope; the
-  detailed floor has 276 coarse coverage and obligation clusters, 49 operational obligations, 12
-  proof dimensions, 16 global laws, exact iteration/range accounting, and
-  ordinary-library witnesses with closed dependency budgets. Its generated
-  payload ledger has 26 active stored-borrow rows, 138 contracts with 294
-  deferred branches, 100 true no-complement rows, nine boundary rows, two
-  frame-scope deferrals, and one delegated allocation-error row. This is an
-  obligation basis, not a selected primitive basis. The 276 rows are not exact
-  operation contracts or import units. Exact registries route all 276 clusters,
-  1,961 evidence relations, 334 concrete trait implementations, and 49 B/M/W/H/O
-  obligations through an acyclic 53-edge family/gate dependency graph. A Family Lock loads its complete
-  declaration, implementation, and helper evidence universe as an audit domain,
-  derives exact applicability per evidence identity and target, and freezes exact
-  `member_contract_id` and `outcome_id` units before candidate work,
-  `E`/`P`, or scoring. D13 now authorizes drafting the dense unique-owner
-  Family Lock A for owner review. It does not authorize candidate construction,
-  a language or specification decision, compiler or production implementation,
-  E0.1 restart, scored or held-out runs, xlc migration, or default teaching.
+- G0-Core and the research-only dense unique-owner Family Lock A are complete
+  for owner review. The lock closes exact coverage (65 clusters, 426 selector
+  children, 1,400 terminals), 303 member/outcome contracts, five
+  candidate-neutral mechanism descriptions, 2,002 mathematical soundness
+  traces, 93 exact E0.1 member classifications (84 newly mandatory), 97
+  same-shape Rust operation gates, 520 exact performance cells, and 27
+  fail-closed operational blockers.
+  Exact-byte coverage, contract/soundness, performance, and whole-dossier
+  hostile reviews pass. No candidate, pilot, score, held-out observation, or
+  production mechanism exists. The next action is owner resolution of OD-0
+  through OD-5; even accepting all recommendations does not authorize candidate
+  construction. Language or specification selection, compiler or production
+  implementation, E0.1 restart, scored or held-out execution, xlc migration,
+  and default teaching remain unauthorized.
 - xlc self-hosting build in `compiler/` (SoA-tape architecture per P2).
 - D9a is complete on two independently preregistered shipped-library targets.
   First-green `gpt-5.6-terra`/medium xlang beats `percent-encoding` 2.3.2 by
