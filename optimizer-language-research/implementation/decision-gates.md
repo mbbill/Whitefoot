@@ -1511,3 +1511,34 @@ reference pilot, candidate construction, Candidate Freeze B, execution,
 scoring, held-out access, selection, language or specification decision,
 compiler or production implementation, production fact channel, E0.1 restart,
 xlc migration, or default teaching.
+
+## D13-R5A closes the corrected dense performance staging protocol (2026-07-15)
+
+The corrected Dense Family Lock A performance layer passes a fresh independent
+exact-byte hostile review. It preserves the 303 contract dispositions, 97
+same-shape Rust operation gates, 520 exact cells, inference law, selection law,
+and counted resource ceiling from D13-R5 while replacing only the incomplete v4
+staging map. The v5 registry contains 27 explicit blockers with exact owner-
+branch applicability: Mac-local branches have eight direct reference-pilot
+prerequisites and 21 cumulative candidate-construction prerequisites; dual-
+native branches have nine and 22. The reference pilot must close feasible
+before the first candidate prompt. A common exact repository baseline now gates
+all 520 cells, the OD-4 Rust reference adapter is separated from later
+candidate-side META-5/compiler artifacts, and Candidate Freeze B pins artifacts
+produced during authorized construction rather than circularly preceding them.
+
+Independent regeneration reproduced all 29 generated files byte-for-byte and
+authenticated the exact 39-file union. The fail-closed verifier rejects all 48
+registered mutations; the independent reviewer rejected 14 additional coherent
+attacks across stage placement, branch applicability, matrix joins, benefit
+families, law/task domains, and resource accounting. The v5 report is
+`dense-family-lock-a/DENSE-PERFORMANCE-HOSTILE-REVIEW-PASS.md` at SHA-256
+`e42823c8ecf94b2ac5c898c3215c511e9881fd082b7b77a112e98ff3b3b7bfe1`.
+The D13-R5 v4 report and commit remain superseded history and cannot supply a
+live staging authority.
+
+No pilot or candidate observation has occurred. This correction authorizes no
+reference pilot, candidate construction, Candidate Freeze B, execution,
+scoring, held-out access, selection, language or specification decision,
+compiler implementation, production adoption, production fact channel, E0.1
+restart, xlc migration, or default teaching.

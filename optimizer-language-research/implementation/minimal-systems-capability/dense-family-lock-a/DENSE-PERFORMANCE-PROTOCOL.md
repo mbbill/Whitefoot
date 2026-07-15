@@ -41,7 +41,10 @@ Any input-byte change blocks regeneration until this protocol is reviewed and ex
 
 ## Construction boundary
 
-- Explicit operational blockers: 25.
+- Explicit operational blockers: 27.
+- `earliest_blocked_stage` is cumulative across REFERENCE_PILOT, CANDIDATE_CONSTRUCTION, and CANDIDATE_FREEZE_B; descriptive counter reporting is a nonselection side stage.
+- Per-branch reference-pilot prerequisite counts: [8, 9]; cumulative construction-gate counts: [21, 22]. The extra prerequisite is the x86 runner in dual-native branches.
+- The reference pilot must close as feasible before the first candidate prompt; its row names the complete per-branch prerequisite manifest, not a two-blocker shortcut.
 - Author, service, disclosure, custody, equal resources, and repair rules are not yet defensibly frozen; no arbitrary default is supplied.
 - After a later exact freeze, inability to build or pass within the frozen equal protocol is a mechanism result. It does not permit another author, service, mechanism, resource extension, or tuning round.
 
@@ -49,7 +52,7 @@ Any input-byte change blocks regeneration until this protocol is reviewed and ex
 
 - DENSE-PERFORMANCE-ALGORITHMS.tsv: 136786 bytes, SHA-256 65c531a4b77338d1b651b539c2ca8c6aa2e122f92168b3c234a814973a3ef887.
 - DENSE-PERFORMANCE-ALLOCATORS.tsv: 1556 bytes, SHA-256 cc218b4330640a9cad12eb5c9c2c14e5cfdaf912fdfd3bf6cb96e753d6f5e5df.
-- DENSE-PERFORMANCE-BLOCKERS.tsv: 8074 bytes, SHA-256 95f843a3f3448c4ead37611f4e9f07505ad9882d1df23910b73c7ce45b65dda6.
+- DENSE-PERFORMANCE-BLOCKERS.tsv: 13658 bytes, SHA-256 3fda2ab4a24189f58ddd83e425a2504be4b52f3a7830721e413015695d0f8af3.
 - DENSE-PERFORMANCE-COMMON-SUBSTRATE.tsv: 7176 bytes, SHA-256 23b2b1f652f7d28f6d9722ae082f10bef8c797c59a63d507fba579ede87fbc3e.
 - DENSE-PERFORMANCE-CONTROLS.tsv: 5077 bytes, SHA-256 1bc594003697c3868e0ac42720de56df1680922f22426b090ad12fa029eeea09.
 - DENSE-PERFORMANCE-COUNTER-POLICIES.tsv: 2494 bytes, SHA-256 89a9212a6982b4e37c211e2dcc3641be55bd64fcdaa9e1d70720761c16768117.
@@ -60,17 +63,17 @@ Any input-byte change blocks regeneration until this protocol is reviewed and ex
 - DENSE-PERFORMANCE-FAILURE-POLICIES.tsv: 815 bytes, SHA-256 bd6331cc05d6af867a77a416644a92ed143cab669c9145cea4e39089128af742.
 - DENSE-PERFORMANCE-GENERATORS.tsv: 769 bytes, SHA-256 bf9ff60553e0157ba6a92fbf0cfa672e81b0b8668db8abdcc3c56c631f543f9e.
 - DENSE-PERFORMANCE-GROWTH-POLICIES.tsv: 1813 bytes, SHA-256 768645fd68ed1de1699dac7f92d30b51ebb3ba99efc1b8a294368255f0f4c431.
-- DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl: 1383246 bytes, SHA-256 3e8e983faae0d1acdaf3acf0785d9dc2153b3e6f0cf37818a397a3e510ec77a0.
-- DENSE-PERFORMANCE-INPUTS.jsonl: 265676 bytes, SHA-256 ca84619308a575c81648d25d93853552f2c331a1327bf0c5a914635cbb83999e.
+- DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl: 1382806 bytes, SHA-256 880a1231311bb8e1132e7d0237c844455cd6f7c99a30eb8bff4d396ad8d12722.
+- DENSE-PERFORMANCE-INPUTS.jsonl: 265676 bytes, SHA-256 65ed14b61cf2f016bf75c49abe165e5a6b2245e451acafb67d693512bc83119f.
 - DENSE-PERFORMANCE-LAYOUTS.tsv: 1445 bytes, SHA-256 de5a054494d944ab70cd3aac56c2dfff6ddfa6f2271f030064ed2642ff198768.
-- DENSE-PERFORMANCE-MATRIX.tsv: 944633 bytes, SHA-256 67d65ba70b58eb3a1c54ae798a8852d9df05fadedaf5a034585dcd749db21568.
+- DENSE-PERFORMANCE-MATRIX.tsv: 963557 bytes, SHA-256 8d9f376ed9cb90f3fe8aa9c55c3861bc775430d948521a264630178cac28a187.
 - DENSE-PERFORMANCE-OPERATION-GATES.tsv: 71499 bytes, SHA-256 2a6faa63f95b9140c0f8203022c9526a83681bf4f27b6fd0a270b151b35245a9.
 - DENSE-PERFORMANCE-OWNER-BRANCHES.tsv: 5478 bytes, SHA-256 c48bbc27e51db13094cd4486dddf09001b8c2725cd38c2922f7dbbf3b94f09f5.
 - DENSE-PERFORMANCE-PAYLOADS.tsv: 2356 bytes, SHA-256 68ccb0cb9e85e2b83e6cdb4e586a8fd789f264966f1d9f71881b42338dfd52e0.
 - DENSE-PERFORMANCE-REFERENCE-ROUTES.tsv: 7325 bytes, SHA-256 ae89b2b13e4e438de70a70006c43d8d0f7044227f54dc81bf5df513c094cf6a7.
 - DENSE-PERFORMANCE-REPETITIONS.tsv: 1097 bytes, SHA-256 0ad5eb53324573507e9f4db7f5afdabd29c053334595ae6d2e40a3b03397c359.
 - DENSE-PERFORMANCE-SCHEDULES.tsv: 10917 bytes, SHA-256 06e0a002f799fa82dc4e77d9f46914fb1762ac9659ab6a18d0a145c24f3bbc94.
-- DENSE-PERFORMANCE-STATISTICS.json: 123212 bytes, SHA-256 5c4c607dc38b1793657e1493217271ab1e81d62bcfe574865689673ecaf5f393.
+- DENSE-PERFORMANCE-STATISTICS.json: 172659 bytes, SHA-256 08987857f7e52ab258536b8d8763d689e3ad1feb243b369241b3d82e286ab4b0.
 - DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv: 4770 bytes, SHA-256 6196995de9b7f1ad2518c38c730a4c081ddb465a2bb00cff52734e9b351c9f32.
 - DENSE-PERFORMANCE-TARGETS.tsv: 1489 bytes, SHA-256 9dcc86dc85fdcf87c77f7c1e6c411c22761b44aac50a7973348df335997dcf94.
 - DENSE-PERFORMANCE-WARMUPS.tsv: 643 bytes, SHA-256 0b048f6ab95c9c48d6bb963f0a4be6d648258b86c88dd6944ed0251ad908c41b.

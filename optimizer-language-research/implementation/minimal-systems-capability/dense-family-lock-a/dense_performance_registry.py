@@ -250,7 +250,8 @@ SCHEMAS = {
     ],
     "blockers": [
         "blocker_id", "kind", "missing_fact", "required_resolution",
-        "blocks_stage", "mechanism_failure_rule", "status",
+        "earliest_blocked_stage", "applicable_owner_branch_ids",
+        "mechanism_failure_rule", "status",
     ],
     "matrix": [
         "cell_id", "cell_role", "operation_gate_id", "performance_unit_id",
@@ -2219,23 +2220,61 @@ def schedule_rows() -> list[dict[str, str]]:
     ]
 
 
+PIPELINE_STAGE_ORDER = (
+    "REFERENCE_PILOT",
+    "CANDIDATE_CONSTRUCTION",
+    "CANDIDATE_FREEZE_B",
+)
+SIDE_STAGES = ("DESCRIPTIVE_COUNTER_REPORT",)
+
+
+def active_owner_branch_rows() -> list[dict[str, str]]:
+    return [
+        row for row in owner_branch_base_rows()
+        if row["branch_class"] == "ACTIVE_POWER_BRANCH"
+    ]
+
+
+ALL_ACTIVE_BRANCH_IDS = tuple(sorted(
+    row["branch_id"] for row in active_owner_branch_rows()
+))
+DUAL_NATIVE_BRANCH_IDS = tuple(sorted(
+    row["branch_id"] for row in active_owner_branch_rows()
+    if row["od2_option_id"] == "OD-2-DUAL-NATIVE"
+))
+
+
 BLOCKERS = [
     (
         "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
         "AUTHORIZATION",
         "D13 does not authorize candidate construction, Freeze B, pilot, or score.",
         "A separate explicit owner authorization after exact-hash hostile review.",
-        "CANDIDATE_CONSTRUCTION",
+        "REFERENCE_PILOT",
         "Absence ends the workflow; it is not permission to infer authority.",
     ),
     (
         "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
         "OWNER_DECISION",
-        "OD-1, OD-2, and OD-3 remain unresolved; OD-0 common, OD-4 scoped, "
-        "and OD-5 no-crossover are protocol conditions, not selections.",
-        "Owner selects exactly one of the eight preregistered power branches.",
+        "OD-0 through OD-5 remain unresolved. The eight active power branches "
+        "exist only under OD-0 common substrate, OD-4 scoped consume, and OD-5 "
+        "no-crossover.",
+        "The owner either accepts those three protocol conditions and selects "
+        "exactly one OD-1/OD-2/OD-3 branch, or the lock reopens before any pilot.",
+        "REFERENCE_PILOT",
+        "No branch may borrow data or power from another branch; a rejected "
+        "protocol condition requires a regenerated lock.",
+    ),
+    (
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+        "REPOSITORY_BASELINE",
+        "No clean common candidate starting commit, permitted generated state, "
+        "worktree-status digest, or equality rule is frozen.",
+        "Freeze one exact repository commit and allowed-status manifest for all "
+        "five isolated authors before the first candidate prompt.",
         "CANDIDATE_CONSTRUCTION",
-        "No branch may borrow data or power from another branch.",
+        "Any unequal or contaminated starting tree invalidates construction; no "
+        "arm may receive a repaired or later baseline.",
     ),
     (
         "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
@@ -2294,10 +2333,22 @@ BLOCKERS = [
     ),
     (
         "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
-        "OD4_CONTRACT",
-        "The scoped-consume policy hash is frozen, but exact META-5/compiler "
-        "artifacts and executable symmetric Rust adapter do not exist.",
-        "Freeze those artifacts without changing the OD4 policy bytes.",
+        "OD4_REFERENCE_ADAPTER",
+        "The scoped-consume policy hash is frozen, but its executable symmetric "
+        "Rust reference adapter does not exist.",
+        "Freeze exact Rust source, binary, interface, behavior-oracle, and cost "
+        "hashes without changing the OD-4 policy bytes.",
+        "REFERENCE_PILOT",
+        "A missing or asymmetric scoped Rust adapter makes the reference pilot "
+        "protocol infeasible.",
+    ),
+    (
+        "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        "OD4_CANDIDATE_CONTRACT",
+        "The exact scoped-consume META-5 and compiler artifacts for candidate "
+        "construction do not exist.",
+        "Freeze the candidate-visible contract, compiler surface, diagnostics, "
+        "and lowering inputs without changing the OD-4 policy bytes.",
         "CANDIDATE_CONSTRUCTION",
         "If the exact scoped contract cannot be implemented, the branch fails.",
     ),
@@ -2314,9 +2365,11 @@ BLOCKERS = [
         "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
         "TARGET",
         "Exact power, affinity, thermal, noise, dyld, libc, allocator image, "
-        "counter tool, and CPU feature identities are absent.",
-        "Freeze probes, executable/configuration hashes, and invalidation rules.",
-        "CANDIDATE_CONSTRUCTION",
+        "CPU features, Rust compiler, linker, runtime, target tools, flags, and "
+        "executable identities are absent.",
+        "Freeze environment probes, toolchain binaries and configurations, build "
+        "commands, executable hashes, and invalidation rules.",
+        "REFERENCE_PILOT",
         "Unavailable environment blocks the relevant branch.",
     ),
     (
@@ -2325,7 +2378,7 @@ BLOCKERS = [
         "No exact x86-64 machine, kernel, libc, allocator, isolation, counter "
         "tool, or toolchain identity is frozen.",
         "Provision and hash the native runner.",
-        "CANDIDATE_CONSTRUCTION",
+        "REFERENCE_PILOT",
         "Dual-native branches fail closed; Mac-local branches remain target-local.",
     ),
     (
@@ -2342,7 +2395,7 @@ BLOCKERS = [
         "Common counted adapter source, binary, usable-byte method, and failure "
         "injector hashes do not exist.",
         "Construct and independently review one symmetric adapter.",
-        "CANDIDATE_CONSTRUCTION",
+        "REFERENCE_PILOT",
         "No private or approximate byte accounting may substitute.",
     ),
     (
@@ -2351,7 +2404,7 @@ BLOCKERS = [
         "Executable harness, Rust adapters, payload declarations, and exact "
         "oracles do not exist.",
         "Freeze source, binaries, inputs, commands, and oracle hashes.",
-        "CANDIDATE_CONSTRUCTION",
+        "REFERENCE_PILOT",
         "A missing exact adapter blocks its operation; no aggregate proxy.",
     ),
     (
@@ -2360,7 +2413,8 @@ BLOCKERS = [
         "The fixed four-cycle six-pseudo-Rust raw campaign, whole-cycle supports, "
         "memory eligibility ledger, and selected branch block count are absent.",
         "Run only the preregistered reference pilot and exact empirical DP after "
-        "the randomization and power-engine blockers are resolved.",
+        "every applicable per-branch REFERENCE_PILOT prerequisite in the frozen "
+        "stage protocol is resolved.",
         "CANDIDATE_CONSTRUCTION",
         "If 60, 90, and 120 blocks all miss worst-case power, return "
         "PROTOCOL_INFEASIBLE and reopen before any candidate observation.",
@@ -2391,7 +2445,9 @@ BLOCKERS = [
         "PENDING_EXTERNAL_FACT_REPORTS",
         "FACT_CHANNEL",
         "Candidate fact producers, consumers, invalidators, and reports do not exist.",
-        "Freeze report schema and Candidate Freeze B artifacts.",
+        "During authorized construction, produce the exact report schema, "
+        "producer/consumer/invalidation records, and facts-on/off artifacts; "
+        "Candidate Freeze B then pins them.",
         "CANDIDATE_FREEZE_B",
         "Indeterminate fact accounting rejects the candidate.",
     ),
@@ -2399,7 +2455,9 @@ BLOCKERS = [
         "PENDING_EXTERNAL_CANDIDATE_BUILDS",
         "ARTIFACT",
         "No candidate source, compiler, command, or binary is authorized or built.",
-        "Requires later construction authority and exact Candidate Freeze B.",
+        "After construction authority, produce exact candidate source, compiler, "
+        "commands, binaries, and construction reports; Candidate Freeze B then "
+        "pins those completed artifacts.",
         "CANDIDATE_FREEZE_B",
         "A nonbuilding arm is a mechanism result, not permission to change it.",
     ),
@@ -2449,12 +2507,86 @@ BLOCKERS = [
 def blocker_rows() -> list[dict[str, str]]:
     fields = [
         "blocker_id", "kind", "missing_fact", "required_resolution",
-        "blocks_stage", "mechanism_failure_rule",
+        "earliest_blocked_stage", "mechanism_failure_rule",
     ]
-    return [
-        dict(zip(fields, row), status="BLOCKING")
-        for row in BLOCKERS
-    ]
+    rows = []
+    for values in BLOCKERS:
+        item = dict(zip(fields, values), status="BLOCKING")
+        branch_ids = (
+            DUAL_NATIVE_BRANCH_IDS
+            if item["blocker_id"] in {
+                "PENDING_EXTERNAL_X86_RUNNER",
+                "PENDING_EXTERNAL_X86_COUNTER_PROTOCOL",
+            }
+            else ALL_ACTIVE_BRANCH_IDS
+        )
+        item["applicable_owner_branch_ids"] = ",".join(branch_ids)
+        rows.append(item)
+    return rows
+
+
+def stage_prerequisite_protocol() -> dict[str, Any]:
+    rows = blocker_rows()
+    stage_index = {
+        stage: index for index, stage in enumerate(PIPELINE_STAGE_ORDER)
+    }
+    known_stages = set(PIPELINE_STAGE_ORDER) | set(SIDE_STAGES)
+    if any(row["earliest_blocked_stage"] not in known_stages for row in rows):
+        raise ProtocolError("blocker uses an unknown stage")
+    if len({row["blocker_id"] for row in rows}) != len(rows):
+        raise ProtocolError("duplicate operational blocker")
+
+    per_branch: dict[str, dict[str, Any]] = {}
+    for branch_id in ALL_ACTIVE_BRANCH_IDS:
+        applicable = [
+            row for row in rows
+            if branch_id in row["applicable_owner_branch_ids"].split(",")
+        ]
+        pipeline: dict[str, Any] = {}
+        for stage in PIPELINE_STAGE_ORDER:
+            direct = sorted(
+                row["blocker_id"] for row in applicable
+                if row["earliest_blocked_stage"] == stage
+            )
+            cumulative = sorted(
+                row["blocker_id"] for row in applicable
+                if (
+                    row["earliest_blocked_stage"] in stage_index
+                    and stage_index[row["earliest_blocked_stage"]]
+                    <= stage_index[stage]
+                )
+            )
+            pipeline[stage] = {
+                "direct_blocker_ids": direct,
+                "cumulative_blocker_ids": cumulative,
+            }
+        side = {
+            stage: sorted(
+                row["blocker_id"] for row in applicable
+                if row["earliest_blocked_stage"] == stage
+            )
+            for stage in SIDE_STAGES
+        }
+        per_branch[branch_id] = {
+            "pipeline": pipeline,
+            "side_stages": side,
+        }
+    return {
+        "schema": "xlang-dense-stage-prerequisites-v1",
+        "pipeline_stage_order": list(PIPELINE_STAGE_ORDER),
+        "side_stages": list(SIDE_STAGES),
+        "earliest_stage_rule": (
+            "earliest_blocked_stage is the first pipeline gate that an unresolved "
+            "applicable row blocks; it transitively blocks every later pipeline "
+            "stage. Side stages never gate candidate selection."
+        ),
+        "branch_applicability_rule": (
+            "A blocker applies only to the exact owner_branch_ids recorded in its "
+            "row. Every branch must resolve its complete cumulative set before "
+            "entering a pipeline stage."
+        ),
+        "per_owner_branch": per_branch,
+    }
 
 
 SORT_MEMBERS = {
@@ -2758,6 +2890,7 @@ def common_cell_blockers(target_id: str, payload_id: str) -> list[str]:
     result = [
         "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
         "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
         "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
         "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
         "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
@@ -3041,6 +3174,10 @@ def make_control_cell(
     branch_ids = sorted(
         row["branch_id"] for row in branches
         if row["branch_class"] == "ACTIVE_POWER_BRANCH"
+        and (
+            target_id == "TARGET-I686-STRUCTURAL"
+            or target_id in row["required_target_ids"].split(",")
+        )
     )
     seed = {
         "role": "PROTECTED_STRUCTURAL",
@@ -3080,6 +3217,7 @@ def make_control_cell(
     }[control_id]
     blockers = [
         "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
         "PENDING_EXTERNAL_CANDIDATE_BUILDS",
     ]
     if control_id == "H-FLATSET":
@@ -3178,6 +3316,10 @@ def make_arithmetic_cell(
     branch_ids = sorted(
         row["branch_id"] for row in branches
         if row["branch_class"] == "ACTIVE_POWER_BRANCH"
+        and (
+            target_id == "TARGET-I686-STRUCTURAL"
+            or target_id in row["required_target_ids"].split(",")
+        )
     )
     cell_id = "DPERF-" + digest_value(
         ["ARITHMETIC", target_id, bits]
@@ -3216,7 +3358,10 @@ def make_arithmetic_cell(
     }
     trace_sha = digest_value(trace_plan)
     oracle_sha = digest_value(oracle_plan)
-    blockers = ["PENDING_EXTERNAL_OWNER_AUTHORIZATION"]
+    blockers = [
+        "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+        "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+    ]
     if target_id == "TARGET-I686-STRUCTURAL":
         blockers.append("PENDING_EXTERNAL_I686_TOOLCHAIN")
     elif target_id == "TARGET-X86_64-LINUX":
@@ -3405,7 +3550,10 @@ def build_matrix(
                 "P-BEHAVIOR",
                 target_id,
                 branches,
-                ("PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",),
+                (
+                    "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+                    "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+                ),
             ))
 
     controls = {row["control_id"]: row for row in CONTROLS}
@@ -4688,10 +4836,19 @@ def statistics_payload(
             "selected_block_count": PENDING,
             "power_state": "BLOCKED_REFERENCE_ONLY_PILOT_ABSENT",
         })
+    stage_protocol = stage_prerequisite_protocol()
+    construction_required_by_branch = {
+        branch_id: branch_protocol["pipeline"][
+            "CANDIDATE_CONSTRUCTION"
+        ]["cumulative_blocker_ids"]
+        for branch_id, branch_protocol in
+        stage_protocol["per_owner_branch"].items()
+    }
     return {
-        "schema": "xlang-dense-performance-statistics-v4",
+        "schema": "xlang-dense-performance-statistics-v5",
         "status": "BLOCKED_REFERENCE_ONLY_PILOT_ABSENT",
         "candidate_construction_authorized": False,
+        "stage_prerequisite_protocol": stage_protocol,
         "owner_branch_design": {
             "active_branch_count": 8,
             "active_factorization": "OD-1(2) x OD-2(2) x OD-3(2)",
@@ -5195,18 +5352,18 @@ def statistics_payload(
         "construction_protocol": {
             "status": "UNRESOLVED_OPERATIONAL_BLOCKERS",
             "arbitrary_resource_default_forbidden": True,
-            "required_blocker_ids": [
-                "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
-                "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
-                "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
-                "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
-                "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
-                "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
-                "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
-                "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
-                "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
-                "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
-            ],
+            "required_blocker_ids": sorted({
+                blocker_id
+                for blocker_ids in construction_required_by_branch.values()
+                for blocker_id in blocker_ids
+            }),
+            "required_blocker_ids_by_owner_branch":
+                construction_required_by_branch,
+            "first_candidate_prompt_gate": (
+                "Every applicable cumulative CANDIDATE_CONSTRUCTION blocker, "
+                "including a feasible frozen reference pilot and exact common "
+                "repository baseline, resolves before the first candidate prompt."
+            ),
             "mechanism_failure_rule": (
                 "Once exact equal resources and repair rules are owner-frozen, "
                 "an arm that cannot build or pass within them is a mechanism "
@@ -5336,6 +5493,17 @@ def render_protocol_report(
         row["payload_code"] for row in matrix
         if row["cell_role"] == "PAYLOAD_SEPARATOR_PRIMARY"
     )
+    stage_protocol = stage_prerequisite_protocol()
+    pilot_direct_counts = sorted({
+        len(branch["pipeline"]["REFERENCE_PILOT"]["direct_blocker_ids"])
+        for branch in stage_protocol["per_owner_branch"].values()
+    })
+    construction_cumulative_counts = sorted({
+        len(branch["pipeline"]["CANDIDATE_CONSTRUCTION"][
+            "cumulative_blocker_ids"
+        ])
+        for branch in stage_protocol["per_owner_branch"].values()
+    })
     lines = [
         "# Dense Family Lock A performance protocol",
         "",
@@ -5413,6 +5581,15 @@ def render_protocol_report(
         "## Construction boundary",
         "",
         f"- Explicit operational blockers: {len(BLOCKERS)}.",
+        "- `earliest_blocked_stage` is cumulative across REFERENCE_PILOT, "
+        "CANDIDATE_CONSTRUCTION, and CANDIDATE_FREEZE_B; descriptive counter "
+        "reporting is a nonselection side stage.",
+        f"- Per-branch reference-pilot prerequisite counts: {pilot_direct_counts}; "
+        f"cumulative construction-gate counts: {construction_cumulative_counts}. "
+        "The extra prerequisite is the x86 runner in dual-native branches.",
+        "- The reference pilot must close as feasible before the first candidate "
+        "prompt; its row names the complete per-branch prerequisite manifest, "
+        "not a two-blocker shortcut.",
         "- Author, service, disclosure, custody, equal resources, and repair "
         "rules are not yet defensibly frozen; no arbitrary default is supplied.",
         "- After a later exact freeze, inability to build or pass within the "
@@ -5499,7 +5676,7 @@ def main() -> None:
         artifact_record(HERE / OUTPUTS["protocol"])
     ]
     summary = {
-        "schema": "xlang-dense-performance-registry-summary-v4",
+        "schema": "xlang-dense-performance-registry-summary-v5",
         "status": "RESEARCH_PROTOCOL_FROZEN_CONSTRUCTION_BLOCKED",
         "candidate_construction_authorized": False,
         "frozen_inputs": {
@@ -5561,7 +5738,8 @@ def main() -> None:
         "source_authorities": source_authority_records(),
         "schemas": SCHEMAS,
         "supersession_scope": (
-            "These v4 protocol/statistics artifacts replace both the rejected Cartesian matrix and "
+            "These v5 protocol/statistics artifacts replace the v4 staging map, "
+            "the rejected Cartesian matrix, and "
             "the incomplete v2 sparse protocol. No earlier DENSE-PERFORMANCE "
             "output is live authority."
         ),
@@ -5571,7 +5749,7 @@ def main() -> None:
     ) as handle:
         handle.write(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(
-        "Dense performance protocol v4: "
+        "Dense performance protocol v5: "
         f"{len(dispositions)} exact derivations, {len(gates)} operation gates, "
         f"{len(matrix)} cells, {len(descriptors)} descriptors, "
         f"{len(BLOCKERS)} explicit blockers"

@@ -1,19 +1,20 @@
-# Dense Family Lock A Performance and Statistical Hostile Review: Pass
+# Dense Family Lock A Performance Protocol v5 Hostile Review: Pass
 
-Date: 2026-07-14. Status: `PASS_EXACT_BYTES_PERFORMANCE_PROTOCOL_ONLY`.
+Date: 2026-07-15. Status: `PASS_EXACT_BYTES_PERFORMANCE_PROTOCOL_ONLY`.
 
-An independent reviewer examined the frozen performance protocol, generated
-registries, statistical design, exact power law, randomization grammar,
-resource accounting, and fail-closed verifier without editing any reviewed
-source or generated artifact. The only repository artifact written by this
-reviewer is this report. No unresolved performance-protocol or statistical
-contradiction remains on the exact bytes below.
+Reviewer `/root/repair_soundness_protocol` independently examined the frozen
+performance protocol, generated registries, statistical design, exact power
+law, randomization grammar, operational staging, resource accounting, and
+fail-closed verifier. This reviewer edited no reviewed byte. The only repository
+artifact written by this reviewer is this report. No unresolved
+performance-protocol, staging, or statistical contradiction remains on the
+exact v5 bytes below.
 
 This is not a Family Lock A approval. It authorizes no reference pilot,
 candidate construction, Candidate Freeze B, execution, scoring, held-out work,
 selection, language or specification decision, compiler or production
 implementation, production fact channel, E0.1 restart, xlc migration, or
-default teaching. The 25 explicit external blockers remain blockers.
+default teaching. The 27 explicit external blockers remain blockers.
 
 ## 1. Reviewed exact-byte closure
 
@@ -26,7 +27,7 @@ before using the bundle. Any byte change invalidates this pass.
 | --- | --- |
 | `DENSE-PERFORMANCE-ALGORITHMS.tsv` | `65c531a4b77338d1b651b539c2ca8c6aa2e122f92168b3c234a814973a3ef887` |
 | `DENSE-PERFORMANCE-ALLOCATORS.tsv` | `cc218b4330640a9cad12eb5c9c2c14e5cfdaf912fdfd3bf6cb96e753d6f5e5df` |
-| `DENSE-PERFORMANCE-BLOCKERS.tsv` | `95f843a3f3448c4ead37611f4e9f07505ad9882d1df23910b73c7ce45b65dda6` |
+| `DENSE-PERFORMANCE-BLOCKERS.tsv` | `3fda2ab4a24189f58ddd83e425a2504be4b52f3a7830721e413015695d0f8af3` |
 | `DENSE-PERFORMANCE-COMMON-SUBSTRATE.tsv` | `23b2b1f652f7d28f6d9722ae082f10bef8c797c59a63d507fba579ede87fbc3e` |
 | `DENSE-PERFORMANCE-CONTROLS.tsv` | `1bc594003697c3868e0ac42720de56df1680922f22426b090ad12fa029eeea09` |
 | `DENSE-PERFORMANCE-COUNTER-POLICIES.tsv` | `89a9212a6982b4e37c211e2dcc3641be55bd64fcdaa9e1d70720761c16768117` |
@@ -37,22 +38,22 @@ before using the bundle. Any byte change invalidates this pass.
 | `DENSE-PERFORMANCE-FAILURE-POLICIES.tsv` | `bd6331cc05d6af867a77a416644a92ed143cab669c9145cea4e39089128af742` |
 | `DENSE-PERFORMANCE-GENERATORS.tsv` | `bf9ff60553e0157ba6a92fbf0cfa672e81b0b8668db8abdcc3c56c631f543f9e` |
 | `DENSE-PERFORMANCE-GROWTH-POLICIES.tsv` | `768645fd68ed1de1699dac7f92d30b51ebb3ba99efc1b8a294368255f0f4c431` |
-| `DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl` | `3e8e983faae0d1acdaf3acf0785d9dc2153b3e6f0cf37818a397a3e510ec77a0` |
-| `DENSE-PERFORMANCE-INPUTS.jsonl` | `ca84619308a575c81648d25d93853552f2c331a1327bf0c5a914635cbb83999e` |
+| `DENSE-PERFORMANCE-INPUT-DESCRIPTORS.jsonl` | `880a1231311bb8e1132e7d0237c844455cd6f7c99a30eb8bff4d396ad8d12722` |
+| `DENSE-PERFORMANCE-INPUTS.jsonl` | `65ed14b61cf2f016bf75c49abe165e5a6b2245e451acafb67d693512bc83119f` |
 | `DENSE-PERFORMANCE-LAYOUTS.tsv` | `de5a054494d944ab70cd3aac56c2dfff6ddfa6f2271f030064ed2642ff198768` |
-| `DENSE-PERFORMANCE-MATRIX.tsv` | `67d65ba70b58eb3a1c54ae798a8852d9df05fadedaf5a034585dcd749db21568` |
+| `DENSE-PERFORMANCE-MATRIX.tsv` | `8d9f376ed9cb90f3fe8aa9c55c3861bc775430d948521a264630178cac28a187` |
 | `DENSE-PERFORMANCE-OPERATION-GATES.tsv` | `2a6faa63f95b9140c0f8203022c9526a83681bf4f27b6fd0a270b151b35245a9` |
 | `DENSE-PERFORMANCE-OWNER-BRANCHES.tsv` | `c48bbc27e51db13094cd4486dddf09001b8c2725cd38c2922f7dbbf3b94f09f5` |
 | `DENSE-PERFORMANCE-PAYLOADS.tsv` | `68ccb0cb9e85e2b83e6cdb4e586a8fd789f264966f1d9f71881b42338dfd52e0` |
-| `DENSE-PERFORMANCE-PROTOCOL.md` | `79bb9682d5e3e2e2f4b1d28d6becc379ef73f05bf0e25a586512ebe38b4803c5` |
+| `DENSE-PERFORMANCE-PROTOCOL.md` | `8b63a7f495799547bc8b9481d80ff9c7cb41104f7e4cfe410b6a3758edfee0b1` |
 | `DENSE-PERFORMANCE-REFERENCE-ROUTES.tsv` | `ae89b2b13e4e438de70a70006c43d8d0f7044227f54dc81bf5df513c094cf6a7` |
 | `DENSE-PERFORMANCE-REPETITIONS.tsv` | `0ad5eb53324573507e9f4db7f5afdabd29c053334595ae6d2e40a3b03397c359` |
 | `DENSE-PERFORMANCE-SCHEDULES.tsv` | `06e0a002f799fa82dc4e77d9f46914fb1762ac9659ab6a18d0a145c24f3bbc94` |
-| `DENSE-PERFORMANCE-STATISTICS.json` | `5c4c607dc38b1793657e1493217271ab1e81d62bcfe574865689673ecaf5f393` |
+| `DENSE-PERFORMANCE-STATISTICS.json` | `08987857f7e52ab258536b8d8763d689e3ad1feb243b369241b3d82e286ab4b0` |
 | `DENSE-PERFORMANCE-STRUCTURAL-GATES.tsv` | `6196995de9b7f1ad2518c38c730a4c081ddb465a2bb00cff52734e9b351c9f32` |
 | `DENSE-PERFORMANCE-TARGETS.tsv` | `9dcc86dc85fdcf87c77f7c1e6c411c22761b44aac50a7973348df335997dcf94` |
 | `DENSE-PERFORMANCE-WARMUPS.tsv` | `0b048f6ab95c9c48d6bb963f0a4be6d648258b86c88dd6944ed0251ad908c41b` |
-| `DENSE-PERFORMANCE-REGISTRY-SUMMARY.json` | `b47fa133b3fa1284ce1afbe26fb68cc74f6cd01b1d4e42d3ae31a423e440f253` |
+| `DENSE-PERFORMANCE-REGISTRY-SUMMARY.json` | `c5683859c6f3c137b1aada7b95c1581842436b47b808452c37727e91da570609` |
 | `DENSE-EXACT-MEMBER-OUTCOME-REGISTRY.tsv` | `3016206708a63b858b655e81de0e5c08e21055b0c4aa4c1ce37c2561c73e3418` |
 | `dense_contract_registry.py` | `31dda5ccfd33202860022946fdf456404b104a14118ffcd286406595e2da2d06` |
 | `DENSE-CANDIDATE-OPERATION-REGISTRY.tsv` | `e6309a06014fbc573974786e91597344d29c665b463bd4589553d1e8a55812bd` |
@@ -60,8 +61,8 @@ before using the bundle. Any byte change invalidates this pass.
 | `DENSE-CANDIDATE-LIFECYCLE-REGISTRY.tsv` | `63f6c1e0cad521ea718b40b9570857e2401a2e83e4d36d1d58785b7276a041df` |
 | `DENSE-COMMON-SUBSTRATE-REGISTRY.tsv` | `99fa5fc0c0ad44033c360027a0b2d5caf2bdb65253013776995f21e145e28e3f` |
 | `DENSE-OD4-POLICY-REGISTRY.tsv` | `073c206be16fb9d85cfd7d90bd3743c21633b30ef1a93fd21828d3a1a5938bdd` |
-| `dense_performance_registry.py` | `dedb9c0ced8f937f8e9b67536db681f7185326f79001ad0d5255ac071e7d6ee9` |
-| `verify_dense_performance.py` | `9d71fddf010c1cd1c8eb6178310dad597025445b41615c098b70bc2660f07c80` |
+| `dense_performance_registry.py` | `0f42684374dd7927edfab9af3452286bd75a9703eeb36dbbcb413ba20a67a919` |
+| `verify_dense_performance.py` | `c94765af32878649a053511e7bd89e9bb32b2b2432f06caab0b258f6e790ead2` |
 | `generate_dense_performance_inputs.py` | `47a2bfd1bcd0e7a7d96a39f21080a8f3ca61e0bc906a55042c76200d4ed36c81` |
 
 The reviewer regenerated the registry and input bundle in a separate directory.
@@ -82,9 +83,39 @@ generator or verifier and recovered:
   arithmetic-structural cells;
 - 257 AArch64 cells, 257 x86-64 cells, and six i686 structural cells;
 - 502 timed primary cells, all 520 rows with construction authorization `NO`;
-- eight active power branches, four blocked-or-reopen branches, and 25 explicit
+- eight active power branches, four blocked-or-reopen branches, and 27 explicit
   blockers; and
 - exactly two payload-separator cells for each of the nine payloads.
+
+The reviewer also reconstructed the v5 prerequisite graph directly from the
+27 blocker rows, without treating the generated stage summary as authority.
+The exact stage partition is nine reference-pilot blockers, 13 direct
+candidate-construction blockers, three direct Candidate Freeze B blockers, and
+two descriptive-counter side-stage blockers. The x86 runner and x86 counter
+apply only to the four dual-native branches; every other blocker applies to all
+eight active branches. Therefore the direct reference-pilot closure is exactly
+eight blockers on each Mac-local branch and nine on each dual-native branch.
+The cumulative candidate-construction closure is exactly 21 and 22,
+respectively. Candidate Freeze B adds exactly three blockers. The counter stage
+is descriptive only and never enters candidate selection.
+
+The staging audit additionally established that:
+
+- `PENDING_EXTERNAL_REPOSITORY_BASELINE` gates every one of the 520 cells and
+  every candidate-construction branch before the first candidate prompt;
+- the Rust reference adapter blocker
+  `PENDING_EXTERNAL_OD4_SCOPED_CONTRACT` gates the reference pilot, while the
+  distinct META-5/compiler artifact blocker
+  `PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS` gates construction;
+- all four OD-4 primary cells name both OD-4 blockers;
+- the AArch64 pilot blocker names the compiler, linker, runtime, target tools,
+  flags, and executable identities needed to reproduce the reference baseline;
+- the fact-report and candidate-build resolutions run during authorized
+  construction and are subsequently pinned by Candidate Freeze B; neither
+  resolution depends circularly on a preexisting Candidate Freeze B; and
+- every branch's direct and cumulative lists, the construction union, all 520
+  cell blocker sets, and all 520 descriptor/input joins match those rules
+  exactly.
 
 For each active branch, `T` is the exact timing-cell count, `L` is the exact
 non-ZST memory-family cell count, and `m=20*(T+L)` is the complete candidate-only
@@ -229,17 +260,25 @@ remain explicit external blockers; no arbitrary value is invented here.
 ## 6. Hostile verification
 
 The isolated exact-byte verifier passed with 303 derivations, 97 operation
-gates, 520 cells, eight owner power branches, and all 39 registered hostile
-mutations rejected. The reviewer added eight in-memory attacks, all rejected:
+gates, 520 cells, eight owner power branches, and all 48 registered hostile
+mutations rejected. The reviewer then applied a separate oracle that imports
+neither the generator nor the verifier. It rejected 14 additional coherent
+attacks:
 
-- a changed injected timing multiplier;
-- the memory complement coefficient changed from `-8` to `-7`;
-- a removed memory task partition binding;
-- a failure event without its power-task parent;
-- an undercounted Q/P/M coefficient-ledger hash ceiling;
-- a changed block-order rank;
-- recurrence of the obsolete timing log-ratio estimator; and
-- recurrence of the obsolete memory paired-ratio estimator.
+- moving owner authorization later while changing the recorded closure;
+- deleting the repository baseline from the blocker and construction maps;
+- recombining the Rust-reference and candidate-artifact OD-4 blockers;
+- applying the x86 runner to Mac-local branches;
+- restoring the Candidate Freeze B wording cycle;
+- erasing the AArch64 linker identity;
+- dropping the W-GAP witness from one cumulative construction closure;
+- removing the harness from one primary cell;
+- removing the candidate-artifact OD-4 blocker from all four OD-4 cells;
+- importing an x86 blocker into a Mac-local cell;
+- changing the memory complement coefficient from `-8` to `-7`;
+- changing the injected timing multiplier;
+- removing a required power-task artifact binding; and
+- changing a committed block-order rank.
 
 The following commands passed against the reviewed bytes and the report-only
 repository addition:
@@ -256,7 +295,30 @@ Independent regeneration compared all 29 generated files byte for byte rather
 than relying only on the verifier. The root gate ended with
 `== ALL VERIFICATION LAYERS GREEN ==`.
 
-## 7. Invalidated freeze history
+## 7. Superseded v4 review authority
+
+The previous report byte string, SHA-256
+`83e9135ba26348c6f89423c4710259da76a65381aca2e7d2e54799ef386541ff`,
+is preserved as superseded history only. It reviewed registry
+`dedb9c0ced8f937f8e9b67536db681f7185326f79001ad0d5255ac071e7d6ee9`,
+verifier
+`9d71fddf010c1cd1c8eb6178310dad597025445b41615c098b70bc2660f07c80`,
+summary
+`b47fa133b3fa1284ce1afbe26fb68cc74f6cd01b1d4e42d3ae31a423e440f253`,
+protocol
+`79bb9682d5e3e2e2f4b1d28d6becc379ef73f05bf0e25a586512ebe38b4803c5`,
+statistics
+`5c4c607dc38b1793657e1493217271ab1e81d62bcfe574865689673ecaf5f393`,
+matrix
+`67d65ba70b58eb3a1c54ae798a8852d9df05fadedaf5a034585dcd749db21568`,
+and blockers
+`95f843a3f3448c4ead37611f4e9f07505ad9882d1df23910b73c7ce45b65dda6`.
+That authority is superseded because its 25-row staging taxonomy omitted the
+repository-baseline gate and combined the two distinct OD-4 stages. Its
+statistical findings remain historical evidence about those exact bytes, but
+it is not authority for v5, any current stage transition, or any current file.
+
+## 8. Invalidated freeze history
 
 No earlier coherent-looking bundle is authority. Each was rejected before this
 pass and retained here so a resumed session cannot silently revive it:
@@ -314,7 +376,7 @@ The sixth used that same input generator. A transient single-global-mapping
 Q/P/M proposal and a nominal-FWER complement bound were also rejected before a
 coherent freeze and have no authoritative hash set.
 
-## 8. Conclusion and bounded interpretation
+## 9. Conclusion and bounded interpretation
 
 The protocol is internally exact and fail-closed on the reviewed bytes. Its
 power number remains conditional reference-empirical planning power under the
@@ -323,10 +385,13 @@ candidate variance, tails, or real-world power. Its inferential validity is
 conditional on the stated fresh-child sign independence and scheduled-mixture
 null. Its mapping exactness is under the stated ideal-uniform planning model.
 
-External author identity, disclosure, construction budget, equal-resource,
-runner, allocator, harness, pilot, randomization custody, engine RSS/output/wall
-limits, candidate build, and owner authorization evidence remain absent or
-pending. Any such missing evidence ends the workflow; it does not permit a
-default, approximation, retry, or adjacent mechanism.
+Repository baseline, owner authorization and branch selection, author identity,
+service snapshot, disclosure, construction budget, feedback, common substrate,
+the two stage-distinct OD-4 artifacts, witness custody, target toolchains,
+runner, allocator, harness, pilot, randomization custody, engine
+RSS/output/wall limits, fact report, candidate build, layout module, and counter
+evidence remain absent or pending. All 27 rows fail closed. Any missing evidence
+ends the workflow; it does not permit a default, approximation, retry, adjacent
+mechanism, stage shortcut, or authority inference.
 
 Result: `PASS_EXACT_BYTES_PERFORMANCE_PROTOCOL_ONLY`.

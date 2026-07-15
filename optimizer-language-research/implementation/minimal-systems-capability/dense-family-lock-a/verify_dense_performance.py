@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed verification and mutation tests for performance protocol v4."""
+"""Fail-closed verification and mutation tests for performance protocol v5."""
 
 from __future__ import annotations
 
@@ -873,6 +873,26 @@ def validate_gates_and_matrix(
         fail("timed primary cell count changed")
     if any(row["rust_floor_upper_ratio"] != "1.02" for row in primary):
         fail("a primary cell lost its independent 1.02 Rust floor")
+    blocker_rows = registry.blocker_rows()
+    blocker_branches = {
+        row["blocker_id"]: set(
+            row["applicable_owner_branch_ids"].split(",")
+        )
+        for row in blocker_rows
+    }
+    for row in matrix:
+        row_blockers = set(row["blocker_ids"].split(","))
+        row_branches = set(row["owner_branch_ids"].split(","))
+        if "PENDING_EXTERNAL_REPOSITORY_BASELINE" not in row_blockers:
+            fail(f"matrix cell lacks the common repository baseline: {row['cell_id']}")
+        if not row_blockers <= set(blocker_branches):
+            fail(f"matrix cell names an unknown blocker: {row['cell_id']}")
+        for blocker_id in row_blockers:
+            if not row_branches <= blocker_branches[blocker_id]:
+                fail(
+                    "matrix cell exceeds blocker branch applicability: "
+                    f"{row['cell_id']}/{blocker_id}"
+                )
     exact_primary_members = {
         row["member_contract_id"] for row in dispositions
         if row["disposition"] == "TIMED_PRIMARY"
@@ -952,6 +972,13 @@ def validate_gates_and_matrix(
         "DENSE-ITER-SHARED", "DENSE-ITER-UNIQ", "DENSE-ITER-OWN",
     }:
         fail("traversal modes are not independent primary operations")
+    for row in primary:
+        blocker_ids = set(row["blocker_ids"].split(","))
+        if row["cell_role"] == "OD4_SCOPED_PRIMARY" and not {
+            "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+            "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+        } <= blocker_ids:
+            fail(f"OD4 cell lacks split pilot/construction gates: {row['cell_id']}")
 
 
 def validate_payloads_and_zst(matrix: list[dict[str, str]]) -> None:
@@ -1059,15 +1086,170 @@ def validate_protected_controls(matrix: list[dict[str, str]]) -> None:
         fail("protected controls do not cover all three target layouts")
 
 
+def validate_stage_prerequisites(
+    blockers: list[dict[str, str]],
+    stats: dict[str, Any],
+    branches: list[dict[str, str]],
+) -> None:
+    expected_by_stage = {
+        "REFERENCE_PILOT": {
+            "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+            "PENDING_EXTERNAL_OWNER_BRANCH_SELECTION",
+            "PENDING_EXTERNAL_OD4_SCOPED_CONTRACT",
+            "PENDING_EXTERNAL_AARCH64_ENVIRONMENT",
+            "PENDING_EXTERNAL_X86_RUNNER",
+            "PENDING_EXTERNAL_ALLOCATOR_ADAPTER",
+            "PENDING_EXTERNAL_HARNESS",
+            "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
+            "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
+        },
+        "CANDIDATE_CONSTRUCTION": {
+            "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+            "PENDING_EXTERNAL_CANDIDATE_AUTHOR_IDENTITIES",
+            "PENDING_EXTERNAL_SERVICE_SNAPSHOTS",
+            "PENDING_EXTERNAL_DISCLOSURE_AUTHORITY",
+            "PENDING_EXTERNAL_CONSTRUCTION_BUDGET",
+            "PENDING_EXTERNAL_FEEDBACK_PROTOCOL",
+            "PENDING_EXTERNAL_COMMON_SUBSTRATE_ARTIFACTS",
+            "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS",
+            "PENDING_EXTERNAL_H_FLATSET_CUSTODY",
+            "PENDING_EXTERNAL_I686_TOOLCHAIN",
+            "PENDING_EXTERNAL_REFERENCE_PILOT",
+            "PENDING_EXTERNAL_W_SMALL_FIXTURE",
+            "PENDING_EXTERNAL_W_GAP_FIXTURE",
+        },
+        "CANDIDATE_FREEZE_B": {
+            "PENDING_EXTERNAL_FACT_REPORTS",
+            "PENDING_EXTERNAL_CANDIDATE_BUILDS",
+            "PENDING_EXTERNAL_AARCH64_CANDIDATE_MODULES",
+        },
+        "DESCRIPTIVE_COUNTER_REPORT": {
+            "PENDING_EXTERNAL_AARCH64_COUNTER_PROTOCOL",
+            "PENDING_EXTERNAL_X86_COUNTER_PROTOCOL",
+        },
+    }
+    expected_ids = set().union(*expected_by_stage.values())
+    if len(blockers) != 27 or len(expected_ids) != 27:
+        fail("operational blocker domain is not the exact 27-row set")
+    by_id = {row["blocker_id"]: row for row in blockers}
+    if len(by_id) != len(blockers) or set(by_id) != expected_ids:
+        fail("operational blocker IDs are missing, duplicated, or unknown")
+    for stage, blocker_ids in expected_by_stage.items():
+        if any(
+            by_id[blocker_id]["earliest_blocked_stage"] != stage
+            for blocker_id in blocker_ids
+        ):
+            fail(f"earliest blocker stage changed for {stage}")
+    if any(row["status"] != "BLOCKING" for row in blockers):
+        fail("operational blocker no longer fails closed")
+
+    active = {
+        row["branch_id"]: row for row in branches
+        if row["branch_class"] == "ACTIVE_POWER_BRANCH"
+    }
+    dual = {
+        branch_id for branch_id, row in active.items()
+        if row["od2_option_id"] == "OD-2-DUAL-NATIVE"
+    }
+    for blocker_id, row in by_id.items():
+        applicable = set(row["applicable_owner_branch_ids"].split(","))
+        expected_applicable = (
+            dual
+            if blocker_id in {
+                "PENDING_EXTERNAL_X86_RUNNER",
+                "PENDING_EXTERNAL_X86_COUNTER_PROTOCOL",
+            }
+            else set(active)
+        )
+        if applicable != expected_applicable:
+            fail(f"blocker branch applicability changed: {blocker_id}")
+
+    pilot = by_id["PENDING_EXTERNAL_REFERENCE_PILOT"]
+    if "every applicable per-branch REFERENCE_PILOT prerequisite" not in pilot[
+        "required_resolution"
+    ]:
+        fail("reference pilot retains an incomplete prerequisite shortcut")
+    aarch = by_id["PENDING_EXTERNAL_AARCH64_ENVIRONMENT"]
+    for fragment in ("Rust compiler", "linker", "target tools", "flags"):
+        if fragment not in aarch["missing_fact"]:
+            fail("AArch64 pilot toolchain baseline is incomplete")
+    baseline = by_id["PENDING_EXTERNAL_REPOSITORY_BASELINE"]
+    for fragment in ("starting commit", "worktree-status digest", "equality rule"):
+        if fragment not in baseline["missing_fact"]:
+            fail("candidate repository baseline is incomplete")
+
+    protocol = stats.get("stage_prerequisite_protocol")
+    if (
+        not isinstance(protocol, dict)
+        or protocol.get("schema") != "xlang-dense-stage-prerequisites-v1"
+        or protocol.get("pipeline_stage_order")
+        != ["REFERENCE_PILOT", "CANDIDATE_CONSTRUCTION", "CANDIDATE_FREEZE_B"]
+        or protocol.get("side_stages") != ["DESCRIPTIVE_COUNTER_REPORT"]
+        or "transitively blocks every later" not in protocol.get(
+            "earliest_stage_rule", ""
+        )
+    ):
+        fail("stage prerequisite schema or cumulative rule changed")
+    stage_order = protocol["pipeline_stage_order"]
+    per_branch = protocol.get("per_owner_branch", {})
+    if set(per_branch) != set(active):
+        fail("stage prerequisite branch domain changed")
+    for branch_id in sorted(active):
+        applicable = {
+            blocker_id for blocker_id, row in by_id.items()
+            if branch_id in row["applicable_owner_branch_ids"].split(",")
+        }
+        expected_cumulative: set[str] = set()
+        branch_protocol = per_branch[branch_id]
+        for stage in stage_order:
+            direct = expected_by_stage[stage] & applicable
+            expected_cumulative |= direct
+            recorded = branch_protocol["pipeline"][stage]
+            if (
+                recorded["direct_blocker_ids"] != sorted(direct)
+                or recorded["cumulative_blocker_ids"]
+                != sorted(expected_cumulative)
+            ):
+                fail(f"stage prerequisite closure changed: {branch_id}/{stage}")
+        side = branch_protocol["side_stages"]["DESCRIPTIVE_COUNTER_REPORT"]
+        if side != sorted(
+            expected_by_stage["DESCRIPTIVE_COUNTER_REPORT"] & applicable
+        ):
+            fail(f"counter side-stage applicability changed: {branch_id}")
+
+    construction = stats["construction_protocol"]
+    expected_construction = {
+        branch_id: per_branch[branch_id]["pipeline"][
+            "CANDIDATE_CONSTRUCTION"
+        ]["cumulative_blocker_ids"]
+        for branch_id in sorted(active)
+    }
+    expected_union = sorted({
+        blocker_id
+        for blocker_ids in expected_construction.values()
+        for blocker_id in blocker_ids
+    })
+    if (
+        construction.get("required_blocker_ids_by_owner_branch")
+        != expected_construction
+        or construction.get("required_blocker_ids") != expected_union
+        or "before the first candidate prompt" not in construction.get(
+            "first_candidate_prompt_gate", ""
+        )
+    ):
+        fail("candidate construction prerequisite closure is incomplete")
+
+
 def validate_statistics(
     stats: dict[str, Any],
     branches: list[dict[str, str]],
     matrix: list[dict[str, str]],
 ) -> None:
-    if stats.get("schema") != "xlang-dense-performance-statistics-v4":
-        fail("statistics schema is not v4")
+    if stats.get("schema") != "xlang-dense-performance-statistics-v5":
+        fail("statistics schema is not v5")
     if stats["candidate_construction_authorized"] is not False:
         fail("statistics authorizes construction")
+    validate_stage_prerequisites(registry.blocker_rows(), stats, branches)
     design = stats["primary_design"]
     if (
         design["candidate_count_k"] != 5
@@ -1682,6 +1864,9 @@ def validate_statistics(
         construction["arbitrary_resource_default_forbidden"] is not True
         or "mechanism result" not in construction["mechanism_failure_rule"]
         or not {
+            "PENDING_EXTERNAL_OWNER_AUTHORIZATION",
+            "PENDING_EXTERNAL_REPOSITORY_BASELINE",
+            "PENDING_EXTERNAL_REFERENCE_PILOT",
             "PENDING_EXTERNAL_RANDOMIZATION_CUSTODY",
             "PENDING_EXTERNAL_POWER_ENGINE_RESOURCE_PROTOCOL",
         } <= set(construction["required_blocker_ids"])
@@ -1805,12 +1990,13 @@ def verify_source_pins() -> None:
 def verify_summary() -> None:
     summary = read_json("summary")
     if (
-        summary["schema"] != "xlang-dense-performance-registry-summary-v4"
+        summary["schema"] != "xlang-dense-performance-registry-summary-v5"
         or summary["candidate_construction_authorized"] is not False
         or summary["exact_contract_count"] != 303
         or summary["operation_gate_count"] != 97
         or summary["matrix_cell_count"] != 520
         or summary["active_owner_branch_count"] != 8
+        or summary["explicit_blocker_count"] != 27
     ):
         fail("registry summary counts or boundary changed")
     for entry in summary["artifacts"]:
@@ -1973,6 +2159,67 @@ def run_mutation_tests(bundle: dict[str, Any]) -> int:
             )
         ),
     ))
+    tests.append((
+        "primary cell missing repository baseline",
+        lambda: matrix_case(
+            lambda g, m: next(
+                row for row in m
+                if row["primary_endpoint_id"] == "END-RAW-TRACE-NS"
+            ).__setitem__(
+                "blocker_ids",
+                ",".join(
+                    blocker_id
+                    for blocker_id in next(
+                        row for row in m
+                        if row["primary_endpoint_id"] == "END-RAW-TRACE-NS"
+                    )["blocker_ids"].split(",")
+                    if blocker_id != "PENDING_EXTERNAL_REPOSITORY_BASELINE"
+                ),
+            )
+        ),
+    ))
+    tests.append((
+        "structural cell missing repository baseline",
+        lambda: matrix_case(
+            lambda g, m: next(
+                row for row in m
+                if row["primary_endpoint_id"] != "END-RAW-TRACE-NS"
+            ).__setitem__(
+                "blocker_ids",
+                ",".join(
+                    blocker_id
+                    for blocker_id in next(
+                        row for row in m
+                        if row["primary_endpoint_id"] != "END-RAW-TRACE-NS"
+                    )["blocker_ids"].split(",")
+                    if blocker_id != "PENDING_EXTERNAL_REPOSITORY_BASELINE"
+                ),
+            )
+        ),
+    ))
+    tests.append((
+        "matrix cell unknown blocker",
+        lambda: matrix_case(
+            lambda g, m: m[0].__setitem__(
+                "blocker_ids", m[0]["blocker_ids"] + ",PENDING_EXTERNAL_UNKNOWN"
+            )
+        ),
+    ))
+    tests.append((
+        "Mac-local cell imports dual-native blocker",
+        lambda: matrix_case(
+            lambda g, m: next(
+                row for row in m
+                if row["target_id"] == "TARGET-AARCH64-DARWIN"
+            ).__setitem__(
+                "blocker_ids",
+                next(
+                    row for row in m
+                    if row["target_id"] == "TARGET-AARCH64-DARWIN"
+                )["blocker_ids"] + ",PENDING_EXTERNAL_X86_RUNNER",
+            )
+        ),
+    ))
 
     def branch_case(
         mutate: Callable[[list[dict[str, str]]], None]
@@ -2011,6 +2258,64 @@ def run_mutation_tests(bundle: dict[str, Any]) -> int:
         ),
     ))
 
+    def blocker_case(
+        mutate: Callable[[list[dict[str, str]]], None]
+    ) -> None:
+        blockers = copy.deepcopy(registry.blocker_rows())
+        mutate(blockers)
+        validate_stage_prerequisites(
+            blockers, bundle["statistics"], bundle["branches"]
+        )
+
+    tests.append((
+        "late pilot authorization gate",
+        lambda: blocker_case(
+            lambda rows: next(
+                row for row in rows
+                if row["blocker_id"]
+                == "PENDING_EXTERNAL_OWNER_AUTHORIZATION"
+            ).__setitem__("earliest_blocked_stage", "CANDIDATE_CONSTRUCTION")
+        ),
+    ))
+    tests.append((
+        "x86 runner applied to Mac-local branches",
+        lambda: blocker_case(
+            lambda rows: next(
+                row for row in rows
+                if row["blocker_id"] == "PENDING_EXTERNAL_X86_RUNNER"
+            ).__setitem__(
+                "applicable_owner_branch_ids",
+                ",".join(registry.ALL_ACTIVE_BRANCH_IDS),
+            )
+        ),
+    ))
+    tests.append((
+        "missing repository baseline gate",
+        lambda: blocker_case(
+            lambda rows: rows.__setitem__(
+                slice(None),
+                [
+                    row for row in rows
+                    if row["blocker_id"]
+                    != "PENDING_EXTERNAL_REPOSITORY_BASELINE"
+                ],
+            )
+        ),
+    ))
+    tests.append((
+        "recombined OD4 pilot and candidate blockers",
+        lambda: blocker_case(
+            lambda rows: rows.__setitem__(
+                slice(None),
+                [
+                    row for row in rows
+                    if row["blocker_id"]
+                    != "PENDING_EXTERNAL_OD4_CANDIDATE_ARTIFACTS"
+                ],
+            )
+        ),
+    ))
+
     def stats_case(mutate: Callable[[dict[str, Any]], None]) -> None:
         stats = copy.deepcopy(bundle["statistics"])
         mutate(stats)
@@ -2021,6 +2326,16 @@ def run_mutation_tests(bundle: dict[str, Any]) -> int:
         lambda: stats_case(
             lambda stats: stats["multiplicity"].__setitem__(
                 "global_family_total_alpha", "0.02"
+            )
+        ),
+    ))
+    tests.append((
+        "pilot prerequisite removed from stage manifest",
+        lambda: stats_case(
+            lambda stats: next(iter(
+                stats["stage_prerequisite_protocol"]["per_owner_branch"].values()
+            ))["pipeline"]["REFERENCE_PILOT"]["direct_blocker_ids"].remove(
+                "PENDING_EXTERNAL_OWNER_AUTHORIZATION"
             )
         ),
     ))
