@@ -81,24 +81,25 @@ Measured non-wins (equally load-bearing):
 
 ## 4. Active build track and ranked bets
 
-1. **Minimal systems-capability basis / static privileged definition** — SCOPE
-   CORRECTED; RESEARCH ACTIVE (D14, 2026-07-15). The active question is how a
-   compiler, runtime, or official core implementation defines operations that
-   ordinary source cannot define, and then which irreducible safe public
-   primitives ordinary checked libraries need. Source inaccessibility is a
-   static toolchain boundary. It is not cryptographic nonforgeability or an
-   admission protocol for independently distributed privileged extensions.
+1. **Minimal systems-capability basis / static privileged definition** —
+   RESEARCH PACKET COMPLETE; OWNER REVIEW PENDING (D14, 2026-07-15). The
+   primary-source census, static-gate comparison, hostile reviews, abstract
+   basis derivation, 49-row capability crosswalk, 26-domain routing, held-outs,
+   and structural-cost packet are complete. The research recommendation is one
+   sealed compiler-embedded primitive registry whose compiler-created
+   declaration identity is the sole privilege-definition route. Ordinary code
+   may call fixed checked declarations but cannot define one through syntax,
+   attributes, names, paths, flags, cached artifacts, symbols, plugins, or
+   semantic descriptors. Direct lowering and runtime bodies remain subordinate
+   implementations selected by the same identity.
 
-   The immediate sequence is fixed. First compare Rust and a small justified
-   production-language contrast set across compiler-hard-coded operations,
-   compiler-only intrinsic declarations, sealed embedded core modules, official
-   core source modes, and exact compiler-recognized runtime imports. Then
-   recommend one primary privilege-definition mechanism and subject it to
-   hostile review. Only after that mechanism is selected may the research derive
-   a Pareto-small public semantic basis and test ordinary-library derivations
-   against the existing finite systems-demand, dense-family, and held-out
-   ledgers. The mechanism decision and the semantic-operation inventory are
-   separate decisions.
+   The abstract basis hypothesis separates three fixed storage leaves, six
+   checked ordinary mechanisms, and independently counted stability, atomic,
+   thread, exact external-event, exact target/device-event, and executable-code
+   leaves. P7/P8 are sets of exact compiler-owned rows rather than generic
+   syscall, opcode, ABI-contract, or semantic-descriptor back doors. Containers,
+   allocator policy, synchronization policy, async policy, buffering, retry,
+   and parsing remain ordinary checked libraries.
 
    The earlier signed-grant, release-entry, successor-snapshot, replay,
    revocation, key-rotation, and identity-graph work addressed a different
@@ -108,14 +109,18 @@ Measured non-wins (equally load-bearing):
    architecture is likewise an unselected hypothesis and test-case source, not
    the default public basis.
 
-   The finite evidence remains load-bearing and fail-closed. The Rust 1.97.0
-   anchor, 276 coverage clusters, 26-domain systems envelope, dense Family Lock,
-   and held-outs define coverage and falsification demands rather than one
-   intrinsic per row. The dense ledger still has 340 unresolved required route
-   obligations across 150 contexts, including 208 Convert-related, 136
-   allocator-related, and 12 ZST/fullness obligations. Exact D-2 derivability and
-   P-1 same-contract structural performance remain pending, and paper routes
-   receive no measurement credit.
+   Owner decisions are now limited to selecting or revising the static gate,
+   accepting or revising the abstract basis for further research, and optionally
+   authorizing the bounded safety-model, structural no-tax, and external-row
+   validation slices. No production decision is requested. The finite evidence
+   remains load-bearing and fail-closed: the Rust 1.97.0 anchor, 276 coverage
+   clusters, 26-domain systems envelope, dense Family Lock, and held-outs define
+   coverage and falsification demands rather than one intrinsic per row. The
+   dense ledger still has 340 unresolved required route obligations across 150
+   contexts, including 208 Convert-related, 136 allocator-related, and 12
+   ZST/fullness obligations. Exact D-2 derivability and P-1 same-contract
+   structural performance remain pending, and paper routes receive no
+   measurement credit.
 
    No language or specification change, compiler or verifier implementation,
    capability entry, standard library, container, candidate construction or

@@ -70,19 +70,18 @@ proof discharges them — speed is earned by proof, never by weakening a check.
 
 ## Current focus (2026-07-15)
 
-- D14 static privileged-definition research is the active design track; OD-0
-  through OD-5 are not the next action. First study how Rust and a small set of
-  production-language contrasts let the compiler, runtime, or official core
-  define semantics unavailable to ordinary source. Compare the mechanism
-  classes and recommend one static xlang privilege-definition route; only then
-  derive and test the smallest safe public capability basis. Cryptographic
-  authorization, F/C/S, signed grants, snapshots, replay, revocation, key
-  rotation, identity graphs, and independently distributed privileged
-  extensions are historical out-of-scope research. Keep the 340 unresolved
-  dense obligations across 150 contexts and exact D-2/P-1 fail-closed. No
-  language or specification change, compiler or verifier implementation,
-  capability entry, standard library, container, candidate execution,
-  benchmark, E0.1 restart, migration, or default teaching is authorized.
+- D14 static privileged-definition research has a hostile-reviewed owner packet
+  pending selection. It recommends one sealed compiler-embedded primitive
+  registry, an abstract tag-free storage and exact machine-leaf basis, and three
+  bounded validation slices. This is research, not an owner or production
+  selection. Cryptographic authorization, F/C/S, signed grants, snapshots,
+  replay, revocation, key rotation, identity graphs, and independently
+  distributed privileged extensions remain historical out-of-scope research.
+  Keep the 340 unresolved dense obligations across 150 contexts and exact
+  D-2/P-1 fail-closed. No language or specification change, compiler or verifier
+  implementation, capability entry, standard library, container, candidate
+  execution, benchmark, E0.1 restart, migration, or default teaching is
+  authorized.
 - xlc self-hosting build in `compiler/` (SoA-tape architecture per P2).
 - D9a is complete on two independently preregistered shipped-library targets.
   First-green `gpt-5.6-terra`/medium xlang beats `percent-encoding` 2.3.2 by
