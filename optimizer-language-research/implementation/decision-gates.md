@@ -1415,3 +1415,20 @@ construction, Candidate Freeze B, scored or held-out execution, language or
 specification decisions, compiler or production implementation, E0.1 restart,
 xlc migration, and default teaching remain prohibited. The completed reviewed
 draft returns to the owner before any further authorization.
+
+## D13-R1 rejects the first dense Family Lock A draft (2026-07-14)
+
+Independent coverage, soundness, and performance reviewers rejected the first
+generated draft before it became a durable lock. The review independently
+confirmed only the immutable audit-domain counts: 65 routed clusters, 651
+parent evidence identities, 119 dense and 193 non-dense concrete
+implementations, 29 additional operation-gate relations, 25 role identities,
+49 capability identities, the 39/17/4/5 payload partition, 75 overlay keys,
+and one delegated allocation-error row. It found blocking heuristic routing,
+mutable-input, outcome, oracle, candidate-lifecycle, fact-channel, ZST,
+performance-cell, statistics, protected-control, and META-5 defects. The
+failed-draft findings and exact reviewed manifest/report hashes are preserved
+in `dense-family-lock-a/DENSE-HOSTILE-REVIEW-ROUND-1.md`; the overwritten
+untracked draft bytes are not represented as recoverable evidence. Repair and
+new exact-hash hostile review are mandatory. Candidate construction, scoring,
+language selection, and production implementation remain unauthorized.
