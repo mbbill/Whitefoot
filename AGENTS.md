@@ -71,16 +71,18 @@ proof discharges them — speed is earned by proof, never by weakening a check.
 ## Current focus (2026-07-15)
 
 - D14 privileged-basis research is the active design track; OD-0 through OD-5
-  are no longer the next action. The current candidate uses one sealed stateful
-  admission verifier per authenticated semantic toolchain root plus one fixed
-  checked public resource-policy plane for ordinary proof-carrying modules; the
-  combined architecture remains pending owner selection. Exact dense D-2 has
-  340 unresolved obligations across 150 contexts, and exact P-1 remains pending.
-  The owner packet requests decisions on the architecture and one bounded source-
-  normalization/reference-trace pass. No language or specification change,
-  compiler or verifier implementation, capability entry, standard library,
-  container, candidate execution, benchmark, E0.1 restart, migration, or default
-  teaching is authorized.
+  are not the next action. The gate-authentication layer now has a hostile-
+  reviewed conditional result: use stateless signed grants C if an existing
+  external-frame template must accept new approved instances without an
+  authorization-release update, otherwise use fixed release entries F. Stateful
+  snapshots S add only presently unrequired local extension-grant currentness.
+  This is not an owner selection. Next freeze the bounded no-formula frame-
+  template registry and exact minimal privilege-cut ledger; keep template
+  coverage, dense D-2's 340 unresolved obligations across 150 contexts, and
+  exact P-1 fail-closed. No language or specification change, compiler or
+  verifier implementation, capability entry, standard library, container,
+  candidate execution, benchmark, E0.1 restart, migration, or default teaching
+  is authorized.
 - xlc self-hosting build in `compiler/` (SoA-tape architecture per P2).
 - D9a is complete on two independently preregistered shipped-library targets.
   First-green `gpt-5.6-terra`/medium xlang beats `percent-encoding` 2.3.2 by

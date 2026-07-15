@@ -81,16 +81,24 @@ Measured non-wins (equally load-bearing):
 
 ## 4. Active build track and ranked bets
 
-1. **Minimal systems-capability basis / privileged gate** — RESEARCH SELECTION
-   PENDING OWNER REVIEW (D14, 2026-07-15). The proposed architecture has two
-   planes and one privilege boundary. One sealed stateful admission verifier per
-   authenticated semantic toolchain root admits every irreducible machine,
-   allocator, helper, lowering, ABI, OS, device, or foreign edge. Compiler-
-   embedded and later signed entries pass the same exact current-membership,
-   implementation-cone, consumer-cone, target/frame, and final-resolution
-   predicate. No source keyword, attribute, module path, package, build flag,
-   plugin, helper name, or cache record grants privilege. Exact certified bytes
-   and explicitly trusted opaque foreign providers remain distinct outcomes.
+1. **Minimal systems-capability basis / privileged gate** — CONDITIONAL GATE
+   AUTHENTICATION PASS; BASIS RESEARCH ACTIVE (D14, 2026-07-15). A repaired,
+   hostile-reviewed 42-dimension comparison now defines one source-inaccessible,
+   stage-indexed `PermitUse` relation with typed release-entry, stateless signed-
+   grant, and stateful current-membership witnesses. The identity graph separates
+   semantic policy, authorization, toolchain release, provider commitment,
+   consumer scope, stage use, final resolution, and receipts. Four hostile table
+   mutations fail closed. No source keyword, attribute, module path, package,
+   build flag, plugin, helper name, or cache record grants privilege.
+
+   The gate choice is deliberately conditional. If an approved instance of an
+   existing external-frame template must be usable without an authorization-
+   release update, the stateless signed-grant candidate C is smallest. If such
+   an update is acceptable for every instance, fixed release entries F are
+   smaller. Stateful successor snapshots S add only unrequired local extension-
+   grant currentness under the present hard set, plus protected state and
+   verification cost. This is a research result, not an owner selection; the
+   earlier stateful lock remains historical evidence until an owner ruling.
 
    Above that gate, ordinary unapproved modules use one fixed public reference
    policy for proof-carrying resource protocols. The proposed semantic basis has
@@ -133,19 +141,18 @@ Measured non-wins (equally load-bearing):
    size, compile-time, proof-size, automatic-proof, or default-writer result is
    claimed.
 
-   Owner review is now the next decision. Ratification would select only this
-   architecture for further research and would keep exact D-2 and P-1 pending.
-   It would not authorize a language/specification change, compiler
+   The next action is research, not an owner choice: freeze a bounded, no-formula
+   external-frame template registry and construct exact minimal privilege cuts
+   for every relevant systems, dense, and held-out derivation. The registry must
+   show D6 coverage without turning a template parameter into an axiom channel;
+   the cut ledger must charge every provider allocation, copy, indirection,
+   metadata field, call, effect, and fact. Only after those hostile reviews may
+   the owner choose C or F and approve a successor completion lock for G-2
+   through G-5. Exact D-2, P-1, Convert directions, allocator applicability,
+   ZST/full-storage contracts, Rotate dispatch, and stable/cached-key schedules
+   remain fail-closed. No language/specification change, compiler or verifier
    implementation, capability entry, standard library, container candidate,
-   E0.1 restart, xlc migration, benchmark, or default teaching. Before any
-   combined D14 completion claim, direction-specific Convert contracts,
-   allocator applicability, ZST/full-storage subcontracts, Rotate dispatch, and
-   stable/cached-key sort schedules must be resolved independently. If ratified,
-   the smallest separately authorized implementation-oriented study is a
-   formalization research lock for the sequential R-1/R-2/R-3 kernel,
-   `CoreCopy`, reshape, exact focus, opaque sealing, allocation outcomes, and
-   disposition. Weak-memory profile selection and surface syntax remain later
-   independent decisions.
+   E0.1 restart, xlc migration, benchmark, or default teaching is authorized.
 2. **xlc self-hosting build track** — ACTIVE BUILD TRACK. The production compiler
    now parses, validates, indexes, and resolves all types in its own 477-function
    unit. The first S1 baseline is established: a pure whole-unit semantic driver
