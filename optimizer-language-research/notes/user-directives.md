@@ -630,3 +630,46 @@ Four owner rulings from the same session, recorded verbatim in intent:
    process abort for the concurrency layer, and the named v1 non-goals
    (concurrent ordered map, writable shared-memory IPC, inbound FFI
    callbacks, user-authored novel lock-free structures).
+
+## D17 (2026-07-16): Proof-gated admission to the privileged tier
+
+The owner ruled on the sealed-tier endgame during review of the built-in
+architecture:
+
+1. The verification track (machine-checking container-style representation
+   invariants for specific implementations — "phase 3") is a committed
+   long-term goal, not merely a research option: any sealed kernel whose
+   implementation is machine-proved leaves the trusted list and becomes
+   checked code with privileged representation rights.
+2. The same lane is, in the long term, open to USERS: performance never
+   requires proof (the default path is composing the sealed catalog), but
+   any user implementation that machine-proves its invariants may be
+   admitted to the privileged tier and enjoy the same representation rights
+   (uninitialized storage, elided checks). Proof substitutes for trust;
+   the trusted list only ever holds project kernels that have not yet been
+   proved. The owner's words: "performance wise we don't require proof of
+   everything, but if anything is proved then it can move into the
+   privileged area and enjoy all the benefits."
+
+Recorded consequences:
+
+- The v1 non-goal "user-authored novel lock-free structures" acquires its
+  principled long-term resolution: the proof-gated lane, alongside the
+  existing catalog-escalation lane. It remains a non-goal for v1.
+- Soundness constraints on the lane: proofs are machine-checked
+  deterministically (proof-carrying style — the writer constructs the
+  proof, the checker verifies it without search, preserving the
+  frontend-simple checker law); the invariant language is versioned and
+  each extension passes hostile soundness review; admission never rests on
+  human review of user code.
+- Difficulty ladder acknowledged: sequential representation invariants
+  (tables, sequences, pools) are the realistic near-term candidates;
+  concurrent lock-free protocols remain research-grade per artifact and
+  stay in the sealed tier until the proof technology matures.
+- This is the constitutional principle "speed is earned by proof, never by
+  weakening a check" applied to representation rights; the existing checked
+  requires-prologue fact system (PROOF-1/2) is the same doctrine at the
+  bounds-check scale.
+
+No production change is authorized by this ruling; it fixes the direction of
+the verification track and the extensibility story.

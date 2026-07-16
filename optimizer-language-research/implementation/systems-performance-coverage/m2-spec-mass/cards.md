@@ -157,6 +157,29 @@ names; (b) v0 has no reborrowing and no uniq-to-shared coercion — a row spelle
 result-region parameter issue loans — a single-region row such as
 `tbl_get_uniq` returns its loan at the receiver's region, never a fresh one.
 
+Borrow-minting, worked [M5R2-FIX-3]. A row spelled `&'r` or `&uniq 'r` never
+accepts a bare owned binding (that is the OWN-1 hard error writers keep hitting):
+mint the `borrow_expr` atom `&'r p` / `&uniq 'r p` at the call site, binding the
+region with an enclosing `region 'r { }` when the value is a local. Borrows are
+atoms (GRAM-9), so they need no `let` and no `move`:
+
+```
+fn demo_mint(v: own u32) -> own unit allocates(heap), traps {
+  doc "Mint the borrow inline as the argument atom; the owned local is frozen only for the call.";
+  region 'x {
+    let buf: own seq<u32, 0> = seq_new<u32, 0>();
+    seq_push(&uniq 'x buf, move v);
+    let n: own u64 = seq_len(&'x buf);
+    return unit;
+  }
+}
+```
+
+The `&uniq 'x buf` argument is the uniq-mode mint; `&'x buf` is the shared (`&`)
+mode variant. If instead you bind the borrow (`let l: &uniq 'x seq<u32, 0> =
+&uniq 'x buf;`), `l` is affine and must be passed with `move l` — the inline
+atom above avoids that and is the blessed spelling.
+
 Failure handling under the single failure principle: absence is a value
 (`Option`), never a failure. Environmental failure on this card is
 allocation growth exhaustion, which traps per the `buffer_new`/OP-9
@@ -362,3 +385,78 @@ totality poison in the hottest loop), linked-list queues (per-node
 allocation, pointer-chase), and the catalog's own former two-spellings FIFO
 state — the two-stack card survives only as the fallback subsection above,
 documented amortized-only.
+
+## C3. Iteration — the blessed spellings [M5R2-FIX-2]
+
+Blessed v0 code spells iteration exactly two ways: (1) a protocol op
+(`seq_for_each`/`seq_for_each_uniq`/`seq_drain`/`tbl_for_each`/`tbl_retain`/
+`tbl_drain`) driving a conformer, or (2) self-recursion (FN-6). There is no
+third blessed spelling. (`loop`/`break` exist in the kernel grammar (GRAM-4) but
+are held out of the blessed catalog surface pending the R3 loop-form validation;
+see the flag noted with M5-FIX-6.) The conformer half is what the earlier
+statement-list fix left unwritable — here is the full spelling.
+
+An env struct carries the accumulator; the visitor is a plain `fn` bound to the
+contract member by `conform`; the protocol op drives it. Cross-element state
+lives in the env (set through a `deref` place), so no loop counter is needed.
+
+```
+struct CountEnv { count: u64; }
+
+fn count_visit['v](env: &uniq 'v CountEnv, item: &'v u32) -> own Bool reads('v), writes('v) {
+  doc "Per-element visitor: bump the env counter; True() continues, False() stops.";
+  let cur: own u64 = deref(env).count;
+  set deref(env).count = iadd.wrap<u64>(cur, 1_u64);
+  return True();
+}
+
+conform CountEnv : SeqVisit<u32> { visit = count_visit; }
+
+fn count_all['r](s: &'r seq<u32, 0>) -> own u64 reads('r) {
+  doc "Blessed iteration: the protocol op drives the conformer; no loop statement is written.";
+  region 'v {
+    let acc: own CountEnv = CountEnv(count: 0_u64);
+    seq_for_each<CountEnv>(s, &uniq 'v acc);
+    return acc.count;
+  }
+}
+```
+
+The conformer's declared row `reads('v), writes('v)` equals `SeqVisit`'s member
+row and is exactly what the body exhibits (one `deref` read, one `set` write) —
+[CAT-5a]/[EFF-2]. `count_all`'s own row is just `reads('r)`: the visitor's `'v`
+effects are confined to the internal `region 'v { }` block ([CAT-5a](ii)), and
+`seq_for_each`'s `+ join(CountEnv)` folds into that confined region.
+
+A `tbl_retain` predicate is the same shape with a read-only member row:
+
+```
+struct KeepBig { min: u64; }
+
+fn keep_big['v](env: &uniq 'v KeepBig, key: u64, value: &'v u64) -> own Bool reads('v) {
+  doc "Retain predicate: keep entries whose value >= env.min; False() drops the entry.";
+  let lo: own u64 = deref(env).min;
+  let v: own u64 = deref(value);
+  return ige<u64>(v, lo);
+}
+
+conform KeepBig : TblRetain<u64, u64> { keep = keep_big; }
+
+fn prune['e](t: &uniq 'e table<u64, u64, fold>, floor: own u64) -> own unit writes('e) {
+  doc "Drop small entries in place; tbl_retain drives the KeepBig conformer.";
+  region 'v {
+    let env: own KeepBig = KeepBig(min: floor);
+    tbl_retain<KeepBig>(t, &uniq 'v env);
+    return unit;
+  }
+}
+```
+
+Accumulators and `set`. A `set` target is any place [GRAM-5]: a `deref(p).field`
+(as above), an `index<T>(...)` slot, or a bare local IDENT. So a straight-line
+accumulator on a local is legal — `set acc = iadd.wrap<u64>(acc, x);` where
+`acc` is a copy-typed local — even though *cross-element* accumulation lives in
+the visitor's env as shown. What a bare local can never do in blessed code is
+carry state across iterations by itself, because there is no blessed loop to
+iterate it; that role is the env field (protocol-op path) or a recursion
+parameter (self-recursion path).
