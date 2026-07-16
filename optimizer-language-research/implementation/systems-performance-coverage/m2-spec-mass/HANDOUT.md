@@ -69,6 +69,34 @@ Statement / place / borrow surface (the region-minting and `set` reds):
 - `[GRAM-7]`/`[GIVE-1]` (§3) — the `let`-initializer `match` with `give e;` for
   conditional initialization (there is no `if`).
 
+## Call convention: user fn vs table op [M5R3-FIX-1]
+
+| callee | argument spelling |
+|---|---|
+| user `fn` | NAMED args in declared order [GRAM-11]; all type/region/const args explicit in one `<...>` list [TYPE-5] |
+| table op | POSITIONAL operands, unnamed [OP-1]/[CAT-1]; region args only at a dedicated-result-region row [CAT-1a] |
+
+Paired positive/negative:
+- user fn `fn add3(a: own u64, b: own u64, c: own u64) -> own u64`: `add3(a: 1_u64, b: 2_u64, c: x)` OK; ~~`add3(1_u64, 2_u64, x)`~~ REJECTED (positional at a user fn, GRAM-11).
+- table op: `seq_push(s, move v)` OK; ~~`seq_push(s: s, v: move v)`~~ REJECTED (named args at a table op); ~~`tbl_get['r](t, k)`~~ REJECTED (region list at a positional op).
+
+## Derive your effect row (mechanical) [M5R3-FIX-3]
+
+1. List the effects each op and fn your body calls exhibits, one by one, from the tables ([EFF-1] clauses `reads`/`writes`/`allocates`/`traps`).
+2. Drop every effect confined to a region you minted inside the body with `region 'x { }` — it does not escape [CAT-5a](ii). (A queue brand `'q` is confined the same way and never appears in the row.)
+3. A bounds-checked `index` without a discharging fact — and any `.trap` op, `check`, or `requires` block — exhibits `traps` [EFF-2].
+4. Write the union in canonical order `reads, writes, allocates, traps` (`pure` if empty). Check BOTH directions: undeclared-but-exhibited and declared-but-unexhibited are each an error [EFF-2].
+5. If the fn conforms to a contract member, its declared row must be contained in the member's ceiling (subsumption, [FN-7]/[CAT-5a](iii)) and equal what its body exhibits.
+
+## Affine-spelling checklist [M5R3-FIX-6]
+
+An affine value (owned composite, `box`, `arena`, `buffer`, uniq borrow, `slice` as `&uniq`, queue endpoint) is consumed exactly once by `move` [OWN-1]:
+- Return an affine binding: `return move x;` — a bare affine place is a hard error.
+- Pass an affine binding to a user-fn argument: `f(param: move x)` (named + `move`).
+- Consume an affine operand of a table op: `move` it, e.g. `seq_push(s, move v)`.
+- Bare-place exception: a place used as a NON-consuming operand of a table op is written bare — a borrow receiver, and (inside a `requires` block) a non-consuming place operand [FN-8].
+- Copy values (primitives, `Bool`, tag-only enums, shared borrows, `hdl`) are ALWAYS bare; `move` on a copy value is a hard error [OWN-1].
+
 ## How to use it
 
 Copy spellings from cards.md's worked examples first; when a needed construct is

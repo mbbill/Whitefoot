@@ -63,7 +63,7 @@ fn lru_get['i, 'c](idx: &'i table<u64, hdl<Entry>>, np: &uniq 'c pool<Entry, lin
     Some(value: h) => {
       pool_move_front<Entry>(np, h, sent);
       region 'v {
-        let e: &'v Entry = pool_entry<'v, Entry>(np, h);
+        let e: &'v Entry = pool_entry<Entry, 'v>(np, h);
         let v: own u64 = deref(e).val;
         return Some(value: v);
       }
@@ -185,7 +185,7 @@ Misuse the checker rejects, and the trap that backstops the rest:
 
 ```
 region 'v {
-  let e: &'v Entry = pool_entry<'v, Entry>(np, h);
+  let e: &'v Entry = pool_entry<Entry, 'v>(np, h);
   pool_move_front<Entry>(np, h, sent);
   let v: own u64 = deref(e).val;
 }
@@ -198,7 +198,7 @@ binding). Also rejected statically: storing an entry loan into a struct field
 minting an `hdl<Entry>` from an integer (no such row; the handle type is opaque
 and nonforgeable — only `pool_insert` issues live ones). The residual dynamic
 class is the stale handle: hold `h`, let another path evict it, then
-`pool_entry<'v, Entry>(np, h)` — the slot may already be recycled, but the
+`pool_entry<Entry, 'v>(np, h)` — the slot may already be recycled, but the
 generation differs, so the row TRAPS deterministically, citing itself. It is
 never a well-typed read of a recycled slot: generations turn the STOR-1 UAF
 class into a checked fact, which append-only P2 cannot offer a cache.

@@ -1,5 +1,26 @@
 v0 surface statements are exactly: `fn`, `let`, `match`, `region`, `set`, `check`, `doc`, `return`, `move` (plus `give` in a `let`-initializer `match` and `try` for `Result` propagation). Iteration is spelled per C3 (a protocol op with a conformer, or self-recursion). `loop`/`break` exist in the kernel grammar (GRAM-4) but are held out of the blessed catalog surface (R3-provisional); type aliases, line comments, block-expression `match`, and backslash continuations are not v0 at all, and a program using those is rejected. [M5-FIX-6] [M5R2-FIX-2]
 
+## Card set (D18 decision 5, option 2 — PROVISIONAL pending round-4 data) [M5R3-PART2]
+
+Eight cards are always loaded with full worked examples; the other seven are
+demoted to stub entries (one-line promise + pointer), their full text held as
+non-normative files under `examples/`. The 8/7 split is PROVISIONAL and is
+re-decided on round-4 data.
+
+Always loaded (KEEP, full examples):
+- C3 iteration/conform — written below.
+- C1 LRU bounded cache — written below.
+- C2 FIFO/ring — written below.
+- sharded-mutex map — full text pending (KEEP slot reserved).
+- COW-republish — full text pending (KEEP slot reserved).
+- durability-ordering — full text pending (KEEP slot reserved).
+- tiny-map — full text pending (KEEP slot reserved).
+- validated-view — full text pending (KEEP slot reserved).
+
+Demoted (STUB here; non-normative full text in `examples/`): interner, CSR
+graph, pool-trees, intrusive links, timer wheel, prefetch-probe,
+sort-by-key-permute — see the stub section at the end of this file.
+
 ## C1. Bounded cache with eviction (LRU/CLOCK) — sealed `pool<T>` + `table<K, hdl<T>>` + intrusive handle links
 
 Problem: a bounded map with O(1) get, insert, and eviction — the canonical
@@ -64,7 +85,7 @@ fn lru_get['i, 'c](idx: &'i table<u64, hdl<Entry>>, np: &uniq 'c pool<Entry, lin
     Some(value: h) => {
       pool_move_front<Entry>(np, h, sent);
       region 'v {
-        let e: &'v Entry = pool_entry<'v, Entry>(np, h);
+        let e: &'v Entry = pool_entry<Entry, 'v>(np, h);
         let v: own u64 = deref(e).val;
         return Some(value: v);
       }
@@ -157,6 +178,41 @@ names; (b) v0 has no reborrowing and no uniq-to-shared coercion — a row spelle
 result-region parameter issue loans — a single-region row such as
 `tbl_get_uniq` returns its loan at the receiver's region, never a fresh one.
 
+Calling a card fn [M5R3-FIX-1]. A user `fn` is called with NAMED arguments in
+declared order and all region/type arguments explicit ([GRAM-11]/[TYPE-5]) —
+unlike a table op, which is positional:
+
+```
+let hit: own Option<u64> = lru_get<'i, 'c>(idx: &'i index, np: &uniq 'c nodes, sent: sentinel, key: k);
+```
+
+`sent` (a copy `hdl`) and `key` (a copy `u64`) are bare; `idx`/`np` are borrow
+atoms naming the regions passed in `<'i, 'c>`. Contrast the positional table op
+`pool_len<Entry>(np)`.
+
+Region-mint discipline (OWN-10/OWN-11) [M5R3-FIX-5]. A borrow `&'a p` of a place
+rooted at an OWN binding — a local or an own parameter alike — requires `'a` to
+be introduced WITHIN that binding's scope, never a caller-supplied region
+(OWN-10). The default idiom is the local probe window `region 'e { let r: &'e T
+= op(...); ...use r...; }`, exactly the `region 'v { }` scopes in this card.
+Inside a `loop @l` (kernel-legal but held out of the blessed surface, see
+M5-FIX-6), a `borrow_expr` may name only regions introduced inside `@l`'s body,
+and outside bindings may not be moved in (copies exempt) — OWN-11:
+
+```
+loop @scan {
+  region 'e {
+    let e: &'e Entry = pool_entry<'e, Entry>(np, h);
+    let seen: own u64 = deref(e).val;
+  }
+  break @scan;
+}
+```
+
+The `region 'e { }` sits INSIDE the loop body, so the probe loan is fresh each
+iteration and dead before the next; minting it around the loop (spanning all
+iterations) is the OWN-11 rejection this rule prevents.
+
 Borrow-minting, worked [M5R2-FIX-3]. A row spelled `&'r` or `&uniq 'r` never
 accepts a bare owned binding (that is the OWN-1 hard error writers keep hitting):
 mint the `borrow_expr` atom `&'r p` / `&uniq 'r p` at the call site, binding the
@@ -192,7 +248,7 @@ Misuse the checker rejects, and the trap that backstops the rest:
 
 ```
 region 'v {
-  let e: &'v Entry = pool_entry<'v, Entry>(np, h);
+  let e: &'v Entry = pool_entry<Entry, 'v>(np, h);
   pool_move_front<Entry>(np, h, sent);
   let v: own u64 = deref(e).val;
 }
@@ -205,7 +261,7 @@ into a struct field (loans are confined, stack-only — structs store values,
 not borrows), and minting an `hdl<Entry>` from an integer (no such row; the
 handle type is opaque and nonforgeable — only `pool_insert` issues live
 ones). The residual dynamic class is the stale handle: hold `h`, let another
-path evict it, then `pool_entry<'v, Entry>(np, h)` — the slot may already be
+path evict it, then `pool_entry<Entry, 'v>(np, h)` — the slot may already be
 recycled, but the generation differs, so the row TRAPS deterministically,
 citing itself. It is never a well-typed read of a recycled slot: this card
 is the blessed recycler precisely because generations turn the STOR-1 UAF
@@ -312,6 +368,11 @@ fn ring_pop['q](q: &uniq 'q Ring) -> own Option<u64> writes('q), traps requires 
   }
 }
 ```
+
+Calling a card fn [M5R3-FIX-1]. `ring_push` is a user `fn`: named arguments in
+declared order, region argument explicit — `let ok: own Bool = ring_push<'q>(q:
+&uniq 'q ring, v: x);` (`v` is a copy `u64`, bare; `q` is a `&uniq 'q` borrow
+atom). The table op inside it, `len<u64>(deref(q).buf)`, is positional.
 
 The fact chain, stated honestly: the prologue's passed check mints
 `pow2(len(q.buf))` on the dominated body (OP-5 stated-and-checked); deriving
@@ -422,13 +483,18 @@ fn count_all['r](s: &'r seq<u32, 0>) -> own u64 reads('r) {
 }
 ```
 
-The conformer's declared row `reads('v), writes('v)` equals `SeqVisit`'s member
-row and is exactly what the body exhibits (one `deref` read, one `set` write) —
+The conformer's declared row `reads('v), writes('v)` is contained in `SeqVisit`'s
+ceiling `reads('v), writes('v), traps` (subsumption, [FN-7]/[M5R3-FIX-7]) and
+equals what the body exhibits (one `deref` read, one `set` write) —
 [CAT-5a]/[EFF-2]. `count_all`'s own row is just `reads('r)`: the visitor's `'v`
 effects are confined to the internal `region 'v { }` block ([CAT-5a](ii)), and
-`seq_for_each`'s `+ join(CountEnv)` folds into that confined region.
+`seq_for_each`'s `+ join(CountEnv)` uses `count_visit`'s actual row (which does
+not trap), not the ceiling, so no `traps` reaches `count_all`.
 
-A `tbl_retain` predicate is the same shape with a read-only member row:
+A `tbl_retain` predicate is the same shape; `keep_big` declares `reads('v)`,
+contained in `TblRetain`'s ceiling `reads('v), traps` (the `traps` there lets a
+different predicate use a checked `index`; `keep_big` does not, so its row omits
+it):
 
 ```
 struct KeepBig { min: u64; }
@@ -460,3 +526,32 @@ the visitor's env as shown. What a bare local can never do in blessed code is
 carry state across iterations by itself, because there is no blessed loop to
 iterate it; that role is the env field (protocol-op path) or a recursion
 parameter (self-recursion path).
+
+Calling these fns [M5R3-FIX-1]: `count_all` and `prune` are user fns —
+`let n: own u64 = count_all<'r>(s: &'r data);` and `prune<'e>(t: &uniq 'e cache, floor: 8_u64);`
+(named args, explicit region args, positional table ops only inside the bodies).
+
+User-fn call with explicit type AND region args [M5R3-FIX-4]. TYPE-5 requires
+every type/region/const argument at a user-fn call site (the CAT-1a suppression
+is table-ops-only). Given `fn nth<T>['r](s: &'r seq<T, 0>, i: own u64) -> own T reads('r), traps`:
+
+```
+let x: own u32 = nth<u32, 'r>(s: &'r data, i: 3_u64);
+```
+
+The type arg `u32` and region arg `'r` share one `<...>` list in
+generics-then-regions order (the `fn` declaration order `<generics>['regions]`);
+value arguments are named; `i` (a copy `u64`) is bare.
+
+## Demoted cards (stubs; non-normative full text in `examples/`) [M5R3-PART2]
+
+Each promise is one line; the full worked card is non-normative and lives at the
+pointer. Demotion is PROVISIONAL (re-decided on round-4 data).
+
+- Interner (value -> stable u32 id): bump arena + span-keyed `table` + id vector, one taught composition. -> `examples/interner.md`
+- CSR graph (frozen adjacency scan): two-phase build (Vec-of-adjacency) then compressed sparse row over u32 ids. -> `examples/csr-graph.md`
+- Pool-trees (navigable node soup): `pool` slab with u32 parent/child/sibling handle links. -> `examples/pool-trees.md`
+- Intrusive links (O(1) unlink from within an element): u32 prev/next fields threaded through a slab. -> `examples/intrusive-links.md`
+- Timer wheel (O(1) insert/cancel timeouts): array of buckets + embedded-link lists + masked index. -> `examples/timer-wheel.md`
+- Prefetch-probe (memory-level parallelism): compute-ahead batched prefetch over a probe loop. -> `examples/prefetch-probe.md`
+- Sort-by-key-permute (parallel key sort): `par.for_chunks` partition then permutation gather. -> `examples/sort-by-key-permute.md`

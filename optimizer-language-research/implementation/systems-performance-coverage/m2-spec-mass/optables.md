@@ -6,9 +6,11 @@ Status: catalog excerpt, authored under the sealed-form mechanism delta. Rule ID
 
 [CAT-1] Columns. `signature`: explicit modes, region params, operands (op-table meta-notation, the OP-1 style; not `fn_decl` grammar). `own`: owned-value movement — which operands are consumed, which returns are own-out, which internal drops occur (all internal drops are compiler-derived and artifact-surfaced [STOR-3]). `loan`: `NONE`; `ISSUE &'r` / `ISSUE &uniq 'e` (the result is a kernel borrow-loan on the receiver); `ISSUE tok:t` (the result is an affine confined token of sealed type t carrying the stated loan); `CONSUME p` (the op consumes token operand p). `effects`: an [EFF-1] row in canonical order; `+ join(F)` per [CAT-5]. `failure`: `—` (total); `trap "msg"` (contract violation; deterministic abort [SCOPE-4, ERR-4], report cites this row's rule); `Result: E` (environmental outcome as a value). One row never mixes channels for one condition. `facts`: postconditions entering the requires engine. `kills`: fact families that die. `cg`: a codegen-contract mark defined in the form's CG list, or `—`.
 
-[CAT-1a] Call-site grammar. The signature columns above are op-table meta-notation, not program text; a program call is spelled as follows. Type arguments go in angle brackets in the row's declaration order; region arguments appear in brackets only at a loan-minting call whose row has a dedicated result-region parameter, and are never written for a region the receiver binding already fixes; the only generics supplied are the op-level binders — receiver-fixed `K`, `V`, `h`, `N`, `M`, `IN` come from the receiver's type and are never respelled or reordered at the call; operand order equals the row's operand order. Worked examples, one per family: non-loan op `seq_push(s, move v)` (`'e`, `T`, `N` all fixed by `s`); lookup/loan op `tbl_get(t, k)` and `tbl_get_uniq(t, k)` (the value loan issues at the receiver's region — no region bracket, no `K`/`V`/`h` respelling); iteration/conformer op `seq_for_each(s, f)` with `f: &uniq 'v F` and `F` conforming `SeqVisit<T>`; dedicated-result-region op, the sole shape that writes a region argument, the C1 pattern `pool_entry<'v, Entry>(np, h)` inside an enclosing `region 'v { }`. [M5-FIX-5]
+[CAT-1a] Call-site grammar. The signature columns above are op-table meta-notation, not program text; a program call is spelled as follows. Type arguments go in angle brackets in the row's declaration order; region arguments appear in brackets only at a loan-minting call whose row has a dedicated result-region parameter, and are never written for a region the receiver binding already fixes; the only generics supplied are the op-level binders — receiver-fixed `K`, `V`, `h`, `N`, `M`, `IN` come from the receiver's type and are never respelled or reordered at the call; operand order equals the row's operand order. Worked examples, one per family: non-loan op `seq_push(s, move v)` (`'e`, `T`, `N` all fixed by `s`); lookup/loan op `tbl_get(t, k)` and `tbl_get_uniq(t, k)` (the value loan issues at the receiver's region — no region bracket, no `K`/`V`/`h` respelling); iteration/conformer op `seq_for_each(s, f)` with `f: &uniq 'v F` and `F` conforming `SeqVisit<T>`; dedicated-result-region op, the sole shape that writes a region argument, the C1 pattern `pool_entry<Entry, 'v>(np, h)` inside an enclosing `region 'v { }`. [M5-FIX-5]
 
-Negative examples (each rejected; legal spelling follows) [M5R2-FIX-4]: ~~`seq_push<u64, 0>(s, move v)`~~ — respells the receiver-fixed `T`,`N`, which come from `s`'s type; write `seq_push(s, move v)`. ~~`seq_push['e](s, move v)`~~ — a region argument at a row whose loan column is `NONE`; region arguments appear only at a dedicated-result-region row (the `pool_entry<'v, Entry>(np, h)` pattern), never here; write `seq_push(s, move v)`.
+Negative examples (each rejected; legal spelling follows) [M5R2-FIX-4]: ~~`seq_push<u64, 0>(s, move v)`~~ — respells the receiver-fixed `T`,`N`, which come from `s`'s type; write `seq_push(s, move v)`. ~~`seq_push['e](s, move v)`~~ — a region argument at a row whose loan column is `NONE`; region arguments appear only at a dedicated-result-region row (the `pool_entry<Entry, 'v>(np, h)` pattern), never here; write `seq_push(s, move v)`.
+
+The receiver-fixed-generic suppression above applies to TABLE OPS ONLY [M5R3-FIX-4]. A call resolving to a user `fn` instead states ALL its type, region, and const arguments explicitly [TYPE-5] in one `<...>` targ list (generics and consts first, then regions, matching the `fn` declaration order `<generics>['regions]`), with named value arguments in declared order [GRAM-11]; see the worked example in cards.md.
 
 [CAT-2] Fact families and notation. Facts attach to a live binding; moving or dropping the binding kills all its facts.
 
@@ -30,7 +32,7 @@ Negative examples (each rejected; legal spelling follows) [M5R2-FIX-4]: ~~`seq_p
 
 [CAT-5] Iteration protocol. Internal `for_each`-family ops with a monomorphized, must-inline visitor are the default; visitor `visit` returning `False()` stops iteration and the op returns `False()` (ran-to-end returns `True()`). OPEN-FLAG (EFFECT-JOIN) — narrowed by [CAT-5a](iii)/[M5R2-FIX-1]: the join is now defined (the op's stated row unioned with the conformer's declared member row) and writable by hand; what remains kernel-delta is only whether FN-3's checker computes that union automatically at the call site or the caller states the unioned row explicitly — the source spelling is identical either way.
 
-[CAT-5a] Effect-row rules (restating [EFF-1] for catalog writers). (i) Canonical clause order is `reads, writes, allocates, traps`; `pure` is the empty row [EFF-1]; a row out of order is malformed. (ii) A `fn`'s declared row must cover the union of the rows of every op and fn it calls: every callee `reads`/`writes`/`allocates`/`traps` appears in the caller's row (a trapping op contributes `traps`), while effects confined to a region minted by an internal `region 'x { }` block do not escape into the row. (iii) Conformer rows (RESOLVED — replaces the former OPEN-FLAG (EFFECT-JOIN)): every contract member in S.1/S.2 now DECLARES an explicit effect row [EFF-1]. A `conform` binds a `fn` whose declared row equals that member's row and whose body exhibits exactly it [EFF-2 checks both ways; FN-3 conformance is exact] — the conformer neither under- nor over-declares, so a member's row is the tight row its blessed conformers exhibit (a visitor reads the element and writes its env accumulator; a retain predicate only reads; a sink writes and may allocate/trap). An op row carrying `+ join(F)` has effective row = its stated clauses (dropping the `+ join(F)` mark) unioned with `F`'s conformed member row; a for_each/drain/retain caller writes that union as its own declared row. Region names in any row obey the binding discipline of cards.md C1 [M5-FIX-3]. [M5R2-FIX-1]
+[CAT-5a] Effect-row rules (restating [EFF-1] for catalog writers). (i) Canonical clause order is `reads, writes, allocates, traps`; `pure` is the empty row [EFF-1]; a row out of order is malformed. (ii) A `fn`'s declared row must cover the union of the rows of every op and fn it calls: every callee `reads`/`writes`/`allocates`/`traps` appears in the caller's row (a trapping op contributes `traps`), while effects confined to a region minted by an internal `region 'x { }` block do not escape into the row. (iii) Conformer rows (RESOLVED — replaces the former OPEN-FLAG (EFFECT-JOIN)). Every contract member in S.1/S.2 declares a CEILING effect row [EFF-1]. A `conform` binds a `fn` whose declared row (a) equals exactly what its body exhibits [EFF-2, both directions] and (b) is contained in that member's ceiling — conformance is by subsumption, the "at most" discipline of [FN-7], so a conformer may exhibit LESS than the ceiling but never more (a non-trapping predicate conforms to a `traps`-carrying ceiling; correcting the round-2 "exact-match" statement). An op row carrying `+ join(F)` has effective row at a call site = its stated clauses (dropping `+ join(F)`) unioned with the CONCRETE conformer's declared row, known at monomorphization [FN-2]; the caller writes that union as its own declared row. Region names in any row obey the binding discipline of cards.md C1 [M5-FIX-3]. [M5R2-FIX-1] [M5R3-FIX-7]
 
 [CAT-6] OPEN-FLAG (ALLOC-ERR): kernel v0.6 treats OOM as TCB-level [OP-9, SCOPE-3]. The two recoverable-admission ops (`seq_reserve`, `tbl_reserve`) return `Result<unit, AllocError>`, requiring the prelude addition `enum AllocError { AllocFailure(); }` and an owner ruling. Every other allocating row keeps the TCB stance: its OOM is not a language trap and not a Result.
 
@@ -54,11 +56,11 @@ Negative examples (each rejected; legal spelling follows) [M5R2-FIX-4]: ~~`seq_p
 
 [SEQ-6] Fact discipline. Structure facts (LEN/CAP/SLACK/INB) are killed only as rows state; element-writing, element-moving, or element-dropping rows kill ELEM(s). Growth inside a row is value-preserving, so ELEM facts survive reallocation.
 
-Visitor contracts (normative bytes; each member declares its effect row per [CAT-5a]/[M5R2-FIX-1] — a conformer's row equals the member's and its body exhibits exactly it; OPEN-FLAG (SELF-SPELLING): FN-3 does not yet fix the conforming-type spelling `Self` inside `fn_sig`):
+Visitor contracts (normative bytes; each member declares a CEILING effect row per [CAT-5a]/[M5R2-FIX-1] — a conformer's declared row is contained in the ceiling (subsumption, [FN-7]) and equals what its body exhibits; the `traps` in the visit/keep ceilings lets a conformer use a bounds-checked `index` [M5R3-FIX-7]; OPEN-FLAG (SELF-SPELLING): FN-3 does not yet fix the conforming-type spelling `Self` inside `fn_sig`):
 
 ```
-contract SeqVisit<T> { fn visit['v](env: &uniq 'v Self, item: &'v T) -> own Bool reads('v), writes('v); }
-contract SeqVisitUniq<T> { fn visit['v](env: &uniq 'v Self, item: &uniq 'v T) -> own Bool reads('v), writes('v); }
+contract SeqVisit<T> { fn visit['v](env: &uniq 'v Self, item: &'v T) -> own Bool reads('v), writes('v), traps; }
+contract SeqVisitUniq<T> { fn visit['v](env: &uniq 'v Self, item: &uniq 'v T) -> own Bool reads('v), writes('v), traps; }
 contract SeqSink<T> { fn take['v](env: &uniq 'v Self, item: own T) -> own unit writes('v), allocates(heap), traps; }
 ```
 
@@ -119,9 +121,9 @@ CG marks (all CI-pinned in the codegen corpus; a pin regression fails the gate):
 Visitor contracts (KIN/KOWN abbreviate the TBL-1 spellings; OPEN-FLAG (SELF-SPELLING) as in S.1):
 
 ```
-contract TblVisit<K, V> { fn visit['v](env: &uniq 'v Self, key: KIN<'v>, value: &'v V) -> own Bool reads('v), writes('v); }
-contract TblVisitUniq<K, V> { fn visit['v](env: &uniq 'v Self, key: KIN<'v>, value: &uniq 'v V) -> own Bool reads('v), writes('v); }
-contract TblRetain<K, V> { fn keep['v](env: &uniq 'v Self, key: KIN<'v>, value: &'v V) -> own Bool reads('v); }
+contract TblVisit<K, V> { fn visit['v](env: &uniq 'v Self, key: KIN<'v>, value: &'v V) -> own Bool reads('v), writes('v), traps; }
+contract TblVisitUniq<K, V> { fn visit['v](env: &uniq 'v Self, key: KIN<'v>, value: &uniq 'v V) -> own Bool reads('v), writes('v), traps; }
+contract TblRetain<K, V> { fn keep['v](env: &uniq 'v Self, key: KIN<'v>, value: &'v V) -> own Bool reads('v), traps; }
 contract TblSink<K, V> { fn take['v](env: &uniq 'v Self, key: own KOWN, value: own V) -> own unit writes('v), allocates(heap), traps; }
 ```
 
@@ -158,11 +160,37 @@ CG marks:
 
 ## S.3 `conc_queue<T, ep, K>` — bounded concurrent queue
 
+> **RED BOX — brand discipline [M5R3-FIX-2].** `'q` is NOT a region: it never appears in `region_params`, in a parameter type, or in your effect row. There is no brand-parameter spelling, and a brand can never instantiate a region argument (CQ-2). ALL endpoint use must live in the single function scope that called `cq_new` (workaround (a) below); a helper `fn` receives an already-minted endpoint value or a pre-taken borrow of one, never the brand. Threading `'q` through any `fn` signature is rejected.
+
+Single-scope pipeline, complete — mint, split, send, and receive in the scope that owns `'q`; nothing crosses a `fn` boundary. (Rides OPEN-FLAG (BRAND-MINT) for the fresh `'q` binder on `cq_new`'s result and OPEN-FLAG (SEALED-MATCH) for `match ends`; the `'q` effects stay confined, so they never appear in the row — the RED BOX in action.)
+
+```
+fn roundtrip(v: own u64) -> own Result<u64, CqRecvFail> allocates(heap), traps {
+  doc "Everything touching 'q lives here; no endpoint or brand crosses a fn boundary.";
+  region 'e {
+    let ends: own cq_ends<'q, u64> = cq_new<u64>();
+    match ends {
+      QueueEnds(tx: t, rx: r) => {
+        let s: own Result<unit, CqSendFail<u64>> = cq_try_send(&uniq 'e t, v);
+        match s {
+          Ok(value: u) => {
+            return cq_try_recv(&uniq 'e r);
+          }
+          Err(error: f) => {
+            check False() else trap "roundtrip: send failed on an empty queue";
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 [CQ-1] Form. `ep` closed set: `spsc`, `mpmc`. `const K: u64`, `0 <= K <= 32` (compile-time reject outside, cites CQ-1 [DIAG-1]); capacity is `2^K` slots. T must conform `Sendable` at instantiation (compile reject otherwise; [CAP-1] vocabulary). Slot storage is one heap allocation at `cq_new`; its byte size is a monomorphization-time constant, and overflow is a compile-time reject.
 
 [CQ-2] Brand. `cq_new` mints the instance brand `'q`: an identity tag, not a lexical region — no outlives relation, no storage bound; a brand unifies only with itself, so endpoints of distinct instances never mix. A brand is not a lexical region and may never instantiate a region parameter; a row generic over a region rejects a brand argument. [M5-FIX-7] OPEN-FLAG (BRAND-MINT): TYPE-5 requires the binder's full type, but a fresh brand has no prior name; the mint-position binder spelling is kernel-delta work. Rows below assume it exists.
 
-OPEN-FLAG (BRAND-CROSS-FN) [M5R2-FIX-6]: binding a brand across a user-`fn` boundary is unspellable in v0 — a brand is not a region, so it cannot be passed as a region argument, and there is no brand-parameter spelling yet (pending the arena-brand kernel rules). Sanctioned v1 workarounds, no new rows: (a) for `conc_queue`, consume the endpoints in the same function scope that minted `'q` via `cq_new`; a helper fn never receives a bare brand — it receives an already-minted endpoint value (`own cq_tx<'q, T>` / `own cq_rx<'q, T>`) or a pre-taken borrow of one, and does its work there; (b) for `arena<'r, T>`, keep arena-scoped construction and use inside one function, or pass the `arena` value itself (not its region/brand) across the boundary and re-borrow inside the callee. A program that tries to thread a raw brand or arena region through a `fn` signature is rejected until the kernel rules land.
+OPEN-FLAG (BRAND-CROSS-FN) [M5R2-FIX-6]: the full statement and the sanctioned single-scope workarounds are now the RED BOX at the head of S.3 [M5R3-FIX-2]. In brief: binding a brand across a user-`fn` boundary is unspellable in v0; workaround (a) `conc_queue` — consume the endpoints in the scope that minted `'q`, pass helper fns pre-minted endpoint values or borrows, never the brand; workaround (b) `arena<'r, T>` — keep arena code in one fn or pass the `arena` value (not its region/brand) and re-borrow in the callee.
 
 [CQ-3] Endpoints. `cq_tx<'q, T>` and `cq_rx<'q, T>` are affine own values. Every endpoint op takes `&uniq` on the endpoint, so per-endpoint use is single-threaded by construction; concurrency is distinct endpoints on distinct threads. spsc: exactly the two minted endpoints; the clone rows are a compile-time reject citing CQ-3. mpmc: `cq_tx_clone`/`cq_rx_clone` mint peers. Endpoints conform `Sendable` iff T does; endpoints are never `Shareable`. OPEN-FLAG (THREADS): v0 defines no thread construct [CAP-1]; the cross-thread clauses bind when the concurrency layer lands; single-threaded use is legal now.
 

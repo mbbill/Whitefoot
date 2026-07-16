@@ -138,7 +138,7 @@ binding). Also rejected statically: storing an entry loan into a struct field
 minting an `hdl<Entry>` from an integer (no such row; the handle type is opaque
 and nonforgeable — only `pool_insert` issues live ones). The residual dynamic
 class is the stale handle: hold `h`, let another path evict it, then
-`pool_entry<'v, Entry>(np, h)` — the slot may already be recycled, but the
+`pool_entry<Entry, 'v>(np, h)` — the slot may already be recycled, but the
 generation differs, so the row TRAPS deterministically, citing itself. It is
 never a well-typed read of a recycled slot: generations turn the STOR-1 UAF
 class into a checked fact, which append-only P2 cannot offer a cache.
