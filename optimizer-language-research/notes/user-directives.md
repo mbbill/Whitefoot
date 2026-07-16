@@ -540,3 +540,51 @@ demand routes, not by the rules required to mimic every source topology. This
 amends the earlier phrase "exact full-route derivations"; it does not reopen
 Candidate C, add a project or demand, weaken safety, or authorize production
 changes.
+
+## D15 (2026-07-16): Fresh autonomous derivation of the systems-performance capability set
+
+The owner reviewed the capability track's history and redirected the research.
+The prior convergence-failure analysis was accepted, but the owner instructed
+that the new research must not be anchored to that analysis or to any prior
+candidate framing. The research restarts as a fresh, fully autonomous
+derivation.
+
+The objective, in the owner's terms:
+
+- xlang must be usable for general systems programming with top-tier
+  performance.
+- The project does not need to provide the ability to rewrite existing
+  software line by line. It must provide, for most systems-programming
+  scenarios, at least one blessed way of writing whose performance reaches or
+  exceeds the best existing implementations.
+- Calibration example given by the owner: if one container, forced everywhere,
+  were optimal in every scenario, it would be a correct solution. Since that
+  is impossible, the language provides n forms, and n must stay small, because
+  the second binding requirement is that the specification remain compact
+  enough to fit in a model context window. The goal is an elegant, concise
+  method for expressing most systems-programming demands at high performance.
+- All original constraints are unchanged, with performance first: the safety
+  theorems, no writer-accessible unsafe, proof-only check elision, checker
+  feasibility, and AI writability remain binding.
+
+Recorded consequences for the active research:
+
+- The owner's container example readmits compiler-known forms with disciplined
+  trusted internals into the answer space. The earlier counting rule that
+  excluded container-specific compiler recognition no longer binds this
+  research. Checked-source forms remain preferable to trusted forms all else
+  equal, because they stay inside the safety proof.
+- The D14 B-Strata-only lock no longer constrains the active derivation. The
+  B-Strata plan, core, and all earlier candidate artifacts remain historical
+  evidence and falsifiers; the fresh derivation may converge to, reuse, or
+  discard them on merit.
+- Coverage is judged at the scenario level ("most systems-programming
+  scenarios") against best-existing-implementation performance, not at the
+  level of the fourteen frozen reference operations, which remain stress
+  evidence and workload baselines.
+
+This ruling authorizes scenario-demand mapping, independent design derivation,
+hostile review, cross-design comparison, and durable recording of the results.
+Production language, specification, checker, compiler, runtime,
+standard-library, container, xlc, migration, fact-channel, teaching, and
+shipping changes remain separately gated on later explicit owner decisions.
