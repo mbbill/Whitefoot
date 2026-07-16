@@ -1,0 +1,332 @@
+[
+ {
+  "id": "P1",
+  "code": "fn main() {\n  let s = seq::new();\n  s.push(1);   // form: push(&uniq seq<i64>, own i64) -> unit, clause none\n  s.push(2);\n}",
+  "expected": "ACCEPT",
+  "canonical": true
+ },
+ {
+  "id": "P2",
+  "code": "fn main() {\n  let t = table::new();\n  let e = t.entry(k);   // entry(&uniq 't table, own K) -> Entry<'t>, issues Entry (uniq)\n  t.insert(k2, v2);     // insert(&uniq table, own K, own V), clause none\n  e.fill(v);            // fill(own Entry<'t>, own V), consumes\n}",
+  "expected": "REJECT",
+  "canonical": true
+ },
+ {
+  "id": "P3",
+  "code": "fn main() {\n  let t = table::new();\n  let c = t.range(lo, hi);  // range(&'t table, own K, own K) -> Cursor<'t>, issues Cursor (shr)\n  loop {\n    let n = c.next();       // next(&uniq Cursor<'t>) -> option<KV>, clause none (KV owned copies)\n    match n {\n      Some(kv) => { t.remove(kv.k); }  // remove(&uniq table, own K), clause none\n      None => { break; }\n    }\n  }\n}",
+  "expected": "REJECT",
+  "canonical": true
+ },
+ {
+  "id": "P4",
+  "code": "fn worker(m: &'a mutex<St>, cv: &'a condvar) {\n  let g = m.lock();          // lock(&'m mutex) -> Guard<'m>, issues Guard (uniq)\n  loop {\n    let p = predicate(&g);   // predicate(g: &Guard<'m>) -> Poll \u2014 'm self-ties [R9]\n    match p {\n      Done => { break; }\n      Wait => {\n        let g2 = cv.wait(&m, own g);  // wait(&'c condvar, &'m mutex, own Guard<'m>) -> Guard<'m>, reissues\n        rebind g = g2;\n      }\n    }\n  }\n}  // scope end: g auto-consumed -> unlock",
+  "expected": "ACCEPT",
+  "canonical": true
+ },
+ {
+  "id": "P5",
+  "code": "fn feed<'r>(r: &'r ring<T>, p: &uniq Prod<'r>, v: T) { ... }  // 'r ties to r [R9]\nfn main() {\n  let a = ring::new();\n  let b = ring::new();\n  let pa = a.producer();  // producer(&'r ring) -> Prod<'r>, issues Prod (shr)\n  let cb = b.consumer();  // issues Cons (shr)\n  feed(&b, &uniq pa, v);\n}",
+  "expected": "REJECT",
+  "canonical": true
+ },
+ {
+  "id": "P6",
+  "code": "confined(shr) struct Env<'e> { lut: &'e table<K,V> }\nfn body(chunk: &uniq 'c chunkview<i64>, env: &'e Env<'e>) reads('e) writes('c) {\n  // let w = env.lut.get(k)  \u2014 statement-scoped projection [R3]; writes only through chunk\n}\nfn process(data: &uniq 'a buffer<i64>, tbl: &'a table<K,V>) {\n  let env = Env { lut: &tbl };\n  par::for_chunks(&uniq data, &env, body);  // slot1 split-unique, slot2 replicate-shared\n  data.set(0, 9);\n}",
+  "expected": "ACCEPT",
+  "canonical": true
+ },
+ {
+  "id": "A1/C1-escape-by-return",
+  "code": "fn leak() -> Entry<'?> { let t = table::new(); let e = t.entry(k); return e; }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R13: e's region is t's local block region, not a region parameter of leak; a token can never outlive its source's frame."
+ },
+ {
+  "id": "A2/C2-token-in-struct-or-heap",
+  "code": "struct Holder { e: Entry<'h> }  // and: let bx = box_new(own e)",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R1 rejects the non-confined declaration with a confined field (generic wrappers caught post-monomorphization); R2 rejects the heap store statement."
+ },
+ {
+  "id": "A3/C3-two-unique-tokens",
+  "code": "let e1 = t.entry(k1); let e2 = t.entry(k2);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R5: a uniq issue requires no entry overlapping t; (t,uniq,e1) is live. Same rule kills get-two-and-swap; the blessed route is a sealed two-key op."
+ },
+ {
+  "id": "A4/C5-two-shared-cursors",
+  "code": "let c1 = t.range(lo,mid); let c2 = t.range(mid,hi); let v = t.get(k); let n1 = c1.next(); let n2 = c2.next();",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R5/R6 shr regime: shr issues and &-receiver ops coexist; both cursors auto-consume at scope end (R7)."
+ },
+ {
+  "id": "A5/C4-shared-then-unique-upgrade",
+  "code": "let c = t.range(lo,hi); let e = t.entry(k);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R5: uniq issue while a shr entry lives on t; no upgrade path exists \u2014 consume the cursor first."
+ },
+ {
+  "id": "A6/C6-move-while-loaned",
+  "code": "let c = t.range(lo,hi); let t2 = own t;",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R6: a place overlapped by a live entry cannot be moved, own-passed, or dropped."
+ },
+ {
+  "id": "A7/C7-arm-imbalanced-consume",
+  "code": "let g = m.lock(); match flag { T => { unlock_via(&m, own g); } F => { noop(); } }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R12: fall-through arms disagree on loans(m) and g's liveness; blessed shape consumes in both arms or in neither."
+ },
+ {
+  "id": "A8/C8-helper-issue-and-reuse",
+  "code": "fn reserve<'t>(t: &uniq 't table<K,V>, k: K) -> Entry<'t> { let e = t.entry(k); return e; }\nlet e = reserve(&uniq tt, k); e.fill(v); tt.insert(k2, v2);",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R9 tie ('t -> t) is well-formed; R10(b) derives the uniq issue at the call from the signature alone; the return-effect check (R10c) matches; fill consumes, insert then legal \u2014 the wrapped-writer bless"
+ },
+ {
+  "id": "A9-preloop-token-consumed-in-body",
+  "code": "let e = t.entry(k); loop { e.fill(v); match done() { T => { break; } F => { noop(); } } }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R12: the reachable back edge's projected state (e dead, loans empty) differs from loop entry (e live, uniq entry on t)."
+ },
+ {
+  "id": "A10-per-iteration-token",
+  "code": "loop { let k = next_k(); let e = t.entry(k); e.fill(v); match done() { T => { break; } F => { noop(); } } } t.insert(k9, v9);",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R12's projection excludes body-locals after body scope-end processing, so back edge equals entry; issue/consume balance per iteration."
+ },
+ {
+  "id": "A11-cross-source-reissue (hard call)",
+  "code": "fn transfer<'a,'b>(x: &'a ring<T>, y: &'b ring<T>, p: own Prod<'a>) -> Prod<'b> { retire(&x, own p); let q = y.producer(); return q; }\nlet pa = a.producer(); let pb = transfer(&a, &b, own pa); let r = a.endpoint_reset();",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "Honest composition, not laundering: R10(c) seeds (x,shr,p) in the body; retire consumes it; y.producer() freshly issues; return at caller-supplied 'b passes R13 and the exit-effect check; caller books"
+ },
+ {
+  "id": "A12-ambiguous-region-signature",
+  "code": "fn pick<'t>(x: &'t table<K,V>, y: &'t table<K,V>, sel: B, ...) -> Cursor<'t> { ... }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R9: result region 't ties to two borrow-mode parameters; rejected at declaration so source places stay singleton-exact (reject-when-unsure)."
+ },
+ {
+  "id": "C9-loop-carried-cursor-reads",
+  "code": "let c = t.range(lo,hi); loop { let n = c.next(); match n { Some(x) => { let v = t.get(x); } None => { break } } } let w = t.get(k2);",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R6 shr regime permits &-receiver get under the live shr entry; back edge equals entry (R12); read-under-cursor typechecks."
+ },
+ {
+  "id": "C10-loop-reissue-without-rebind",
+  "code": "let g = m.lock(); loop { match predicate(&g) { Done => { break } Wait => { let g2 = cv.wait(&m, own g); } } }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R12: Wait arm ends with g dead and holder g2 (auto-consumed at arm end, unlocking); projected back-edge/arm states disagree with entry (g live); iteration 2 would run unlocked on dead g."
+ },
+ {
+  "id": "C11-early-consume-then-reopen",
+  "code": "let e = t.entry(k); e.fill(v); let e2 = t.entry(k2); e2.fill(v2); { let e3 = t.entry(k3); } let c = t.range(lo,hi); let x = t.get(k4);",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R7 removes entries at explicit consume and at inner-scope auto-consume (e3's drop releases); sequential uniq sessions then a shr session compose."
+ },
+ {
+  "id": "C12-wrap-then-helper-consume (hard call, amended)",
+  "code": "confined(uniq) struct Wrap<'r> { inner: Entry<'r> }\nfn finish<'r>(t: &'r table<K,V>, w: own Wrap<'r>) { ... }\nlet e = t.entry(k); let w = Wrap { inner: own e }; finish(&t, own w); t.insert(k2, v2);",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R8 renames the entry's holder e->w at construction; R9 totality forces threading t (the original finish(w)-only signature rejects at declaration, zero ties); the call consumes under R6's sole-loan exc"
+ },
+ {
+  "id": "C13-relock-brand-confusion",
+  "code": "fn relock<'r>(m: &'r mutex<T>, g: own Guard<'r>) -> Guard<'r> { ... }\nlet g1 = m1.lock(); let gx = relock(&m2, own g1);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R10(a): g1's recorded source place m1 differs from the tied argument place m2; place identity is the brand and cannot be laundered."
+ },
+ {
+  "id": "C14-uniq-token-into-replicate-slot",
+  "code": "let g = m.lock(); par::for_chunks(&uniq data, &g, body);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R14: a holder holding any uniq entry cannot pass a replicate-shared slot; duplicating unique interior access across bodies would be a race by construction."
+ },
+ {
+  "id": "ATK-gut-untied-param",
+  "code": "fn gut<'t,'u>(t: &uniq 't table<K,V>, e: own Entry<'u>) { t.insert(k2,v2); e.fill(v); }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R9: 'u ties to zero borrow-mode parameters \u2014 undeclarable. The single-region rewrite gut<'t>(t, e: own Entry<'t>) declares, but R10(c) seeds (t,uniq,e) so the insert-before-fill body order rejects at "
+ },
+ {
+  "id": "ATK-launder-strength",
+  "code": "fn launder<'t>(t: &'t table<K,V>, e: own Entry<'t>) -> Entry<'t> { return e; }\nlet e2 = launder(&t, own e); let c = t.range(lo,hi); let n1 = c.next(); e2.fill(v1);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "Kind travels with the confined type (R1/R10b), never with the tie's mode: e2 is reissued as a uniq entry, so t.range's shr issue rejects at R5; no &-tied slot can downgrade a uniq token to shr."
+ },
+ {
+  "id": "ATK-probe-callee-blind",
+  "code": "fn probe<'t>(t: &'t table<K,V>, e: own Entry<'t>) { let c = t.range(lo,hi); let n = c.next(); e.fill(v); let n2 = c.next(); }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R10(c) seeds (t,uniq,e) at body entry; the shr issue t.range rejects at R5 \u2014 the callee frame can no longer forget the caller's loan."
+ },
+ {
+  "id": "ATK-refresh-reissue-laundering",
+  "code": "fn refresh<'t>(t: &uniq 't table<K,V>, e: own Entry<'t>) -> Entry<'t> { t.insert(k9,v9); return e; }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "Under the R10(c) seed, R6 rejects the insert (uniq entry live, statement does not consume e); a body of just { return e } is legal but harmless \u2014 an identity reissue over an unmutated source."
+ },
+ {
+  "id": "ATK-relocate-two-uniq",
+  "code": "fn relocate<'t>(t: &uniq 't table<K,V>, e: own Entry<'t>) -> Entry<'t> { let e2 = t.entry(k2); return e2; }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R5 under the seed: a uniq issue while (t,uniq,e) is live; the front-door route to two live uniq tokens is closed."
+ },
+ {
+  "id": "ATK-close-one-sibling",
+  "code": "let c1 = tt.range(a,b); let c2 = tt.range(c,d); close_one(&uniq tt, own c1); let n = c2.next();",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R6's consume-exception requires the consumed holder's entry to be the SOLE entry on tt; (tt,shr,c2) is live, so the &uniq mint rejects and c2 cannot be dangled."
+ },
+ {
+  "id": "ATK-delete-at-sole-cursor (hard call)",
+  "code": "let c = t.range(lo,hi);  // only token\nt.delete_at(own c);      // delete_at(&uniq 't btree, own Cursor<'t>): consumes",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R6 sole-loan exception: the statement surrenders the only token while mutating, atomic at statement granularity \u2014 no sibling exists to dangle; this recovers the SQLite delete-at-cursor shape."
+ },
+ {
+  "id": "ATK-maybetok-none-forgery",
+  "code": "confined(uniq) enum MaybeTok<'r> { Some(Entry<'r>), None }\nlet none = MaybeTok::None<'r_tt>; let e2 = open(&uniq tt, own none);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R5: a user construction leaving any region parameter unbound by a captured field is rejected, so no loanless forged-region token exists; R10(a)'s must-hold-the-loan check would independently reject th"
+ },
+ {
+  "id": "ATK-wview-kind-incoherence",
+  "code": "confined(shr) struct WView<'r> { p: &uniq 'r slot }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R1 coherence: a confined(shr) type transitively containing a &uniq field is ill-formed, so shared tokens can never carry unique interior write paths (protects OWN-5 and the optimizer's shr-window fact"
+ },
+ {
+  "id": "ATK-cloak-kind",
+  "code": "confined(shr) struct Cloak<'r> { inner: Entry<'r> }  // Entry is uniq-kind",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R1 coherence: shr wrapper containing a confined(uniq) field is ill-formed; kind can never be re-keyed by wrapping (R8 transfers never change kind)."
+ },
+ {
+  "id": "ATK-db-struct-field-place",
+  "code": "struct Db { t: table<K,V>, u: table<K,V> }\nlet e = db.t.entry(k); db.t.insert(k2,v2); e.fill(v);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "Loans are place-keyed (R4): entry (db.t,uniq,e) freezes db.t and db (overlap) but not db.u; the insert rejects at R6 exactly like P2 \u2014 struct-held forms are fully supported, with fill-then-insert acce"
+ },
+ {
+  "id": "ATK-two-struct-rings",
+  "code": "struct Two { a: ring<T>, b: ring<T> }\nlet pt = two.a.producer(); feed(&two.b, &uniq pt, v);",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R10(a): pt's source place two.a differs from the tied argument place two.b; brands are resolved places, so one level of struct wrapping cannot bypass the P5 verdict."
+ },
+ {
+  "id": "ATK-drop-order-rebind",
+  "code": "let t1 = table::new(); let e1 = t1.entry(k1); e1.fill(v1); let t2 = table::new(); let e2 = t2.entry(k2); rebind e1 = e2;  // scope end follows",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R7 checks the derived drop itself: at scope end t2 is reached while (t2,uniq,e1) is live \u2014 a checked error; safety no longer rests on binding-order position, which the rebind falsified."
+ },
+ {
+  "id": "ATK-destructure-env-struct",
+  "code": "match env { Env { t: tb } => { let tbl2 = own tbl; let v = tb.get(k); } }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R11: struct patterns never destructure confined values (only whole-token enum destructure exists), and R3 keeps field access statement-scoped, so no bare borrow binding can outlive the entry that guar"
+ },
+ {
+  "id": "ATK-entryresult-occ-vac",
+  "code": "confined(uniq) enum EntryResult<'t> { Occ(OccTok<'t>), Vac(VacTok<'t>) }\nlet r = t.entry(k); match r { Occ(o) => { o.replace(v); } Vac(v0) => { v0.fill(v); } }",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R11: every variant packs its payload into exactly one same-kind, same-region token; the scrutinee's entry renames per arm and both arms consume, so R12 joins agree \u2014 the flagship hashbrown occupied/va"
+ },
+ {
+  "id": "ATK-trylock-enum",
+  "code": "confined(uniq) enum LockResult<'m> { Got(Guard<'m>), Busy }\nlet r = m.try_lock(); match r { Got(g) => {...} Busy => {} }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R11: the Busy variant carries zero token fields while the scrutinee holds an entry (issue is unconditional at the call); the blessed shape is the state-queryable token (next entry)."
+ },
+ {
+  "id": "ATK-acquire-helper (hard call)",
+  "code": "fn acquire<'m>(m: &'m mutex<St>) -> Guard<'m> {\n  loop { let g = m.try_lock();  // always issues (uniq,g)\n    match g.acquired() { T => { return g; } F => { g.dismiss(); } } } }\nlet g = acquire(&m);",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "Retry-acquire crosses the loop by RETURN, not break: F arm consumes so the back edge equals entry (R12); the T-arm return passes R13 and R10(c)'s exit-effect check (entries on m = exactly the signatur"
+ },
+ {
+  "id": "self-tie-env-param",
+  "code": "fn body(chunk: &uniq 'c chunkview<i64>, env: &'e Env<'e>) reads('e) writes('c) { ... }",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R9 self-tie: no distinct borrow parameter carries 'e and env is by-borrow, so the signature is well-formed; self-ties seed nothing and skip the call-site source comparison (and cannot be re-passed int"
+ },
+ {
+  "id": "ATK-next-view-sibling-issue",
+  "code": "let c = t.range(lo,hi); loop { let v = c.next_view();  // form clause: issues View on source(receiver), shr\n  ...view dies at body end each iteration... }",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R5 holder-receiver issue: the loan lands on c's recorded source place as a sibling shr entry (t,shr,v); zero-copy scan views work without per-element re-lookup, preserving the B-tree/SQLite performanc"
+ },
+ {
+  "id": "ATK-mk-env2-multi-source",
+  "code": "fn mk_env<'r1,'r2>(t1: &'r1 table<K,V>, t2: &'r2 table<K,V>) -> Env2<'r1,'r2> { let env = Env2 { lut: &t1, dict: &t2 }; return env; }",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R9: each region ties to exactly one parameter; R10(b) derives one shr issue per tied argument place \u2014 multi-borrow env helpers compose, fixing the exactly-one-issuer wrong-rejection."
+ },
+ {
+  "id": "ATK-let-move-holder",
+  "code": "let g = m.lock(); let g2 = move g;",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R8: a plain let-move renames the entry's holder to g2 (never drops or duplicates it); the unlock runs at g2's scope end, so the lost-release completion cannot be implemented."
+ },
+ {
+  "id": "ATK-loop-all-paths-exit",
+  "code": "let e = t.entry(k); loop { e.fill(v); break; }",
+  "expected": "ACCEPT",
+  "canonical": false,
+  "why": "R12: every body path ends in break/return, so the back edge is syntactically unreachable and only the (single) break state is checked \u2014 equivalent to the straight-line program."
+ },
+ {
+  "id": "ATK-memoizing-shared-get",
+  "code": "// form table: table.get declared & receiver, internals memoize the last lookup\npar::for_chunks(&uniq data, &env, body);  // bodies call env.lut.get(k) concurrently",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R15: an & receiver op on a loanable form must preserve interior addresses AND be safe under concurrent invocation; the memoizing declaration fails hostile fact-channel review, so no program lawfully l"
+ },
+ {
+  "id": "ATK-zero-region-endpoint",
+  "code": "confined(uniq) struct Tok { }  // no region parameters\nfn escape() -> Tok { let q = conc_queue::new(); let p = q.producer(); return p; }",
+  "expected": "REJECT",
+  "canonical": false,
+  "why": "R1: every loanable confined type must carry at least one region parameter; with it, R13 rejects the return (local region), so the queue can never die under a live endpoint."
+ }
+]
