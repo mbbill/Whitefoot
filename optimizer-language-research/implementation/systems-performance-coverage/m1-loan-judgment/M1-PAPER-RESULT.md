@@ -82,3 +82,31 @@ Invariant I: at every program point, for every live confined value V and every r
 ## Decidability
 
 The checker carries, per function, one environment: a binding map (name -> type, owned/reference, live/consumed, declaration index; for confined bindings also the type's declared kind and a region-parameter -> source-place map) and one loan table, a finite set of (resolved place, kind, holder) entries where a resolved place is a root binding plus a field path. A declarations pre-pass validates confined-type formation (R1) and resolves every signature's region ties (R9) by counting borrow-mode parameters per region — a rejection, not a search, when the count is not exactly one. The body pass then visits each ANF statement exactly once in program order, dispatching on syntactic form; a call's loan effects are a positional lookup against the callee's declared form clause or pre-resolved ties (no unification search at the call site), and every legality condition (R5 preconditions, R6 freeze, R10a place-brand equality) is an emptiness/membership test over the loan table using path-prefix overlap. Effects apply in a fixed order: legality, consumes, issues. Match arms are each checked once from a copy of the entry state and their projected exit states (entries and liveness of outside-declared bindings, taken after arm-local scope-end processing) compared for equality; loops check the body once and compare the projected back-edge state to the entry state — equality replaces any fixpoint, because a body that maps the state to itself does so on every iteration and any other body is rejected — with back-edge reachability decided syntactically (every path ends in break/return). Breaks and returns contribute states to their exit joins under the same pairwise equality. Total cost is O(statements x loan-table size x maximum path length); there are no dataflow lattices, no path sensitivity, no fixpoints, and no backtracking, because every ambiguity (untied or doubly tied regions, unbound construction regions, divergent joins, place mismatches) rejects instead of branching.
+## Addendum: hostile review and repair round (2026-07-16)
+
+The independent hostile review (three lenses, 583 programs run; findings in
+`../evidence/m1-hostile-review.json`) reopened the gate with one FATAL (R14
+lacked a statement-local cross-slot disjointness clause: overlapping
+split-unique and replicate-shared par views of one place were accepted), one
+MAJOR (mint legality never consulted the source parameter's declared borrow
+mode, silently depending on the base ownership layer), five accept-direction
+implementation divergences, and corpus blind spots proven by mutation testing
+(three planted checker bugs went undetected). The expressiveness lens passed:
+all six catalog idioms accept in writer-natural shapes.
+
+The repair round applied every named fix: statement-local mint accumulator
+(par cross-slot AND ordinary same-statement mints), mint mode-capability
+clause, confined sources in scope-end processing, clause-none own-argument
+consumption, binding-keyed R11 gate, par slot liveness, R13 implementation,
+R5 preconditions de-masked, R12 liveness/holder-name clauses covered, and an
+explicit form receiver-holder tie replacing an undocumented carve-out. The
+corpus doubled to 97 frozen programs (all review counterexamples and probes
+absorbed); the mutation harness (`mutants.py`, 9 planted bugs) now catches
+9/9. Independently rerun: 97/97 pass, structural no-fixpoint assertions
+green. Reviewer-supplied rule-text amendments awaiting human ratification are
+in `AMENDMENTS.md` (R14, R6, R9, R12 reconciliation, and one recommended
+R15 prepass tightening); the numbered rules above are retained as the frozen
+pre-review text for auditability.
+
+Gate status: PASS RE-EARNED on the extended corpus, conditional on human
+ratification of the AMENDMENTS.md rule-text changes.

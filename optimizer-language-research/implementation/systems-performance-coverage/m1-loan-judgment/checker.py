@@ -261,6 +261,8 @@ class Binding:
     region_params: tuple = ()
     src: dict = field(default_factory=dict)
     is_param: bool = False
+    borrow_cap: Optional[str] = None   # 'shr'|'uniq' for a reference binding's
+                                       # declared borrow mode; None for owned
 
 
 @dataclass
@@ -310,6 +312,13 @@ def check_form_op(s: Sig):
         if not (s.address_stable and s.concurrent_safe):
             raise Reject('R15', f"& -receiver op {s.name} fails address-stability / "
                          f"concurrent-safety obligation")
+    # Pre-pass (a): a loanable confined type must carry >=1 region parameter. An
+    # issuing op whose result is a zero-region confined type is undeclarable --
+    # enforced HERE at declaration, not only at a call site (CE5).
+    if s.result is not None and s.result.confined and len(s.result.region_args) == 0 \
+            and s.form_clause in ('issues', 'issues_on_source', 'reissues'):
+        raise Reject('R1', f"issuing form op {s.name} produces zero-region loanable "
+                     f"{s.result.type_name}")
 
 
 def check_type_decl(t: TypeDecl, types: dict):
@@ -420,6 +429,33 @@ class Checker:
                     return a.place
         return None
 
+    def _mode_ok(self, place):
+        """Mint-mode capability (machine spec [Mint legality], mode clause): a
+        &uniq mint or own-pass of a place is legal only if the place's root can
+        be uniquely accessed -- an owned local or a &uniq-borrowed parameter.
+        A &-shared-borrowed parameter cannot be upgraded to unique. This removes
+        M1's silent dependency on the base ownership layer (BREAK-1)."""
+        b = self.bindings.get(place.root)
+        if b is None:
+            return True
+        return not (b.mode == 'reference' and b.borrow_cap == 'shr')
+
+    def _check_stmt_mints(self, mints, rule):
+        """Statement-local disjointness (machine spec [Mint legality], statement
+        clause; the R14 authority for par): every mint of ONE statement is
+        accumulated as a pseudo-entry (&uniq -> uniq, & -> shr) and any two
+        overlapping mints where at least one is uniq are rejected. Two shared
+        readers of the same place stay legal. Closes same-statement aliased
+        &uniq mints for ordinary calls (E2d/S1a) and par cross-slot aliasing
+        (BREAK-2/2b/2c/2d)."""
+        for i in range(len(mints)):
+            pi, ki = mints[i]
+            for j in range(i + 1, len(mints)):
+                pj, kj = mints[j]
+                if overlap(pi, pj) and (ki == 'uniq' or kj == 'uniq'):
+                    raise Reject(rule, f"aliased mints in one statement: "
+                                 f"{ki} {pi} and {kj} {pj} overlap")
+
     # --- statement dispatch (one visit per node: single-pass guarantee) ----
 
     def visit(self, s, frame):
@@ -475,20 +511,46 @@ class Checker:
         return 'break'
 
     def v_SReturn(self, s, frame):
+        self._check_region_escape(s.value)                 # R13
         for i in range(len(self.frames) - 1, -1, -1):
             self.process_scope_end(self.frames[i].names, exclude=s.value)
         self.check_exit_effect(s.value, s.value_place)
         return 'return'
 
+    def _check_region_escape(self, ret_name):
+        """R13 (ESC-1): a confined value may be returned only if every region
+        parameter of its type is a region parameter of the enclosing function --
+        i.e. each region's source place roots at a reference PARAMETER, never a
+        locally introduced (owned-local) source."""
+        if ret_name is None:
+            return
+        rb = self.bindings.get(ret_name)
+        if rb is None or not rb.confined:
+            return
+        for region in rb.region_params:
+            S = rb.src.get(region)
+            if S is None:
+                raise Reject('R13', f"returned {ret_name} carries an unbound region {region}")
+            root_b = self.bindings.get(S.root)
+            if root_b is None or not (root_b.mode == 'reference' and root_b.is_param):
+                raise Reject('R13', f"returned {ret_name} carries a locally introduced "
+                             f"region {region} (source {S} is not a function parameter)")
+
     def v_SPar(self, s, frame):
+        slot_mints = []
         for mark, arg in s.slots:
             if mark == 'body':
                 continue
+            b = self.bindings.get(arg.place.root)
+            # R3: a slot argument that is a confined holder must be LIVE (CE4).
+            if b is not None and b.confined and b.status != 'live':
+                raise Reject('R3', f"consumed confined {arg.place.root} in a par slot")
             if mark == 'split':
-                if arg.mode != '&uniq' or not self._mint_ok(arg.place, '&uniq', set()):
+                if arg.mode != '&uniq' or not self._mode_ok(arg.place) \
+                        or not self._mint_ok(arg.place, '&uniq', set()):
                     raise Reject('R14', f"split-unique slot needs a legal &uniq mint of {arg.place}")
+                slot_mints.append((arg.place, 'uniq'))
             elif mark == 'replicate':
-                b = self.bindings.get(arg.place.root)
                 if b is not None and b.confined:
                     held = [e for e in self.loans if e.holder == arg.place.root]
                     if any(e.kind == 'uniq' for e in held):
@@ -496,6 +558,11 @@ class Checker:
                 else:
                     if any(overlap(e.place, arg.place) and e.kind == 'uniq' for e in self.loans):
                         raise Reject('R14', f"uniq entry overlaps replicate-shared {arg.place}")
+                slot_mints.append((arg.place, 'shr'))
+        # cross-slot disjointness (R14): no two par slots may take overlapping
+        # views where one is unique (BREAK-2/2b/2c/2d); replicate+replicate on the
+        # same place stays legal.
+        self._check_stmt_mints(slot_mints, 'R14')
         return 'fall'
 
     # --- call (op / helper fn) : R10 caller+callee, R5 issue, R6 freeze ----
@@ -527,12 +594,34 @@ class Checker:
                 raise Reject('R3', f"use of consumed confined {root}")
             for i, creg in enumerate(p.region_args):
                 tie = sig.ties.get(creg)
-                if tie in (None, SELF):
-                    if tie is SELF and i < len(hb.region_params) and hb.src.get(hb.region_params[i]) is None:
-                        pass  # self-tied origin staying in a self-tie slot is fine
+                hreg = hb.region_params[i] if i < len(hb.region_params) else None
+                if tie is None:
                     continue
+                if tie is SELF:
+                    # A form-table op's confined receiver whose region has no
+                    # distinct borrow candidate ties to the receiver holder
+                    # itself (receiver-holder tie, R9 amendment). It skips the
+                    # distinct-place comparison but STILL brand-checks the token
+                    # identity -- the R10a coverage the frozen is_form carve-out
+                    # silently dropped:
+                    #   * a token with a recorded source must actually hold a live
+                    #     entry there (a genuine issued token);
+                    #   * a LOCAL confined value with no recorded source reaching a
+                    #     form op is forged/foreign -> reject (defense behind R5);
+                    #   * a self-tied PARAMETER has no recorded source and is
+                    #     trusted from the signature (R9 self-tie) -> skip.
+                    if sig.is_form:
+                        S = hb.src.get(hreg)
+                        if S is not None:
+                            if Entry(S, hb.kind, root) not in self.loans:
+                                raise Reject('R10a', f"form token {root} is not a live "
+                                             f"holder of its recorded loan")
+                        elif not hb.is_param:
+                            raise Reject('R10a', f"form token {root} has no recorded "
+                                         f"source (forged/foreign)")
+                    continue
+                # distinct tie: instance-brand comparison
                 R = self._place_of_param(sig, args, tie)
-                hreg = hb.region_params[i]
                 if hb.src.get(hreg) is None:
                     raise Reject('R10a', f"self-tied-origin {root} into distinct-tie slot")
                 if hb.src[hreg] != R:
@@ -541,10 +630,15 @@ class Checker:
                     raise Reject('R10a', f"no live entry ({R},{hb.kind},{root})")
 
         # (ii) mint legality for borrow args
+        mints = []
         for p, a in zip(params, args):
             if isinstance(a, ArgBorrow):
+                if a.mode == '&uniq' and not self._mode_ok(a.place):
+                    raise Reject('R6', f"&uniq mint of a &-shared-borrowed source {a.place}")
                 if not self._mint_ok(a.place, a.mode, consumed):
                     raise Reject('R6', f"illegal {a.mode} mint of {a.place}")
+                mints.append((a.place, 'uniq' if a.mode == '&uniq' else 'shr'))
+        self._check_stmt_mints(mints, 'R6')
 
         # (iii) consumes
         for p, a in zip(params, args):
@@ -554,7 +648,16 @@ class Checker:
             if p.confined and a.place.root in consumed:
                 self._remove_holder(a.place.root)
                 hb.status = 'consumed'
+            elif p.confined and hb is not None:
+                # clause-none own-mode confined argument: affine consume (machine
+                # spec (iii), "other own arguments ... mark consumed"). Its entries
+                # linger and trip R7 at scope end if never resolved. (CE2.)
+                if any(overlap(e.place, a.place) for e in self.loans):
+                    raise Reject('R6', f"own-pass of loaned place {a.place}")
+                hb.status = 'consumed'
             elif not p.confined and hb is not None:
+                if not self._mode_ok(a.place):
+                    raise Reject('R6', f"own-pass of a &-shared-borrowed source {a.place}")
                 if any(overlap(e.place, a.place) for e in self.loans):
                     raise Reject('R6', f"own-pass of loaned {a.place}")
                 hb.status = 'consumed'
@@ -611,6 +714,7 @@ class Checker:
         b = self._new_binding(s.name, td.name, mode='owned', confined=td.is_confined,
                               kind=td.kind, region_params=td.region_params)
         bound = set()
+        cap_mints = []
         for fname, arg in s.field_args:
             fld = fmap[fname]
             if fld.confined:                       # moved confined field (R8)
@@ -624,8 +728,11 @@ class Checker:
                 hb.status = 'consumed'
             else:                                  # captured borrow (R5)
                 S = arg.place
+                if fld.borrow_mode == '&uniq' and not self._mode_ok(S):
+                    raise Reject('R6', f"&uniq capture of a &-shared-borrowed source {S}")
                 if not self._mint_ok(S, fld.borrow_mode, set()):
                     raise Reject('R6', f"illegal {fld.borrow_mode} capture of {S}")
+                cap_mints.append((S, 'uniq' if fld.borrow_mode == '&uniq' else 'shr'))
                 if td.kind == 'uniq':
                     if any(overlap(e.place, S) for e in self.loans):
                         raise Reject('R5', f"uniq capture on {S} overlaps an entry")
@@ -635,6 +742,7 @@ class Checker:
                 self.loans.append(Entry(S, td.kind, s.name))
                 b.src[fld.borrow_region] = S
                 bound.add(fld.borrow_region)
+        self._check_stmt_mints(cap_mints, 'R6')
         missing = set(td.region_params) - bound
         if missing:
             raise Reject('R5', f"construction of {td.name} leaves region(s) {missing} unbound")
@@ -665,15 +773,19 @@ class Checker:
 
     def v_SMatch(self, s, frame):
         cutoff = self.next_decl
-        scrut_confined = s.scrut_type is not None and s.scrut_type.confined
-        scrut_entries, scrut_regparams, scrut_src = [], (), {}
+        # The R11 gate keys on the BINDING's confinedness (machine spec [match]:
+        # "if the scrutinee is a live confined binding"), NOT the AST annotation
+        # s.scrut_type -- a confined scrutinee annotated as a value cannot bypass
+        # the destructure checks or the consume (CE3).
+        sb = None
+        if isinstance(s.scrutinee, Place):
+            sb = self.bindings.get(s.scrutinee.root)
+        scrut_confined = sb is not None and sb.status == 'live' and sb.confined
+        scrut_entries, scrut_type_name, scrut_kind, scrut_regparams, scrut_src = [], None, None, (), {}
         if scrut_confined:
             root = s.scrutinee.root
-            sb = self.bindings[root]
-            if sb.status != 'live':
-                raise Reject('R3', f"match on consumed {root}")
-            td = self.types[s.scrut_type.type_name]
-            if (not td.is_enum) or any(a.struct_pattern for a in s.arms):
+            td = self.types.get(sb.type_name)
+            if td is None or (not td.is_enum) or any(a.struct_pattern for a in s.arms):
                 raise Reject('R11', "struct / non-enum destructure of a confined value")
             for v in td.variants:
                 cf = [f for f in v.fields if f.confined]
@@ -684,6 +796,7 @@ class Checker:
                     raise Reject('R11', f"variant {v.name} kind/region mismatch")
             scrut_entries = [e for e in self.loans if e.holder == root]
             self.loans = [e for e in self.loans if e.holder != root]
+            scrut_type_name, scrut_kind = sb.type_name, sb.kind
             scrut_regparams = sb.region_params
             scrut_src = dict(sb.src)
             sb.status = 'consumed'
@@ -694,9 +807,8 @@ class Checker:
             self.restore(base)
             injects = None
             if scrut_confined and arm.binder:
-                nb = Binding(arm.binder, s.scrut_type.type_name, 'owned', None, 'live',
-                             0, True, self.types[s.scrut_type.type_name].kind,
-                             scrut_regparams, dict(scrut_src))
+                nb = Binding(arm.binder, scrut_type_name, 'owned', None, 'live',
+                             0, True, scrut_kind, scrut_regparams, dict(scrut_src))
                 ents = [Entry(e.place, e.kind, arm.binder) for e in scrut_entries]
                 injects = [(arm.binder, nb, ents)]
             flow = self._run_block(arm.body, 'arm', injects=injects)
@@ -739,8 +851,13 @@ class Checker:
             if b.status == 'consumed':
                 continue
             if b.confined:
-                self._remove_holder(name)     # auto-consume: release + drop entries
+                self._remove_holder(name)     # auto-consume: release + drop its entries
                 b.status = 'consumed'
+                # A confined binding is an owned binding being dropped; if it is
+                # itself a loan SOURCE, a live entry still overlaps its place after
+                # its own entries are released -> dangling source, REJECT (CE1).
+                if any(overlap(e.place, Place(name)) for e in self.loans):
+                    raise Reject('R7', f"drop of confined source {name} while a live loan overlaps it")
             else:
                 if b.mode == 'owned':
                     pl = Place(name)
@@ -778,13 +895,16 @@ class Checker:
         frame = Frame('func', [], 0)
         self.frames.append(frame)
         sig = func.sig
+        cap = {'&': 'shr', '&uniq': 'uniq', 'own': None}
         for p in sig.params:
             if p.confined:
                 b = Binding(p.name, p.type_name, 'owned' if p.mode == 'own' else 'reference',
-                            p.region, 'live', self.next_decl, True, p.kind, tuple(p.region_args), {})
+                            p.region, 'live', self.next_decl, True, p.kind, tuple(p.region_args), {},
+                            is_param=True, borrow_cap=cap.get(p.mode))
             else:
                 b = Binding(p.name, p.type_name or 'container', 'reference', p.region,
-                            'live', self.next_decl, False, None, (), {})
+                            'live', self.next_decl, False, None, (), {},
+                            is_param=True, borrow_cap=cap.get(p.mode))
             self.bindings[p.name] = b
             self.next_decl += 1
             frame.names.append(p.name)
