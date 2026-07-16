@@ -1,0 +1,72 @@
+{
+  "encoding": "cl100k_base",
+  "measured_original": {
+    "optables_total": 9194,
+    "optables_s0_header": 1078,
+    "optables_op_content": 8116,
+    "optables_per_form": {
+      "seq": 2947,
+      "table": 2774,
+      "conc_queue": 2395
+    },
+    "cards_LRU": 3014,
+    "cards_FIFO": 2152,
+    "cards_total": 5166
+  },
+  "measured_reduced": {
+    "optables_total": 9106,
+    "optables_s0_header": 1810,
+    "optables_op_content": 7296,
+    "optables_per_form": {
+      "seq": 2576,
+      "table": 2486,
+      "conc_queue": 2234
+    },
+    "cards_A": {
+      "LRU": 2423,
+      "FIFO": 2105,
+      "total": 4528
+    },
+    "cards_B": {
+      "LRU": 1951,
+      "FIFO": 1582,
+      "total": 3533
+    }
+  },
+  "ratios": {
+    "optables_full_file": 0.9904,
+    "optables_op_content": 0.899,
+    "cards_A_LRU": 0.8039,
+    "cards_A_FIFO": 0.9782,
+    "cards_A_total": 0.8765,
+    "cards_B_LRU": 0.6473,
+    "cards_B_FIFO": 0.7351,
+    "cards_B_total": 0.6839
+  },
+  "extrapolation": {
+    "categories_original": {
+      "sealed_kernels": 23500,
+      "checked_lib": 5000,
+      "cards": 37000,
+      "s0_conventions_fixed": 1078,
+      "total": 66578,
+      "band": "FAIL"
+    },
+    "reduced": {
+      "sealed_kernels": 21126,
+      "checked_lib": 4495,
+      "s0_conventions_fixed": 1810,
+      "cards_A": 32431,
+      "cards_B": 25304
+    },
+    "appendix_total_A_levers234_code_kept": 59861,
+    "band_A": "FAIL",
+    "appendix_total_B_plus_code_to_corpus": 52735,
+    "band_B": "REDUCE"
+  },
+  "bands": {
+    "PASS": "<=40k",
+    "REDUCE": "40-55k",
+    "FAIL": ">55k"
+  }
+}
