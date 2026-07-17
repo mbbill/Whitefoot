@@ -97,6 +97,23 @@ An affine value (owned composite, `box`, `arena`, `buffer`, uniq borrow, `slice`
 - Bare-place exception: a place used as a NON-consuming operand of a table op is written bare — a borrow receiver, and (inside a `requires` block) a non-consuming place operand [FN-8].
 - Copy values (primitives, `Bool`, tag-only enums, shared borrows, `hdl`) are ALWAYS bare; `move` on a copy value is a hard error [OWN-1].
 
+## Diagnostic coverage — round-4 blind spot [M5R4-FIX-6]
+
+The feedback/diagnostic cycle must surface two defect classes it missed in
+round 4 (both slipped through as accepted), not only locally-fixable
+spelling/derivation errors:
+1. **Reborrow-out-of-borrowed-struct** (T-A): minting a new `&`/`&uniq` field
+   borrow OUT of an already-borrowed wrapper — `&uniq 'e deref(h).items` where
+   `h: &uniq 'e History`. v0 has no reborrowing; a helper must take the field
+   PARTS from the owner (cards.md C1 no-reborrowing example), never a borrowed
+   wrapper. This is a hard error the diagnostic must name at the borrow site.
+2. **WRONG_CHOICE performance anti-patterns**: a legal-but-not-blessed shape a
+   card supersedes — e.g. `seq_remove_at(s, 0_u64)` front-removal (O(len)/pop,
+   SEQ-4) where C2's FIFO is the blessed route; using a plain SwissTable where
+   C7 tiny-map wins; per-pop `conc_queue` where a single-threaded C2 ring
+   suffices. These are not spelling errors, so a spelling-only checker passes
+   them; the grader/feedback generator must flag the choice against the card set.
+
 ## How to use it
 
 Copy spellings from cards.md's worked examples first; when a needed construct is

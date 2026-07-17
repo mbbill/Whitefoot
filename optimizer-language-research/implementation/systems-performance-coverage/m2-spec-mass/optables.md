@@ -40,6 +40,8 @@ The receiver-fixed-generic suppression above applies to TABLE OPS ONLY [M5R3-FIX
 
 [CAT-7a] Scalar ops are not re-listed here: integer arithmetic, comparison, bitwise, and count ops are rows of the kernel operation tables [OP-2, OP-7] and are callable directly. The subset visible in the cards (`ieq`, `ige`, `iand`, `ipopcount`, `iadd.wrap<u64>`, `isub.wrap<u64>`) is illustrative, not the closed set: the kernel defines the full compare set `ieq ine ilt ile igt ige` (dotless, `(T, T) -> own Bool`), the moded arithmetic families `iadd`/`isub`/`imul` with `.wrap`/`.trap`/`.checked`/`.sat` suffixes and `idiv`/`irem` with `.trap`/`.checked` (there is no bare `iadd`/`isub` — every integer add or subtract carries an explicit overflow mode), bitwise `iand ior ixor`, and counts `ipopcount iclz ictz`. Strict-less-than is `ilt` written directly. An op spelling in neither the kernel tables nor this appendix is a hard error [DIAG-1], never a license to invent. [M5-FIX-2]
 
+[CAT-7b] Dotless is not typeless [M5R4-FIX-2]. A receiver-less generic scalar op (`ieq`, `ine`, `ilt`, `ile`, `igt`, `ige`, `iadd.wrap`, `isub.wrap`, `iand`, ...) has NO receiver to fix its type argument, so it ALWAYS takes an explicit `<T>` at the call — `ieq<u64>(n, 0_u64)`, never `~~ieq(n, 0_u64)~~` [TYPE-5, FN-2: call sites state all type args explicitly]. The [CAT-1a] receiver-fixed-generic suppression is TABLE-OPS-ONLY (it drops only the `T`/`N`/`K`/`h` a CONTAINER receiver already fixes); it never licenses dropping a scalar op's type arg. The absence of a `.mode` suffix (a "dotless" op name) is a mode-axis fact and says nothing about type arguments — dotless is not typeless.
+
 ---
 
 ## S.1 `seq<T, inline N>` — growable sequence
@@ -185,6 +187,10 @@ fn roundtrip(v: own u64) -> own Result<u64, CqRecvFail> allocates(heap), traps {
   }
 }
 ```
+
+cq_new instantiation spelling [M5R4-FIX-6]: `conc_queue<T, ep, K>` fixes the payload `T`, the endpoint discipline `ep` (`spsc`/`mpmc`), and the const capacity exponent `K`; the intended `cq_new` call is `cq_new<Record, spsc, 10>()` — payload `Record`, `spsc`, `2^10` slots — minting a fresh brand `'q`. TWO attestation flags: (a) the `ep` tag (`spsc`/`mpmc`) and the hasher `h` in `table<K, V, h>` are lowercase closed-set tags, which GRAM-3 `targ := type | REGIONID | const` does NOT admit (a TYPEID is uppercase-initial), so the tag-argument position is a SPEC GAP pending a kernel delta (admit closed-set tag identifiers as a targ sort); (b) the `'q` binder rides OPEN-FLAG (BRAND-MINT) — the mint-position binder has no prior name. Do not guess a different spelling; the `<T, ep, K>` arity above is the attested intent.
+
+Blessed affine-FIFO route [M5R4-FIX-6] (resolving the seq-vs-C2 choice): a single-threaded FIFO of an AFFINE payload is C2's pool-handle ring (or the two-seq flip queue), NEVER front-removal from a `seq` — `seq_remove_at(s, 0_u64)` is O(len) per pop (SEQ-4) and is the WRONG_CHOICE anti-pattern C2 supersedes. Cross-thread FIFO is this `conc_queue` form. Copy payload single-threaded is C2's masked ring.
 
 [CQ-1] Form. `ep` closed set: `spsc`, `mpmc`. `const K: u64`, `0 <= K <= 32` (compile-time reject outside, cites CQ-1 [DIAG-1]); capacity is `2^K` slots. T must conform `Sendable` at instantiation (compile reject otherwise; [CAP-1] vocabulary). Slot storage is one heap allocation at `cq_new`; its byte size is a monomorphization-time constant, and overflow is a compile-time reject.
 

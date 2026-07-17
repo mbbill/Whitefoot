@@ -56,6 +56,27 @@ has no reborrowing (T-A), so these helpers are written over the parts, never
 over a borrowed cache-wrapper struct. Two field borrows of one owned struct
 are disjoint places; nothing is relaxed.
 
+No-reborrowing, worked [M5R4-FIX-5]. Because v0 has no reborrowing (T-A), a
+helper is written over the PARTS the OWNER mints, never over a borrowed wrapper:
+
+```
+region 'e {
+  lru_insert<'e, 'e>(idx: &uniq 'e state.index, np: &uniq 'e state.nodes, sent: state.sent, cap: state.cap, key: k, val: v);
+}
+```
+
+`state` is the OWNED state struct, so `&uniq 'e state.index` and `&uniq 'e
+state.nodes` are disjoint FIELD borrows minted from an owned place — legal. The
+REJECTED shape (the e2 error) is a helper that takes the borrowed WRAPPER and
+mints a field borrow OUT of it: `fn bad['e](h: &uniq 'e History) { let items:
+&uniq 'e seq<Event, 100> = &uniq 'e deref(h).items; ... }` — `&uniq 'e
+deref(h).items` reborrows a field out of the already-borrowed `&uniq 'e
+History`, which T-A forbids. Contrast `ring_push['q](q: &uniq 'q Ring, ...)`
+(C2): it takes the whole `Ring` by `&uniq` and reaches fields with PLACE OPS
+(`set index<u64>(deref(q).buf, slot) = v`, `len<u64>(deref(q).buf)`) — a place
+operand through the borrow is fine; only MINTING a new `&`/`&uniq` field borrow
+out of a borrowed struct is the reborrow that rejects.
+
 Op rows this card leans on (sealed-form op tables; positional operands):
 
 | row | signature | loan | effects | failure | facts -> / kills | codegen |
@@ -141,6 +162,16 @@ The `requires` prologue closes the victim-is-sentinel edge structurally
 fact channel like any OP-5 fact. The construction filler `hnull` is inert:
 `pool_insert` self-links the slot before it is reachable.
 
+Two flat-form reminders [M5R4-FIX-4]. (1) A `construct` or `call` may NEVER sit
+in an atom or `fieldinit` slot (GRAM-9) — even a nullary construct: write
+`~~Err(error: AlreadyRegistered())~~` as `let e: own AlreadyRegistered =
+AlreadyRegistered(); return Err(error: e);`. This is exactly the `hnull` pattern
+above (`let hnull = hdl_null<Entry>();` before the `Entry(...)` construct), and
+the reason every computed argument is let-bound first (GRAM-9 three-address).
+(2) `loop`/`break` LABELs are MANDATORY, not optional: it is `loop @scan { ...
+break @scan; }` (as in the OWN-11 example), never a bare `loop { }` / `break;`
+(GRAM-4 `loop_stmt := "loop" LABEL`).
+
 Performance contract: promote is one splice row — at most six u32 stores
 (two splice-out, four splice-in), zero branches; the two node-local stores
 land in the cache line the key compare already fetched, so off-node traffic
@@ -210,8 +241,28 @@ loop @scan {
 ```
 
 The `region 'e { }` sits INSIDE the loop body, so the probe loan is fresh each
-iteration and dead before the next; minting it around the loop (spanning all
-iterations) is the OWN-11 rejection this rule prevents.
+iteration and dead before the next.
+
+[M5R4-FIX-1] THE ONLY legal way to borrow a receiver inside `loop @l` is to mint
+the region INSIDE `@l`'s body (above). The CANONICAL REJECTION — the single most
+recurrent OWN-11 error — is a region minted AROUND the loop and named by an
+in-loop borrow:
+
+```
+region 'e {                              // REJECTED shape: region wraps the loop
+  loop @scan {
+    let e: &'e Entry = pool_entry<'e, Entry>(np, h);
+    break @scan;
+  }
+}
+```
+
+`&'e` inside `@scan` names `'e`, which is introduced OUTSIDE `@scan` — a hard
+error citing OWN-11 (a `borrow_expr` in a loop body may name only regions
+introduced inside that body). The same error is the `&uniq 'e r` / `&uniq 'e t` /
+`&uniq 'e dst` shape: any receiver borrow inside a `loop` MUST bind a
+loop-body-local `region 'f { }`, never an outer `'e`. Fix: move the `region { }`
+inside `@l`.
 
 Borrow-minting, worked [M5R2-FIX-3]. A row spelled `&'r` or `&uniq 'r` never
 accepts a bare owned binding (that is the OWN-1 hard error writers keep hitting):
@@ -485,8 +536,16 @@ fn count_all['r](s: &'r seq<u32, 0>) -> own u64 reads('r) {
 
 The conformer's declared row `reads('v), writes('v)` is contained in `SeqVisit`'s
 ceiling `reads('v), writes('v), traps` (subsumption, [FN-7]/[M5R3-FIX-7]) and
-equals what the body exhibits (one `deref` read, one `set` write) —
-[CAT-5a]/[EFF-2]. `count_all`'s own row is just `reads('r)`: the visitor's `'v`
+equals what the body exhibits — the `reads('v)` is from the ONE `deref` field
+read `deref(env).count`, and the `writes('v)` from the `set` [CAT-5a]/[EFF-2].
+[M5R4-FIX-3] Reading a field through `deref` exhibits `reads('v)` EVEN when `env`
+is a `&uniq 'v` borrow: the effect follows the ACCESS (a read is a read), not
+the borrow mode (the `tbl_entry` precedent — a `&uniq` receiver with a `reads`
+effect). The rule "reading through `&uniq` adds no `reads`" is WRONG and rejected
+by [EFF-2]'s both-directions check; a read-modify-write conformer like
+`count_visit` or `keep_big` may drop `writes`/`traps` from the ceiling (it is a
+subset) but NEVER its `reads('v)` clause, because every `deref(env)`/`deref(value)`
+field read exhibits it. `count_all`'s own row is just `reads('r)`: the visitor's `'v`
 effects are confined to the internal `region 'v { }` block ([CAT-5a](ii)), and
 `seq_for_each`'s `+ join(CountEnv)` uses `count_visit`'s actual row (which does
 not trap), not the ceiling, so no `traps` reaches `count_all`.
