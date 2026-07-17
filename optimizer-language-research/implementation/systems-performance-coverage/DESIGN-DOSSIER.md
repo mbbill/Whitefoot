@@ -121,7 +121,12 @@ performance mechanism it preserves, and its acceptance-ledger status.
    generation write is ~3-5x the 2-3-instruction bump path and loses O(1) bulk
    free). *Status:* the per-arena-value brand (which lets deref skip the
    which-arena check) is the subject of kernel Delta 5 / BRAND-1 (§3); alloc
-   fast-path must inspect to 2-3 instructions.
+   fast-path must inspect to 2-3 instructions. *M4 dry run (§4):* the branded-id
+   deref is asm-confirmed check-free (no which-arena or generation compare/branch)
+   and a retained bounds check would cost ~0% in a pointer chase (latency-hidden);
+   parity with C holds for memory-resident walks, with index-based deref ~1.6x a
+   RAW-pointer arena for L1-resident hot walks (index arithmetic, orthogonal to
+   checking; an index-based C arena matches it).
 
 5. **threads + par — scoped spawn, parallel-for, work-stealing scheduler.** The
    only thread-spawning and task-scheduling surface; the Chase-Lev steal deque is
