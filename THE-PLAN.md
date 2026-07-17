@@ -111,7 +111,8 @@ Measured non-wins (equally load-bearing):
    v1 non-goals; `copy struct`; the D2 budget split. No production change
    is authorized before those decisions.
 
-   STATUS (2026-07-16 evening): gate #1 is passed and ratified — the
+   STATUS (2026-07-17): all six kernel deltas have completed drafting and
+   adversarial review. Gate #1 (loan/freeze, 15 rules) is passed and ratified — the
    loan/freeze judgment plus confined borrow-carrying values landed at
    exactly 15 rules, machine-verified on a 97-program corpus with a 9/9
    mutation harness, hostilely reviewed and repaired; RULES-RATIFIED.md is
@@ -120,11 +121,19 @@ Measured non-wins (equally load-bearing):
    generational pools; four v1 non-goals; proof-gated admission; spec budget
    option 2). Kernel-shape dry runs validate seq/table (4/5 in band, two
    wins, AoS layout pinned) and the SPSC queue (exhaustive model check SAFE,
-   zero-RMW win confirmed, beats rtrb). Writability clean baseline is 26.3%
-   single-shot with six actionable defect families; the feedback-cycle round
-   is pending quota. Next: round-4 resume, the five remaining cards, the
-   brand kernel rules (now a writability blocker), then the gated compiler
-   integration.
+   zero-RMW win confirmed, beats rtrb). Writability round 4 PASSES (70% green
+   after one diagnostic-feedback revision, 100% par form choice); the eight
+   catalog cards are authored and the always-loaded set is 42.3k of the 48k
+   budget. All six kernel deltas (loan/freeze, TAG-1, tbl_clone, byte loads,
+   DOM-1, BRAND-1, concurrency) are drafted and adversarially reviewed;
+   BRAND-1 and concurrency each took four review rounds, the rest one or two;
+   the program-wide review scorecard is ~9 FATAL and ~25 MAJOR findings, every
+   one caught by an attacker with a concrete program. Adoption is gated on
+   five owner escalations (land CONC-0 as kernel memory-model text; OWN-11
+   loop-spawn coverage; ratify AMD-5-carve-out/AMD-7/AMD-8; the clone re-mode;
+   the concurrency budget cut) and a separate landing review. Next: the owner
+   decisions, then the gated real-compiler integration and per-form safety
+   models.
 
    Historical context of the superseded lock (evidence, not active
    authority): after the completed `B-REVISE` gate, the owner had selected
