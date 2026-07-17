@@ -53,6 +53,7 @@ The goal in one line, for the top of the doc:
 > **The code an AI writes — under a checker it cannot cheat — runs at C-class
 > speed, with entire bug classes made impossible, while a human only states the
 > requirements and verifies the result.**
+// in face with all we have here, it's not just c-class, it should be much faster than c. it can do all c can, and it can use the compiler backend's optimization chances better than c - proof, aliasing annotations, etc.
 
 The honesty bar we hold ourselves to, stated up front: **R0, the Rust Test —
 "if a decision leaves us equal to Rust, it failed; 'just use Rust' was
@@ -70,11 +71,11 @@ cheaper." Every difference below names what it buys over Rust.**
 - **Answer with the four-point reframe** (each fully explained):
   1. The expensive part of AI code is *trusting* it, not typing it — so move
      failure from runtime (an AI's worst feedback channel) to a compile-time
-     repair loop it can act on.
+     repair loop it can act on. // I don't quite understand the logic here, how can this answer the above question?
   2. Models cheat when stuck — so make cheating *unrepresentable*, not
-     punishable. There is no hatch to reach for.
+     punishable. There is no hatch to reach for. // yeah this is a good point, but as mentioned, Rust can also ban unsafe, which makes it equally qualified for this point.
   3. What breaks weak models is *irregularity*, not verbosity — so one spelling,
-     verbose everywhere, zero special cases.
+     verbose everywhere, zero special cases. // verbose everywhere is one of the benefits from "programming language for AI not for human". but this is also not quite supporting the answer.
   4. Explicitness is what the optimizer wants anyway — so writability and speed
      *reinforce* each other instead of trading off. (This is the hinge of the
      whole document.)
