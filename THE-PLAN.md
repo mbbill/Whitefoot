@@ -111,6 +111,12 @@ Measured non-wins (equally load-bearing):
    v1 non-goals; `copy struct`; the D2 budget split. No production change
    is authorized before those decisions.
 
+   STATUS (2026-07-17, PARKED): the D15 systems-performance-coverage
+   research package is COMPLETE and PARKED at the owner's direction (D19).
+   The design is finished and budget-verified; the production landing is a
+   separate owner-gated phase not yet opened. The superseded B-Strata /
+   candidate era is archived at `archive/research/minimal-systems-capability/`.
+
    STATUS (2026-07-17): all six kernel deltas have completed drafting and
    adversarial review. Gate #1 (loan/freeze, 15 rules) is passed and ratified — the
    loan/freeze judgment plus confined borrow-carrying values landed at

@@ -8,6 +8,17 @@ research record is
 
 ## Current D15 status — read this first
 
+**PARKED (2026-07-17, D19).** The systems-performance-coverage design
+package is complete and budget-verified; the owner has parked it at a clean
+research stopping point. The production landing (real-compiler integration,
+per-part acceptance batteries, production spec drafting) is a separate
+owner-gated phase that is NOT yet opened. The superseded B-Strata / candidate
+era is archived at `archive/research/minimal-systems-capability/`. The design
+package and its follow-ups live under
+`optimizer-language-research/implementation/systems-performance-coverage/`
+(`DESIGN-DOSSIER.md`, `FOLLOW-UPS.md`).
+
+
 The owner redirected the capability research on 2026-07-16 to a fresh,
 fully autonomous derivation: for most systems-programming scenarios, at
 least one blessed way of writing must reach or exceed the performance of

@@ -17,3 +17,10 @@ anything; no tool or test reads from this tree.
   faster than the weak-writer test depreciates) but SHELF-READY: the
   requires-accounting design (section 13.4) names it for the authorship
   experiments, and `trial.py` runs against any model CLI unchanged.
+- `research/minimal-systems-capability/` — the superseded B-Strata /
+  Candidate B/C / G0-Core capability-research era (2026-07-14..15), suspended by
+  D15. Historical evidence and falsifiers for the active
+  systems-performance-coverage design; its standalone verifier tools are under
+  `verifier-tools/` (inert — not run). ~179MB.
+- `research/capability-floor/` — the general-purpose data-structure capability
+  floor research (2026-07-13) that preceded and fed the D15 pass.

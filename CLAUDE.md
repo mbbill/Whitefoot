@@ -69,41 +69,35 @@ proof discharges them — speed is earned by proof, never by weakening a check.
 - `archive/` — superseded plans, the research-era record, shelved harnesses.
   Read-only context; nothing in it gates anything.
 
-## Current focus (2026-07-16)
+## Current focus (2026-07-17)
 
-- D15 systems-performance coverage research is the active capability track:
-  for most systems-programming scenarios, at least one blessed way of writing
-  must reach or exceed the best existing implementations; the form count n
-  stays small under spec compactness; compiler-known forms with disciplined
-  trusted internals are admissible. The D14 B-Strata-only lock is suspended;
-  prior candidate artifacts remain historical evidence and falsifiers. Track
-  record lives in
-  `optimizer-language-research/implementation/systems-performance-coverage/`.
-  STATUS (2026-07-16 evening): the three-tier architecture (narrow language
-  core + sealed taught forms + cards) is selected and validated through its
-  first gates. Gate #1 passed and is ratified: the loan/freeze judgment plus
-  confined borrow-carrying values — exactly 15 rules, machine-verified on a
-  97-program corpus with a 9/9 mutation-caught harness, hostilely reviewed,
-  repaired, amendments ratified (RULES-RATIFIED.md is the normative research
-  draft). Owner rulings D16-D18 bind: explicit copy struct; catalog
-  minimality (10 sealed kernels after re-cut; member audits done; io-file =
-  17 enumerated rows with the Darwin F_FULLFSYNC pin); acceptance ledger
-  (performance+safety+reliability) per sealed kernel; trap = process abort;
-  pool generational reuse (check-free alternatives under research); four v1
-  non-goals with triggers; proof-gated admission (D17: proof substitutes for
-  trust, long-term user lane); spec budget option 2 (~48k always-loaded,
-  eight example-rich cards, five still to author). Dry runs validate the
-  kernel shapes: seq/table vs Rust Vec/hashbrown 4/5 in band with two wins
-  and the AoS layout finding; SPSC queue exhaustively model-checked SAFE
-  with the zero-RMW win confirmed in disassembly, beats rtrb. Writability:
-  clean single-shot baseline 26.3% (round 3; six defect families, fixes
-  applied; the brand-across-fn gap is the next kernel-rule blocker); round 4
-  adds a diagnostic-feedback cycle and is pending session-quota reset.
-  No production language, specification, checker, compiler, verifier,
-  runtime, standard-library, container, xlc, migration, fact-channel,
-  teaching, or shipping change is authorized before the remaining gates and
-  a separate landing review.
-- xlc self-hosting build in `compiler/` (SoA-tape architecture per P2).
+- The D15 systems-performance-coverage capability research is COMPLETE and
+  PARKED at the owner's direction (2026-07-17, D19). The design package is
+  finished and budget-verified: a three-tier architecture (narrow language
+  core + sealed built-in parts + taught checked-source libraries/cards); ten
+  sealed parts; the ratified 15-rule loan/freeze judgment plus six
+  adversarially-reviewed kernel deltas (TAG-1, tbl_clone, byte-loads, DOM-1,
+  BRAND-1, concurrency/CONC-0..4); and the always-loaded manual fits at
+  ~46.4k of the 48k token budget. Owner rulings D16-D19 bind (explicit copy
+  struct; catalog minimality = 10 sealed kernels; per-kernel acceptance
+  ledgers; trap = process abort; generational pools; four v1 non-goals;
+  proof-gated admission per D17; the five concurrency-delta decisions). The
+  package lives under
+  `optimizer-language-research/implementation/systems-performance-coverage/`
+  (start at `DESIGN-DOSSIER.md`); deferred items are tracked in its
+  `FOLLOW-UPS.md`. NOTHING is authorized for production: the real-compiler
+  landing (loan/freeze rules into the prototype checker, then a sealed part
+  end-to-end measured on the deploy target), the per-part five-leg acceptance
+  batteries, and production spec drafting are a separate owner-gated phase
+  that is NOT yet opened. Do not begin landing work without an explicit owner
+  decision.
+- The superseded B-Strata / candidate capability-research era is archived at
+  `archive/research/minimal-systems-capability/` (historical evidence and
+  falsifiers; nothing gates it).
+- xlc self-hosting build in `compiler/` (SoA-tape architecture per P2) — a
+  separate track: front-end complete over its 477-function unit, LLVM codegen
+  at ~15/477 functions, still bootstrapped by `prototype/democ`; unaffected by
+  the parked capability research.
 - D9a is complete on two independently preregistered shipped-library targets.
   First-green `gpt-5.6-terra`/medium xlang beats `percent-encoding` 2.3.2 by
   1.653x [1.631, 1.667] and one-shot `utf8parse` 0.2.2 by 1.098x
