@@ -11,11 +11,11 @@ Always loaded (KEEP, full examples):
 - C3 iteration/conform — written below.
 - C1 LRU bounded cache — written below.
 - C2 FIFO/ring — written below.
-- sharded-mutex map — full text pending (KEEP slot reserved).
-- COW-republish — full text pending (KEEP slot reserved).
-- durability-ordering — full text pending (KEEP slot reserved).
-- tiny-map — full text pending (KEEP slot reserved).
-- validated-view — full text pending (KEEP slot reserved).
+- C4 sharded-mutex map — written below (structure only; concurrency ops unspellable in v0, flagged).
+- C5 COW-republish — written below (pattern + measured constants; clone/publish unspellable in v0, flagged).
+- C6 durability-ordering — written below.
+- C7 tiny-map — written below.
+- C8 validated-view — written below (validation + byte reads; at-par typed load unspellable in v0, flagged).
 
 Demoted (STUB here; non-normative full text in `examples/`): interner, CSR
 graph, pool-trees, intrusive links, timer wheel, prefetch-probe,
@@ -542,6 +542,229 @@ let x: own u32 = nth<u32, 'r>(s: &'r data, i: 3_u64);
 The type arg `u32` and region arg `'r` share one `<...>` list in
 generics-then-regions order (the `fn` declaration order `<generics>['regions]`);
 value arguments are named; `i` (a copy `u64`) is bare.
+
+## C4. Sharded-mutex map — concurrent keyed state [CARD-1]
+
+Problem: get/insert/remove from many threads with no writer starvation; per-key
+atomic get-or-insert; mixed read/write. Par target: dashmap 6 (64 shards) ~20-40
+ns uncontended, ~50-100M mixed ops/s across 16 threads; the `RwLock<HashMap>`
+read plateau is the fail line (demand-map scenarios 11/42).
+
+Pattern: `N = 2^k` shards, each a sealed `table<K, V, h>` behind its own mutex;
+the shard is `hash(key) & (N-1)`, so lock and data contention are confined to
+1/N of traffic. This is composition (an array of locked blessed maps + a
+hash-based shard pick), not a new primitive.
+
+> **UNSPELLABLE IN v0 [CARD-1 FLAG].** The concurrency half of this card has no
+> v0 spelling and is NOT invented here. Kernel CAP-1: "v0 defines no thread
+> construct"; `Shareable`/`Sendable` are reserved vocabulary with nothing to
+> bind. There is no mutex, lock, guard, or cross-thread share form. What IS
+> v0-expressible: the per-shard `table<K, V, h>` and the shard pick
+> (`iand<u64>(h, mask)` over a power-of-two shard count, the C2 mask idiom).
+> What is NOT: acquiring a shard lock, sharing the shard array across threads,
+> and the atomic get-or-insert under the lock. This card becomes a full worked
+> card when the concurrency layer lands (a `mutex`/`guard` sealed form whose
+> guard is a confined loan token — exactly the M1 loan-judgment shape — plus
+> `Shareable` binding for the shard array). Until then it is a structural
+> placeholder; the single-threaded per-shard `table` operations are the C-table
+> rows in S.2.
+
+Performance note: sharding divides contention linearly; a 16-shard/8-thread
+mixed workload takes an uncontended shard lock (~15 ns) plus one SwissTable
+probe. The read-mostly regime where readers must write nothing is a different
+shape — see C5 (COW-republish).
+
+## C5. COW-republish read-mostly map [CARD-2]
+
+Problem: read-mostly keyed state read millions of times/second where the read
+path must write NO shared cache line (else read scaling dies); occasional whole
+-table update. Par target: arc-swap snapshot load ~2 ns/read, linear read scaling
+(demand-map scenario 42, read-mostly arc).
+
+Pattern: hold an immutable `table<K, V, h>` behind one shared cell; a reader
+loads the current snapshot (a pure read, zero shared writes); a writer CLONES
+the whole table, mutates the clone, and atomically republishes it (copy-on-write
+republish); the old snapshot is reclaimed when its last reader releases it.
+
+Clone-is-publish constant (measured, `evidence/microbench/RESULTS.md`): the
+whole-table clone IS the publish cost. POD / handle-valued tables clone at ~1-2
+ns/entry — ~1-2 ms per 1,000,000 entries — so COW republish is viable at modest
+update rates. KB-value tables clone at ~360-3060 ns/entry — ~3 s per 1,000,000
+entries — so republish is non-viable except at very low update rates; that
+regime belongs to C4 (sharded-mutex) or a deferred in-place concurrent table.
+The falsifier MUST pick its constant by the target scenario's value type; the
+old ~50-100 ns/entry blanket figure is wrong in both directions (25-100x high
+for POD, 3-30x low for KB values).
+
+> **UNSPELLABLE IN v0 [CARD-2 FLAG].** Two gaps, neither invented here. (1) The
+> atomic-pointer publish and cross-thread reader sharing are concurrency — CAP-1
+> gives no thread construct and no atomic cell. (2) There is NO `tbl_clone` op:
+> the S.2 `table` form declares no whole-table clone row, so even the
+> single-threaded clone-modify step has no v0 spelling. This card is therefore a
+> pattern + measured viability rule; it becomes writable when the table form
+> gains a `tbl_clone` row (its cost the constants above) and the concurrency
+> layer provides a shareable atomic snapshot cell. Do not spell either today.
+
+## C6. Durability-ordering — WAL fsync discipline [CARD-3]
+
+Problem: "these bytes are on stable storage before that state becomes valid."
+Log append then ONE `fdatasync` per commit batch; checkpoint = write-new,
+`fsync`, `rename`, directory `fsync`; checksummed frames so a torn tail is
+detectable; recovery truncates at the first bad checksum. Par target: SQLite
+3.45 WAL mode ~20-50k commits/s batched on NVMe vs ~100-250/s naive per-commit
+fsync (demand-map scenario 49). SOTA wins by minimizing fsync COUNT (group
+commit), not write speed — `fdatasync` is the ~20-100 us wall.
+
+The rows this card leans on are the enumerated io-file rows (`IO-ROW-ENUMERATION.md`),
+cited not restated, exactly as C1 cites the pool rows: `pwrite` (row 5,
+positional append at an explicit offset), `fdatasync` (row 7), `fsync` (row 8),
+`fsync`-on-directory-handle (row 9), `rename` (row 10). Failure is a value
+(`Result`, errno class); `try` propagates it.
+
+```
+fn wal_commit['h, 'f](log: &uniq 'h io_file, frame: slice<'f, u8>, off: own u64) -> own Result<unit, IoError> reads('f), writes('h) {
+  doc "Append the checksummed frame, then one fdatasync makes the commit durable; data is written before the record it validates.";
+  let wrote: own u64 = try pwrite(log, frame, off);
+  let synced: own unit = try fdatasync(log);
+  return Ok(value: unit);
+}
+```
+
+> **DARWIN DURABILITY PIN [CARD-3 FLAG].** On macOS, plain `fdatasync`/`fsync`
+> return before the drive cache is flushed; the durable spelling is
+> `fcntl(fd, F_FULLFSYNC)` (`IO-ROW-ENUMERATION.md` rows 7/8/9 and §3(b)). A
+> WAL-durability test on the dev machine is void unless `fdatasync`/`fsync`
+> lower to `F_FULLFSYNC` on Darwin; `F_BARRIERFSYNC` is ordering-only and does
+> NOT satisfy a commit. Also pending: the io-file rows are enumerated but not yet
+> a sealed form in S.0-S.3, so `io_file`/`IoError` here are cited like C1's
+> `pool` — a pending-catalog handle, not yet an optables row.
+
+Checkpoint (write-new + `fsync` + `rename` + directory `fsync`) publishes a new
+generation atomically: the rename is durable only after the directory `fsync`
+(F_FULLFSYNC on the dir fd, Darwin). Recovery replays frames via a `pread` loop
+to the first checksum mismatch, then truncates there — a torn tail never
+corrupts a committed prefix. This is a checked-library shape over the io rows;
+sealing buys no mechanism (the `fdatasync` cost dominates by 2-3 orders of
+magnitude), which is why durability is a card, not a form.
+
+## C7. Tiny-map — inline linear scan [CARD-4]
+
+Problem: a map whose n is statically tiny (<= ~8-16), built and dropped millions
+of times, so construction cost matters as much as lookup and no heap allocation
+is tolerated at tiny n. Par target: LLVM `SmallDenseMap<K,V,8>` beats `DenseMap`
+~3-4x on the build-4/lookup-4/drop microcycle; the blessed form must beat a plain
+SwissTable on "millions of 4-entry maps" by >=2x (demand-map scenario 7).
+
+Pattern: a `seq<Pair, N>` with inline capacity `N` (frame-resident while
+unspilled, SEQ-2 — zero heap touch at n <= N); lookup is a linear `for_each`
+scan comparing keys; no hashing at tiny n (a quality hash of an 8-byte key costs
+about as much as the whole scan). Insert appends a fresh `Pair` (or overwrites on
+a key hit). It is nearly a knob on the sequence, not a new container.
+
+```
+struct Pair { key: u64; val: u64; }
+
+struct FindEnv { want: u64; found: Bool; val: u64; }
+
+fn find_visit['v](env: &uniq 'v FindEnv, item: &'v Pair) -> own Bool reads('v), writes('v) {
+  doc "Stop (False) at the first key match, recording the value into env.";
+  let k: own u64 = deref(item).key;
+  let hit: own Bool = ieq<u64>(k, deref(env).want);
+  match hit {
+    True() => {
+      set deref(env).val = deref(item).val;
+      set deref(env).found = True();
+      return False();
+    }
+    False() => {
+      return True();
+    }
+  }
+}
+
+conform FindEnv : SeqVisit<Pair> { visit = find_visit; }
+
+fn tiny_get['r](m: &'r seq<Pair, 8>, want: own u64) -> own Option<u64> reads('r) {
+  doc "Linear scan of an inline pair sequence; no hashing, no heap at n <= 8.";
+  region 'v {
+    let env: own FindEnv = FindEnv(want: want, found: False(), val: 0_u64);
+    seq_for_each<FindEnv>(m, &uniq 'v env);
+    let ok: own Bool = env.found;
+    match ok {
+      True() => {
+        return Some(value: env.val);
+      }
+      False() => {
+        return None();
+      }
+    }
+  }
+}
+```
+
+`find_visit` declares `reads('v), writes('v)`, contained in `SeqVisit`'s ceiling
+and exactly what it exhibits ([CAT-5a]). `tiny_get`'s own row is `reads('r)`: the
+`'v` effects are confined to the `region 'v { }` block, and the join uses
+`find_visit`'s non-trapping row. Performance contract: at n <= 8 the scan touches
+1-2 cache lines with a perfectly predicted loop and zero allocation, versus a
+freshly-allocated cold SwissTable's hash + group load; on the millions-of-tiny-
+maps compiler workload this is the >=2x win. Insert is `seq_push(move Pair(...))`
+(append) or a scan-then-`seq_set` overwrite; spill past `N` is one-way to heap
+(SEQ-2), at which point a SwissTable is the better shape (the knob's threshold).
+
+Replaces: a heap-allocated `HashMap` per tiny scope (a malloc + cold hash per
+build) and hand-rolled parallel key/value arrays.
+
+## C8. Validated-view — typed view over borrowed bytes [CARD-5]
+
+Problem: overlay typed, endian-explicit accessors on a borrowed byte buffer after
+one length/shape validation, so each subsequent field access is a plain load with
+no residual checks; no copy; view lifetime tied to the buffer. Par target:
+zerocopy 0.8 field access is codegen-identical to a raw C load (1 load [+1 bswap],
+verified by asm diff); demand-map scenario 27.
+
+Pattern: validate the buffer length ONCE, then read fields. Reads use
+`len<u8>`/`index<u8>` (both from the kernel op table) over a `buffer<u8>` or
+`slice<'r, u8>`.
+
+```
+fn header_kind['r](buf: &'r buffer<u8>) -> own Option<u32> reads('r), traps {
+  doc "Validate length once, then read the big-endian u16 at offset 0 by byte assembly (v0 has no typed load).";
+  let n: own u64 = len<u8>(deref(buf));
+  let ok: own Bool = ige<u64>(n, 2_u64);
+  match ok {
+    False() => {
+      return None();
+    }
+    True() => {
+      let b0: own u8 = index<u8>(deref(buf), 0_u64);
+      let b1: own u8 = index<u8>(deref(buf), 1_u64);
+      let hi: own u32 = cvt<u8, u32>(b0);
+      let lo: own u32 = cvt<u8, u32>(b1);
+      let hishift: own u32 = ishl.wrap<u32>(hi, 8_u32);
+      let kind: own u32 = ior<u32>(hishift, lo);
+      return Some(value: kind);
+    }
+  }
+}
+```
+
+> **NOT AT PAR IN v0 [CARD-5 FLAG].** The par target is 1 load per field; the code
+> above is byte assembly — 4-8 instructions per multi-byte field (`index<u8>`
+> reads ONE byte; a u16/u32 is shifted and OR-ed together). Two gaps, neither
+> invented here: (1) there is no byte->typed load op — `reinterpret` is
+> scalar<->scalar (i32<->u32, {i,u}32<->f32, ...), never bytes->u32 out of a
+> slice; (2) even the retained per-byte `index` bounds checks (the `traps` in the
+> row) are only elidable by a length-fact-dominates-bounds extension, the same
+> gated F-extension the C2 ring's pow2 mask needs. At-par validated views require
+> a future typed-view form (validate-once, then endian-explicit unaligned loads
+> with the bounds fact discharged). Until then this card fails closed to correct-
+> but-not-at-par byte assembly; correctness is never conditional on the missing
+> form, only the band is.
+
+Replaces (once the view form lands): `memcpy`-then-parse and per-field re-
+validation; the value is that the one-time length/shape check licenses every
+later field load.
 
 ## Demoted cards (stubs; non-normative full text in `examples/`) [M5R3-PART2]
 
