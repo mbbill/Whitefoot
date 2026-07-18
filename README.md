@@ -1,16 +1,8 @@
 # Whitefoot
 
-A systems language for AI-written, human-approved code. The checker makes the
-memory-corruption, data-race, silent-overflow, and uninitialized-read bug
-classes unrepresentable — no unsafe escape exists — and its proofs feed the
-optimizer, so checked code runs at C-class speed: safety checks are always on
-unless a machine-verified proof discharges them.
+Whitefoot is a systems language that an AI writes and a human approves. Four bug classes simply don't compile: memory corruption, data races, silent overflow, and uninitialized reads. There is no `unsafe` escape to reach for. The checks that rule those bugs out also give the optimizer facts it can trust, so checked code runs at C speed. Every check stays in unless a machine proof takes it out.
 
-Here is what that means in one program.
-
-**This is base64. Every array read and write in it is bounds-checked at
-runtime — and the language has no `unsafe`, no `get_unchecked`, no way for a
-writer to turn a check off by hand.**
+Base64 shows the bargain in one function. Every array read and write below is bounds-checked at runtime. No `unsafe`, no `get_unchecked`, no way to switch a check off by hand.
 
 ```
 fn encode ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64
@@ -22,45 +14,27 @@ fn encode ['r] (out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64
 }
 ```
 
-One line of contract — *the output buffer is big enough* — is checked once on
-entry. A machine proof then carries that fact into the loop and discharges all
-27 bounds checks inside it. Same source, checks retained versus proven away:
-2.48 → 4.23 GB/s (**1.71x**), output byte-identical, the entry check still live
-(an undersized buffer traps at the boundary — even for a C caller).
+One `requires` line states that the output buffer is big enough. It runs once, at entry. A machine proof carries that fact into the loop and clears all 27 bounds checks inside it. The same source runs at 2.48 GB/s with the checks in place and 4.23 GB/s after the proof removes them, a 1.71x gain. Output stays byte-identical. The entry check still traps an undersized buffer, even when C code calls in.
 
-Now the same work in Rust, same machine, full RFC semantics, isolated
-processes:
+Rust runs the same task on the same machine, full RFC semantics, isolated processes:
 
 | implementation | throughput | vs Whitefoot |
 |---|---:|---:|
-| **Whitefoot** — obvious loop + one checked `requires` line | **4.285 GB/s** | — |
-| Rust — obvious indexed loop | 2.673 GB/s | 1.60x slower |
-| Rust — obvious loop + `assert!` up front | 2.677 GB/s | 1.60x slower |
-| Rust — expert `chunks_exact/zip` restructure | 4.297 GB/s | tie |
-| Rust — `unsafe` indexed | 4.111 GB/s | 1.04x slower |
+| **Whitefoot**, obvious loop plus one checked `requires` line | **4.285 GB/s** | baseline |
+| Rust, obvious indexed loop | 2.673 GB/s | 1.60x slower |
+| Rust, obvious loop plus `assert!` up front | 2.677 GB/s | 1.60x slower |
+| Rust, expert `chunks_exact/zip` restructure | 4.297 GB/s | tie |
+| Rust, `unsafe` indexed | 4.111 GB/s | 1.04x slower |
 
-Read the middle two rows. The `assert!` that *looks* like it should let the
-optimizer drop the checks recovers **nothing** — LLVM cannot connect it to the
-loop. Only an expert who knows the `chunks_exact` restructuring reaches the
-fast class, and even `unsafe` indexing is slightly slower. In Whitefoot the
-**obvious** shape plus one checked line gets there, with every bound still
-enforced.
+The two middle rows carry the lesson. An `assert!` that should let the optimizer drop the checks buys nothing, because LLVM cannot tie it to the loop. To reach the fast class in Rust you restructure into `chunks_exact`, an idiom you have to already know, and even `unsafe` indexing lands a little behind. Whitefoot reaches it from the obvious loop plus one checked line, and keeps every bound. Speed comes from proof, never from dropping a check.
 
-That is the whole idea in one program: **speed is earned by proof, never
-bought by weakening a check.**
+For the full argument, read [docs/why-whitefoot.md](docs/why-whitefoot.md): effect rows the optimizer trusts across opaque boundaries, ownership-driven guard-free vectorization, checked algebraic laws, and the cases where Whitefoot loses.
 
-The full argument — effect rows the optimizer trusts across opaque boundaries,
-ownership-driven guard-free vectorization, checked algebraic laws, and what it
-honestly does *not* beat — is in **[docs/why-whitefoot.md](docs/why-whitefoot.md)**.
-
-Highlights so far (each with a RESULTS.md under `experiments/`):
-- default floor: first-green `gpt-5.6-terra` Whitefoot programs beat the ordinary
-  public paths of two released Rust crates by 1.653x and 1.098x on locked
-  workloads, with every reported Whitefoot bounds check retained.
-- wc: byte-identical under LC_ALL=C, ~2x GNU coreutils on default invocation.
-- The classifier-kernel study: i1-dataflow parity with C and safe Rust.
-- Checked algebraic laws: 3.3x on reductions, with FALSE laws refuted at
-  compile time — the transform Rust must take on faith.
+Each highlight below links to a RESULTS.md under `experiments/`:
+- Default floor: the first correctness-green program from a `gpt-5.6-terra` run beat two released Rust crates by 1.653x and 1.098x on locked workloads, every bounds check still in place.
+- wc: byte-identical output under LC_ALL=C, about 2x faster than GNU coreutils on the default invocation.
+- Classifier kernel: i1 dataflow ties C and safe Rust.
+- Checked algebraic laws: 3.3x on reductions, and a false law fails to compile.
 
 ## Where things are
 
@@ -79,9 +53,4 @@ Highlights so far (each with a RESULTS.md under `experiments/`):
 
 ## Verification
 
-Two gates, both required green: `make check` (spec CI, rule tests, soundness
-probes, performance pins, codegen parity corpus, conformance suite) and
-`make -C compiler check` (the wfc test stack, including the self-parse gate).
-Every completed unit of work commits with a one-line entry in the decision
-log — the repo is designed so that any fresh session can resume from
-`git log` plus the log tail alone.
+Both gates run green or the build fails. `make check` covers spec CI, rule tests, soundness probes, performance pins, the codegen-parity corpus, and the conformance suite. `make -C compiler check` runs the wfc test stack, including the self-parse gate. Every finished step commits with one line in the decision log, so a fresh session resumes from `git log` and the log tail alone.
