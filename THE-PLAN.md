@@ -123,6 +123,30 @@ Execute these steps in order:
 New helper functions change the unit total, so each slice regenerates and pins
 the exact count. Facts remain disabled throughout this phase.
 
+**Open decision — the no-reborrow rule (gates classifying wfc's reborrowing
+functions).** Growing body semantics surfaces a conflict between wfc's own
+source and the accepted language: wfc borrows a sub-place of an exclusive
+`&uniq` holder and passes it onward — a reborrow — at roughly 1,279 sites (for
+example `frontend_unit_reset` forms `&uniq 'frontend_reset_tokens
+deref(analyzed).tokens`). v0.6 forbids reborrowing (PATTERNS P4 / T-A); that ban
+keeps the ownership no-alias facts unconditional and is a load-bearing
+optimizer-fact guarantee. The current wfc source is not authoritative: it is
+early code and may be wrong. Do not relax the rule to make wfc pass, and do not
+treat wfc's current shape as the answer. Before any reborrowing function is
+classified clean, run a recorded investigation of the two options — keep the
+rule and rewrite the code into a no-reborrow shape, or change the rule to admit
+some form of reborrowing — comparing written pros and cons, a soundness argument
+that any proposed relaxation preserves the ownership no-alias / T-A facts, and
+measured data (checker feasibility, code shape, performance). A kernel-spec
+change follows only if that evidence concludes the rule should change, and then
+only through the owner gate: a new spec version, the full hostile-review
+landing, and a logged approval. Until the decision lands, these functions stay
+"legal but unsupported" — an interim state only. The decision must resolve (rule
+kept and code rewritten, or rule relaxed through the owner gate) and every
+reborrowing function must lower before the Phase 2 whole-unit lowering and
+facts-off self-hosting fixpoint gate; no function may remain unsupported at the
+Phase 2 exit.
+
 **Exit gate:** the exact compiler unit has complete body semantics and lowering;
 stage-1 wfc matches stage 0 on compiler-subset conformance; the facts-off IR
 fixpoint is byte-identical; both project gates pass.

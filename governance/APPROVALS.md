@@ -18,6 +18,12 @@ deleting, or weakening an existing one — or regenerating a pinned oracle diges
 requires an approval below. Never make a failing check pass by changing what it
 expects.
 
+An approval that relaxes a rule or changes accepted semantics must rest on a
+recorded investigation — the alternatives considered, pros and cons, a soundness
+argument, and data — and must cite where that investigation is recorded (the
+decision-gates.md line or dossier path). Every approval's stated reason must rest
+on evidence, never on convenience or on the shape of existing code.
+
 Protocol for an approved change:
 
 1. Present the exact delta to the owner and get explicit approval in the session.
@@ -27,8 +33,9 @@ Protocol for an approved change:
    hash. `make check`'s `spec-guard` layer fails on any guarded change whose
    baseline hash is not logged here.
 
-Each entry records: the date, that the owner approved, the reason, and the
-`baseline` SHA-256 the approval authorizes.
+Each entry records: the date, that the owner approved, the reason, the
+`baseline` SHA-256 the approval authorizes, and, for a rule relaxation or
+semantic change, a pointer to the recorded investigation it rests on.
 
 ## 2026-07-18 — approval
 - owner: approved in session

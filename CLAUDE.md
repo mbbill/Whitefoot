@@ -48,6 +48,15 @@ proof discharges them — speed is earned by proof, never by weakening a check.
   change — never revise a numbered specification in place. Record the owner's
   approval in `governance/APPROVALS.md`; that logged approval is the
   authorization to commit.
+- Earn a spec change with evidence, never convenience. The accepted specification
+  is the authority; the current wfc source is not — it is early code that may be
+  wrong. A conflict between wfc and the spec is an investigation, not a license to
+  relax the rule: record the alternatives (fix the code to fit the rule vs. change
+  the rule), their pros and cons, a soundness argument for any proposed relaxation,
+  and measured data (checker feasibility, code shape, performance) before bringing
+  the owner-gated change. Never relax a rule on the ground that existing code
+  violates it; a spec change must be earned by a soundness or design argument that
+  stands on its own, independent of what the current code happens to do.
 - The semantics-bearing test surface is owner-gated the same way: conformance
   expected verdicts (`conformance/manifest.jsonl` + `conformance/cases/**`),
   frozen oracle digests, and the reference semantics tests
