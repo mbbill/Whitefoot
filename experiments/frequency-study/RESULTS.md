@@ -2,7 +2,7 @@
 
 Status: **provisional GO; directional evidence only; study stopped**
 
-The pilot did what it was meant to do: cheaply estimate whether whitefoot still has
+The pilot did what it was meant to do: cheaply estimate whether Whitefoot still has
 plausible leverage in real Rust code. It did not measure a whole-program
 speedup, establish population prevalence, or validate every raw source signal.
 
@@ -21,7 +21,7 @@ Approximate source signals in the 30 eligible projects were:
 | strict unsigned saturating reassociation | 0 | 0 |
 
 The expert-shape controls found 8 `chunks_exact`, 23 `get_unchecked`, and 59
-`zip` records. They are context for authorship style, not missed whitefoot wins.
+`zip` records. They are context for authorship style, not missed Whitefoot wins.
 
 The manual current-whitefoot bounds/alias audit classified all 31 high-signal
 records as follows:
@@ -81,7 +81,7 @@ Alias-versioning results:
 - `crc` had zero.
 
 The `inferno` cases are real local-allocation disjointness facts, but they are
-outside current whitefoot's emitter/expressibility and are likely small. They do not
+outside current Whitefoot's emitter/expressibility and are likely small. They do not
 count as current-whitefoot advantages.
 
 The effect-attribute classifier could not resolve cross-module targets from
@@ -125,7 +125,7 @@ compiler experiment rather than another frequency scan.
 **Provisional GO: stop analyzing and move on.** The evidence supports the next
 bounded work being improved bounds/precondition proof plus real workload ports.
 It does not support prioritizing checked-law or current scoped-alias frequency,
-and it does not establish that whitefoot is faster than Rust on whole projects.
+and it does not establish that Whitefoot is faster than Rust on whole projects.
 
 The reason to proceed is narrower: ordinary popular code contains surviving
 bounds checks and source shapes worth testing, the current proof-elision channel

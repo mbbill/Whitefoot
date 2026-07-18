@@ -3,7 +3,7 @@
 Status: **complete directional pilot; stop after this run**
 
 This directory answers one practical question: do ordinary, popular Rust
-projects contain enough optimization shapes relevant to current whitefoot to
+projects contain enough optimization shapes relevant to current Whitefoot to
 justify moving on? It is disposable research tooling, not a general Rust
 analyzer, a preregistered population study, or a source of precise prevalence
 estimates.
@@ -101,7 +101,7 @@ python3 -B experiments/frequency-study/effect-attrs/classify_ir.py \
 
 The source audit inspected all high-signal index and alias records, rejecting
 test/generated code, already expert-safe shapes, unrelated alias relationships,
-and cases current whitefoot cannot express or annotate. Application candidates were
+and cases current Whitefoot cannot express or annotate. Application candidates were
 audited again rather than promoted automatically. Three buildable libraries
 (`comrak`, `inferno`, and `crc`) received a small optimized-IR follow-up.
 

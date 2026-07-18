@@ -13,7 +13,7 @@ their limits are stated in §7.
 
 ## 1. The goal and the shape of the answer
 
-**The objective (D15, `../../notes/user-directives.md`).** whitefoot must be usable
+**The objective (D15, `../../notes/user-directives.md`).** Whitefoot must be usable
 for general systems programming at top-tier performance. It does NOT need to let
 you rewrite existing software line by line. It must provide, for MOST
 systems-programming scenarios, at least ONE blessed way of writing whose
@@ -456,7 +456,7 @@ soundness basis.
 
 *Recommendation.* **Adopt (a).** The concurrency review converged on CONC-0 as
 the necessary and sufficient foundation; three review rounds could spell no
-data race against the resulting text. The cost is unavoidable if whitefoot is to have
+data race against the resulting text. The cost is unavoidable if Whitefoot is to have
 safe concurrency at all, and it is smaller than any alternative that was tried.
 
 ### Decision 2 — Loop-spawn: fixed vs dynamic fan-out

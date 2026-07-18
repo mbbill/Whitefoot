@@ -1,4 +1,4 @@
-# whitefoot conformance suite
+# Whitefoot conformance suite
 
 A **spec-anchored, rule-keyed, toolchain-agnostic** test system. It tests the
 *language* — `source → verdict` — not any prototype's internals, so the same suite
@@ -10,7 +10,7 @@ It is the production artifact of the toolchain. The checker and democ are dispos
 the guarantees this suite pins are not.
 
 ## Layout
-- `cases/<id>.wf` — one canonical whitefoot program per case (also a FORM-1/2 byte-exact fixture).
+- `cases/<id>.wf` — one canonical Whitefoot program per case (also a FORM-1/2 byte-exact fixture).
 - `manifest.jsonl` — one JSON object per case: the rule id(s) it exercises + the expected verdict + status.
 - `runner.py` — the runner (a toolchain **adapter**) + the coverage tracker.
 

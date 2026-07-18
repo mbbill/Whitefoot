@@ -1,4 +1,4 @@
-# whitefoot: what's different, and why
+# Whitefoot: what's different, and why
 
 *For people who already write Rust, C, and C++ — and for people who only
 prompt.*
@@ -59,7 +59,7 @@ an algebraic law (§ 6); and a large installed base forbids ever deleting the
 slow shapes from the language (§ 1).
 
 The rungs are ordered. Each language further down the ladder keeps more facts
-in the source, and each is faster *for that reason*. whitefoot is designed as the
+in the source, and each is faster *for that reason*. Whitefoot is designed as the
 limit of the ladder.
 
 Two more observations complete the argument.
@@ -104,7 +104,7 @@ recover downstream, because nothing is discarded upstream.
 
 That is the spine of this document. The goal, in one statement:
 
-> **whitefoot is built to beat the C baseline, not to reach it. It can express
+> **Whitefoot is built to beat the C baseline, not to reach it. It can express
 > what C expresses where performance lives, and it hands the backend
 > machine-checked facts C and Rust structurally cannot: guaranteed aliasing
 > from ownership, effect declarations the optimizer can trust across opaque
@@ -114,7 +114,7 @@ That is the spine of this document. The goal, in one statement:
 > unrepresentable.**
 
 And the honesty bar the project holds itself to, stated up front: **if a
-design decision leaves whitefoot equivalent to Rust, the decision failed — "just
+design decision leaves Whitefoot equivalent to Rust, the decision failed — "just
 use Rust" was cheaper.** Every difference described below names what it buys.
 
 ---
@@ -158,7 +158,7 @@ get large fast — *whatever is representable will eventually be written.* Rust
 cannot enforce a floor under program quality, because its human contract
 forbids taking shapes away.
 
-whitefoot's bet is to constrain the writable shape-space itself. One spelling per
+Whitefoot's bet is to constrain the writable shape-space itself. One spelling per
 construct, to the byte. One loop form, one conditional form. Overflow
 behavior chosen in the operation's name, per call site. A closed, taught
 catalog of program architectures. Runtime checks that only a machine proof
@@ -177,7 +177,7 @@ the shapes that run fast. (Both results carry their protocols and caveats in
 the repository; they are floor evidence for these two libraries and corpora,
 not a universal claim.)
 
-For the ceiling, whitefoot wins where its extra fact channels bite and ties
+For the ceiling, Whitefoot wins where its extra fact channels bite and ties
 elsewhere; Part II shows both honestly. But the core answer to "why not
 Rust" is the floor, because for the floor Rust has no mechanism at all.
 
@@ -197,7 +197,7 @@ Two follow-up objections, answered briefly:
 
 ## 2. What safety is actually for here
 
-Safety in whitefoot is not the mission statement; it is load-bearing
+Safety in Whitefoot is not the mission statement; it is load-bearing
 infrastructure, and it is worth being precise about the two jobs it does.
 
 **Job 1: safety is a floor mechanism.** The writer is an AI. Some writers,
@@ -208,7 +208,7 @@ data races, use-after-free, dangling references, double-free, uninitialized
 reads, and silent overflow are not *detected* — they are **unrepresentable**
 in accepted programs. There is no `unsafe` block to review, because there is
 no `unsafe` block. Rust polices this boundary by convention (CI bans, code
-review of `unsafe`); whitefoot has nothing to police. This is one of several
+review of `unsafe`); Whitefoot has nothing to police. This is one of several
 mechanisms — alongside the single spelling, the taught catalog, and the
 checked contracts — that hold the floor: even a bad writer's accepted program
 is a good program.
@@ -248,7 +248,7 @@ Apple M4 with the exact protocols in each experiment's RESULTS file.
 
 ## 3. Everything is checked — so where does the speed come from?
 
-Start with the objection the previous sentence invites. In whitefoot, every
+Start with the objection the previous sentence invites. In Whitefoot, every
 risky operation is checked at runtime: every index is bounds-checked, every
 `.trap` arithmetic op traps on overflow, and there is no way to write "trust
 me" — no `unsafe`, no `get_unchecked`, no assume-intrinsic. A writer cannot
@@ -357,9 +357,9 @@ Now the comparison that makes this a language argument rather than a
 compiler trick. A controlled adversary run (all variants full RFC semantics,
 all enforcing the same entry relation, same machine, isolated processes):
 
-| variant | throughput | vs whitefoot |
+| variant | throughput | vs Whitefoot |
 |---|---:|---:|
-| whitefoot, obvious loop + checked `requires` | 4.285 GB/s | 1.000 |
+| Whitefoot, obvious loop + checked `requires` | 4.285 GB/s | 1.000 |
 | Rust, obvious indexed loop | 2.673 GB/s | 1.60x slower |
 | Rust, obvious loop + `assert!` up front | 2.677 GB/s | 1.60x slower |
 | Rust, expert `chunks_exact/zip` restructure | 4.297 GB/s | tie (0.997) |
@@ -370,7 +370,7 @@ Read the table twice.
 - The folk remedy is measured dead: **`assert!` recovers nothing.** LLVM
   cannot connect a top-of-function assert to the coupled `i += 3, o += 4`
   induction, so every interior check stays. The thing that looks like a
-  contract optimizes like a comment. whitefoot's `requires` differs precisely in
+  contract optimizes like a comment. Whitefoot's `requires` differs precisely in
   that the *checker* makes the connection, deterministically, and reports
   which fact discharged which site.
 - Expert safe Rust ties — say it plainly. A `chunks_exact/zip` restructure
@@ -379,14 +379,14 @@ Read the table twice.
   and nothing verifies the reasoning. The obvious shape stays 1.6x behind.
 - Even `unsafe` buys nothing here — slightly worse than both.
 
-That is the floor claim in one experiment: **in whitefoot the obvious shape plus
+That is the floor claim in one experiment: **in Whitefoot the obvious shape plus
 one checked line reaches the expert class; in Rust the obvious shape stays
 1.6x behind and the honest-looking remedy does not work.** And the ceiling
 tie is the honest half of the same story.
 
 ## 4. Effect rows the optimizer can trust across an opaque boundary
 
-Every whitefoot signature declares its effects: `pure`, or a row of
+Every Whitefoot signature declares its effects: `pure`, or a row of
 `reads('r)`, `writes('r)`, `allocates(...)`, `traps`. The row is checked in
 **both directions** — a function that exhibits an effect it did not declare
 is rejected, and a function that declares an effect it does not exhibit is
@@ -443,7 +443,7 @@ Rust's ordinary cross-crate build (no LTO) runs the same 1.49 s; Rust with
 **fat LTO ties us**, because with the whole program visible LLVM infers the
 same facts.
 
-So state the delta precisely: **whitefoot's per-file default equals Rust's most
+So state the delta precisely: **Whitefoot's per-file default equals Rust's most
 expensive build configuration**, and the guarantee holds where inference
 cannot reach — genuinely opaque objects, cached artifacts, foreign
 boundaries with declared effects, and bodies too complex for the attributor.
@@ -462,7 +462,7 @@ Two experiments, one mechanism: the borrow mode on a signature becomes
 
 **First, the C-facing half.** The classic reduction —
 `accumulate(acc, addend, n)` where the body folds `*addend` into `*acc` —
-compiled from whitefoot borrows versus plain C pointers. Naive C must reload and
+compiled from Whitefoot borrows versus plain C pointers. Naive C must reload and
 re-store through both pointers every iteration, because `acc` and `addend`
 might alias:
 
@@ -477,11 +477,11 @@ LBB0_2:
 	b.ne	LBB0_2
 ```
 
-whitefoot's `&uniq acc, & addend` emits `noalias`/`readonly` on the parameters
+Whitefoot's `&uniq acc, & addend` emits `noalias`/`readonly` on the parameters
 by construction, and the loop keeps everything in registers:
 
 ```
-_accumulate:                     ; whitefoot, from the borrow modes
+_accumulate:                     ; Whitefoot, from the borrow modes
 	ldr	x8, [x1]              ; load *addend once
 	ldr	x9, [x0]              ; load *acc once
 LBB0_2:
@@ -493,12 +493,12 @@ LBB0_2:
 ```
 
 On the additive variant of this kernel the same fact changes the complexity
-class: naive C keeps an O(n) loop behind a runtime alias check while whitefoot
+class: naive C keeps an O(n) loop behind a runtime alias check while Whitefoot
 collapses it to a single multiply-add — measured **≈22x** over unannotated C.
 Honest label: C with a correct `restrict` and Rust's `&mut` both reach the
 same code here — parameter-level no-aliasing is table stakes among the
 fact-keeping languages. The difference at this rung is that C's fact is an
-unchecked promise the programmer must remember and get right, while whitefoot's
+unchecked promise the programmer must remember and get right, while Whitefoot's
 is a checked consequence of the type.
 
 **Second, the half Rust cannot reach.** Rust's `&mut Cols` gives LLVM
@@ -552,14 +552,14 @@ The scoreboard for the same semantics, verified in the committed assembly:
 
 | variant | vector ops | runtime alias guards | asm lines |
 |---|---:|---:|---:|
-| whitefoot, obvious shape | 8 | **0** | **121** |
+| Whitefoot, obvious shape | 8 | **0** | **121** |
 | Rust, obvious shape | 65 | 29 | 2,132 |
 | Rust, destructure-and-slice | 73 | 54 | 2,360 |
 | Rust, expert inner-fn-with-8-slice-params | 14 | 0 | 499 |
 
 And the honest timing story, all three parts of it:
 
-- **Short trips are the real speed delta**: at trip count 8, whitefoot runs 2.0x
+- **Short trips are the real speed delta**: at trip count 8, Whitefoot runs 2.0x
   Rust's obvious shape and 1.17x even the expert shape (which pays its extra
   call). Short-trip kernels called in outer loops — per-row updates, small
   fixed-width blocks — are common.
@@ -568,7 +568,7 @@ And the honest timing story, all three parts of it:
 - **Code size is the durable win**: 121 lines versus 2,132 for the same
   large-n speed — 17x. Versioned-loop bloat is invisible in a
   microbenchmark and is instruction-cache pressure in a real program. At 16
-  columns the Rust guards grow to 111 and the code to 2,836 lines; the whitefoot
+  columns the Rust guards grow to 111 and the code to 2,836 lines; the Whitefoot
   kernel stays at 183 lines with zero guards. The fact is static and O(1);
   the recovery is a runtime mechanism that scales with pointer count.
 
@@ -576,7 +576,7 @@ The safe-Rust escape (the committed `inner-fn` shape) is instructive: pass
 all eight columns as separate slice arguments to an inner function, because
 parameter-level `noalias` is the only aliasing channel Rust has. It works —
 at the cost of being the kind of idiom you must already know, applied at
-every such loop. In whitefoot the obvious shape *is* the fast shape at every
+every such loop. In Whitefoot the obvious shape *is* the fast shape at every
 trip count, which is the property that matters when the writer is not
 hand-tuning every loop.
 
@@ -599,7 +599,7 @@ Rust experts know the workaround: hand-write the multi-accumulator loop. And
 that workaround contains a hidden assertion — *the human is claiming the
 operation is associative*, and nothing checks the claim.
 
-whitefoot makes the law a checked, declared fact. The committed kernel:
+Whitefoot makes the law a checked, declared fact. The committed kernel:
 
 ```
 contract SatMonoid {
@@ -651,7 +651,7 @@ LBB1_3:                          ; reassociated: 4 independent chains
 
 Measured at n = 65,536: 0.512 ns/element for the obvious fold in *either*
 language (LLVM correctly refuses to reassociate what it cannot prove),
-0.156 ns/element for whitefoot — **3.3x from stating a fact** — tying Rust's
+0.156 ns/element for Whitefoot — **3.3x from stating a fact** — tying Rust's
 hand-written four-accumulator expert shape (0.159). At short arrays the
 per-call guard overhead shows and the expert shape leads (0.210 vs 0.155 at
 n = 4,096); honesty in the small print.
@@ -665,7 +665,7 @@ associative — signed saturating add, where
 - **Rust compiles it silently.** The four-accumulator loop now computes a
   different function than the fold it replaced. No warning exists or can
   exist; the language has no idea the shape encodes an algebraic claim.
-- **whitefoot rejects it at compile time.** A declared `associative` law on the
+- **Whitefoot rejects it at compile time.** A declared `associative` law on the
   signed op is *refuted* against the operation table with a rule-citing
   diagnostic (there is a conformance test pinning exactly this case), and an
   undischargeable law is a hard error — stated-but-unchecked never reaches
@@ -709,7 +709,7 @@ Measured effect on the whole kernel: the integer-recurrence form ran
 1.6–1.8x behind C and Rust; the `i1` form is at parity with both (the full
 before/after tables are in the experiment record). Safe Rust can express
 the same wide shape — this workload gives it no fact advantage — which is
-exactly why the result is filed under *floor*, not *ceiling*: in whitefoot the
+exactly why the result is filed under *floor*, not *ceiling*: in Whitefoot the
 boolean-dataflow form is the taught, blessed pattern for scanner state, so
 the writer lands on the 16-wide shape by default instead of discovering the
 1.6x cliff in production.
@@ -722,7 +722,7 @@ The sections above are fact channels: things the writer states and the
 optimizer uses. This part is the complementary bet: **remove the shapes that
 waste the facts.** The framing for an expert reader is not "you write bad
 code" — it is that nobody hand-tunes the average line under a deadline, and
-in a million-line codebase the average line is where the time goes. whitefoot
+in a million-line codebase the average line is where the time goes. Whitefoot
 makes the slow shapes unrepresentable or unreachable, so the floor rises for
 every line, not just the profiled ones.
 
@@ -757,7 +757,7 @@ Why an expert should care rather than wince:
 - **The overflow-mode split kills a real semantic divergence.** C and Rust
   ship two different programs from one source: Rust panics on overflow in
   debug and wraps in release; C invokes undefined behavior on signed
-  overflow, and the optimizer *uses* that. In whitefoot, debug and release
+  overflow, and the optimizer *uses* that. In Whitefoot, debug and release
   optimize the *same program* — every mode is spelled at the site, so there
   is nothing for the build type to reinterpret. `iadd.trap` also traps in
   release; `iadd.wrap` also wraps in debug. What you test is what ships.
@@ -767,7 +767,7 @@ irregularity, and every mechanism in Part II leans on it.
 
 ## 9. A closed, taught catalog of architectures; data-oriented layout by default
 
-At statement level, whitefoot forces one loop form and one conditional. The same
+At statement level, Whitefoot forces one loop form and one conditional. The same
 policy is applied at *architecture* level: the set of blessed program-scale
 patterns is **closed and taught up front** — and the catalog is held to two
 tests: it must be **complete** (every task is modelable inside it; a gap is
@@ -849,7 +849,7 @@ A Rust engineer will recognize this as "just use indices into a `Vec`" —
 the arena idiom Rust folklore already recommends *to escape its own borrow
 checker* at exactly these sites. The difference is status: in Rust it is a
 workaround with a footgun (any stale index silently reads whatever occupies
-the slot now — a well-typed use-after-free); in whitefoot it is the blessed
+the slot now — a well-typed use-after-free); in Whitefoot it is the blessed
 pattern, taught up front, with the staleness hole closed by construction.
 
 ---
@@ -928,7 +928,7 @@ entire trust surface.
 Contrast the shape of the risk. Rust's `unsafe` is the same admission —
 "some invariants live outside the type system" — distributed as a keyword
 to every writer, in every crate, forever; the ecosystem's soundness is the
-union of every author's care. whitefoot concentrates the identical risk into
+union of every author's care. Whitefoot concentrates the identical risk into
 ten artifacts it owns, audits, and — critically — can *fix once* so the
 world recompiles. No writer-reachable syntax escalates into the privileged
 layer, so there is nothing to ban, lint, or review for.
@@ -1032,7 +1032,7 @@ holds memory wrong, the program corrupts silently. If it picks a slow
 architecture, nothing objects; you find out when your users do. Your only
 defenses are testing what you can see and trusting what you cannot.
 
-whitefoot changes what you are trusting. The AI writes; a checker — a program,
+Whitefoot changes what you are trusting. The AI writes; a checker — a program,
 deterministic, with no goodwill to appeal to — accepts or rejects. The
 categories of failure you cannot see are not found by the checker; they are
 *unwritable in the first place*. Memory corruption, data races, silent
@@ -1057,7 +1057,7 @@ caveats live in each RESULTS file; nothing here is quotable without them.
 | Proof tier: 27/27 bounds sites discharged, 2.48 → 4.23 GB/s (1.71x), entry trap retained | `experiments/port-study/base64/RESULTS.md` |
 | Pre-proof checked loop (asm) | `experiments/port-study/base64/b64.s` |
 | Proof-build IR (asm regenerable with `clang -O2 -S b64.ll`) | `experiments/port-study/base64/b64.ll` |
-| Adversary table: whitefoot 4.285 GB/s; Rust obvious 1.60x; assert 1.604x; chunks tie 0.997; unsafe 1.040 | `experiments/port-study/base64/RESULTS.md`, `adversary_benchmark.py`, pinned CSV + metadata |
+| Adversary table: Whitefoot 4.285 GB/s; Rust obvious 1.60x; assert 1.604x; chunks tie 0.997; unsafe 1.040 | `experiments/port-study/base64/RESULTS.md`, `adversary_benchmark.py`, pinned CSV + metadata |
 | Effect rows: 1.47 s → 0.00 s across opaque boundary; Rust no-LTO 1.49 s; fat LTO ties | `experiments/effect-attrs-channel/RESULTS.md`, `main_attr.s`, `main_plain.s`, `kernel.wf` |
 | Naive C vs borrow-derived noalias; ≈22x additive variant; Rust parity | `experiments/codegen-vs-rust-c/SUMMARY.md`, `asm/kernelB_c.s`, `asm/kernelB_xl_acc.s` |
 | Vectorization: 0 guards/121 lines vs 29 guards/2,132 lines; short-trip 2.0x; long-trip tie; 16-column scaling | `experiments/scoped-alias-channel/RESULTS.md`, `kernel.wf`, `kernel_facts.s`, `rust_kernels.rs`, `rust_kernels.s` |

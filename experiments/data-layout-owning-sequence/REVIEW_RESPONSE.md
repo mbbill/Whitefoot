@@ -214,7 +214,7 @@ justified; they are not silently promoted into language law.
 
 The following evidence survives the revisions:
 
-- whitefoot currently cannot express fixed `buffer<Record>` AoS storage;
+- Whitefoot currently cannot express fixed `buffer<Record>` AoS storage;
 - wfc's current SoA has plausible workload and memory advantages and remains the
   protected baseline;
 - natural fixed AoS would increase Token/Ast requested bytes by 11.1% and total

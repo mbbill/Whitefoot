@@ -62,7 +62,7 @@ runtime gate later only for a stable, dedicated benchmark host.
 ## Manifest vocabulary
 
 Each variant names a `kind` (`whitefoot`, `c`, or `rust`), source, optimization
-level, and optional function. whitefoot variants may disable the fact bundle with
+level, and optional function. Whitefoot variants may disable the fact bundle with
 `"facts": false`; `"elide_bounds": true` is reserved for the explicitly
 labelled ceiling audit. Checks compare `variant.metric` to a literal or another
 variant. Supported operators are `eq`, `ne`, `lt`, `le`, `gt`, and `ge`.

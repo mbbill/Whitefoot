@@ -11,7 +11,7 @@ growable collections, no pool, and no generics.
 
 ## Where wfc stands (measured, not aspired)
 
-- 32 whitefoot source files, 23,962 lines and 477 functions, compiled by stage 0
+- 32 Whitefoot source files, 23,962 lines and 477 functions, compiled by stage 0
   (`prototype/democ`). The exact unit currently parses to 211,374 tokens and
   105,550 AST nodes.
 - Frontend COMPLETE for wfc's own source: lexer (canonical OPNAME
@@ -163,7 +163,7 @@ It needs nested `let`/`match`/early-return flow, primitive expression typing,
 multi-argument user-call checking, named-argument mapping, and effect
 containment. It adds no LLVM lowering; the current 15-function module remains
 byte-identical. Freeze the new total only after implementation because any new
-whitefoot helper also enters the audited unit. The next expected source-order
+Whitefoot helper also enters the audited unit. The next expected source-order
 frontier is `lexer_ampuniq_at`.
 GATE: differential accept/reject parity with the stage-0 checker over (a) the
 whole compiler unit and (b) every conformance case whose constructs fall
@@ -227,10 +227,10 @@ and Result<aggregate, E> lowering (unlocks the streaming DecodeStep shape).
 
 The experiment track runs beside the build track but does not steer it before
 measurement. D9a now scores one fixed low-tier model's first correctness-green
-whitefoot artifact against a previously untuned shipped Rust library; base64 is
+Whitefoot artifact against a previously untuned shipped Rust library; base64 is
 ineligible because it already shaped PROOF-1/2, and QOI is deferred until its
 aggregate-result and fixed-array needs arrive through the normal compiler
-roadmap. The selected experiment must run on whitefoot capabilities that already
+roadmap. The selected experiment must run on Whitefoot capabilities that already
 exist when its protocol is frozen. Only a post-freeze result may motivate a
 general compiler feature, which then follows the same staged, gated path as
 everything else.

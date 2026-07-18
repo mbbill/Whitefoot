@@ -21,7 +21,7 @@ CVE-2022-37434 heap-overflow class is a compile error."
   program (git, web servers, package managers) picks it up with no relink.
 - vs Rust wave: zlib-rs exists and ships in Firefox/Chromium paths — BUT it
   carries `unsafe` in SIMD/pointer hot loops (bug class only mostly gone) and
-  is human-written. whitefoot: zero unsafe incl. fast path + AI-authored.
+  is human-written. Whitefoot: zero unsafe incl. fast path + AI-authored.
 - Verify: bit-identical over Canterbury/Silesia + real blobs; zlib's own test
   suite; libFuzzer fuzz-diff; replay the CVE-2022-37434 PoC -> clean reject.
 - Rung: NEAR. Gap: growable/streaming output buffers (the one real blocker);

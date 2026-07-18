@@ -1,7 +1,7 @@
 # Concurrency — normative manual section
 
 Always-loaded normative extract of the concurrency layer (ratified per D19). This
-is what a writer needs to write correct and efficient concurrent whitefoot; the
+is what a writer needs to write correct and efficient concurrent Whitefoot; the
 rationale, review history, and regression walks live in `KERNEL-DELTAS-DRAFT.md`
 (the review record). Rules cite the kernel spec and the ratified loan rules
 (`../m1-loan-judgment/RULES-RATIFIED.md`, R1-R15, AMD-1..5). The amendments AMD-6

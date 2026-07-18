@@ -2,7 +2,7 @@
 
 Status: MEASURED 2026-07-10; PROOF-2 and controlled-adversary update
 2026-07-11. First const-array consumer: byte-identical to the RFC 4648
-alphabet and fuzz-verified. The complete whitefoot CLI beats GNU, the uutils
+alphabet and fuzz-verified. The complete Whitefoot CLI beats GNU, the uutils
 base64 CLI, and the platform BSD tool after proof elision; its scalar kernel
 is in practical parity with expert safe Rust.
 
@@ -16,12 +16,12 @@ is in practical parity with expert safe Rust.
 | implementation | time |
 |---|---:|
 | BSD base64 (macOS, platform-tuned) | **0.20s** |
-| whitefoot xb64 (kernel + C driver) | 0.23s |
-| whitefoot xb64 (no-facts control) | 0.23s |
+| Whitefoot xb64 (kernel + C driver) | 0.23s |
+| Whitefoot xb64 (no-facts control) | 0.23s |
 | GNU base64 (gbase64) | 0.36s |
 | uutils base64 (Rust) | 0.36s |
 
-- whitefoot is 1.6x faster than GNU and the uutils base64 CLI; ~15% behind BSD's
+- Whitefoot is 1.6x faster than GNU and the uutils base64 CLI; ~15% behind BSD's
   hand-tuned encoder. A codec is the "fast shape is the obvious shape" case —
   parity-at-C-speed is the honest headline, not a speed win.
 - Alias facts vs no alias facts were neutral in this pre-bounds-proof snapshot
@@ -31,7 +31,7 @@ is in practical parity with expert safe Rust.
 ## Language findings surfaced (fed to notes/pattern doctrine)
 1. ANF is verbose for bit-twiddling: base64's `(x >> 18) & 63` becomes two
    bound lets. Expected under D2a (AI pays it), but the encode kernel is ~90
-   lines for what C does in ~15 — worth a "the obvious whitefoot shape is verbose
+   lines for what C does in ~15 — worth a "the obvious Whitefoot shape is verbose
    here" honesty note when advertising.
 2. Whole-function no-shadowing forces globally-unique local names across
    sibling blocks (loop body vs the two tail match arms) — had to suffix each
@@ -128,7 +128,7 @@ first body byte store (`verify.py`).
 
 | implementation | time |
 |---|---:|
-| **whitefoot, proofs active** | **0.16s** |
+| **Whitefoot, proofs active** | **0.16s** |
 | BSD base64 (Apple, wide-table) | 0.21s |
 | GNU base64 | 0.36s |
 | uutils base64 (Rust) | 0.36s |
@@ -142,22 +142,22 @@ was 0.23s and LOST to BSD's 0.20; the proof tier flipped the ladder — now
 ## Controlled Rust adversary correction (2026-07-11)
 
 The original adversary table mixed two fixed-order harnesses and compared the
-complete checked whitefoot encoder with a Rust `chunks_exact/zip` kernel that
+complete checked Whitefoot encoder with a Rust `chunks_exact/zip` kernel that
 silently truncated short output and discarded one-/two-byte input tails. Its
 apparent ~5% Rust lead is superseded by this controlled rerun. The old 384MB
 input was divisible by three and its output was ample, so those API mismatches
 did not execute in the timed path; fixing them makes the comparison honest,
 while isolated balanced timing fixes the unsupported ranking.
 
-`adversary_benchmark.py` builds one executable containing whitefoot PROOF-2 and
+`adversary_benchmark.py` builds one executable containing Whitefoot PROOF-2 and
 four Rust variants. Each of 30 timing blocks runs in a fresh process; within a
 block all five variants share the same source buffer, exact-capacity output
 buffer, and clock. Every Rust variant now emits RFC-padded tails. The assert,
-chunks, and unsafe candidates enforce the same entry-capacity relation as whitefoot;
+chunks, and unsafe candidates enforce the same entry-capacity relation as Whitefoot;
 naive remains the deliberate ordinary-bounds-check control. Before timing,
 the harness checks all five outputs at exact capacity for every length 0..257;
 the independent 139-case differential and short-capacity trap gate also
-remains green. The build additionally requires the whitefoot proof report to stay
+remains green. The build additionally requires the Whitefoot proof report to stay
 at 27 proved, 0 retained, including 12 output-capacity-lockstep sites. Both
 toolchains target the native Apple M4: rustc 1.91.1 (LLVM 21.1.2) and Apple
 clang 21.0.0 at `-O3`/equivalent, one codegen unit, and aborting Rust panics.
@@ -174,7 +174,7 @@ or minus 2% before the 384MB evidence run.
 
 | variant | median | MAD/median | throughput | XL/variant process-block ratio (row-bootstrap 95% interval) |
 |---|---:|---:|---:|---:|
-| whitefoot obvious shape + requires | 89.625 ms | 0.27% | **4.285 GB/s** | 1.000 |
+| Whitefoot obvious shape + requires | 89.625 ms | 0.27% | **4.285 GB/s** | 1.000 |
 | Rust naive indexed | 143.670 ms | 0.30% | 2.673 GB/s | 1.602 (1.598..1.613) |
 | Rust assert-up-front | 143.427 ms | 0.25% | 2.677 GB/s | 1.604 (1.598..1.610) |
 | Rust safe `chunks_exact/zip`, full semantics | **89.355 ms** | 0.29% | **4.297 GB/s** | **0.997 (0.994..0.999)** |
@@ -199,7 +199,7 @@ Verdicts:
    = loop-shape quality" attribution is withdrawn. The assembly shapes still
    differ, but this experiment establishes no practically meaningful
    throughput debt above the 2% margin.
-4. The durable W1 result is distributional: whitefoot's obvious indexed loop plus
+4. The durable W1 result is distributional: Whitefoot's obvious indexed loop plus
    one checked relation reaches expert-safe-Rust performance, whereas Rust's
    obvious indexed loop stays near 2.7 GB/s and the local assert changes
    nothing. The writer must know the iterator restructuring.

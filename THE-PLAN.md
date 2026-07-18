@@ -7,7 +7,7 @@ proven, and what it does next. Supersedes the DECISION_SPRINT/ROADMAP phase plan
 `optimizer-language-research/implementation/decision-gates.md`. This file is
 the map, re-derived from those sources; on conflict, they win in that order.
 
-## 1. What whitefoot is
+## 1. What Whitefoot is
 
 A systems language for AI-written, human-approved code (D0a). Entire bug
 classes are unrepresentable (memory corruption, races, silent overflow,
@@ -32,7 +32,7 @@ scale as at statement scale (D6, PATTERNS.md).
   faster + parity + bug-class-unrepresentable + AI-authored. Safe-direction
   constraint: performance/correctness framing only.
 - D9a confidence gate: compare one fixed `gpt-5.6-terra`/medium model's first
-  correctness-green whitefoot artifact with one exact, unmodified, commonly used
+  correctness-green Whitefoot artifact with one exact, unmodified, commonly used
   shipped Rust library. Freeze before timing; facts-on/off explains the win.
   Expert Rust is ceiling evidence only. Replicate once before a broad claim.
 
@@ -42,7 +42,7 @@ Measured wins (real, replicable, with caveats in each RESULTS.md):
 - Floor-raising (binary-trees): the slow design is unrepresentable; ports
   land on the fast shape by construction. The 12x-vs-Box number is a shape
   effect — identical-shape Rust is ~11% faster than us (checked-semantics
-  tax, part of which is whitefoot doing MORE checking than release Rust).
+  tax, part of which is Whitefoot doing MORE checking than release Rust).
 - Checked-law channel: 3.3x over the obvious fold; false laws refuted at
   compile time (the W3 jewel — expert Rust's manual reassociation is an
   unchecked assertion).
@@ -298,10 +298,10 @@ Measured non-wins (equally load-bearing):
    general sequence, sparse-slot, or deletion/reuse contracts. G0-Core alone is
    not candidate authorization.
 3. **Default-floor experiment against shipped Rust (D9a)** — COMPLETE on two
-   separately preregistered targets. First-green Terra whitefoot records paired
+   separately preregistered targets. First-green Terra Whitefoot records paired
    throughput ratios of 1.653x [1.631, 1.667] against `percent-encoding` 2.3.2
    and 1.098x [1.085, 1.145] against one-shot `utf8parse` 0.2.2. Both retain
-   every reported whitefoot bounds site, so neither is a proof-elision win. This is
+   every reported Whitefoot bounds site, so neither is a proof-elision win. This is
    cross-target performance-floor evidence, not a pooled ecosystem result or
    expert-Rust ceiling claim. Canonical wording and caveats are in
    `experiments/default-floor/RESULTS.md`; no third target is required for D9a.
@@ -372,12 +372,12 @@ Measured non-wins (equally load-bearing):
    headline runs through the shelved trial harness when the time comes.
 
 STATUS UPDATE (2026-07-13): D9a is complete on two separately preregistered
-targets. Default Terra whitefoot beats shipped `percent-encoding` 2.3.2 by 1.653x
+targets. Default Terra Whitefoot beats shipped `percent-encoding` 2.3.2 by 1.653x
 and shipped `utf8parse` 0.2.2 by 1.098x on their locked workloads. Neither win
 comes from proof-elided bounds checks. This supports a replicated default-shape
 thesis while remaining limited to these implementations, corpora, and machine.
 THE BUILD TRACK IS ACTIVE: `compiler/` hosts wfc, the production compiler
-written in whitefoot itself (the current baseline remains the P2 SoA-tape
+written in Whitefoot itself (the current baseline remains the P2 SoA-tape
 architecture with fixed-capacity buffers and no generics), bootstrapped by
 prototype/democ as stage 0,
 with its own gate (`make -C compiler check`, incl. the self-parse gate).

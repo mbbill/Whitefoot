@@ -21,13 +21,13 @@ controls; they do not substitute for measurements on wfc.
 - Move exposes `copy` and `store` as distinct abilities.  A value can therefore
   be eligible for persistent storage without being duplicable.  **Inference:**
   separating fixed-storage eligibility from Copy is a coherent non-Rust design
-  precedent, but it does not establish that whitefoot should pay the initializer and
+  precedent, but it does not establish that Whitefoot should pay the initializer and
   checker cost of that separation.
   <https://move-language.github.io/move/abilities.html>
 - Rust documents `Vec<T>` as a pointer/capacity/length owner with exactly the
   first `len` elements initialized.  Spare capacity is logically uninitialized;
   growth can reallocate.  `push_within_capacity` is specifically the no-realloc
-  append operation.  **Inference:** current whitefoot `buffer<T>`, whose full fixed
+  append operation.  **Inference:** current Whitefoot `buffer<T>`, whose full fixed
   length is initialized and dropped, cannot implement an affine Vec without an
   additional initialized-prefix/raw-storage abstraction or per-slot overhead.
   <https://doc.rust-lang.org/std/vec/struct.Vec.html#guarantees>
@@ -68,6 +68,6 @@ controls; they do not substitute for measurements on wfc.
   layouts.  This makes wfc's AST SoA a particularly important consumer-side
   baseline rather than bootstrap debt to erase.  <https://arxiv.org/abs/2605.01140>
 
-The combined evidence supports only a workload-dependent conclusion: whitefoot
+The combined evidence supports only a workload-dependent conclusion: Whitefoot
 should be able to express both layouts without overhead, while its default
 writer guidance must be decided from access patterns and measured outcomes.

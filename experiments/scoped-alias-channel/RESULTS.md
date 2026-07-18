@@ -66,12 +66,12 @@ Generated code (the mechanism, verified in asm):
    not just guards.
 4. **Guarantee vs heuristic**: Rust's recovery is quadratic-in-pointers runtime
    disambiguation that eventually exceeds the vectorizer's check budget; the
-   whitefoot fact is static and O(1). (Bail-point sweep with wider structs:
+   Whitefoot fact is static and O(1). (Bail-point sweep with wider structs:
    follow-up.)
 5. The n=4096 facts-vs-rust gap (0.886 vs 0.65) is allocation-layout noise
    (C malloc vs Vec alignment); at k=1e5 fixed it measured 0.760 vs 0.754.
    Worth re-measuring with aligned allocation before quoting large-n numbers.
-6. W1 story unchanged and strengthened: the OBVIOUS whitefoot shape is the fast
+6. W1 story unchanged and strengthened: the OBVIOUS Whitefoot shape is the fast
    shape at every n; Rust's obvious shape is fine at large n only, and its
    fast-everywhere shape requires the inner-fn-with-slice-params idiom.
 
@@ -87,7 +87,7 @@ Falsification attempt on claim 4: at 16 columns (4 written, 12 read) LLVM STILL
 version-vectorizes Rust's obvious shape — guards grow 29 -> 111 and asm
 2132 -> 2836 lines (whitefoot-facts: 183 lines, 0 guards), but the vectorizer does
 not bail, and times are near-parity at n >= 512 (memory-bound) with only ~1.16x
-whitefoot advantage at n=64. The versioning budget is far larger than the old
+Whitefoot advantage at n=64. The versioning budget is far larger than the old
 threshold-8 lore. So: the static-vs-quadratic claim is structurally true
 (guards and code size scale with column count) but does NOT convert into a
 large-n time delta at any width probed. The durable channel-1 deltas remain

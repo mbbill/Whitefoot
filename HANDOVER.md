@@ -1,4 +1,4 @@
-# whitefoot Research Handover
+# Whitefoot Research Handover
 
 Status: active handover updated under D15 on 2026-07-16. Historical sections
 remain useful evidence; the controlling current ruling is D15 in
@@ -178,7 +178,7 @@ completed.
 
 ## 0. Historical performance-first correction — superseded
 
-The active objective is performance. Current whitefoot semantics cannot express
+The active objective is performance. Current Whitefoot semantics cannot express
 some required native representations and code shapes without initialization,
 zeroing, copying, relocation, tags, metadata, allocation, indirection, checks,
 or extra machine events. The research must identify those finite expressiveness
@@ -268,7 +268,7 @@ The immediate research question is **not** how to authenticate independently
 distributed privileged extensions. The owner wants to study how Rust and other
 production languages let the compiler, runtime, or official core library define
 operations that ordinary user source cannot define, then choose one elegant
-whitefoot mechanism of that class and determine the smallest safe public capability
+Whitefoot mechanism of that class and determine the smallest safe public capability
 basis ordinary libraries need.
 
 In this task, "ordinary source cannot obtain the back door" means a static
@@ -282,7 +282,7 @@ The next agent should proceed in this order:
    rewriting hash-pinned historical reports;
 2. research compiler- and core-library-private mechanisms in Rust and selected
    comparable production languages;
-3. compare the mechanism classes and recommend one static whitefoot privilege-
+3. compare the mechanism classes and recommend one static Whitefoot privilege-
    definition route;
 4. only then derive the minimal safe public capability basis and test it against
    the existing finite systems-demand ledgers and held-out witnesses; and
@@ -291,18 +291,18 @@ The next agent should proceed in this order:
 
 ## 1. Project objective and standing constraints
 
-whitefoot is intended to become a general-purpose systems language for AI-written,
+Whitefoot is intended to become a general-purpose systems language for AI-written,
 human-approved code. The project gives machine-code performance highest
 priority, while making memory corruption, data races, silent overflow, and
 uninitialized reads unrepresentable in accepted programs. There is no writer-
 accessible `unsafe` escape. Checks remain enabled unless a machine-verified
 proof removes them.
 
-The capability research exists because whitefoot may ship no standard library, yet
+The capability research exists because Whitefoot may ship no standard library, yet
 ordinary checked libraries must still be able to implement the capabilities
 needed by everyday systems programs with competitive asymptotic and structural
-performance. whitefoot does not need to reproduce Rust types or APIs one for one.
-Several named Rust abstractions may derive from one smaller whitefoot substrate when
+performance. Whitefoot does not need to reproduce Rust types or APIs one for one.
+Several named Rust abstractions may derive from one smaller Whitefoot substrate when
 their observable contracts permit it.
 
 The binding sources are:
@@ -336,11 +336,11 @@ not active after the current owner correction in section 0.
 Study how systems languages grant the compiler, runtime, or official core
 library implementation capabilities that ordinary source cannot use to define
 new semantics. Select the smallest coherent static privilege-definition
-mechanism for whitefoot. Then show that a Pareto-small set of safe public primitives
-exposed through that mechanism lets ordinary whitefoot libraries implement the
+mechanism for Whitefoot. Then show that a Pareto-small set of safe public primitives
+exposed through that mechanism lets ordinary Whitefoot libraries implement the
 finite required systems and container capability set with native
 representations and without unavoidable asymptotic or structural performance
-tax, while whitefoot ships no standard library and exposes no writer-accessible
+tax, while Whitefoot ships no standard library and exposes no writer-accessible
 `unsafe`.
 
 This goal has two serial decisions:
@@ -365,14 +365,14 @@ Use these terms consistently:
 compiler/runtime/official core implementation
   -> uses the source-inaccessible privilege-definition mechanism
   -> defines safe public primitive contracts
-  -> ordinary whitefoot libraries compose those primitives
+  -> ordinary Whitefoot libraries compose those primitives
   -> applications use containers, strings, I/O wrappers, and systems services
 ```
 
 ### 3.1 Privilege-definition mechanism
 
 The compiler-recognized route by which trusted implementation code can define
-semantics unavailable to an ordinary whitefoot definition. Candidate classes may
+semantics unavailable to an ordinary Whitefoot definition. Candidate classes may
 include hard-coded operations, compiler-only intrinsic declarations, a sealed
 embedded core module, a specially compiled official core dialect, or a native
 runtime boundary.
@@ -382,7 +382,7 @@ not selected.
 
 ### 3.2 Safe public primitive
 
-An operation ordinary whitefoot code may call under normal typing, ownership,
+An operation ordinary Whitefoot code may call under normal typing, ownership,
 effect, and checking rules. Public availability is not privilege. For example,
 ordinary source may safely allocate through a compiler-defined operation while
 remaining unable to define another allocator primitive with fabricated
@@ -391,7 +391,7 @@ semantics.
 ### 3.3 Derived ordinary library
 
 A container, string, iterator, resource wrapper, synchronization abstraction,
-or other system facility implemented in ordinary checked whitefoot over the public
+or other system facility implemented in ordinary checked Whitefoot over the public
 primitive basis. Such a library receives no special package, path, module,
 attribute, or name-based authority.
 
@@ -456,7 +456,7 @@ cover:
 - native runtime shims and compiler-provided ABI operations;
 - standard-library internal `unsafe` or equivalent trusted implementation
   code; and
-- ordinary user-accessible `unsafe` as a counterexample to whitefoot's W3 goal.
+- ordinary user-accessible `unsafe` as a counterexample to Whitefoot's W3 goal.
 
 For each mechanism, record:
 
@@ -469,12 +469,12 @@ For each mechanism, record:
 7. whether it works when the language ships no standard library;
 8. whether it is backend- and target-independent at the language boundary;
 9. whether it creates more than one privileged route; and
-10. its P0, W1, W3, auditability, and TCB consequences for whitefoot.
+10. its P0, W1, W3, auditability, and TCB consequences for Whitefoot.
 
 Do not assume Rust's mechanism is the answer. Rust is both a source of useful
 precedent and a counterexample because ordinary Rust users can write `unsafe`.
 
-### 5.2 Static whitefoot gate comparison
+### 5.2 Static Whitefoot gate comparison
 
 Compare at least these mechanism classes at the architectural level:
 
@@ -498,7 +498,7 @@ compiler boundary, not a cryptographic protocol.
 ### 5.3 Minimal safe public capability basis
 
 After selecting a gate class, identify only the irreducible operations ordinary
-whitefoot cannot implement safely and efficiently from existing semantics. Likely
+Whitefoot cannot implement safely and efficiently from existing semantics. Likely
 question categories include, but are not preapproved as primitives:
 
 - acquiring, resizing, and releasing storage;
@@ -601,12 +601,12 @@ Immediate falsifiers include:
 
 D9a is complete on two independently preregistered shipped-library targets:
 
-- first-green `gpt-5.6-terra`/medium whitefoot beats `percent-encoding` 2.3.2 by
+- first-green `gpt-5.6-terra`/medium Whitefoot beats `percent-encoding` 2.3.2 by
   1.653x, confidence interval [1.631, 1.667]; and
-- one-shot whitefoot beats `utf8parse` 0.2.2 by 1.098x, confidence interval
+- one-shot Whitefoot beats `utf8parse` 0.2.2 by 1.098x, confidence interval
   [1.085, 1.145].
 
-Both whitefoot results retain every bounds site. This is replicated default-code-
+Both Whitefoot results retain every bounds site. This is replicated default-code-
 shape evidence, not proof-elision evidence. The utf8parse facts control is
 statistically inconclusive, while facts-on/off reports and optimized
 instruction bodies are identical. Do not tune either completed protocol from
@@ -665,7 +665,7 @@ It correctly recognized several durable principles:
 - high-level containers should remain ordinary libraries;
 - storage needs vacant/live state rather than forced full initialization;
 - a generic fully initialized `Box`-class operation is insufficient by itself;
-- arbitrary raw allocation exposed to writers violates whitefoot's safety goals;
+- arbitrary raw allocation exposed to writers violates Whitefoot's safety goals;
 - safety facts require static proof, runtime validation/enforcement, or an
   explicit trusted implementation boundary; and
 - container correctness properties need not become storage-safety authority
@@ -849,13 +849,13 @@ or plugin distribution.
 
 ### Step 3: static gate recommendation
 
-From the census, recommend one architectural class for whitefoot. The result should
+From the census, recommend one architectural class for Whitefoot. The result should
 define:
 
 - where privileged definitions live;
 - what exact compiler condition makes them privileged;
 - why ordinary source and dependencies cannot enter that condition;
-- how safe public declarations are exposed when whitefoot ships no standard
+- how safe public declarations are exposed when Whitefoot ships no standard
   library;
 - how backend or runtime bodies attach without creating a second authority
   path;
@@ -878,7 +878,7 @@ gate.
 For each proposed primitive:
 
 1. state the abstract safe contract;
-2. state why ordinary current whitefoot cannot implement it;
+2. state why ordinary current Whitefoot cannot implement it;
 3. give at least one required capability that depends on it;
 4. show that it does not hide a high-level policy;
 5. identify its runtime representation and cost;

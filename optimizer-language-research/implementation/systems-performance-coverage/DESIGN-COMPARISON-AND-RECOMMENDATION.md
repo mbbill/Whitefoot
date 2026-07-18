@@ -9,7 +9,7 @@ change remains separately gated on explicit owner decisions.
 ## 1. Question and method
 
 D15 restates the objective: for most systems-programming scenarios, at least
-one blessed way of writing whitefoot must reach or exceed the performance of the
+one blessed way of writing Whitefoot must reach or exceed the performance of the
 best existing implementations; the provided form count n must stay small under
 the binding spec-compactness requirement; line-by-line reproduction of
 existing software is explicitly not required.

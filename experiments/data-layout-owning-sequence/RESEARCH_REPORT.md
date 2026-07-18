@@ -18,7 +18,7 @@ and measurements rather than automatically restarting them.
 ## 0. Executive conclusion
 
 Specification and implementation audits, not performance experiments, confirm the
-first real expressiveness gap: whitefoot can manually express SoA with multiple
+first real expressiveness gap: Whitefoot can manually express SoA with multiple
 `buffer<primitive>` values, but it cannot safely place an ordinary named record in a
 `buffer<Record>` or guarantee that `index<Record>(rows, i).field` lowers correctly to
 a row GEP, field GEP, and scalar load/store. Programs with an obviously row-oriented

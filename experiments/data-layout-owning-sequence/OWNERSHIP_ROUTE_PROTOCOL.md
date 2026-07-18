@@ -256,7 +256,7 @@ copyable struct TokenRow {
 
 The experiment reserves the currently collision-free candidate word `copyable`
 and inserts it immediately before `struct`. Lock A repeats the collision census
-over every frozen whitefoot source; a collision requires owner review of a new
+over every frozen Whitefoot source; a collision requires owner review of a new
 spelling rather than renaming baseline code. The marker names the checked
 duplicability invariant and deliberately does not reuse Rust's `Copy` token.
 There is no inferred Copy record, negative `affine` marker, call-site copy
@@ -444,7 +444,7 @@ must pass its exact-byte reviews before any candidate code exists.
 
 ## 5. Pre-implementation corpus census
 
-Before candidate code, freeze a repository corpus containing production whitefoot
+Before candidate code, freeze a repository corpus containing production Whitefoot
 sources, the current wfc unit, and the two completed first-green default-floor
 artifacts. Tests written to exercise a proposed route are excluded from
 prevalence counts.
@@ -470,7 +470,7 @@ fixture, but it is not prevalence evidence and cannot by itself reject
 `DECLARATIVE_COPY`. A nominal-affinity result becomes a decision gate only if the
 owner identifies and freezes a real project requirement before either candidate
 is implemented. The lock must state the required invariant and why ordinary
-affinity is part of the task contract. Current closed-unit whitefoot has no private
+affinity is part of the task contract. Current closed-unit Whitefoot has no private
 constructor or module boundary, so this lane may claim only that one issued value
 cannot be duplicated after construction; it may not claim that fresh values are
 unforgeable.

@@ -1,18 +1,18 @@
-# Codegen/perf experiment: whitefoot vs C / C++ / Rust (2026-07-08)
+# Codegen/perf experiment: Whitefoot vs C / C++ / Rust (2026-07-08)
 
 **R0 evidence.** First non-trivial head-to-head of the bootstrap toolchain against C, C++,
 Rust. Machine: Apple M4 (arm64), macOS. democ snapshot @ git `6893813`.
 
 ## Framing (no overclaim)
 democ has **no optimizer of its own** — it emits LLVM IR text and shells to `clang -O2`.
-So this isolates ONE question: does whitefoot's *automatic* emission of optimizer facts
+So this isolates ONE question: does Whitefoot's *automatic* emission of optimizer facts
 (`noalias`/`readonly` from `&uniq`/`&`; defined-wrapping / no-UB arithmetic) give the
 **shared LLVM backend** more to work with than un-annotated C, and reach **parity** with
 Rust? Constitution's honest hypothesis: *parity with Rust + non-defeasible noalias*, NOT
 "faster than Rust." Tried to falsify as a skeptic.
 
 ## Toolchains
-whitefoot (democ `.ll` → `/usr/bin/clang -O2`) and C/C++ use the **same** Apple clang 21 / LLVM 21
+Whitefoot (democ `.ll` → `/usr/bin/clang -O2`) and C/C++ use the **same** Apple clang 21 / LLVM 21
 binary (cleanest possible pair). Rust = rustc 1.91.1 / LLVM 21.1.2. Constraint: democ's subset
 has no arrays/heap/floats/strings/I-O, so kernels are scalar + borrows, constant-fed, result
 consumed via `check…else trap`; correctness verified bit-identical in all languages before timing.
@@ -21,21 +21,21 @@ consumed via `check…else trap`; correctness verified bit-identical in all lang
 
 **Kernel A — splitmix64 mixing ×2·10⁸, xor-accumulated (parity test).**
 Hot loop is **byte-identical** across whitefoot/C/C++/Rust (9 register-only arm64 instructions;
-democ's in-loop `alloca`s fully promoted by clang SROA/mem2reg). Runtime (median): whitefoot 3.017,
+democ's in-loop `alloca`s fully promoted by clang SROA/mem2reg). Runtime (median): Whitefoot 3.017,
 C 3.021, C++ 3.063, Rust 3.109 ns/iter → **full parity, within noise. No regression.**
 
 **Kernel B — `accumulate(&uniq acc, & addend, n)` noalias demonstration.**
 democ emits `define void @accumulate(ptr noalias %acc, ptr noalias readonly %addend, i64 %n)`
 automatically & non-defeasibly from the borrow modes.
-- *B1, non-affine body* (`acc=(acc^*addend)*K`): whitefoot hoists the invariant `*addend` load and
+- *B1, non-affine body* (`acc=(acc^*addend)*K`): Whitefoot hoists the invariant `*addend` load and
   keeps `*acc` in a register → loop body **identical to C-`restrict` and Rust** (4 instr vs naive
   C's 6 with reload/store). BUT **runtime parity** on the M4 P-core (0.93 ns/iter all round):
   single-accumulator loops are latency-bound; the eliminated load/store hide under OoO +
   store-to-load forwarding. **Codegen/µop/code-size/energy win, not P-core wall-clock.**
 - *B-add, affine reduction* (`*acc += *addend`): noalias changes **complexity**. Naive C keeps an
-  O(n) vectorized loop behind a runtime alias-check; C-`restrict`, **Rust**, and **whitefoot** collapse
+  O(n) vectorized loop behind a runtime alias-check; C-`restrict`, **Rust**, and **Whitefoot** collapse
   it to a single `madd` = **O(1)**. Runtime: naive C **60.88 ms** vs C-restrict **2.75** vs
-  **whitefoot 2.92** (10⁹ iters) → **≈22× faster than unannotated C, automatic**. The checked-in Rust
+  **Whitefoot 2.92** (10⁹ iters) → **≈22× faster than unannotated C, automatic**. The checked-in Rust
   additive comparator confirms this is **parity with Rust**, not a Rust-beating result.
 
 ## Honest verdict

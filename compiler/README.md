@@ -1,6 +1,6 @@
 # wfc
 
-This directory contains the production whitefoot compiler, written in whitefoot. Python
+This directory contains the production Whitefoot compiler, written in Whitefoot. Python
 `prototype/democ` is stage 0 only: it compiles wfc until wfc can compile itself.
 
 The compiler currently uses fixed-capacity structure-of-arrays tapes backed by

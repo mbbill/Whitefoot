@@ -17,8 +17,8 @@ derived-totality tier closed it.
 ## Results (median of 3)
 | variant | boundary | time |
 |---|---|---|
-| whitefoot, declared effects on declare | opaque (.o + .o, no LTO) | **0.00 s** (call hoisted; loop strength-reduced to one multiply — O(1)) |
-| whitefoot, no attributes (control) | opaque | 1.47 s (2e9 real calls) |
+| Whitefoot, declared effects on declare | opaque (.o + .o, no LTO) | **0.00 s** (call hoisted; loop strength-reduced to one multiply — O(1)) |
+| Whitefoot, no attributes (control) | opaque | 1.47 s (2e9 real calls) |
 | Rust `#[inline(never)]`, cross-crate | opaque (no LTO — cargo's default shape) | 1.49 s (1 call site in loop) |
 | Rust, `-C lto=fat` | body visible | 0.00 s (0 call sites: inlined/inferred) |
 
@@ -26,7 +26,7 @@ derived-totality tier closed it.
 - The channel WORKS and is a complexity-class change (O(n)→O(1)) over both our own
   no-facts control and Rust's default separate-compilation shape.
 - Rust with fat LTO ties — with body visibility, LLVM infers the same facts. The delta
-  is therefore: **whitefoot's default = Rust's most expensive configuration**, with the
+  is therefore: **Whitefoot's default = Rust's most expensive configuration**, with the
   guarantee holding where inference cannot reach (opaque/cached objects, future FFI
   frames with declared effects, bodies too complex for the attributor).
 - Durable systems story: facts-on-declarations decouple optimization from body

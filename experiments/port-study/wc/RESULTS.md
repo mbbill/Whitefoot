@@ -15,7 +15,7 @@ implementations on full counts.
 Full counts (the default invocation):
 | implementation | time |
 |---|---:|
-| xwc (whitefoot kernel + C driver) | **0.27s** |
+| xwc (Whitefoot kernel + C driver) | **0.27s** |
 | GNU wc (LC_ALL=C) | 0.48s |
 | BSD wc (LC_ALL=C) | 0.54s |
 | uutils wc / Rust (LC_ALL=C) | 0.56s |
@@ -29,7 +29,7 @@ Full counts (the default invocation):
 | xwc -l | 0.10s |
 | BSD wc -l | 0.33s |
 
-- Default invocation: whitefoot beats GNU 1.8x, BSD 2.0x, AND the Rust rewrite
+- Default invocation: Whitefoot beats GNU 1.8x, BSD 2.0x, AND the Rust rewrite
   2.1x. uutils being slowest on the default path while fastest on -l is the
   obvious-shape-vs-fast-shape distribution story visible in a shipping tool.
 - -l gap decomposition: ~half is the slurp driver (same-memchr same-driver

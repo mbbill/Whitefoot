@@ -50,8 +50,8 @@ top-level text are also rejected rather than partially analyzed.
   calibration deliberately fails closed on toolchain drift.
 - This is a static optimized-instance count. It says nothing about runtime
   hotness, trip counts, or whether checks matter to application performance.
-- A runtime memcheck is only a candidate for whitefoot's channel. Same-owner
-  subviews, raw pointers, unsafe code, and FFI may require facts whitefoot does not
+- A runtime memcheck is only a candidate for Whitefoot's channel. Same-owner
+  subviews, raw pointers, unsafe code, and FFI may require facts Whitefoot does not
   currently provide; every real-corpus hit needs source audit.
 - Monomorphization can produce several optimized instances from one source
   loop. A corpus collector must report both instance and unique-source counts.

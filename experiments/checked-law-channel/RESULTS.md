@@ -46,10 +46,10 @@ All variants produce identical sinks (semantics preserved).
    serial — correctly, since it cannot prove associativity.
 2. **Ties expert Rust** — but the expert shape is an UNVERIFIED assertion.
    Swap in a non-associative op (signed sat-add, saturating_sub) and Rust
-   compiles it silently to garbage; whitefoot refutes the law at compile time.
+   compiles it silently to garbage; Whitefoot refutes the law at compile time.
    This is the W3 delta in its purest form: the cheat (or the honest mistake)
    is structurally unavailable.
-3. **W1 delta**: the fast shape in whitefoot IS the obvious fold; in Rust the fast
+3. **W1 delta**: the fast shape in Whitefoot IS the obvious fold; in Rust the fast
    shape requires knowing the 4-accumulator idiom and being right about the
    algebra with no checker behind you.
 4. Headroom: the 4 chains are scalar (adds+csinv x4, paired loads); SLP does

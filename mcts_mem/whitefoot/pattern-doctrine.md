@@ -5,7 +5,7 @@
 
 ## Facts
 
-- 2026-07-09 rationale: owner ruling D6 — human languages must accommodate incoming patterns or be rejected by their users; whitefoot has no installed base to appease (D0a), so it may make radical restrictions provided the completeness and efficiency tests hold; the recorded trigger was the deep-write review, with the ruling that the command-buffer idiom must be doctrine, not folklore. (sourced)
+- 2026-07-09 rationale: owner ruling D6 — human languages must accommodate incoming patterns or be rejected by their users; Whitefoot has no installed base to appease (D0a), so it may make radical restrictions provided the completeness and efficiency tests hold; the recorded trigger was the deep-write review, with the ruling that the command-buffer idiom must be doctrine, not folklore. (sourced)
 - 2026-07-11 statement: catalog entries are earned from a measurement or a review, never taste — the command-buffer pattern from the no-reborrow deep-write wall, the struct-of-arrays pool validated by the binary-trees port, the branchless i1 classifier from the width-16 result, traps-to-the-boundary from the wc counter case, and the exact-capacity/recoverable-shortage contract from the check-accounting review. (sourced)
 - 2026-07-09 statement: the known-gaps section is itself doctrine — gaps are findings recorded next to the patterns (in-place mutation during traversal, shared memo writes during read traversals, borrows stored in data), each with a blessed encoding or a carded relief valve, never silent. (sourced)
 - 2026-07-13 rationale: for the data-structure floor, COMPLETE requires representative held-out structures to be implementable by ordinary no-unsafe libraries through public checked mechanisms without asymptotic regression, unavoidable pathological storage, or standard-library-only raw privilege; it does not promise global optimality for every unforeseen structure. (sourced)
@@ -15,4 +15,4 @@
 
 ## Moves
 
-- 2026-07-09 (fd298d47) replaced [[unconstrained-architecture]]: human languages must let writers carry familiar patterns in or be rejected; whitefoot's writers are AI under D0a with no installed base to appease, so a closed taught catalog can be forced — provided it stays complete (every task modelable) and efficient (blessed patterns hit the fast paths) (sourced)
+- 2026-07-09 (fd298d47) replaced [[unconstrained-architecture]]: human languages must let writers carry familiar patterns in or be rejected; Whitefoot's writers are AI under D0a with no installed base to appease, so a closed taught catalog can be forced — provided it stays complete (every task modelable) and efficient (blessed patterns hit the fast paths) (sourced)

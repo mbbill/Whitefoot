@@ -28,8 +28,8 @@ and gitignored. Chronology and decisions live in
 
 ## Port studies (real programs; D9 confidence-gate evidence)
 - `default-floor/` — D9a protocol: a fixed low-tier model's first
-  correctness-green whitefoot artifact versus an exact unmodified shipped Rust
-  library. Two separately preregistered results are complete: Terra whitefoot beats
+  correctness-green Whitefoot artifact versus an exact unmodified shipped Rust
+  library. Two separately preregistered results are complete: Terra Whitefoot beats
   `percent-encoding` 2.3.2 `percent_decode` by 1.653x [1.631, 1.667] and
   one-shot `utf8parse` 0.2.2 by 1.098x [1.085, 1.145]. Neither result is a
   proof-elision win; see the aggregate claim boundary in

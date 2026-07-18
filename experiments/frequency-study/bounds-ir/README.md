@@ -17,7 +17,7 @@ or non-IR input aborts the whole run instead of producing clean-zero evidence.
 
 Every result is only a `heuristic-surviving-bounds-candidate`. A surviving
 panic edge may be cold, unavoidable, introduced by expansion or inlining, or
-unrelated to anything current whitefoot can eliminate. Manually inspect and
+unrelated to anything current Whitefoot can eliminate. Manually inspect and
 profile promising hits before treating them as evidence of an advantage.
 
 Run the stdlib-only tests with:

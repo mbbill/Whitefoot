@@ -1,6 +1,6 @@
-# whitefoot — agent onboarding
+# Whitefoot — agent onboarding
 
-whitefoot is a systems language for AI-written, human-approved code. Entire bug
+Whitefoot is a systems language for AI-written, human-approved code. Entire bug
 classes are unrepresentable (memory corruption, races, silent overflow,
 uninitialized reads); there is no unsafe escape. The checker's proofs double
 as optimizer facts: safety checks are always on unless a machine-verified
@@ -23,7 +23,7 @@ proof discharges them — speed is earned by proof, never by weakening a check.
 
 - `make check` — root gate: spec CI, rule tests, soundness, perf pins,
   codegen parity + corpus, conformance. Must be green.
-- `make -C compiler check` — wfc (the production compiler, written in whitefoot,
+- `make -C compiler check` — wfc (the production compiler, written in Whitefoot,
   bootstrapped by `prototype/democ`). Must be green.
 
 ## Standing rules (owner-ratified; do not relitigate)
@@ -54,7 +54,7 @@ proof discharges them — speed is earned by proof, never by weakening a check.
 
 ## Layout
 
-- `compiler/` — wfc, the self-hosting compiler (whitefoot sources, Python-run
+- `compiler/` — wfc, the self-hosting compiler (Whitefoot sources, Python-run
   stage-0 tests). The active build track.
 - `prototype/` — democ (stage-0 compiler) + checker; reference semantics.
 - `spec/` — kernel spec, derivation ledger, FR reconciliation.
@@ -99,7 +99,7 @@ proof discharges them — speed is earned by proof, never by weakening a check.
   at ~15/477 functions, still bootstrapped by `prototype/democ`; unaffected by
   the parked capability research.
 - D9a is complete on two independently preregistered shipped-library targets.
-  First-green `gpt-5.6-terra`/medium whitefoot beats `percent-encoding` 2.3.2 by
+  First-green `gpt-5.6-terra`/medium Whitefoot beats `percent-encoding` 2.3.2 by
   1.653x [1.631, 1.667] and one-shot `utf8parse` 0.2.2 by 1.098x
   [1.085, 1.145]. Both retain every bounds site, so this is replicated
   default-shape evidence, not proof-elision evidence. The utf8parse facts

@@ -9,7 +9,7 @@ not a normative language document. Produced by three independent mappers from
 real-software knowledge; raw output in `evidence/scenario-map.json`.
 
 Reading guide: "Par target" names the reference implementation and the rough
-number a blessed whitefoot writing must match. "Substitutability" answers the
+number a blessed Whitefoot writing must match. "Substitutability" answers the
 owner's central question: can ONE blessed shape serve all uses of the
 scenario at par, or do uses genuinely split.
 
@@ -116,7 +116,7 @@ scenario at par, or do uses genuinely split.
 - **SOTA shape**: Two SOTA shapes by read/write mix: (a) sharded SwissTables — N=64-256 shards each behind its own lock, shard picked by hash (dashmap 6, folly ConcurrentHashMap SIMD mode); (b) read-optimized epoch/RCU maps — readers lock-free and write-free (evmap, Linux RCU hash tables, papaya).
 - **Why fast**: Sharding confines lock and data contention to 1/N of traffic — uncontended shard lock is one uncontested CAS (~10-15 ns) and the inner probe is plain SwissTable; RCU-class reads execute ZERO atomic RMWs and dirty zero shared lines (no reader-count cache-line ping-pong, which is what caps RwLock<HashMap> at ~2-3 threads), so read throughput scales linearly with cores.
 - **Par target**: dashmap 6 (64 shards): ~1.5-2x single-thread hashbrown cost per op uncontended, near-linear to 16 threads mixed 90/10; papaya/evmap read ~hashbrown-parity per op with linear read scaling. RwLock<HashMap>-class read plateau is the fail line.
-- **Weight**: medium. **Substitutability**: Sharding is composition (array of locked blessed maps + hash-based shard pick) — one taught pattern, reaches par for write-mixed workloads. The RCU/epoch read-mostly class is NOT composition: it needs a deferred-reclamation mechanism (epoch/hazard), which for whitefoot is a checker/runtime capability question, not a container question. Honest split: sharded (composable now) vs read-mostly-linear-scaling (needs a reclamation primitive).
+- **Weight**: medium. **Substitutability**: Sharding is composition (array of locked blessed maps + hash-based shard pick) — one taught pattern, reaches par for write-mixed workloads. The RCU/epoch read-mostly class is NOT composition: it needs a deferred-reclamation mechanism (epoch/hazard), which for Whitefoot is a checker/runtime capability question, not a container question. Honest split: sharded (composable now) vs read-mostly-linear-scaling (needs a reclamation primitive).
 
 
 ## F3 — identity & linked structures

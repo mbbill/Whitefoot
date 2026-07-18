@@ -6,7 +6,7 @@
 ## Facts
 
 - 2026-07-08 rationale: uniform naming applies even to single-payload variants because name-only-when-two-same-typed-fields and positional-for-single-field are both context-dependent spellings that flip when a field is added; the single-field ceremony is an accepted verbosity cost — verbosity is free, irregularity is the enemy. (sourced)
-- 2026-07-08 statement: the honest delta over Rust is on cheat-proofness and check-time rejection, not performance — Rust leaves tuple structs and all enum payloads positional (admitting exactly the silent same-typed transposition this form closes) and permits free field order with shorthand and update syntax; whitefoot names every product in one byte sequence. (sourced)
+- 2026-07-08 statement: the honest delta over Rust is on cheat-proofness and check-time rejection, not performance — Rust leaves tuple structs and all enum payloads positional (admitting exactly the silent same-typed transposition this form closes) and permits free field order with shorthand and update syntax; Whitefoot names every product in one byte sequence. (sourced)
 - 2026-07-08 statement: the weak-writer net sign is experiment-gated — the adoption record pre-registers transposition-rate reduction versus the new wrong-field-name error class as the decision metric, with direction already forced and only magnitude open. (sourced)
 
 ## Moves

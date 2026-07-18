@@ -1,4 +1,4 @@
-# whitefoot Pattern Doctrine (D6)
+# Whitefoot Pattern Doctrine (D6)
 
 Status: seeded 2026-07-09; normative once ratified. The language forces a
 closed pattern vocabulary at the architecture level, exactly as the kernel
