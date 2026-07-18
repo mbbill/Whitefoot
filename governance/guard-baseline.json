@@ -162,10 +162,10 @@
     "rule:GATE-1": "f015e0e72c301561923163bd4c847c42a186d63164d4c67973bf85a2e3cfdbda",
     "rule:LEDGER-1": "df549c0f5608c17b2515c6da93e61dba421cabe1a9078d12efb8cf50cc7094f8",
     "rule:LEX-1": "48e51e1d394ed46797b0540ecdb605cff51820e8da98f86d53b0db5f6175fa83",
-    "rule:META-1": "befab830c570f370c47a39c24c16b0c1172bd2001048e1f83279621cf623d682",
+    "rule:META-1": "c9bf6679ecd22b411e026bfde07a27f70d04e805a7d6b1977b0245bd496b6325",
     "rule:META-2": "a854c0600e7d90ff839d88366f773a8b3ba9ed891068dd786b77655583f9b824",
-    "rule:META-3": "8b9da767203ba9dc693c806d342511d5538a01852f46d03db0c218f96a13d08a",
-    "rule:META-4": "cc7d075b2dda9267fe38b611872f1c2e39c8e1587abd70fbebb935cef61886e7",
+    "rule:META-3": "3070b5b48364033b0c3aca2a41f5c2aa65440ed5d57a70e4152cffe56305329c",
+    "rule:META-4": "98099899ed731b65d1c93c31a939bb10526e419167f4c54f4bbb588a1543bcc0",
     "rule:META-5": "1195031ac3a453166e4f19e02c775525b0453c18c1f9c9c8d13e19f06595bfb1",
     "rule:META-6": "c95eab04fbd0073f87aeecef8a534c65853473c80b9b3ce643e67d2ef5cadb83",
     "rule:OWN-8": "2654eaf720d5f8a895bfe2f2ad8ce2d87580806c498fb3ae70e2a0d3be53c922",
@@ -296,7 +296,8 @@
     "spec/kernel-spec-v0.3.md": "771bdf907edfa01f40fca1fd97ea92a7e6fff072444e796c2e7da3311b7841b4",
     "spec/kernel-spec-v0.4.md": "30baf9cefa1ab179f39a1d5a0a660e37a4bce42a762574e7eb4098bc2505f3e1",
     "spec/kernel-spec-v0.5.md": "f41128b7e5cc7ecad1447ee0b45bdd3004d681c5048a08a5edc1d5fd0b8aa01a",
-    "spec/kernel-spec-v0.6.md": "95ae3e1eec48109e1c55c65c2a3e3ddecccd6192c30c0d034e5b7931f10e535e"
+    "spec/kernel-spec-v0.6.md": "95ae3e1eec48109e1c55c65c2a3e3ddecccd6192c30c0d034e5b7931f10e535e",
+    "spec/kernel-spec-v0.7.md": "212a2224d9d69ed58b0cb4cb3e8137572e2f06c6e1326698b1c6793ff0f04481"
   },
   "oracles": {
     "tools/codegen_parity.py": [

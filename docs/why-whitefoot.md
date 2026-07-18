@@ -548,6 +548,6 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `optimizer-language-research/implementation/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `.../systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
 | Reproducibility: whole-compiler object SHA-256-pinned | `THE-PLAN.md` (build-track record) |
-| Language rules cited (one spelling; reject-not-reformat; two-way effect checking; `requires` semantics; overflow op names; trap = abort) | `spec/kernel-spec-v0.6.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1 |
+| Language rules cited (one spelling; reject-not-reformat; two-way effect checking; `requires` semantics; overflow op names; trap = abort) | `spec/kernel-spec-v0.7.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1 |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, traps-to-boundary) | `PATTERNS.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `optimizer-language-research/notes/verified-findings.md`, `notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

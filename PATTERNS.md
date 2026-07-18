@@ -57,11 +57,15 @@ Replaces: GC nurseries (same insight, zero runtime), `Rc` lifetime webs.
 
 Problem: a callee chain must transform exclusive state and hand it back.
 Pattern: pass the affine value (or `&uniq`) in, return it (or the derived
-state) out — possession flows like a token; v0 has no reborrowing (T-A), so
-the token never silently forks.
-Fast because: singleton provenance keeps the checker simple and the noalias
-facts unconditional (channel 1's soundness rests on T-A).
-Replaces: Rust's implicit `&mut` reborrow chains, aliased mutable captures.
+state) out — possession flows like a token. v0 admits only bounded
+statement-scoped reborrowing (OWN-6): a child borrow of a holder is a transient,
+non-escaping call argument that suspends its parent for one statement, so the
+token never silently forks or escapes.
+Fast because: singleton provenance keeps the checker simple; the noalias facts
+hold for usable borrows (a suspended parent yields no usable alias), so channel
+1's soundness rests on T-A plus statement-scoped suspension.
+Replaces: Rust's unbounded implicit `&mut` reborrow chains and aliased mutable
+captures; Whitefoot's reborrow is bounded to one statement and cannot escape.
 
 ## P5. Env-struct behavior parameterization (FN-5)
 

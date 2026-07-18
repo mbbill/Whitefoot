@@ -10,7 +10,7 @@ not set current priority or authorize work.
 
 - `CONSTITUTION.md` defines project law.
 - `optimizer-language-research/notes/user-directives.md` records owner rulings.
-- `spec/kernel-spec-v0.6.md` defines the accepted language.
+- `spec/kernel-spec-v0.7.md` defines the accepted language.
 - `PATTERNS.md` defines the closed set of forms writers use.
 - This file orders implementation and records its authorization boundary.
 - `optimizer-language-research/implementation/decision-gates.md` preserves the
@@ -123,45 +123,39 @@ Execute these steps in order:
 New helper functions change the unit total, so each slice regenerates and pins
 the exact count. Facts remain disabled throughout this phase.
 
-**Open decision — the no-reborrow rule (gates classifying wfc's reborrowing
-functions).** Growing body semantics surfaces a conflict between wfc's own
-source and the accepted language: wfc borrows a sub-place of an exclusive
-`&uniq` holder and passes it onward — a reborrow — at roughly 1,279 sites (for
-example `frontend_unit_reset` forms `&uniq 'frontend_reset_tokens
-deref(analyzed).tokens`). v0.6 forbids reborrowing (PATTERNS P4 / T-A); that ban
-keeps the ownership no-alias facts unconditional and is a load-bearing
-optimizer-fact guarantee. The current wfc source is not authoritative: it is
-early code and may be wrong. Do not relax the rule to make wfc pass, and do not
-treat wfc's current shape as the answer. Before any reborrowing function is
-classified clean, run a recorded investigation of the two options — keep the
-rule and rewrite the code into a no-reborrow shape, or change the rule to admit
-some form of reborrowing — comparing written pros and cons, a soundness argument
-that any proposed relaxation preserves the ownership no-alias / T-A facts, and
-measured data (checker feasibility, code shape, performance). A kernel-spec
-change follows only if that evidence concludes the rule should change, and then
-only through the owner gate: a new spec version, the full hostile-review
-landing, and a logged approval. Until the decision lands, these functions stay
-"legal but unsupported" — an interim state only. The decision must resolve (rule
-kept and code rewritten, or rule relaxed through the owner gate) and every
-reborrowing function must lower before the Phase 2 whole-unit lowering and
-facts-off self-hosting fixpoint gate; no function may remain unsupported at the
-Phase 2 exit.
+**No-reborrow decision — RESOLVED (2026-07-18): bounded statement-scoped reborrow,
+landed in v0.7.** Growing body semantics surfaced that wfc's own source reborrows
+at ~1,062 verified sites — it borrows a sub-place of an exclusive `&uniq` holder
+and passes it onward as a call argument (e.g. `frontend_unit_reset` forms
+`&uniq 'frontend_reset_tokens deref(analyzed).tokens`), which v0.6 forbade. The
+owner-directed investigation (`optimizer-language-research/implementation/
+reborrow-investigation/`) weighed keeping the rule and rewriting the code against
+relaxing it, on written pros and cons, a Featherweight-Rust reconciliation, a
+1,000,000-program model-check (zero aliasing), and a hostile no-alias fact-channel
+review (PASS-WITH-CONDITIONS; performance preserved). The owner ratified the narrow
+relaxation, and kernel-spec **v0.7** admits the bounded, non-escaping,
+statement-scoped child reborrow (OWN-5/6/9/12 + new STOR-5) while deferring
+result-transfer and the harder forms. What remains in Phase 2 is production
+implementation of an already-landed spec rule, not a new spec decision: implement
+the fragment in the production checker with the recorded conditions, and grow wfc
+body semantics and lowering so every reborrowing function classifies clean and
+lowers — no function may remain unsupported at the Phase 2 exit.
 
 **Exit gate:** the exact compiler unit has complete body semantics and lowering;
 stage-1 wfc matches stage 0 on compiler-subset conformance; the facts-off IR
 fixpoint is byte-identical; both project gates pass.
 
-## Phase 3: implement all of v0.6 with facts off
+## Phase 3: implement all of v0.7 with facts off
 
 **Entry:** phase 2 exit and a frozen stage 0.
 
-Implement every accepted v0.6 construct that wfc's own source did not require.
+Implement every accepted v0.7 construct that wfc's own source did not require.
 The work includes `requires`: AST representation, parsing, entry-check
 normalization, body-derived obligation accounting, deterministic diagnostics,
 lowering, and report/no-report byte identity. Complete effect checking before
 any optimizer fact can affect output.
 
-Run the full v0.6 conformance suite through wfc. Use frozen stage 0 as the
+Run the full v0.7 conformance suite through wfc. Use frozen stage 0 as the
 behavior oracle only for its frozen subset. Use specification-derived expected
 artifacts or purpose-built reference checkers for constructs stage 0 lacks.
 Resolve all fourteen pending source cases so the runner reports zero skips.
@@ -170,7 +164,7 @@ annotations do not close those rules. Preserve a conformance case for each
 discrepancy. Keep facts disabled and rerun the facts-off self-hosting fixpoint
 after the final language slice.
 
-**Exit gate:** wfc accepts and rejects every source-emittable v0.6 case with
+**Exit gate:** wfc accepts and rejects every source-emittable v0.7 case with
 zero skips, supports `requires` end to end, emits the DIAG-2 artifact and DIAG-3
 reports, completes effect checking, and retains the facts-off byte-identical
 fixpoint. Both project gates pass.
@@ -194,7 +188,7 @@ allocation leaks, retain deterministic diagnostics, harden `wfc_compile`, and
 provide the trusted launcher shim. The launcher shim does not define public
 file-I/O language semantics.
 
-**Exit gate:** wfc passes full v0.6 conformance, codegen parity, per-site proof
+**Exit gate:** wfc passes full v0.7 conformance, codegen parity, per-site proof
 accounting, resource cleanup, and byte-identical self-hosting with facts on.
 Every fact family has hostile-review evidence. Both project gates pass. wfc is
 the production compiler baseline; frozen stage 0 remains an oracle.

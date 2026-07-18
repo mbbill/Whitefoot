@@ -83,7 +83,7 @@ Open questions run through most of it: hand-tuned SIMD still beats the naive sha
 | Understand the project state | `THE-PLAN.md`, then the tail of `optimizer-language-research/implementation/decision-gates.md` |
 | Work in this repo as an agent | `CLAUDE.md` |
 | Read the law / the doctrine | `CONSTITUTION.md` / `PATTERNS.md` |
-| Read the language spec | `spec/kernel-spec-v0.6.md` (+ `spec/derivation-ledger.md` for why each rule exists) |
+| Read the language spec | `spec/kernel-spec-v0.7.md` (+ `spec/derivation-ledger.md` for why each rule exists) |
 | The production compiler (wfc, self-hosting) | `compiler/` |
 | The stage-0 compiler + checker | `prototype/` |
 | Run all verification | `make check` and `make -C compiler check` |
