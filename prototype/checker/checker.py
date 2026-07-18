@@ -101,6 +101,20 @@ def places_overlap(p: tuple, q: tuple) -> bool:
     return p[:n] == q[:n]
 
 
+def _referenced_regions(value) -> set:
+    """Every REGIONID named in a mode subtree (params, return mode, effects)."""
+    result = set()
+    if isinstance(value, dict):
+        if value.get("kind") == "ref" and value.get("region"):
+            result.add(value["region"])
+        for v in value.values():
+            result |= _referenced_regions(v)
+    elif isinstance(value, list):
+        for item in value:
+            result |= _referenced_regions(item)
+    return result
+
+
 class Checker:
     def __init__(self, fn: dict):
         self.fn = fn
@@ -114,6 +128,7 @@ class Checker:
 
     # -- entry ---------------------------------------------------------------
     def check(self):
+        self._check_signature_regions()
         requirements = (self.fn.get("requires") or [])
         if requirements:
             # [FN-8] A requires clause is a checked, parameter-only prologue.
@@ -123,6 +138,17 @@ class Checker:
             self.check_block(requirements)
         self._seed_entry(include_consts=True)
         self.check_block(self.fn["body"])
+
+    def _check_signature_regions(self):
+        # [OWN-3] every region named in the signature (param modes, return mode)
+        # must be a declared region parameter; regions are lexical and are never
+        # introduced by mention.
+        declared = set(self.fn.get("regions", []))
+        referenced = (_referenced_regions(self.fn.get("params", []))
+                      | _referenced_regions(self.fn.get("rmode", {}) or {}))
+        for r in sorted(referenced - declared):
+            raise CheckError("OWN-3",
+                f"signature region {r} is not a declared region parameter")
 
     def _seed_entry(self, include_consts):
         self.ctx = Ctx()

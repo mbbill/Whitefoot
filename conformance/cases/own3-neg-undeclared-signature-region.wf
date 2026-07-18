@@ -1,0 +1,7 @@
+fn invalid_signature (value: &'missing i32) -> own unit pure {
+  return unit;
+}
+
+fn main () -> own unit pure {
+  return unit;
+}
