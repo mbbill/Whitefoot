@@ -79,7 +79,7 @@ Spec rules changed:
 Checker changes shipped with the delta (non-spec): unconditional exclusivity assertion (B),
 `derived_from`-only-on-unbound-temporary (D), lineage-aware alias-scope emitter (C).
 
-Deferred (unchanged; each needs its own reconciliation + review before admission): OWN-14
+Deferred (unchanged; each needs its own reconciliation + review before admission): reference-result provenance
 result-transfer, uniq→shared downgrade, uniq slices, affine-element buffers, match-binder
 parents, grandchild chains, bound children.
 

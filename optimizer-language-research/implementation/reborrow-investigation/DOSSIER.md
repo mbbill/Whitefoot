@@ -12,7 +12,7 @@ owner-gated (see `governance/APPROVALS.md`). Provenance: workflow wf_9da63778-85
 
 # Dossier: The No-Reborrow Rule (T-A) — Keep-and-Rewrite vs. Bounded Relaxation
 
-Prepared for the owner. Read-only investigation; no repository file was modified. This is a recommendation, not a decision. The gated artifact at stake is a numbered kernel-spec rule (v0.6 OWN-1/4/6 + a possible new OWN-14), so any change is owner-gated.
+Prepared for the owner. Read-only investigation; no repository file was modified. This is a recommendation, not a decision. The gated artifact at stake is a numbered kernel-spec rule (v0.6 OWN-1/4/6 + a possible new reference-result-provenance rule), so any change is owner-gated.
 
 ---
 
@@ -75,7 +75,7 @@ The adversarial attack targeted the decisive tier — the mutually-recursive ana
 
 ## 4. Option B — Relax to bounded, non-escaping, statement-scoped reborrows
 
-Child-suspension model as drafted on branch `parked_edits` (OWN-6 rewritten + new OWN-14 reference-result provenance; checker in `prototype/checker/checker.py`).
+Child-suspension model as drafted on branch `parked_edits` (OWN-6 rewritten + new reference-result provenance; checker in `prototype/checker/checker.py`).
 
 **Verdict: viable-with-cost; survived a genuine kill-shot attempt but rests on an OPEN formal obligation (OBL-4) and an un-run fact-channel audit.**
 
@@ -89,9 +89,9 @@ Child-suspension model as drafted on branch `parked_edits` (OWN-6 rewritten + ne
 ### Cons
 - **OBL-4 is OPEN.** The parked branch's headline "10,000-model, zero violations" run is explicitly an *existing-core* run — it validates the pre-reborrow checker. The new forms (suspension/resumption, loan-after-move, result-transfer, whole-arg roots, downgrade) have only focused unit regressions. The branch itself marks the additive forms **provisional**.
 - **Fact-channel review not done.** This is a fact-channel change; CLAUDE.md mandates hostile review before shipping. The `noalias` *derivation* must be re-audited under lineage, and 167 tests + a green make are the green gate, not that review.
-- **Checker complexity is real** because the *spec* admits the full rule, not just wfc's subset: `checker.py` +804/-54, 14 new helpers (provenance fingerprints at flow joins, moved-holder loan persistence, descendant-mode propagation, OWN-14 recovery/downgrade). The simple case cannot be admitted in isolation without speccing the bound/returned/downgraded cases too.
+- **Checker complexity is real** because the *spec* admits the full rule, not just wfc's subset: `checker.py` +804/-54, 14 new helpers (provenance fingerprints at flow joins, moved-holder loan persistence, descendant-mode propagation, reference-result provenance recovery/downgrade). The simple case cannot be admitted in isolation without speccing the bound/returned/downgraded cases too.
 - **The measured performance case for B is absent.** The binary-trees port hit the no-reborrow wall and was forced to a bottom-up SoA build at **zero measured cost** (0.71s with facts vs. an inexpressible Rust recursive-&mut arena; identical-shape Rust 0.64s). So B buys *writer ergonomics / avoiding a wfc rewrite*, not speed.
-- **Reborrow-adjacent escape is a demonstrated FATAL-race class.** D18-R20..R24 found an interior `&uniq` view whose result region was caller-supplied — two live `&uniq` to one location. Sequential wfc reborrows don't escape, but the *spec rule* permits result-carrying children, the same shape that raced; its escape-prevention clauses (OWN-4/OWN-10/OWN-14) are load-bearing and must be attacked directly.
+- **Reborrow-adjacent escape is a demonstrated FATAL-race class.** D18-R20..R24 found an interior `&uniq` view whose result region was caller-supplied — two live `&uniq` to one location. Sequential wfc reborrows don't escape, but the *spec rule* permits result-carrying children, the same shape that raced; its escape-prevention clauses (OWN-4/OWN-10/reference-result provenance) are load-bearing and must be attacked directly.
 - **Governance:** the parked branch edited v0.6 in place, which GOV-1/spec-guard now hard-fails. Any real change must bump the version and rename the file.
 
 ### Soundness verdict — did the kill-shot break it?
@@ -105,7 +105,7 @@ Child-suspension model as drafted on branch `parked_edits` (OWN-6 rewritten + ne
 - Nested/transitive reborrows → transitive `derived_from` suspension (`probe7`).
 - The canonical wfc shape → **ACCEPT** (`wfc`), confirming B unblocks the ~1,000 sites.
 
-The **closest approach** was the sequential analog of the D18 guard-FATAL (`escape1/escape2`): an interior `&uniq` view escaping past its object's tenure via a caller-supplied result region. In concurrency this raced because a mutex's dynamic tenure was shorter than the caller region. In the *sequential* kernel that mismatch cannot exist — OWN-14 requires the formal return region to be syntactically identical to a formal *parameter* region, so the result is tied to its source, and OWN-4 rejects any borrow whose region does not outlive the destination. Both escapes were caught with the OWN-4 diagnostic.
+The **closest approach** was the sequential analog of the D18 guard-FATAL (`escape1/escape2`): an interior `&uniq` view escaping past its object's tenure via a caller-supplied result region. In concurrency this raced because a mutex's dynamic tenure was shorter than the caller region. In the *sequential* kernel that mismatch cannot exist — reference-result provenance requires the formal return region to be syntactically identical to a formal *parameter* region, so the result is tied to its source, and OWN-4 rejects any borrow whose region does not outlive the destination. Both escapes were caught with the OWN-4 diagnostic.
 
 **What the rule must forbid (and, as drafted, does):** (1) two overlapping `uniq` siblings on one call; (2) a `uniq` child from a `shared` parent; (3) any access — read/write/move/copy/transfer — through a *suspended* parent; (4) a child whose region outlives its source (return/store/`give` past the parent); (5) resumption before the *last* descendant ends. All five are named and enforced.
 
@@ -141,13 +141,13 @@ The **closest approach** was the sequential analog of the D18 guard-FATAL (`esca
 
 2. **Do not ratify Option B as drafted.** It survived a real kill-shot attempt, which is meaningful, but (a) OBL-4's widened bounded model check has **not** been run for the new forms, (b) the `noalias` fact-channel re-derivation under lineage has **not** been audited, and (c) safety is carried as distributed runtime bookkeeping rather than a structural invariant. CLAUDE.md forbids shipping a fact channel on a green gate alone.
 
-3. **Recommended path: pursue the narrowest relaxation that covers 100% of wfc — OWN-6 statement-scoped suspension only — gated on three concrete deliverables.** wfc needs *only* OBL-4 item 1 (statement-scoped suspension of an unbound call-argument child); it uses none of OWN-14's result-transfer, downgrade, or loan-after-move. A minimal rule that admits *only* the unbound statement-scoped fragment carries a much smaller obligation and a fraction of the checker code, and still unblocks every wfc site. Defer OWN-14's result-carrying/downgrade machinery until an actual writer need for it is demonstrated (none exists today).
+3. **Recommended path: pursue the narrowest relaxation that covers 100% of wfc — OWN-6 statement-scoped suspension only — gated on three concrete deliverables.** wfc needs *only* OBL-4 item 1 (statement-scoped suspension of an unbound call-argument child); it uses none of reference-result provenance's result-transfer, downgrade, or loan-after-move. A minimal rule that admits *only* the unbound statement-scoped fragment carries a much smaller obligation and a fraction of the checker code, and still unblocks every wfc site. Defer reference-result provenance's result-carrying/downgrade machinery until an actual writer need for it is demonstrated (none exists today).
 
 **This recommendation is explicitly not "relax because wfc uses reborrows."** wfc's usage is treated as a *cost signal for Option A*, not a justification for B. The decisive facts are: (i) Option A's rewrite is architecturally unacceptable on the analyzer core, and (ii) Option B's minimal fragment preserves the single-writer invariant and survived adversarial attack — subject to unfinished formal work.
 
 **What would change this recommendation:**
 - **Toward pure Option A (keep, no relax):** if a measured redesign shows the analyzer core can move to a single top-down owned semantic context at tolerable perf and readability cost (the finite-but-large rewrite), *and* the byte-sink borrow-return idiom is blessed and measured zero-cost — then keep T-A and pay the one-time sweep. wfc is early code; a bounded rewrite there is cheaper than permanently widening the language.
-- **Toward full Option B:** if a writer need for *bound/returned* reborrows (OWN-14 forms) is demonstrated beyond the statement-scoped fragment, and OBL-4 is discharged for those forms too.
+- **Toward full Option B:** if a writer need for *bound/returned* reborrows (reference-result provenance forms) is demonstrated beyond the statement-scoped fragment, and OBL-4 is discharged for those forms too.
 - **Toward a third option not costed here:** a checked `split_uniq` disjoint-field view (already carded in PATTERNS "Known gaps") could cover the field-projection subset (`frontend_unit_reset`, `deref(out).bytes`) *without* general reborrow, keeping T-A intact for whole-aggregate re-narrowing. It does **not** help the analyzer core (same array, node-id indices, not statically disjoint), so it is a partial mitigation, not a full answer — but it is worth costing.
 
 ---
@@ -158,7 +158,7 @@ A numbered-kernel-spec change is owner-gated. Before any edit, the owner must be
 
 **A. Governance / spec mechanics (mandatory, mechanical):**
 - Bump the specification version and **rename the file** (`kernel-spec-v0.6.md` → next version); update title and every live reference in the same change. Never revise a numbered rule in place — the parked branch violated this and GOV-1/spec-guard now hard-fails it.
-- Scope the delta to the **minimal** rule: OWN-6 statement-scoped suspension for an unbound call-argument child. Explicitly exclude (or separately gate) OWN-14 result-transfer, uniq→shared downgrade, and loan-after-holder-move until needed.
+- Scope the delta to the **minimal** rule: OWN-6 statement-scoped suspension for an unbound call-argument child. Explicitly exclude (or separately gate) reference-result provenance result-transfer, uniq→shared downgrade, and loan-after-holder-move until needed.
 - Keep `CLAUDE.md`/`AGENTS.md` byte-identical if either is touched.
 
 **B. Formal reconciliation (discharge OBL-4 for the admitted fragment):**

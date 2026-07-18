@@ -17,7 +17,7 @@ OWN-7 index-sibling gloss and the OWN-5/OWN-12/ancestor interactions. Coverage s
 Design intent: admit exactly the fragment of reborrowing that wfc uses — a transient,
 non-escaping child borrow passed as a call argument to an `own`-returning callee — and
 nothing more. Every harder form (bound children, returned/given children, result-carrying
-children/OWN-14, uniq→shared downgrade, loan-after-holder-move) is DEFERRED, so the open
+children/reference-result provenance, uniq→shared downgrade, loan-after-holder-move) is DEFERRED, so the open
 obligation and the checker surface stay small. See `DOSSIER.md` for why this fragment is
 the recommendation.
 
@@ -137,7 +137,7 @@ The admitted fragment is syntactic and local:
 - clear the flag at statement end.
 
 No dataflow fixpoint, no path-set typing, no inference. Far smaller than the parked branch's
-full design (OWN-14 result-transfer, downgrade, loan-after-move — all deferred here).
+full design (reference-result provenance result-transfer, downgrade, loan-after-move — all deferred here).
 
 ## 6. Deferred (re-entry triggers recorded)
 
@@ -145,7 +145,7 @@ Each returns for its own owner-gated review when a real writer need is demonstra
 
 - **Bound children** (`let c = &uniq 'r deref(h)...`) — needs child liveness beyond one
   statement.
-- **Result-carrying children / reference-result provenance** (the parked branch's OWN-14) —
+- **Result-carrying children / reference-result provenance** (the parked branch's reference-result-provenance rule) —
   a function returning a borrow derived from a borrow argument. wfc uses zero of these; §1.2
   forbids them.
 - **`match`-binder parents and grandchild reborrow chains** — needs the transitive-ancestor
@@ -188,7 +188,7 @@ OWN-6 statement-scoped child definition + eligible-holder restriction + suspensi
 OWN-12 ancestor-only effect-row exemption; PATTERNS P4 no-reborrow → bounded reborrow; and —
 correcting rev 2 — **one NEW numbered rule** promoting "no field/element/box-or-arena
 content/enum-payload may be borrow- or region-typed" from convention to cited spec (the
-own-wrapped-launder closure the fact-channel review surfaced). OWN-14 result-transfer stays
+own-wrapped-launder closure the fact-channel review surfaced). reference-result provenance result-transfer stays
 deferred. Record the approval and evidence pointer in `governance/APPROVALS.md` and
 `decision-gates.md`.
 
