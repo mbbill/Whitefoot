@@ -405,9 +405,10 @@ def canonical_path(columns, root, target):
 # function is validated legal by the stage-0 reference checker at build time.
 COMPILER_CLEAN_ORDINALS = (
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-    21, 22, 23, 24, 30, 31, 96, 102, 105, 106, 110, 111, 123, 124, 125,
-    126, 144, 147, 158, 159, 185, 208, 209, 216, 289, 300, 330, 331, 332,
-    333, 334, 335, 336, 401, 412, 413, 427, 490, 508,
+    21, 22, 23, 24, 29, 30, 31, 96, 98, 102, 104, 105, 106, 110, 111,
+    123, 124, 125, 126, 144, 147, 158, 159, 185, 208, 209, 216, 289, 300,
+    330, 331, 332, 333, 334, 335, 336, 401, 408, 412, 413, 414, 427, 490,
+    508,
 )
 
 
@@ -422,8 +423,8 @@ def assert_compiler_coverage(library):
     expected = (
         UNIT_CLEAN,
         537,
-        57,
-        480,
+        62,
+        475,
         0,
         functions[18],
         AST_NONE,
@@ -871,10 +872,9 @@ def assert_reader_general_signature_and_enum_match(library):
         b"}\n"
     )
 
-    # Regression: until buffer arguments retain their region identity, an
-    # effectful user call in a multi-region function cannot soundly attribute
-    # the callee's read to the call's explicit region argument. `hole` passes
-    # the 'b buffer while spelling 'a, so it must fail closed.
+    # A one-region read-only callee attributes its exhibited row to the exact
+    # explicit substitution, including a non-first region of a multi-region
+    # caller. The actual shared argument must have that same provenance.
     witness = (
         b"fn c1 ['r] (source: &'r buffer<u8>, at: own u64) -> own u8 "
         b"reads('r), traps {\n"
@@ -892,6 +892,71 @@ def assert_reader_general_signature_and_enum_match(library):
         function,
     ), (kind, report.status)
 
+    assert_clean(
+        b"fn c1 ['r] (source: &'r buffer<u8>, at: own u64) -> own u8 "
+        b"reads('r), traps {\n"
+        b"  return index<u8>(deref(source), at);\n"
+        b"}\n"
+        b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own u8 reads('b), traps {\n"
+        b"  return c1<'b>(source: b, at: at);\n"
+        b"}\n"
+    )
+    assert_clean(
+        b"fn c1 ['r] (source: &'r buffer<u8>, at: own u64) -> own u8 "
+        b"reads('r), traps {\n"
+        b"  return index<u8>(deref(source), at);\n"
+        b"}\n"
+        b"fn both ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  let x: own u8 = c1<'a>(source: a, at: at);\n"
+        b"  let y: own u8 = c1<'b>(source: b, at: at);\n"
+        b"  return ieq<u8>(x, y);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        b"fn c1 ['r] (source: &'r buffer<u8>, at: own u64) -> own u8 "
+        b"reads('r), traps {\n"
+        b"  return index<u8>(deref(source), at);\n"
+        b"}\n"
+        b"fn wrong ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own u8 reads('a), traps {\n"
+        b"  return c1<'b>(source: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        b"fn c1 ['r] (source: &'r buffer<u8>, at: own u64) -> own u8 "
+        b"reads('r), traps {\n"
+        b"  return index<u8>(deref(source), at);\n"
+        b"}\n"
+        b"fn wrong ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own u8 reads('b) {\n"
+        b"  return c1<'b>(source: b, at: at);\n"
+        b"}\n"
+    )
+
+    # Reads-without-traps is a distinct exact row. The caller neither gains nor
+    # loses traps when it instantiates the callee's sole region with 'b.
+    read_only_callee = (
+        b"fn width ['r] (source: &'r buffer<u8>) -> own u64 reads('r) {\n"
+        b"  return len<u8>(deref(source));\n"
+        b"}\n"
+    )
+    assert_clean(
+        read_only_callee
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 reads('b) {\n"
+        b"  return width<'b>(source: b);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        read_only_callee
+        + b"fn wrong ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 reads('b), traps {\n"
+        b"  return width<'b>(source: b);\n"
+        b"}\n"
+    )
+
     # Region substitution applies to pure calls too. The explicit 'a argument
     # instantiates c's 'r, so only a place rooted in 'a can satisfy x: &'r.
     pure_callee = (
@@ -906,11 +971,48 @@ def assert_reader_general_signature_and_enum_match(library):
         b"  return c<'a>(x: a);\n"
         b"}\n"
     )
+    assert_clean(
+        pure_callee
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 pure {\n"
+        b"  return c<'b>(x: b);\n"
+        b"}\n"
+    )
     assert_unsupported(
         pure_callee
         + b"fn hole ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
         b"-> own u64 pure {\n"
         b"  return c<'a>(x: b);\n"
+        b"}\n"
+    )
+
+    # Named own-u64 call arguments use the same bounded canonical parser as
+    # ordinary u64 expressions; they are not restricted to one-digit values.
+    takes_u64 = (
+        b"fn takes_u64 (value: own u64) -> own u64 pure {\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+    assert_clean(
+        takes_u64
+        + b"fn literal_call () -> own u64 pure {\n"
+        b"  return takes_u64(value: 12_u64);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        takes_u64
+        + b"fn noncanonical_call () -> own u64 pure {\n"
+        b"  return takes_u64(value: 01_u64);\n"
+        b"}\n"
+    )
+
+    # Even when the callee does not use its formal region, the explicit actual
+    # must be a declared live caller region; an unused region cannot legalize an
+    # undeclared spelling.
+    assert_unsupported(
+        b"fn unused ['r] () -> own u64 pure {\n  return 0_u64;\n}\n"
+        b"fn wrong ['a] (a: &'a buffer<u8>) -> own u64 pure {\n"
+        b"  return unused<'z>();\n"
         b"}\n"
     )
 
@@ -2280,8 +2382,8 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
         537,
-        57,
-        480,
+        62,
+        475,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -2338,10 +2440,10 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 537 total / 57 clean / 480 unsupported / "
+        "semantic unit: compiler 537 total / 62 clean / 475 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
-        "admission, multi-region effectful-call rejection, general signatures "
+        "admission, exact call-region attribution, general signatures "
         "and multi-variant enum matches, "
         "enum values and tag-only-enum buffer reads, "
         "structural rename, real "

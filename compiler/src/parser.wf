@@ -150,7 +150,7 @@ fn parser_word6 ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: 
 }
 
 fn parser_symbol_is ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64, want: own u8) -> own Bool reads('s 't), traps {
-  let symbol: own Bool = parser_kind_at_is(tokens: tokens, token: token, want: 12_u64);
+  let symbol: own Bool = parser_kind_at_is<'t>(tokens: tokens, token: token, want: 12_u64);
   match symbol {
     True() => {
     }

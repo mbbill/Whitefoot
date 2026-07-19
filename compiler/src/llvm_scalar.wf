@@ -184,7 +184,7 @@ fn llvm_scalar_node_type_is ['f, 'y] (facts: &'f NodeFacts, types: &'y TypeTape,
     }
   }
   let type_id: own u64 = index<u64>(deref(facts).type_ids, node);
-  return llvm_scalar_type_is(types: types, type_id: type_id, expected: expected);
+  return llvm_scalar_type_is<'y>(types: types, type_id: type_id, expected: expected);
 }
 
 fn llvm_scalar_mode_is ['f] (facts: &'f NodeFacts, node: own u64, expected: own SemanticValueMode) -> own Bool reads('f), traps {

@@ -88,7 +88,7 @@ fn token_ordinal_valid ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, 
   }
   let start: own u64 = index<u64>(deref(tokens).starts, token);
   let end: own u64 = index<u64>(deref(tokens).ends, token);
-  return source_span_valid(source: source, start: start, end: end);
+  return source_span_valid<'s>(source: source, start: start, end: end);
 }
 
 fn token_text_equal ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, left: own u64, right: own u64) -> own Bool reads('s 't), traps {

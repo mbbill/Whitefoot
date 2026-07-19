@@ -246,7 +246,7 @@ fn semantic_reader_operand ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTa
       }
       match ieq<u64>(expected_type, semantic_buffer_type_u64) {
         True() => {
-          return semantic_reader_u64_literal_any(source: source, tokens: tokens, ast: ast, node: node);
+          return semantic_reader_u64_literal_canonical<'c>(source: source, tokens: tokens, ast: ast, node: node);
         }
         False() => {
           return False();
@@ -1383,7 +1383,7 @@ fn semantic_reader_return_type_id ['c] (source: &'c buffer<u8>, tokens: &'c Toke
   return semantic_reader_leaf_enum_id(source: source, tokens: tokens, ast: ast, symbols: symbols, node: node);
 }
 
-fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, node: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, node: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
   let ast_user_call_atom: own AstKind = AstUserCall();
   let kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_user_call_atom);
   let token_ok: own Bool = semantic_buffer_declaration_word_valid<'c>(source: source, tokens: tokens, ast: ast, node: node);
@@ -1706,9 +1706,11 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_block: own Bool = ieq<AstKind>(scan_kind, ast_block_atom);
     match scan_is_block {
       True() => {
+        let block_after_reads: own Bool = ieq<u64>(scan_stage, 6_u64);
         let block_after_traps: own Bool = ieq<u64>(scan_stage, 7_u64);
         let block_after_pure: own Bool = ieq<u64>(scan_stage, 8_u64);
-        let block_order: own Bool = bor<Bool>(block_after_traps, block_after_pure);
+        let block_after_read_row: own Bool = bor<Bool>(block_after_reads, block_after_traps);
+        let block_order: own Bool = bor<Bool>(block_after_read_row, block_after_pure);
         let block_head_valid: own Bool = semantic_buffer_single_symbol_node<'c>(source: source, tokens: tokens, ast: ast, node: scan_child, want: 123_u8);
         match band<Bool>(block_order, block_head_valid) {
           True() => {
@@ -1819,9 +1821,8 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
   let no_pure: own Bool = bnot<Bool>(pure_seen);
   let effect_pure_a: own Bool = band<Bool>(pure_seen, no_reads);
   let effect_pure: own Bool = band<Bool>(effect_pure_a, no_traps);
-  let effect_reads_a: own Bool = band<Bool>(reads_present, traps_seen);
-  let effect_reads_traps: own Bool = band<Bool>(effect_reads_a, no_pure);
-  match bor<Bool>(effect_pure, effect_reads_traps) {
+  let effect_reads: own Bool = band<Bool>(reads_present, no_pure);
+  match bor<Bool>(effect_pure, effect_reads) {
     True() => {
     }
     False() => {
@@ -1867,7 +1868,7 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  match effect_reads_traps {
+  match effect_reads {
     True() => {
       match has_region {
         True() => {
@@ -2022,8 +2023,8 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
             return semantic_facts_none;
           }
         }
-        let region_same: own Bool = token_text_equal(source: source, tokens: tokens, left: arg_region_head, right: region_token);
-        match region_same {
+        let region_live: own Bool = semantic_reader_region_declared(source: source, tokens: tokens, ast: ast, regions_node: regions_node, head_token: arg_region_head);
+        match region_live {
           True() => {
           }
           False() => {
@@ -2395,7 +2396,7 @@ fn semantic_reader_literal_type ['c] (source: &'c buffer<u8>, tokens: &'c TokenT
   }
 }
 
-fn semantic_reader_analyze_expr ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, node: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_expr ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, node: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
   let ast_count: own u64 = deref(ast).count;
   match ilt<u64>(node, ast_count) {
     True() => {
@@ -2532,7 +2533,7 @@ fn semantic_reader_analyze_expr ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     True() => {
       let call_type: own u64 = semantic_facts_none;
       region 'semantic_reader_expr_call {
-        set call_type = semantic_reader_analyze_call(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, node: node, scratch: scratch, report: &uniq 'semantic_reader_expr_call deref(report));
+        set call_type = semantic_reader_analyze_call(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, node: node, scratch: scratch, report: &uniq 'semantic_reader_expr_call deref(report));
       }
       return call_type;
     }
@@ -2635,7 +2636,7 @@ fn semantic_reader_let_header_valid ['c] (source: &'c buffer<u8>, tokens: &'c To
   return band<Bool>(prefix, type_valid);
 }
 
-fn semantic_reader_analyze_let ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own Bool reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_let ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own Bool reads('c 'w), writes('w), traps {
   let type_node: own u64 = semantic_body_child_at(ast: ast, node: statement, ordinal: 2_u64);
   let ast_binding_type_atom: own AstKind = AstBindingType();
   let type_id: own u64 = semantic_facts_none;
@@ -2701,7 +2702,7 @@ fn semantic_reader_analyze_let ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
   let value_node: own u64 = semantic_body_child_at(ast: ast, node: statement, ordinal: 3_u64);
   let value_type: own u64 = semantic_facts_none;
   region 'semantic_reader_let_value {
-    set value_type = semantic_reader_analyze_expr(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, node: value_node, scratch: &'semantic_reader_let_value deref(scratch), report: &uniq 'semantic_reader_let_value deref(report));
+    set value_type = semantic_reader_analyze_expr(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, node: value_node, scratch: &'semantic_reader_let_value deref(scratch), report: &uniq 'semantic_reader_let_value deref(report));
   }
   match ieq<u64>(value_type, semantic_facts_none) {
     True() => {
@@ -2740,7 +2741,7 @@ fn semantic_reader_analyze_let ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
   }
 }
 
-fn semantic_reader_analyze_return ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, return_type: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own Bool reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_return ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, return_type: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own Bool reads('c 'w), writes('w), traps {
   let ast_return_atom: own AstKind = AstReturn();
   let kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: statement, want: ast_return_atom);
   let shape_ok: own Bool = semantic_body_exact_children(ast: ast, node: statement, want: 1_u64);
@@ -2772,7 +2773,7 @@ fn semantic_reader_analyze_return ['c, 'w] (source: &'c buffer<u8>, tokens: &'c 
   let value_node: own u64 = semantic_body_child_at(ast: ast, node: statement, ordinal: 0_u64);
   let value_type: own u64 = semantic_facts_none;
   region 'semantic_reader_return_value {
-    set value_type = semantic_reader_analyze_expr(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, node: value_node, scratch: &'semantic_reader_return_value deref(scratch), report: &uniq 'semantic_reader_return_value deref(report));
+    set value_type = semantic_reader_analyze_expr(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, node: value_node, scratch: &'semantic_reader_return_value deref(scratch), report: &uniq 'semantic_reader_return_value deref(report));
   }
   match ieq<u64>(value_type, semantic_facts_none) {
     True() => {
@@ -3119,7 +3120,7 @@ fn semantic_reader_enum_match_exact ['c] (source: &'c buffer<u8>, tokens: &'c To
   }
 }
 
-fn semantic_reader_analyze_enum_arms ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, return_type: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own SemanticReaderFlow reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_enum_arms ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, return_type: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own SemanticReaderFlow reads('c 'w), writes('w), traps {
   let ast_count: own u64 = deref(ast).count;
   let first: own u64 = index<u64>(deref(ast).first_children, statement);
   let last: own u64 = index<u64>(deref(ast).last_children, statement);
@@ -3141,7 +3142,7 @@ fn semantic_reader_analyze_enum_arms ['c, 'w] (source: &'c buffer<u8>, tokens: &
     let arm_saved: own u64 = deref(scratch).count;
     let arm_flow: own SemanticReaderFlow = SemanticReaderFlowError();
     region 'semantic_reader_enum_arm_block {
-      set arm_flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: return_type, block: arm_block, scratch: &uniq 'semantic_reader_enum_arm_block deref(scratch), report: &uniq 'semantic_reader_enum_arm_block deref(report));
+      set arm_flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: return_type, block: arm_block, scratch: &uniq 'semantic_reader_enum_arm_block deref(scratch), report: &uniq 'semantic_reader_enum_arm_block deref(report));
     }
     set deref(scratch).count = arm_saved;
     match arm_flow {
@@ -3194,7 +3195,7 @@ fn semantic_reader_analyze_enum_arms ['c, 'w] (source: &'c buffer<u8>, tokens: &
   }
 }
 
-fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, return_type: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own SemanticReaderFlow reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, return_type: own u64, statement: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own SemanticReaderFlow reads('c 'w), writes('w), traps {
   let match_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: statement);
   match match_token {
     True() => {
@@ -3232,7 +3233,7 @@ fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
 
   let scrutinee_type: own u64 = semantic_facts_none;
   region 'semantic_reader_match_scrutinee {
-    set scrutinee_type = semantic_reader_analyze_expr(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, node: scrutinee, scratch: &'semantic_reader_match_scrutinee deref(scratch), report: &uniq 'semantic_reader_match_scrutinee deref(report));
+    set scrutinee_type = semantic_reader_analyze_expr(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, node: scrutinee, scratch: &'semantic_reader_match_scrutinee deref(scratch), report: &uniq 'semantic_reader_match_scrutinee deref(report));
   }
   match ieq<u64>(scrutinee_type, semantic_facts_none) {
     True() => {
@@ -3285,7 +3286,7 @@ fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
       }
       let enum_flow: own SemanticReaderFlow = SemanticReaderFlowError();
       region 'semantic_reader_match_enum_arms {
-        set enum_flow = semantic_reader_analyze_enum_arms(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: return_type, statement: statement, scratch: &uniq 'semantic_reader_match_enum_arms deref(scratch), report: &uniq 'semantic_reader_match_enum_arms deref(report));
+        set enum_flow = semantic_reader_analyze_enum_arms(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: return_type, statement: statement, scratch: &uniq 'semantic_reader_match_enum_arms deref(scratch), report: &uniq 'semantic_reader_match_enum_arms deref(report));
       }
       return enum_flow;
     }
@@ -3326,7 +3327,7 @@ fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   let true_saved: own u64 = deref(scratch).count;
   let true_flow: own SemanticReaderFlow = SemanticReaderFlowError();
   region 'semantic_reader_match_true {
-    set true_flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: return_type, block: true_block, scratch: &uniq 'semantic_reader_match_true deref(scratch), report: &uniq 'semantic_reader_match_true deref(report));
+    set true_flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: return_type, block: true_block, scratch: &uniq 'semantic_reader_match_true deref(scratch), report: &uniq 'semantic_reader_match_true deref(report));
   }
   set deref(scratch).count = true_saved;
   let true_returns: own Bool = False();
@@ -3344,7 +3345,7 @@ fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   let false_saved: own u64 = deref(scratch).count;
   let false_flow: own SemanticReaderFlow = SemanticReaderFlowError();
   region 'semantic_reader_match_false {
-    set false_flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: return_type, block: false_block, scratch: &uniq 'semantic_reader_match_false deref(scratch), report: &uniq 'semantic_reader_match_false deref(report));
+    set false_flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: return_type, block: false_block, scratch: &uniq 'semantic_reader_match_false deref(scratch), report: &uniq 'semantic_reader_match_false deref(report));
   }
   set deref(scratch).count = false_saved;
   let false_returns: own Bool = False();
@@ -3369,7 +3370,7 @@ fn semantic_reader_analyze_match ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   }
 }
 
-fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, return_type: own u64, block: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own SemanticReaderFlow reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, return_type: own u64, block: own u64, scratch: &uniq 'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own SemanticReaderFlow reads('c 'w), writes('w), traps {
   let ast_block_atom: own AstKind = AstBlock();
   let block_kind: own Bool = semantic_body_kind_is(ast: ast, node: block, want: ast_block_atom);
   let block_token: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: block, want: 123_u8);
@@ -3437,7 +3438,7 @@ fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
       True() => {
         let let_clean: own Bool = False();
         region 'semantic_reader_stmt_let {
-          set let_clean = semantic_reader_analyze_let(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, statement: statement, scratch: &uniq 'semantic_reader_stmt_let deref(scratch), report: &uniq 'semantic_reader_stmt_let deref(report));
+          set let_clean = semantic_reader_analyze_let(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, statement: statement, scratch: &uniq 'semantic_reader_stmt_let deref(scratch), report: &uniq 'semantic_reader_stmt_let deref(report));
         }
         match let_clean {
           True() => {
@@ -3452,7 +3453,7 @@ fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
         match is_match {
           True() => {
             region 'semantic_reader_stmt_match {
-              set statement_flow = semantic_reader_analyze_match(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: return_type, statement: statement, scratch: &uniq 'semantic_reader_stmt_match deref(scratch), report: &uniq 'semantic_reader_stmt_match deref(report));
+              set statement_flow = semantic_reader_analyze_match(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: return_type, statement: statement, scratch: &uniq 'semantic_reader_stmt_match deref(scratch), report: &uniq 'semantic_reader_stmt_match deref(report));
             }
           }
           False() => {
@@ -3460,7 +3461,7 @@ fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
               True() => {
                 let return_clean: own Bool = False();
                 region 'semantic_reader_stmt_return {
-                  set return_clean = semantic_reader_analyze_return(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: return_type, statement: statement, scratch: &uniq 'semantic_reader_stmt_return deref(scratch), report: &uniq 'semantic_reader_stmt_return deref(report));
+                  set return_clean = semantic_reader_analyze_return(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: return_type, statement: statement, scratch: &uniq 'semantic_reader_stmt_return deref(scratch), report: &uniq 'semantic_reader_stmt_return deref(report));
                 }
                 match return_clean {
                   True() => {
@@ -4355,7 +4356,7 @@ fn semantic_reader_function_param_region ['c] (source: &'c buffer<u8>, tokens: &
   }
 }
 
-fn semantic_reader_call_effectful ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, call_node: own u64) -> own Bool reads('c), traps {
+fn semantic_reader_call_effects ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, call_node: own u64) -> own u64 reads('c), traps {
   let call_head: own u64 = index<u64>(deref(ast).heads, call_node);
   let symbol_value_atom: own SymbolNamespace = SymbolValue();
   let lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: symbol_value_atom, scope: symbol_none, name_token: call_head);
@@ -4363,13 +4364,13 @@ fn semantic_reader_call_effectful ['c] (source: &'c buffer<u8>, tokens: &'c Toke
     SymbolLookupFound() => {
     }
     SymbolLookupNotFound() => {
-      return True();
+      return 3_u64;
     }
     SymbolLookupInvalidTape() => {
-      return True();
+      return 3_u64;
     }
     SymbolLookupInvalidToken() => {
-      return True();
+      return 3_u64;
     }
   }
   let callee: own u64 = lookup.declaration;
@@ -4380,34 +4381,76 @@ fn semantic_reader_call_effectful ['c] (source: &'c buffer<u8>, tokens: &'c Toke
   let last_none: own Bool = ieq<u64>(last, ast_none);
   match bor<Bool>(first_none, last_none) {
     True() => {
-      return True();
+      return 3_u64;
     }
     False() => {
     }
   }
-  let ast_reads_effect_atom: own AstKind = AstReadsEffect();
   let child: own u64 = first;
   let steps: own u64 = 0_u64;
-  loop @semantic_reader_callee_effect_scan {
+  let ast_reads_effect_atom_call_scan: own AstKind = AstReadsEffect();
+  let ast_traps_effect_atom_call_scan: own AstKind = AstTrapsEffect();
+  let ast_block_atom_call_scan: own AstKind = AstBlock();
+  loop @semantic_reader_call_effect_scan {
     match ilt<u64>(child, ast_count) {
       True() => {
       }
       False() => {
-        return True();
+        return 3_u64;
       }
     }
     let child_kind: own AstKind = index<AstKind>(deref(ast).kinds, child);
-    let is_reads: own Bool = ieq<AstKind>(child_kind, ast_reads_effect_atom);
+    let is_reads: own Bool = ieq<AstKind>(child_kind, ast_reads_effect_atom_call_scan);
     match is_reads {
       True() => {
-        return True();
+        match ieq<u64>(child, last) {
+          True() => {
+            return 3_u64;
+          }
+          False() => {
+          }
+        }
+        let effect_next: own u64 = index<u64>(deref(ast).next_siblings, child);
+        match ilt<u64>(effect_next, ast_count) {
+          True() => {
+          }
+          False() => {
+            return 3_u64;
+          }
+        }
+        let effect_next_kind: own AstKind = index<AstKind>(deref(ast).kinds, effect_next);
+        let reads_with_traps: own Bool = ieq<AstKind>(effect_next_kind, ast_traps_effect_atom_call_scan);
+        match reads_with_traps {
+          True() => {
+            return 3_u64;
+          }
+          False() => {
+          }
+        }
+        let reads_only: own Bool = ieq<AstKind>(effect_next_kind, ast_block_atom_call_scan);
+        match reads_only {
+          True() => {
+            return 1_u64;
+          }
+          False() => {
+            return 3_u64;
+          }
+        }
+      }
+      False() => {
+      }
+    }
+    let is_traps: own Bool = ieq<AstKind>(child_kind, ast_traps_effect_atom_call_scan);
+    match is_traps {
+      True() => {
+        return 2_u64;
       }
       False() => {
       }
     }
     match ieq<u64>(child, last) {
       True() => {
-        return False();
+        return 0_u64;
       }
       False() => {
       }
@@ -4418,7 +4461,7 @@ fn semantic_reader_call_effectful ['c] (source: &'c buffer<u8>, tokens: &'c Toke
         set child = next;
       }
       False() => {
-        return True();
+        return 3_u64;
       }
     }
     set steps = iadd.trap<u64>(steps, 1_u64);
@@ -4426,7 +4469,7 @@ fn semantic_reader_call_effectful ['c] (source: &'c buffer<u8>, tokens: &'c Toke
       True() => {
       }
       False() => {
-        return True();
+        return 3_u64;
       }
     }
   }
@@ -4633,37 +4676,98 @@ fn semantic_reader_expr_effect ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
   let is_call: own Bool = ieq<AstKind>(kind, ast_user_call_atom);
   match is_call {
     True() => {
-      let effectful: own Bool = semantic_reader_call_effectful(source: source, tokens: tokens, ast: ast, symbols: symbols, call_node: expr);
-      match effectful {
+      let call_effects: own u64 = semantic_reader_call_effects<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, call_node: expr);
+      let call_reads_only: own Bool = ieq<u64>(call_effects, 1_u64);
+      let call_traps_only: own Bool = ieq<u64>(call_effects, 2_u64);
+      let call_reads_traps: own Bool = ieq<u64>(call_effects, 3_u64);
+      let call_reads: own Bool = bor<Bool>(call_reads_only, call_reads_traps);
+      let call_traps: own Bool = bor<Bool>(call_traps_only, call_reads_traps);
+      let call_effectful: own Bool = bor<Bool>(call_reads, call_traps);
+      match call_effectful {
         True() => {
         }
         False() => {
           return False();
         }
       }
+      let call_region: own u64 = ast_none;
+      match call_reads {
+        True() => {
+          let call_first: own u64 = index<u64>(deref(ast).first_children, expr);
+          match ilt<u64>(call_first, ast_count) {
+            True() => {
+              let ast_region_argument_atom_eff: own AstKind = AstRegionArgument();
+              let first_is_region: own Bool = semantic_body_kind_is<'c>(ast: ast, node: call_first, want: ast_region_argument_atom_eff);
+              let region_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: call_first, want: 0_u64);
+              let region_token_valid: own Bool = semantic_body_node_token_valid<'c>(source: source, tokens: tokens, ast: ast, node: call_first);
+              let region_shape_valid: own Bool = band<Bool>(first_is_region, region_leaf);
+              match band<Bool>(region_shape_valid, region_token_valid) {
+                True() => {
+                  let call_region_head: own u64 = index<u64>(deref(ast).heads, call_first);
+                  let region_kind: own Bool = parser_kind_at_is<'c>(tokens: tokens, token: call_region_head, want: 4_u64);
+                  match region_kind {
+                    True() => {
+                      set call_region = call_region_head;
+                    }
+                    False() => {
+                    }
+                  }
+                }
+                False() => {
+                }
+              }
+            }
+            False() => {
+            }
+          }
+        }
+        False() => {
+        }
+      }
       match ieq<u64>(mode, semantic_reader_effect_user_call) {
         True() => {
-          return True();
+          return ieq<u64>(call_region, ast_none);
         }
         False() => {
         }
       }
       match ieq<u64>(mode, semantic_reader_effect_traps) {
         True() => {
-          return True();
+          return call_traps;
         }
         False() => {
         }
       }
       match ieq<u64>(mode, semantic_reader_effect_undeclared) {
         True() => {
-          let declared: own Bool = semantic_reader_region_declared(source: source, tokens: tokens, ast: ast, regions_node: reads_node, head_token: region_token);
+          match call_reads {
+            True() => {
+            }
+            False() => {
+              return False();
+            }
+          }
+          match ine<u64>(call_region, ast_none) {
+            True() => {
+            }
+            False() => {
+              return True();
+            }
+          }
+          let declared: own Bool = semantic_reader_region_declared(source: source, tokens: tokens, ast: ast, regions_node: reads_node, head_token: call_region);
           return bnot<Bool>(declared);
         }
         False() => {
         }
       }
-      return token_text_equal(source: source, tokens: tokens, left: want_region, right: region_token);
+      match call_reads {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      return token_text_equal(source: source, tokens: tokens, left: want_region, right: call_region);
     }
     False() => {
     }
@@ -4817,8 +4921,8 @@ fn semantic_reader_effects_reconcile ['c] (source: &'c buffer<u8>, tokens: &'c T
   let no_region: own u64 = ast_none;
   match multiple_regions {
     True() => {
-      let effectful_call: own Bool = semantic_reader_block_effect(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, region_token: region_token, reads_node: reads_node, want_region: no_region, mode: semantic_reader_effect_user_call, block: block);
-      match effectful_call {
+      let unattributed_call: own Bool = semantic_reader_block_effect(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, region_token: region_token, reads_node: reads_node, want_region: no_region, mode: semantic_reader_effect_user_call, block: block);
+      match unattributed_call {
         True() => {
           return False();
         }
@@ -5120,7 +5224,7 @@ fn semantic_reader_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, 
 
   let flow: own SemanticReaderFlow = SemanticReaderFlowError();
   region 'semantic_reader_run_block {
-    set flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, region_token: region_token, return_type: reader_return_type_id, block: reader_block, scratch: &uniq 'semantic_reader_run_block deref(scratch), report: &uniq 'semantic_reader_run_block deref(report));
+    set flow = semantic_reader_analyze_block(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, return_type: reader_return_type_id, block: reader_block, scratch: &uniq 'semantic_reader_run_block deref(scratch), report: &uniq 'semantic_reader_run_block deref(report));
   }
   match flow {
     SemanticReaderFlowReturns() => {
