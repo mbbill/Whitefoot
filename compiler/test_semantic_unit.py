@@ -400,12 +400,13 @@ def canonical_path(columns, root, target):
 # remainder are the F1 general-signature + general-enum-match slice (general
 # `own` scalar/enum params, shared buffer borrows, pure or reads+traps effects,
 # exhaustive/exact multi-variant enum matches, scalar/enum returns, and typed
-# tag-only-enum buffer reads, and exact one-region user-call substitution).
+# tag-only-enum buffer reads, and exact arbitrary-arity call-region substitution).
 # Every listed
 # function is validated legal by the stage-0 reference checker at build time.
 COMPILER_CLEAN_ORDINALS = (
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-    21, 22, 23, 24, 29, 30, 31, 96, 98, 102, 104, 105, 106, 110, 111,
+    21, 22, 23, 24, 29, 30, 31, 63, 64, 65, 96, 98, 102, 104, 105, 106,
+    110, 111,
     123, 124, 125, 126, 144, 145, 147, 148, 158, 159, 185, 204, 207, 208,
     209, 214, 216, 289, 300, 330, 331, 332, 333, 334, 335, 336, 401, 408,
     412, 413, 414, 427, 490, 508,
@@ -423,8 +424,8 @@ def assert_compiler_coverage(library):
     expected = (
         UNIT_CLEAN,
         537,
-        67,
-        470,
+        70,
+        467,
         0,
         functions[18],
         AST_NONE,
@@ -1150,6 +1151,347 @@ def assert_reader_general_signature_and_enum_match(library):
         b"traps {\n"
         b"  match s {\n" + lo + mid + hi + b"  }\n}\n"
     )
+
+
+def assert_reader_multi_region_calls(library):
+    def under_test(source):
+        case = parsed(library, source)
+        function = top_level_functions(case)[-1]
+        work = make_work(library, case[5].count)
+        kind, report = invoke_dispatch(library, case, function, work)
+        assert_output_guards(work)
+        return kind, report, function
+
+    def assert_clean(source):
+        kind, report, function = under_test(source)
+        assert (kind, report.status, report.function) == (
+            CAPABILITY_ACYCLIC,
+            BODY_CLEAN,
+            function,
+        ), (kind, report.status)
+        assert (
+            report.rule,
+            report.fix,
+            report.primary_node,
+            report.related_node,
+            report.path_count,
+        ) == (RULE_NONE, FIX_NONE, AST_NONE, AST_NONE, 0)
+        assert_path_guard(report)
+
+    def assert_unsupported(source):
+        kind, report, function = under_test(source)
+        assert report.status == BODY_UNSUPPORTED, (kind, report.status)
+        assert kind in (CAPABILITY_ACYCLIC, CAPABILITY_UNSUPPORTED), kind
+        assert report.function == function
+
+    pair = (
+        b"fn pair ['l, 'r] (left: &'l buffer<u8>, right: &'r buffer<u8>, "
+        b"at: own u64) -> own Bool reads('l 'r), traps {\n"
+        b"  let lv: own u8 = index<u8>(deref(left), at);\n"
+        b"  let rv: own u8 = index<u8>(deref(right), at);\n"
+        b"  return ieq<u8>(lv, rv);\n"
+        b"}\n"
+    )
+
+    # Identity, a positional permutation, and a non-injective substitution all
+    # preserve exact shared provenance and instantiate the complete read row.
+    assert_clean(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  return pair<'a, 'b>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_clean(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  return pair<'b, 'a>(left: b, right: a, at: at);\n"
+        b"}\n"
+    )
+    assert_clean(
+        pair
+        + b"fn relay ['a] (a: &'a buffer<u8>, at: own u64) "
+        b"-> own Bool reads('a), traps {\n"
+        b"  return pair<'a, 'a>(left: a, right: a, at: at);\n"
+        b"}\n"
+    )
+
+    # The same positional mappings reject unswapped or conflicting shared
+    # values. Region substitution is ordinal and may repeat, but provenance is
+    # never inferred from the value arguments.
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  return pair<'b, 'a>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a), traps {\n"
+        b"  return pair<'a, 'a>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  return pair<'a, 'a>(left: a, right: a, at: at);\n"
+        b"}\n"
+    )
+
+    widths = (
+        b"fn widths ['l, 'r] (left: &'l buffer<u8>, right: &'r buffer<u8>) "
+        b"-> own u64 reads('l 'r) {\n"
+        b"  let ll: own u64 = len<u8>(deref(left));\n"
+        b"  let rr: own u64 = len<u8>(deref(right));\n"
+        b"  return iadd.wrap<u64>(ll, rr);\n"
+        b"}\n"
+    )
+    assert_clean(
+        widths
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 reads('a 'b) {\n"
+        b"  return widths<'a, 'b>(left: a, right: b);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        widths
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 reads('a 'b), traps {\n"
+        b"  return widths<'a, 'b>(left: a, right: b);\n"
+        b"}\n"
+    )
+
+    pure_pair = (
+        b"fn pure_pair ['l, 'r] (left: &'l buffer<u8>, "
+        b"right: &'r buffer<u8>) -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+    )
+    assert_clean(
+        pure_pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 pure {\n"
+        b"  return pure_pair<'b, 'a>(left: b, right: a);\n"
+        b"}\n"
+    )
+
+    tri = (
+        b"fn tri ['x, 'y, 'z] (x: &'x buffer<u8>, y: &'y buffer<u8>, "
+        b"z: &'z buffer<u8>, at: own u64) -> own u8 "
+        b"reads('x 'y 'z), traps {\n"
+        b"  let xv: own u8 = index<u8>(deref(x), at);\n"
+        b"  let yv: own u8 = index<u8>(deref(y), at);\n"
+        b"  let zv: own u8 = index<u8>(deref(z), at);\n"
+        b"  return xv;\n"
+        b"}\n"
+    )
+    assert_clean(
+        tri
+        + b"fn relay ['a, 'b, 'c] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"c: &'c buffer<u8>, at: own u64) -> own u8 "
+        b"reads('a 'b 'c), traps {\n"
+        b"  return tri<'c, 'a, 'b>(x: c, y: a, z: b, at: at);\n"
+        b"}\n"
+    )
+
+    five = (
+        b"fn five ['r0, 'r1, 'r2, 'r3, 'r4] () -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+    )
+    assert_clean(
+        five
+        + b"fn relay ['a, 'b, 'c, 'd, 'e] () -> own u64 pure {\n"
+        b"  return five<'e, 'd, 'c, 'b, 'a>();\n"
+        b"}\n"
+    )
+
+    # Exact EFF-2 reconciliation rejects a missing read, an extra read, a
+    # missing trap, and a spurious trap after substitution.
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a), traps {\n"
+        b"  return pair<'a, 'b>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b, 'c] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"c: &'c buffer<u8>, at: own u64) -> own Bool "
+        b"reads('a 'b 'c), traps {\n"
+        b"  return pair<'a, 'b>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b) {\n"
+        b"  return pair<'a, 'b>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+
+    # Region actuals have exact arity and must all be live caller regions.
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  return pair<'a>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b, 'c] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"c: &'c buffer<u8>, at: own u64) -> own Bool "
+        b"reads('a 'b), traps {\n"
+        b"  return pair<'a, 'b, 'c>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>, "
+        b"at: own u64) -> own Bool reads('a 'b), traps {\n"
+        b"  return pair<'a, 'z>(left: a, right: b, at: at);\n"
+        b"}\n"
+    )
+
+    # The narrow fact boundary requires reads of every formal exactly once in
+    # declaration order. Subsets, permutations, duplicates, undeclared names,
+    # and duplicate formal declarations remain unsupported.
+    row_prefix = b"fn row ['l, 'r] (left: &'l buffer<u8>, right: &'r buffer<u8>) -> own u64 "
+    row_body = b" {\n  return 0_u64;\n}\n"
+    caller = (
+        b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 reads('a 'b), traps {\n"
+        b"  return row<'a, 'b>(left: a, right: b);\n"
+        b"}\n"
+    )
+    for row in (
+        b"reads('l), traps",
+        b"reads('r 'l), traps",
+        b"reads('l 'l), traps",
+        b"reads('l 'q), traps",
+    ):
+        assert_unsupported(row_prefix + row + row_body + caller)
+
+    duplicate_source = (
+        pure_pair
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 pure {\n"
+        b"  return pure_pair<'a, 'b>(left: a, right: b);\n"
+        b"}\n"
+    )
+    duplicate_case = parsed(library, duplicate_source)
+    duplicate_callee, duplicate_caller = top_level_functions(duplicate_case)
+    duplicate_regions = next(
+        child
+        for child in children_of(duplicate_case[4], duplicate_callee)
+        if duplicate_case[4][0][child] == AST["AstRegionParameters"]
+    )
+    first_region, second_region = children_of(duplicate_case[4], duplicate_regions)
+    first_head = duplicate_case[4][1][first_region]
+    second_head = duplicate_case[4][1][second_region]
+    first_start = duplicate_case[2][1][first_head]
+    first_end = duplicate_case[2][2][first_head]
+    second_start = duplicate_case[2][1][second_head]
+    second_end = duplicate_case[2][2][second_head]
+    assert first_end - first_start == second_end - second_start
+    for offset in range(first_end - first_start):
+        duplicate_case[0][second_start + offset] = duplicate_case[0][
+            first_start + offset
+        ]
+    duplicate_work = make_work(library, duplicate_case[5].count)
+    duplicate_kind, duplicate_report = invoke_dispatch(
+        library, duplicate_case, duplicate_caller, duplicate_work
+    )
+    assert (duplicate_kind, duplicate_report.status, duplicate_report.function) == (
+        CAPABILITY_UNSUPPORTED,
+        BODY_UNSUPPORTED,
+        duplicate_caller,
+    ), (duplicate_kind, duplicate_report.status, duplicate_report.function)
+    assert_output_guards(duplicate_work)
+
+    def assert_direct_terminal_rejected(source, mutate):
+        case = parsed(library, source)
+        caller_function = top_level_functions(case)[-1]
+        baseline_work = make_work(library, case[5].count)
+        baseline_kind, baseline = invoke_dispatch(
+            library, case, caller_function, baseline_work
+        )
+        assert (baseline_kind, baseline.status, baseline.function) == (
+            CAPABILITY_ACYCLIC,
+            BODY_CLEAN,
+            caller_function,
+        )
+        mutate(case)
+        hostile_work = make_work(library, case[5].count)
+        hostile = SemanticBodyReport(99, 123, 456, 99, 99, 789)
+        library.semantic_reader_run(
+            case[1],
+            ctypes.byref(case[3]),
+            ctypes.byref(case[5]),
+            ctypes.byref(case[9]),
+            caller_function,
+            ctypes.byref(hostile_work[6]),
+            ctypes.byref(hostile),
+        )
+        assert (hostile.status, hostile.rule, hostile.fix) == (
+            BODY_UNSUPPORTED,
+            RULE_NONE,
+            FIX_NONE,
+        )
+        assert_output_guards(baseline_work)
+        assert_output_guards(hostile_work)
+
+    pure_terminal_source = (
+        b"fn callee ['l, 'r] () -> own u64 pure {\n  return 0_u64;\n}\n"
+        b"fn caller ['a, 'b] () -> own u64 pure {\n"
+        b"  return callee<'a, 'b>();\n}\n"
+    )
+
+    def break_formal_terminal(case):
+        callee_function = top_level_functions(case)[0]
+        regions = next(
+            child
+            for child in children_of(case[4], callee_function)
+            if case[4][0][child] == AST["AstRegionParameters"]
+        )
+        formal_regions = children_of(case[4], regions)
+        case[4][6][formal_regions[-1]] = formal_regions[0]
+
+    def break_call_terminal(case):
+        caller_function = top_level_functions(case)[-1]
+        caller_block = children_of(case[4], caller_function)[-1]
+        caller_return = children_of(case[4], caller_block)[0]
+        call = children_of(case[4], caller_return)[0]
+        call_children = children_of(case[4], call)
+        case[4][6][call_children[-1]] = call_children[0]
+
+    assert_direct_terminal_rejected(pure_terminal_source, break_formal_terminal)
+    assert_direct_terminal_rejected(pure_terminal_source, break_call_terminal)
+
+    reads_terminal_source = (
+        b"fn callee ['l, 'r] () -> own u64 reads('l 'r), traps {\n"
+        b"  return 0_u64;\n}\n"
+        b"fn caller ['a, 'b] () -> own u64 reads('a 'b), traps {\n"
+        b"  return callee<'a, 'b>();\n}\n"
+    )
+
+    def break_reads_terminal(case):
+        callee_function = top_level_functions(case)[0]
+        reads = next(
+            child
+            for child in children_of(case[4], callee_function)
+            if case[4][0][child] == AST["AstReadsEffect"]
+        )
+        read_regions = children_of(case[4], reads)
+        case[4][6][read_regions[-1]] = read_regions[0]
+
+    assert_direct_terminal_rejected(reads_terminal_source, break_reads_terminal)
 
 
 def assert_reader_region_argument_leaf(library):
@@ -2382,8 +2724,8 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
         537,
-        67,
-        470,
+        70,
+        467,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -2424,6 +2766,7 @@ def main():
         assert_reader_bool_equality_rejected(library)
         assert_reader_bool_returns_admitted(library)
         assert_reader_general_signature_and_enum_match(library)
+        assert_reader_multi_region_calls(library)
         assert_reader_region_argument_leaf(library)
         assert_reader_callee_signature_singletons(library)
         assert_reader_callee_signature_shapes(library)
@@ -2440,10 +2783,10 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 537 total / 67 clean / 470 unsupported / "
+        "semantic unit: compiler 537 total / 70 clean / 467 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
-        "admission, exact call-region attribution, general signatures "
+        "admission, exact arbitrary-arity call-region attribution, general signatures "
         "and multi-variant enum matches, "
         "enum values and tag-only-enum buffer reads, "
         "structural rename, real "

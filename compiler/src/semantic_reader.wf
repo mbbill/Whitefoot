@@ -1833,13 +1833,36 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  let callee_region_head: own u64 = ast_none;
+  let call_first: own u64 = index<u64>(deref(ast).first_children, node);
+  let call_first_none: own Bool = ieq<u64>(call_first, ast_none);
   let callee_region_count: own u64 = 0_u64;
   let has_region: own Bool = ine<u64>(region_node, ast_none);
   match has_region {
     True() => {
-      let region_shape: own Bool = semantic_body_exact_children(ast: ast, node: region_node, want: 1_u64);
-      match region_shape {
+      match ilt<u64>(call_first, ast_count) {
+        True() => {
+        }
+        False() => {
+          set deref(report).status = SemanticBodyUnsupported();
+          set deref(report).node = node;
+          set deref(report).related = call_first;
+          return semantic_facts_none;
+        }
+      }
+      let call_first_kind: own AstKind = index<AstKind>(deref(ast).kinds, call_first);
+      let ast_region_argument_atom_early: own AstKind = AstRegionArgument();
+      match ieq<AstKind>(call_first_kind, ast_region_argument_atom_early) {
+        True() => {
+        }
+        False() => {
+          set deref(report).status = SemanticBodyUnsupported();
+          set deref(report).node = node;
+          set deref(report).related = call_first;
+          return semantic_facts_none;
+        }
+      }
+      let regions_valid: own Bool = semantic_reader_regions_valid<'c>(source: source, tokens: tokens, ast: ast, regions_node: region_node);
+      match regions_valid {
         True() => {
         }
         False() => {
@@ -1849,20 +1872,52 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           return semantic_facts_none;
         }
       }
-      let region_leaf: own u64 = semantic_body_child_at(ast: ast, node: region_node, ordinal: 0_u64);
-      let region_leaf_valid: own Bool = semantic_function_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: region_leaf);
-      match region_leaf_valid {
-        True() => {
+      let count_region: own u64 = index<u64>(deref(ast).first_children, region_node);
+      let count_region_last: own u64 = index<u64>(deref(ast).last_children, region_node);
+      let count_region_steps: own u64 = 0_u64;
+      loop @semantic_reader_callee_regions_count {
+        match ilt<u64>(count_region, ast_count) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = count_region;
+            return semantic_facts_none;
+          }
         }
-        False() => {
-          set deref(report).status = SemanticBodyUnsupported();
-          set deref(report).node = node;
-          set deref(report).related = region_leaf;
-          return semantic_facts_none;
+        set callee_region_count = iadd.trap<u64>(callee_region_count, 1_u64);
+        match ieq<u64>(count_region, count_region_last) {
+          True() => {
+            break @semantic_reader_callee_regions_count;
+          }
+          False() => {
+          }
+        }
+        let count_region_next: own u64 = index<u64>(deref(ast).next_siblings, count_region);
+        match ilt<u64>(count_region_next, ast_count) {
+          True() => {
+            set count_region = count_region_next;
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = count_region_next;
+            return semantic_facts_none;
+          }
+        }
+        set count_region_steps = iadd.trap<u64>(count_region_steps, 1_u64);
+        match ilt<u64>(count_region_steps, ast_count) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = count_region_steps;
+            return semantic_facts_none;
+          }
         }
       }
-      set callee_region_head = index<u64>(deref(ast).heads, region_leaf);
-      set callee_region_count = 1_u64;
     }
     False() => {
     }
@@ -1880,8 +1935,8 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           return semantic_facts_none;
         }
       }
-      let reads_shape: own Bool = semantic_body_exact_children(ast: ast, node: reads_node, want: 1_u64);
-      match reads_shape {
+      let reads_valid: own Bool = semantic_reader_reads_regions_declared<'c>(source: source, tokens: tokens, ast: ast, reads_node: reads_node, regions_node: region_node);
+      match reads_valid {
         True() => {
         }
         False() => {
@@ -1891,28 +1946,87 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           return semantic_facts_none;
         }
       }
-      let reads_region: own u64 = semantic_body_child_at(ast: ast, node: reads_node, ordinal: 0_u64);
-      let reads_region_valid: own Bool = semantic_function_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: reads_region);
-      match reads_region_valid {
-        True() => {
+      let formal_region: own u64 = index<u64>(deref(ast).first_children, region_node);
+      let formal_region_last: own u64 = index<u64>(deref(ast).last_children, region_node);
+      let reads_region: own u64 = index<u64>(deref(ast).first_children, reads_node);
+      let reads_region_last: own u64 = index<u64>(deref(ast).last_children, reads_node);
+      let reads_compare_steps: own u64 = 0_u64;
+      loop @semantic_reader_callee_reads_exact {
+        let formal_in_bounds: own Bool = ilt<u64>(formal_region, ast_count);
+        let reads_in_bounds: own Bool = ilt<u64>(reads_region, ast_count);
+        match band<Bool>(formal_in_bounds, reads_in_bounds) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = reads_region;
+            return semantic_facts_none;
+          }
         }
-        False() => {
-          set deref(report).status = SemanticBodyUnsupported();
-          set deref(report).node = node;
-          set deref(report).related = reads_region;
-          return semantic_facts_none;
+        let formal_region_head: own u64 = index<u64>(deref(ast).heads, formal_region);
+        let reads_region_head: own u64 = index<u64>(deref(ast).heads, reads_region);
+        let reads_matches_formal: own Bool = token_text_equal<'c, 'c>(source: source, tokens: tokens, left: reads_region_head, right: formal_region_head);
+        match reads_matches_formal {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = reads_region;
+            return semantic_facts_none;
+          }
         }
-      }
-      let reads_region_head: own u64 = index<u64>(deref(ast).heads, reads_region);
-      let reads_matches_param: own Bool = token_text_equal(source: source, tokens: tokens, left: reads_region_head, right: callee_region_head);
-      match reads_matches_param {
-        True() => {
+        let formal_done: own Bool = ieq<u64>(formal_region, formal_region_last);
+        let reads_done: own Bool = ieq<u64>(reads_region, reads_region_last);
+        let both_done: own Bool = band<Bool>(formal_done, reads_done);
+        let neither_formal_done: own Bool = bnot<Bool>(formal_done);
+        let neither_reads_done: own Bool = bnot<Bool>(reads_done);
+        let neither_done: own Bool = band<Bool>(neither_formal_done, neither_reads_done);
+        let termination_matches: own Bool = bor<Bool>(both_done, neither_done);
+        match termination_matches {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = reads_region;
+            return semantic_facts_none;
+          }
         }
-        False() => {
-          set deref(report).status = SemanticBodyUnsupported();
-          set deref(report).node = node;
-          set deref(report).related = reads_region;
-          return semantic_facts_none;
+        match formal_done {
+          True() => {
+            break @semantic_reader_callee_reads_exact;
+          }
+          False() => {
+          }
+        }
+        let formal_region_next: own u64 = index<u64>(deref(ast).next_siblings, formal_region);
+        let reads_region_next: own u64 = index<u64>(deref(ast).next_siblings, reads_region);
+        let formal_next_valid: own Bool = ilt<u64>(formal_region_next, ast_count);
+        let reads_next_valid: own Bool = ilt<u64>(reads_region_next, ast_count);
+        match band<Bool>(formal_next_valid, reads_next_valid) {
+          True() => {
+            set formal_region = formal_region_next;
+            set reads_region = reads_region_next;
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = reads_region_next;
+            return semantic_facts_none;
+          }
+        }
+        set reads_compare_steps = iadd.trap<u64>(reads_compare_steps, 1_u64);
+        match ilt<u64>(reads_compare_steps, ast_count) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = reads_compare_steps;
+            return semantic_facts_none;
+          }
         }
       }
     }
@@ -1932,8 +2046,6 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  let call_first: own u64 = index<u64>(deref(ast).first_children, node);
-  let call_first_none: own Bool = ieq<u64>(call_first, ast_none);
   match call_first_none {
     True() => {
       let empty_ok_a: own Bool = ieq<u64>(callee_region_count, 0_u64);
@@ -1969,7 +2081,6 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
   let ast_region_argument_atom: own AstKind = AstRegionArgument();
   let ast_named_argument_atom: own AstKind = AstNamedArgument();
   let region_args_seen: own u64 = 0_u64;
-  let call_region_head: own u64 = ast_none;
   let named_seen: own u64 = 0_u64;
   let param_cursor: own u64 = first_param;
   let arg_child: own u64 = call_first;
@@ -2034,7 +2145,6 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
             return semantic_facts_none;
           }
         }
-        set call_region_head = arg_region_head;
         set region_args_seen = iadd.trap<u64>(region_args_seen, 1_u64);
       }
       False() => {
@@ -2123,7 +2233,7 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           SemanticModeOwn() => {
           }
           SemanticModeShared() => {
-            match ine<u64>(callee_region_head, ast_none) {
+            match has_region {
               True() => {
               }
               False() => {
@@ -2160,8 +2270,81 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
               }
             }
             let param_region_head: own u64 = index<u64>(deref(ast).heads, param_region_node);
-            let param_region_matches: own Bool = token_text_equal<'c, 'c>(source: source, tokens: tokens, left: param_region_head, right: callee_region_head);
-            match param_region_matches {
+            let mapped_region: own u64 = ast_none;
+            let map_formal: own u64 = index<u64>(deref(ast).first_children, region_node);
+            let map_formal_last: own u64 = index<u64>(deref(ast).last_children, region_node);
+            let map_actual: own u64 = call_first;
+            let map_steps: own u64 = 0_u64;
+            loop @semantic_reader_call_region_map {
+              let map_formal_in_bounds: own Bool = ilt<u64>(map_formal, ast_count);
+              let map_actual_in_bounds: own Bool = ilt<u64>(map_actual, ast_count);
+              match band<Bool>(map_formal_in_bounds, map_actual_in_bounds) {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticBodyUnsupported();
+                  set deref(report).node = node;
+                  set deref(report).related = map_actual;
+                  return semantic_facts_none;
+                }
+              }
+              let map_actual_is_region: own Bool = semantic_body_kind_is<'c>(ast: ast, node: map_actual, want: ast_region_argument_atom);
+              match map_actual_is_region {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticBodyUnsupported();
+                  set deref(report).node = node;
+                  set deref(report).related = map_actual;
+                  return semantic_facts_none;
+                }
+              }
+              let map_formal_head: own u64 = index<u64>(deref(ast).heads, map_formal);
+              let map_formal_matches: own Bool = token_text_equal<'c, 'c>(source: source, tokens: tokens, left: param_region_head, right: map_formal_head);
+              match map_formal_matches {
+                True() => {
+                  set mapped_region = index<u64>(deref(ast).heads, map_actual);
+                  break @semantic_reader_call_region_map;
+                }
+                False() => {
+                }
+              }
+              match ieq<u64>(map_formal, map_formal_last) {
+                True() => {
+                  break @semantic_reader_call_region_map;
+                }
+                False() => {
+                }
+              }
+              let map_formal_next: own u64 = index<u64>(deref(ast).next_siblings, map_formal);
+              let map_actual_next: own u64 = index<u64>(deref(ast).next_siblings, map_actual);
+              let map_formal_next_valid: own Bool = ilt<u64>(map_formal_next, ast_count);
+              let map_actual_next_valid: own Bool = ilt<u64>(map_actual_next, ast_count);
+              match band<Bool>(map_formal_next_valid, map_actual_next_valid) {
+                True() => {
+                  set map_formal = map_formal_next;
+                  set map_actual = map_actual_next;
+                }
+                False() => {
+                  set deref(report).status = SemanticBodyUnsupported();
+                  set deref(report).node = node;
+                  set deref(report).related = map_actual_next;
+                  return semantic_facts_none;
+                }
+              }
+              set map_steps = iadd.trap<u64>(map_steps, 1_u64);
+              match ilt<u64>(map_steps, ast_count) {
+                True() => {
+                }
+                False() => {
+                  set deref(report).status = SemanticBodyUnsupported();
+                  set deref(report).node = node;
+                  set deref(report).related = map_steps;
+                  return semantic_facts_none;
+                }
+              }
+            }
+            match ine<u64>(mapped_region, ast_none) {
               True() => {
               }
               False() => {
@@ -2171,7 +2354,7 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
                 return semantic_facts_none;
               }
             }
-            set expected_region = call_region_head;
+            set expected_region = mapped_region;
           }
           SemanticModeUniq() => {
             set deref(report).status = SemanticBodyUnsupported();
@@ -2204,6 +2387,17 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     }
     match ieq<u64>(arg_child, call_last) {
       True() => {
+        let arg_terminal: own u64 = index<u64>(deref(ast).next_siblings, arg_child);
+        match ieq<u64>(arg_terminal, ast_none) {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = arg_terminal;
+            return semantic_facts_none;
+          }
+        }
         break @semantic_reader_call_arguments;
       }
       False() => {
@@ -3726,7 +3920,8 @@ fn semantic_reader_regions_valid ['c] (source: &'c buffer<u8>, tokens: &'c Token
     }
     match ieq<u64>(child, last) {
       True() => {
-        return True();
+        let terminal: own u64 = index<u64>(deref(ast).next_siblings, child);
+        return ieq<u64>(terminal, ast_none);
       }
       False() => {
       }
@@ -3793,7 +3988,8 @@ fn semantic_reader_reads_regions_declared ['c] (source: &'c buffer<u8>, tokens: 
     }
     match ieq<u64>(child, last) {
       True() => {
-        return True();
+        let terminal: own u64 = index<u64>(deref(ast).next_siblings, child);
+        return ieq<u64>(terminal, ast_none);
       }
       False() => {
       }
@@ -4690,50 +4886,140 @@ fn semantic_reader_expr_effect ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
           return False();
         }
       }
-      let call_region: own u64 = ast_none;
+      match ieq<u64>(mode, semantic_reader_effect_traps) {
+        True() => {
+          return call_traps;
+        }
+        False() => {
+        }
+      }
+      let call_regions_valid: own Bool = True();
+      let call_region_seen: own Bool = False();
+      let call_region_matches: own Bool = False();
+      let call_region_undeclared: own Bool = False();
       match call_reads {
         True() => {
           let call_first: own u64 = index<u64>(deref(ast).first_children, expr);
-          match ilt<u64>(call_first, ast_count) {
+          let call_last: own u64 = index<u64>(deref(ast).last_children, expr);
+          let call_first_none: own Bool = ieq<u64>(call_first, ast_none);
+          let call_last_none: own Bool = ieq<u64>(call_last, ast_none);
+          match bor<Bool>(call_first_none, call_last_none) {
             True() => {
-              let ast_region_argument_atom_eff: own AstKind = AstRegionArgument();
-              let first_is_region: own Bool = semantic_body_kind_is<'c>(ast: ast, node: call_first, want: ast_region_argument_atom_eff);
-              let region_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: call_first, want: 0_u64);
-              let region_token_valid: own Bool = semantic_body_node_token_valid<'c>(source: source, tokens: tokens, ast: ast, node: call_first);
-              let region_shape_valid: own Bool = band<Bool>(first_is_region, region_leaf);
-              match band<Bool>(region_shape_valid, region_token_valid) {
-                True() => {
-                  let call_region_head: own u64 = index<u64>(deref(ast).heads, call_first);
-                  let region_kind: own Bool = parser_kind_at_is<'c>(tokens: tokens, token: call_region_head, want: 4_u64);
-                  match region_kind {
-                    True() => {
-                      set call_region = call_region_head;
-                    }
-                    False() => {
-                    }
-                  }
-                }
-                False() => {
-                }
-              }
+              set call_regions_valid = False();
             }
             False() => {
+              let ast_region_argument_atom_eff: own AstKind = AstRegionArgument();
+              let ast_named_argument_atom_eff: own AstKind = AstNamedArgument();
+              let call_region_child: own u64 = call_first;
+              let call_region_steps: own u64 = 0_u64;
+              loop @semantic_reader_call_effect_regions {
+                match ilt<u64>(call_region_child, ast_count) {
+                  True() => {
+                  }
+                  False() => {
+                    set call_regions_valid = False();
+                    break @semantic_reader_call_effect_regions;
+                  }
+                }
+                let child_is_region: own Bool = semantic_body_kind_is<'c>(ast: ast, node: call_region_child, want: ast_region_argument_atom_eff);
+                match child_is_region {
+                  True() => {
+                  }
+                  False() => {
+                    let child_is_named: own Bool = semantic_body_kind_is<'c>(ast: ast, node: call_region_child, want: ast_named_argument_atom_eff);
+                    match child_is_named {
+                      True() => {
+                      }
+                      False() => {
+                        set call_regions_valid = False();
+                      }
+                    }
+                    break @semantic_reader_call_effect_regions;
+                  }
+                }
+                let region_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: call_region_child, want: 0_u64);
+                let region_token_valid: own Bool = semantic_body_node_token_valid<'c>(source: source, tokens: tokens, ast: ast, node: call_region_child);
+                let region_shape_valid: own Bool = band<Bool>(region_leaf, region_token_valid);
+                match region_shape_valid {
+                  True() => {
+                  }
+                  False() => {
+                    set call_regions_valid = False();
+                    break @semantic_reader_call_effect_regions;
+                  }
+                }
+                let call_region_head: own u64 = index<u64>(deref(ast).heads, call_region_child);
+                let region_kind: own Bool = parser_kind_at_is<'c>(tokens: tokens, token: call_region_head, want: 4_u64);
+                match region_kind {
+                  True() => {
+                  }
+                  False() => {
+                    set call_regions_valid = False();
+                    break @semantic_reader_call_effect_regions;
+                  }
+                }
+                set call_region_seen = True();
+                let region_declared: own Bool = semantic_reader_region_declared<'c>(source: source, tokens: tokens, ast: ast, regions_node: reads_node, head_token: call_region_head);
+                match region_declared {
+                  True() => {
+                  }
+                  False() => {
+                    set call_region_undeclared = True();
+                  }
+                }
+                let region_matches: own Bool = token_text_equal<'c, 'c>(source: source, tokens: tokens, left: want_region, right: call_region_head);
+                match region_matches {
+                  True() => {
+                    set call_region_matches = True();
+                  }
+                  False() => {
+                  }
+                }
+                match ieq<u64>(call_region_child, call_last) {
+                  True() => {
+                    let call_region_terminal: own u64 = index<u64>(deref(ast).next_siblings, call_region_child);
+                    match ieq<u64>(call_region_terminal, ast_none) {
+                      True() => {
+                      }
+                      False() => {
+                        set call_regions_valid = False();
+                      }
+                    }
+                    break @semantic_reader_call_effect_regions;
+                  }
+                  False() => {
+                  }
+                }
+                let call_region_next: own u64 = index<u64>(deref(ast).next_siblings, call_region_child);
+                match ilt<u64>(call_region_next, ast_count) {
+                  True() => {
+                    set call_region_child = call_region_next;
+                  }
+                  False() => {
+                    set call_regions_valid = False();
+                    break @semantic_reader_call_effect_regions;
+                  }
+                }
+                set call_region_steps = iadd.trap<u64>(call_region_steps, 1_u64);
+                match ilt<u64>(call_region_steps, ast_count) {
+                  True() => {
+                  }
+                  False() => {
+                    set call_regions_valid = False();
+                    break @semantic_reader_call_effect_regions;
+                  }
+                }
+              }
             }
           }
         }
         False() => {
         }
       }
+      let call_regions_attributed: own Bool = band<Bool>(call_regions_valid, call_region_seen);
       match ieq<u64>(mode, semantic_reader_effect_user_call) {
         True() => {
-          return ieq<u64>(call_region, ast_none);
-        }
-        False() => {
-        }
-      }
-      match ieq<u64>(mode, semantic_reader_effect_traps) {
-        True() => {
-          return call_traps;
+          return bnot<Bool>(call_regions_attributed);
         }
         False() => {
         }
@@ -4747,15 +5033,14 @@ fn semantic_reader_expr_effect ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
               return False();
             }
           }
-          match ine<u64>(call_region, ast_none) {
+          match call_regions_attributed {
             True() => {
             }
             False() => {
               return True();
             }
           }
-          let declared: own Bool = semantic_reader_region_declared(source: source, tokens: tokens, ast: ast, regions_node: reads_node, head_token: call_region);
-          return bnot<Bool>(declared);
+          return call_region_undeclared;
         }
         False() => {
         }
@@ -4767,7 +5052,14 @@ fn semantic_reader_expr_effect ['c] (source: &'c buffer<u8>, tokens: &'c TokenTa
           return False();
         }
       }
-      return token_text_equal(source: source, tokens: tokens, left: want_region, right: call_region);
+      match call_regions_attributed {
+        True() => {
+          return call_region_matches;
+        }
+        False() => {
+          return False();
+        }
+      }
     }
     False() => {
     }

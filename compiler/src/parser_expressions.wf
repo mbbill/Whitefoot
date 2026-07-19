@@ -1,13 +1,13 @@
 fn parser_v2_word_is_deref ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
-  return parser_word5(source: source, tokens: tokens, token: token, a: 100_u8, b: 101_u8, c: 114_u8, d: 101_u8, e: 102_u8);
+  return parser_word5<'s, 't>(source: source, tokens: tokens, token: token, a: 100_u8, b: 101_u8, c: 114_u8, d: 101_u8, e: 102_u8);
 }
 
 fn parser_v2_word_is_index ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
-  return parser_word5(source: source, tokens: tokens, token: token, a: 105_u8, b: 110_u8, c: 100_u8, d: 101_u8, e: 120_u8);
+  return parser_word5<'s, 't>(source: source, tokens: tokens, token: token, a: 105_u8, b: 110_u8, c: 100_u8, d: 101_u8, e: 120_u8);
 }
 
 fn parser_v2_word_is_move ['s, 't] (source: &'s buffer<u8>, tokens: &'t TokenTape, token: own u64) -> own Bool reads('s 't), traps {
-  return parser_word4(source: source, tokens: tokens, token: token, a: 109_u8, b: 111_u8, c: 118_u8, d: 101_u8);
+  return parser_word4<'s, 't>(source: source, tokens: tokens, token: token, a: 109_u8, b: 111_u8, c: 118_u8, d: 101_u8);
 }
 
 fn parser_v2_finish_at_token ['t, 'a] (tokens: &'t TokenTape, out: &uniq 'a AstTape, node: own u64, token: own u64) -> own unit reads('t 'a), writes('a), traps {
