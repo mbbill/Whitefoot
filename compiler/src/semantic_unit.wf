@@ -4,6 +4,7 @@ enum SemanticCapabilityKind {
   SemanticCapabilityScanner();
   SemanticCapabilityLinear();
   SemanticCapabilityUnsupported();
+  SemanticCapabilityAcyclic();
 }
 
 struct SemanticCapabilityReport {
@@ -567,6 +568,41 @@ fn semantic_unit_classify_validated ['c, 'w] (source: &'c buffer<u8>, tokens: &'
         False() => {
           let semantic_body_unsupported_atom_0418: own SemanticBodyStatus = SemanticBodyUnsupported();
           match ieq<SemanticBodyStatus>(body.status, semantic_body_unsupported_atom_0418) {
+            True() => {
+              return SemanticCapabilityUnsupported();
+            }
+            False() => {
+              return SemanticCapabilityFailed();
+            }
+          }
+        }
+      }
+    }
+    False() => {
+    }
+  }
+
+  let reader_signature: own Bool = semantic_reader_signature_valid(source: source, tokens: tokens, ast: ast, function: function);
+  match reader_signature {
+    True() => {
+      region 'semantic_unit_dispatch_reader {
+        semantic_reader_run(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, scratch: &uniq 'semantic_unit_dispatch_reader deref(scratch), report: &uniq 'semantic_unit_dispatch_reader body);
+      }
+      set deref(report).status = body.status;
+      set deref(report).function = function;
+      set deref(report).related = body.related;
+      set deref(report).rule = body.rule;
+      set deref(report).fix = body.fix;
+      set deref(report).primary_node = body.node;
+      set deref(report).related_node = body.related_node;
+      let semantic_body_clean_atom_reader: own SemanticBodyStatus = SemanticBodyClean();
+      match ieq<SemanticBodyStatus>(body.status, semantic_body_clean_atom_reader) {
+        True() => {
+          return SemanticCapabilityAcyclic();
+        }
+        False() => {
+          let semantic_body_unsupported_atom_reader: own SemanticBodyStatus = SemanticBodyUnsupported();
+          match ieq<SemanticBodyStatus>(body.status, semantic_body_unsupported_atom_reader) {
             True() => {
               return SemanticCapabilityUnsupported();
             }

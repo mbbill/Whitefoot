@@ -298,21 +298,24 @@ before publishing a source span or root-to-primary node path, and commits no
 partial diagnostic on invalid input or insufficient capacity. Hostile cases
 for stale validation, malformed topology, invalid related nodes, one-short
 buffers, and late publication failure are automated regressions. The current
-unit has 488 functions: 15 clean, 473 legal but unsupported, and zero rejected.
-Its self-parse is deterministic at 1,135,190 source bytes, 224,462 tokens, and
-112,640 unique-head AST nodes. LLVM support remains the same byte-identical
+unit has 510 functions: 17 clean, 493 legal but unsupported, and zero rejected.
+Its self-parse is deterministic at 1,237,377 source bytes, 244,886 tokens, and
+122,594 unique-head AST nodes. LLVM support remains the same byte-identical
 15-function module.
 
-The next checkpoint closes a source/specification discrepancy before adding
-the acyclic-decision semantic family: calls must retain the explicit region
-arguments required by TYPE-5 and consumed by OWN-12. Add the AST, parser, and
-stage-0 support, then migrate the six regionful calls in
-`lexer_scan_op_suffix` and the one in `lexer_scan_word`. Migrate the remaining
-compiler call families as semantic coverage reaches them, with no omissions by
-the phase-2 fixpoint. Then admit those two functions with nested `let`, `match`,
-and early-return flow; primitive expression typing; named multi-argument calls;
-and effect containment. This slice adds no LLVM lowering. The expected next
-source-order frontier remains `lexer_ampuniq_at`.
+The region-retention checkpoint and the first acyclic-decision admission are
+complete. Calls now retain the explicit region arguments required by TYPE-5 and
+consumed by OWN-12 (the six regionful calls in `lexer_scan_op_suffix` and the
+one in `lexer_scan_word` are migrated; remaining call families migrate as
+semantic coverage reaches them, with no omissions by the phase-2 fixpoint). The
+acyclic-decision (reader) body-semantics profile now admits `lexer_scan_op_suffix`
+and `lexer_scan_word` — nested `let`, `match`, and early-return flow; primitive
+expression typing; named multi-argument calls; and effect containment — after a
+two-pass hostile soundness review found and fixed a Bool-equality false-clean
+(`ieq`/`ine` are integer-only per OP-1) and pinned it with a non-vacuous
+regression. This slice adds no LLVM lowering. The next checkpoint continues the
+frontier at `lexer_ampuniq_at`, whose `own Bool` return falls outside the
+current `own u64` reader signature gate and needs a Bool-returning profile.
 
 ## Work outside the seven-phase scope
 

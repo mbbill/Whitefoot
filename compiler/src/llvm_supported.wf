@@ -52,6 +52,13 @@ fn llvm_supported_analyze_kind_validated ['c, 'w] (source: &'c buffer<u8>, token
       }
       return LlvmSupportedKindFailed();
     }
+    SemanticCapabilityAcyclic() => {
+      region 'llvm_supported_semantic_acyclic {
+        let llvm_supported_unsupported_function_atom_reader: own LlvmSupportedStatus = LlvmSupportedUnsupportedFunction();
+        llvm_supported_fail(report: &uniq 'llvm_supported_semantic_acyclic deref(report), status: llvm_supported_unsupported_function_atom_reader, function: function, related: capability_report.related);
+      }
+      return LlvmSupportedKindFailed();
+    }
     SemanticCapabilityFixedWidth() => {
       let fixed_valid: own Bool = False();
       region 'llvm_supported_fixed_gate {

@@ -45,6 +45,7 @@ UNIT_INFRASTRUCTURE = 7
 CAPABILITY_UNSUPPORTED = 4
 CAPABILITY_FAILED = 0
 CAPABILITY_LINEAR = 3
+CAPABILITY_ACYCLIC = 5
 
 RULE_NONE = 0
 RULE_FORM7 = 1
@@ -386,23 +387,23 @@ def assert_compiler_coverage(library):
     data = compiler_source().encode("ascii")
     case = parsed(library, data)
     functions = top_level_functions(case)
-    assert len(functions) == 489
+    assert len(functions) == 510
 
     work = make_work(library, case[5].count)
     first = invoke_unit(library, case, work)
     expected = (
         UNIT_CLEAN,
-        489,
-        15,
-        474,
+        510,
+        17,
+        493,
         0,
-        functions[14],
+        functions[17],
         AST_NONE,
     )
     assert unit_report_tuple(first) == expected
     assert_no_unit_diagnostic(first)
     assert function_name(data, case, first.first_unsupported) == (
-        b"lexer_scan_op_suffix"
+        b"lexer_ampuniq_at"
     )
 
     clean_ordinals = []
@@ -428,7 +429,7 @@ def assert_compiler_coverage(library):
                 report.function,
                 report.related,
             )
-    assert tuple(clean_ordinals) == tuple(range(14)) + (16,)
+    assert tuple(clean_ordinals) == tuple(range(17))
 
     second = invoke_unit(library, case, work)
     assert unit_report_tuple(second) == unit_report_tuple(first)
@@ -509,6 +510,115 @@ def assert_legal_nonprofile_is_unsupported(library):
     )
     assert_output_guards(collision_work)
     assert_output_guards(wrong_work)
+
+
+def assert_reader_bool_equality_rejected(library):
+    # Regression: the acyclic (reader) profile must reject integer-only equality
+    # and inequality (ieq/ine, defined by OP-1 over "all int T") applied to Bool
+    # operands. There is no Bool equality op -- ieq<Bool> is ill-typed. An earlier
+    # revision set operation_ok unconditionally in the equality branch, so a reader
+    # carrying `ieq<Bool>` walked to a false CLEAN. The branch now pins the operand
+    # to a scalar, exactly like the ordered-comparison branch.
+    def reader_probe(third_let):
+        return (
+            b"fn reader_probe ['s] (source: &'s buffer<u8>, start: own u64, "
+            b"size: own u64) -> own u64 reads('s), traps {\n"
+            b"  let flag_a: own Bool = ige<u64>(start, size);\n"
+            b"  let flag_b: own Bool = ilt<u64>(start, size);\n"
+            + third_let
+            + b"  match bad {\n"
+            b"    True() => {\n"
+            b"      return start;\n"
+            b"    }\n"
+            b"    False() => {\n"
+            b"      return size;\n"
+            b"    }\n"
+            b"  }\n"
+            b"}\n"
+        )
+
+    # Illegal: ieq/ine on Bool operands -> Unsupported (not a false CLEAN).
+    for illegal_op in (b"ieq", b"ine"):
+        source = reader_probe(
+            b"  let bad: own Bool = " + illegal_op + b"<Bool>(flag_a, flag_b);\n"
+        )
+        case = parsed(library, source)
+        (function,) = top_level_functions(case)
+        work = make_work(library, case[5].count)
+        kind, report = invoke_dispatch(library, case, function, work)
+        assert (kind, report.status, report.function) == (
+            CAPABILITY_UNSUPPORTED,
+            BODY_UNSUPPORTED,
+            function,
+        ), illegal_op
+        assert (
+            report.rule,
+            report.fix,
+            report.primary_node,
+            report.related_node,
+            report.span_start,
+            report.span_end,
+            report.path_count,
+        ) == (
+            RULE_NONE,
+            FIX_NONE,
+            AST_NONE,
+            AST_NONE,
+            AST_NONE,
+            AST_NONE,
+            0,
+        ), illegal_op
+        assert_path_guard(report)
+        assert_output_guards(work)
+
+    # Legal Bool logical op with identical signature and control flow -> clean
+    # acyclic, proving the signature and flow are admitted and the rejection above
+    # targets only the Bool equality operand, not the shape.
+    legal_bool = reader_probe(
+        b"  let bad: own Bool = band<Bool>(flag_a, flag_b);\n"
+    )
+    legal_case = parsed(library, legal_bool)
+    (legal_function,) = top_level_functions(legal_case)
+    legal_work = make_work(library, legal_case[5].count)
+    kind, report = invoke_dispatch(
+        library, legal_case, legal_function, legal_work
+    )
+    assert (kind, report.status, report.function) == (
+        CAPABILITY_ACYCLIC,
+        BODY_CLEAN,
+        legal_function,
+    )
+    assert_output_guards(legal_work)
+
+    # Legal integer equality/inequality -> clean acyclic, proving ieq/ine remain
+    # admitted on the integer operands OP-1 allows (the fix narrows, not removes).
+    for legal_op in (b"ieq", b"ine"):
+        integer_eq = (
+            b"fn reader_probe ['s] (source: &'s buffer<u8>, start: own u64, "
+            b"size: own u64) -> own u64 reads('s), traps {\n"
+            b"  let bad: own Bool = " + legal_op + b"<u64>(start, size);\n"
+            b"  match bad {\n"
+            b"    True() => {\n"
+            b"      return start;\n"
+            b"    }\n"
+            b"    False() => {\n"
+            b"      return size;\n"
+            b"    }\n"
+            b"  }\n"
+            b"}\n"
+        )
+        integer_case = parsed(library, integer_eq)
+        (integer_function,) = top_level_functions(integer_case)
+        integer_work = make_work(library, integer_case[5].count)
+        kind, report = invoke_dispatch(
+            library, integer_case, integer_function, integer_work
+        )
+        assert (kind, report.status, report.function) == (
+            CAPABILITY_ACYCLIC,
+            BODY_CLEAN,
+            integer_function,
+        ), legal_op
+        assert_output_guards(integer_work)
 
 
 def assert_structural_profile_and_real_reject(library):
@@ -985,11 +1095,11 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     )
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
-        489,
-        15,
-        474,
+        510,
+        17,
+        493,
         0,
-        top_level_functions(case)[14],
+        top_level_functions(case)[17],
         AST_NONE,
     )
     assert validation.status == 0
@@ -1025,6 +1135,7 @@ def main():
         configure(library)
         case, work = assert_compiler_coverage(library)
         assert_legal_nonprofile_is_unsupported(library)
+        assert_reader_bool_equality_rejected(library)
         assert_structural_profile_and_real_reject(library)
         assert_diagnostic_path_capacity(library)
         assert_site_specific_rule_ids(library)
@@ -1035,9 +1146,10 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 489 total / 15 clean / 474 unsupported / "
+        "semantic unit: compiler 510 total / 17 clean / 493 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
-        "nonprofile, structural rename, real reject, deterministic repeat, "
+        "nonprofile, reader bool-equality rejection, structural rename, real "
+        "reject, deterministic repeat, "
         "fresh validation, bounded paths, transactional diagnostics, "
         "dynamic/hostile capacities, inputs, and guards pass"
     )
