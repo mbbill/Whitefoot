@@ -259,7 +259,7 @@ def analyze(library, parsed_case, name):
     outputs = make_outputs(
         library,
         ast.count,
-        scratch_caps=(scratch_capacity,) * 4,
+        scratch_caps=(scratch_capacity,) * 5,
     )
     report = invoke(library, parsed_case, function, outputs)
     assert report.status == BODY_CLEAN, (name, report.status, report.node, report.related)
@@ -776,7 +776,7 @@ def assert_profile_boundaries(library, parsed_case, space):
         direct_source, direct_case[4], direct_case[5], b"direct"
     )
     direct_outputs = make_outputs(
-        library, direct_case[5].count, scratch_caps=(1, 1, 1, 1)
+        library, direct_case[5].count, scratch_caps=(1, 1, 1, 1, 1)
     )
     direct_report = invoke(
         library, direct_case, direct_function, direct_outputs

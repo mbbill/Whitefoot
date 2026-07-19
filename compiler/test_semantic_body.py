@@ -109,6 +109,8 @@ class SemanticBodyScratch(ctypes.Structure):
         ("type_ids", Buffer),
         ("modes", Buffer),
         ("count", ctypes.c_uint64),
+        ("loop_labels", Buffer),
+        ("loop_count", ctypes.c_uint64),
     ]
 
 
@@ -135,6 +137,7 @@ SCRATCH_COLUMNS = (
     (ctypes.c_uint64, U64_POISON, U64_GUARD),
     (ctypes.c_uint64, U64_POISON, U64_GUARD),
     (ctypes.c_int32, ENUM_POISON, ENUM_GUARD),
+    (ctypes.c_uint64, U64_POISON, U64_GUARD),
 )
 
 
@@ -324,7 +327,11 @@ def make_scratch(capacities):
         column[capacity] = guard
         storage.append(column)
         buffers.append(Buffer(ctypes.cast(column, ctypes.c_void_p), capacity))
-    return tuple(storage), tuple(capacities), SemanticBodyScratch(*buffers, 0)
+    return (
+        tuple(storage),
+        tuple(capacities),
+        SemanticBodyScratch(*buffers[:4], 0, buffers[4], 0),
+    )
 
 
 def assert_scratch_guards(storage, capacities):

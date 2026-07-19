@@ -259,7 +259,7 @@ def analyze(library, data, width):
         case[5].count,
         type_caps=(4,) * len(TYPE_COLUMNS),
         fact_caps=(case[5].count,) * len(NODE_COLUMNS),
-        scratch_caps=(5 * width - 1,) * 4,
+        scratch_caps=(5 * width - 1,) * 5,
     )
     report = SemanticBodyReport(99, 123, 456, 99, 99, 789)
     library.semantic_buffer_fixed_width_run(

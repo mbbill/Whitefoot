@@ -69,6 +69,8 @@ struct SemanticBodyScratch {
   type_ids: buffer<u64>;
   modes: buffer<SemanticValueMode>;
   count: u64;
+  loop_labels: buffer<u64>;
+  loop_count: u64;
 }
 
 fn semantic_body_set_report ['w] (report: &uniq 'w SemanticBodyReport, status: own SemanticBodyStatus, node: own u64, related: own u64) -> own unit writes('w) {
@@ -310,13 +312,17 @@ fn semantic_body_scratch_shape_valid ['w] (scratch: &'w SemanticBodyScratch) -> 
   let declarations_length: own u64 = len<u64>(deref(scratch).declarations);
   let types_length: own u64 = len<u64>(deref(scratch).type_ids);
   let modes_length: own u64 = len<SemanticValueMode>(deref(scratch).modes);
+  let loop_labels_length: own u64 = len<u64>(deref(scratch).loop_labels);
   let names_ok: own Bool = ile<u64>(count, names_length);
   let declarations_ok: own Bool = ile<u64>(count, declarations_length);
   let types_ok: own Bool = ile<u64>(count, types_length);
   let modes_ok: own Bool = ile<u64>(count, modes_length);
+  let loop_count: own u64 = deref(scratch).loop_count;
+  let loop_labels_ok: own Bool = ile<u64>(loop_count, loop_labels_length);
   let first: own Bool = band<Bool>(names_ok, declarations_ok);
   let second: own Bool = band<Bool>(types_ok, modes_ok);
-  return band<Bool>(first, second);
+  let columns_ok: own Bool = band<Bool>(first, second);
+  return band<Bool>(columns_ok, loop_labels_ok);
 }
 
 fn semantic_body_scratch_capacity_valid ['w] (scratch: &'w SemanticBodyScratch, needed: own u64) -> own Bool reads('w) {
@@ -324,13 +330,16 @@ fn semantic_body_scratch_capacity_valid ['w] (scratch: &'w SemanticBodyScratch, 
   let declarations_length: own u64 = len<u64>(deref(scratch).declarations);
   let types_length: own u64 = len<u64>(deref(scratch).type_ids);
   let modes_length: own u64 = len<SemanticValueMode>(deref(scratch).modes);
+  let loop_labels_length: own u64 = len<u64>(deref(scratch).loop_labels);
   let names_ok: own Bool = ige<u64>(names_length, needed);
   let declarations_ok: own Bool = ige<u64>(declarations_length, needed);
   let types_ok: own Bool = ige<u64>(types_length, needed);
   let modes_ok: own Bool = ige<u64>(modes_length, needed);
+  let loop_labels_ok: own Bool = ige<u64>(loop_labels_length, needed);
   let first: own Bool = band<Bool>(names_ok, declarations_ok);
   let second: own Bool = band<Bool>(types_ok, modes_ok);
-  return band<Bool>(first, second);
+  let columns_ok: own Bool = band<Bool>(first, second);
+  return band<Bool>(columns_ok, loop_labels_ok);
 }
 
 fn semantic_body_scope_push ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, scratch: &uniq 'w SemanticBodyScratch, name_token: own u64, declaration: own u64, type_id: own u64, mode: own SemanticValueMode) -> own Bool reads('c 'w), writes('w), traps {

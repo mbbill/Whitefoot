@@ -200,7 +200,7 @@ def make_work(
         ast_count,
         type_caps=(type_capacity,) * 6,
         fact_caps=(fact_capacity,) * 8,
-        scratch_caps=(scratch_capacity,) * 4,
+        scratch_caps=(scratch_capacity,) * 5,
     )
 
 
@@ -397,10 +397,12 @@ def canonical_path(columns, root, target):
 
 # Source ordinals of the functions the classifier admits CLEAN over the wfc
 # corpus. 0-17 are the original fixed-width/scanner/linear/reader-Bool set; the
-# remainder are the F1 general-signature + general-enum-match slice (general
+# remainder are the F1 general-signature + general-enum-match slice plus the
+# first F2 loop/local-mutation slice (general
 # `own` scalar/enum params, shared buffer borrows, pure or reads+traps effects,
 # exhaustive/exact multi-variant enum matches, scalar/enum returns, and typed
-# tag-only-enum buffer reads, and exact arbitrary-arity call-region substitution).
+# tag-only-enum buffer reads, exact arbitrary-arity call-region substitution,
+# structured loop flow, innermost labeled break, and owned-let mutation).
 # Every listed
 # function is validated legal by the stage-0 reference checker at build time.
 COMPILER_CLEAN_ORDINALS = (
@@ -408,8 +410,8 @@ COMPILER_CLEAN_ORDINALS = (
     21, 22, 23, 24, 29, 30, 31, 63, 64, 65, 96, 98, 102, 104, 105, 106,
     110, 111,
     123, 124, 125, 126, 144, 145, 147, 148, 152, 158, 159, 185, 204, 207, 208,
-    209, 214, 216, 289, 300, 330, 331, 332, 333, 334, 335, 336, 399, 401,
-    405, 408, 409, 410, 412, 413, 414, 427, 490, 508,
+    209, 214, 216, 228, 229, 230, 235, 299, 310, 340, 341, 342, 343, 344,
+    345, 346, 409, 411, 415, 418, 419, 420, 422, 423, 424, 437, 500, 518,
 )
 
 
@@ -417,15 +419,15 @@ def assert_compiler_coverage(library):
     data = compiler_source().encode("ascii")
     case = parsed(library, data)
     functions = top_level_functions(case)
-    assert len(functions) == 537
+    assert len(functions) == 547
 
     work = make_work(library, case[5].count)
     first = invoke_unit(library, case, work)
     expected = (
         UNIT_CLEAN,
-        537,
-        75,
-        462,
+        547,
+        79,
+        468,
         0,
         functions[18],
         AST_NONE,
@@ -469,15 +471,13 @@ def assert_compiler_coverage(library):
 
 
 def assert_legal_nonprofile_is_unsupported(library):
-    # A legal function outside every capability profile stays unsupported. The F1
-    # general-signature slice admits read-only acyclic bodies, so this witness
-    # uses local mutation (`set`), which no read-only profile accepts and which
-    # the acyclic reader deliberately rejects fail-closed.
+    # A legal function outside every capability profile stays unsupported. F2
+    # admits mutation of an owned `let` binding; mutation of an owned parameter
+    # remains outside that bounded capability and therefore stays fail-closed.
     data = (
         b"fn accumulate (value: own u64) -> own u64 traps {\n"
-        b"  let total: own u64 = value;\n"
-        b"  set total = iadd.trap<u64>(total, 1_u64);\n"
-        b"  return total;\n"
+        b"  set value = iadd.trap<u64>(value, 1_u64);\n"
+        b"  return value;\n"
         b"}\n"
     )
     case = parsed(library, data)
@@ -486,10 +486,9 @@ def assert_legal_nonprofile_is_unsupported(library):
     work = make_work(library, case[5].count)
 
     kind, report = invoke_dispatch(library, case, function, work)
-    assert (kind, report.status, report.function, report.related) == (
+    assert (kind, report.status, report.function) == (
         CAPABILITY_UNSUPPORTED,
         BODY_UNSUPPORTED,
-        function,
         function,
     )
     assert (
@@ -546,6 +545,253 @@ def assert_legal_nonprofile_is_unsupported(library):
     )
     assert_output_guards(collision_work)
     assert_output_guards(wrong_work)
+
+
+def assert_reader_loops_and_local_set(library):
+    def classify(source):
+        case = parsed(library, source)
+        functions = top_level_functions(case)
+        work = make_work(library, case[5].count)
+        results = [
+            invoke_dispatch(library, case, function, work)
+            for function in functions
+        ]
+        return case, functions, work, results
+
+    def assert_clean(source):
+        case, functions, work, results = classify(source)
+        for function, (kind, report) in zip(functions, results):
+            assert (kind, report.status, report.function, report.related) == (
+                CAPABILITY_ACYCLIC,
+                BODY_CLEAN,
+                function,
+                AST_NONE,
+            ), (kind, report.status, report.function, report.related)
+            assert_no_capability_diagnostic(report)
+        assert_output_guards(work)
+        return case, functions, work
+
+    def assert_unsupported(source):
+        case, functions, work, results = classify(source)
+        function = functions[-1]
+        kind, report = results[-1]
+        assert (kind, report.status, report.function) == (
+            CAPABILITY_UNSUPPORTED,
+            BODY_UNSUPPORTED,
+            function,
+        ), (kind, report.status, report.function, report.related)
+        assert_no_capability_diagnostic(report)
+        assert_output_guards(work)
+        return case
+
+    local_set = (
+        b"fn accumulate (value: own u64) -> own u64 traps {\n"
+        b"  let total: own u64 = value;\n"
+        b"  set total = iadd.trap<u64>(total, 1_u64);\n"
+        b"  return total;\n"
+        b"}\n"
+    )
+    assert_clean(local_set)
+
+    loop_break = (
+        b"fn count (value: own u64) -> own u64 traps {\n"
+        b"  let total: own u64 = value;\n"
+        b"  loop @counting {\n"
+        b"    set total = iadd.trap<u64>(total, 1_u64);\n"
+        b"    match ige<u64>(total, 3_u64) {\n"
+        b"      True() => { break @counting; }\n"
+        b"      False() => {}\n"
+        b"    }\n"
+        b"  }\n"
+        b"  return total;\n"
+        b"}\n"
+    )
+    assert_clean(loop_break)
+
+    # A no-break loop cannot fall through. This bounded slice requires at
+    # least one return path and treats the remaining paths as divergence.
+    assert_clean(
+        b"fn decide (flag: own Bool) -> own Bool pure {\n"
+        b"  loop @deciding {\n"
+        b"    match flag {\n"
+        b"      True() => { return True(); }\n"
+        b"      False() => {}\n"
+        b"    }\n"
+        b"  }\n"
+        b"}\n"
+    )
+
+    # Pure divergence has no return witness in the bounded flow summary and
+    # stays unsupported until a later slice models it explicitly.
+    assert_unsupported(
+        b"fn forever () -> own u64 pure {\n"
+        b"  loop @forever {}\n"
+        b"}\n"
+    )
+
+    # Nested loops are admitted when each break names the innermost loop and
+    # every label is unique in the function.
+    assert_clean(
+        b"fn nested (value: own u64) -> own u64 pure {\n"
+        b"  loop @outer {\n"
+        b"    loop @inner { break @inner; }\n"
+        b"    break @outer;\n"
+        b"  }\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+
+    # Traps-only signatures and callees are exact effect rows, not an implicit
+    # widening of pure functions.
+    assert_clean(
+        b"fn bump (value: own u64) -> own u64 traps {\n"
+        b"  let next: own u64 = value;\n"
+        b"  set next = iadd.trap<u64>(next, 1_u64);\n"
+        b"  return next;\n"
+        b"}\n"
+        b"fn forward (value: own u64) -> own u64 traps {\n"
+        b"  return bump(value: value);\n"
+        b"}\n"
+    )
+
+    # Exact local types include Bool but never permit cross-type mutation.
+    assert_clean(
+        b"fn flip () -> own Bool pure {\n"
+        b"  let flag: own Bool = True();\n"
+        b"  set flag = False();\n"
+        b"  return flag;\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        local_set.replace(
+            b"iadd.trap<u64>(total, 1_u64)", b"True()"
+        )
+    )
+
+    # The bounded F2 mutation surface is an owned `let` place. Parameters,
+    # unknown places, and loop-local bindings after the loop stay unsupported.
+    assert_unsupported(
+        b"fn parameter_set (value: own u64) -> own u64 traps {\n"
+        b"  set value = iadd.trap<u64>(value, 1_u64);\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        b"fn unknown_set (value: own u64) -> own u64 traps {\n"
+        b"  set missing = iadd.trap<u64>(value, 1_u64);\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        b"fn loop_scope (value: own u64) -> own u64 pure {\n"
+        b"  loop @once {\n"
+        b"    let inside: own u64 = value;\n"
+        b"    break @once;\n"
+        b"  }\n"
+        b"  return inside;\n"
+        b"}\n"
+    )
+
+    # Breaks are lexical and terminal. Outer-target breaks in nested loops are
+    # conservatively deferred because this slice carries only the innermost
+    # target through its control summary.
+    assert_unsupported(
+        b"fn stray_break (value: own u64) -> own u64 pure {\n"
+        b"  break @missing;\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        loop_break.replace(b"break @counting", b"break @other")
+    )
+    assert_unsupported(
+        b"fn outer_break (value: own u64) -> own u64 pure {\n"
+        b"  loop @outer {\n"
+        b"    loop @inner { break @outer; }\n"
+        b"  }\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        b"fn duplicate_labels (value: own u64) -> own u64 pure {\n"
+        b"  loop @same { break @same; }\n"
+        b"  loop @same { break @same; }\n"
+        b"  return value;\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        b"fn after_break (value: own u64) -> own u64 traps {\n"
+        b"  let total: own u64 = value;\n"
+        b"  loop @once {\n"
+        b"    break @once;\n"
+        b"    set total = iadd.trap<u64>(total, 1_u64);\n"
+        b"  }\n"
+        b"  return total;\n"
+        b"}\n"
+    )
+
+    # EFF-2 remains bidirectional across a set RHS and loop body.
+    assert_unsupported(local_set.replace(b"traps {", b"pure {"))
+    assert_unsupported(
+        b"fn false_traps (value: own u64) -> own u64 traps {\n"
+        b"  let total: own u64 = value;\n"
+        b"  set total = value;\n"
+        b"  return total;\n"
+        b"}\n"
+    )
+
+    def assert_direct_mutation_rejected(source, mutate):
+        case, (function,), baseline_work = assert_clean(source)
+        mutate(case)
+        hostile_work = make_work(library, case[5].count)
+        hostile = SemanticBodyReport(99, 123, 456, 99, 99, 789)
+        library.semantic_reader_run(
+            case[1],
+            ctypes.byref(case[3]),
+            ctypes.byref(case[5]),
+            ctypes.byref(case[9]),
+            function,
+            ctypes.byref(hostile_work[6]),
+            ctypes.byref(hostile),
+        )
+        assert (hostile.status, hostile.rule, hostile.fix) == (
+            BODY_UNSUPPORTED,
+            RULE_NONE,
+            FIX_NONE,
+        )
+        assert_output_guards(baseline_work)
+        assert_output_guards(hostile_work)
+
+    def break_set_target(case):
+        statement = next(
+            node
+            for node in range(case[5].count)
+            if case[4][0][node] == AST["AstSet"]
+        )
+        target = children_of(case[4], statement)[0]
+        case[4][0][target] = AST["AstFieldPlace"]
+
+    def break_loop_label(case):
+        loop = next(
+            node
+            for node in range(case[5].count)
+            if case[4][0][node] == AST["AstLoop"]
+        )
+        label = children_of(case[4], loop)[0]
+        case[4][0][label] = AST["AstBreakLabel"]
+
+    def break_break_label(case):
+        statement = next(
+            node
+            for node in range(case[5].count)
+            if case[4][0][node] == AST["AstBreak"]
+        )
+        label = children_of(case[4], statement)[0]
+        case[4][0][label] = AST["AstLoopLabel"]
+
+    assert_direct_mutation_rejected(local_set, break_set_target)
+    assert_direct_mutation_rejected(loop_break, break_loop_label)
+    assert_direct_mutation_rejected(loop_break, break_break_label)
 
 
 def assert_reader_bool_equality_rejected(library):
@@ -1099,8 +1345,8 @@ def assert_reader_general_signature_and_enum_match(library):
         b"}\n"
     )
 
-    # Negative: local mutation (set) -> Unsupported.
-    assert_unsupported(
+    # F2 positive: exact-type mutation of an owned `let` binding.
+    assert_clean(
         b"fn probe (x: own u64) -> own u64 traps {\n"
         b"  let y: own u64 = x;\n"
         b"  set y = iadd.trap<u64>(y, 1_u64);\n"
@@ -1108,7 +1354,8 @@ def assert_reader_general_signature_and_enum_match(library):
         b"}\n"
     )
 
-    # Negative: loop -> Unsupported.
+    # Negative: the loop is structurally supported, but this traps-only row
+    # exhibits no trap and therefore remains an EFF-2 mismatch.
     assert_unsupported(
         b"fn probe (x: own u64) -> own u64 traps {\n"
         b"  loop @scan {\n"
@@ -2913,9 +3160,9 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     )
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
-        537,
-        75,
-        462,
+        547,
+        79,
+        468,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -2953,6 +3200,7 @@ def main():
         configure(library)
         case, work = assert_compiler_coverage(library)
         assert_legal_nonprofile_is_unsupported(library)
+        assert_reader_loops_and_local_set(library)
         assert_reader_bool_equality_rejected(library)
         assert_reader_bool_returns_admitted(library)
         assert_reader_general_signature_and_enum_match(library)
@@ -2973,11 +3221,12 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 537 total / 75 clean / 462 unsupported / "
+        "semantic unit: compiler 547 total / 79 clean / 468 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
         "admission, exact arbitrary-arity call-region attribution, general signatures "
         "and multi-variant enum matches, "
+        "structured loops and owned-let mutation, "
         "enum values and tag-only-enum buffer reads, "
         "structural rename, real "
         "reject, deterministic repeat, "

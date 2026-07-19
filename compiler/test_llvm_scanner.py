@@ -156,7 +156,7 @@ def analyze(library, data, name):
         case[5].count,
         type_caps=(4,) * len(TYPE_COLUMNS),
         fact_caps=(case[5].count,) * len(NODE_COLUMNS),
-        scratch_caps=(6,) * 4,
+        scratch_caps=(6,) * 5,
     )
     report = SemanticBodyReport(99, 123, 456, 99, 99, 789)
     library.semantic_scanner_run(

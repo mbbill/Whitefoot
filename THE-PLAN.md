@@ -294,10 +294,10 @@ the authorized seven-phase scope.
 
 Phase 2 is active. The canonical rejection ABI, explicit call-region retention,
 and arbitrary-arity exact call substitution are complete. The current unit has
-537 functions: 75 clean, 462 legal but unsupported, and zero rejected. Its
-self-parse is deterministic at 1,368,342 source bytes, 271,668 tokens, and
-135,307 unique-head AST nodes. The parser census is 3,472 regionful calls: 123
-explicit and 3,349 staged omissions. LLVM support remains the same
+547 functions: 79 clean, 468 legal but unsupported, and zero rejected. Its
+self-parse is deterministic at 1,392,939 source bytes, 276,481 tokens, and
+137,559 unique-head AST nodes. The parser census is 3,500 regionful calls: 152
+explicit and 3,348 staged omissions. LLVM support remains the same
 byte-identical 15-function module.
 
 Kernel v0.8 and its tag-only enum equality implementation are complete.
@@ -314,16 +314,26 @@ CLEAN through the repaired equality domain: `semantic_body_kind_is`,
 `llvm_scalar_node_is`, `llvm_scalar_type_is`, `llvm_scalar_mode_is`, and
 `llvm_scalar_operation_is`.
 
-The F1 acyclic read-only tranche now covers general signatures and exact effect
+The F1 acyclic read-only tranche covers general signatures and exact effect
 rows, general tag-only enum matches and values, shared struct fields, typed
-scalar and tag-only-enum buffer `index`, and field/buffer `len`. The next
-body-semantics capability is F2 loops (`loop @label` plus `break`) and local
-mutation. `lexer_scan_string` remains the source-order frontier, held jointly
-for F2 and F5 aggregate return. F3 writers, F4 bounded statement-scoped
-reborrow, F5 aggregate construction/return, and F6 `allocates`/`move` follow in
-that order. Whole-unit LLVM lowering, including production emission of general
-`eeq`/`ene` calls after revalidating their domain, remains the separate Phase-2
-step-2 track and may not treat CLEAN classification as emission authority.
+scalar and tag-only-enum buffer `index`, and field/buffer `len`. The first
+bounded F2 slice is complete: the reader carries exact fall/return/break
+may-flow through sequential blocks and exhaustive matches, admits canonical
+loops with function-unique labels and innermost labeled `break`, admits
+exact-type mutation of owned `let` bindings, recognizes exact traps-only rows
+and callees, and discovers effects recursively through `set` values and loop
+bodies. It deliberately keeps parameter mutation, outer-target breaks from a
+nested loop, duplicate labels, and a no-break loop without any return witness
+unsupported. `semantic_reader_u64_literal_any` is the one pre-existing
+function newly classified clean; the other three clean additions are the new
+flow-query helpers. F2 remains active for the remaining bounded loop and local-
+mutation corpus. `lexer_scan_string` remains the source-order frontier, held
+jointly for F2 and F5 aggregate return. F3 writers, F4 bounded statement-
+scoped reborrow, F5 aggregate construction/return, and F6 `allocates`/`move`
+follow in that order. Whole-unit LLVM lowering, including production emission
+of general `eeq`/`ene` calls after revalidating their domain, remains the
+separate Phase-2 step-2 track and may not treat CLEAN classification as
+emission authority.
 
 ## Work outside the seven-phase scope
 

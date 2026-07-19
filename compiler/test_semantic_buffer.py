@@ -696,12 +696,14 @@ def assert_dense_scratch(case, outputs, nodes):
         declarations,
         types,
         modes,
+        [SCRATCH_COLUMNS[4][1]] * 14,
     )
     observed = tuple(
         list(column[:14]) for column in outputs["scratch_storage"]
     )
     assert observed == expected
     assert outputs["scratch"].count == 14
+    assert outputs["scratch"].loop_count == 0
 
 
 def fixed_width_nodes(columns, function, width):
@@ -938,12 +940,14 @@ def assert_fixed_width_dense_scratch(case, outputs, nodes, width):
         declarations,
         parameter_types + let_types,
         [MODE_SHARED] + [MODE_OWN] * (needed - 1),
+        [SCRATCH_COLUMNS[4][1]] * needed,
     )
     observed = tuple(
         list(column[:needed]) for column in outputs["scratch_storage"]
     )
     assert observed == expected
     assert outputs["scratch"].count == needed
+    assert outputs["scratch"].loop_count == 0
 
 
 def assert_fixed_width_capacity_retry(

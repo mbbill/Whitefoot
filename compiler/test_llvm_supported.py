@@ -104,7 +104,7 @@ def make_work(library, ast_count, *, type_capacity=4, fact_capacity=None, scratc
         ast_count,
         type_caps=(type_capacity,) * 6,
         fact_caps=(fact_capacity,) * 8,
-        scratch_caps=(scratch_capacity,) * 4,
+        scratch_caps=(scratch_capacity,) * 5,
     )
 
 

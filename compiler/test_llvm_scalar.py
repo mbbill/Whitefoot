@@ -55,6 +55,8 @@ class SemanticBodyScratch(ctypes.Structure):
         ("type_ids", Buffer),
         ("modes", Buffer),
         ("count", ctypes.c_uint64),
+        ("loop_labels", Buffer),
+        ("loop_count", ctypes.c_uint64),
     ]
 
 
@@ -289,7 +291,8 @@ def analyze_semantic_body(
     declarations = (ctypes.c_uint64 * (scratch_capacity + 1))()
     type_ids = (ctypes.c_uint64 * (scratch_capacity + 1))()
     modes = (ctypes.c_int32 * (scratch_capacity + 1))()
-    for column in (name_tokens, declarations, type_ids):
+    loop_labels = (ctypes.c_uint64 * (scratch_capacity + 1))()
+    for column in (name_tokens, declarations, type_ids, loop_labels):
         column[scratch_capacity] = SCRATCH_U64_GUARD
     modes[scratch_capacity] = SCRATCH_MODE_GUARD
     scratch = SemanticBodyScratch(
@@ -297,6 +300,8 @@ def analyze_semantic_body(
         Buffer(ctypes.cast(declarations, ctypes.c_void_p), scratch_capacity),
         Buffer(ctypes.cast(type_ids, ctypes.c_void_p), scratch_capacity),
         Buffer(ctypes.cast(modes, ctypes.c_void_p), scratch_capacity),
+        0,
+        Buffer(ctypes.cast(loop_labels, ctypes.c_void_p), scratch_capacity),
         0,
     )
     report = SemanticBodyReport(99, 123, 456, 99, 99, 789)

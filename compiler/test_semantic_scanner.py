@@ -448,10 +448,12 @@ def assert_dense_scratch(case, outputs, nodes):
         declarations,
         [TYPE_BUFFER_U8, TYPE_U64, TYPE_U64, TYPE_U64, TYPE_U8, TYPE_BOOL],
         [MODE_SHARED, MODE_OWN, MODE_OWN, MODE_OWN, MODE_OWN, MODE_OWN],
+        [SCRATCH_COLUMNS[4][1]] * 6,
     )
     observed = tuple(list(column[:6]) for column in outputs["scratch_storage"])
     assert observed == expected
     assert outputs["scratch"].count == 6
+    assert outputs["scratch"].loop_count == 0
 
 
 def assert_real_scanners(library):
