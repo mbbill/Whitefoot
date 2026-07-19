@@ -98,7 +98,7 @@ Each experiment is self-contained and records its setup, results, and limitation
 | If you want to... | Start here |
 |---|---|
 | See the current state and authorized work | [THE-PLAN.md](THE-PLAN.md) |
-| Read the language specification | [spec/kernel-spec-v0.7.md](spec/kernel-spec-v0.7.md) |
+| Read the language specification | [spec/kernel-spec-v0.8.md](spec/kernel-spec-v0.8.md) |
 | Understand why each rule exists | [spec/derivation-ledger.md](spec/derivation-ledger.md) |
 | Read the project laws and blessed program shapes | [CONSTITUTION.md](CONSTITUTION.md) and [PATTERNS.md](PATTERNS.md) |
 | Inspect the production compiler | [compiler/](compiler/README.md) |

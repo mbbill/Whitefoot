@@ -59,6 +59,7 @@
     "form2-neg-noncanonical-ws": "839f2f77e3c9d90cebd9c906a02732ca07d6e3558167a6a326af376783dfacb0",
     "form2-pos-canonical-bytes": "ef7afaf56506b8878bba9d25494cbe1104690b7cbb4d8498b15b538ffef7e8b2",
     "form3-neg-opname-bad-suffix": "f716ab8ac9f122e82fb14f4f5c25f1f9df9721657e5ac422925665ecd5783cae",
+    "form3-neg-region-param-missing-apostrophe": "60cb376cc857e745ad0e9e1968df21c46a72b79113ffc27ca492c52a256a3303",
     "form3-neg-requires-binding": "12eeb6ce731db0cb89df82ff2070200f8e36ee460d5fae80c9258a742390dd8c",
     "form3-neg-reserved-mode-field": "a29418050a151ff183060e67f0617791fed3e5547cf4149f4a267306c41b8ce2",
     "form3-neg-typeid-fn-name": "160b709d9e43590e1ce108d89169fa0bca3b7f01112395393a8aa5535a85bc31",
@@ -139,6 +140,7 @@
     "own13-pos-let-match-give": "28b741afe04efa7e3aa5420e039985665d58e637c5ac444e06ac44b4057ecb70",
     "own13-pos-uniq-match-payloads": "67db129e93de3d3f501cc78ad5f8a86d5cbb9921c989c603a5070f3ef3e85054",
     "own2-pos-three-modes": "63a1cf1b6c9207a2dfeaedc80e827f70605ef8006bb0944db33a685d1aa36cf4",
+    "own3-neg-undeclared-signature-region": "8713aeb0742e3b4a297c5f42abea497b269cd5cc8db1ade46f09107ba98a5a2c",
     "own3-neg-unknown-region": "6c29013b554f3e969f149273c4e389a01158d56bf706708a79b2d94f2ffc5011",
     "own3-pos-outlives-store": "d26d1966a695e09844e0744b22c96a3d010bb817df927b208cf7b7f4574914e9",
     "own4-neg-return-local-borrow": "18c86d3b03ad40f4c2abc7df782a493086b052dcdc075e471ff8b0211cb4b9f5",
@@ -162,10 +164,10 @@
     "rule:GATE-1": "f015e0e72c301561923163bd4c847c42a186d63164d4c67973bf85a2e3cfdbda",
     "rule:LEDGER-1": "df549c0f5608c17b2515c6da93e61dba421cabe1a9078d12efb8cf50cc7094f8",
     "rule:LEX-1": "48e51e1d394ed46797b0540ecdb605cff51820e8da98f86d53b0db5f6175fa83",
-    "rule:META-1": "c9bf6679ecd22b411e026bfde07a27f70d04e805a7d6b1977b0245bd496b6325",
+    "rule:META-1": "9ac996a21c777a0c234e76e7ba586d4686bb6de319365deebeeb9a1b4026bd94",
     "rule:META-2": "a854c0600e7d90ff839d88366f773a8b3ba9ed891068dd786b77655583f9b824",
-    "rule:META-3": "3070b5b48364033b0c3aca2a41f5c2aa65440ed5d57a70e4152cffe56305329c",
-    "rule:META-4": "98099899ed731b65d1c93c31a939bb10526e419167f4c54f4bbb588a1543bcc0",
+    "rule:META-3": "e2e0b7c942dbd0c60b63bed4d7a0fd97c173091f3901505d6f19ef67547f4541",
+    "rule:META-4": "f353b202ee601b70bfc35693e9df3f17e9731eca548bccaf619269518f607156",
     "rule:META-5": "1195031ac3a453166e4f19e02c775525b0453c18c1f9c9c8d13e19f06595bfb1",
     "rule:META-6": "c95eab04fbd0073f87aeecef8a534c65853473c80b9b3ce643e67d2ef5cadb83",
     "rule:OWN-8": "2654eaf720d5f8a895bfe2f2ad8ce2d87580806c498fb3ae70e2a0d3be53c922",
@@ -195,6 +197,7 @@
     "type5-neg-index-offset-type": "429400696a3011b7e41137aa82cf5f76f5428c6bfe6b888631ba17d7cc2ce41b",
     "type5-neg-match-non-enum": "c8d3b88a1a1f13788cc3025e8d0e04b244f28d80a668191cfd89bcbfcd3c0546",
     "type5-neg-shared-for-uniq-arg": "b2c53ea24584d117911b3245542a0754cf42a57f464b3a436453b99c8958ff61",
+    "type5-neg-wrong-region-arg-count": "f86d05b3d8c6b54f7122b97ea70db7e2e7501d85ef816863d16bc2f808b53f1d",
     "type5-pos-explicit": "603338de1f8d4b8cb207ab1bc24b95fe74e43485c73a3ff4726b14b086cdd428",
     "type6-neg-dup-variant": "50f7c7b3d6d11816bc082a60fb557da6547fccff7fae102b1e8a7d2de8e94589",
     "type6-neg-shadow": "8a5468b974c5b767d5f4534d937a9bd50e923a73f1cd8a8b9ee6dc620221e23a",
@@ -297,7 +300,8 @@
     "spec/kernel-spec-v0.4.md": "30baf9cefa1ab179f39a1d5a0a660e37a4bce42a762574e7eb4098bc2505f3e1",
     "spec/kernel-spec-v0.5.md": "f41128b7e5cc7ecad1447ee0b45bdd3004d681c5048a08a5edc1d5fd0b8aa01a",
     "spec/kernel-spec-v0.6.md": "95ae3e1eec48109e1c55c65c2a3e3ddecccd6192c30c0d034e5b7931f10e535e",
-    "spec/kernel-spec-v0.7.md": "212a2224d9d69ed58b0cb4cb3e8137572e2f06c6e1326698b1c6793ff0f04481"
+    "spec/kernel-spec-v0.7.md": "212a2224d9d69ed58b0cb4cb3e8137572e2f06c6e1326698b1c6793ff0f04481",
+    "spec/kernel-spec-v0.8.md": "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
   },
   "oracles": {
     "tools/codegen_parity.py": [

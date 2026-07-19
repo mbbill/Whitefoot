@@ -15,7 +15,7 @@ proof discharges them — speed is earned by proof, never by weakening a check.
    design change, read the relevant node and its `.alt/` (what was already
    tried and why it lost).
 4. As needed: `CONSTITUTION.md` (law), `PATTERNS.md` (the closed pattern
-   doctrine — blessed shapes writers must use), `spec/kernel-spec-v0.7.md`
+   doctrine — blessed shapes writers must use), `spec/kernel-spec-v0.8.md`
    (the 91-rule language spec), `optimizer-language-research/notes/user-directives.md`
    (binding owner rulings and amendments).
 

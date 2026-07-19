@@ -10,7 +10,7 @@ not set current priority or authorize work.
 
 - `CONSTITUTION.md` defines project law.
 - `optimizer-language-research/notes/user-directives.md` records owner rulings.
-- `spec/kernel-spec-v0.7.md` defines the accepted language.
+- `spec/kernel-spec-v0.8.md` defines the accepted language.
 - `PATTERNS.md` defines the closed set of forms writers use.
 - This file orders implementation and records its authorization boundary.
 - `optimizer-language-research/implementation/decision-gates.md` preserves the
@@ -145,17 +145,17 @@ lowers — no function may remain unsupported at the Phase 2 exit.
 stage-1 wfc matches stage 0 on compiler-subset conformance; the facts-off IR
 fixpoint is byte-identical; both project gates pass.
 
-## Phase 3: implement all of v0.7 with facts off
+## Phase 3: implement all of v0.8 with facts off
 
 **Entry:** phase 2 exit and a frozen stage 0.
 
-Implement every accepted v0.7 construct that wfc's own source did not require.
+Implement every accepted v0.8 construct that wfc's own source did not require.
 The work includes `requires`: AST representation, parsing, entry-check
 normalization, body-derived obligation accounting, deterministic diagnostics,
 lowering, and report/no-report byte identity. Complete effect checking before
 any optimizer fact can affect output.
 
-Run the full v0.7 conformance suite through wfc. Use frozen stage 0 as the
+Run the full v0.8 conformance suite through wfc. Use frozen stage 0 as the
 behavior oracle only for its frozen subset. Use specification-derived expected
 artifacts or purpose-built reference checkers for constructs stage 0 lacks.
 Resolve all fourteen pending source cases so the runner reports zero skips.
@@ -164,7 +164,7 @@ annotations do not close those rules. Preserve a conformance case for each
 discrepancy. Keep facts disabled and rerun the facts-off self-hosting fixpoint
 after the final language slice.
 
-**Exit gate:** wfc accepts and rejects every source-emittable v0.7 case with
+**Exit gate:** wfc accepts and rejects every source-emittable v0.8 case with
 zero skips, supports `requires` end to end, emits the DIAG-2 artifact and DIAG-3
 reports, completes effect checking, and retains the facts-off byte-identical
 fixpoint. Both project gates pass.
@@ -188,7 +188,7 @@ allocation leaks, retain deterministic diagnostics, harden `wfc_compile`, and
 provide the trusted launcher shim. The launcher shim does not define public
 file-I/O language semantics.
 
-**Exit gate:** wfc passes full v0.7 conformance, codegen parity, per-site proof
+**Exit gate:** wfc passes full v0.8 conformance, codegen parity, per-site proof
 accounting, resource cleanup, and byte-identical self-hosting with facts on.
 Every fact family has hostile-review evidence. Both project gates pass. wfc is
 the production compiler baseline; frozen stage 0 remains an oracle.
