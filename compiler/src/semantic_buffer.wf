@@ -1148,7 +1148,7 @@ fn semantic_buffer_fixed_width_signature_for ['c] (source: &'c buffer<u8>, token
 }
 
 fn semantic_buffer_fixed_width_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, function: own u64) -> own Bool reads('c), traps {
-  return semantic_buffer_fixed_width_signature_for(source: source, tokens: tokens, ast: ast, function: function, expected_width: 0_u64);
+  return semantic_buffer_fixed_width_signature_for<'c>(source: source, tokens: tokens, ast: ast, function: function, expected_width: 0_u64);
 }
 
 fn semantic_buffer_fixed_width_let_name_unique ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, function: own u64, block: own u64, width: own u64, statement_index: own u64, name: own u64) -> own Bool reads('c), traps {
@@ -1436,7 +1436,7 @@ fn semantic_buffer_fixed_width_body_for ['c] (source: &'c buffer<u8>, tokens: &'
 }
 
 fn semantic_buffer_fixed_width_body_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, function: own u64) -> own Bool reads('c), traps {
-  return semantic_buffer_fixed_width_body_for(source: source, tokens: tokens, ast: ast, function: function, expected_width: 0_u64);
+  return semantic_buffer_fixed_width_body_for<'c>(source: source, tokens: tokens, ast: ast, function: function, expected_width: 0_u64);
 }
 
 fn semantic_buffer_match3_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, function: own u64) -> own Bool reads('c), traps {

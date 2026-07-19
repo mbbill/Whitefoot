@@ -406,9 +406,9 @@ def canonical_path(columns, root, target):
 COMPILER_CLEAN_ORDINALS = (
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
     21, 22, 23, 24, 29, 30, 31, 96, 98, 102, 104, 105, 106, 110, 111,
-    123, 124, 125, 126, 144, 147, 158, 159, 185, 208, 209, 216, 289, 300,
-    330, 331, 332, 333, 334, 335, 336, 401, 408, 412, 413, 414, 427, 490,
-    508,
+    123, 124, 125, 126, 144, 145, 147, 148, 158, 159, 185, 204, 207, 208,
+    209, 214, 216, 289, 300, 330, 331, 332, 333, 334, 335, 336, 401, 408,
+    412, 413, 414, 427, 490, 508,
 )
 
 
@@ -423,8 +423,8 @@ def assert_compiler_coverage(library):
     expected = (
         UNIT_CLEAN,
         537,
-        62,
-        475,
+        67,
+        470,
         0,
         functions[18],
         AST_NONE,
@@ -2382,8 +2382,8 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
         537,
-        62,
-        475,
+        67,
+        470,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -2440,7 +2440,7 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 537 total / 62 clean / 475 unsupported / "
+        "semantic unit: compiler 537 total / 67 clean / 470 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
         "admission, exact call-region attribution, general signatures "

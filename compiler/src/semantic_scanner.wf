@@ -1,7 +1,7 @@
 fn semantic_scanner_leaf_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, kind: own AstKind) -> own Bool reads('c), traps {
-  let scanner_leaf_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: kind);
-  let scanner_leaf_shape: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 0_u64);
-  let scanner_leaf_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
+  let scanner_leaf_kind: own Bool = semantic_body_kind_is<'c>(ast: ast, node: node, want: kind);
+  let scanner_leaf_shape: own Bool = semantic_body_exact_children<'c>(ast: ast, node: node, want: 0_u64);
+  let scanner_leaf_token: own Bool = semantic_body_node_token_valid<'c>(source: source, tokens: tokens, ast: ast, node: node);
   let scanner_leaf_first: own Bool = band<Bool>(scanner_leaf_kind, scanner_leaf_shape);
   return band<Bool>(scanner_leaf_first, scanner_leaf_token);
 }

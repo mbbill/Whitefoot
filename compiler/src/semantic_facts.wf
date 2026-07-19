@@ -101,7 +101,7 @@ fn semantic_type_tape_shape_valid ['f] (types: &'f TypeTape) -> own Bool reads('
 }
 
 fn semantic_type_tape_capacity_valid ['f] (types: &'f TypeTape, needed: own u64) -> own Bool reads('f) {
-  let shape_valid: own Bool = semantic_type_tape_shape_valid(types: types);
+  let shape_valid: own Bool = semantic_type_tape_shape_valid<'f>(types: types);
   match shape_valid {
     True() => {
     }
@@ -171,7 +171,7 @@ fn semantic_node_facts_shape_valid ['f] (facts: &'f NodeFacts) -> own Bool reads
 }
 
 fn semantic_node_facts_capacity_valid ['f] (facts: &'f NodeFacts, needed: own u64) -> own Bool reads('f) {
-  let shape_valid: own Bool = semantic_node_facts_shape_valid(facts: facts);
+  let shape_valid: own Bool = semantic_node_facts_shape_valid<'f>(facts: facts);
   match shape_valid {
     True() => {
     }
