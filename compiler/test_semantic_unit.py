@@ -13,7 +13,7 @@ from test_parser import (
     AstTape,
     children_of,
 )
-from test_ast_validate import AstValidationReport
+from test_ast_validate import AstValidationReport, validate
 from test_semantic_body import (
     AST,
     BODY_CAPACITY,
@@ -891,6 +891,39 @@ def assert_reader_general_signature_and_enum_match(library):
         function,
     ), (kind, report.status)
 
+    # Region substitution applies to pure calls too. The explicit 'a argument
+    # instantiates c's 'r, so only a place rooted in 'a can satisfy x: &'r.
+    pure_callee = (
+        b"fn c ['r] (x: &'r buffer<u8>) -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+    )
+    assert_clean(
+        pure_callee
+        + b"fn relay ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 pure {\n"
+        b"  return c<'a>(x: a);\n"
+        b"}\n"
+    )
+    assert_unsupported(
+        pure_callee
+        + b"fn hole ['a, 'b] (a: &'a buffer<u8>, b: &'b buffer<u8>) "
+        b"-> own u64 pure {\n"
+        b"  return c<'a>(x: b);\n"
+        b"}\n"
+    )
+
+    # A shared formal must name the callee's declared region before the call
+    # can substitute it. An undeclared formal region fails closed.
+    assert_unsupported(
+        b"fn malformed ['r] (x: &'q buffer<u8>) -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+        b"fn relay ['a] (a: &'a buffer<u8>) -> own u64 pure {\n"
+        b"  return malformed<'a>(x: a);\n"
+        b"}\n"
+    )
+
     # Positive: general 3-variant enum match; every declared variant appears
     # exactly once, tag-only, and every arm returns.
     assert_clean(rank(b"  match s {\n" + lo + mid + hi + b"  }\n"))
@@ -1014,6 +1047,389 @@ def assert_reader_general_signature_and_enum_match(library):
         b"traps {\n"
         b"  match s {\n" + lo + mid + hi + b"  }\n}\n"
     )
+
+
+def assert_reader_region_argument_leaf(library):
+    # The kind-agnostic structural validator permits a uniquely reachable child
+    # beneath any node. The semantic call reader must still enforce the grammar
+    # invariant that an explicit region argument is a leaf.
+    data = (
+        b"fn c ['r] (x: &'r buffer<u8>) -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+        b"fn relay ['a] (a: &'a buffer<u8>) -> own u64 pure {\n"
+        b"  return c<'a>(x: a);\n"
+        b"}\n"
+    )
+    case = parsed(library, data)
+    callee, caller = top_level_functions(case)
+    callee_block = children_of(case[4], callee)[-1]
+    stolen_statement = children_of(case[4], callee_block)[0]
+    caller_block = children_of(case[4], caller)[-1]
+    caller_return = children_of(case[4], caller_block)[0]
+    call = children_of(case[4], caller_return)[0]
+    region_argument = next(
+        child
+        for child in children_of(case[4], call)
+        if case[4][0][child] == AST["AstRegionArgument"]
+    )
+
+    case[4][4][callee_block] = AST_NONE
+    case[4][5][callee_block] = AST_NONE
+    case[4][4][region_argument] = stolen_statement
+    case[4][5][region_argument] = stolen_statement
+    case[4][6][stolen_statement] = AST_NONE
+
+    refreshed = validate(library, len(data), case[3].count, case[5])
+    assert refreshed.status == 0
+    forged = list(case)
+    forged[6] = refreshed
+    forged = tuple(forged)
+    work = make_work(library, forged[5].count)
+    kind, report = invoke_dispatch(library, forged, caller, work)
+    assert (kind, report.status, report.function) == (
+        CAPABILITY_UNSUPPORTED,
+        BODY_UNSUPPORTED,
+        caller,
+    ), (kind, report.status)
+    assert_output_guards(work)
+
+    # Text equality alone is not a region argument: the head token must retain
+    # the REGIONID lexical kind even when its bytes still spell 'a.
+    token_case = parsed(library, data)
+    _, token_caller = top_level_functions(token_case)
+    token_block = children_of(token_case[4], token_caller)[-1]
+    token_return = children_of(token_case[4], token_block)[0]
+    token_call = children_of(token_case[4], token_return)[0]
+    token_region_argument = next(
+        child
+        for child in children_of(token_case[4], token_call)
+        if token_case[4][0][child] == AST["AstRegionArgument"]
+    )
+    token_head = token_case[4][1][token_region_argument]
+    token_case[2][0][token_head] = 1
+    token_work = make_work(library, token_case[5].count)
+    token_kind, token_report = invoke_dispatch(
+        library, token_case, token_caller, token_work
+    )
+    assert (token_kind, token_report.status, token_report.function) == (
+        CAPABILITY_UNSUPPORTED,
+        BODY_UNSUPPORTED,
+        token_caller,
+    ), (token_kind, token_report.status)
+    assert_output_guards(token_work)
+
+
+def assert_reader_callee_signature_singletons(library):
+    data = (
+        b"fn c ['r] (x: &'r buffer<u8>) -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+        b"fn relay ['a] (a: &'a buffer<u8>) -> own u64 pure {\n"
+        b"  return c<'a>(x: a);\n"
+        b"}\n"
+    )
+
+    def assert_forged_unsupported(case, caller):
+        refreshed = validate(library, len(data), case[3].count, case[5])
+        assert refreshed.status == 0
+        forged = list(case)
+        forged[6] = refreshed
+        forged = tuple(forged)
+        work = make_work(library, forged[5].count)
+        kind, report = invoke_dispatch(library, forged, caller, work)
+        assert (kind, report.status, report.function) == (
+            CAPABILITY_UNSUPPORTED,
+            BODY_UNSUPPORTED,
+            caller,
+        ), (kind, report.status)
+        assert_output_guards(work)
+
+    # A second region-parameter node cannot replace an earlier malformed one.
+    # Keep the tree uniquely reachable while moving the callee's return subtree
+    # into a second, well-shaped region declaration.
+    region_case = parsed(library, data)
+    region_callee, region_caller = top_level_functions(region_case)
+    region_children = children_of(region_case[4], region_callee)
+    original_regions = next(
+        child
+        for child in region_children
+        if region_case[4][0][child] == AST["AstRegionParameters"]
+    )
+    original_region = children_of(region_case[4], original_regions)[0]
+    region_block = region_children[-1]
+    moved_regions = children_of(region_case[4], region_block)[0]
+    moved_region = children_of(region_case[4], moved_regions)[0]
+    region_case[4][4][region_block] = AST_NONE
+    region_case[4][5][region_block] = AST_NONE
+    region_case[4][6][region_block] = moved_regions
+    region_case[4][5][region_callee] = moved_regions
+    region_case[4][6][moved_regions] = AST_NONE
+    region_case[4][0][moved_regions] = AST["AstRegionParameters"]
+    region_case[4][0][moved_region] = AST["AstRegion"]
+    region_case[4][1][original_region], region_case[4][1][moved_region] = (
+        region_case[4][1][moved_region],
+        region_case[4][1][original_region],
+    )
+    assert_forged_unsupported(region_case, region_caller)
+
+    # Every other singleton signature component is counted too. A second pure
+    # effect leaf must not be accepted merely because it appears last.
+    pure_case = parsed(library, data)
+    pure_callee, pure_caller = top_level_functions(pure_case)
+    pure_children = children_of(pure_case[4], pure_callee)
+    original_pure = next(
+        child
+        for child in pure_children
+        if pure_case[4][0][child] == AST["AstPureEffect"]
+    )
+    pure_block = pure_children[-1]
+    return_statement = children_of(pure_case[4], pure_block)[0]
+    moved_pure = children_of(pure_case[4], return_statement)[0]
+    pure_case[4][4][return_statement] = AST_NONE
+    pure_case[4][5][return_statement] = AST_NONE
+    pure_case[4][6][pure_block] = moved_pure
+    pure_case[4][5][pure_callee] = moved_pure
+    pure_case[4][6][moved_pure] = AST_NONE
+    pure_case[4][0][moved_pure] = AST["AstPureEffect"]
+    pure_case[4][1][original_pure], pure_case[4][1][moved_pure] = (
+        pure_case[4][1][moved_pure],
+        pure_case[4][1][original_pure],
+    )
+    assert_forged_unsupported(pure_case, pure_caller)
+
+
+def assert_reader_callee_signature_shapes(library):
+    pure = (
+        b"fn c ['r] (x: &'r buffer<u8>) -> own u64 pure {\n"
+        b"  return 0_u64;\n"
+        b"}\n"
+        b"fn relay ['a] (a: &'a buffer<u8>) -> own u64 pure {\n"
+        b"  return c<'a>(x: a);\n"
+        b"}\n"
+    )
+    effectful = (
+        b"fn c ['r] (x: &'r buffer<u8>, i: own u64) -> own u8 "
+        b"reads('r), traps {\n"
+        b"  return index<u8>(deref(x), i);\n"
+        b"}\n"
+        b"fn relay ['a] (x: &'a buffer<u8>, i: own u64) -> own u8 "
+        b"reads('a), traps {\n"
+        b"  return c<'a>(x: x, i: i);\n"
+        b"}\n"
+    )
+
+    def assert_mutation_unsupported(label, source, mutate):
+        case = parsed(library, source)
+        callee, caller = top_level_functions(case)
+        direct = children_of(case[4], callee)
+        by_kind = {}
+        for node in direct:
+            by_kind.setdefault(case[4][0][node], []).append(node)
+        mutate(case, callee, direct, by_kind)
+        refreshed = validate(library, len(source), case[3].count, case[5])
+        assert refreshed.status == 0, label
+        forged = list(case)
+        forged[6] = refreshed
+        forged = tuple(forged)
+        work = make_work(library, forged[5].count)
+        kind, report = invoke_dispatch(library, forged, caller, work)
+        assert (kind, report.status, report.function) == (
+            CAPABILITY_UNSUPPORTED,
+            BODY_UNSUPPORTED,
+            caller,
+        ), (label, kind, report.status)
+        assert_output_guards(work)
+
+    def attach_block_statement_to(kind_name):
+        def mutate(case, callee, direct, by_kind):
+            block = by_kind[AST["AstBlock"]][0]
+            target = by_kind[AST[kind_name]][0]
+            statement = children_of(case[4], block)[0]
+            case[4][4][block] = AST_NONE
+            case[4][5][block] = AST_NONE
+            case[4][4][target] = statement
+            case[4][5][target] = statement
+            case[4][6][statement] = AST_NONE
+
+        return mutate
+
+    def swap_heads(left_name, right_name):
+        def mutate(case, callee, direct, by_kind):
+            left = by_kind[AST[left_name]][0]
+            right = by_kind[AST[right_name]][0]
+            case[4][1][left], case[4][1][right] = (
+                case[4][1][right],
+                case[4][1][left],
+            )
+
+        return mutate
+
+    def move_parameter_before_regions(case, callee, direct, by_kind):
+        region = by_kind[AST["AstRegionParameters"]][0]
+        parameter = by_kind[AST["AstParameter"]][0]
+        order = list(direct)
+        region_index = order.index(region)
+        parameter_index = order.index(parameter)
+        order[region_index], order[parameter_index] = (
+            order[parameter_index],
+            order[region_index],
+        )
+        case[4][4][callee] = order[0]
+        case[4][5][callee] = order[-1]
+        for current, following in zip(order, order[1:]):
+            case[4][6][current] = following
+        case[4][6][order[-1]] = AST_NONE
+
+    cases = (
+        ("pure nonleaf", pure, attach_block_statement_to("AstPureEffect")),
+        (
+            "traps nonleaf",
+            effectful,
+            attach_block_statement_to("AstTrapsEffect"),
+        ),
+        (
+            "region parent head",
+            pure,
+            swap_heads("AstRegionParameters", "AstBlock"),
+        ),
+        ("return mode head", pure, swap_heads("AstOwnMode", "AstBlock")),
+        ("function name head", pure, swap_heads("AstFunctionName", "AstBlock")),
+        ("pure effect head", pure, swap_heads("AstPureEffect", "AstBlock")),
+        ("parameter before regions", pure, move_parameter_before_regions),
+    )
+    for label, source, mutate in cases:
+        assert_mutation_unsupported(label, source, mutate)
+
+    # The callee root is syntax-bearing too: its head must remain the exact
+    # WORD token `fn`, not merely an in-range token with the same bytes.
+    root_case = parsed(library, pure)
+    root_callee, root_caller = top_level_functions(root_case)
+    root_head = root_case[4][1][root_callee]
+    root_case[2][0][root_head] = 12
+    root_work = make_work(library, root_case[5].count)
+    root_kind, root_report = invoke_dispatch(
+        library, root_case, root_caller, root_work
+    )
+    assert (root_kind, root_report.status, root_report.function) == (
+        CAPABILITY_UNSUPPORTED,
+        BODY_UNSUPPORTED,
+        root_caller,
+    ), (root_kind, root_report.status)
+    assert_output_guards(root_work)
+
+    # A symbol-table hit must still agree with the callee's validated AST name.
+    # Swap two valid identifier heads while preserving unique reachability.
+    name_source = (
+        b"fn c (x: own u64) -> own u64 pure {\n"
+        b"  let other: own u64 = x;\n"
+        b"  return other;\n"
+        b"}\n"
+        b"fn relay (x: own u64) -> own u64 pure {\n"
+        b"  return c(x: x);\n"
+        b"}\n"
+    )
+    name_case = parsed(library, name_source)
+    name_callee, name_caller = top_level_functions(name_case)
+    function_name = next(
+        child
+        for child in children_of(name_case[4], name_callee)
+        if name_case[4][0][child] == AST["AstFunctionName"]
+    )
+    binding_name = next(
+        node
+        for node in range(name_case[5].count)
+        if name_case[4][0][node] == AST["AstBindingName"]
+    )
+    name_case[4][1][function_name], name_case[4][1][binding_name] = (
+        name_case[4][1][binding_name],
+        name_case[4][1][function_name],
+    )
+    name_validation = validate(
+        library, len(name_source), name_case[3].count, name_case[5]
+    )
+    assert name_validation.status == 0
+    forged_name = list(name_case)
+    forged_name[6] = name_validation
+    forged_name = tuple(forged_name)
+    name_work = make_work(library, forged_name[5].count)
+    name_kind, name_report = invoke_dispatch(
+        library, forged_name, name_caller, name_work
+    )
+    assert (name_kind, name_report.status, name_report.function) == (
+        CAPABILITY_UNSUPPORTED,
+        BODY_UNSUPPORTED,
+        name_caller,
+    ), (name_kind, name_report.status)
+    assert_output_guards(name_work)
+
+    # Distinct formal names are part of the canonical signature. Matching a
+    # forged duplicate formal list with forged duplicate named arguments must
+    # not make the call appear exact.
+    duplicate_source = (
+        b"fn c (x: own u64, y: own u64) -> own u64 pure {\n"
+        b"  return x;\n"
+        b"}\n"
+        b"fn relay (a: own u64, b: own u64) -> own u64 pure {\n"
+        b"  let x: own u64 = a;\n"
+        b"  return c(x: a, y: b);\n"
+        b"}\n"
+    )
+    duplicate_case = parsed(library, duplicate_source)
+    duplicate_callee, duplicate_caller = top_level_functions(duplicate_case)
+    callee_parameters = [
+        child
+        for child in children_of(duplicate_case[4], duplicate_callee)
+        if duplicate_case[4][0][child] == AST["AstParameter"]
+    ]
+    callee_block = children_of(duplicate_case[4], duplicate_callee)[-1]
+    callee_return = children_of(duplicate_case[4], callee_block)[0]
+    callee_place = children_of(duplicate_case[4], callee_return)[0]
+    duplicate_case[4][1][callee_parameters[1]], duplicate_case[4][1][callee_place] = (
+        duplicate_case[4][1][callee_place],
+        duplicate_case[4][1][callee_parameters[1]],
+    )
+    caller_block = children_of(duplicate_case[4], duplicate_caller)[-1]
+    caller_statements = children_of(duplicate_case[4], caller_block)
+    caller_binding = next(
+        node
+        for node in range(duplicate_case[5].count)
+        if duplicate_case[4][0][node] == AST["AstBindingName"]
+    )
+    caller_call = children_of(duplicate_case[4], caller_statements[-1])[0]
+    caller_arguments = [
+        child
+        for child in children_of(duplicate_case[4], caller_call)
+        if duplicate_case[4][0][child] == AST["AstNamedArgument"]
+    ]
+    duplicate_case[4][1][caller_arguments[1]], duplicate_case[4][1][caller_binding] = (
+        duplicate_case[4][1][caller_binding],
+        duplicate_case[4][1][caller_arguments[1]],
+    )
+    duplicate_validation = validate(
+        library,
+        len(duplicate_source),
+        duplicate_case[3].count,
+        duplicate_case[5],
+    )
+    assert duplicate_validation.status == 0
+    forged_duplicate = list(duplicate_case)
+    forged_duplicate[6] = duplicate_validation
+    forged_duplicate = tuple(forged_duplicate)
+    duplicate_work = make_work(library, forged_duplicate[5].count)
+    duplicate_kind, duplicate_report = invoke_dispatch(
+        library, forged_duplicate, duplicate_caller, duplicate_work
+    )
+    assert (
+        duplicate_kind,
+        duplicate_report.status,
+        duplicate_report.function,
+    ) == (
+        CAPABILITY_UNSUPPORTED,
+        BODY_UNSUPPORTED,
+        duplicate_caller,
+    ), (duplicate_kind, duplicate_report.status)
+    assert_output_guards(duplicate_work)
 
 
 def assert_reader_struct_field_and_typed_index(library):
@@ -1905,6 +2321,9 @@ def main():
         assert_reader_bool_equality_rejected(library)
         assert_reader_bool_returns_admitted(library)
         assert_reader_general_signature_and_enum_match(library)
+        assert_reader_region_argument_leaf(library)
+        assert_reader_callee_signature_singletons(library)
+        assert_reader_callee_signature_shapes(library)
         assert_reader_struct_field_and_typed_index(library)
         assert_reader_enum_values_and_buffers(library)
         assert_reader_enum_type_id_partition_guard()

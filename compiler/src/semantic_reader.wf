@@ -1228,7 +1228,7 @@ fn semantic_reader_param_mode ['c] (source: &'c buffer<u8>, tokens: &'c TokenTap
   }
 }
 
-fn semantic_reader_arg_matches ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, scratch: &'w SemanticBodyScratch, actual: own u64, expected_type: own u64, expected_mode: own SemanticValueMode) -> own Bool reads('c 'w), traps {
+fn semantic_reader_arg_matches ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, scratch: &'w SemanticBodyScratch, actual: own u64, expected_type: own u64, expected_mode: own SemanticValueMode, expected_region: own u64) -> own Bool reads('c 'w), traps {
   let ast_count: own u64 = deref(ast).count;
   match ilt<u64>(actual, ast_count) {
     True() => {
@@ -1272,7 +1272,73 @@ fn semantic_reader_arg_matches ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
       let actual_mode: own SemanticValueMode = index<SemanticValueMode>(deref(scratch).modes, slot);
       let type_ok: own Bool = ieq<u64>(actual_type, expected_type);
       let mode_ok: own Bool = ieq<SemanticValueMode>(actual_mode, expected_mode);
-      return band<Bool>(type_ok, mode_ok);
+      match band<Bool>(type_ok, mode_ok) {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      match expected_mode {
+        SemanticModeOwn() => {
+          return True();
+        }
+        SemanticModeShared() => {
+        }
+        SemanticModeUniq() => {
+          return False();
+        }
+        SemanticModeNone() => {
+          return False();
+        }
+      }
+      match ine<u64>(expected_region, ast_none) {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let declaration: own u64 = index<u64>(deref(scratch).declarations, slot);
+      match ilt<u64>(declaration, ast_count) {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let ast_parameter_atom: own AstKind = AstParameter();
+      let declaration_parameter: own Bool = semantic_body_kind_is<'c>(ast: ast, node: declaration, want: ast_parameter_atom);
+      let declaration_shape: own Bool = semantic_body_exact_children<'c>(ast: ast, node: declaration, want: 2_u64);
+      match band<Bool>(declaration_parameter, declaration_shape) {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let mode_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: declaration, ordinal: 0_u64);
+      let ast_shared_mode_atom: own AstKind = AstSharedMode();
+      let mode_shared: own Bool = semantic_body_kind_is<'c>(ast: ast, node: mode_node, want: ast_shared_mode_atom);
+      let mode_valid: own Bool = semantic_function_mode_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: mode_node);
+      match band<Bool>(mode_shared, mode_valid) {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let region_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: mode_node, ordinal: 0_u64);
+      let region_valid: own Bool = semantic_function_region_leaf_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: region_node);
+      match region_valid {
+        True() => {
+        }
+        False() => {
+          return False();
+        }
+      }
+      let actual_region: own u64 = index<u64>(deref(ast).heads, region_node);
+      return token_text_equal<'c, 'c>(source: source, tokens: tokens, left: actual_region, right: expected_region);
     }
     False() => {
       return False();
@@ -1320,7 +1386,7 @@ fn semantic_reader_return_type_id ['c] (source: &'c buffer<u8>, tokens: &'c Toke
 fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, region_token: own u64, node: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
   let ast_user_call_atom: own AstKind = AstUserCall();
   let kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_user_call_atom);
-  let token_ok: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: node);
+  let token_ok: own Bool = semantic_buffer_declaration_word_valid<'c>(source: source, tokens: tokens, ast: ast, node: node);
   match band<Bool>(kind_ok, token_ok) {
     True() => {
     }
@@ -1370,6 +1436,29 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
       return semantic_facts_none;
     }
   }
+  let callee_token_valid: own Bool = semantic_body_node_token_valid<'c>(source: source, tokens: tokens, ast: ast, node: callee);
+  match callee_token_valid {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = node;
+      set deref(report).related = callee;
+      return semantic_facts_none;
+    }
+  }
+  let callee_head: own u64 = index<u64>(deref(ast).heads, callee);
+  let callee_fn_word: own Bool = parser_word2<'c, 'c>(source: source, tokens: tokens, token: callee_head, a: 102_u8, b: 110_u8);
+  match callee_fn_word {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = node;
+      set deref(report).related = callee;
+      return semantic_facts_none;
+    }
+  }
 
   let ast_count: own u64 = deref(ast).count;
   let callee_first: own u64 = index<u64>(deref(ast).first_children, callee);
@@ -1397,7 +1486,17 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
   let traps_seen: own Bool = False();
   let other_effect: own Bool = False();
   let block_node: own u64 = ast_none;
-  let name_seen: own Bool = False();
+  let name_node: own u64 = ast_none;
+  let name_count: own u64 = 0_u64;
+  let region_count: own u64 = 0_u64;
+  let return_mode_count: own u64 = 0_u64;
+  let return_type_count: own u64 = 0_u64;
+  let pure_count: own u64 = 0_u64;
+  let reads_count: own u64 = 0_u64;
+  let traps_count: own u64 = 0_u64;
+  let block_count: own u64 = 0_u64;
+  let signature_nodes_ok: own Bool = True();
+  let scan_stage: own u64 = 0_u64;
 
   let ast_function_name_atom: own AstKind = AstFunctionName();
   let ast_region_parameters_atom: own AstKind = AstRegionParameters();
@@ -1426,7 +1525,20 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_name: own Bool = ieq<AstKind>(scan_kind, ast_function_name_atom);
     match scan_is_name {
       True() => {
-        set name_seen = True();
+        let name_order: own Bool = ieq<u64>(scan_stage, 0_u64);
+        let name_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: scan_child, want: 0_u64);
+        let name_word: own Bool = semantic_buffer_declaration_word_valid<'c>(source: source, tokens: tokens, ast: ast, node: scan_child);
+        let name_node_ok: own Bool = band<Bool>(name_leaf, name_word);
+        match band<Bool>(name_order, name_node_ok) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
+        set name_node = scan_child;
+        set name_count = iadd.trap<u64>(name_count, 1_u64);
+        set scan_stage = 1_u64;
       }
       False() => {
       }
@@ -1434,7 +1546,18 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_region: own Bool = ieq<AstKind>(scan_kind, ast_region_parameters_atom);
     match scan_is_region {
       True() => {
+        let region_order: own Bool = ieq<u64>(scan_stage, 1_u64);
+        let region_head_valid: own Bool = semantic_buffer_single_symbol_node<'c>(source: source, tokens: tokens, ast: ast, node: scan_child, want: 91_u8);
+        match band<Bool>(region_order, region_head_valid) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set region_node = scan_child;
+        set region_count = iadd.trap<u64>(region_count, 1_u64);
+        set scan_stage = 2_u64;
       }
       False() => {
       }
@@ -1442,14 +1565,39 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_param: own Bool = ieq<AstKind>(scan_kind, ast_parameter_atom);
     match scan_is_param {
       True() => {
+        let param_stage_one: own Bool = ieq<u64>(scan_stage, 1_u64);
+        let param_stage_two: own Bool = ieq<u64>(scan_stage, 2_u64);
+        let param_stage_three: own Bool = ieq<u64>(scan_stage, 3_u64);
+        let param_stage_first: own Bool = bor<Bool>(param_stage_one, param_stage_two);
+        let param_order: own Bool = bor<Bool>(param_stage_first, param_stage_three);
+        let param_shape: own Bool = semantic_body_exact_children<'c>(ast: ast, node: scan_child, want: 2_u64);
+        let param_name: own Bool = semantic_buffer_declaration_word_valid<'c>(source: source, tokens: tokens, ast: ast, node: scan_child);
+        let param_node_ok: own Bool = band<Bool>(param_shape, param_name);
+        match band<Bool>(param_order, param_node_ok) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         match ieq<u64>(first_param, ast_none) {
           True() => {
             set first_param = scan_child;
           }
           False() => {
+            let current_param_name: own u64 = index<u64>(deref(ast).heads, scan_child);
+            let prior_duplicate: own u64 = semantic_function_prior_parameter_duplicate<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, first: first_param, current: scan_child, current_name: current_param_name);
+            match ieq<u64>(prior_duplicate, ast_none) {
+              True() => {
+              }
+              False() => {
+                set signature_nodes_ok = False();
+              }
+            }
           }
         }
         set param_count = iadd.trap<u64>(param_count, 1_u64);
+        set scan_stage = 3_u64;
       }
       False() => {
       }
@@ -1457,7 +1605,22 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_return_mode: own Bool = ieq<AstKind>(scan_kind, ast_own_mode_atom);
     match scan_is_return_mode {
       True() => {
+        let return_mode_stage_one: own Bool = ieq<u64>(scan_stage, 1_u64);
+        let return_mode_stage_two: own Bool = ieq<u64>(scan_stage, 2_u64);
+        let return_mode_stage_three: own Bool = ieq<u64>(scan_stage, 3_u64);
+        let return_mode_stage_first: own Bool = bor<Bool>(return_mode_stage_one, return_mode_stage_two);
+        let return_mode_order: own Bool = bor<Bool>(return_mode_stage_first, return_mode_stage_three);
+        let return_mode_valid: own Bool = semantic_function_mode_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: scan_child);
+        match band<Bool>(return_mode_order, return_mode_valid) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set return_mode_node = scan_child;
+        set return_mode_count = iadd.trap<u64>(return_mode_count, 1_u64);
+        set scan_stage = 4_u64;
       }
       False() => {
       }
@@ -1465,7 +1628,16 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_return_type: own Bool = ieq<AstKind>(scan_kind, ast_return_type_atom);
     match scan_is_return_type {
       True() => {
+        match ieq<u64>(scan_stage, 4_u64) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set return_type_node = scan_child;
+        set return_type_count = iadd.trap<u64>(return_type_count, 1_u64);
+        set scan_stage = 5_u64;
       }
       False() => {
       }
@@ -1473,7 +1645,20 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_pure: own Bool = ieq<AstKind>(scan_kind, ast_pure_effect_atom);
     match scan_is_pure {
       True() => {
+        let pure_order: own Bool = ieq<u64>(scan_stage, 5_u64);
+        let pure_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: scan_child, want: 0_u64);
+        let pure_word: own Bool = semantic_function_effect_word_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: scan_child, code: 0_u64);
+        let pure_node_ok: own Bool = band<Bool>(pure_leaf, pure_word);
+        match band<Bool>(pure_order, pure_node_ok) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set pure_seen = True();
+        set pure_count = iadd.trap<u64>(pure_count, 1_u64);
+        set scan_stage = 8_u64;
       }
       False() => {
       }
@@ -1481,7 +1666,18 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_reads: own Bool = ieq<AstKind>(scan_kind, ast_reads_effect_atom);
     match scan_is_reads {
       True() => {
+        let reads_order: own Bool = ieq<u64>(scan_stage, 5_u64);
+        let reads_word: own Bool = semantic_function_effect_word_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: scan_child, code: 1_u64);
+        match band<Bool>(reads_order, reads_word) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set reads_node = scan_child;
+        set reads_count = iadd.trap<u64>(reads_count, 1_u64);
+        set scan_stage = 6_u64;
       }
       False() => {
       }
@@ -1489,7 +1685,20 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_traps: own Bool = ieq<AstKind>(scan_kind, ast_traps_effect_atom);
     match scan_is_traps {
       True() => {
+        let traps_order: own Bool = ieq<u64>(scan_stage, 6_u64);
+        let traps_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: scan_child, want: 0_u64);
+        let traps_word: own Bool = semantic_function_effect_word_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: scan_child, code: 3_u64);
+        let traps_node_ok: own Bool = band<Bool>(traps_leaf, traps_word);
+        match band<Bool>(traps_order, traps_node_ok) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set traps_seen = True();
+        set traps_count = iadd.trap<u64>(traps_count, 1_u64);
+        set scan_stage = 7_u64;
       }
       False() => {
       }
@@ -1497,7 +1706,20 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     let scan_is_block: own Bool = ieq<AstKind>(scan_kind, ast_block_atom);
     match scan_is_block {
       True() => {
+        let block_after_traps: own Bool = ieq<u64>(scan_stage, 7_u64);
+        let block_after_pure: own Bool = ieq<u64>(scan_stage, 8_u64);
+        let block_order: own Bool = bor<Bool>(block_after_traps, block_after_pure);
+        let block_head_valid: own Bool = semantic_buffer_single_symbol_node<'c>(source: source, tokens: tokens, ast: ast, node: scan_child, want: 123_u8);
+        match band<Bool>(block_order, block_head_valid) {
+          True() => {
+          }
+          False() => {
+            set signature_nodes_ok = False();
+          }
+        }
         set block_node = scan_child;
+        set block_count = iadd.trap<u64>(block_count, 1_u64);
+        set scan_stage = 9_u64;
       }
       False() => {
       }
@@ -1549,12 +1771,24 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
     }
   }
 
-  let return_mode_present: own Bool = ine<u64>(return_mode_node, ast_none);
-  let return_type_present: own Bool = ine<u64>(return_type_node, ast_none);
-  let block_present: own Bool = ine<u64>(block_node, ast_none);
-  let signature_present_a: own Bool = band<Bool>(name_seen, return_mode_present);
-  let signature_present_b: own Bool = band<Bool>(return_type_present, block_present);
-  let signature_present: own Bool = band<Bool>(signature_present_a, signature_present_b);
+  let name_one: own Bool = ieq<u64>(name_count, 1_u64);
+  let region_single: own Bool = ilt<u64>(region_count, 2_u64);
+  let return_mode_one: own Bool = ieq<u64>(return_mode_count, 1_u64);
+  let return_type_one: own Bool = ieq<u64>(return_type_count, 1_u64);
+  let pure_single: own Bool = ilt<u64>(pure_count, 2_u64);
+  let reads_single: own Bool = ilt<u64>(reads_count, 2_u64);
+  let traps_single: own Bool = ilt<u64>(traps_count, 2_u64);
+  let block_one: own Bool = ieq<u64>(block_count, 1_u64);
+  let signature_single_a: own Bool = band<Bool>(name_one, region_single);
+  let signature_single_b: own Bool = band<Bool>(return_mode_one, return_type_one);
+  let signature_single_c: own Bool = band<Bool>(pure_single, reads_single);
+  let signature_single_d: own Bool = band<Bool>(traps_single, block_one);
+  let signature_single_ab: own Bool = band<Bool>(signature_single_a, signature_single_b);
+  let signature_single_cd: own Bool = band<Bool>(signature_single_c, signature_single_d);
+  let signature_single: own Bool = band<Bool>(signature_single_ab, signature_single_cd);
+  let signature_order_complete: own Bool = ieq<u64>(scan_stage, 9_u64);
+  let signature_shape: own Bool = band<Bool>(signature_single, signature_order_complete);
+  let signature_present: own Bool = band<Bool>(signature_shape, signature_nodes_ok);
   let no_other_effect: own Bool = bnot<Bool>(other_effect);
   match band<Bool>(signature_present, no_other_effect) {
     True() => {
@@ -1563,6 +1797,18 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
       set deref(report).status = SemanticBodyUnsupported();
       set deref(report).node = node;
       set deref(report).related = callee;
+      return semantic_facts_none;
+    }
+  }
+  let callee_name_head: own u64 = index<u64>(deref(ast).heads, name_node);
+  let callee_name_matches: own Bool = token_text_equal<'c, 'c>(source: source, tokens: tokens, left: call_head, right: callee_name_head);
+  match callee_name_matches {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = node;
+      set deref(report).related = name_node;
       return semantic_facts_none;
     }
   }
@@ -1722,6 +1968,7 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
   let ast_region_argument_atom: own AstKind = AstRegionArgument();
   let ast_named_argument_atom: own AstKind = AstNamedArgument();
   let region_args_seen: own u64 = 0_u64;
+  let call_region_head: own u64 = ast_none;
   let named_seen: own u64 = 0_u64;
   let param_cursor: own u64 = first_param;
   let arg_child: own u64 = call_first;
@@ -1751,8 +1998,9 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
             return semantic_facts_none;
           }
         }
+        let arg_region_leaf: own Bool = semantic_body_exact_children<'c>(ast: ast, node: arg_child, want: 0_u64);
         let arg_region_token_valid: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: arg_child);
-        match arg_region_token_valid {
+        match band<Bool>(arg_region_leaf, arg_region_token_valid) {
           True() => {
           }
           False() => {
@@ -1763,6 +2011,17 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           }
         }
         let arg_region_head: own u64 = index<u64>(deref(ast).heads, arg_child);
+        let arg_region_kind: own Bool = parser_kind_at_is<'c>(tokens: tokens, token: arg_region_head, want: 4_u64);
+        match arg_region_kind {
+          True() => {
+          }
+          False() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = arg_child;
+            return semantic_facts_none;
+          }
+        }
         let region_same: own Bool = token_text_equal(source: source, tokens: tokens, left: arg_region_head, right: region_token);
         match region_same {
           True() => {
@@ -1774,6 +2033,7 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
             return semantic_facts_none;
           }
         }
+        set call_region_head = arg_region_head;
         set region_args_seen = iadd.trap<u64>(region_args_seen, 1_u64);
       }
       False() => {
@@ -1810,7 +2070,7 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           }
         }
         let arg_shape: own Bool = semantic_body_exact_children(ast: ast, node: arg_child, want: 1_u64);
-        let arg_token: own Bool = semantic_body_node_token_valid(source: source, tokens: tokens, ast: ast, node: arg_child);
+        let arg_token: own Bool = semantic_buffer_declaration_word_valid<'c>(source: source, tokens: tokens, ast: ast, node: arg_child);
         match band<Bool>(arg_shape, arg_token) {
           True() => {
           }
@@ -1857,8 +2117,76 @@ fn semantic_reader_analyze_call ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
           False() => {
           }
         }
+        let expected_region: own u64 = ast_none;
+        match param_mode {
+          SemanticModeOwn() => {
+          }
+          SemanticModeShared() => {
+            match ine<u64>(callee_region_head, ast_none) {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticBodyUnsupported();
+                set deref(report).node = node;
+                set deref(report).related = param_cursor;
+                return semantic_facts_none;
+              }
+            }
+            let param_mode_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: param_cursor, ordinal: 0_u64);
+            let ast_shared_mode_atom: own AstKind = AstSharedMode();
+            let param_mode_shared: own Bool = semantic_body_kind_is<'c>(ast: ast, node: param_mode_node, want: ast_shared_mode_atom);
+            let param_mode_valid: own Bool = semantic_function_mode_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: param_mode_node);
+            match band<Bool>(param_mode_shared, param_mode_valid) {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticBodyUnsupported();
+                set deref(report).node = node;
+                set deref(report).related = param_cursor;
+                return semantic_facts_none;
+              }
+            }
+            let param_region_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: param_mode_node, ordinal: 0_u64);
+            let param_region_valid: own Bool = semantic_function_region_leaf_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: param_region_node);
+            match param_region_valid {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticBodyUnsupported();
+                set deref(report).node = node;
+                set deref(report).related = param_region_node;
+                return semantic_facts_none;
+              }
+            }
+            let param_region_head: own u64 = index<u64>(deref(ast).heads, param_region_node);
+            let param_region_matches: own Bool = token_text_equal<'c, 'c>(source: source, tokens: tokens, left: param_region_head, right: callee_region_head);
+            match param_region_matches {
+              True() => {
+              }
+              False() => {
+                set deref(report).status = SemanticBodyUnsupported();
+                set deref(report).node = node;
+                set deref(report).related = param_region_node;
+                return semantic_facts_none;
+              }
+            }
+            set expected_region = call_region_head;
+          }
+          SemanticModeUniq() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = param_cursor;
+            return semantic_facts_none;
+          }
+          SemanticModeNone() => {
+            set deref(report).status = SemanticBodyUnsupported();
+            set deref(report).node = node;
+            set deref(report).related = param_cursor;
+            return semantic_facts_none;
+          }
+        }
         let arg_actual: own u64 = semantic_body_child_at(ast: ast, node: arg_child, ordinal: 0_u64);
-        let arg_ok: own Bool = semantic_reader_arg_matches(source: source, tokens: tokens, ast: ast, scratch: scratch, actual: arg_actual, expected_type: param_type, expected_mode: param_mode);
+        let arg_ok: own Bool = semantic_reader_arg_matches<'c, 'w>(source: source, tokens: tokens, ast: ast, scratch: scratch, actual: arg_actual, expected_type: param_type, expected_mode: param_mode, expected_region: expected_region);
         match arg_ok {
           True() => {
           }
