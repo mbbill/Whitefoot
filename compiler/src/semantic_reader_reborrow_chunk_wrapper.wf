@@ -159,6 +159,37 @@ fn semantic_reader_reborrow_chunk_wrapper_region_valid ['c] (source: &'c buffer<
   return semantic_reader_reborrow_chunk_wrapper_callee_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, call: call, expected_type: outer_type);
 }
 
+fn semantic_reader_reborrow_chunk_wrapper_pair_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, outer_parameter_head: own u64, outer_type: own u64, outer_region_head: own u64, block: own u64) -> own Bool reads('c), traps {
+  let block_shape: own Bool = semantic_body_exact_children(ast: ast, node: block, want: 3_u64);
+  match block_shape {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let first_region: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 0_u64);
+  let second_region: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 1_u64);
+  let return_node: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 2_u64);
+  let first_valid: own Bool = semantic_reader_reborrow_chunk_wrapper_region_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, outer_parameter_head: outer_parameter_head, outer_type: outer_type, outer_region_head: outer_region_head, node: first_region);
+  let second_valid: own Bool = semantic_reader_reborrow_chunk_wrapper_region_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, outer_parameter_head: outer_parameter_head, outer_type: outer_type, outer_region_head: outer_region_head, node: second_region);
+  match band<Bool>(first_valid, second_valid) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let first_local: own u64 = semantic_body_child_at(ast: ast, node: first_region, ordinal: 0_u64);
+  let second_local: own u64 = semantic_body_child_at(ast: ast, node: second_region, ordinal: 0_u64);
+  let first_head: own u64 = index<u64>(deref(ast).heads, first_local);
+  let second_head: own u64 = index<u64>(deref(ast).heads, second_local);
+  let same_local: own Bool = token_text_equal(source: source, tokens: tokens, left: first_head, right: second_head);
+  let locals_distinct: own Bool = bnot<Bool>(same_local);
+  let return_valid: own Bool = semantic_reader_reborrow_return_unit_valid(source: source, tokens: tokens, ast: ast, node: return_node);
+  return band<Bool>(locals_distinct, return_valid);
+}
+
 fn semantic_reader_analyze_reborrow_chunk_wrapper_region ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, statement: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own Bool reads('c 'w), writes('w), traps {
   let call: own u64 = semantic_reader_reborrow_chunk_wrapper_call(source: source, tokens: tokens, ast: ast, node: statement);
   match ieq<u64>(call, ast_none) {

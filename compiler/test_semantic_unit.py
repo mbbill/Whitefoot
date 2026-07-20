@@ -421,8 +421,9 @@ def canonical_path(columns, root, target):
 # calls pass the eight owned u8 parameters to that same independently-proven
 # callee. The fourth F4 profile admits an exact one-region wrapper around that
 # chunk callee with one whole-parent unique reborrow, one canonical u64 literal,
-# and eight canonical u8 literals. Every listed function is validated legal by
-# the stage-0 reference checker at build time.
+# and eight canonical u8 literals. The fifth F4 profile admits exactly two such
+# sequential wrappers with distinct statement-local regions. Every listed
+# function is validated legal by the stage-0 reference checker at build time.
 COMPILER_CLEAN_ORDINALS = (
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
     21, 22, 23, 24, 29, 30, 31, 34, 63, 64, 65, 88, 89, 90, 91, 96, 98, 102,
@@ -430,11 +431,12 @@ COMPILER_CLEAN_ORDINALS = (
     123, 124, 125, 126, 143, 144, 145, 146, 147, 148, 149, 150, 152, 158, 159,
     162, 163, 164, 175,
     185, 190, 191, 204, 207, 208, 209, 214, 216, 228, 229, 230, 235, 287, 288,
-    296, 378, 387, 389, 395, 419, 420, 421, 422, 423, 424, 425, 426, 427, 428,
-    430, 431, 441, 442, 443, 444, 445, 446, 447, 450, 451, 452, 455, 456, 457,
-    458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 470, 473, 474,
-    475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485, 487, 488, 490, 494,
-    497, 498, 499, 501, 502, 503, 504, 509, 516, 536, 551, 579, 596, 597, 619,
+    296, 379, 388, 390, 396, 420, 421, 422, 423, 424, 425, 426, 427, 428, 429,
+    431, 432, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 455,
+    456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 470,
+    471, 472, 473, 474, 475, 476, 477, 478, 479, 480, 481, 482, 483, 484, 485,
+    486, 487, 488, 489, 491, 495, 498, 499, 500, 502, 503, 504, 505, 510, 517,
+    537, 552, 580, 597, 598, 620,
 )
 
 
@@ -442,15 +444,15 @@ def assert_compiler_coverage(library):
     data = compiler_source().encode("ascii")
     case = parsed(library, data)
     functions = top_level_functions(case)
-    assert len(functions) == 626
+    assert len(functions) == 627
 
     work = make_work(library, case[5].count)
     first = invoke_unit(library, case, work)
     expected = (
         UNIT_CLEAN,
-        626,
-        152,
-        474,
+        627,
+        158,
+        469,
         0,
         functions[18],
         AST_NONE,
@@ -3185,9 +3187,9 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     )
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
-        626,
-        152,
-        474,
+        627,
+        158,
+        469,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -3246,7 +3248,7 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 626 total / 152 clean / 474 unsupported / "
+        "semantic unit: compiler 627 total / 158 clean / 469 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
         "admission, exact arbitrary-arity call-region attribution, general signatures "
@@ -3257,7 +3259,7 @@ def main():
         "row-clearing control writers, and exact one-child statement-scoped "
         "reborrow writers, exact same-region byte push and whole-parent-u8 "
         "reborrow calls, exact guarded eight-byte chunk reborrows and exact "
-        "one-region fixed-literal chunk wrappers, "
+        "one- and two-region fixed-literal chunk wrappers, "
         "structural rename, real "
         "reject, deterministic repeat, "
         "fresh validation, bounded paths, transactional diagnostics, "

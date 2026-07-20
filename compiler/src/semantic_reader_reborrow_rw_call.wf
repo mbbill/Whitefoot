@@ -219,7 +219,9 @@ fn semantic_reader_reborrow_rw_wrapper_body_valid ['c] (source: &'c buffer<u8>, 
   }
   let ast_block_atom: own AstKind = AstBlock();
   let block_kind: own Bool = semantic_body_kind_is(ast: ast, node: block, want: ast_block_atom);
-  let block_shape: own Bool = semantic_body_exact_children(ast: ast, node: block, want: 2_u64);
+  let block_single_shape: own Bool = semantic_body_exact_children(ast: ast, node: block, want: 2_u64);
+  let block_pair_shape: own Bool = semantic_body_exact_children(ast: ast, node: block, want: 3_u64);
+  let block_shape: own Bool = bor<Bool>(block_single_shape, block_pair_shape);
   let block_token: own Bool = semantic_buffer_single_symbol_node(source: source, tokens: tokens, ast: ast, node: block, want: 123_u8);
   let block_first: own Bool = band<Bool>(block_kind, block_shape);
   match band<Bool>(block_first, block_token) {
@@ -229,11 +231,18 @@ fn semantic_reader_reborrow_rw_wrapper_body_valid ['c] (source: &'c buffer<u8>, 
       return False();
     }
   }
-  let region_block: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 0_u64);
-  let return_node: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 1_u64);
   let outer_region: own u64 = semantic_body_child_at(ast: ast, node: regions_node, ordinal: 0_u64);
   let outer_region_head: own u64 = index<u64>(deref(ast).heads, outer_region);
   let parameter_head: own u64 = index<u64>(deref(ast).heads, parameter);
+  match block_pair_shape {
+    True() => {
+      return semantic_reader_reborrow_chunk_wrapper_pair_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, outer_parameter_head: parameter_head, outer_type: parameter_type, outer_region_head: outer_region_head, block: block);
+    }
+    False() => {
+    }
+  }
+  let region_block: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 0_u64);
+  let return_node: own u64 = semantic_body_child_at(ast: ast, node: block, ordinal: 1_u64);
   let region_valid: own Bool = semantic_reader_reborrow_rw_region_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, outer_parameter_head: parameter_head, outer_type: parameter_type, outer_region_head: outer_region_head, node: region_block);
   match region_valid {
     True() => {

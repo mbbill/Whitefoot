@@ -42,6 +42,24 @@ WRAPPER = (
 )
 REBORROW_CHUNK_WRAPPER = REBORROW_CHUNK + WRAPPER
 
+PAIR_WRAPPER = (
+    b"fn emit_pair ['o] (out: &uniq 'o PushTape) "
+    b"-> own unit reads('o), writes('o), traps {\n"
+    b"  region 'pair_head {\n"
+    b"    emit_chunk(out: &uniq 'pair_head deref(out), count: 8_u64, "
+    b"b0: 101_u8, b1: 120_u8, b2: 116_u8, b3: 114_u8, "
+    b"b4: 97_u8, b5: 99_u8, b6: 116_u8, b7: 118_u8);\n"
+    b"  }\n"
+    b"  region 'pair_tail {\n"
+    b"    emit_chunk(out: &uniq 'pair_tail deref(out), count: 3_u64, "
+    b"b0: 98_u8, b1: 108_u8, b2: 101_u8, b3: 32_u8, "
+    b"b4: 32_u8, b5: 32_u8, b6: 32_u8, b7: 32_u8);\n"
+    b"  }\n"
+    b"  return unit;\n"
+    b"}\n"
+)
+REBORROW_CHUNK_PAIR_WRAPPER = REBORROW_CHUNK + PAIR_WRAPPER
+
 
 def assert_reborrow_chunk_wrapper_boundary(library):
     def classify(source=REBORROW_CHUNK_WRAPPER):
@@ -80,6 +98,90 @@ def assert_reborrow_chunk_wrapper_boundary(library):
         .replace(b"emit_fixed", b"send_fixed")
         .replace(b"'fixed_chunk", b"'fixed_scope")
     )
+    assert_clean(
+        REBORROW_CHUNK_WRAPPER.replace(b"count: 4_u64", b"count: 9_u64", 1)
+    )
+    assert_clean(REBORROW_CHUNK_PAIR_WRAPPER)
+    assert_clean(
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(b"push_byte", b"put_octet")
+        .replace(b"emit_chunk", b"send_octets")
+        .replace(b"emit_pair", b"send_pair")
+        .replace(b"'pair_head", b"'first_scope")
+        .replace(b"'pair_tail", b"'second_scope")
+    )
+
+    # The paired profile is exact: both sequential statement-confined calls
+    # are independently proven, their local regions are distinct, and a third
+    # region or any composite statement remains outside the boundary.
+    for source in (
+        replace_last(
+            REBORROW_CHUNK_PAIR_WRAPPER,
+            b"out: &uniq 'o PushTape",
+            b"out: &'o PushTape",
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"count: 3_u64", b"count: 03_u64", 1
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"b0: 98_u8", b"b0: 256_u8", 1
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"count: 3_u64, b0: 98_u8",
+            b"b0: 98_u8, count: 3_u64",
+            1,
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"&uniq 'pair_tail deref(out)",
+            b"&'pair_tail deref(out)",
+            1,
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"&uniq 'pair_tail deref(out)",
+            b"&uniq 'pair_tail deref(out).count",
+            1,
+        ),
+        replace_last(
+            REBORROW_CHUNK_PAIR_WRAPPER,
+            b"emit_chunk(out:",
+            b"emit_chunk<'pair_tail>(out:",
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"    emit_chunk(out: &uniq 'pair_tail",
+            b"    let ignored: own unit = emit_chunk(out: &uniq 'pair_tail",
+            1,
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"b7: 32_u8);\n  }\n  return unit;",
+            b"b7: 32_u8);\n    return unit;\n  }\n  return unit;",
+            1,
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"    emit_chunk(out: &uniq 'pair_head",
+            b"    push_byte(out: &uniq 'pair_head",
+            1,
+        ),
+        replace_last(
+            REBORROW_CHUNK_PAIR_WRAPPER,
+            b"emit_chunk(out:",
+            b"missing_chunk(out:",
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"'pair_tail", b"'pair_head"
+        ),
+        REBORROW_CHUNK_PAIR_WRAPPER.replace(
+            b"'pair_tail", b"'o"
+        ),
+        replace_last(
+            REBORROW_CHUNK_PAIR_WRAPPER,
+            b"  return unit;\n}\n",
+            b"  region 'pair_third {\n"
+            b"    emit_chunk(out: &uniq 'pair_third deref(out), "
+            b"count: 0_u64, b0: 0_u8, b1: 0_u8, b2: 0_u8, b3: 0_u8, "
+            b"b4: 0_u8, b5: 0_u8, b6: 0_u8, b7: 0_u8);\n"
+            b"  }\n  return unit;\n}\n",
+        ),
+    ):
+        assert_unsupported(source)
 
     # The caller keeps the exact one-parent same-region signature.
     for source in (
@@ -137,18 +239,6 @@ def assert_reborrow_chunk_wrapper_boundary(library):
             1,
         )
     )
-    assert_unsupported(
-        replace_last(
-            REBORROW_CHUNK_WRAPPER,
-            b"  return unit;\n}\n",
-            b"  region 'second_chunk {\n"
-            b"    emit_chunk(out: &uniq 'second_chunk deref(out), "
-            b"count: 0_u64, b0: 0_u8, b1: 0_u8, b2: 0_u8, b3: 0_u8, "
-            b"b4: 0_u8, b5: 0_u8, b6: 0_u8, b7: 0_u8);\n"
-            b"  }\n  return unit;\n}\n",
-        )
-    )
-
     # A declaration alone never lends effects: both the chunk and its nested
     # push callee are independently re-proven.
     assert_unsupported(
@@ -162,14 +252,14 @@ def assert_reborrow_chunk_wrapper_boundary(library):
         )
     )
 
-    def nodes(case, function):
+    def nodes(case, function, region_ordinal=0):
         columns = case[4]
         direct = children_of(columns, function)
         outer_region = children_of(columns, direct[1])[0]
         outer_parameter = direct[2]
         reads_region = children_of(columns, direct[5])[0]
         writes_region = children_of(columns, direct[6])[0]
-        region_block, _ = children_of(columns, direct[8])
+        region_block = children_of(columns, direct[8])[region_ordinal]
         local_region, inner_block = children_of(columns, region_block)
         expression = children_of(columns, inner_block)[0]
         call = children_of(columns, expression)[0]
@@ -189,6 +279,7 @@ def assert_reborrow_chunk_wrapper_boundary(library):
             "outer_parameter": outer_parameter,
             "reads_region": reads_region,
             "writes_region": writes_region,
+            "region_block": region_block,
             "local_region": local_region,
             "child_region": child_region,
             "call": call,
@@ -205,8 +296,10 @@ def assert_reborrow_chunk_wrapper_boundary(library):
             "borrow": borrow,
         }
 
-    def assert_direct_mutation_rejected(mutate):
-        case, function = assert_clean()
+    def assert_direct_mutation_rejected(
+        mutate, source=REBORROW_CHUNK_WRAPPER
+    ):
+        case, function = assert_clean(source)
         mutate(case, function)
         work = make_work(library, case[5].count)
         report = SemanticBodyReport(99, 123, 456, 99, 99, 789)
@@ -241,6 +334,10 @@ def assert_reborrow_chunk_wrapper_boundary(library):
         selected = nodes(case, function)
         case[4][6][selected["output_argument"]] = selected["output_argument"]
 
+    def pair_region_cycle(case, function):
+        selected = nodes(case, function)
+        case[4][6][selected["region_block"]] = selected["region_block"]
+
     for mutate in (
         redirect_head("reads_region", "outer_region"),
         redirect_head("writes_region", "outer_region"),
@@ -262,6 +359,9 @@ def assert_reborrow_chunk_wrapper_boundary(library):
         argument_cycle,
     ):
         assert_direct_mutation_rejected(mutate)
+    assert_direct_mutation_rejected(
+        pair_region_cycle, source=REBORROW_CHUNK_PAIR_WRAPPER
+    )
 
 
 def main():
@@ -270,9 +370,10 @@ def main():
         configure(library)
         assert_reborrow_chunk_wrapper_boundary(library)
     print(
-        "semantic reborrow chunk wrapper: exact one-region fixed-literal "
-        "ten-argument calls, independent nested callee proof, source "
-        "anchoring, topology, and closed multi-region/composite shapes pass"
+        "semantic reborrow chunk wrapper: exact one- and two-region "
+        "fixed-literal ten-argument calls, independent nested callee proof, "
+        "source anchoring, topology, and closed higher-region/composite "
+        "shapes pass"
     )
 
 
