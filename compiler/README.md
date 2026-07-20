@@ -25,19 +25,25 @@ fixture.
 
 The semantic layer has exact-byte scoped symbols, atomic global and type-member
 indexing, structural type equality, and exact type-name/array-size resolution.
-Its whole-unit capability driver audits each compiler function in source order
-and classifies it as clean, legal but unsupported, or a semantic reject. A shared
-dispatcher keeps a legal profile miss separate from a real semantic error; the
-LLVM layer consumes the same classification and facts, so semantic coverage
-cannot drift from lowering coverage. This taxonomy measures compiler-unit
-coverage; each profile expansion adds a body capability recognizer with its new
-semantic rules. Type
-names and constructor names are deliberately separate namespaces: this permits the
-prelude's `Overflow` type and `Overflow()` constructor while still rejecting duplicate
-constructors across enums. The prelude names are recognized from exact bytes and cannot
-be redeclared. Body semantics now begin with a deliberately narrow, fact-producing
-scalar profile; the remaining expression, ownership, and effect checks grow from those
-pieces. `src/source_names.wf` compares
+Its current whole-unit capability driver is legacy recovery debt: it audits
+compiler functions in source order and can publish `CLEAN` through exact
+whole-function and subtree profiles. `Unsupported` means only not certified; it
+makes no legality claim. The exact-profile route is frozen and must not be
+extended.
+
+The production architecture recorded in `../THE-PLAN.md` replaces that route
+with one syntax-directed semantic checker, atomic whole-unit acceptance, a
+versioned unit-bound elaborated `CheckedUnit`, and one generic lowerer. Delivery
+slices add specification-rule transitions to those shared paths and remove the
+profiles they supersede; they never become runtime function families. Body
+status, unit acceptance, lowering authority, and optimizer facts are separate
+gates. Type names and constructor names are deliberately separate namespaces:
+this permits the prelude's `Overflow` type and `Overflow()` constructor while
+still rejecting duplicate constructors across enums. The prelude names are
+recognized from exact bytes and cannot be redeclared. The retained scalar path
+contains useful type and node-fact machinery, but its whole-body admission
+branch is recovery debt and receives no exemption from the unified pipeline.
+`src/source_names.wf` compares
 names byte-for-byte without hashes. `src/output.wf` is the capacity-aware, two-pass
 byte sink used by the LLVM emitters. `make check` compiles the whole compiler with
 stage 0 and exercises these native C ABIs, including hostile capacities and malformed

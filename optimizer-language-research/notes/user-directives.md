@@ -776,3 +776,53 @@ the resulting development sequence through phase 7:
    sequential part of R15. R14 and R15's concurrent-invocation clause stay with
    the later concurrency landing, along with their nine parallel research
    cases.
+
+## D21 (2026-07-20): Production architecture over coverage-counter clearing
+
+The owner stopped the Phase 2 exact-profile sequence after reviewing the
+guarded-span slice and approved the following correction after hostile review:
+
+1. **The objective is the production compiler.** The exact compiler unit must
+   ultimately be certified for self-hosting, but its `Unsupported` census is an
+   observation, not a work selector, pass criterion, product, or optimization
+   target. Work that improves the counter while making the compiler more
+   source-shaped, larger, or less general is a regression, not progress.
+2. **Function, family, and whole-subtree admission or emission dispatch are
+   rejected.** Production semantics use one syntax-directed, spec-derived
+   checker applied to every function, followed by atomic whole-unit acceptance
+   and one unit-bound elaborated artifact. Lowering is one generic consumer of
+   that artifact. A capability family may describe a delivery slice or test
+   group only; it does not survive as production admission or emission
+   architecture. No conjunction
+   of exact signature, resolved nominal identity, literal, statement order,
+   callee, loop, source name, ordinal, or body properties may act as a source or
+   profile fingerprint or select an alternative admission or lowering path. A
+   whole-body profile or preselected source-shaped subtree validator may not
+   produce an admission verdict, authoritative typed transition, or emission
+   selection. Syntax-directed handlers may recurse compositionally over
+   arbitrary resolved children and state where the cited rule requires it,
+   including block flow, exhaustive match, and GRAM-7/GIVE-1 judgments; they
+   return only that local rule's typed or flow fact, never a source-profile
+   status. Each exact property remains checked compositionally wherever a
+   numbered language rule requires it.
+3. **Checked acceptance and optimizer proof are separate.** During facts-off
+   bootstrap, legal checked operations retain their traps. Source-specific
+   proofs of bounds, overflow freedom, termination, or literal properties must
+   not become prerequisites for compiling those operations. Proof-based check
+   removal remains a later, separately reviewed fact-channel concern.
+4. **Stop, plan, then clean up.** Further compiler implementation is frozen
+   until `THE-PLAN.md` records explicit prohibited routes, a general semantic
+   architecture gate, a read-only debt inventory, and a cleanup-first recovery
+   sequence. The next uncommitted exact probe must not be merged. Existing work
+   is not blindly reverted: reusable general machinery is separated from
+   source-specific authority, and the owner reviews the inventory and first
+   cleanup proposal before compiler implementation, compiler tests, or compiler
+   source-unit files change.
+
+This ruling refines the authorized Phase 2 implementation method without
+changing the language specification, the phases-through-`seq`
+authorization, or any protected semantic expectation. Approval of this packet
+does not authorize compiler cleanup: the separate implementation entrance gate
+in `THE-PLAN.md` still requires a read-only debt inventory, complete architecture
+packet, preregistered first tranche, hostile review, and explicit written owner
+approval.

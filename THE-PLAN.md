@@ -1,6 +1,6 @@
 # THE PLAN
 
-Status: CANONICAL ROADMAP, updated 2026-07-19.
+Status: CANONICAL ROADMAP, updated 2026-07-20.
 
 This file contains Whitefoot's one current execution order. Other files may
 define law, specify behavior, explain a design, or preserve evidence. They do
@@ -49,8 +49,9 @@ Baseline date: 2026-07-17, before plan consolidation.
 - wfc lexes, parses, validates, indexes, resolves declarations and types, and
   builds function scopes for that complete unit. Two parses produce identical
   token and AST tapes.
-- Body semantics classify 15 functions as clean, 462 as legal but unsupported,
-  and zero as semantic rejects. The first source-order frontier is
+- Body semantics classify 15 functions as provisionally clean and report 462
+  as Unsupported, which makes no legality claim; zero reach a semantic-reject
+  path in the then-implemented subset. The first source-order frontier is
   `lexer_scan_op_suffix`.
 - LLVM support emits the same 15 clean functions as one deterministic module.
   Clang accepts it and the native tests pass.
@@ -100,18 +101,28 @@ change has one commit and one decision-log entry.
 
 Execute these steps in order:
 
-1. **Complete body semantics.** Grow wfc's type, ownership, loan, and effect
-   checks until it classifies every function in the exact `sources.txt` unit.
-   Its rejection ABI records one rule ID, canonical node path, primary and
-   related nodes, source span, and an applicable mechanical fix code.
-   Add one structural capability family per slice. Compare every covered
+1. **Complete semantics and certify the compiler unit.** Grow wfc's declaration,
+   type, ownership, loan, control-flow, effect, and whole-unit checks until the
+   exact `sources.txt` unit receives one atomically published compiler-subset
+   `CheckedUnit`, not just per-function statuses. Semantic `Unsupported` means
+   not certified and makes no legality claim. The rejection ABI records one
+   rule ID, canonical node path, primary and related nodes, source span, and an
+   applicable mechanical fix code.
+   Extend one unified, source-independent body checker by one cluster of
+   specification rules per slice under the production-compiler contract below.
+   A slice is only a delivery and review boundary; it never becomes a
+   production profile or whole-function dispatch path. Compare every covered
    conformance case and the whole compiler unit with stage 0. Resolve each
    verdict difference as a wfc defect or a stage-0 defect backed by a new
    conformance case.
-2. **Complete whole-unit lowering.** Start after body-semantics coverage reaches
-   the full unit. Grow the shared fact-driven LLVM families until
-   `wfc_compile(sources)` emits every function. Clang must accept the complete
-   module, and native tests must exercise it.
+2. **Complete whole-unit lowering.** Start only after the compiler-subset
+   `CheckedUnit` publishes. Build one generic `CheckedUnit` plus verified
+   `FactOverlay`-to-LLVM lowering path, using the canonical empty overlay in
+   facts-off mode. Its dispatch is by statement, expression, type, operation,
+   checked semantic result, and verified check decision, never by source
+   function or whole-body family. Grow that path until `wfc_compile(sources)`
+   emits every function. Clang must accept the complete module, and native tests
+   must exercise it.
 3. **Run compiler-subset conformance through stage 1.** Add a wfc adapter to the
    conformance runner. Require zero verdict differences for the language subset
    wfc's source uses.
@@ -120,8 +131,369 @@ Execute these steps in order:
    `IR2 == IR3`. Freeze stage 0 at this point. Keep it as a differential oracle,
    but add no language feature to it.
 
-New helper functions change the unit total, so each slice regenerates and pins
-the exact count. Facts remain disabled throughout this phase.
+Facts remain disabled throughout this phase. Unit counts and clean ordinals are
+regression observations, not implementation targets or sources of authority.
+
+### Phase 2 production-compiler contract
+
+The objective is a production implementation of Whitefoot, followed by generic
+lowering and a self-hosting fixpoint. Compiler-unit counts are integration
+observations. They do not define legality, select work, or confer authority.
+
+Incompleteness is stage-qualified. Body `Unsupported` means only that an
+applicable semantic transition in the current facet catalog is not implemented;
+it makes no claim that the source is legal. An incomplete declaration,
+whole-unit, or artifact obligation prevents `CheckedUnit` publication without
+rewriting a body verdict. A backend gap reports `LoweringUnsupported` against an
+already certified unit and cannot change semantic legality or certification. A
+per-body `CLEAN` result is provisional: it means the one body checker traversed
+that body under a validated FN-1 signature and reconciled its local exit
+judgments. Whole-unit compiler-subset certification is separate and atomic. It
+requires valid declarations, every declared body and every concrete
+instantiation named transitively by a resolved call or instantiation edge in any
+declared body—treating every declared body, not only `main`-reachable bodies, as
+a graph root—every applicable source and whole-unit rule, and generic-cycle
+obligations to pass. Neither body `CLEAN` nor unit certification authorizes
+optimizer facts. Lowering consumes only the published elaborated artifact
+described below.
+
+Phase 2 is facts-off. Checked indexing, arithmetic, allocation, and other
+trapping operations compile with their checks intact. A proof that a check
+cannot fire is optional evidence for a later facts-on optimizer channel, never
+a prerequisite for accepting legal checked code.
+
+#### One semantic pipeline
+
+There is one production semantic pipeline, with these reviewed boundaries:
+
+1. **Validated input.** Structural validation publishes a unit-bound validated
+   AST handle tied to the exact source, token, AST, and validator generation.
+   Declaration, resolution, and semantic phases consume that handle rather than
+   repeatedly treating raw topology as trusted input. A malformed or stale
+   handle fails at the boundary.
+2. **Declarations and whole-unit rules.** One pass indexes declarations, types,
+   constants, contracts/conformances, generic parameters, and complete FN-1
+   signatures under stable IDs. It checks declaration-phase whole-unit rules,
+   including namespace uniqueness and FN-7 entry status. This table, not a
+   callee body or prior body-analysis verdict, is the call-checking authority.
+   The body checker later records resolved call and instantiation edges; the
+   unit finalizer alone owns FN-6 SCC validation over those edges.
+3. **One syntax-directed body checker.** Every concrete body enters the same
+   `check_function` driver. That driver folds generic
+   `check_place`, `check_atom`/`check_expression`,
+   `check_statement`, and `check_block` judgments over arbitrary legal AST
+   lists and nesting. Production rule selection depends only on the current AST
+   construct and resolved semantic state. Each call records its resolved
+   declaration and explicit substitution edge. A delivery slice never becomes
+   a profile, function family, or alternative body path.
+4. **Staged unit finalization.** Each body result is staged without publishing
+   unit acceptance. The unit finalizer verifies that every body reconciles with
+   its signature, runs FN-6 SCC validation over the resolved call and
+   instantiation graph, and checks all other whole-unit and concrete-
+   instantiation obligations. It then publishes one immutable certified unit
+   atomically. Failure publishes no partial clean unit, elaboration, effect
+   result, lowering token, or optimizer fact.
+5. **One elaborated semantic artifact.** Acceptance produces a versioned,
+   unit-hash-bound `CheckedUnit` containing resolved types and modes,
+   declaration and concrete-instantiation IDs, place/root provenance, per-edge
+   owned/loan state, explicit region exits, derived drops and releases,
+   instantiated calls and effect rows, retained runtime checks, `try`/`give`
+   and other control edges, monomorphizations, diagnostics mappings, and
+   canonical source paths. It also embeds verifier-checkable acceptance
+   derivation records for every completed facet and per-check instrumentation
+   with retained/eliminated status and proof reference, sufficient to decide its
+   certified claims without rereading raw source or mutable external state. A
+   derivation reference may point only to a record embedded in the same artifact
+   or to an immutable rule schema identified by the artifact's exact
+   specification and verifier hashes; a bare rule ID, handler ID, external cache
+   entry, or compiler assertion is not a proof object. Each record is
+   provenance-bound to its rule facet and node/declaration identity. The schema
+   contains no profile, family, function-shape, or corpus-membership
+   discriminator.
+6. **One generic lowerer.** The lowerer consumes `CheckedUnit` plus a verified
+   optional `FactOverlay`, both read-only. Facts-off uses one canonical empty
+   overlay. A nonempty overlay is a closed, ledgered union of verified
+   optimizer-only record kinds: implicit/spec-elidable check elimination,
+   region-scoped alias metadata, declaration effect attributes, and checked-law
+   rewrite licenses. Each kind has its own proposition, scope, producer,
+   provenance, consumer, invalidators, and proof schema; an unknown kind fails
+   closed. Check-elimination records may target only checks explicitly marked
+   implicit and spec-elidable. OP-5/FN-8 explicit checks, user checks, and every
+   non-elidable check class remain retained regardless of proof. A fact verifier
+   binds every record to the exact unit, specification, verifier version,
+   node/declaration/check identities, and proof objects. No record may alter
+   `CheckedUnit` or semantic certification. The overlay is included in the same
+   content-addressed canonical artifact bundle, so no mutable external fact
+   state is consulted.
+   The lowerer dispatches only on elaborated node kind, resolved type/layout,
+   operation, control edge, check record, verified overlay decision, and derived
+   cleanup. It never re-resolves raw text, rechecks semantics, or selects
+   emission by source function, signature profile, body shape, or compiler
+   corpus membership. Module publication has one failure-atomic entry.
+
+The target production architecture has exactly one constructor/publication site
+for provisional body `CLEAN`, one for certified `CheckedUnit`, and one for a
+completed LLVM module.
+The body site is reachable only after the generic driver visits every applicable
+node and performs cited function-exit rules such as return reconciliation and
+EFF-2 equality. Syntax helpers return local typed transitions, flow states,
+exhibited effects, elaboration records, or diagnostics; they never return a
+whole-function admission verdict. CI rejects an alternative status constructor,
+a publication-path call to a whole-body or subtree-profile validator, and any
+admission or lowering branch that compares a resolved identifier with a
+hard-coded compiler-corpus name or function ordinal. Ordinary symbol-table
+equality, declaration-before-use, reserved/prelude recognition, and callee
+resolution remain mandatory.
+
+During recovery, every remaining legacy profile path is explicitly quarantined
+and may emit only a `LegacyProfileResult`; it cannot feed `CheckedUnit`, generic
+lowering, or optimizer facts. The legacy call-graph and authority baseline may
+only shrink, and new edges into legacy validators are forbidden. The generic
+`CLEAN` site accepts only syntax-directed body results, and `CheckedUnit`
+publication remains disabled until every legacy admission path is removed.
+`LegacyProfileResult` may feed only an explicitly named isolated regression
+harness. It may not feed `wfc_compile`, completed-module publication, a
+production artifact or coverage claim, any certification gate, or any new
+consumer. The existing 15-function profile emitter may continue only as a
+frozen historical regression seam until removal; its output is explicitly
+non-production, carries no semantic, lowering-completeness, or optimizer
+authority, and its call graph may only shrink.
+
+In Phase 2, `CheckedUnit` is compiler-subset certification bound to the exact
+completed-facet catalog; it does not claim that arbitrary v0.8 input is fully
+supported. Its permanent DIAG-2-shaped schema is already the generic lowerer's
+semantic input; facts-off supplies the canonical empty overlay. Phase 2 executes
+the embedded verifier for the compiler-subset claims. Phase 3 closes every
+remaining normative facet and executable DIAG-2/3 obligation before the same
+artifact schema and verifier can publish full-v0.8 certification.
+
+#### Calls, effects, ownership, and flow
+
+Per FN-1, a call uses only the structurally and semantically validated callee
+declaration. The checker verifies the named formal-to-actual mapping, exact type
+and written-mode equality, explicit type/const/region substitution, ordered
+owned-value consumption, loan compatibility, and the instantiated declared
+effect row. The caller path never inspects or re-proves the callee body.
+Separately, every concrete callee body is checked once against its own signature.
+Unit-finalization SCC analysis consumes the body-produced call and instantiation
+edges to check FN-6 and deterministic monomorphization obligations. It is not
+effect inference and creates no caller-specific callee proof.
+
+Every declared body is checked; no invalid declaration escapes checking merely
+because no caller reaches it. Every concrete generic instantiation named
+transitively by a resolved call or instantiation edge in any declared body is
+also validated under its explicit substitution and deterministic
+monomorphization identity, treating every declared body—not only
+`main`-reachable bodies—as a graph root. Cached semantic data may be reused only
+when the analyzer version, complete unit hash, validated-AST identity,
+symbol/type-table generations, and every referenced declaration identity match;
+otherwise reuse fails closed.
+
+EFF-2 reconciliation is a syntax-complete, control-flow-insensitive fold over
+the body and `requires` block. It includes unreachable syntax, instantiated
+declared callee rows, implicit checks, and checks later proved redundant. At
+function exit, the complete exhibited reads, writes, allocates, and traps are
+compared in both directions with the declaration.
+
+The reviewed ownership design must state, at minimum:
+
+- each binding's uninitialized, live, consumed, and dead states, its resolved
+  type and written mode, and its copy or affine class;
+- every place's immutable root and projection path and the OWN-7 overlap
+  relation;
+- live loan lineage, shared/unique capability, usable or suspended state, and
+  statement-scoped child boundaries;
+- lexical region/outlives and scope stacks;
+- fallthrough, return, labeled break, give, region-exit, and derived
+  drop/release edges;
+- a proof-preserving join retaining only propositions true on every predecessor
+  and OWN-8 rejection for incompatible affine or loan states;
+- convergent loop fixed points and OWN-11 back-edge checks; and
+- call-time consumption, sibling-overlap checks, parent suspension/resumption,
+  instantiated effects, and failure-atomic state updates.
+
+Diagnostics use canonical source/node order plus a fixed rule priority where one
+node violates multiple rules. Their result is independent of body-analysis
+scheduling, SCC traversal, worklist order, or parallel execution for one fixed
+canonical source and declaration order. Tests hold that semantic order fixed,
+permute only analysis scheduling, and require byte-identical diagnostics.
+
+#### Generalization and completeness
+
+Grammar and judgment constructor schemas are finite; program sizes,
+environments, place paths, loan sets, region nesting, generic instances, and
+CFG-state instances are not. Generality rests on total transition schemas
+parameterized by those unbounded finite structures, with reviewed induction
+invariants for list traversal, scope and loan stacks, place resolution,
+control-flow composition, and fixed-point iteration. It does not come from
+enumerating compiler functions.
+
+A machine-checked implementation ledger is indexed by atomic facets: every
+grammar production; type, mode, and storage constructor; operation-table row,
+domain, and edge case; ownership premise and transition; effect clause; control
+transfer; diagnostic/artifact obligation; and applicable whole-program rule.
+Each facet records a validated owning stage (`lexer/tokenizer`, `validator`,
+`parser`, `declarations`, `resolver`, `checker`, `unit-finalizer`, `artifact`,
+`diagnostic/report`, `runtime`, `lowerer`, `fact-verifier/optimizer`, `policy`,
+`spec-CI`, or justified `N/A`), handler, implementation status, positive and
+negative witnesses, composition witnesses, diagnostic path, malformed-input
+behavior, elaboration field, lowering obligation or structured none, and
+normative/provisional/deferred status. CI rejects an unowned facet, an
+unreasoned none, a blank/default-accept handler, or a source-emittable rule
+marked policy-only.
+
+The facet catalog is versioned and hash-bound to the exact kernel specification.
+Grammar productions, rule IDs, and operation-table rows are extracted
+mechanically where possible; manually decomposed prose facets carry exact
+rule/text anchors and hostile-review approval. CI displays and rejects an
+unexplained facet addition, deletion, merge, split, or status change. Each
+semantic handler exit links to exactly one of: a successful facet transition;
+one exact numbered-rule rejection premise; or a stage-qualified `Unsupported`
+linked to one exact pending facet. An unledgered wildcard, catch-all `Reject`,
+catch-all or default `Unsupported`, or fallback diagnostic over a completed
+normative facet is forbidden. Mutation gates delete or redirect each
+handler/facet edge and must fail.
+
+If new evidence exposes a soundness gap in a completed facet, certification and
+all dependent publication stop immediately. Reopening requires a reviewed,
+versioned catalog revision of that exact anchored facet; the revision
+invalidates every dependent staged body result, `CheckedUnit`, `FactOverlay`,
+module, and cache entry before the facet may return stage-qualified
+`Unsupported`. Do not invent a source-shaped facet, cite an unrelated rejection
+premise, or use a broad rule such as OWN-8 to camouflage an implementation gap.
+
+Phase 2 closes the facets exercised by the exact compiler subset while using the
+permanent architecture above. Phase 3 closes every remaining normative
+source-emittable v0.8 facet without replacing that architecture. It makes
+`Unsupported` unreachable for canonical parseable v0.8 input: valid programs
+are accepted and invalid programs receive their required diagnostic. Evidence
+combines static exhaustive dispatch over every finite syntax, type/mode,
+operation, and analysis-state discriminator; reviewed structural-induction and
+invariant-preservation arguments parameterized by arbitrary finite state
+instances; and bounded generative/model tests as validation rather than proof.
+Those tests compose legal alpha-renaming, multiple list lengths and nesting,
+all operation domains and boundary values, ownership/control-flow combinations,
+region substitutions, effects, and acyclic and recursive call graphs. Zero
+conformance skips is necessary, not sufficient. Non-program rules require
+executable artifact, policy, or spec-CI gates. This is not an exhaustive
+enumeration of programs.
+
+Metamorphic requirements are explicit rather than "semantic equivalence":
+alpha-renaming applies only to non-reserved identifiers under TYPE-6 and legal
+scope; independently legal copy-only statements may be inserted where they do
+not change flow/effects; blocks and nesting are tested at zero, one, multiple,
+capacity-boundary, and recursively composed lengths while implementation remains
+parameterized over every representable finite length; and permutations are
+tested only when the applicable ownership, flow, and effect premises are
+unchanged.
+
+The Phase 2 architecture design maps all v0.8 categories now, including
+generics/contracts, `requires`, `try`/`give`, consts, allocation and
+storage, drops/releases, aggregate values and returns, and DIAG-2/3, even when a
+handler is explicitly pending until Phase 3. Deferred text is not promoted and
+provisional status is not silently treated as ratification.
+
+#### Required exactness and prohibited profiles
+
+Exact local checks remain mandatory wherever a numbered rule requires them:
+grammar-fixed direct-child arity, well-formed bounded variable child chains,
+canonical operation and literal form, literal type/range/constant validity,
+resolved nominal declaration identity, named argument order, explicit
+substitution, sequential ownership flow, callee signatures and effects,
+loop/region structure, source anchoring, and bounded topology. These local
+judgments are not profiles.
+
+The following routes are prohibited:
+
+1. **No whole-function or subtree admission profile.** No production entry may
+   select, short-circuit, or publish a function or subtree verdict from a
+   preselected conjunction of source name/ordinal, hard-coded project nominal
+   spelling, signature/effect shape, fixed block/region/loop/match-arm child
+   count, statement/literal/callee sequence, or body/subtree fingerprint. Exact
+   arity applies only where the grammar fixes a node's direct arity; variable
+   statement and item lists are traversed generically. Rule-defined recursive
+   subjudgments—such as block flow, exhaustive-match traversal, and
+   GRAM-7/GIVE-1 delivery completeness—are allowed when parameterized by
+   arbitrary resolved input and analysis state. They return the cited local
+   rule fact, never a source-shaped subtree admission status.
+2. **No profile laundering.** A parser, resolver, cached flag, generated table,
+   stage-0 verdict, host shim, test manifest, or lowerer may not turn such a
+   fingerprint into a "resolved semantic property." Resolved nominal identity
+   remains mandatory; selecting an analyzer because that identity has a
+   repository-specific spelling, ordinal, or enumerated compiler membership is
+   prohibited.
+3. **No special-case stacking.** Do not add a signature/body fallback, wrapper
+   or probe recognizer, exact call-sequence path, or parallel emitter for a newly
+   encountered source shape. A general transition replaces or subsumes the
+   source-specific authority it covers; it is not stacked beside it.
+4. **No census authority.** Hard-coded compiler function names, corpus ordinals,
+   dependency-frontier lists, clean ordinals, and desired counts are
+   observations only. They never select an alternative rule, checker, lowering,
+   test-expectation, or slice path. Ordinary source-name resolution to a
+   declaration is not census authority.
+5. **No callee-body re-proof.** A caller relies on the validated signature as
+   FN-1 requires. Re-reading a callee body from the caller path, including via a
+   cached profile or "independent proof," is prohibited.
+6. **No proof-for-admission.** Source-specific proofs of bounds, overflow
+   freedom, termination, literal values, or algebraic properties are not
+   prerequisites for compiling checked operations. This does not waive
+   canonical literal parsing, type/range validity, constant-expression rules,
+   effect reconciliation, or any other specification check. Proof may remove a
+   check only through a separately reviewed fact channel with facts-off
+   semantic identity.
+7. **No analyzer-driven source distortion.** Investigate every discrepancy
+   against the accepted specification. Repair the compiler or source to match
+   it; a specification change requires its owner-gated evidence protocol. Do
+   not rewrite wfc into artificial shapes merely to satisfy an incomplete
+   analyzer. Spec-required canonical migration is not distortion.
+8. **No raw-AST backend semantics.** Lowering consumes only `CheckedUnit`.
+   Source-specific LLVM emitters, raw-text semantic rediscovery, caller-forged
+   facts, and emission selected by function/profile are prohibited.
+
+#### Slice and maintainability gates
+
+Before coding, every slice records the atomic ledger facets and local transitions
+it implements in the one pipeline; arbitrary-source positive, negative,
+composition, and malformed-input witnesses; state/diagnostic behavior; expected
+elaboration and generic lowering consequences; complexity and capacity bounds;
+new-helper self-classification; superseded authority and duplication to remove;
+old-to-new hostile-test mapping; and explicit stop conditions.
+
+No new production helper may remain `Unsupported` when its completed cleanup
+tranche exits. A necessary temporary helper tranche is preregistered, can confer
+no acceptance/lowering/fact authority, and closes before that tranche exits.
+Coverage counts are recorded and every delta is explained, but their sign is
+not a gate. Removing false profile authority may honestly increase
+`Unsupported`; infrastructure may leave it unchanged; a general transition
+may clean an unpredicted function. Any unexplained movement pauses integration
+for independent derivation, differential testing, and hostile review.
+
+A slice succeeds by completing its ledger facets, preserving or replacing every
+valuable defect regression, removing the source-specific authority in scope,
+reducing duplicated logic, passing arbitrary-source composition tests, and
+passing both project gates. Template-positive expectations may be removed, but a
+reproduced topology, source-redirection, cycle, ownership, effect, diagnostic,
+capacity, or failure-atomicity defect remains pinned at the corresponding
+general boundary. Protected semantic tests remain owner-gated.
+
+The semantic architecture performs one structural validation and declaration
+indexing pass per unit, never rescans a callee body per call, and bounds SCC work
+by functions plus resolved call edges. Each body node and CFG edge is visited a
+bounded number of times per dataflow iteration; fixed capacities derive from
+source/token/AST/call/instantiation counts. Every architecture packet includes a
+whole-compiler time/memory regression budget. New modules have one semantic
+responsibility. Do not grow the existing monolithic `semantic_reader.wf`;
+split by judgment, never by compiler function or source family.
+
+Cleanup is architectural, not file-count churn. Retain proven general
+mechanisms, remove dead profile branches and duplicate walkers once their
+general replacement is green, and keep data ownership and transition authority
+obvious at module boundaries. Split a file when one review can no longer hold
+its responsibility and invariants together, using judgment or artifact
+boundaries; do not replace the monolith with one-use forwarding facades or
+profile-shaped micro-modules. Record file-size and dependency deltas for review,
+but no arbitrary line target substitutes for cohesion, readable names, focused
+tests, and deletion of obsolete paths.
 
 **No-reborrow decision — RESOLVED (2026-07-18): bounded statement-scoped reborrow,
 landed in v0.7.** Growing body semantics surfaced that wfc's own source reborrows
@@ -137,9 +509,10 @@ relaxation, and kernel-spec **v0.7** admits the bounded, non-escaping,
 statement-scoped child reborrow (OWN-5/6/9/12 + new STOR-5) while deferring
 result-transfer and the harder forms. What remains in Phase 2 is production
 implementation of an already-landed spec rule, not a new spec decision: implement
-the fragment in the production checker with the recorded conditions, and grow wfc
-body semantics and lowering so every reborrowing function classifies clean and
-lowers — no function may remain unsupported at the Phase 2 exit.
+the rule compositionally in the unified production checker and generic lowerer.
+The rule's actual prerequisites in type/mode classification, affine state,
+resolved places, ordinary loans, regions, calls, and flow determine its landing
+order; the historical F4 frontier does not.
 
 **Exit gate:** the exact compiler unit has complete body semantics and lowering;
 stage-1 wfc matches stage 0 on compiler-subset conformance; the facts-off IR
@@ -164,6 +537,15 @@ annotations do not close those rules. Preserve a conformance case for each
 discrepancy. Keep facts disabled and rerun the facts-off self-hosting fixpoint
 after the final language slice.
 
+Close every normative source-emittable atomic ledger facet. Require exhaustive
+dispatch over every finite grammar/AST, type/mode, operation, and analysis-state
+discriminator; reviewed structural-induction and invariant-preservation
+arguments parameterized by arbitrary finite state instances; and bounded
+generative/model composition as validation rather than proof. No normative
+program case may remain `pending`, `xfail`, `Unsupported`, or skipped.
+Non-program rules require their executable artifact, runtime, policy, or spec-CI
+gate. Zero conformance skips is necessary but not sufficient.
+
 **Exit gate:** wfc accepts and rejects every source-emittable v0.8 case with
 zero skips, supports `requires` end to end, emits the DIAG-2 artifact and DIAG-3
 reports, completes effect checking, and retains the facts-off byte-identical
@@ -178,6 +560,11 @@ invalidators, and per-site accounting before enabling it. Add observational
 reports first. Require report/no-report output identity. Then enable one family,
 run its facts-off control, inspect generated IR and assembly, and obtain hostile
 review before shipping that family.
+
+Every family publishes only through the Phase-2 `FactOverlay` verifier and the
+same generic lowerer, using one of the closed ledgered record kinds. It may not
+mutate `CheckedUnit`, create a second lowering path, pass an unverified fact
+directly to emission, or reinterpret a non-elidable check as elidable.
 
 Require wfc to match the reference proof accounting on the bounds corpus and
 all codegen-parity pins. Re-run full conformance in both fact modes and
@@ -292,477 +679,168 @@ the authorized seven-phase scope.
 
 ## Execution cursor
 
-Phase 2 is active. The canonical rejection ABI, explicit call-region retention,
-and arbitrary-arity exact call substitution are complete. The current unit has
-655 functions: 166 clean, 489 legal but unsupported, and zero rejected. Its
-self-parse is deterministic at 1,783,808 source bytes, 360,726 tokens, and
-179,036 unique-head AST nodes. The parser census is 5,065 regionful calls: 497
-explicit and 4,568 staged omissions. LLVM support remains the same
-byte-identical 15-function module.
+Phase 2 is active, but production implementation is frozen at commit
+`c5ef95a` pending the recovery reviews below. The main worktree is clean and
+both project gates were green at that commit. This cursor authorizes
+documentation, read-only inventory, architecture design, and hostile review
+only. It does not authorize compiler implementation, compiler-test changes,
+source migration, or lowering work before the explicit implementation entrance
+gate.
 
-Stage 0 now emits every fixed-size stack slot once in the LLVM entry block.
-Growth of the complete compiler source exposed that an aggregate call-result
-spill inside `lexer_run` had been executing on every token iteration and
-retaining its storage until function return, eventually exhausting the native
-stack. An additive stage-0 regression requires all fixed-size `alloca`
-instructions to precede repeated control flow; the complete compiler bootstrap
-and existing codegen parity and performance gates remain green.
+The current pipeline reports 655 functions: 166 provisionally clean, 489
+Unsupported, and zero through its currently implemented semantic-reject paths.
+`Unsupported` makes no legality claim. Self-parse is deterministic at
+1,783,808 source bytes, 360,726 tokens, and 179,036 unique-head AST nodes. The
+parser census is 5,065 regionful calls: 497 explicit and 4,568 staged omissions.
+LLVM profile emission still covers 15 functions.
 
-Kernel v0.8 and its tag-only enum equality implementation are complete.
-Stage 0 and the wfc reader recognize only exact nominal tag-only `eeq`/`ene`;
-`ieq`/`ine` remain integer-only. Stage 0 lowers both enum operations directly
-at the selected tag width, including i1 for `Bool` and two-variant enums. The
-complete compiler-source migration has 255 `eeq` sites in 92 functions across
-18 files and 22 tag-only types, with zero non-integer `ieq`/`ine` sites. The
-approved 16-case additive conformance surface passes, and hostile tests cover
-same-width nominal confusion, payload enums, malformed symbol/type topology,
-declaration collisions, missing explicit type arguments, all bounded truth
-tables, and direct raw/optimized code shape. Five source functions move to
-CLEAN through the repaired equality domain: `semantic_body_kind_is`,
-`llvm_scalar_node_is`, `llvm_scalar_type_is`, `llvm_scalar_mode_is`, and
-`llvm_scalar_operation_is`.
+The exact compiler unit is already known not to satisfy all accepted source and
+whole-unit rules:
 
-The F1 acyclic read-only tranche covers general signatures and exact effect
-rows, general tag-only enum matches and values, shared struct fields, typed
-scalar and tag-only-enum buffer `index`, and field/buffer `len`. The first
-bounded F2 slice is complete: the reader carries exact fall/return/break
-may-flow through sequential blocks and exhaustive matches, admits canonical
-loops with function-unique labels and innermost labeled `break`, admits
-exact-type mutation of owned `let` bindings, recognizes exact traps-only rows
-and callees, and discovers effects recursively through `set` values and loop
-bodies. It deliberately keeps parameter mutation, outer-target breaks from a
-nested loop, duplicate labels, and a no-break loop without any return witness
-unsupported. `semantic_reader_u64_literal_any` is the one pre-existing
-function newly classified clean; the other three clean additions are the new
-flow-query helpers. A fresh corpus inventory found no additional isolated
-loop/local-mutation unlock; admitting owned-parameter mutation also conflicts
-with stage-0 lowering and unlocked zero compiler functions, so that experiment
-was fully reverted and the bounded F2 compiler-family tranche is complete.
+- TYPE-5 requires explicit type, region, and const arguments, so the 4,568
+  staged omissions are source-conformance debt, not legal calls and not
+  permission for inference or normalization.
+- `sources.txt` contains no `fn main`, while FN-7 requires exactly one.
+  Stage 0 currently checks only at most one and is not authoritative for that
+  discrepancy. The recovery must either make the unit a canonical program or
+  bring an exact language/toolchain alternative through the owner-gated
+  specification protocol. There is no inferred compiler-only exemption.
 
-The first nine bounded F3 writer slices are complete. The writes-only profile admits one or more exclusive
-borrows of structs in exactly one declared region, an exact writes-only row for
-that region, one or more flat direct scalar/tag-only-enum field assignments from
-own parameters, canonical `u8`/`u64` literals, or exact nullary `Bool`/tag-only-
-enum constructors, or a prior direct top-level `u64` constant initialized by a
-canonical `u64` literal, and a final `return unit`. Constructor resolution is
-confined to this field-writer path: a bounded whole-unit scan proves one globally
-unique direct nullary variant, a tag-only owning enum, and exact nominal field
-equality. Constant resolution is likewise writer-local: it requires the exact
-value-symbol binding, declaration-before-use, exact const/name/type/value topology,
-source-anchored head tokens, and exact `u64` type and initializer. It admits no
-mutable global state (which the language forbids), forward reference, alias,
-array, non-`u64` constant, or function symbol. Shared or cross-region exclusive roots,
-general `unit` readers, borrowed RHS values, payload or ambiguous constructors,
-general constructor expressions, missing/spurious or wrong-region writes, nested
-control, writer calls, and non-unit returns remain unsupported. The first slice moved exactly
-four pre-existing functions to CLEAN:
-`symbol_report`, `semantic_body_set_report`,
-`semantic_type_resolve_set_report`, and `llvm_supported_fail`. Hostile review
-caught and closed an initial widening that also admitted three read-only
-exclusive-borrow helpers; both exclusive borrows and `unit` are now fenced to
-the exact writer profile, and the body independently verifies the exclusive
-target and flat RHS shape. The second slice moves exactly seven more pre-existing
-functions to CLEAN: `byte_tape_reset`, `semantic_all_types_fail`,
-`frontend_token_tape_reset`, `llvm_scalar_fail`, `llvm_linear_fail`,
-`llvm_buffer_fail`, and `llvm_scanner_fail`. Its writer-specific implementation
-and hostile tests live in focused files rather than enlarging the general reader
-and unit-test modules. The third slice moves exactly six more pre-existing
-functions to CLEAN: `symbol_tape_reset`, `semantic_type_tape_reset`,
-`semantic_node_facts_reset`, `frontend_ast_tape_reset`,
-`frontend_validation_reset`, and `frontend_report_reset`. Its hostile review also
-fixed canonical `u64` validation at the exact 20-digit maximum and pinned
-out-of-range rejection, stale symbol redirection, forged AST heads, malformed
-const topology, forward declarations, and non-const value symbols. The focused
-writer implementation remains 861 lines. The fourth slice admits the one measured
-mixed-effect boundary: exactly two distinct regions, exactly one shared root for
-an exact reads row, exactly one exclusive root for an exact writes row, `traps`,
-and the same flat direct-field writer body, with user calls allowed only as
-right-hand-side values under that mixed profile. Ordinary call analysis proves
-callee signature and result type; exact call-region substitution proves shared
-argument provenance; and effect reconciliation independently proves every declared
-read, rejects undeclared reads or traps, and rejects write-effect callees. The source
-function `parser_fail` now declares only its exhibited token-tape read and spells
-both call-region arguments explicitly, moving exactly that one pre-existing function
-to CLEAN. Hostile review pinned omitted and wrong call regions, extra roots and
-regions, missing/spurious/wrong rows, wrong call results, hidden write-effect callees,
-malformed region nodes, call topology, and duplicate effect nodes. Mixed-profile
-logic lives in a focused 237-line module. The fifth slice extends the established
-writes-only signature proof from exactly one exclusive root to one or more roots,
-while requiring every root, including unused roots, to belong to the singleton
-declared write region. The existing body proof already checks every assignment
-target independently against an exclusive parameter and that region. This moves
-exactly `semantic_body_mark_failure`, whose three exclusive output tapes share one
-region, to CLEAN; shared roots, zero roots, and an unused cross-region root remain
-Unsupported. Its focused hostile test is 571 lines. The sixth slice admits exact
-flat indexed targets only under `writes(region), traps` with no read row: the
-target must be `index<T>(deref(exclusive_struct).buffer_field,
-own_u64_parameter)`, the root must belong to the singleton write region, the
-element and right-hand-side types must match exactly, and the bounds-checked
-target supplies `traps` without fabricating a read of the exclusive root.
-Immutable-global subscripts, direct buffer roots, shared or cross-region roots,
-mixed read/write rows, and malformed target topology remain unsupported.
-Hostile review additionally source-anchors every semantics-bearing target head
-and leaf, including same-spelling token redirects. Exactly
-`semantic_body_set_value_fact`, `semantic_buffer_write_result_fact`, and
-`semantic_buffer_write_place_fact` move to CLEAN. Target logic lives in a
-focused module and a separate hostile test; extracting the
-prior field-target proof reduces the writer module to 814 lines and the general
-reader. The seventh slice extends only the indexed-target subscript boundary to
-canonical `u64` numeric literals. The shared index analyzer receives an explicit
-capability flag that is false for ordinary indexed reads and true only for writer
-targets; independent target validation rechecks the literal kind, canonical value,
-and exact source anchoring. Leading-zero, wrong-width, and out-of-range literals,
-same-spelling token redirects, immutable-global subscripts, and literal subscripts
-on ordinary indexed reads remain Unsupported. Exactly
-`semantic_body_initialize_types` moves to CLEAN. The target module is 388 lines,
-its hostile test is 356 lines, the writer module remains 814 lines, and the general
-reader is 6,623 lines. The eighth slice admits only prior direct immutable `u64`
-constants as indexed-target subscripts. It reuses the writer-local constant proof:
-an exact value-symbol binding must name a source-anchored three-child `const`
-declaration before the use, with exact `u64` type and a canonical direct `u64`
-literal initializer. Ordinary indexed reads keep the capability disabled.
-Forward, wrong-width, noncanonical, out-of-range, and function-symbol cases stay
-Unsupported, as do same-named non-own parameters: parameter lookup distinguishes
-an absent name from a present but invalid binding before global fallback. Exactly
-`semantic_buffer_initialize_types` moves to CLEAN. Target logic is 408 lines, its
-focused hostile test is 418 lines, the writer module remains 814 lines, and the
-general reader is 6,634 lines. The ninth slice admits the one remaining
-loop-based indexed initializer, `semantic_body_initialize_facts`. Its exact
-control protocol requires an owned `u64` cursor initialized by canonical
-`0_u64`; one loop whose source-anchored `ige<u64>(cursor, own_u64_parameter)`
-guard has a `True` arm containing only a break to the same source-anchored label
-and an empty `False` arm; one or more indexed assignments rooted in the exact
-write region and subscripted only by that cursor; the exact trapping
-`cursor = iadd.trap<u64>(cursor, 1_u64)` update; one or more direct field tail
-writes; and a final `return unit`. The ordinary reader, flat writer, and indexed
-read profiles are unchanged. Hostile review caught and closed swapped arm tags,
-non-cursor subscripts, and same-spelling type/name/label token redirection before
-the slice landed. Exactly `semantic_body_initialize_facts` moves to CLEAN; no
-other pre-existing function moves and no prior CLEAN function is lost. Control
-logic is isolated in a 674-line module with a 325-line focused hostile test;
-the general reader is 6,644 lines. The post-slice inventory left
-`frontend_unit_reset` as the only Unsupported function with writes but neither
-reads nor allocation; it is a statement-scoped reborrow/call-composition shape,
-so the bounded F3 compiler-family tranche is complete.
+The durable implementation also contains useful foundations: lexing and parsing
+for the current compiler subset, structural AST validation, transactional
+diagnostics, exact byte-name handling, atomic global/type/member/function symbol
+indexing, type-resolution pieces, explicit call-region AST retention, generic
+pieces of block/match/loop walking, place/field/index resolution, output
+capacity handling, checked-operation LLVM primitives, codegen corpus gates, and
+the repaired entry-block placement of fixed stack slots. These pieces are not
+presumed correct merely because they predate this correction; the inventory
+classifies and tests them before retention.
 
-The first bounded F4 slice implements that exact compiler shape. It admits one
-exclusive struct parameter in one caller region and a nonempty sequence of
-distinct local region statements. Each local region contains exactly one
-expression-statement call with exactly one named argument: an unbound unique
-child borrow of one direct field of the parent. The local region spelling must
-match the child, cannot shadow the caller region or another local region, and
-ends with that statement; the call returns own `unit`; the parent is
-structurally suspended because no sibling or other argument exists. The callee
-has exactly one unique parameter, an exact writes-only row for its formal
-region, and an independently validated flat writer body, so a dishonest or
-unsupported callee cannot supply the effect fact. This implements the exact
-ancestor effect exemption without widening the ordinary field reader. Shared
-children, whole-parent or deeper suffixes, explicit call-region arguments,
-bound results, multiple arguments, siblings, let-bound parents, read/write
-callees, and borrow returns remain Unsupported. Hostile review pins local-region
-confinement and uniqueness, parent suspension, non-escape, dishonest callees,
-disjoint and overlapping deferred siblings, exact nominal field types,
-semantics-bearing source heads, and cyclic topology. Exactly
-`frontend_unit_reset` moves to CLEAN and no prior CLEAN function is lost. F4
-logic is isolated in 590- and 389-line modules with a 366-line focused test; the
-general reader is 6,692 lines.
+The later body-semantics route became source-shaped. Ten bounded F4 slices added
+exact signature and whole-body/subtree recognizers for particular reborrow
+writers, byte emitters, fixed-literal wrappers, numeric composition, probes, and
+the guarded span loop. Hostile review found real topology, source-anchoring,
+effect, and failure-atomicity defects, and some local helpers may be reusable.
+But the final authority remained tied to current source shapes. The last span
+slice made one existing function provisionally clean while adding eleven
+Unsupported compiler helpers, changing 644 / 165 / 479 into
+655 / 166 / 489. It also proved source-specific bounds, overflow, and
+termination properties while facts were disabled and checked traps could remain.
+That negative leverage and conflation of checked acceptance with source-specific
+proof are unacceptable.
 
-The second bounded F4 slice admits the exact same-region `ByteTape` push
-protocol and its smallest call-composition boundary. The independently proven
-callee has one exclusive struct root and one owned `u8` parameter, exact
-singleton `reads(root)` and `writes(root)` rows plus `traps`, and the exact
-six-statement push body: read the count and byte-buffer capacity, compare them,
-write either the indexed byte or a matching nullary status constructor, perform
-the trapping count increment, and return unit. Field declarations, nominal
-types, parameter and local bindings, effects, constructor ownership, source
-heads, and body topology are all revalidated without recognizing project
-names. The caller has one exclusive parent and one fresh one-statement local
-region; it passes exactly a whole-parent unique reborrow and one canonical
-`u8` literal to that proven callee, then returns unit. The exact call shape
-makes suspension and non-escape structural. Any same-region mixed signature
-outside these two bodies stops before generic writer reconciliation. Shared or
-field/deeper borrows, explicit call-region arguments, reordered or additional
-arguments, noncanonical literals, bound results, multiple calls or regions,
-dishonest callees, and sibling children remain Unsupported. Hostile review
-pinned wrong or missing rows, field and parameter types, local uniqueness,
-callee-body substitutions, renamed positive controls, same-spelling source-head
-redirection in both directions, and cyclic sibling topology. Exactly
-`byte_tape_push` and twelve one-byte `llvm_text_emit_*` wrappers move to CLEAN;
-no prior CLEAN function is lost and all twenty new helpers remain Unsupported.
-The focused implementation is split across 133-, 231-, 325-, 201-, and
-296-line modules with a 349-line hostile test; the general reader is 6,730
-lines. A fresh post-slice inventory finds 67 simple unsupported region-call
-wrappers. The next bounded boundary is the exact `byte_tape_emit_chunk` body;
-it has eight guarded whole-parent calls to the proven push using owned `u8`
-parameters, and it is the prerequisite for 37 simple fixed ten-argument chunk
-wrappers (30 one-region, six two-region, and one four-region). General sibling
-overlap and recursive numeric emission remain later F4 work.
+The exact-profile route is suspended. The uncommitted
+`byte_tape_emit_span_probe` implementation remains isolated outside main and
+must not be merged as another profile. Completed slice narratives remain in the
+append-only decision log as evidence; they no longer select work. Cleanup is not
+a blind rollback: it separates general mechanisms and valuable defect
+regressions from source-specific authority, then replaces that authority through
+the reviewed pipeline.
 
-The third bounded F4 slice admits the exact guarded eight-byte chunk callee.
-Its signature has one exclusive struct root, one owned `u64` count, eight
-distinct owned `u8` parameters, exact singleton `reads(root)` and
-`writes(root)` rows plus `traps`, and an own-unit result. The body first proves
-the count is at most canonical `8_u64`; its exact invalid arm writes a nullary
-constructor belonging to an enum field of the same root and returns. Eight
-ordered `ige<u64>(count, N_u64)` matches then either return early or enter one
-statement-scoped region and call the independently proven push callee with a
-whole-parent unique reborrow and the corresponding `u8` parameter. The eighth
-false arm is empty and the body ends with `return unit`. Every operation,
-threshold, arm tag and statement count, parameter and named-argument order,
-nominal type, source head, and topology is revalidated without recognizing
-project names. The ordinary body analyzer's new fallback accepts only an owned
-`u8` parameter as the second argument of this already-bounded region-call
-shape; the same-region effect gate still requires the complete exact chunk
-body before returning CLEAN, so the flow support cannot lend authority to any
-other mixed read/write function. Hostile review pins wrong or missing rows,
-parameter modes and types, count guards, threshold order, early-return shape,
-status-field and constructor types, local-region confinement, shared or deeper
-borrows, explicit call regions, argument order and binding, dishonest callees,
-same-spelling source-head redirection in both directions, and cyclic topology.
-Exactly `byte_tape_emit_chunk` moves to CLEAN; no prior CLEAN function is lost,
-and all fifteen new helpers remain Unsupported. The unit is 619 total / 122
-CLEAN / 497 Unsupported / 0 rejected; the exact 15-function LLVM module is
-unchanged. The parser census is 4,525 regionful calls = 496 explicit + 4,029
-staged omissions; self-parse is deterministic at 1,663,946 bytes / 335,070
-tokens / 166,278 nodes. A shared 149-line region-call shape module reduces the
-prior region module from 201 to 64 lines; chunk logic is split across 187-,
-131-, 195-, and 85-line modules with a 382-line hostile test, and the general
-reader is 6,739 lines. A fresh inventory finds 41 Unsupported callers of the
-now-proven chunk: 30 are exact one-region, two-statement fixed-literal wrappers;
-six contain two chunk regions, one contains four, and four compose one chunk
-with recursive numeric emission. The exact 30-wrapper one-region family is the
-next bounded F4 boundary; multi-region and numeric composition remain later.
+### Phase 2 recovery sequence
 
-The fourth bounded F4 slice admits that exact one-region fixed-literal wrapper
-family. Each caller has one exclusive struct root, exact singleton reads and
-writes rows plus traps, own unit, one fresh one-statement local region, and a
-final unit return. The call has exactly ten named arguments in formal order: a
-whole-parent unique reborrow confined to the local region, one canonical `u64`
-count literal, and eight canonical `u8` literals. The count is not treated as a
-proof fact; the independently re-proven chunk callee retains its exact
-`count <= 8` guard before any write. The caller proof also requires exact
-nominal root type, argument/formal name correspondence, source anchoring, and
-topology. The ordinary body analyzer gained only a fallback for this exact call
-shape with the same independent callee proof; the focused caller signature and
-body gate remains the only source of classifier authority. Shared, deeper, or
-wrong-region parents, explicit call regions, bound calls, wrong or reordered
-arguments, noncanonical or out-of-range literals, dishonest chunk or nested
-push callees, multi-statement regions, and multiple regions remain Unsupported.
-Hostile review additionally caught and corrected a test mutation that first
-targeted the nested callee instead of the wrapper, then pinned the intended
-multi-region boundary plus same-spelling head redirection and cyclic topology.
-Exactly 30 pre-existing functions move to CLEAN; no prior CLEAN function is
-lost and all seven new helpers remain Unsupported. The unit is 626 total / 152
-CLEAN / 474 Unsupported / 0 rejected; the exact 15-function LLVM module is
-unchanged. The parser census is 4,568 regionful calls = 496 explicit + 4,072
-staged omissions; self-parse is deterministic at 1,675,543 bytes / 337,523
-tokens / 167,503 nodes. Shared call syntax is 166 lines, the new focused module
-is 216 lines, its hostile test is 280 lines, and the general reader is 6,748
-lines. A fresh inventory leaves exactly 11 Unsupported chunk callers: six
-two-region wrappers, one four-region wrapper, and four chunk-plus-recursive-
-number compositions. The exact six-wrapper two-region family is next;
-four-region and recursive composition remain later.
+0. **Land the governing correction only.** Reconcile `THE-PLAN.md`, the owner
+   directive, toolchain design memory and rejected alternative, and active
+   compiler architecture documentation. Change no compiler implementation,
+   compiler test, compiler source unit, numbered specification, conformance
+   verdict, oracle digest, or protected reference test. Run both project gates
+   and stop.
+1. **Produce a read-only semantic, whole-unit, source, and lowering debt
+   inventory.** Trace every semantic state structure, phase-validity token,
+   status constructor/publication site, elaboration/fact record, body or subtree
+   validator, exact profile, LLVM kind/emitter, `sources.txt` ordering
+   dependency, build/test integration, and call path into body `CLEAN`, unit
+   acceptance, or LLVM publication. For every module/helper/test, record
+   responsibility, callers, line count, current status, complexity, and
+   dependence on names, ordinals, hard-coded project nominal spellings,
+   signatures as fingerprints, constants, fixed child/list counts, statement
+   order, callee sequences, or complete bodies/subtrees. Classify each item as
+   general machinery to retain, general machinery to repair, source-specific
+   authority to remove, or fixture/measurement code with no authority. Map every
+   reproduced defect test to the general invariant that must preserve it.
+   Separately enumerate known and newly discovered source/whole-unit
+   discrepancies, including TYPE-5 omissions and FN-7.
+2. **Write the complete architecture packet, still without compiler edits.**
+   Instantiate every boundary and state required by the production contract:
+   validated AST handle, declaration/signature table, concrete-instantiation
+   graph, one syntax-directed body checker, ownership/loan transfer and joins,
+   EFF-2 fold, staged body results, atomic `CheckedUnit`, deterministic
+   diagnostics, facet-ledger generator, verified optional `FactOverlay` with a
+   canonical facts-off empty form, and unique generic lowerer. Map every
+   v0.8 category, including constructs pending for Phase 3. State fixed-capacity
+   formulas, time/memory budgets, dataflow convergence, analysis-schedule
+   independence for a fixed canonical source/declaration order, cache identity,
+   publication tokens, and failure atomicity.
+   Build a reviewed specification-dependency graph for implementation order.
+   Historical F labels and the compiler dependency frontier have no ordering
+   force. The ownership foundation—type/mode and copy/affine classification,
+   resolved places, live/moved state, lexical regions, overlap, and ordinary
+   loans—precedes general calls and statement-scoped reborrow.
+3. **Pre-register the first cleanup tranche.** Choose the smallest coherent set
+   of atomic facets and pipeline infrastructure justified by the dependency
+   graph, not a target function. State arbitrary-source and malformed witnesses,
+   bounded/generative composition, diagnostic scheduling tests, expected
+   elaboration, source migrations if any, capacity/performance budgets, helpers
+   and their closure schedule, exact production branches to remove, old-to-new
+   defect-test mappings, census observations, and stop conditions. Its first
+   authority change must quarantine every remaining legacy profile behind
+   `LegacyProfileResult`, disable `CheckedUnit` publication until those paths are
+   removed, and forbid new callers; subsequent removals may then proceed in
+   reviewed tranches. If FN-7 resolution would change the specification or
+   toolchain contract, present the exact alternatives and owner-gated delta
+   instead of assuming one.
+4. **Implement only the explicitly approved tranche; replace, never stack.**
+   Extend the one pipeline and remove the source-specific whole-function and
+   subtree authority in scope. A temporary helper tranche is allowed only when
+   preregistered, confers no semantic/lowering/fact authority, and ends with all
+   its helpers clean. Coverage movement is recorded but never a pass criterion.
+   Removing false authority may increase Unsupported; infrastructure may leave
+   it unchanged; a general transition may clean an unpredicted function.
+   Unexplained movement stops for independent derivation and hostile review.
+5. **Make the compiler source unit canonical before claiming semantic
+   completion.** Migrate every TYPE-5-required call argument explicitly from
+   resolved signatures and enforce a mechanically checked zero-omission gate.
+   Resolve FN-7 under the accepted specification or a separately approved
+   spec/toolchain decision. Audit the whole unit for every already-implemented
+   source and whole-unit rule. Stage-0 disagreement is recorded as oracle debt,
+   never used to relax wfc or source.
+6. **Complete Phase 2 semantic facets in specification-dependency order.**
+   Repeat reviewed tranches through one body checker and one atomic unit
+   finalizer. Every completed tranche removes the superseded authority in its
+   scope and preserves each valuable defect regression at a general boundary.
+   Body-semantic recovery exits only when the compiler unit is canonical,
+   every required facet is complete, every body and whole-unit rule passes, and
+   one compiler-subset-certified `CheckedUnit` publishes atomically.
+7. **Replace LLVM profile emission with generic lowering.** Do not extend a
+   source-specific emitter during semantic recovery. Before lowering resumes,
+   prove each existing primitive emitter generic at node/type/operation level or
+   classify it as removal debt. The first lowering tranche establishes the
+   unique `CheckedUnit` consumer and removes the whole-function emitter
+   branches it supersedes. Subsequent tranches extend only that path, covering
+   layouts/ABI/mangling, constants and instantiations, generic CFG construction,
+   retained arithmetic/bounds/allocation checks without poison or undefined
+   behavior, traps/reports, ownership-derived cleanup, strict operation
+   semantics, deterministic ordering/capacity, and failure atomicity.
+8. **Resume conformance and self-hosting gates.** After the generic lowerer emits
+   the entire compiler-subset-certified unit, run stage-1 subset conformance and the
+   facts-off byte-identical fixpoint exactly as specified above. Body `CLEAN`,
+   unit acceptance, lowering authority, and optimizer facts remain four
+   separate gates.
 
-The fifth bounded F4 slice admits the exact six-wrapper two-region family.
-The established one-parent signature and exact fixed-literal chunk call proof
-are unchanged. The caller body has exactly two sequential one-statement local
-regions followed by a unit return; both locals are fresh relative to the outer
-region and distinct from each other. Each call independently re-proves its
-whole-parent unique child, ten named actuals in formal order, canonical `u64`
-and `u8` literals, nominal parent type, guarded chunk callee, and nested byte-
-push callee. Because each unbound own-unit call and its local region end before
-the next statement begins, the parent is suspended for one statement at a time
-and resumes between them; no sibling children coexist. One-region callers keep
-their prior path. Shared, deeper, explicit, bound, wrong-parent, wrong-literal,
-wrong-callee, duplicate-local, outer-shadowing, mixed-call, extra-statement,
-three-or-more-region, and cyclic shapes remain Unsupported. Hostile review
-also converts the prior appended-second-region negative into the intended
-positive boundary and adds a third-region negative, rather than weakening the
-fence. Exactly six pre-existing functions move to CLEAN:
-`llvm_text_emit_buffer_type`, `llvm_text_emit_overflow_pair_type`,
-`llvm_text_emit_llvm_trap`, `llvm_text_emit_extractvalue`,
-`llvm_text_emit_getelementptr`, and `llvm_text_emit_unreachable`. No prior CLEAN
-function is lost and the one new helper remains Unsupported. The unit is 627
-total / 158 CLEAN / 469 Unsupported / 0 rejected; the exact 15-function LLVM
-module is unchanged. The parser census is 4,580 regionful calls = 496 explicit
-+ 4,084 staged omissions; self-parse is deterministic at 1,678,161 bytes /
-338,051 tokens / 167,770 nodes. The focused proof is 247 lines, its hostile
-test is 381 lines, the shared caller gate is 330 lines, and the general reader
-remains 6,748 lines. Fresh inventory leaves exactly five Unsupported chunk
-callers: one exact four-region wrapper and four chunk-plus-recursive-number
-compositions. The four-region wrapper is next; recursive composition remains
-later.
+**Inventory checkpoint:** after recovery step 1, present the debt and
+source-conformance inventory to the owner. No compiler or compiler-test edit is
+authorized by that review.
 
-The sixth bounded F4 slice admits that exact four-region wrapper,
-`llvm_text_emit_uadd_overflow_i64`. Its established one-parent signature and
-fixed-literal chunk-call proof are unchanged. The caller contains exactly four
-sequential one-statement local regions followed by a unit return. Every local
-region differs from the outer region and from all prior locals, and each call
-independently re-proves its confined whole-parent unique child, ten named
-actuals in formal order, canonical `u64` and `u8` literals, nominal parent
-type, guarded chunk callee, and nested byte-push callee. The bounded sequence
-helper accepts only two or four regions; one-region callers retain their prior
-path, while three-, five-, and composite-region shapes remain Unsupported.
-Each unbound own-unit call and local region ends before the next statement, so
-the parent resumes between statements and no unique siblings coexist. Hostile
-review pins caller modes and effects, exact literals and argument order,
-shared, deeper, explicit, and bound calls, missing, mixed, or dishonest nested
-callees, pairwise local freshness including nonadjacent duplicates, outer
-shadowing, extra statements, closed three- and five-region shapes, source-head
-redirection, and cyclic topology. It also caught and corrected two test
-mutations that initially targeted a nested callee rather than the wrapper.
-Exactly `llvm_text_emit_uadd_overflow_i64` moves to CLEAN; no prior CLEAN
-function is lost and the refactored sequence helper remains Unsupported. The
-unit is 627 total / 159 CLEAN / 468 Unsupported / 0 rejected; the exact
-15-function LLVM module is unchanged. The parser census is 4,581 regionful
-calls = 496 explicit + 4,085 staged omissions; self-parse is deterministic at
-1,679,443 bytes / 338,276 tokens / 167,874 nodes. The focused proof is 283
-lines, its new hostile suite is 224 lines, the shared caller gate is 339 lines,
-and the general reader remains 6,748 lines. Fresh inventory leaves four
-Unsupported chunk-plus-recursive-number callers. Their next common prerequisite
-is the exact recursive decimal emitter `byte_tape_emit_u64`, selected as the
-next bounded F4 boundary before admitting any composite caller.
-
-The seventh bounded F4 slice admits that exact terminating recursive decimal
-emitter. Its same-region signature has one exclusive struct output, one owned
-`u64` value, exact singleton reads and writes rows plus traps, and own unit.
-The body compares the value with canonical `10_u64`; only the true arm divides
-by the same nonzero constant and recursively calls itself on the quotient in a
-fresh one-statement region. For unsigned values at least ten, that quotient is
-strictly smaller, so recursion terminates in at most twenty decimal digits.
-The tail takes the remainder modulo ten, then indexes an independently resolved
-immutable `array<u8, 10>` containing exactly the canonical bytes 48 through 57,
-and passes the resulting owned `u8` local through a second fresh region to the
-independently re-proven byte-push callee. Both local regions differ from the
-outer region, from every binding, and from each other; the first child ends
-before the tail resumes the parent. No quotient, remainder, global value, or
-bounds result is exported as an optimizer fact, and this slice adds no lowering
-authority. Ordinary flow support is limited to exact trapping divide or
-remainder by ten, the exact immutable digit table, owned local `u8` arguments
-to the proven push, and calls to a fully re-proven emitter. The same-region
-effect gate still returns the exact emitter-body verdict directly. Hostile
-review pins the signature and effects, comparison, divisor and operation
-modes, strict recursive decrease, self-call identity, local confinement,
-shared, deeper, explicit, and bound calls, exact table type, length, order, and
-values, remainder subscript, push-callee honesty, binding and region
-uniqueness, source anchoring, and cyclic topology. It also caught and corrected
-three initially mis-targeted source mutations before shipping. Exactly
-`byte_tape_emit_u64` moves to CLEAN; no prior CLEAN function is lost and all ten
-new helpers remain Unsupported. The unit is 637 total / 160 CLEAN / 477
-Unsupported / 0 rejected; the exact 15-function LLVM module is unchanged. The
-parser census is 4,772 regionful calls = 496 explicit + 4,276 staged omissions;
-self-parse is deterministic at 1,721,479 bytes / 347,440 tokens / 172,434
-nodes. The proof is split across 283-, 214-, and 199-line modules with a
-332-line hostile suite; the shared signature and caller gate remain 231 and
-347 lines, and the general reader is 6,779 lines. Fresh inventory leaves the
-four exact chunk-plus-number wrappers `llvm_text_emit_value`,
-`llvm_text_emit_place`, `llvm_text_emit_block`, and
-`llvm_text_emit_block_ref` Unsupported; that closed four-function family is
-the next bounded F4 boundary.
-
-The eighth bounded F4 slice admits that exact four-function family. Each caller
-retains the exact two-parameter same-region signature: one exclusive struct
-output, one owned `u64` identifier, singleton reads and writes rows plus traps,
-and own unit. Its body has exactly one fixed-literal chunk region, one recursive
-decimal-emitter region that consumes the identifier, and a unit return, in that
-order. Both statement-local regions differ from the caller region and from each
-other. The chunk call independently re-proves the whole-parent unique child,
-canonical literals, exact formal order, guarded chunk callee, and nested byte-
-push callee. The numeric call independently re-proves the whole-parent child,
-owned `u64` argument, exact formal order, terminating emitter body, immutable
-digit table, and nested byte-push callee. Each child ends before the parent
-resumes, so no unique siblings coexist. No identifier, digit, global, bounds,
-or call result is exported as an optimizer fact, and no lowering authority is
-added. Hostile review pins the exact signature and effects, ordered body,
-canonical chunk literals, owned identifier use, shared, deeper, explicit, and
-bound calls, region freshness, dishonest or missing callees, source anchoring,
-and cyclic topology. It also corrected one invalid test assumption: region and
-value names are separate syntactic namespaces, while outer and sibling region
-freshness remain enforced. Exactly `llvm_text_emit_value`,
-`llvm_text_emit_place`, `llvm_text_emit_block`, and
-`llvm_text_emit_block_ref` move to CLEAN; no prior CLEAN function is lost and
-the two new helpers remain Unsupported. The unit is 639 total / 164 CLEAN /
-475 Unsupported / 0 rejected; the exact 15-function LLVM module is unchanged.
-The parser census is 4,804 regionful calls = 496 explicit + 4,308 staged
-omissions; self-parse is deterministic at 1,727,663 bytes / 348,731 tokens /
-173,085 nodes. The focused proof is 90 lines, its hostile suite is 340 lines,
-the shared caller gate is 355 lines, and the general reader remains 6,779
-lines. That dependency inventory selected `byte_tape_emit_probe`, whose bounded
-slice is complete below.
-
-The ninth bounded F4 slice admits `byte_tape_emit_probe`. Its exact two-
-parameter same-region signature has one exclusive struct output, one owned
-`u64` value, singleton reads and writes rows plus traps, and own unit. Its body
-has exactly three sequential one-statement local regions followed by a unit
-return. The first call passes only a confined whole-parent unique child to an
-independently validated one-root flat writes-only callee. The second passes the
-same shape to an independently validated fixed-literal chunk wrapper, which in
-turn re-proves its guarded chunk and byte-push callees. The third passes the
-whole-parent child and exact owned caller value to the independently re-proven
-terminating decimal emitter. Every local differs from the outer region and
-pairwise from the other locals; each unbound own-unit call ends before the
-parent resumes, so no unique siblings coexist. Ordinary flow support accepts
-only the one-argument whole-parent call whose callee independently passes the
-flat-writer or fixed-chunk-wrapper proof; the same-region effect gate still
-requires this exact ordered body. No value, bound, global, call result, or
-optimizer fact is exported, and no lowering authority is added. Hostile review
-pins the signature and effects, statement order, shared and deeper borrows,
-explicit region arguments, bound or missing calls, wrong owned values,
-duplicate and shadowing locals, extra statements and regions, dishonest nested
-callees, mismatched formal names, same-spelling source-head redirection, and
-cyclic topology. Exactly `byte_tape_emit_probe` moves to CLEAN; no prior CLEAN
-function is lost and all five new helpers remain Unsupported. The unit is 644
-total / 165 CLEAN / 479 Unsupported / 0 rejected; the exact 15-function LLVM
-module is unchanged. The parser census is 4,860 regionful calls = 496 explicit
-+ 4,364 staged omissions; self-parse is deterministic at 1,740,995 bytes /
-351,552 tokens / 174,487 nodes. Maintainability review isolates the proof in a
-230-line module and its hostile boundary in a 405-line test; the shared caller
-gate is 363 lines and the general reader is 6,788 lines. Fresh inventory leaves
-`byte_tape_emit_span` and its dependent `byte_tape_emit_span_probe` Unsupported
-at output ordinals 93 and 94 while the probe at ordinal 95 is CLEAN. The exact
-span emitter is the next bounded F4 boundary: it combines already-supported
-guarded loop flow and shared source reads with one statement-scoped whole-output
-child per owned byte; the span probe remains blocked until that prerequisite is
-CLEAN.
-
-The tenth bounded F4 slice admits `byte_tape_emit_span`. Its exact four-
-parameter, two-region signature has one shared `buffer<u8>` source, owned
-`u64` start and end indices, one exclusive struct output, exact source/output
-reads, output writes, traps, and own unit. The body proves
-`start <= end <= len(source)`, returns through the exact invalid-status match
-when that guard fails, initializes a cursor to start, and enters an exact
-terminating loop. Each nonterminal iteration proves `cursor < end`, reads
-`source[cursor]`, passes the resulting owned byte with a fresh statement-local
-whole-output unique child to the independently re-proven byte-push callee, and
-increments the cursor with trapping addition. Since `end <= len(source)`, the
-index is in bounds; since `cursor < end <= u64::MAX`, the increment cannot
-overflow; strict progress terminates at end. The child is unbound and confined
-to its call statement, so the parent is suspended only for that statement and
-no unique siblings coexist. No range, cursor, global value, call result, or
-optimizer fact is exported, and no lowering authority is added. Hostile review
-returned GO after pinning signature modes, nominal types, region roots, effect
-rows and order, guard operations and operands, invalid arm, cursor lifecycle,
-loop arms, source index, reborrow depth/mode/confinement, region freshness,
-increment, callee honesty, source-head redirection, and cyclic topology.
-Fail-closed ordering defects found during negative testing were corrected so
-malformed effect rows and parameter modes are rejected before dependent child
-lookups. Exactly `byte_tape_emit_span` moves to CLEAN; no prior CLEAN function
-is lost and all eleven new helpers remain Unsupported. The unit is 655 total /
-166 CLEAN / 489 Unsupported / 0 rejected; the exact 15-function LLVM module is
-unchanged. The parser census is 5,065 regionful calls = 497 explicit + 4,568
-staged omissions; self-parse is deterministic at 1,783,808 bytes / 360,726
-tokens / 179,036 nodes. Maintainability review splits the proof across 264-,
-133-, 220-, and 165-line modules with a 375-line hostile suite; the general
-reader is 6,807 lines. The dependent `byte_tape_emit_span_probe` at output
-ordinal 94 is the next bounded F4 boundary; `llvm_text_emit_token` follows it
-in the dependency chain.
-
-`lexer_scan_string` remains the source-order
-frontier, blocked by aggregate return and other deferred forms. Remaining F4
-bounded statement-scoped reborrow, F5 aggregate construction/return, and F6
-`allocates`/`move` follow in that order. Whole-unit LLVM lowering, including production emission of general
-`eeq`/`ene` calls after revalidating their domain, remains the separate Phase-2
-step-2 track and may not treat CLEAN classification as emission authority.
+**Implementation entrance gate:** after read-only recovery steps 2 and 3,
+present the complete architecture packet, generated facet-ledger design,
+specification-dependency graph, source-conformance resolution, and
+preregistered first tranche to the owner. No compiler implementation, compiler
+test, or source-unit file may change until the owner explicitly approves that
+packet in writing. Approval of this plan correction is not approval to begin
+cleanup. A red gate, profile or subtree fingerprint, caller-side callee-body
+inspection, authority outside the unique publication paths, unexplained verdict,
+unclosed helper tranche, source-specific lowering condition, or need to weaken a
+contract stops recovery.
 
 ## Work outside the seven-phase scope
 
