@@ -26,6 +26,7 @@ check:
 	$(PY) test_semantic_reborrow_chunk_wrapper.py
 	$(PY) test_semantic_reborrow_chunk_wrapper_quad.py
 	$(PY) test_semantic_reborrow_u64.py
+	$(PY) test_semantic_reborrow_numeric_wrapper.py
 	$(PY) test_semantic_types.py
 	$(PY) test_semantic_globals.py
 	$(PY) test_semantic_type_resolve.py

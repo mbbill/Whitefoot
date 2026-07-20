@@ -294,10 +294,10 @@ the authorized seven-phase scope.
 
 Phase 2 is active. The canonical rejection ABI, explicit call-region retention,
 and arbitrary-arity exact call substitution are complete. The current unit has
-637 functions: 160 clean, 477 legal but unsupported, and zero rejected. Its
-self-parse is deterministic at 1,721,479 source bytes, 347,440 tokens, and
-172,434 unique-head AST nodes. The parser census is 4,772 regionful calls: 496
-explicit and 4,276 staged omissions. LLVM support remains the same
+639 functions: 164 clean, 475 legal but unsupported, and zero rejected. Its
+self-parse is deterministic at 1,727,663 source bytes, 348,731 tokens, and
+173,085 unique-head AST nodes. The parser census is 4,804 regionful calls: 496
+explicit and 4,308 staged omissions. LLVM support remains the same
 byte-identical 15-function module.
 
 Kernel v0.8 and its tag-only enum equality implementation are complete.
@@ -623,8 +623,8 @@ by the same nonzero constant and recursively calls itself on the quotient in a
 fresh one-statement region. For unsigned values at least ten, that quotient is
 strictly smaller, so recursion terminates in at most twenty decimal digits.
 The tail takes the remainder modulo ten, then indexes an independently resolved
-immutable `array<u8, 10>` containing exactly the canonical bytes 48 through 57, and
-passes the resulting owned `u8` local through a second fresh region to the
+immutable `array<u8, 10>` containing exactly the canonical bytes 48 through 57,
+and passes the resulting owned `u8` local through a second fresh region to the
 independently re-proven byte-push callee. Both local regions differ from the
 outer region, from every binding, and from each other; the first child ends
 before the tail resumes the parent. No quotient, remainder, global value, or
@@ -651,6 +651,38 @@ four exact chunk-plus-number wrappers `llvm_text_emit_value`,
 `llvm_text_emit_place`, `llvm_text_emit_block`, and
 `llvm_text_emit_block_ref` Unsupported; that closed four-function family is
 the next bounded F4 boundary.
+
+The eighth bounded F4 slice admits that exact four-function family. Each caller
+retains the exact two-parameter same-region signature: one exclusive struct
+output, one owned `u64` identifier, singleton reads and writes rows plus traps,
+and own unit. Its body has exactly one fixed-literal chunk region, one recursive
+decimal-emitter region that consumes the identifier, and a unit return, in that
+order. Both statement-local regions differ from the caller region and from each
+other. The chunk call independently re-proves the whole-parent unique child,
+canonical literals, exact formal order, guarded chunk callee, and nested byte-
+push callee. The numeric call independently re-proves the whole-parent child,
+owned `u64` argument, exact formal order, terminating emitter body, immutable
+digit table, and nested byte-push callee. Each child ends before the parent
+resumes, so no unique siblings coexist. No identifier, digit, global, bounds,
+or call result is exported as an optimizer fact, and no lowering authority is
+added. Hostile review pins the exact signature and effects, ordered body,
+canonical chunk literals, owned identifier use, shared, deeper, explicit, and
+bound calls, region freshness, dishonest or missing callees, source anchoring,
+and cyclic topology. It also corrected one invalid test assumption: region and
+value names are separate syntactic namespaces, while outer and sibling region
+freshness remain enforced. Exactly `llvm_text_emit_value`,
+`llvm_text_emit_place`, `llvm_text_emit_block`, and
+`llvm_text_emit_block_ref` move to CLEAN; no prior CLEAN function is lost and
+the two new helpers remain Unsupported. The unit is 639 total / 164 CLEAN /
+475 Unsupported / 0 rejected; the exact 15-function LLVM module is unchanged.
+The parser census is 4,804 regionful calls = 496 explicit + 4,308 staged
+omissions; self-parse is deterministic at 1,727,663 bytes / 348,731 tokens /
+173,085 nodes. The focused proof is 90 lines, its hostile suite is 340 lines,
+the shared caller gate is 355 lines, and the general reader remains 6,779
+lines. Fresh dependency inventory selects `byte_tape_emit_probe` as the next
+bounded F4 boundary: its reset, fixed-prefix, and recursive-number callees are
+all CLEAN, while the adjacent span probe remains blocked by the Unsupported
+`byte_tape_emit_span`.
 
 `lexer_scan_string` remains the source-order
 frontier, blocked by aggregate return and other deferred forms. Remaining F4

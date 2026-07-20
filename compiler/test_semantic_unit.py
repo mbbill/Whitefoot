@@ -428,6 +428,8 @@ def canonical_path(columns, root, target):
 # u64 decimal emitter: divide by ten only under value >= 10, recurse on that
 # strict quotient, take remainder ten, index an exact immutable ten-byte digit
 # table, and pass the resulting owned u8 local to the proven byte-push callee.
+# The eighth F4 profile admits an exact fixed-literal chunk region followed by
+# an exact recursive-u64 region that consumes the caller's owned u64 parameter.
 # Every listed function is validated legal by the stage-0 reference checker at
 # build time.
 COMPILER_CLEAN_ORDINALS = (
@@ -437,12 +439,12 @@ COMPILER_CLEAN_ORDINALS = (
     123, 124, 125, 126, 143, 144, 145, 146, 147, 148, 149, 150, 152, 158, 159,
     162, 163, 164, 175,
     185, 190, 191, 204, 207, 208, 209, 214, 216, 228, 229, 230, 235, 287, 288,
-    296, 389, 398, 400, 406, 430, 431, 432, 433, 434, 435, 436, 437, 438, 439,
-    441, 442, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464,
-    465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479,
-    480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 494,
-    495, 496, 497, 498, 499, 501, 505, 508, 509, 510, 512, 513, 514, 515, 520,
-    527, 547, 562, 590, 607, 608, 630,
+    296, 391, 400, 402, 408, 432, 433, 434, 435, 436, 437, 438, 439, 440, 441,
+    443, 444, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462,
+    463, 464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477,
+    478, 479, 480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492,
+    493, 494, 495, 496, 497, 498, 499, 500, 501, 503, 507, 510, 511, 512, 514,
+    515, 516, 517, 522, 529, 549, 564, 592, 609, 610, 632,
 )
 
 
@@ -450,15 +452,15 @@ def assert_compiler_coverage(library):
     data = compiler_source().encode("ascii")
     case = parsed(library, data)
     functions = top_level_functions(case)
-    assert len(functions) == 637
+    assert len(functions) == 639
 
     work = make_work(library, case[5].count)
     first = invoke_unit(library, case, work)
     expected = (
         UNIT_CLEAN,
-        637,
-        160,
-        477,
+        639,
+        164,
+        475,
         0,
         functions[18],
         AST_NONE,
@@ -492,7 +494,7 @@ def assert_compiler_coverage(library):
                 report.function,
                 report.related,
             )
-    assert tuple(clean_ordinals) == COMPILER_CLEAN_ORDINALS
+    assert tuple(clean_ordinals) == COMPILER_CLEAN_ORDINALS, tuple(clean_ordinals)
 
     second = invoke_unit(library, case, work)
     assert unit_report_tuple(second) == unit_report_tuple(first)
@@ -3193,9 +3195,9 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     )
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
-        637,
-        160,
-        477,
+        639,
+        164,
+        475,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -3254,7 +3256,7 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 637 total / 160 clean / 477 unsupported / "
+        "semantic unit: compiler 639 total / 164 clean / 475 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
         "admission, exact arbitrary-arity call-region attribution, general signatures "
@@ -3266,7 +3268,8 @@ def main():
         "reborrow writers, exact same-region byte push and whole-parent-u8 "
         "reborrow calls, exact guarded eight-byte chunk reborrows and exact "
         "one-, two-, and four-region fixed-literal chunk wrappers, "
-        "exact terminating recursive u64 decimal emission, "
+        "exact terminating recursive u64 decimal emission and exact "
+        "fixed-chunk-plus-number wrappers, "
         "structural rename, real "
         "reject, deterministic repeat, "
         "fresh validation, bounded paths, transactional diagnostics, "
