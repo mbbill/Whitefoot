@@ -361,61 +361,54 @@ one decision-log entry. Fact channels and new safety judgments require hostile
 review before shipment. Keep project artifacts in English and `AGENTS.md` and
 `CLAUDE.md` byte-identical.
 
-Phase 2 is active. It establishes the Rust workspace, exact source and artifact
-contracts, facet catalog, adapter protocol, and independent verifier boundary.
-The first foundation slice supplies the pinned, dependency-policed safe-Rust
-workspace, ordered raw-source bundle, canonical source/spec binding codec, and
-separately typed source-binding verifier. The current catalog slice supplies a
-fail-closed exact-v0.8 structural index; it explicitly distinguishes 57 fenced
-grammar productions from two EFF-1 inline productions and records the unresolved
-OP-1 dotless-name set mismatch without choosing an interpretation. The authored
-semantic decomposition now owns all 91 rules, tiles them into 598 exact clauses
-and 587 semantic facets, and traces all 200 source atoms. Its normalized
-decomposition SHA-256 is
-`3ccd1c7b5113e176e7edac37eb4a98603d158cce41908a6297064bf5ded2d156`;
-the canonical generated catalog SHA-256 is
+Phase 2 is active. The completed foundation now consists of:
+
+- a pinned, dependency-policed three-crate safe-Rust workspace with exact build
+  and cross-copy reproducibility gates;
+- an ordered raw-source bundle, canonical source/specification binding codec,
+  nominal specification and static-catalog identities, and an independently
+  typed source-binding verifier;
+- a fail-closed structural index covering 57 fenced grammar productions plus
+  the two EFF-1 inline productions, and an authored static catalog covering all
+  91 rules, 598 exact clauses, 587 facets, and 200 source atoms;
+- a separately checked fourteen-record discrepancy sidecar and an empty,
+  non-authorizing capability overlay outside the Cargo workspace; and
+- a permanent lossless lexer that partitions every source byte into a
+  shape-only token or retained trivia under explicit limits, plus a small
+  compiler-independent byte model and fixture corpus.
+
+The static catalog SHA-256 remains
 `2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d`.
-The bounded checker accepts only exact specification, source-index, and
-canonical fragment bytes. A checked-in descriptive sidecar is regenerated from
-those authorities and records 14 exact, non-waivable specification or
-protected-surface discrepancies. The latest audit isolates DIAG-1's missing
-location representation for rejection before a canonical tree exists; it
-blocks only the node-path-attribution facet and does not block a lossless lexer
-that publishes no normative rejection ABI. Only affected facets are blocked;
-no record chooses semantics or authorizes a release. Token, tree, declaration,
-type, instantiation, check, and proof identities remain deliberately unfrozen
-until their canonical schemas exist; traversal counters must not become
-artifact authority. The implementation capability overlay now lives outside
-the Cargo workspace, binds the exact catalog, rejects blocked handler claims,
-and contains no verdict or completion state. The foundation registers no
-evidence replay provider, so its empty overlay closes nothing; opaque receipt
-references would remain unresolved and grant nothing. Production Rust cannot contain direct
-contiguous facet-ID source occurrences. Workspace policy scans every `.rs` file
-under `compiler/crates/`, forbids `#[path]`, and permits only the exact
-specification and static semantic-catalog locks as source-level included data.
-Source-splicing
-`include!` and local `macro_rules!` are forbidden so comments, token spacing, or
-macro generation cannot evade that scan; compile-time environment macros and
-aliased data macros are also rejected, and conditional compilation is limited to
-canonical `#[cfg(test)]`. Crate doctest targets are disabled and gate commands
-forbid explicit doctest execution. Active compiler Cargo configuration and every
-rustfmt or Clippy configuration discoverable from source ancestry are forbidden.
-Every workspace-resolving or compiling gate Cargo
-command runs with isolated Cargo and process homes, fresh target and temporary
-directories, a configuration-free working directory, closed environment, exact
-toolchain, and explicit manifest; Make variables cannot replace that runner. The
-first executable adapter must pass identical-result
-tests with capability metadata absent from every input channel and with hostile
-metadata mutations. The canonical catalog identity is now a distinct nominal
-Rust type pinned through an independently recomputed digest and exact root and
-compiler locks. This is identity, not implementation or catalog-completeness
-evidence. `WFSOURCE`
-remains version 1 and exactly source plus specification identity; catalog
-identity will join canonical tree and proof-schema identities only in a real
-checked-artifact envelope. Tree, proof, and envelope identities remain unfrozen
-where the recorded v0.8 discrepancies or absent schemas prevent an honest
-contract; no placeholder `CheckedUnit` may stand in for them. The next slice
-freezes the first remaining unblocked identity together with its real producer,
-consumer, and hostile tests. A red gate, specification conflict,
+The lexer changes no catalog or capability state: `Complete` means only an
+exact lexical partition, its token handles are source-bound runtime handles
+rather than portable artifact identities, and its pre-tree issues are internal
+locations without rule IDs, canonical node paths, or verdict authority. The
+independent model is not a Rust differential or evidence receipt. Consequently
+the capability overlay remains empty and this foundation closes zero facets.
+
+Canonical tree, node, declaration, type, instantiation, check, proof, and
+artifact-envelope identities remain deliberately unfrozen where schemas or
+recorded v0.8 discrepancies prevent an honest contract. Traversal ordinals and
+temporary syntax handles may not become artifact authority. Parser preflight
+has exposed an additional exact-v0.8 boundary: FORM-3 admits quoted lowercase
+grammar words as IDENTs, but the specification supplies no general terminal-vs-
+IDENT priority or exclusion. Inputs such as `deref(p)`, `index<T>(p, i)`, and
+`unit` therefore have competing grammar derivations with different meanings.
+The next slice must first register and hostile-review an exact discrepancy
+predicate; ordered-choice precedence or an invented keyword set is forbidden.
+
+Only after that boundary is honestly resolved may the frontend publish a
+single-derivation grammar result. The intended producer is permanent,
+iterative, and resource-bounded over the lossless token stream, covers all 59
+grammar productions while distinguishing the 57 fenced productions from
+EFF-1's two inline productions, and retains the original lexical partition and
+exact derivation structure. It may not choose a canonical/core-tree
+representation, publish node IDs or paths, recover with synthetic tokens,
+normalize effect rows, issue normative diagnostics, or claim language
+acceptance. An independent bounded grammar oracle and hostile observation tests
+must accompany the real producer before any parser capability claim.
+
+Phase 2 remains open until its artifact, adapter, identity, and verifier
+boundaries are real and executable. A red gate, specification conflict,
 protected-surface guard, unverified authority path, unexplained verdict, or need
 for a numbered-spec change stops the affected work at that boundary.

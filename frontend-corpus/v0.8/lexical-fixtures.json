@@ -1,0 +1,202 @@
+{
+  "schema": 1,
+  "kind": "whitefoot-v0.8-lexical-fixtures",
+  "spec_sha256": "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8",
+  "static_catalog_sha256": "2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d",
+  "default_limits": {
+    "max_sources": 32,
+    "max_source_bytes": 10000,
+    "max_total_source_bytes": 50000,
+    "max_token_bytes": 10000,
+    "max_tokens": 10000,
+    "max_lexemes": 20000
+  },
+  "cases": [
+    {
+      "id": "closed-operation-suffixes",
+      "sources_hex": [
+        "782e77726170",
+        "782e74726170",
+        "782e636865636b6564",
+        "782e736174",
+        "782e737472696374"
+      ],
+      "expect": {
+        "outcome": "complete",
+        "token_count": 5,
+        "source_ranges": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]],
+        "pieces": [
+          [0, 0, 6, "operation_name_form", "782e77726170"],
+          [1, 0, 6, "operation_name_form", "782e74726170"],
+          [2, 0, 9, "operation_name_form", "782e636865636b6564"],
+          [3, 0, 5, "operation_name_form", "782e736174"],
+          [4, 0, 8, "operation_name_form", "782e737472696374"]
+        ]
+      }
+    },
+    {
+      "id": "operation-near-misses",
+      "sources_hex": [
+        "702e6669656c64",
+        "782e7772617078",
+        "782e7877726170",
+        "782e626f677573"
+      ],
+      "expect": {
+        "outcome": "complete",
+        "token_count": 12,
+        "source_ranges": [[0, 3], [3, 6], [6, 9], [9, 12]],
+        "pieces": [
+          [0, 0, 1, "lower_word_form", "70"],
+          [0, 1, 2, "dot", "2e"],
+          [0, 2, 7, "lower_word_form", "6669656c64"],
+          [1, 0, 1, "lower_word_form", "78"],
+          [1, 1, 2, "dot", "2e"],
+          [1, 2, 7, "lower_word_form", "7772617078"],
+          [2, 0, 1, "lower_word_form", "78"],
+          [2, 1, 2, "dot", "2e"],
+          [2, 2, 7, "lower_word_form", "7877726170"],
+          [3, 0, 1, "lower_word_form", "78"],
+          [3, 1, 2, "dot", "2e"],
+          [3, 2, 7, "lower_word_form", "626f677573"]
+        ]
+      }
+    },
+    {
+      "id": "opaque-number-candidates",
+      "sources_hex": [
+        "312e3045325f663634",
+        "312e5f663634",
+        "312e30655f663634",
+        "312e30652b325f663634",
+        "30315f693332",
+        "2d305f693332"
+      ],
+      "expect": {
+        "outcome": "complete",
+        "token_count": 6,
+        "source_ranges": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]],
+        "pieces": [
+          [0, 0, 9, "number_form", "312e3045325f663634"],
+          [1, 0, 6, "number_form", "312e5f663634"],
+          [2, 0, 8, "number_form", "312e30655f663634"],
+          [3, 0, 10, "number_form", "312e30652b325f663634"],
+          [4, 0, 6, "number_form", "30315f693332"],
+          [5, 0, 6, "number_form", "2d305f693332"]
+        ]
+      }
+    },
+    {
+      "id": "signed-number-and-label",
+      "sources_hex": ["2d315f69363420406c6f6f700a"],
+      "expect": {
+        "outcome": "complete",
+        "token_count": 2,
+        "source_ranges": [[0, 4]],
+        "pieces": [
+          [0, 0, 6, "number_form", "2d315f693634"],
+          [0, 6, 7, "spaces", "20"],
+          [0, 7, 12, "label_form", "406c6f6f70"],
+          [0, 12, 13, "line_feed", "0a"]
+        ]
+      }
+    },
+    {
+      "id": "source-isolation",
+      "sources_hex": ["666f6f2e", "77726170"],
+      "expect": {
+        "outcome": "complete",
+        "token_count": 3,
+        "source_ranges": [[0, 2], [2, 3]],
+        "pieces": [
+          [0, 0, 3, "lower_word_form", "666f6f"],
+          [0, 3, 4, "dot", "2e"],
+          [1, 0, 4, "lower_word_form", "77726170"]
+        ]
+      }
+    },
+    {
+      "id": "invalid-utf8",
+      "sources_hex": ["ff"],
+      "expect": {
+        "outcome": "source_issue",
+        "source_ordinal": 0,
+        "start": 0,
+        "end": 1,
+        "kind": "invalid_utf8",
+        "hex": "ff"
+      }
+    },
+    {
+      "id": "unicode-outside",
+      "sources_hex": ["e29883"],
+      "expect": {
+        "outcome": "source_issue",
+        "source_ordinal": 0,
+        "start": 0,
+        "end": 3,
+        "kind": "unexpected_byte",
+        "hex": "e29883"
+      }
+    },
+    {
+      "id": "string-control",
+      "sources_hex": ["2261096222"],
+      "expect": {
+        "outcome": "source_issue",
+        "source_ordinal": 0,
+        "start": 2,
+        "end": 3,
+        "kind": "invalid_string_byte",
+        "hex": "09"
+      }
+    },
+    {
+      "id": "string-escape",
+      "sources_hex": ["22615c716222"],
+      "expect": {
+        "outcome": "source_issue",
+        "source_ordinal": 0,
+        "start": 2,
+        "end": 4,
+        "kind": "invalid_string_escape",
+        "hex": "5c71"
+      }
+    },
+    {
+      "id": "missing-region",
+      "sources_hex": ["2741"],
+      "expect": {
+        "outcome": "source_issue",
+        "source_ordinal": 0,
+        "start": 0,
+        "end": 1,
+        "kind": "missing_region_name",
+        "hex": "27"
+      }
+    },
+    {
+      "id": "missing-label",
+      "sources_hex": ["4039"],
+      "expect": {
+        "outcome": "source_issue",
+        "source_ordinal": 0,
+        "start": 0,
+        "end": 1,
+        "kind": "missing_label_name",
+        "hex": "40"
+      }
+    },
+    {
+      "id": "token-limit",
+      "sources_hex": ["6120620a"],
+      "limits": {"max_tokens": 1},
+      "expect": {
+        "outcome": "resource_failure",
+        "limit": "tokens",
+        "maximum": 1,
+        "actual": 2
+      }
+    }
+  ]
+}

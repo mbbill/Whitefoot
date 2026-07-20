@@ -52,7 +52,13 @@ The repository is in the Rust compiler foundation phase.
   bounded independent evidence, not as a compiler.
 - The active safe-Rust workspace now pins the exact toolchain and specification,
   owns the ordered raw-source contract, and independently verifies exact
-  source/spec binding. It has no compiler executable or conformance adapter yet.
+  source/spec binding. Its first frontend boundary losslessly partitions exact
+  source bytes into shape-only tokens and retained trivia under explicit
+  ceilings; this is not yet parsing or language acceptance. It has no compiler
+  executable or conformance adapter yet.
+- A small byte-exact lexical corpus and independent model exercise that same
+  non-authorizing boundary without importing compiler code. They do not yet
+  constitute a compiler differential or capability receipt.
 - The exact-v0.8 structural source index is generated independently of compiler
   code. Its counts are integrity facts, not an implementation-progress measure;
   authored semantic decomposition and compiler capability remain separate.
@@ -111,6 +117,7 @@ as production rewrites.
 | Active Rust compiler workspace | [compiler/](compiler/README.md) |
 | Project law and writer patterns | [CONSTITUTION.md](CONSTITUTION.md), [PATTERNS.md](PATTERNS.md) |
 | Compiler-independent behavior corpus | [conformance/](conformance/README.md) |
+| Compiler-independent lexical probes | [frontend-corpus/v0.8/](frontend-corpus/v0.8/README.md) |
 | Proof/code-shape premise corpus | [codegen-corpus/](codegen-corpus/README.md) |
 | Focused reference semantics | [prototype/checker/](prototype/checker/) |
 | Measured evidence | [experiments/](experiments/README.md) |

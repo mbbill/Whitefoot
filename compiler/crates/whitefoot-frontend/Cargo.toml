@@ -1,0 +1,17 @@
+[package]
+name = "whitefoot-frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Lossless deterministic frontend for Whitefoot v0.8"
+publish = false
+
+[dependencies]
+whitefoot-contract = { path = "../whitefoot-contract" }
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

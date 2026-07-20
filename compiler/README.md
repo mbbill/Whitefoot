@@ -15,14 +15,22 @@ conformance or release claim.
   source identities and bundle-bound spans, explicit resource ceilings, and
   the first canonical source-binding framing. The catalog identity is a nominal
   byte identity only; it does not claim implementation completeness.
+- `whitefoot-frontend` depends only on `whitefoot-contract`. A complete lexer
+  result partitions the exact source bytes while classifying v0.8 lexical
+  shapes. Source issues, resource exhaustion, and compiler failures remain
+  distinct internal outcomes. Lexer-owned output allocation is fallible and
+  explicitly bounded; this does not extend that claim backward to source-bundle
+  construction. This is lossless frontend infrastructure, not a
+  language-acceptance, semantic-capability, or catalog-facet claim.
 - `whitefoot-verifier` depends only on `whitefoot-contract`. Its first real
   judgment verifies that an artifact is bound to the expected specification
   and exact ordered source bytes. Verified state has no public constructor.
 
-Frontend, semantic, diagnostic, and command-line modules will be added only
+Semantic, normative diagnostic, and command-line modules will be added only
 when they contain real production behavior. The independent verifier remains a
-separate crate. Lowering becomes a separate crate when a real backend exists,
-so the dependency graph can prevent raw frontend state from reaching it.
+separate crate and has no dependency on the frontend. Lowering becomes a
+separate crate when a real backend exists, so the dependency graph can prevent
+raw frontend state from reaching it.
 
 No active code imports the retired implementations under `archive/`.
 
@@ -78,7 +86,7 @@ make -C compiler check
 
 The gate verifies the exact Rust toolchain fingerprint, v0.8 bytes, and static
 catalog identity, enforces
-the closed two-package dependency graph and inherited lint policy, rejects
+the closed three-package dependency graph and inherited lint policy, rejects
 symlinks, build scripts, procedural macros, unapproved dependencies, and paths
 outside this workspace, then checks formatting, builds, lints, tests, and
 rustdoc. The reproducibility layer copies the complete compiler source to two
@@ -86,7 +94,7 @@ different paths and physical files, builds both release graphs, and compares
 every Cargo-declared workspace artifact under collision-checked logical keys.
 
 Absolute checkout paths otherwise enter stable-rustc library metadata and make
-all four current release artifacts differ across source copies. The gate uses
+all six current release artifacts differ across source copies. The gate uses
 stable `--remap-path-prefix` flags for both the copied source root and its target
 directory. The two builds never share a checkout or target directory, and the
 gate uses no nightly compiler option.

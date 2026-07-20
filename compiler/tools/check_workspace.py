@@ -21,10 +21,12 @@ REPOSITORY = ROOT.parent
 
 EXPECTED_MEMBERS = (
     "whitefoot-contract",
+    "whitefoot-frontend",
     "whitefoot-verifier",
 )
 EXPECTED_MANIFESTS = {
     "whitefoot-contract": Path("crates/whitefoot-contract/Cargo.toml"),
+    "whitefoot-frontend": Path("crates/whitefoot-frontend/Cargo.toml"),
     "whitefoot-verifier": Path("crates/whitefoot-verifier/Cargo.toml"),
 }
 EXPECTED_TARGETS = {
@@ -33,6 +35,13 @@ EXPECTED_TARGETS = {
         "kind": ["lib"],
         "crate_types": ["lib"],
         "source": Path("crates/whitefoot-contract/src/lib.rs"),
+        "doctest": False,
+    },
+    "whitefoot-frontend": {
+        "name": "whitefoot_frontend",
+        "kind": ["lib"],
+        "crate_types": ["lib"],
+        "source": Path("crates/whitefoot-frontend/src/lib.rs"),
         "doctest": False,
     },
     "whitefoot-verifier": {
@@ -45,6 +54,7 @@ EXPECTED_TARGETS = {
 }
 EXPECTED_EDGES = {
     "whitefoot-contract": (),
+    "whitefoot-frontend": ("whitefoot-contract",),
     "whitefoot-verifier": ("whitefoot-contract",),
 }
 DEPENDENCY_FIELDS = {
@@ -574,6 +584,21 @@ def check_workspace_topology(metadata: dict) -> dict[str, dict]:
 
     expected_dependency_rows = {
         "whitefoot-contract": (),
+        "whitefoot-frontend": (
+            (
+                "whitefoot-contract",
+                "*",
+                None,
+                None,
+                False,
+                True,
+                (),
+                None,
+                None,
+                None,
+                Path("crates/whitefoot-contract"),
+            ),
+        ),
         "whitefoot-verifier": (
             (
                 "whitefoot-contract",

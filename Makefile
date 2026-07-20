@@ -3,7 +3,7 @@
 
 PY=python3 -B
 
-check: project-state spec-guard spec facets catalog-identity capabilities reference-model conformance compiler
+check: project-state spec-guard spec facets catalog-identity capabilities lexical-model reference-model conformance compiler
 	@echo "== DEVELOPMENT GATE GREEN; RUST FOUNDATION ACTIVE; NO RELEASE CLAIM =="
 
 project-state:
@@ -36,6 +36,9 @@ capabilities:
 	$(PY) tools/test_capability_overlay.py
 	$(PY) tools/capability_overlay.py check
 
+lexical-model:
+	$(PY) tools/test_v08_lexical_model.py
+
 reference-model:
 	cd prototype/checker && $(PY) test_checker.py -v
 	cd prototype/checker && $(PY) modelcheck.py 10000
@@ -53,4 +56,4 @@ release-check:
 	@echo "release gate unavailable: the exact-v0.8 Rust compiler is incomplete"
 	@false
 
-.PHONY: check project-state spec-guard approve-spec spec facets catalog-identity capabilities reference-model conformance compiler conformance-run release-check
+.PHONY: check project-state spec-guard approve-spec spec facets catalog-identity capabilities lexical-model reference-model conformance compiler conformance-run release-check
