@@ -294,10 +294,10 @@ the authorized seven-phase scope.
 
 Phase 2 is active. The canonical rejection ABI, explicit call-region retention,
 and arbitrary-arity exact call substitution are complete. The current unit has
-619 functions: 122 clean, 497 legal but unsupported, and zero rejected. Its
-self-parse is deterministic at 1,663,946 source bytes, 335,070 tokens, and
-166,278 unique-head AST nodes. The parser census is 4,525 regionful calls: 496
-explicit and 4,029 staged omissions. LLVM support remains the same
+626 functions: 152 clean, 474 legal but unsupported, and zero rejected. Its
+self-parse is deterministic at 1,675,543 source bytes, 337,523 tokens, and
+167,503 unique-head AST nodes. The parser census is 4,568 regionful calls: 496
+explicit and 4,072 staged omissions. LLVM support remains the same
 byte-identical 15-function module.
 
 Kernel v0.8 and its tag-only enum equality implementation are complete.
@@ -524,6 +524,36 @@ now-proven chunk: 30 are exact one-region, two-statement fixed-literal wrappers;
 six contain two chunk regions, one contains four, and four compose one chunk
 with recursive numeric emission. The exact 30-wrapper one-region family is the
 next bounded F4 boundary; multi-region and numeric composition remain later.
+
+The fourth bounded F4 slice admits that exact one-region fixed-literal wrapper
+family. Each caller has one exclusive struct root, exact singleton reads and
+writes rows plus traps, own unit, one fresh one-statement local region, and a
+final unit return. The call has exactly ten named arguments in formal order: a
+whole-parent unique reborrow confined to the local region, one canonical `u64`
+count literal, and eight canonical `u8` literals. The count is not treated as a
+proof fact; the independently re-proven chunk callee retains its exact
+`count <= 8` guard before any write. The caller proof also requires exact
+nominal root type, argument/formal name correspondence, source anchoring, and
+topology. The ordinary body analyzer gained only a fallback for this exact call
+shape with the same independent callee proof; the focused caller signature and
+body gate remains the only source of classifier authority. Shared, deeper, or
+wrong-region parents, explicit call regions, bound calls, wrong or reordered
+arguments, noncanonical or out-of-range literals, dishonest chunk or nested
+push callees, multi-statement regions, and multiple regions remain Unsupported.
+Hostile review additionally caught and corrected a test mutation that first
+targeted the nested callee instead of the wrapper, then pinned the intended
+multi-region boundary plus same-spelling head redirection and cyclic topology.
+Exactly 30 pre-existing functions move to CLEAN; no prior CLEAN function is
+lost and all seven new helpers remain Unsupported. The unit is 626 total / 152
+CLEAN / 474 Unsupported / 0 rejected; the exact 15-function LLVM module is
+unchanged. The parser census is 4,568 regionful calls = 496 explicit + 4,072
+staged omissions; self-parse is deterministic at 1,675,543 bytes / 337,523
+tokens / 167,503 nodes. Shared call syntax is 166 lines, the new focused module
+is 216 lines, its hostile test is 280 lines, and the general reader is 6,748
+lines. A fresh inventory leaves exactly 11 Unsupported chunk callers: six
+two-region wrappers, one four-region wrapper, and four chunk-plus-recursive-
+number compositions. The exact six-wrapper two-region family is next;
+four-region and recursive composition remain later.
 
 `lexer_scan_string` remains the source-order
 frontier, blocked by aggregate return and other deferred forms. Remaining F4

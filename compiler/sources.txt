@@ -33,6 +33,7 @@ src/semantic_reader_reborrow_chunk_signature.wf
 src/semantic_reader_reborrow_chunk_guard.wf
 src/semantic_reader_reborrow_chunk_call.wf
 src/semantic_reader_reborrow_chunk.wf
+src/semantic_reader_reborrow_chunk_wrapper.wf
 src/semantic_unit.wf
 src/semantic_types.wf
 src/semantic_globals.wf

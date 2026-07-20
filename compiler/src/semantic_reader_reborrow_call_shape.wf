@@ -9,7 +9,7 @@ fn semantic_reader_reborrow_call_argument_valid ['c] (source: &'c buffer<u8>, to
   return band<Bool>(first, second);
 }
 
-fn semantic_reader_reborrow_call_region_shape_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, byte_parameter_head: own u64, byte_is_literal: own Bool) -> own Bool reads('c), traps {
+fn semantic_reader_reborrow_region_call_node ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, argument_count: own u64) -> own u64 reads('c), traps {
   let ast_region_block_atom: own AstKind = AstRegionBlock();
   let region_kind: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_region_block_atom);
   let region_shape: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 2_u64);
@@ -22,7 +22,7 @@ fn semantic_reader_reborrow_call_region_shape_valid ['c] (source: &'c buffer<u8>
     True() => {
     }
     False() => {
-      return False();
+      return ast_none;
     }
   }
   let local_region: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 0_u64);
@@ -38,7 +38,7 @@ fn semantic_reader_reborrow_call_region_shape_valid ['c] (source: &'c buffer<u8>
     True() => {
     }
     False() => {
-      return False();
+      return ast_none;
     }
   }
   let expression: own u64 = semantic_body_child_at(ast: ast, node: inner_block, ordinal: 0_u64);
@@ -53,29 +53,30 @@ fn semantic_reader_reborrow_call_region_shape_valid ['c] (source: &'c buffer<u8>
     True() => {
     }
     False() => {
-      return False();
+      return ast_none;
     }
   }
   let call: own u64 = semantic_body_child_at(ast: ast, node: expression, ordinal: 0_u64);
   let ast_user_call_atom: own AstKind = AstUserCall();
   let call_kind: own Bool = semantic_body_kind_is(ast: ast, node: call, want: ast_user_call_atom);
-  let call_shape: own Bool = semantic_body_exact_children(ast: ast, node: call, want: 2_u64);
+  let call_shape: own Bool = semantic_body_exact_children(ast: ast, node: call, want: argument_count);
   let call_name: own Bool = semantic_buffer_declaration_word_valid(source: source, tokens: tokens, ast: ast, node: call);
   let call_start: own Bool = semantic_reader_writer_head_starts_node(source: source, tokens: tokens, ast: ast, node: call);
   let call_first: own Bool = band<Bool>(call_kind, call_shape);
   let call_second: own Bool = band<Bool>(call_name, call_start);
   match band<Bool>(call_first, call_second) {
     True() => {
+      return call;
     }
     False() => {
-      return False();
+      return ast_none;
     }
   }
-  let output_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 0_u64);
-  let byte_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 1_u64);
-  let output_valid: own Bool = semantic_reader_reborrow_call_argument_valid(source: source, tokens: tokens, ast: ast, node: output_argument);
-  let byte_valid: own Bool = semantic_reader_reborrow_call_argument_valid(source: source, tokens: tokens, ast: ast, node: byte_argument);
-  match band<Bool>(output_valid, byte_valid) {
+}
+
+fn semantic_reader_reborrow_call_output_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, output_argument: own u64) -> own Bool reads('c), traps {
+  let argument_valid: own Bool = semantic_reader_reborrow_call_argument_valid(source: source, tokens: tokens, ast: ast, node: output_argument);
+  match argument_valid {
     True() => {
     }
     False() => {
@@ -123,7 +124,23 @@ fn semantic_reader_reborrow_call_region_shape_valid ['c] (source: &'c buffer<u8>
   let parent_token: own Bool = semantic_reader_writer_leaf_token_exact(source: source, tokens: tokens, ast: ast, node: parent);
   let parent_name: own Bool = semantic_buffer_declaration_word_valid(source: source, tokens: tokens, ast: ast, node: parent);
   let parent_first: own Bool = band<Bool>(parent_kind, parent_token);
-  match band<Bool>(parent_first, parent_name) {
+  return band<Bool>(parent_first, parent_name);
+}
+
+fn semantic_reader_reborrow_call_region_shape_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64, byte_parameter_head: own u64, byte_is_literal: own Bool) -> own Bool reads('c), traps {
+  let call: own u64 = semantic_reader_reborrow_region_call_node(source: source, tokens: tokens, ast: ast, node: node, argument_count: 2_u64);
+  match ieq<u64>(call, ast_none) {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  let output_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 0_u64);
+  let byte_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 1_u64);
+  let output_valid: own Bool = semantic_reader_reborrow_call_output_valid(source: source, tokens: tokens, ast: ast, output_argument: output_argument);
+  let byte_valid: own Bool = semantic_reader_reborrow_call_argument_valid(source: source, tokens: tokens, ast: ast, node: byte_argument);
+  match band<Bool>(output_valid, byte_valid) {
     True() => {
     }
     False() => {

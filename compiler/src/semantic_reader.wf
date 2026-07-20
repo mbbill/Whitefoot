@@ -4533,6 +4533,15 @@ fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
         }
         match region_clean {
           True() => {
+          }
+          False() => {
+            region 'semantic_reader_stmt_reborrow_chunk_wrapper_region {
+              set region_clean = semantic_reader_analyze_reborrow_chunk_wrapper_region(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, statement: statement, scratch: &'semantic_reader_stmt_reborrow_chunk_wrapper_region deref(scratch), report: &uniq 'semantic_reader_stmt_reborrow_chunk_wrapper_region deref(report));
+            }
+          }
+        }
+        match region_clean {
+          True() => {
             set statement_flow = SemanticReaderFlowFalls();
           }
           False() => {

@@ -1,0 +1,216 @@
+fn semantic_reader_reborrow_chunk_wrapper_literals_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, call: own u64) -> own Bool reads('c), traps {
+  let ordinal: own u64 = 1_u64;
+  loop @semantic_reader_reborrow_chunk_wrapper_literals {
+    let argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: ordinal);
+    let argument_valid: own Bool = semantic_reader_reborrow_call_argument_valid(source: source, tokens: tokens, ast: ast, node: argument);
+    match argument_valid {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    let value: own u64 = semantic_body_child_at(ast: ast, node: argument, ordinal: 0_u64);
+    let value_valid: own Bool = False();
+    match ieq<u64>(ordinal, 1_u64) {
+      True() => {
+        set value_valid = semantic_reader_u64_literal_canonical(source: source, tokens: tokens, ast: ast, node: value);
+      }
+      False() => {
+        set value_valid = semantic_reader_reborrow_rw_u8_literal_valid(source: source, tokens: tokens, ast: ast, node: value);
+      }
+    }
+    match value_valid {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    match ieq<u64>(ordinal, 9_u64) {
+      True() => {
+        return True();
+      }
+      False() => {
+      }
+    }
+    set ordinal = iadd.trap<u64>(ordinal, 1_u64);
+  }
+}
+
+fn semantic_reader_reborrow_chunk_wrapper_call ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, node: own u64) -> own u64 reads('c), traps {
+  let call: own u64 = semantic_reader_reborrow_region_call_node(source: source, tokens: tokens, ast: ast, node: node, argument_count: 10_u64);
+  match ieq<u64>(call, ast_none) {
+    True() => {
+      return ast_none;
+    }
+    False() => {
+    }
+  }
+  let output_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 0_u64);
+  let output_valid: own Bool = semantic_reader_reborrow_call_output_valid(source: source, tokens: tokens, ast: ast, output_argument: output_argument);
+  let literals_valid: own Bool = semantic_reader_reborrow_chunk_wrapper_literals_valid(source: source, tokens: tokens, ast: ast, call: call);
+  match band<Bool>(output_valid, literals_valid) {
+    True() => {
+      return call;
+    }
+    False() => {
+      return ast_none;
+    }
+  }
+}
+
+fn semantic_reader_reborrow_chunk_wrapper_callee_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, call: own u64, expected_type: own u64) -> own Bool reads('c), traps {
+  let call_head: own u64 = index<u64>(deref(ast).heads, call);
+  let value_space: own SymbolNamespace = SymbolValue();
+  let lookup: own SymbolLookupResult = symbol_lookup_in_scope(source: source, tokens: tokens, symbols: symbols, space: value_space, scope: symbol_none, name_token: call_head);
+  match lookup.status {
+    SymbolLookupFound() => {
+    }
+    SymbolLookupNotFound() => {
+      return False();
+    }
+    SymbolLookupInvalidTape() => {
+      return False();
+    }
+    SymbolLookupInvalidToken() => {
+      return False();
+    }
+  }
+  let callee: own u64 = lookup.declaration;
+  let top_level: own Bool = semantic_buffer_top_level_function_valid(ast: ast, function: callee);
+  let body_valid: own Bool = semantic_reader_reborrow_chunk_body_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, function: callee);
+  match band<Bool>(top_level, body_valid) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let function_name: own u64 = semantic_body_child_at(ast: ast, node: callee, ordinal: 0_u64);
+  let function_name_head: own u64 = index<u64>(deref(ast).heads, function_name);
+  let call_matches: own Bool = token_text_equal(source: source, tokens: tokens, left: call_head, right: function_name_head);
+  let output_parameter: own u64 = semantic_body_child_at(ast: ast, node: callee, ordinal: 2_u64);
+  let output_type: own u64 = semantic_reader_param_type_id(source: source, tokens: tokens, ast: ast, symbols: symbols, parameter: output_parameter);
+  let type_matches: own Bool = ieq<u64>(output_type, expected_type);
+  match band<Bool>(call_matches, type_matches) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let ordinal: own u64 = 0_u64;
+  loop @semantic_reader_reborrow_chunk_wrapper_formals {
+    let argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: ordinal);
+    let formal_ordinal: own u64 = iadd.trap<u64>(ordinal, 2_u64);
+    let formal: own u64 = semantic_body_child_at(ast: ast, node: callee, ordinal: formal_ordinal);
+    let argument_head: own u64 = index<u64>(deref(ast).heads, argument);
+    let formal_head: own u64 = index<u64>(deref(ast).heads, formal);
+    let names_match: own Bool = token_text_equal(source: source, tokens: tokens, left: argument_head, right: formal_head);
+    match names_match {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    match ieq<u64>(ordinal, 9_u64) {
+      True() => {
+        return True();
+      }
+      False() => {
+      }
+    }
+    set ordinal = iadd.trap<u64>(ordinal, 1_u64);
+  }
+}
+
+fn semantic_reader_reborrow_chunk_wrapper_region_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, outer_parameter_head: own u64, outer_type: own u64, outer_region_head: own u64, node: own u64) -> own Bool reads('c), traps {
+  let call: own u64 = semantic_reader_reborrow_chunk_wrapper_call(source: source, tokens: tokens, ast: ast, node: node);
+  match ieq<u64>(call, ast_none) {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  let local_region: own u64 = semantic_body_child_at(ast: ast, node: node, ordinal: 0_u64);
+  let output_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 0_u64);
+  let borrow: own u64 = semantic_body_child_at(ast: ast, node: output_argument, ordinal: 0_u64);
+  let child_region: own u64 = semantic_body_child_at(ast: ast, node: borrow, ordinal: 0_u64);
+  let deref_place: own u64 = semantic_body_child_at(ast: ast, node: borrow, ordinal: 1_u64);
+  let parent: own u64 = semantic_body_child_at(ast: ast, node: deref_place, ordinal: 0_u64);
+  let local_head: own u64 = index<u64>(deref(ast).heads, local_region);
+  let child_head: own u64 = index<u64>(deref(ast).heads, child_region);
+  let parent_head: own u64 = index<u64>(deref(ast).heads, parent);
+  let child_matches: own Bool = token_text_equal(source: source, tokens: tokens, left: child_head, right: local_head);
+  let shadows_outer: own Bool = token_text_equal(source: source, tokens: tokens, left: local_head, right: outer_region_head);
+  let local_fresh: own Bool = bnot<Bool>(shadows_outer);
+  let parent_matches: own Bool = token_text_equal(source: source, tokens: tokens, left: parent_head, right: outer_parameter_head);
+  let regions_valid: own Bool = band<Bool>(child_matches, local_fresh);
+  match band<Bool>(regions_valid, parent_matches) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  return semantic_reader_reborrow_chunk_wrapper_callee_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, call: call, expected_type: outer_type);
+}
+
+fn semantic_reader_analyze_reborrow_chunk_wrapper_region ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, regions_node: own u64, statement: own u64, scratch: &'w SemanticBodyScratch, report: &uniq 'w SemanticBodyReport) -> own Bool reads('c 'w), writes('w), traps {
+  let call: own u64 = semantic_reader_reborrow_chunk_wrapper_call(source: source, tokens: tokens, ast: ast, node: statement);
+  match ieq<u64>(call, ast_none) {
+    True() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = statement;
+      set deref(report).related = statement;
+      return False();
+    }
+    False() => {
+    }
+  }
+  let local_region: own u64 = semantic_body_child_at(ast: ast, node: statement, ordinal: 0_u64);
+  let output_argument: own u64 = semantic_body_child_at(ast: ast, node: call, ordinal: 0_u64);
+  let borrow: own u64 = semantic_body_child_at(ast: ast, node: output_argument, ordinal: 0_u64);
+  let child_region: own u64 = semantic_body_child_at(ast: ast, node: borrow, ordinal: 0_u64);
+  let local_head: own u64 = index<u64>(deref(ast).heads, local_region);
+  let child_head: own u64 = index<u64>(deref(ast).heads, child_region);
+  let child_matches: own Bool = token_text_equal(source: source, tokens: tokens, left: child_head, right: local_head);
+  let shadows_parameter: own Bool = semantic_reader_region_declared(source: source, tokens: tokens, ast: ast, regions_node: regions_node, head_token: local_head);
+  let local_fresh: own Bool = bnot<Bool>(shadows_parameter);
+  match band<Bool>(child_matches, local_fresh) {
+    True() => {
+    }
+    False() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = statement;
+      set deref(report).related = child_region;
+      return False();
+    }
+  }
+  let parent_type: own u64 = semantic_reader_reborrow_rw_parent_type(source: source, tokens: tokens, ast: ast, scratch: scratch, region_block: statement);
+  match ieq<u64>(parent_type, semantic_facts_none) {
+    True() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = statement;
+      set deref(report).related = borrow;
+      return False();
+    }
+    False() => {
+    }
+  }
+  let callee_valid: own Bool = semantic_reader_reborrow_chunk_wrapper_callee_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, call: call, expected_type: parent_type);
+  match callee_valid {
+    True() => {
+      return True();
+    }
+    False() => {
+      set deref(report).status = SemanticBodyUnsupported();
+      set deref(report).node = statement;
+      set deref(report).related = call;
+      return False();
+    }
+  }
+}

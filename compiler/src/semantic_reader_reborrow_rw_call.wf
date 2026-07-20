@@ -235,6 +235,13 @@ fn semantic_reader_reborrow_rw_wrapper_body_valid ['c] (source: &'c buffer<u8>, 
   let outer_region_head: own u64 = index<u64>(deref(ast).heads, outer_region);
   let parameter_head: own u64 = index<u64>(deref(ast).heads, parameter);
   let region_valid: own Bool = semantic_reader_reborrow_rw_region_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, outer_parameter_head: parameter_head, outer_type: parameter_type, outer_region_head: outer_region_head, node: region_block);
+  match region_valid {
+    True() => {
+    }
+    False() => {
+      set region_valid = semantic_reader_reborrow_chunk_wrapper_region_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, outer_parameter_head: parameter_head, outer_type: parameter_type, outer_region_head: outer_region_head, node: region_block);
+    }
+  }
   let return_valid: own Bool = semantic_reader_reborrow_return_unit_valid(source: source, tokens: tokens, ast: ast, node: return_node);
   return band<Bool>(region_valid, return_valid);
 }
