@@ -26,6 +26,7 @@ facets:
 	$(PY) tools/test_semantic_catalog.py
 	$(PY) tools/semantic_catalog.py check
 	$(PY) tools/test_facet_discrepancies.py
+	$(PY) tools/test_v08_terminal_ident_audit.py
 	$(PY) tools/facet_discrepancies.py check
 
 catalog-identity:

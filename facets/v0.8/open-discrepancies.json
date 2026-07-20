@@ -575,6 +575,529 @@
     },
     {
       "affected_facet_ids": [
+        "facet:FORM-3/ident-lexical-class",
+        "facet:FORM-6/unit-grammar-positions-disjoint",
+        "facet:FORM-6/unit-lowercase-keyword",
+        "facet:FORM-6/unit-production-local-resolution",
+        "facet:FORM-6/unit-token-type-position",
+        "facet:FORM-6/unit-token-value-position",
+        "facet:GRAM-1/deterministic-single-parse",
+        "facet:GRAM-1/two-token-overlap-resolution",
+        "facet:GRAM-3/constant-value-tree-shape",
+        "facet:GRAM-3/type-argument-shapes",
+        "facet:GRAM-5/atom-form-closed-set",
+        "facet:GRAM-5/call-and-callee-shapes",
+        "facet:GRAM-5/expression-form-closed-set",
+        "facet:GRAM-5/place-chain-shapes",
+        "facet:GRAM-6/index-place-only",
+        "facet:META-2/context-independent-spellings"
+      ],
+      "class": "internal-specification-gap",
+      "evidence": {
+        "ambiguous_spellings": [
+          "deref",
+          "f32",
+          "f64",
+          "i16",
+          "i32",
+          "i64",
+          "i8",
+          "index",
+          "u16",
+          "u32",
+          "u64",
+          "u8",
+          "unit"
+        ],
+        "competing_derivations": [
+          {
+            "context": "type-argument-primitive-or-unit",
+            "derivations": [
+              "targ/type",
+              "targ/const/IDENT"
+            ],
+            "spelling_count": 11,
+            "spellings": [
+              "f32",
+              "f64",
+              "i16",
+              "i32",
+              "i64",
+              "i8",
+              "u16",
+              "u32",
+              "u64",
+              "u8",
+              "unit"
+            ]
+          },
+          {
+            "context": "constant-value-unit",
+            "derivations": [
+              "cvalue/literal/unit",
+              "cvalue/IDENT"
+            ],
+            "spelling": "unit"
+          },
+          {
+            "context": "expression-unit",
+            "derivations": [
+              "expr/atom/literal/unit",
+              "expr/atom/place/IDENT"
+            ],
+            "spelling": "unit"
+          },
+          {
+            "context": "expression-deref",
+            "derivations": [
+              "expr/atom/place/deref",
+              "expr/call/IDENT"
+            ],
+            "spelling": "deref(p)"
+          },
+          {
+            "context": "expression-index",
+            "derivations": [
+              "expr/atom/place/index",
+              "expr/call/IDENT"
+            ],
+            "spelling": "index<T>(p, i)"
+          }
+        ],
+        "derivation_count_witnesses": [
+          {
+            "call_derivations": 1,
+            "place_derivations": 1,
+            "spelling": "deref(p)",
+            "total_derivations": 2
+          },
+          {
+            "call_derivations": 1,
+            "place_derivations": 1,
+            "spelling": "index<T>(p, q)",
+            "total_derivations": 2
+          },
+          {
+            "call_derivations": 2,
+            "place_derivations": 1,
+            "spelling": "deref(unit)",
+            "total_derivations": 3
+          },
+          {
+            "call_derivations": 2,
+            "place_derivations": 1,
+            "spelling": "index<i32>(p, q)",
+            "total_derivations": 3
+          },
+          {
+            "call_derivations": 4,
+            "place_derivations": 2,
+            "spelling": "index<unit>(p, unit)",
+            "total_derivations": 6
+          }
+        ],
+        "fixed_terminal_count": 47,
+        "fixed_terminal_inventory_sha256": "5e437fbb7371fbaf00be9f341264c6414de6a23ca13877fe28f43a1644d9e376",
+        "fixed_terminal_occurrence_count": 51,
+        "fixed_terminals": [
+          "allocates",
+          "arena",
+          "array",
+          "box",
+          "break",
+          "buffer",
+          "check",
+          "conform",
+          "const",
+          "contract",
+          "deref",
+          "doc",
+          "else",
+          "enum",
+          "f32",
+          "f64",
+          "fn",
+          "give",
+          "heap",
+          "i16",
+          "i32",
+          "i64",
+          "i8",
+          "index",
+          "law",
+          "let",
+          "loop",
+          "match",
+          "move",
+          "own",
+          "pure",
+          "reads",
+          "region",
+          "requires",
+          "return",
+          "set",
+          "slice",
+          "struct",
+          "trap",
+          "traps",
+          "try",
+          "u16",
+          "u32",
+          "u64",
+          "u8",
+          "unit",
+          "writes"
+        ],
+        "fn8_requires_reservation_source": {
+          "byte_end": 53853,
+          "byte_start": 53792,
+          "line_end": 284,
+          "line_start": 284,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "881850a5d323fcfe7705fc3392ba2fa93191b747efbe21ab9206fef361d08d39"
+        },
+        "form3_ident_source": {
+          "byte_end": 8321,
+          "byte_start": 8298,
+          "line_end": 25,
+          "line_start": 25,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "f2655036507f78d0d0dacc6aa8556cf2fee139401d9bbeab590343de856ac909"
+        },
+        "form3_opname_source": {
+          "byte_end": 8510,
+          "byte_start": 8454,
+          "line_end": 25,
+          "line_start": 25,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "c51c99225e3ada9d5743c4d68bc1032584d80ec6b9e031d0b2d0e1ef50f0a0a5"
+        },
+        "form3_regionid_source": {
+          "byte_end": 8378,
+          "byte_start": 8351,
+          "line_end": 25,
+          "line_start": 25,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "a3172b34a9e0bad32c0b6ff9f897501b67de272dac52d0b3d205625e0cd829e5"
+        },
+        "form3_rule_source": {
+          "byte_end": 8689,
+          "byte_start": 8272,
+          "line_end": 25,
+          "line_start": 25,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "a8d051a71ed3c2b30a7bdaf311906b763a4f582ac98c696e167b68d3ceb07740"
+        },
+        "form3_typeid_source": {
+          "byte_end": 8349,
+          "byte_start": 8323,
+          "line_end": 25,
+          "line_start": 25,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "252294dda9f8eb6ee8ab0f9609444ee4b7c0b7051e058f439cbaa7dccce14c35"
+        },
+        "form5_rule_source": {
+          "byte_end": 10195,
+          "byte_start": 8821,
+          "line_end": 29,
+          "line_start": 29,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "ccb123759eac5548f7c9432545dc95fdadbec32213e3a655b8047c90e72b6126"
+        },
+        "form5_unit_literal_source": {
+          "byte_end": 9397,
+          "byte_start": 9389,
+          "line_end": 29,
+          "line_start": 29,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "32745a55c4b621a035287bd17fbbe56552aa159b5d5195947f9805de07ef4b95"
+        },
+        "form6_keyword_source": {
+          "byte_end": 10518,
+          "byte_start": 10401,
+          "line_end": 31,
+          "line_start": 31,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "0e3a17cb22f0e356c002afbc4c7cc40c211e4da00e5c52edbeb1cd4942c75c85"
+        },
+        "form6_unit_resolution_source": {
+          "byte_end": 10400,
+          "byte_start": 10205,
+          "line_end": 31,
+          "line_start": 31,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "a8b1e0b461438d1d9eca3551378100f537c96b609f6231dd7cdf55660e6cc54a"
+        },
+        "gram1_determinism_source": {
+          "byte_end": 12267,
+          "byte_start": 12140,
+          "line_end": 39,
+          "line_start": 39,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "0a5099694735abd2a68f7b04f7d2ac2b29b48f97f6364f13123eab81aac0692d"
+        },
+        "gram6_index_home_source": {
+          "byte_end": 16034,
+          "byte_start": 16000,
+          "line_end": 125,
+          "line_start": 125,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "ace5cb8ae0cf8ee1c6f5aa07129add47cbb6c0e22b284659b3805ebd8d91ecf4"
+        },
+        "ident_matching_fixed_terminals": [
+          "allocates",
+          "arena",
+          "array",
+          "box",
+          "break",
+          "buffer",
+          "check",
+          "conform",
+          "const",
+          "contract",
+          "deref",
+          "doc",
+          "else",
+          "enum",
+          "f32",
+          "f64",
+          "fn",
+          "give",
+          "heap",
+          "i16",
+          "i32",
+          "i64",
+          "i8",
+          "index",
+          "law",
+          "let",
+          "loop",
+          "match",
+          "move",
+          "own",
+          "pure",
+          "reads",
+          "region",
+          "requires",
+          "return",
+          "set",
+          "slice",
+          "struct",
+          "trap",
+          "traps",
+          "try",
+          "u16",
+          "u32",
+          "u64",
+          "u8",
+          "unit",
+          "writes"
+        ],
+        "ident_matching_terminal_count": 47,
+        "meta2_context_independence_source": {
+          "byte_end": 62815,
+          "byte_start": 62686,
+          "line_end": 407,
+          "line_start": 407,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "236063e683e4e0f1b13f2279230e64e3041f8d07f6b6153e36da930fe865c3bc"
+        },
+        "missing_contract": "fixed-terminal-versus-ident-priority-or-exclusion",
+        "op1_selective_reservation_source": {
+          "byte_end": 40719,
+          "byte_start": 40556,
+          "line_end": 250,
+          "line_start": 250,
+          "path": "spec/kernel-spec-v0.8.md",
+          "sha256": "00adc90c57057478c47cdc4048be08a36a167bbcdf380363d7692b90c44b02d6"
+        },
+        "place_call_ambiguous_spellings": [
+          "deref",
+          "index"
+        ],
+        "production_sources": {
+          "production:GRAM-3:const": {
+            "byte_end": 14132,
+            "byte_start": 14035,
+            "line_end": 80,
+            "line_start": 80,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "7f10580fec0ea9c8c10ef9ec932daf33c49c99b04078c368c2b5cb40463e5e8f"
+          },
+          "production:GRAM-3:cvalue": {
+            "byte_end": 14233,
+            "byte_start": 14132,
+            "line_end": 81,
+            "line_start": 81,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "ff6abe7175e59b7cb9b0623f727b02d1e0949c766b0293871e86fd1d0a2706f1"
+          },
+          "production:GRAM-3:targ": {
+            "byte_end": 14035,
+            "byte_start": 14001,
+            "line_end": 79,
+            "line_start": 79,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "ee2ff41e9976603932679d73422ded3412a83cbc273599d0a931af46e5a8328d"
+          },
+          "production:GRAM-3:targs": {
+            "byte_end": 14001,
+            "byte_start": 13966,
+            "line_end": 78,
+            "line_start": 78,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "ea042669f6278458e76b7bbdab1b0f5489dad9672f99ef0a87263d4048fa42cf"
+          },
+          "production:GRAM-3:type": {
+            "byte_end": 13896,
+            "byte_start": 13631,
+            "line_end": 75,
+            "line_start": 72,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "eb8e907bbb7270682ca8dfda756933d356fd7f17d333c49dc9099725fb60ad58"
+          },
+          "production:GRAM-5:atom": {
+            "byte_end": 15237,
+            "byte_start": 15174,
+            "line_end": 111,
+            "line_start": 111,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "d5f4da123e63126382aa144dfe92b918b9310d84b714667d28e1848e433ed9e6"
+          },
+          "production:GRAM-5:atom_list": {
+            "byte_end": 15573,
+            "byte_start": 15538,
+            "line_end": 118,
+            "line_start": 118,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "f905b6c93d16eade935b53a25d28c7b345766f7b89a4c9ef92fc6c906445f01c"
+          },
+          "production:GRAM-5:borrow_expr": {
+            "byte_end": 15538,
+            "byte_start": 15476,
+            "line_end": 117,
+            "line_start": 117,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "96863547c90b53bf254706c4ced2ee644a6894a9225e24806923536785935fd5"
+          },
+          "production:GRAM-5:call": {
+            "byte_end": 15309,
+            "byte_start": 15237,
+            "line_end": 112,
+            "line_start": 112,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "06bd6a04c3e1faeef87c41863fc3c1e58a668147397b46e8c25c4277c32eaf0b"
+          },
+          "production:GRAM-5:callee": {
+            "byte_end": 15342,
+            "byte_start": 15309,
+            "line_end": 113,
+            "line_start": 113,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "ff032dff50a091b9bf4215725efeb5febec7699dd2f9f6beb382e2e0fd52758c"
+          },
+          "production:GRAM-5:construct": {
+            "byte_end": 15398,
+            "byte_start": 15342,
+            "line_end": 114,
+            "line_start": 114,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "ebb68f287d883ffc453c2abe79af07017a65b5467878f7492e1e2bf7d05be39e"
+          },
+          "production:GRAM-5:expr": {
+            "byte_end": 15174,
+            "byte_start": 15132,
+            "line_end": 110,
+            "line_start": 110,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "30d222ef9603fd5d0aa81e0515ce1f1b9df1f1dea2780da697bddc60647695b3"
+          },
+          "production:GRAM-5:fieldinit": {
+            "byte_end": 15476,
+            "byte_start": 15443,
+            "line_end": 116,
+            "line_start": 116,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "0c5c9b99b2c6c988f53bfb21d2e326a47028d2f1f2d9a9ef0e0f54834ed5f0bf"
+          },
+          "production:GRAM-5:fieldinit_list": {
+            "byte_end": 15443,
+            "byte_start": 15398,
+            "line_end": 115,
+            "line_start": 115,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "88e9d4ff25bb61a81629c88e480df627236256566cb2577c49fcaf683c555be6"
+          },
+          "production:GRAM-5:pbase": {
+            "byte_end": 15715,
+            "byte_start": 15606,
+            "line_end": 121,
+            "line_start": 120,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "95fd98f31347793769d8ed1ff0950acf70199a9d6507e4463a59dc075e7a3f0b"
+          },
+          "production:GRAM-5:place": {
+            "byte_end": 15606,
+            "byte_start": 15573,
+            "line_end": 119,
+            "line_start": 119,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "2848a8fe9ef2cba32ba4b5155c198b4da1aa3d21032c2dcd18f5437f2e166ae2"
+          },
+          "production:GRAM-5:psuffix": {
+            "byte_end": 15743,
+            "byte_start": 15715,
+            "line_end": 122,
+            "line_start": 122,
+            "path": "spec/kernel-spec-v0.8.md",
+            "sha256": "f49077b55c1dceac8a465bec2c1e926ff5eaf92d18c6fd0e874605f3c175ce32"
+          }
+        },
+        "production_terminal_map_row_count": 27,
+        "production_terminal_map_sha256": "35150331a150a188564f4073898aa35c53bd51df77f9b55222b8a68b38526145",
+        "single_derivation_boundaries": [
+          {
+            "call_derivations": 0,
+            "place_derivations": 1,
+            "spelling": "deref(p).field",
+            "total_derivations": 1
+          },
+          {
+            "call_derivations": 1,
+            "place_derivations": 0,
+            "spelling": "deref<T>(p)",
+            "total_derivations": 1
+          },
+          {
+            "call_derivations": 0,
+            "place_derivations": 1,
+            "spelling": "index<T>(p, q).field",
+            "total_derivations": 1
+          }
+        ],
+        "syntax_production_count": 59,
+        "type_argument_ambiguous_spellings": [
+          "f32",
+          "f64",
+          "i16",
+          "i32",
+          "i64",
+          "i8",
+          "u16",
+          "u32",
+          "u64",
+          "u8",
+          "unit"
+        ]
+      },
+      "id": "discrepancy:v0.8/gram-terminal-ident-partition",
+      "predicate_id": "predicate:gram-terminal-ident-partition-completeness",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
         "facet:GRAM-1/production-node-bijection",
         "facet:GRAM-7/shared-match-node-kind",
         "facet:META-1/production-node-bijection-enforcement"

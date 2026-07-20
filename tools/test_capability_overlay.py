@@ -83,8 +83,8 @@ class LiveFoundationTests(unittest.TestCase):
         report = overlay.audit_repository()
         self.assertEqual(len(report.facets), 587)
         self.assertEqual(report.closed_facet_ids, ())
-        self.assertEqual(len(report.blocked_facet_ids), 34)
-        self.assertEqual(len(report.open_discrepancy_ids), 14)
+        self.assertEqual(len(report.blocked_facet_ids), 49)
+        self.assertEqual(len(report.open_discrepancy_ids), 15)
         self.assertEqual(report.unresolved_receipt_ids, ())
 
     def test_live_fragment_has_no_verdict_or_claim(self) -> None:

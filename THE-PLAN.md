@@ -371,7 +371,7 @@ Phase 2 is active. The completed foundation now consists of:
 - a fail-closed structural index covering 57 fenced grammar productions plus
   the two EFF-1 inline productions, and an authored static catalog covering all
   91 rules, 598 exact clauses, 587 facets, and 200 source atoms;
-- a separately checked fourteen-record discrepancy sidecar and an empty,
+- a separately checked fifteen-record discrepancy sidecar and an empty,
   non-authorizing capability overlay outside the Cargo workspace; and
 - a permanent lossless lexer that partitions every source byte into a
   shape-only token or retained trivia under explicit limits, plus a small
@@ -390,15 +390,17 @@ Canonical tree, node, declaration, type, instantiation, check, proof, and
 artifact-envelope identities remain deliberately unfrozen where schemas or
 recorded v0.8 discrepancies prevent an honest contract. Traversal ordinals and
 temporary syntax handles may not become artifact authority. Parser preflight
-has exposed an additional exact-v0.8 boundary: FORM-3 admits quoted lowercase
-grammar words as IDENTs, but the specification supplies no general terminal-vs-
-IDENT priority or exclusion. Inputs such as `deref(p)`, `index<T>(p, i)`, and
-`unit` therefore have competing grammar derivations with different meanings.
-The next slice must first register and hostile-review an exact discrepancy
-predicate; ordered-choice precedence or an invented keyword set is forbidden.
+exposed and the discrepancy registry now pins an additional exact-v0.8
+boundary: all 47 unique quoted lowercase grammar terminals match FORM-3 IDENT,
+while the specification supplies no general terminal-versus-IDENT priority or
+exclusion. Thirteen spellings have competing complete derivations across type
+arguments, constant values, expressions, calls, and places. The record blocks
+only its 16 directly affected facets; ordered-choice precedence or an invented
+keyword set remains forbidden.
 
-Only after that boundary is honestly resolved may the frontend publish a
-single-derivation grammar result. The intended producer is permanent,
+Only after that boundary is owner-resolved in a successor numbered
+specification may the frontend publish a single-derivation grammar result. The
+intended producer is permanent,
 iterative, and resource-bounded over the lossless token stream, covers all 59
 grammar productions while distinguishing the 57 fenced productions from
 EFF-1's two inline productions, and retains the original lexical partition and
@@ -407,6 +409,14 @@ representation, publish node IDs or paths, recover with synthetic tokens,
 normalize effect rows, issue normative diagnostics, or claim language
 acceptance. An independent bounded grammar oracle and hostile observation tests
 must accompany the real producer before any parser capability claim.
+
+The next unblocked Phase-2 slice is an executable lexical observation adapter
+and independent Rust/model differential over authored and generated hostile
+bytes. It must bind the exact specification and source bundle, restrict model
+limits to the Rust `u32`/`u64` domain, keep capability metadata absent from all
+compiler input channels, and report only the existing non-authorizing lexical
+outcomes. It closes no facet until a separately reviewed evidence provider and
+receipt replay boundary exist.
 
 Phase 2 remains open until its artifact, adapter, identity, and verifier
 boundaries are real and executable. A red gate, specification conflict,

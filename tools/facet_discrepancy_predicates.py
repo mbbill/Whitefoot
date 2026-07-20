@@ -15,6 +15,11 @@ try:
 except ModuleNotFoundError:  # Support import as ``tools.*``.
     from tools import facet_discrepancy_inputs as inputs  # type: ignore
 
+try:
+    import v08_terminal_ident_audit as terminal_ident
+except ModuleNotFoundError:  # Support import as ``tools.*``.
+    from tools import v08_terminal_ident_audit as terminal_ident  # type: ignore
+
 
 DiscrepancyError = inputs.DiscrepancyError
 
@@ -217,6 +222,30 @@ REGISTRATIONS = (
             "facet:GRAM-1/production-node-bijection",
             "facet:GRAM-7/shared-match-node-kind",
             "facet:META-1/production-node-bijection-enforcement",
+        ),
+        ("successor-numbered-specification",),
+    ),
+    Registration(
+        "discrepancy:v0.8/gram-terminal-ident-partition",
+        "internal-specification-gap",
+        "predicate:gram-terminal-ident-partition-completeness",
+        (
+            "facet:FORM-3/ident-lexical-class",
+            "facet:FORM-6/unit-grammar-positions-disjoint",
+            "facet:FORM-6/unit-lowercase-keyword",
+            "facet:FORM-6/unit-production-local-resolution",
+            "facet:FORM-6/unit-token-type-position",
+            "facet:FORM-6/unit-token-value-position",
+            "facet:GRAM-1/deterministic-single-parse",
+            "facet:GRAM-1/two-token-overlap-resolution",
+            "facet:GRAM-3/constant-value-tree-shape",
+            "facet:GRAM-3/type-argument-shapes",
+            "facet:GRAM-5/atom-form-closed-set",
+            "facet:GRAM-5/call-and-callee-shapes",
+            "facet:GRAM-5/expression-form-closed-set",
+            "facet:GRAM-5/place-chain-shapes",
+            "facet:GRAM-6/index-place-only",
+            "facet:META-2/context-independent-spellings",
         ),
         ("successor-numbered-specification",),
     ),
@@ -1058,6 +1087,232 @@ def observe_gram1_gram7(
     return Observation(True, evidence)
 
 
+def observe_gram_terminal_ident_partition(
+    specification: bytes,
+    source_index: Mapping[str, Any],
+    *,
+    enforce_pins: bool = True,
+) -> Observation:
+    """Record the missing fixed-terminal versus IDENT partition contract."""
+    source = ExactSource.from_bytes("spec/kernel-spec-v0.8.md", specification)
+    source_fields = ("byte_end", "byte_start", "line_end", "line_start", "sha256")
+
+    def indexed_fragment(
+        record: Mapping[str, Any],
+        label: str,
+    ) -> tuple[bytes, dict[str, Any]]:
+        indexed_source = record.get("source")
+        if not isinstance(indexed_source, dict) or set(indexed_source) != set(
+            source_fields
+        ):
+            raise DiscrepancyError(f"{label} source fields drifted")
+        start = indexed_source.get("byte_start")
+        end = indexed_source.get("byte_end")
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int)
+            or isinstance(end, bool)
+            or not isinstance(end, int)
+        ):
+            raise DiscrepancyError(f"{label} source span is invalid")
+        exact = source.evidence(start, end)
+        if {field: exact[field] for field in source_fields} != indexed_source:
+            raise DiscrepancyError(f"{label} source is stale")
+        return specification[start:end], exact
+
+    productions = source_index.get("syntax_productions")
+    if not isinstance(productions, list) or len(productions) != 59:
+        raise DiscrepancyError("terminal audit requires exactly 59 syntax productions")
+    audited_productions: list[terminal_ident.Production] = []
+    production_sources: dict[str, dict[str, Any]] = {}
+    seen_productions: set[str] = set()
+    for ordinal, record in enumerate(productions):
+        if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+            raise DiscrepancyError(f"syntax production {ordinal} has invalid identity")
+        identifier = record["id"]
+        if identifier in seen_productions:
+            raise DiscrepancyError(f"duplicate syntax production: {identifier}")
+        seen_productions.add(identifier)
+        fragment, exact = indexed_fragment(record, f"syntax production {identifier}")
+        audited_productions.append(
+            terminal_ident.Production(identifier, fragment, exact["sha256"])
+        )
+        production_sources[identifier] = exact
+
+    try:
+        audit = terminal_ident.audit(audited_productions)
+    except terminal_ident.GrammarAuditError as error:
+        raise DiscrepancyError(str(error)) from error
+
+    rules = source_index.get("rules")
+    if not isinstance(rules, list):
+        raise DiscrepancyError("terminal audit requires indexed rules")
+    indexed_rules: dict[str, Mapping[str, Any]] = {}
+    for ordinal, record in enumerate(rules):
+        if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+            raise DiscrepancyError(f"indexed rule {ordinal} has invalid identity")
+        identifier = record["id"]
+        if identifier in indexed_rules:
+            raise DiscrepancyError(f"duplicate indexed rule: {identifier}")
+        indexed_rules[identifier] = record
+    required_rules = ("rule:FORM-3", "rule:FORM-5")
+    missing_rules = sorted(set(required_rules) - set(indexed_rules))
+    if missing_rules:
+        raise DiscrepancyError(f"terminal audit is missing rules: {missing_rules}")
+    rule_sources = {
+        identifier: indexed_fragment(indexed_rules[identifier], identifier)[1]
+        for identifier in required_rules
+    }
+
+    exact_sources = _exact_fragment_sources(
+        source,
+        {
+            "fn8_requires_reservation": (
+                b"`requires` is RESERVED and cannot bind any IDENT declaration."
+            ),
+            "form3_ident": b"IDENT `[a-z][a-z0-9_]*`",
+            "form3_opname": (
+                b"OPNAME `[a-z][a-z0-9_]*\\.(wrap|trap|checked|sat|strict)`"
+            ),
+            "form3_regionid": b"REGIONID `'[a-z][a-z0-9_]*`",
+            "form3_typeid": b"TYPEID `[A-Z][A-Za-z0-9]*`",
+            "form5_unit_literal": b"`unit`; ",
+            "form6_keyword": (
+                b"The lowercase spelling follows the primitive-type convention "
+                b"(TYPE-1: primitives are lowercase keywords, not TYPEIDs)"
+            ),
+            "form6_unit_resolution": (
+                b"The token `unit` names the unit type in type position and the "
+                b"unit value in expression position; the grammar positions are "
+                b"disjoint productions, so resolution is production-local, not "
+                b"contextual."
+            ),
+            "gram1_determinism": (
+                b"The grammar is deterministic and unambiguous (one parse per "
+                b"input; resolved with two-token lookahead where FIRST sets overlap)."
+            ),
+            "gram6_index_home": b"`index` is a place (its sole home)",
+            "meta2_context_independence": (
+                b"No context-dependent spellings or rule variants: no rule's "
+                b"meaning depends on surrounding context; defaulting rules do not exist."
+            ),
+            "op1_selective_reservation": (
+                b"The dotless operation IDENTs above and the mode-words `wrap` "
+                b"`trap` `checked` `sat` `strict` are RESERVED: no `fn_decl`, "
+                b"field, param, binder, or region binds them"
+            ),
+        },
+        {
+            "fn8_requires_reservation": {
+                "byte_end": 53853,
+                "byte_start": 53792,
+                "sha256": "881850a5d323fcfe7705fc3392ba2fa93191b747efbe21ab9206fef361d08d39",
+            },
+            "form3_ident": {
+                "byte_end": 8321,
+                "byte_start": 8298,
+                "sha256": "f2655036507f78d0d0dacc6aa8556cf2fee139401d9bbeab590343de856ac909",
+            },
+            "form3_opname": {
+                "byte_end": 8510,
+                "byte_start": 8454,
+                "sha256": "c51c99225e3ada9d5743c4d68bc1032584d80ec6b9e031d0b2d0e1ef50f0a0a5",
+            },
+            "form3_regionid": {
+                "byte_end": 8378,
+                "byte_start": 8351,
+                "sha256": "a3172b34a9e0bad32c0b6ff9f897501b67de272dac52d0b3d205625e0cd829e5",
+            },
+            "form3_typeid": {
+                "byte_end": 8349,
+                "byte_start": 8323,
+                "sha256": "252294dda9f8eb6ee8ab0f9609444ee4b7c0b7051e058f439cbaa7dccce14c35",
+            },
+            "form5_unit_literal": {
+                "byte_end": 9397,
+                "byte_start": 9389,
+                "sha256": "32745a55c4b621a035287bd17fbbe56552aa159b5d5195947f9805de07ef4b95",
+            },
+            "form6_keyword": {
+                "byte_end": 10518,
+                "byte_start": 10401,
+                "sha256": "0e3a17cb22f0e356c002afbc4c7cc40c211e4da00e5c52edbeb1cd4942c75c85",
+            },
+            "form6_unit_resolution": {
+                "byte_end": 10400,
+                "byte_start": 10205,
+                "sha256": "a8b1e0b461438d1d9eca3551378100f537c96b609f6231dd7cdf55660e6cc54a",
+            },
+            "gram1_determinism": {
+                "byte_end": 12267,
+                "byte_start": 12140,
+                "sha256": "0a5099694735abd2a68f7b04f7d2ac2b29b48f97f6364f13123eab81aac0692d",
+            },
+            "gram6_index_home": {
+                "byte_end": 16034,
+                "byte_start": 16000,
+                "sha256": "ace5cb8ae0cf8ee1c6f5aa07129add47cbb6c0e22b284659b3805ebd8d91ecf4",
+            },
+            "meta2_context_independence": {
+                "byte_end": 62815,
+                "byte_start": 62686,
+                "sha256": "236063e683e4e0f1b13f2279230e64e3041f8d07f6b6153e36da930fe865c3bc",
+            },
+            "op1_selective_reservation": {
+                "byte_end": 40719,
+                "byte_start": 40556,
+                "sha256": "00adc90c57057478c47cdc4048be08a36a167bbcdf380363d7692b90c44b02d6",
+            },
+        },
+        "terminal versus IDENT evidence",
+        enforce_pins=enforce_pins,
+    )
+    if enforce_pins:
+        _pin(
+            audit.pin_payload(),
+            terminal_ident.EXPECTED_PIN_PAYLOAD,
+            "terminal versus IDENT census",
+        )
+        _pin(
+            {
+                identifier: {
+                    "byte_end": rule_sources[identifier]["byte_end"],
+                    "byte_start": rule_sources[identifier]["byte_start"],
+                    "sha256": rule_sources[identifier]["sha256"],
+                }
+                for identifier in required_rules
+            },
+            {
+                "rule:FORM-3": {
+                    "byte_end": 8689,
+                    "byte_start": 8272,
+                    "sha256": "a8d051a71ed3c2b30a7bdaf311906b763a4f582ac98c696e167b68d3ceb07740",
+                },
+                "rule:FORM-5": {
+                    "byte_end": 10195,
+                    "byte_start": 8821,
+                    "sha256": "ccb123759eac5548f7c9432545dc95fdadbec32213e3a655b8047c90e72b6126",
+                },
+            },
+            "terminal versus IDENT rule sources",
+        )
+
+    return Observation(
+        True,
+        {
+            **exact_sources,
+            **audit.evidence(),
+            "form3_rule_source": rule_sources["rule:FORM-3"],
+            "form5_rule_source": rule_sources["rule:FORM-5"],
+            "missing_contract": "fixed-terminal-versus-ident-priority-or-exclusion",
+            "production_sources": {
+                identifier: production_sources[identifier]
+                for identifier in terminal_ident.REQUIRED_PRODUCTION_SHAPES
+            },
+        },
+    )
+
+
 def observe_affine_deref_lifecycle(
     specification: bytes,
     *,
@@ -1629,6 +1884,12 @@ def recompute(authorities: inputs.AuthorityInputs) -> dict[str, Observation]:
         ),
         "discrepancy:v0.8/gram1-gram7-match-node-bijection": observe_gram1_gram7(
             authorities.specification
+        ),
+        "discrepancy:v0.8/gram-terminal-ident-partition": (
+            observe_gram_terminal_ident_partition(
+                authorities.specification,
+                authorities.source_index,
+            )
         ),
     }
     validate_registry(observations)

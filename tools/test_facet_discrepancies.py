@@ -38,6 +38,7 @@ EXPECTED_OPEN_IDS = (
     "discrepancy:v0.8/form2-protected-conformance-spacing",
     "discrepancy:v0.8/form4-doc-cross-reference",
     "discrepancy:v0.8/form5-form7-float-canonical-spelling",
+    "discrepancy:v0.8/gram-terminal-ident-partition",
     "discrepancy:v0.8/gram1-gram7-match-node-bijection",
     "discrepancy:v0.8/op1-dotless-reservation",
 )
@@ -411,6 +412,24 @@ class PinnedPredicateTests(unittest.TestCase):
                 "facet:FN-8/keyword-reserved",
                 "facet:FORM-3/ident-lexical-class",
             ],
+            "discrepancy:v0.8/gram-terminal-ident-partition": [
+                "facet:FORM-3/ident-lexical-class",
+                "facet:FORM-6/unit-grammar-positions-disjoint",
+                "facet:FORM-6/unit-lowercase-keyword",
+                "facet:FORM-6/unit-production-local-resolution",
+                "facet:FORM-6/unit-token-type-position",
+                "facet:FORM-6/unit-token-value-position",
+                "facet:GRAM-1/deterministic-single-parse",
+                "facet:GRAM-1/two-token-overlap-resolution",
+                "facet:GRAM-3/constant-value-tree-shape",
+                "facet:GRAM-3/type-argument-shapes",
+                "facet:GRAM-5/atom-form-closed-set",
+                "facet:GRAM-5/call-and-callee-shapes",
+                "facet:GRAM-5/expression-form-closed-set",
+                "facet:GRAM-5/place-chain-shapes",
+                "facet:GRAM-6/index-place-only",
+                "facet:META-2/context-independent-spellings",
+            ],
         }
         for identifier, facets in expected.items():
             with self.subTest(identifier=identifier):
@@ -694,6 +713,16 @@ class CatalogAndRegistryTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(discrepancies.DiscrepancyError, "unknown facets"):
             discrepancies.build_sidecar(catalog_without_form4)
+
+        catalog_without_terminal_partition = make_test_catalog(
+            {
+                "facet:GRAM-1/deterministic-single-parse": (
+                    "facet:GRAM-1/test-determinism"
+                )
+            }
+        )
+        with self.assertRaisesRegex(discrepancies.DiscrepancyError, "unknown facets"):
+            discrepancies.build_sidecar(catalog_without_terminal_partition)
 
     def test_catalog_hash_or_normalized_content_substitution_fails(self) -> None:
         value = semantic_catalog.parse_strict_json(CATALOG, "catalog")
