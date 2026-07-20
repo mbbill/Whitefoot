@@ -905,7 +905,8 @@ class Gen:
         g.consts = getattr(Gen, "_consts", {})   # [CONST-2] array tuple or ('scalar', value, signed, LLVM type)
         g.scopes = {}                  # provenance key -> (alias.scope list id, noalias list id)
         g.total = total; g.give_slot = None; g.give_ty = "i32"
-        g.prologue = []                # entry-block setup (own struct params spilled to a slot)
+        g.entry_allocas = []           # fixed-size stack slots, emitted once in the entry block
+        g.prologue = []                # entry-block setup after stack-slot declarations
         # payload-carrying enums lower to a named aggregate %E = { i32, i<payw> }
         g.payenums = {en for en, vs in g.enums.items() if _enum_payw(vs) > 0}
         # global variant registry over prelude + user enums (TYPE-6 => names unique):
@@ -992,6 +993,11 @@ class Gen:
             return t
         return x["v"]
     def tmp(g): g.n += 1; return f"%t{g.n}"
+    def stack_slot(g, ty):
+        """Reserve one fixed-size slot at function entry, never inside a loop."""
+        slot = g.tmp()
+        g.entry_allocas.append(f"  {slot} = alloca {ty}")
+        return slot
     def lbl(g): g.n += 1; return f"L{g.n}"
     def emit(g, s): g.lines.append(s)
     def scope_key(g, pl):
@@ -1166,7 +1172,7 @@ class Gen:
                         "signed": src.get("signed", True), "en": src.get("en"),
                         "type_args": src.get("type_args")}
             ty = src["k"] if src["k"] in INT_LL else "i32"
-            slot = g.tmp(); g.emit(f"  {slot} = alloca {ty}")   # spill own SSA to make addressable
+            slot = g.stack_slot(ty)                         # spill own SSA to make addressable
             g.emit(f"  store {ty} {src['v']}, ptr {slot}")
             return {"k": "ptr", "v": slot, "ty": ty, "signed": src.get("signed", True)}
         if k == "construct":
@@ -1202,7 +1208,7 @@ class Gen:
             en, _idx = g.venum.get(n, (None, None))
             if en in g.payenums:                       # payload enum: build {i32 tag, iN payload} [GRAM-8]
                 payll = g.enum_payll(en)
-                slot = g.tmp(); g.emit(f"  {slot} = alloca %{en}")
+                slot = g.stack_slot(f"%{en}")
                 tp = g.tmp(); g.emit(f"  {tp} = getelementptr %{en}, ptr {slot}, i32 0, i32 0")
                 g.emit(f"  store i32 {g.vtag(n)}, ptr {tp}")
                 pp = g.tmp(); g.emit(f"  {pp} = getelementptr %{en}, ptr {slot}, i32 0, i32 1")
@@ -1213,7 +1219,7 @@ class Gen:
                 g.emit(f"  store {payll} {stored}, ptr {pp}")
                 return {"k": "enum", "v": slot, "en": en, "slot": True}
             if n in g.structs:                         # struct construct: alloca + store each field [GRAM-8]
-                slot = g.tmp(); g.emit(f"  {slot} = alloca %{n}")
+                slot = g.stack_slot(f"%{n}")
                 for fld in flds:
                     fv = g.expr(fld["atom"])
                     idx, fll, _fs, sub, _tyn = g.field_info(n, fld["name"])
@@ -1260,7 +1266,7 @@ class Gen:
             if ret.startswith("%"):                    # aggregate return: spill to a slot
                 nm = ret[1:]
                 if nm in g.payenums or nm in ("Result", "Option"):
-                    sl = g.tmp(); g.emit(f"  {sl} = alloca %{nm}")
+                    sl = g.stack_slot(f"%{nm}")
                     g.emit(f"  store %{nm} {t}, ptr {sl}")
                     type_args = _named_args(rstr, nm) if nm in ("Result", "Option") else None
                     return {"k": "enum", "v": sl, "en": nm, "slot": True,
@@ -1284,8 +1290,8 @@ class Gen:
             ov = g.tmp(); g.emit(f"  {ov} = extractvalue {{i64, i1}} {pr}, 1")
             l = g.lbl(); g.emit(f"  br i1 {ov}, label %trap, label %{l}"); g.emit(f"{l}:")
             buf = g.tmp(); g.emit(f"  {buf} = call ptr @malloc(i64 {by})")
-            # fill loop (alloca counter; mem2reg cleans)
-            cs = g.tmp(); g.emit(f"  {cs} = alloca i64"); g.emit(f"  store i64 0, ptr {cs}")
+            # fill loop (entry-block counter slot; mem2reg cleans)
+            cs = g.stack_slot("i64"); g.emit(f"  store i64 0, ptr {cs}")
             lc, lb, ld = g.lbl(), g.lbl(), g.lbl()
             g.emit(f"  br label %{lc}"); g.emit(f"{lc}:")
             cur = g.tmp(); g.emit(f"  {cur} = load i64, ptr {cs}")
@@ -1444,7 +1450,7 @@ class Gen:
                     gty = g.llty(s["ty"]); gsigned = _is_signed(s["ty"])
                     slot = None
                     if s["ty"] != "unit":
-                        slot = g.tmp(); g.emit(f"  {slot} = alloca {gty}")
+                        slot = g.stack_slot(gty)
                     prev, prevt = g.give_slot, g.give_ty
                     g.give_slot = slot; g.give_ty = "unit" if s["ty"] == "unit" else gty
                     g.gen_match(s["match"])
@@ -1478,7 +1484,7 @@ class Gen:
                     v = dict(v)
                     v["type_args"] = _named_args(s["ty"], decl_base)
                 if v["k"] in INT_LL or v["k"] == "i1":   # i1: mutable Bool locals [OWN-1 amendment]
-                    slot = g.tmp(); g.emit(f"  {slot} = alloca {v['k']}")
+                    slot = g.stack_slot(v["k"])
                     g.emit(f"  store {v['k']} {v['v']}, ptr {slot}")
                     g.env[s["n"]] = {"k": "slot", "v": slot, "ty": v["k"],
                                      "signed": v.get("signed", True)}
@@ -1486,14 +1492,14 @@ class Gen:
                     if v.get("slot"):                  # construct already made the slot -> reuse it
                         g.env[s["n"]] = v
                     else:                              # call result (aggregate) -> spill to a slot
-                        slot = g.tmp(); g.emit(f"  {slot} = alloca %{v['st']}")
+                        slot = g.stack_slot(f"%{v['st']}")
                         g.emit(f"  store %{v['st']} {v['v']}, ptr {slot}")
                         g.env[s["n"]] = {"k": "struct", "v": slot, "st": v["st"], "slot": True}
                 elif v["k"] == "enum":                 # an enum binding is an addressable own local
                     if v.get("slot"):                  # construct already made the slot -> reuse it
                         g.env[s["n"]] = v
                     else:                              # call result (aggregate) -> spill to a slot
-                        slot = g.tmp(); g.emit(f"  {slot} = alloca %{v['en']}")
+                        slot = g.stack_slot(f"%{v['en']}")
                         g.emit(f"  store %{v['en']} {v['v']}, ptr {slot}")
                         g.env[s["n"]] = {"k": "enum", "v": slot, "en": v["en"], "slot": True,
                                          "type_args": v.get("type_args")}
@@ -1576,7 +1582,7 @@ class Gen:
                 # observation and failure edge present even when a backend can
                 # prove the source predicate tautological.  Implicit OP-4
                 # checks remain eligible for deterministic proof elision.
-                cs = g.tmp(); g.emit(f"  {cs} = alloca i1")
+                cs = g.stack_slot("i1")
                 g.emit(f"  store volatile i1 {c['v']}, ptr {cs}")
                 observed = g.tmp(); g.emit(f"  {observed} = load volatile i1, ptr {cs}")
                 g.emit(f"  br i1 {observed}, label %{l}, label %trap")
@@ -1690,8 +1696,7 @@ class Gen:
                                                or q["ty"].split("<")[0] in g.payenums
                                                or q["ty"].split("<")[0] in ("Result", "Option")):
                 s = q["ty"].split("<")[0]; ps.append(f"%{s} %{q['name']}")   # own aggregate param by value
-                slot = g.tmp()                                 # spill to a slot for field/tag access
-                g.prologue.append(f"  {slot} = alloca %{s}")
+                slot = g.stack_slot(f"%{s}")                  # spill for field/tag access
                 g.prologue.append(f"  store %{s} %{q['name']}, ptr {slot}")
                 if s in g.structs:
                     g.env[q["name"]] = {"k": "struct", "v": slot, "st": s, "slot": True}
@@ -1755,6 +1760,7 @@ class Gen:
             attrs = " nounwind" + (" willreturn" if g.f["name"] in g.total else "") + ((" " + mem) if mem else "")
         g.emit(f"define {rt} @{g.f['name']}({', '.join(ps)}){attrs} {{")
         g.emit("entry:")
+        entry_alloca_index = len(g.lines)
         for line in g.prologue: g.emit(line)
         # [FN-8] Checked preconditions are enforced at the callee boundary,
         # after parameter/header unpack and before any body effect.  Clause
@@ -1769,6 +1775,7 @@ class Gen:
             g.emit("  ret i32 0" if g.f["name"] == "main" else ("  ret void" if rt == "void" else "  unreachable"))
         if g.traps: g.emit("trap:\n  call void @llvm.trap()\n  unreachable")
         g.emit("}")
+        g.lines[entry_alloca_index:entry_alloca_index] = g.entry_allocas
         return "\n".join(g.lines) + "\n"
 
 # ---- [FN-4] checked-law channel: static discharge + reduction reassociation ----

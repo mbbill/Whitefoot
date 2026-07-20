@@ -300,6 +300,14 @@ self-parse is deterministic at 1,727,663 source bytes, 348,731 tokens, and
 explicit and 4,308 staged omissions. LLVM support remains the same
 byte-identical 15-function module.
 
+Stage 0 now emits every fixed-size stack slot once in the LLVM entry block.
+Growth of the complete compiler source exposed that an aggregate call-result
+spill inside `lexer_run` had been executing on every token iteration and
+retaining its storage until function return, eventually exhausting the native
+stack. An additive stage-0 regression requires all fixed-size `alloca`
+instructions to precede repeated control flow; the complete compiler bootstrap
+and existing codegen parity and performance gates remain green.
+
 Kernel v0.8 and its tag-only enum equality implementation are complete.
 Stage 0 and the wfc reader recognize only exact nominal tag-only `eeq`/`ene`;
 `ieq`/`ine` remain integer-only. Stage 0 lowers both enum operations directly

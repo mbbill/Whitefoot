@@ -15,6 +15,7 @@ spec:                      # layer 1: spec integrity (META rules, ledger coverag
 rules:                     # layer 2: rule-keyed checker + stage-0 codegen correctness
 	cd prototype/checker && $(PY) test_checker.py -v 2>&1 | tail -2
 	cd prototype/democ && $(PY) test_codegen.py
+	cd prototype/democ && $(PY) test_entry_allocas.py
 soundness:                 # layer 3: generative model check vs independent oracle
 	cd prototype/checker && $(PY) modelcheck.py 10000
 perf:                      # layer 4: pinned optimizer-fact effects

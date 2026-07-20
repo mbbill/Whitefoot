@@ -15,6 +15,7 @@
 - 2026-07-17 owner ruling: `THE-PLAN.md` is the sole active roadmap, and its phases 1 through 7 are authorized through the complete `seq` acceptance battery. The authorization fixes the compiler order as subset fixpoint, current-language closure, facts-on fixpoint, loan/freeze, then `seq`. (sourced)
 - 2026-07-17 implementation: wfc's canonical rejection ABI is site-produced rather than inferred from a coarse status. A rejection carries its exact rule and fix codes, primary and related nodes, source span, and absolute root-to-primary child-ordinal path. Publication revalidates the complete AST and is failure-atomic for malformed topology, stale validation, invalid related nodes, and insufficient path capacity. (code)
 - 2026-07-17 pitfall: the first decision-family walk exposed that wfc source omits explicit region arguments at regionful calls even though TYPE-5 requires them and OWN-12 consumes them. The parser must retain those arguments before the decision checker can compare exact substitutions; omissions cannot be normalized away or repaired by region inference. (sourced)
+- 2026-07-19 implementation: stage 0 emits every fixed-size LLVM stack slot once in the function entry block. Complete-source growth exposed that an aggregate result spill inside the lexer token loop otherwise allocated once per token and retained every slot until return, exhausting the native stack. A focused raw-IR regression requires the entry-block placement; semantic checks, optimizer facts, and source behavior are unchanged. (code)
 
 ## Moves
 

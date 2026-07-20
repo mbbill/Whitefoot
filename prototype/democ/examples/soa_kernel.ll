@@ -8,26 +8,29 @@ declare {i64, i1} @llvm.uadd.with.overflow.i64(i64, i64)
 
 define void @kernel(ptr %s) {
 entry:
+  %t6 = alloca i64
+  %t12 = alloca i64
+  %t16 = alloca i64
+  %t17 = alloca i64
+  %t36 = alloca i64
+  %t47 = alloca i64
+  %t51 = alloca i64
   %t1 = getelementptr %Pair, ptr %s, i32 0, i32 0
   %t2 = getelementptr {ptr, i64}, ptr %t1, i32 0, i32 0
   %t3 = load ptr, ptr %t2
   %t4 = getelementptr {ptr, i64}, ptr %t1, i32 0, i32 1
   %t5 = load i64, ptr %t4
-  %t6 = alloca i64
   store i64 %t5, ptr %t6
   %t7 = getelementptr %Pair, ptr %s, i32 0, i32 1
   %t8 = getelementptr {ptr, i64}, ptr %t7, i32 0, i32 0
   %t9 = load ptr, ptr %t8
   %t10 = getelementptr {ptr, i64}, ptr %t7, i32 0, i32 1
   %t11 = load i64, ptr %t10
-  %t12 = alloca i64
   store i64 %t11, ptr %t12
   %t13 = load i64, ptr %t6
   %t14 = load i64, ptr %t12
   %t15 = call i64 @llvm.umin.i64(i64 %t13, i64 %t14)
-  %t16 = alloca i64
   store i64 %t15, ptr %t16
-  %t17 = alloca i64
   store i64 0, ptr %t17
   br label %L18
 L18:
@@ -51,7 +54,6 @@ L23:
 L33:
   %t34 = getelementptr i64, ptr %t28, i64 %t31
   %t35 = load i64, ptr %t34
-  %t36 = alloca i64
   store i64 %t35, ptr %t36
   %t37 = getelementptr %Pair, ptr %s, i32 0, i32 1
   %t38 = getelementptr {ptr, i64}, ptr %t37, i32 0, i32 0
@@ -64,12 +66,10 @@ L33:
 L44:
   %t45 = getelementptr i64, ptr %t39, i64 %t42
   %t46 = load i64, ptr %t45
-  %t47 = alloca i64
   store i64 %t46, ptr %t47
   %t48 = load i64, ptr %t36
   %t49 = load i64, ptr %t47
   %t50 = add i64 %t48, %t49
-  %t51 = alloca i64
   store i64 %t50, ptr %t51
   %t52 = load i64, ptr %t51
   %t53 = getelementptr %Pair, ptr %s, i32 0, i32 0
