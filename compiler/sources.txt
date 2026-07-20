@@ -23,6 +23,11 @@ src/semantic_reader_writer_mixed.wf
 src/semantic_reader_writer_control.wf
 src/semantic_reader_reborrow.wf
 src/semantic_reader_reborrow_writer.wf
+src/semantic_reader_reborrow_rw.wf
+src/semantic_reader_reborrow_rw_struct.wf
+src/semantic_reader_reborrow_rw_push.wf
+src/semantic_reader_reborrow_rw_region.wf
+src/semantic_reader_reborrow_rw_call.wf
 src/semantic_unit.wf
 src/semantic_types.wf
 src/semantic_globals.wf

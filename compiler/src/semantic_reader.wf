@@ -4515,6 +4515,15 @@ fn semantic_reader_analyze_block ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
         }
         match region_clean {
           True() => {
+          }
+          False() => {
+            region 'semantic_reader_stmt_reborrow_rw_region {
+              set region_clean = semantic_reader_analyze_reborrow_rw_region(source: source, tokens: tokens, ast: ast, symbols: symbols, regions_node: regions_node, statement: statement, scratch: &'semantic_reader_stmt_reborrow_rw_region deref(scratch), report: &uniq 'semantic_reader_stmt_reborrow_rw_region deref(report));
+            }
+          }
+        }
+        match region_clean {
+          True() => {
             set statement_flow = SemanticReaderFlowFalls();
           }
           False() => {
@@ -5399,7 +5408,9 @@ fn semantic_reader_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c Tok
           set writer_signature_ok = semantic_reader_writer_signature_valid<'c>(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, writes_node: writes_node);
         }
         False() => {
-          set writer_signature_ok = semantic_reader_writer_mixed_signature_valid<'c>(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, reads_node: reads_node, writes_node: writes_node);
+          let split_region_writer: own Bool = semantic_reader_writer_mixed_signature_valid<'c>(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, reads_node: reads_node, writes_node: writes_node);
+          let same_region_writer: own Bool = semantic_reader_reborrow_rw_signature_valid<'c>(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, reads_node: reads_node, writes_node: writes_node);
+          set writer_signature_ok = bor<Bool>(split_region_writer, same_region_writer);
         }
       }
       let writer_return_unit: own Bool = ieq<u64>(reader_return_type, semantic_reader_type_unit);
@@ -6237,7 +6248,34 @@ fn semantic_reader_block_effect ['c] (source: &'c buffer<u8>, tokens: &'c TokenT
   }
 }
 
-fn semantic_reader_effects_reconcile ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, function: own u64, multiple_regions: own Bool, region_token: own u64, reads_node: own u64, writes_node: own u64, traps_declared: own Bool, block: own u64) -> own Bool reads('c), traps {
+fn semantic_reader_effects_reconcile ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, function: own u64, regions_node: own u64, multiple_regions: own Bool, region_token: own u64, reads_node: own u64, writes_node: own u64, traps_declared: own Bool, block: own u64) -> own Bool reads('c), traps {
+  let reborrow_rw_body: own Bool = False();
+  let reborrow_rw_signature: own Bool = False();
+  let reborrow_rw_reads: own Bool = ine<u64>(reads_node, ast_none);
+  let reborrow_rw_writes: own Bool = ine<u64>(writes_node, ast_none);
+  let reborrow_rw_rows: own Bool = band<Bool>(reborrow_rw_reads, reborrow_rw_writes);
+  let reborrow_rw_candidate: own Bool = band<Bool>(reborrow_rw_rows, traps_declared);
+  match reborrow_rw_candidate {
+    True() => {
+      set reborrow_rw_signature = semantic_reader_reborrow_rw_signature_valid(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, reads_node: reads_node, writes_node: writes_node);
+      match reborrow_rw_signature {
+        True() => {
+          set reborrow_rw_body = semantic_reader_reborrow_rw_body_valid(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, regions_node: regions_node, reads_node: reads_node, writes_node: writes_node, traps_declared: traps_declared, block: block);
+        }
+        False() => {
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match reborrow_rw_signature {
+    True() => {
+      return reborrow_rw_body;
+    }
+    False() => {
+    }
+  }
   let no_region: own u64 = ast_none;
   match multiple_regions {
     True() => {
@@ -6608,7 +6646,7 @@ fn semantic_reader_run ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, 
   }
   match flow {
     SemanticReaderFlowReturns() => {
-      let effects_ok: own Bool = semantic_reader_effects_reconcile<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, multiple_regions: multiple_regions, region_token: region_token, reads_node: reads_node, writes_node: writes_node, traps_declared: traps_seen, block: reader_block);
+      let effects_ok: own Bool = semantic_reader_effects_reconcile<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, regions_node: regions_node, multiple_regions: multiple_regions, region_token: region_token, reads_node: reads_node, writes_node: writes_node, traps_declared: traps_seen, block: reader_block);
       match effects_ok {
         True() => {
           set deref(report).status = SemanticBodyClean();

@@ -294,10 +294,10 @@ the authorized seven-phase scope.
 
 Phase 2 is active. The canonical rejection ABI, explicit call-region retention,
 and arbitrary-arity exact call substitution are complete. The current unit has
-584 functions: 108 clean, 476 legal but unsupported, and zero rejected. Its
-self-parse is deterministic at 1,561,065 source bytes, 313,033 tokens, and
-155,257 unique-head AST nodes. The parser census is 4,067 regionful calls: 495
-explicit and 3,572 staged omissions. LLVM support remains the same
+604 functions: 121 clean, 483 legal but unsupported, and zero rejected. Its
+self-parse is deterministic at 1,629,024 source bytes, 327,643 tokens, and
+162,547 unique-head AST nodes. The parser census is 4,370 regionful calls: 496
+explicit and 3,874 staged omissions. LLVM support remains the same
 byte-identical 15-function module.
 
 Kernel v0.8 and its tag-only enum equality implementation are complete.
@@ -457,16 +457,43 @@ disjoint and overlapping deferred siblings, exact nominal field types,
 semantics-bearing source heads, and cyclic topology. Exactly
 `frontend_unit_reset` moves to CLEAN and no prior CLEAN function is lost. F4
 logic is isolated in 590- and 389-line modules with a 366-line focused test; the
-general reader is 6,692 lines. A fresh inventory identifies the next F4
-boundary as single child calls with additional scalar/shared arguments and a
-read/write effect through the same exclusive parent, led by the `ByteTape`
-emitters and the `llvm_text_emit_*` wrappers; sibling overlap remains a later
-F4 slice.
+general reader is 6,692 lines.
+
+The second bounded F4 slice admits the exact same-region `ByteTape` push
+protocol and its smallest call-composition boundary. The independently proven
+callee has one exclusive struct root and one owned `u8` parameter, exact
+singleton `reads(root)` and `writes(root)` rows plus `traps`, and the exact
+six-statement push body: read the count and byte-buffer capacity, compare them,
+write either the indexed byte or a matching nullary status constructor, perform
+the trapping count increment, and return unit. Field declarations, nominal
+types, parameter and local bindings, effects, constructor ownership, source
+heads, and body topology are all revalidated without recognizing project
+names. The caller has one exclusive parent and one fresh one-statement local
+region; it passes exactly a whole-parent unique reborrow and one canonical
+`u8` literal to that proven callee, then returns unit. The exact call shape
+makes suspension and non-escape structural. Any same-region mixed signature
+outside these two bodies stops before generic writer reconciliation. Shared or
+field/deeper borrows, explicit call-region arguments, reordered or additional
+arguments, noncanonical literals, bound results, multiple calls or regions,
+dishonest callees, and sibling children remain Unsupported. Hostile review
+pinned wrong or missing rows, field and parameter types, local uniqueness,
+callee-body substitutions, renamed positive controls, same-spelling source-head
+redirection in both directions, and cyclic sibling topology. Exactly
+`byte_tape_push` and twelve one-byte `llvm_text_emit_*` wrappers move to CLEAN;
+no prior CLEAN function is lost and all twenty new helpers remain Unsupported.
+The focused implementation is split across 133-, 231-, 325-, 201-, and
+296-line modules with a 349-line hostile test; the general reader is 6,730
+lines. A fresh post-slice inventory finds 67 simple unsupported region-call
+wrappers. The next bounded boundary is the exact `byte_tape_emit_chunk` body;
+it has eight guarded whole-parent calls to the proven push using owned `u8`
+parameters, and it is the prerequisite for 37 simple fixed ten-argument chunk
+wrappers (30 one-region, six two-region, and one four-region). General sibling
+overlap and recursive numeric emission remain later F4 work.
 
 `lexer_scan_string` remains the source-order
-frontier, blocked by aggregate return and other deferred forms. F4 bounded statement-scoped
-reborrow, F5 aggregate construction/return, and F6 `allocates`/`move` follow in
-that order. Whole-unit LLVM lowering, including production emission of general
+frontier, blocked by aggregate return and other deferred forms. Remaining F4
+bounded statement-scoped reborrow, F5 aggregate construction/return, and F6
+`allocates`/`move` follow in that order. Whole-unit LLVM lowering, including production emission of general
 `eeq`/`ene` calls after revalidating their domain, remains the separate Phase-2
 step-2 track and may not treat CLEAN classification as emission authority.
 

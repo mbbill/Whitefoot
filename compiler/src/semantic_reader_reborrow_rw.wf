@@ -1,0 +1,133 @@
+fn semantic_reader_reborrow_rw_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, function: own u64, regions_node: own u64, reads_node: own u64, writes_node: own u64) -> own Bool reads('c), traps {
+  let writer_signature: own Bool = semantic_reader_writer_signature_valid(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, writes_node: writes_node);
+  match writer_signature {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let region_first: own u64 = index<u64>(deref(ast).first_children, regions_node);
+  let region_last: own u64 = index<u64>(deref(ast).last_children, regions_node);
+  let reads_first: own u64 = index<u64>(deref(ast).first_children, reads_node);
+  let reads_last: own u64 = index<u64>(deref(ast).last_children, reads_node);
+  let writes_first: own u64 = index<u64>(deref(ast).first_children, writes_node);
+  let writes_last: own u64 = index<u64>(deref(ast).last_children, writes_node);
+  let region_one: own Bool = ieq<u64>(region_first, region_last);
+  let reads_one: own Bool = ieq<u64>(reads_first, reads_last);
+  let writes_one: own Bool = ieq<u64>(writes_first, writes_last);
+  let region_present: own Bool = ine<u64>(region_first, ast_none);
+  let reads_present: own Bool = ine<u64>(reads_first, ast_none);
+  let writes_present: own Bool = ine<u64>(writes_first, ast_none);
+  let singleton_a: own Bool = band<Bool>(region_one, reads_one);
+  let singleton_b: own Bool = band<Bool>(writes_one, region_present);
+  let singleton_c: own Bool = band<Bool>(reads_present, writes_present);
+  let singleton_ab: own Bool = band<Bool>(singleton_a, singleton_b);
+  match band<Bool>(singleton_ab, singleton_c) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let region_valid: own Bool = semantic_reader_reborrow_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: region_first);
+  let reads_valid: own Bool = semantic_reader_reborrow_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: reads_first);
+  let writes_valid: own Bool = semantic_reader_reborrow_region_leaf_valid(source: source, tokens: tokens, ast: ast, node: writes_first);
+  let regions_first: own Bool = band<Bool>(region_valid, reads_valid);
+  match band<Bool>(regions_first, writes_valid) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+  let region_head: own u64 = index<u64>(deref(ast).heads, region_first);
+  let reads_head: own u64 = index<u64>(deref(ast).heads, reads_first);
+  let writes_head: own u64 = index<u64>(deref(ast).heads, writes_first);
+  let reads_match: own Bool = token_text_equal(source: source, tokens: tokens, left: reads_head, right: region_head);
+  let writes_match: own Bool = token_text_equal(source: source, tokens: tokens, left: writes_head, right: region_head);
+  match band<Bool>(reads_match, writes_match) {
+    True() => {
+    }
+    False() => {
+      return False();
+    }
+  }
+
+  let ast_count: own u64 = deref(ast).count;
+  let first: own u64 = index<u64>(deref(ast).first_children, function);
+  let last: own u64 = index<u64>(deref(ast).last_children, function);
+  let first_none: own Bool = ieq<u64>(first, ast_none);
+  let last_none: own Bool = ieq<u64>(last, ast_none);
+  match bor<Bool>(first_none, last_none) {
+    True() => {
+      return False();
+    }
+    False() => {
+    }
+  }
+  let ast_parameter_atom: own AstKind = AstParameter();
+  let ast_shared_mode_atom: own AstKind = AstSharedMode();
+  let ast_uniq_mode_atom: own AstKind = AstUniqMode();
+  let uniq_count: own u64 = 0_u64;
+  let child: own u64 = first;
+  let steps: own u64 = 0_u64;
+  loop @semantic_reader_reborrow_rw_parameters {
+    match ilt<u64>(child, ast_count) {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+    let child_kind: own AstKind = index<AstKind>(deref(ast).kinds, child);
+    let is_parameter: own Bool = eeq<AstKind>(child_kind, ast_parameter_atom);
+    match is_parameter {
+      True() => {
+        let mode: own u64 = semantic_body_child_at(ast: ast, node: child, ordinal: 0_u64);
+        let shared: own Bool = semantic_body_kind_is(ast: ast, node: mode, want: ast_shared_mode_atom);
+        match shared {
+          True() => {
+            return False();
+          }
+          False() => {
+          }
+        }
+        let uniq: own Bool = semantic_body_kind_is(ast: ast, node: mode, want: ast_uniq_mode_atom);
+        match uniq {
+          True() => {
+            set uniq_count = iadd.trap<u64>(uniq_count, 1_u64);
+          }
+          False() => {
+          }
+        }
+      }
+      False() => {
+      }
+    }
+    match ieq<u64>(child, last) {
+      True() => {
+        return ieq<u64>(uniq_count, 1_u64);
+      }
+      False() => {
+      }
+    }
+    let next: own u64 = index<u64>(deref(ast).next_siblings, child);
+    match ilt<u64>(next, ast_count) {
+      True() => {
+        set child = next;
+      }
+      False() => {
+        return False();
+      }
+    }
+    set steps = iadd.trap<u64>(steps, 1_u64);
+    match ilt<u64>(steps, ast_count) {
+      True() => {
+      }
+      False() => {
+        return False();
+      }
+    }
+  }
+}
