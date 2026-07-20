@@ -1,4 +1,4 @@
-- There is no active compiler during the transition. The sole moving implementation is a safe-Rust production compiler for the exact normative content of kernel specification v0.8, SHA-256 `d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`.
+- No source-to-code compiler is active during the foundation phase. The sole moving implementation is a safe-Rust production compiler for the exact normative content of kernel specification v0.8, SHA-256 `d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`.
 - The Rust implementation starts directly with the permanent checked-artifact architecture; there is no disposable compiler or parallel implementation ladder.
 - The production workspace forbids Rust `unsafe`. The declared trusted computing base includes the pinned Rust toolchain and dependencies, LLVM and native tools, the runtime and allocator, the operating system, and foreign call frames.
 - Retired wfc and democ snapshots are inert historical evidence. Neither implementation defines language semantics, lowering behavior, build success, or release readiness.

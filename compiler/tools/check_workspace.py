@@ -77,6 +77,10 @@ LITERAL_INCLUDE = re.compile(
     r'\binclude(?:_bytes|_str)?!\s*\(\s*"([^"\n]+)"\s*\)'
 )
 PATH_ATTRIBUTE = re.compile(r'#\s*\[\s*path\s*=\s*"([^"\n]+)"\s*\]')
+DIRECT_FACET_ID = re.compile(
+    r"facet:[A-Z]+-[0-9]+[a-z]?/[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    r"(?![a-z0-9-])"
+)
 
 
 def fail(message: str) -> None:
@@ -117,11 +121,11 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def relative(path: Union[str, Path]) -> Path:
+def relative(path: Union[str, Path], root: Path = ROOT) -> Path:
     """Resolve a path and require it to remain inside compiler/."""
     resolved = Path(path).resolve()
     try:
-        return resolved.relative_to(ROOT)
+        return resolved.relative_to(root)
     except ValueError:
         fail(f"path escapes compiler/: {resolved}")
 
@@ -138,6 +142,36 @@ def check_no_source_symlinks() -> None:
             directory_names[:] = [name for name in directory_names if name != "target"]
 
 
+def facet_metadata_reference(text: str) -> Optional[str]:
+    """Name a static-catalog facet ID embedded in production Rust."""
+    facet = DIRECT_FACET_ID.search(text)
+    if facet is not None:
+        return f"direct facet ID {facet.group(0)!r}"
+    return None
+
+
+def check_no_production_facet_ids(root: Path = ROOT) -> None:
+    """Prevent facet IDs from becoming production dispatch inputs."""
+    try:
+        paths = sorted(root.glob("crates/**/*.rs"))
+    except OSError as error:
+        fail(f"cannot enumerate production Rust sources: {error}")
+    for path in paths:
+        relative_path = path.relative_to(root)
+        try:
+            if not path.is_file():
+                fail(f"production Rust source is not a regular file: {relative_path}")
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            fail(f"cannot inspect production Rust source {relative_path}: {error}")
+        reference = facet_metadata_reference(text)
+        if reference is not None:
+            fail(
+                "production Rust must not embed static-catalog facet metadata: "
+                f"{relative_path}: {reference}"
+            )
+
+
 def check_environment() -> None:
     """Reject host overrides that can silently change the checked build."""
     forbidden = sorted(
@@ -150,23 +184,26 @@ def check_environment() -> None:
         fail(f"build override environment is forbidden: {forbidden}")
 
 
-def check_compile_time_inputs() -> None:
-    """Require every Rust textual input to be a literal file inside compiler/."""
-    for path in sorted(ROOT.glob("crates/**/*.rs")):
+def check_compile_time_inputs(root: Path = ROOT) -> None:
+    """Require every Rust textual input to be a literal inside the Cargo workspace."""
+    for path in sorted(root.glob("crates/**/*.rs")):
         text = path.read_text(encoding="utf-8")
         invocations = list(INCLUDE_INVOCATION.finditer(text))
         literal_includes = list(LITERAL_INCLUDE.finditer(text))
         if len(invocations) != len(literal_includes):
-            fail(f"nonliteral or malformed include macro is forbidden: {path.relative_to(ROOT)}")
+            fail(
+                "nonliteral or malformed include macro is forbidden: "
+                f"{path.relative_to(root)}"
+            )
         inputs = [match.group(1) for match in literal_includes]
         inputs.extend(match.group(1) for match in PATH_ATTRIBUTE.finditer(text))
         for spelling in inputs:
             included = (path.parent / spelling).resolve()
-            relative(included)
+            relative(included, root)
             if not included.is_file():
                 fail(
                     f"compile-time input does not name a regular file: "
-                    f"{path.relative_to(ROOT)} -> {spelling}"
+                    f"{path.relative_to(root)} -> {spelling}"
                 )
 
 
@@ -591,6 +628,7 @@ def main() -> None:
     """Run every closed-world workspace policy check."""
     check_environment()
     check_no_source_symlinks()
+    check_no_production_facet_ids()
     check_compile_time_inputs()
     check_toolchain()
     check_specification()
@@ -600,7 +638,7 @@ def main() -> None:
     check_dependencies(cargo_metadata, package_by_id)
     print(
         "workspace policy: exact topology, toolchain, specification, lints, "
-        "targets, dependency lock, and source paths verified"
+        "targets, dependency lock, source paths, and direct facet-ID source fence verified"
     )
 
 

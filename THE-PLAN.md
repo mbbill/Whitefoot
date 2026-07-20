@@ -96,11 +96,12 @@ hash-iteration dependence, or scheduling dependence.
 
 The conformance corpus tests language behavior, not compiler internals.
 Specification-versioned source and expected verdicts are immutable authority.
-An implementation's capability state lives in its adapter metadata, never in a
-normative expectation. The adapter protocol distinguishes semantic acceptance,
-rule-cited rejection, run, trap, exact pending facet, internal error, timeout,
-artifact-verifier failure, backend failure, and toolchain failure. No exception
-or crash is translated into `Unsupported`.
+An adapter reports separately audited implementation capability; it neither owns
+that state nor changes a normative expectation. The adapter protocol
+distinguishes semantic acceptance, rule-cited rejection, run, trap, exact
+pending facet, internal error, timeout, artifact-verifier failure, backend
+failure, and toolchain failure. No exception or crash is translated into
+`Unsupported`.
 
 A specification-hash-bound source index accounts mechanically for every rule,
 syntax production, operation-table row, report row, and byte-exact normative
@@ -110,11 +111,14 @@ classes. It contains no compiler symbol, implementation state, concrete witness,
 expected verdict, semantic fallback, or replacement normative prose. A generated
 static catalog binds those two inputs.
 
-A separate compiler capability overlay binds the catalog hash and records shared
-generic handlers and concrete evidence. Capability is derived: a facet remains
-pending when any required lane or evidence class is absent, and there is no
-editable completeness flag. Production code neither dispatches on facet IDs nor
-reads the overlay to decide acceptance or lowering. Open specification or
+A separate implementation capability overlay outside the compiler build
+workspace binds the catalog hash and names explicit generic-handler
+responsibilities plus exact evidence-receipt identities. Closed class-specific
+runners independently replay receipts; a reference alone grants nothing.
+Capability is derived: a facet remains pending when any required handler lane is
+unexercised or any required evidence class is absent, and there is no editable
+completeness flag. Production code neither dispatches on facet IDs nor reads the
+overlay to decide acceptance or lowering. Open specification or
 protected-surface discrepancies live in a separate machine-checked sidecar,
 cannot waive an obligation, prevent affected facets from closing, and block a
 release. Coherent tranches may close multiple dependent facets; catalog counts
@@ -378,8 +382,15 @@ protected-surface discrepancies. Only their affected facets are blocked; no
 record chooses semantics or authorizes a release. Token, tree, declaration,
 type, instantiation, check, and proof identities remain deliberately unfrozen
 until their canonical schemas exist; traversal counters must not become
-artifact authority. The next slice freezes the capability-overlay boundary,
-followed by those identities and the artifact envelope. A red gate,
-specification conflict, protected-surface guard, unverified authority path,
-unexplained verdict, or need for a numbered-spec change stops the affected work
-at that boundary.
+artifact authority. The implementation capability overlay now lives outside the
+Cargo workspace, binds the exact catalog, rejects blocked handler claims, and
+contains no verdict or completion state. The foundation registers no evidence
+replay provider, so its empty overlay closes nothing; opaque receipt references
+would remain unresolved and grant nothing. Production Rust cannot embed facet
+IDs, and compile-time textual `include*` and `#[path]` inputs cannot escape
+`compiler/`. The first executable adapter must also pass identical-result tests
+with capability metadata absent from every input channel and with hostile
+metadata mutations. The next slice freezes the remaining stable identities and
+canonical artifact envelope. A red gate, specification conflict,
+protected-surface guard, unverified authority path, unexplained verdict, or need
+for a numbered-spec change stops the affected work at that boundary.

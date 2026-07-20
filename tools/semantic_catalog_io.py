@@ -374,21 +374,23 @@ def read_fragment_directory(
     root: Path,
     components: Sequence[str],
     *,
+    label: str = "decomposition",
     max_entries: int | None = None,
     max_count: int,
     max_file_bytes: int,
     max_total_bytes: int,
 ) -> tuple[tuple[str, bytes], ...]:
-    """Read direct ``*.json`` files from one fixed non-symlink directory."""
+    """Read direct ``*.json`` files from one labelled non-symlink directory."""
     try:
         if max_count <= 0:
             raise CatalogIOError("fragment count limit must be positive")
         entry_limit = max_count * 4 if max_entries is None else max_entries
         if entry_limit <= 0:
             raise CatalogIOError("directory entry limit must be positive")
-        parent, name = _open_parent(root, components, "decomposition directory")
+        directory_label = f"{label} directory"
+        parent, name = _open_parent(root, components, directory_label)
         try:
-            directory = _open_directory_at(parent, name, "decomposition directory")
+            directory = _open_directory_at(parent, name, directory_label)
         finally:
             os.close(parent)
         try:
@@ -400,46 +402,46 @@ def read_fragment_directory(
                         scanned += 1
                         if scanned > entry_limit:
                             raise CatalogIOError(
-                                "direct decomposition entries exceed the "
+                                f"direct {label} entries exceed the "
                                 f"{entry_limit}-entry limit"
                             )
                         entry = record.name
                         if not isinstance(entry, str):
-                            raise CatalogIOError("fragment filename is not text")
+                            raise CatalogIOError(f"{label} fragment filename is not text")
                         try:
                             entry.encode("ascii")
                         except UnicodeEncodeError as error:
                             if entry.endswith(".json"):
                                 raise CatalogIOError(
-                                    f"fragment filename is not ASCII: {entry!r}"
+                                    f"{label} fragment filename is not ASCII: {entry!r}"
                                 ) from error
                             continue
                         if entry.endswith(".json"):
                             names.append(entry)
                             if len(names) > max_count:
                                 raise CatalogIOError(
-                                    "fragment count exceeds the "
+                                    f"{label} fragment count exceeds the "
                                     f"{max_count}-file limit"
                                 )
             except CatalogIOError:
                 raise
             except OSError as error:
                 raise CatalogIOError(
-                    f"cannot enumerate decomposition directory: {error}"
+                    f"cannot enumerate {label} directory: {error}"
                 ) from error
             names.sort(key=str.encode)
             if not names:
-                raise CatalogIOError("no decomposition fragments found")
+                raise CatalogIOError(f"no {label} fragments found")
             result: list[tuple[str, bytes]] = []
             total = 0
             for entry in names:
                 raw = _read_regular_at(
-                    directory, entry, max_file_bytes, f"fragment {entry}"
+                    directory, entry, max_file_bytes, f"{label} fragment {entry}"
                 )
                 total += len(raw)
                 if total > max_total_bytes:
                     raise CatalogIOError(
-                        "fragment bytes exceed the "
+                        f"{label} fragment bytes exceed the "
                         f"{max_total_bytes}-byte aggregate limit"
                     )
                 result.append((entry, raw))
@@ -450,5 +452,5 @@ def read_fragment_directory(
         raise
     except OSError as error:
         raise CatalogIOError(
-            f"decomposition directory filesystem operation failed: {error}"
+            f"{label} directory filesystem operation failed: {error}"
         ) from error

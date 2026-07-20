@@ -25,6 +25,22 @@ so the dependency graph can prevent raw frontend state from reaching it.
 
 No active code imports the retired implementations under `archive/`.
 
+## Capability audit boundary
+
+The implementation overlay lives at `../capabilities/whitefoot-rust/v0.8/`,
+outside this Cargo workspace. It is audit metadata, not a compiler input. The
+workspace policy forbids production Rust from embedding static-catalog facet
+IDs and rejects compile-time textual `include*` and `#[path]` inputs outside
+`compiler/`; exact package and dependency checks keep the overlay outside crate
+APIs. No evidence replay provider exists yet, so the overlay cannot close any
+semantic obligation.
+
+When an executable conformance adapter is added, its gate must compare identical
+results with the overlay and derived report absent from the filesystem, working
+directory, environment, arguments, and compile-time inputs, and under hostile
+overlay mutations. The compiler, verifier, lowerer, runtime, diagnostics, and
+adapter test selection must behave identically without that metadata.
+
 The ordered multi-file bundle is a toolchain input envelope around v0.8's one
 closed program, not a new language rule. Each file will contain complete
 top-level items; combined declaration order is file order followed by item

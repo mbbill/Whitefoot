@@ -45,8 +45,9 @@ The permanent boundary is:
    source-atom references, required pipeline lanes, and evidence classes;
 3. a generated static catalog binding those inputs;
 4. a separate machine-checked discrepancy sidecar; and
-5. a compiler-owned capability overlay containing shared handlers and concrete
-   evidence, with completeness derived rather than asserted.
+5. a separately checked implementation capability overlay outside the compiler
+   build workspace, naming shared handlers and exact receipt identities while
+   leaving concrete evidence to independent class-specific replay.
 
 Compiler production code must not dispatch on facet IDs or consult capability
 metadata to decide language behavior. Open discrepancies cannot waive an
