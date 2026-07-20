@@ -51,9 +51,9 @@ fn semantic_reader_writer_uniq_place_valid ['c, 'w] (source: &'c buffer<u8>, tok
 
 fn semantic_reader_writer_index_target_type ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, scratch: &'w SemanticBodyScratch, target: own u64, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
   let element_type: own u64 = semantic_facts_none;
-  let allow_literal_subscript: own Bool = True();
+  let allow_writer_subscript: own Bool = True();
   region 'semantic_reader_writer_index_element {
-    set element_type = semantic_reader_analyze_index<'c, 'semantic_reader_writer_index_element>(source: source, tokens: tokens, ast: ast, symbols: symbols, scratch: &'semantic_reader_writer_index_element deref(scratch), node: target, allow_literal_subscript: allow_literal_subscript, report: &uniq 'semantic_reader_writer_index_element deref(report));
+    set element_type = semantic_reader_analyze_index<'c, 'semantic_reader_writer_index_element>(source: source, tokens: tokens, ast: ast, symbols: symbols, scratch: &'semantic_reader_writer_index_element deref(scratch), node: target, allow_writer_subscript: allow_writer_subscript, report: &uniq 'semantic_reader_writer_index_element deref(report));
   }
   match ieq<u64>(element_type, semantic_facts_none) {
     True() => {
@@ -182,13 +182,13 @@ fn semantic_reader_writer_field_target_valid ['c] (source: &'c buffer<u8>, token
   return token_text_equal<'c, 'c>(source: source, tokens: tokens, left: parameter_region, right: writes_region_head);
 }
 
-fn semantic_reader_writer_own_u64_parameter_valid ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, function: own u64, name_head: own u64) -> own Bool reads('c), traps {
+fn semantic_reader_writer_own_u64_parameter_class ['c] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, function: own u64, name_head: own u64) -> own u64 reads('c), traps {
   let ast_count: own u64 = deref(ast).count;
   match ilt<u64>(function, ast_count) {
     True() => {
     }
     False() => {
-      return False();
+      return 2_u64;
     }
   }
   let first: own u64 = index<u64>(deref(ast).first_children, function);
@@ -201,7 +201,7 @@ fn semantic_reader_writer_own_u64_parameter_valid ['c] (source: &'c buffer<u8>, 
       True() => {
       }
       False() => {
-        return False();
+        return 2_u64;
       }
     }
     let is_parameter: own Bool = semantic_body_kind_is<'c>(ast: ast, node: child, want: ast_parameter_atom);
@@ -216,7 +216,14 @@ fn semantic_reader_writer_own_u64_parameter_valid ['c] (source: &'c buffer<u8>, 
             let mode_matches: own Bool = eeq<SemanticValueMode>(parameter_mode, own_mode);
             let parameter_type: own u64 = semantic_reader_param_type_id<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, parameter: child);
             let type_matches: own Bool = ieq<u64>(parameter_type, semantic_buffer_type_u64);
-            return band<Bool>(mode_matches, type_matches);
+            match band<Bool>(mode_matches, type_matches) {
+              True() => {
+                return 1_u64;
+              }
+              False() => {
+                return 2_u64;
+              }
+            }
           }
           False() => {
           }
@@ -227,7 +234,7 @@ fn semantic_reader_writer_own_u64_parameter_valid ['c] (source: &'c buffer<u8>, 
     }
     match ieq<u64>(child, last) {
       True() => {
-        return False();
+        return 0_u64;
       }
       False() => {
       }
@@ -238,7 +245,7 @@ fn semantic_reader_writer_own_u64_parameter_valid ['c] (source: &'c buffer<u8>, 
         set child = next;
       }
       False() => {
-        return False();
+        return 2_u64;
       }
     }
     set steps = iadd.trap<u64>(steps, 1_u64);
@@ -246,7 +253,7 @@ fn semantic_reader_writer_own_u64_parameter_valid ['c] (source: &'c buffer<u8>, 
       True() => {
       }
       False() => {
-        return False();
+        return 2_u64;
       }
     }
   }
@@ -361,8 +368,21 @@ fn semantic_reader_writer_index_target_valid ['c] (source: &'c buffer<u8>, token
       match subscript_token {
         True() => {
           let subscript_head: own u64 = index<u64>(deref(ast).heads, subscript);
-          let parameter_valid: own Bool = semantic_reader_writer_own_u64_parameter_valid<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, name_head: subscript_head);
-          set subscript_place_valid = parameter_valid;
+          let parameter_class: own u64 = semantic_reader_writer_own_u64_parameter_class<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, name_head: subscript_head);
+          let parameter_valid: own Bool = ieq<u64>(parameter_class, 1_u64);
+          let parameter_absent: own Bool = ieq<u64>(parameter_class, 0_u64);
+          let global_valid: own Bool = False();
+          match parameter_absent {
+            True() => {
+              let global_type: own u64 = semantic_reader_writer_global_u64_type_id<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, node: subscript);
+              let global_u64: own Bool = ieq<u64>(global_type, semantic_buffer_type_u64);
+              set global_valid = global_u64;
+            }
+            False() => {
+            }
+          }
+          let place_valid: own Bool = bor<Bool>(parameter_valid, global_valid);
+          set subscript_place_valid = place_valid;
         }
         False() => {
         }

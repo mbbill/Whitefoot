@@ -845,7 +845,7 @@ fn semantic_reader_analyze_table_call ['c, 'w] (source: &'c buffer<u8>, tokens: 
   }
 }
 
-fn semantic_reader_analyze_index ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, scratch: &'w SemanticBodyScratch, node: own u64, allow_literal_subscript: own Bool, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
+fn semantic_reader_analyze_index ['c, 'w] (source: &'c buffer<u8>, tokens: &'c TokenTape, ast: &'c AstTape, symbols: &'c SymbolTape, scratch: &'w SemanticBodyScratch, node: own u64, allow_writer_subscript: own Bool, report: &uniq 'w SemanticBodyReport) -> own u64 reads('c 'w), writes('w), traps {
   let ast_index_place_atom: own AstKind = AstIndexPlace();
   let kind_ok: own Bool = semantic_body_kind_is(ast: ast, node: node, want: ast_index_place_atom);
   let shape_ok: own Bool = semantic_body_exact_children(ast: ast, node: node, want: 3_u64);
@@ -897,15 +897,26 @@ fn semantic_reader_analyze_index ['c, 'w] (source: &'c buffer<u8>, tokens: &'c T
   let subscript_type: own u64 = semantic_reader_place_type(source: source, tokens: tokens, ast: ast, scratch: scratch, node: subscript_node);
   let subscript_place_u64: own Bool = ieq<u64>(subscript_type, semantic_buffer_type_u64);
   let subscript_literal_u64: own Bool = False();
-  match allow_literal_subscript {
+  let subscript_global_u64: own Bool = False();
+  match allow_writer_subscript {
     True() => {
       let literal_u64: own Bool = semantic_reader_u64_literal_canonical<'c>(source: source, tokens: tokens, ast: ast, node: subscript_node);
       set subscript_literal_u64 = literal_u64;
+      match ieq<u64>(subscript_type, semantic_facts_none) {
+        True() => {
+          let global_type: own u64 = semantic_reader_writer_global_u64_type_id<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, node: subscript_node);
+          let global_u64: own Bool = ieq<u64>(global_type, semantic_buffer_type_u64);
+          set subscript_global_u64 = global_u64;
+        }
+        False() => {
+        }
+      }
     }
     False() => {
     }
   }
-  match bor<Bool>(subscript_place_u64, subscript_literal_u64) {
+  let subscript_writer_u64: own Bool = bor<Bool>(subscript_literal_u64, subscript_global_u64);
+  match bor<Bool>(subscript_place_u64, subscript_writer_u64) {
     True() => {
     }
     False() => {
@@ -3014,9 +3025,9 @@ fn semantic_reader_analyze_expr ['c, 'w] (source: &'c buffer<u8>, tokens: &'c To
   match is_index {
     True() => {
       let index_type: own u64 = semantic_facts_none;
-      let allow_literal_subscript: own Bool = False();
+      let allow_writer_subscript: own Bool = False();
       region 'semantic_reader_expr_index {
-        set index_type = semantic_reader_analyze_index(source: source, tokens: tokens, ast: ast, symbols: symbols, scratch: scratch, node: node, allow_literal_subscript: allow_literal_subscript, report: &uniq 'semantic_reader_expr_index deref(report));
+        set index_type = semantic_reader_analyze_index(source: source, tokens: tokens, ast: ast, symbols: symbols, scratch: scratch, node: node, allow_writer_subscript: allow_writer_subscript, report: &uniq 'semantic_reader_expr_index deref(report));
       }
       return index_type;
     }

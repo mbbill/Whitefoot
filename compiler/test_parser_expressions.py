@@ -500,7 +500,7 @@ def assert_global_region_migration_debt(library):
             omitted_calls += 1
 
     census = (regionful_calls, explicit_calls, omitted_calls)
-    assert census == (3690, 348, 3342), census
+    assert census == (3692, 350, 3342), census
     return census
 
 

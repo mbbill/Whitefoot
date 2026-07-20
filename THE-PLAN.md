@@ -294,9 +294,9 @@ the authorized seven-phase scope.
 
 Phase 2 is active. The canonical rejection ABI, explicit call-region retention,
 and arbitrary-arity exact call substitution are complete. The current unit has
-563 functions: 105 clean, 458 legal but unsupported, and zero rejected. Its
-self-parse is deterministic at 1,470,022 source bytes, 293,059 tokens, and
-145,446 unique-head AST nodes. The parser census is 3,690 regionful calls: 348
+563 functions: 106 clean, 457 legal but unsupported, and zero rejected. Its
+self-parse is deterministic at 1,471,434 source bytes, 293,298 tokens, and
+145,565 unique-head AST nodes. The parser census is 3,692 regionful calls: 350
 explicit and 3,342 staged omissions. LLVM support remains the same
 byte-identical 15-function module.
 
@@ -331,7 +331,7 @@ loop/local-mutation unlock; admitting owned-parameter mutation also conflicts
 with stage-0 lowering and unlocked zero compiler functions, so that experiment
 was fully reverted and the bounded F2 compiler-family tranche is complete.
 
-The first seven bounded F3 writer slices are complete. The writes-only profile admits one or more exclusive
+The first eight bounded F3 writer slices are complete. The writes-only profile admits one or more exclusive
 borrows of structs in exactly one declared region, an exact writes-only row for
 that region, one or more flat direct scalar/tag-only-enum field assignments from
 own parameters, canonical `u8`/`u64` literals, or exact nullary `Bool`/tag-only-
@@ -408,7 +408,17 @@ same-spelling token redirects, immutable-global subscripts, and literal subscrip
 on ordinary indexed reads remain Unsupported. Exactly
 `semantic_body_initialize_types` moves to CLEAN. The target module is 388 lines,
 its hostile test is 356 lines, the writer module remains 814 lines, and the general
-reader is 6,623 lines. F3 remains active for the deferred broader indexed and
+reader is 6,623 lines. The eighth slice admits only prior direct immutable `u64`
+constants as indexed-target subscripts. It reuses the writer-local constant proof:
+an exact value-symbol binding must name a source-anchored three-child `const`
+declaration before the use, with exact `u64` type and a canonical direct `u64`
+literal initializer. Ordinary indexed reads keep the capability disabled.
+Forward, wrong-width, noncanonical, out-of-range, and function-symbol cases stay
+Unsupported, as do same-named non-own parameters: parameter lookup distinguishes
+an absent name from a present but invalid binding before global fallback. Exactly
+`semantic_buffer_initialize_types` moves to CLEAN. Target logic is 408 lines, its
+focused hostile test is 418 lines, the writer module remains 814 lines, and the
+general reader is 6,634 lines. F3 remains active for the deferred broader indexed and
 control-flow writer profiles. `lexer_scan_string` remains the source-order
 frontier, blocked by aggregate return and other deferred forms. F4 bounded statement-scoped
 reborrow, F5 aggregate construction/return, and F6 `allocates`/`move` follow in

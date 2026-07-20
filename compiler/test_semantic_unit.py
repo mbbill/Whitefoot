@@ -405,8 +405,8 @@ def canonical_path(columns, root, target):
 # structured loop flow, innermost labeled break, owned-let mutation, and exact
 # writes-only direct field assignment through one or more same-region exclusive
 # struct borrows, plus exact trapping indexed assignment through a buffer field
-# of one of those roots with an own-u64 parameter or canonical u64 literal
-# subscript, with
+# of one of those roots with an own-u64 parameter, canonical u64 literal, or
+# prior immutable u64 constant subscript, with
 # direct own values, canonical u8/u64 literals, prior direct u64 constants, or
 # exact nullary tag constructors, plus one exact two-region mixed writer whose
 # call RHS values carry explicit read-region attribution).
@@ -417,7 +417,7 @@ COMPILER_CLEAN_ORDINALS = (
     21, 22, 23, 24, 29, 30, 31, 34, 63, 64, 65, 88, 96, 98, 102, 104, 105, 106,
     110, 111, 118, 119,
     123, 124, 125, 126, 143, 144, 145, 146, 147, 148, 149, 150, 152, 158, 159,
-    162, 164,
+    162, 164, 175,
     185, 190, 191, 204, 207, 208, 209, 214, 216, 228, 229, 230, 235, 286, 287,
     295, 315, 324, 326, 332, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365,
     368, 424, 425, 427, 431, 434, 435, 436, 438, 439, 440, 446, 453, 488, 516,
@@ -436,8 +436,8 @@ def assert_compiler_coverage(library):
     expected = (
         UNIT_CLEAN,
         563,
-        105,
-        458,
+        106,
+        457,
         0,
         functions[18],
         AST_NONE,
@@ -3173,8 +3173,8 @@ def assert_hostile_inputs_and_capacities(library, case, full_work):
     assert unit_report_tuple(refreshed) == (
         UNIT_CLEAN,
         563,
-        105,
-        458,
+        106,
+        457,
         0,
         top_level_functions(case)[18],
         AST_NONE,
@@ -3233,7 +3233,7 @@ def main():
         assert_dynamic_linear_capacity(library)
         assert_hostile_inputs_and_capacities(library, case, work)
     print(
-        "semantic unit: compiler 563 total / 105 clean / 458 unsupported / "
+        "semantic unit: compiler 563 total / 106 clean / 457 unsupported / "
         "0 rejected; exact clean ordinals, source-order frontier, legal "
         "nonprofile, reader bool-equality rejection, reader bool-return "
         "admission, exact arbitrary-arity call-region attribution, general signatures "
