@@ -3415,6 +3415,8 @@ fn semantic_reader_analyze_set ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
   let target_is_local: own Bool = eeq<AstKind>(target_kind, ast_place_use_atom);
   let ast_field_place_atom: own AstKind = AstFieldPlace();
   let target_is_field: own Bool = eeq<AstKind>(target_kind, ast_field_place_atom);
+  let ast_index_place_atom: own AstKind = AstIndexPlace();
+  let target_is_index: own Bool = eeq<AstKind>(target_kind, ast_index_place_atom);
   let target_type: own u64 = semantic_facts_none;
   match target_is_local {
     True() => {
@@ -3478,60 +3480,29 @@ fn semantic_reader_analyze_set ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
       }
       let field_base: own u64 = semantic_body_child_at<'c>(ast: ast, node: target, ordinal: 0_u64);
       let field_place: own u64 = semantic_body_child_at<'c>(ast: ast, node: field_base, ordinal: 0_u64);
-      let field_slot: own u64 = semantic_facts_none;
-      region 'semantic_reader_set_field_slot {
-        set field_slot = semantic_reader_place_slot<'c, 'semantic_reader_set_field_slot>(source: source, tokens: tokens, ast: ast, scratch: &'semantic_reader_set_field_slot deref(scratch), node: field_place);
+      let field_root_valid: own Bool = False();
+      region 'semantic_reader_set_field_root {
+        set field_root_valid = semantic_reader_writer_uniq_place_valid<'c, 'semantic_reader_set_field_root>(source: source, tokens: tokens, ast: ast, scratch: &'semantic_reader_set_field_root deref(scratch), place: field_place);
       }
-      match ieq<u64>(field_slot, semantic_facts_none) {
-        True() => {
-          set deref(report).status = SemanticBodyUnsupported();
-          set deref(report).node = target;
-          set deref(report).related = field_place;
-          return False();
-        }
-        False() => {
-        }
-      }
-      let field_mode: own SemanticValueMode = index<SemanticValueMode>(deref(scratch).modes, field_slot);
-      let uniq_mode: own SemanticValueMode = SemanticModeUniq();
-      match eeq<SemanticValueMode>(field_mode, uniq_mode) {
-        True() => {
-        }
-        False() => {
-          set deref(report).status = SemanticBodyUnsupported();
-          set deref(report).node = target;
-          set deref(report).related = field_place;
-          return False();
-        }
-      }
-      let field_declaration: own u64 = index<u64>(deref(scratch).declarations, field_slot);
-      let ast_parameter_atom: own AstKind = AstParameter();
-      let field_parameter: own Bool = semantic_body_kind_is<'c>(ast: ast, node: field_declaration, want: ast_parameter_atom);
-      let field_parameter_shape: own Bool = semantic_body_exact_children<'c>(ast: ast, node: field_declaration, want: 2_u64);
-      match band<Bool>(field_parameter, field_parameter_shape) {
-        True() => {
-        }
-        False() => {
-          set deref(report).status = SemanticBodyUnsupported();
-          set deref(report).node = target;
-          set deref(report).related = field_declaration;
-          return False();
-        }
-      }
-      let field_mode_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: field_declaration, ordinal: 0_u64);
-      let ast_uniq_mode_atom: own AstKind = AstUniqMode();
-      let field_mode_kind: own Bool = semantic_body_kind_is<'c>(ast: ast, node: field_mode_node, want: ast_uniq_mode_atom);
-      let field_mode_valid: own Bool = semantic_function_mode_valid<'c, 'c, 'c>(source: source, tokens: tokens, ast: ast, node: field_mode_node);
-      match band<Bool>(field_mode_kind, field_mode_valid) {
+      match field_root_valid {
         True() => {
           set target_type = field_type;
         }
         False() => {
           set deref(report).status = SemanticBodyUnsupported();
           set deref(report).node = target;
-          set deref(report).related = field_mode_node;
+          set deref(report).related = field_place;
           return False();
         }
+      }
+    }
+    False() => {
+    }
+  }
+  match target_is_index {
+    True() => {
+      region 'semantic_reader_set_index_type {
+        set target_type = semantic_reader_writer_index_target_type<'c, 'semantic_reader_set_index_type>(source: source, tokens: tokens, ast: ast, symbols: symbols, scratch: &'semantic_reader_set_index_type deref(scratch), target: target, report: &uniq 'semantic_reader_set_index_type deref(report));
       }
     }
     False() => {
@@ -3553,7 +3524,8 @@ fn semantic_reader_analyze_set ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
   let value_kind: own AstKind = index<AstKind>(deref(ast).kinds, value);
   let ast_constructor_atom: own AstKind = AstConstructor();
   let value_is_constructor: own Bool = eeq<AstKind>(value_kind, ast_constructor_atom);
-  match band<Bool>(target_is_field, value_is_constructor) {
+  let target_is_writer: own Bool = bor<Bool>(target_is_field, target_is_index);
+  match band<Bool>(target_is_writer, value_is_constructor) {
     True() => {
       set value_type = semantic_reader_writer_constructor_type_id<'c>(source: source, tokens: tokens, ast: ast, node: value);
     }
@@ -3561,7 +3533,7 @@ fn semantic_reader_analyze_set ['c, 'w] (source: &'c buffer<u8>, tokens: &'c Tok
     }
   }
   let value_is_place: own Bool = eeq<AstKind>(value_kind, ast_place_use_atom);
-  match band<Bool>(target_is_field, value_is_place) {
+  match band<Bool>(target_is_writer, value_is_place) {
     True() => {
       let local_value_type: own u64 = semantic_facts_none;
       region 'semantic_reader_set_value_local {
@@ -5281,11 +5253,15 @@ fn semantic_reader_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c Tok
   let effect_writes_a: own Bool = band<Bool>(writes_present, no_pure);
   let effect_writes_b: own Bool = band<Bool>(effect_writes_a, no_reads);
   let effect_writes: own Bool = band<Bool>(effect_writes_b, no_traps);
+  let effect_trapping_writer_a: own Bool = band<Bool>(writes_present, traps_seen);
+  let effect_trapping_writer_b: own Bool = band<Bool>(effect_trapping_writer_a, no_reads);
+  let effect_trapping_writer: own Bool = band<Bool>(effect_trapping_writer_b, no_pure);
   let effect_mixed_a: own Bool = band<Bool>(reads_present, writes_present);
   let effect_mixed_b: own Bool = band<Bool>(effect_mixed_a, traps_seen);
   let effect_mixed_writer: own Bool = band<Bool>(effect_mixed_b, no_pure);
   let effect_pure_or_reads: own Bool = bor<Bool>(effect_pure, effect_reads);
-  let effect_traps_or_writes: own Bool = bor<Bool>(effect_traps, effect_writes);
+  let effect_writer_simple: own Bool = bor<Bool>(effect_writes, effect_trapping_writer);
+  let effect_traps_or_writes: own Bool = bor<Bool>(effect_traps, effect_writer_simple);
   let effect_known: own Bool = bor<Bool>(effect_pure_or_reads, effect_traps_or_writes);
   match bor<Bool>(effect_known, effect_mixed_writer) {
     True() => {
@@ -5294,7 +5270,7 @@ fn semantic_reader_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c Tok
       return False();
     }
   }
-  let effect_writer: own Bool = bor<Bool>(effect_writes, effect_mixed_writer);
+  let effect_writer: own Bool = bor<Bool>(effect_writer_simple, effect_mixed_writer);
   let effect_reader: own Bool = bor<Bool>(effect_reads, effect_mixed_writer);
   let has_uniq_param: own Bool = igt<u64>(uniq_param_count, 0_u64);
   let no_writer_effect: own Bool = bnot<Bool>(effect_writer);
@@ -5360,7 +5336,7 @@ fn semantic_reader_signature_valid ['c] (source: &'c buffer<u8>, tokens: &'c Tok
         }
       }
       let writer_signature_ok: own Bool = False();
-      match effect_writes {
+      match effect_writer_simple {
         True() => {
           set writer_signature_ok = semantic_reader_writer_signature_valid<'c>(source: source, tokens: tokens, ast: ast, function: function, regions_node: regions_node, writes_node: writes_node);
         }
@@ -6142,6 +6118,20 @@ fn semantic_reader_block_effect ['c] (source: &'c buffer<u8>, tokens: &'c TokenT
       True() => {
         let value_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: stmt, ordinal: 1_u64);
         set found = semantic_reader_expr_effect<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, region_token: region_token, reads_node: reads_node, want_region: want_region, mode: mode, expr: value_node);
+        match found {
+          True() => {
+          }
+          False() => {
+            match ieq<u64>(mode, semantic_reader_effect_traps) {
+              True() => {
+                let target_node: own u64 = semantic_body_child_at<'c>(ast: ast, node: stmt, ordinal: 0_u64);
+                set found = semantic_reader_expr_effect<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, region_token: region_token, reads_node: reads_node, want_region: want_region, mode: mode, expr: target_node);
+              }
+              False() => {
+              }
+            }
+          }
+        }
       }
       False() => {
       }
@@ -6225,7 +6215,9 @@ fn semantic_reader_effects_reconcile ['c] (source: &'c buffer<u8>, tokens: &'c T
     True() => {
       let reads_present: own Bool = ine<u64>(reads_node, ast_none);
       let allow_user_call: own Bool = band<Bool>(reads_present, traps_declared);
-      let writer_body_ok: own Bool = semantic_reader_writer_body_valid<'c>(source: source, tokens: tokens, ast: ast, function: function, writes_node: writes_node, block: block, allow_user_call: allow_user_call);
+      let no_reads: own Bool = bnot<Bool>(reads_present);
+      let allow_index_target: own Bool = band<Bool>(no_reads, traps_declared);
+      let writer_body_ok: own Bool = semantic_reader_writer_body_valid<'c>(source: source, tokens: tokens, ast: ast, symbols: symbols, function: function, writes_node: writes_node, block: block, allow_user_call: allow_user_call, allow_index_target: allow_index_target);
       match writer_body_ok {
         True() => {
         }

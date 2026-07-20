@@ -18,6 +18,7 @@ src/semantic_buffer.wf
 src/semantic_scanner.wf
 src/semantic_reader.wf
 src/semantic_reader_writer.wf
+src/semantic_reader_writer_targets.wf
 src/semantic_reader_writer_mixed.wf
 src/semantic_unit.wf
 src/semantic_types.wf
