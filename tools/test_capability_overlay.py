@@ -120,6 +120,15 @@ class LiveFoundationTests(unittest.TestCase):
 
 
 class FailClosedEvidenceTests(unittest.TestCase):
+    def test_absent_handler_reports_every_required_lane_missing(self) -> None:
+        validated = validate(fragment())
+        state = overlay._derive_report(CATALOG, SIDECAR, validated).explain(
+            TARGET_FACET
+        )
+        self.assertFalse(state.is_closed)
+        self.assertEqual(state.missing_handler_lanes, ("report", "governance"))
+        self.assertEqual(state.unexercised_lanes, ())
+
     def test_handlers_remain_unexercised_without_a_replay_provider(self) -> None:
         validated = validate(fragment(handlers=target_handlers()))
         state = overlay._derive_report(CATALOG, SIDECAR, validated).explain(TARGET_FACET)

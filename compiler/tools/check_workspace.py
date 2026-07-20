@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Optional, Union
 
+import rust_source_policy
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = ROOT.parent
@@ -30,12 +32,14 @@ EXPECTED_TARGETS = {
         "kind": ["lib"],
         "crate_types": ["lib"],
         "source": Path("crates/whitefoot-contract/src/lib.rs"),
+        "doctest": False,
     },
     "whitefoot-verifier": {
         "name": "whitefoot_verifier",
         "kind": ["lib"],
         "crate_types": ["lib"],
         "source": Path("crates/whitefoot-verifier/src/lib.rs"),
+        "doctest": False,
     },
 }
 EXPECTED_EDGES = {
@@ -72,15 +76,24 @@ FORBIDDEN_BUILD_ENV_PREFIXES = (
     "CARGO_PROFILE_",
     "CARGO_TARGET_",
 )
-INCLUDE_INVOCATION = re.compile(r"\binclude(?:_bytes|_str)?!\s*\(")
+INCLUDE_INVOCATION = re.compile(r"\binclude_(?:bytes|str)\s*!\s*\(")
+INCLUDE_DATA_IDENTIFIER = re.compile(r"\b(?:r#)?include_(?:bytes|str)\b")
 LITERAL_INCLUDE = re.compile(
-    r'\binclude(?:_bytes|_str)?!\s*\(\s*"([^"\n]+)"\s*\)'
+    r'\b(include_(?:bytes|str))\s*!\s*\(\s*"([^"\\\n]+)"\s*\)'
 )
-PATH_ATTRIBUTE = re.compile(r'#\s*\[\s*path\s*=\s*"([^"\n]+)"\s*\]')
+PATH_ATTRIBUTE_INVOCATION = re.compile(r"#\s*\[[^\]]*\bpath\s*=")
+FORBIDDEN_INCLUDE_MACRO = re.compile(r"\b(?:r#)?include\b")
+FORBIDDEN_MACRO_RULES = re.compile(r"\bmacro_rules\s*!")
+FORBIDDEN_ENV_IDENTIFIER = re.compile(r"\b(?:r#)?(?:env|option_env)\b")
+CFG_IDENTIFIER = re.compile(r"\b(?:r#)?(?:cfg|cfg_attr)\b")
+CANONICAL_TEST_CFG = re.compile(r"#\s*\[\s*(cfg)\s*\(\s*test\s*\)\s*\]")
 DIRECT_FACET_ID = re.compile(
     r"facet:[A-Z]+-[0-9]+[a-z]?/[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
     r"(?![a-z0-9-])"
 )
+EXPECTED_COMPILE_TIME_DATA_INPUTS = {
+    Path("kernel-spec-v0.8.sha256"),
+}
 
 
 def fail(message: str) -> None:
@@ -124,6 +137,7 @@ def sha256(path: Path) -> str:
 def relative(path: Union[str, Path], root: Path = ROOT) -> Path:
     """Resolve a path and require it to remain inside compiler/."""
     resolved = Path(path).resolve()
+    root = root.resolve()
     try:
         return resolved.relative_to(root)
     except ValueError:
@@ -142,8 +156,46 @@ def check_no_source_symlinks() -> None:
             directory_names[:] = [name for name in directory_names if name != "target"]
 
 
+def check_no_workspace_build_tool_configuration(
+    root: Path = ROOT,
+    repository: Path = REPOSITORY,
+) -> None:
+    """Reject active Cargo, rustfmt, and Clippy configuration inputs."""
+    present: list[Path] = []
+    for directory, directory_names, file_names in os.walk(root, followlinks=False):
+        base = Path(directory)
+        if base == root:
+            directory_names[:] = [name for name in directory_names if name != "target"]
+        if base.name == ".cargo":
+            present.extend(
+                base / name
+                for name in ("config", "config.toml")
+                if name in file_names
+            )
+        present.extend(
+            base / name
+            for name in (".rustfmt.toml", "rustfmt.toml", ".clippy.toml", "clippy.toml")
+            if name in file_names
+        )
+    present.extend(
+        path
+        for path in (
+        repository / ".cargo" / "config",
+        repository / ".cargo" / "config.toml",
+        repository / ".rustfmt.toml",
+        repository / "rustfmt.toml",
+        repository / ".clippy.toml",
+        repository / "clippy.toml",
+        )
+        if path.exists()
+    )
+    if present:
+        rendered = sorted({str(path.resolve()) for path in present})
+        fail(f"workspace build-tool configuration is forbidden: {rendered}")
+
+
 def facet_metadata_reference(text: str) -> Optional[str]:
-    """Name a static-catalog facet ID embedded in production Rust."""
+    """Name a direct static-catalog facet ID occurrence in production Rust."""
     facet = DIRECT_FACET_ID.search(text)
     if facet is not None:
         return f"direct facet ID {facet.group(0)!r}"
@@ -151,23 +203,14 @@ def facet_metadata_reference(text: str) -> Optional[str]:
 
 
 def check_no_production_facet_ids(root: Path = ROOT) -> None:
-    """Prevent facet IDs from becoming production dispatch inputs."""
-    try:
-        paths = sorted(root.glob("crates/**/*.rs"))
-    except OSError as error:
-        fail(f"cannot enumerate production Rust sources: {error}")
-    for path in paths:
+    """Reject direct facet-ID source occurrences in production Rust."""
+    root = root.resolve()
+    for path, text in production_rust_sources(root):
         relative_path = path.relative_to(root)
-        try:
-            if not path.is_file():
-                fail(f"production Rust source is not a regular file: {relative_path}")
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as error:
-            fail(f"cannot inspect production Rust source {relative_path}: {error}")
         reference = facet_metadata_reference(text)
         if reference is not None:
             fail(
-                "production Rust must not embed static-catalog facet metadata: "
+                "production Rust must not contain direct static-catalog facet IDs: "
                 f"{relative_path}: {reference}"
             )
 
@@ -184,27 +227,94 @@ def check_environment() -> None:
         fail(f"build override environment is forbidden: {forbidden}")
 
 
-def check_compile_time_inputs(root: Path = ROOT) -> None:
-    """Require every Rust textual input to be a literal inside the Cargo workspace."""
-    for path in sorted(root.glob("crates/**/*.rs")):
-        text = path.read_text(encoding="utf-8")
-        invocations = list(INCLUDE_INVOCATION.finditer(text))
-        literal_includes = list(LITERAL_INCLUDE.finditer(text))
+def production_rust_sources(root: Path = ROOT) -> tuple[tuple[Path, str], ...]:
+    """Validate every Rust source under crates/ and its approved data inputs."""
+    root = root.resolve()
+    try:
+        paths = sorted(root.glob("crates/**/*.rs"))
+    except OSError as error:
+        fail(f"cannot enumerate production Rust sources: {error}")
+    sources: list[tuple[Path, str]] = []
+    for discovered in paths:
+        path = discovered.resolve()
+        relative_path = relative(path, root)
+        try:
+            if not path.is_file():
+                fail(f"production Rust source is not a regular file: {relative_path}")
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            fail(f"cannot inspect production Rust source {relative_path}: {error}")
+        sources.append((path, text))
+
+        try:
+            views = rust_source_policy.lexical_views(text)
+        except rust_source_policy.RustSourcePolicyError as error:
+            fail(f"cannot lex production Rust source {relative_path}: {error}")
+        if FORBIDDEN_INCLUDE_MACRO.search(views.code_only):
+            fail(f"include! is forbidden in production Rust: {relative_path}")
+        if FORBIDDEN_MACRO_RULES.search(views.code_only):
+            fail(f"macro_rules! is forbidden in production Rust: {relative_path}")
+        if FORBIDDEN_ENV_IDENTIFIER.search(views.code_only):
+            fail(
+                "compile-time environment channels are forbidden in production Rust: "
+                f"{relative_path}"
+            )
+        cfg_identifiers = {
+            match.start() for match in CFG_IDENTIFIER.finditer(views.code_only)
+        }
+        allowed_cfg_identifiers = {
+            match.start(1) for match in CANONICAL_TEST_CFG.finditer(views.code_only)
+        }
+        if cfg_identifiers != allowed_cfg_identifiers:
+            fail(
+                "conditional compilation is limited to canonical #[cfg(test)]: "
+                f"{relative_path}"
+            )
+
+        directive_text = views.comments_removed
+        invocations = list(INCLUDE_INVOCATION.finditer(views.code_only))
+        invocation_starts = {match.start() for match in invocations}
+        data_identifiers = {
+            match.start() for match in INCLUDE_DATA_IDENTIFIER.finditer(views.code_only)
+        }
+        if data_identifiers != invocation_starts:
+            fail(
+                "compile-time data macros must be direct invocations: "
+                f"{path.relative_to(root)}"
+            )
+        literal_includes = [
+            match
+            for match in LITERAL_INCLUDE.finditer(directive_text)
+            if match.start() in invocation_starts
+        ]
         if len(invocations) != len(literal_includes):
             fail(
                 "nonliteral or malformed include macro is forbidden: "
                 f"{path.relative_to(root)}"
             )
-        inputs = [match.group(1) for match in literal_includes]
-        inputs.extend(match.group(1) for match in PATH_ATTRIBUTE.finditer(text))
-        for spelling in inputs:
+        if PATH_ATTRIBUTE_INVOCATION.search(views.code_only):
+            fail(f"#[path] is forbidden in production Rust: {relative_path}")
+
+        for match in literal_includes:
+            spelling = match.group(2)
             included = (path.parent / spelling).resolve()
-            relative(included, root)
+            included_relative = relative(included, root)
             if not included.is_file():
                 fail(
                     f"compile-time input does not name a regular file: "
                     f"{path.relative_to(root)} -> {spelling}"
                 )
+            if included_relative not in EXPECTED_COMPILE_TIME_DATA_INPUTS:
+                fail(
+                    "unapproved compile-time data input: "
+                    f"{path.relative_to(root)} -> {included_relative}"
+                )
+    return tuple(sources)
+
+
+def check_compile_time_inputs(root: Path = ROOT) -> None:
+    """Require crate sources and compile-time data to remain closed."""
+    production_rust_sources(root)
 
 
 def check_toolchain() -> None:
@@ -446,7 +556,7 @@ def check_workspace_topology(metadata: dict) -> dict[str, dict]:
             or relative(target["src_path"]) != expected_target["source"]
             or target.get("edition") != "2024"
             or target.get("doc") is not True
-            or target.get("doctest") is not True
+            or target.get("doctest") is not expected_target["doctest"]
             or target.get("test") is not True
         ):
             fail(f"{name} target topology drifted")
@@ -614,7 +724,9 @@ def metadata() -> dict:
     """Return the locked, offline Cargo graph."""
     return json.loads(
         output(
-            "cargo",
+            sys.executable,
+            "-B",
+            str(ROOT / "tools" / "cargo_policy.py"),
             "metadata",
             "--format-version",
             "1",
@@ -628,6 +740,7 @@ def main() -> None:
     """Run every closed-world workspace policy check."""
     check_environment()
     check_no_source_symlinks()
+    check_no_workspace_build_tool_configuration()
     check_no_production_facet_ids()
     check_compile_time_inputs()
     check_toolchain()

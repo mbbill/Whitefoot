@@ -431,5 +431,4 @@ impl fmt::Display for DecodeError {
 impl std::error::Error for DecodeError {}
 
 #[cfg(test)]
-#[path = "binding_tests.rs"]
 mod tests;

@@ -7,5 +7,8 @@ license.workspace = true
 description = "Deterministic data contracts for the Whitefoot compiler"
 publish = false
 
+[lib]
+doctest = false
+
 [lints]
 workspace = true

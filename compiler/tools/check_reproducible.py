@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import cargo_policy
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TARGETS = {
@@ -27,9 +29,6 @@ EXPECTED_TARGETS = {
         ("lib",),
     ),
 }
-TOOLCHAIN_CHANNEL = json.loads(
-    (ROOT / "toolchain-lock.json").read_text(encoding="utf-8")
-)["channel"]
 
 
 def digest(path: Path) -> str:
@@ -88,11 +87,18 @@ def require_distinct_copies(first: Path, second: Path) -> None:
             fail(f"source copies differ before building: {relative}")
 
 
-def cargo_metadata(source: Path, environment: dict[str, str]) -> dict:
+def cargo_metadata(
+    source: Path,
+    environment: dict[str, str],
+    working_directory: Path,
+) -> dict:
     """Resolve the copied workspace without network access."""
     result = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--locked", "--offline"],
-        cwd=source,
+        cargo_policy.cargo_command(
+            ("metadata", "--format-version", "1", "--locked", "--offline"),
+            source,
+        ),
+        cwd=working_directory,
         env=environment,
         check=False,
         stdout=subprocess.PIPE,
@@ -120,23 +126,19 @@ def build_environment(
 ) -> dict[str, str]:
     """Construct a closed build environment without user Cargo configuration."""
     cargo_home.mkdir(parents=True)
-    environment = {
-        name: os.environ[name]
-        for name in ("HOME", "PATH", "RUSTUP_HOME", "TMPDIR")
-        if name in os.environ
-    }
+    process_home = cargo_home.parent / f"process-home-{cargo_home.name}"
+    child_temporary = cargo_home.parent / f"tmp-{cargo_home.name}"
+    process_home.mkdir()
+    child_temporary.mkdir()
+    environment = cargo_policy.closed_environment(
+        cargo_home,
+        target,
+        process_home,
+        child_temporary,
+        "build",
+    )
     environment.update(
         {
-            "CARGO_HOME": str(cargo_home),
-            "CARGO_INCREMENTAL": "0",
-            "CARGO_NET_OFFLINE": "true",
-            "CARGO_TARGET_DIR": str(target),
-            "CARGO_TERM_COLOR": "never",
-            "LC_ALL": "C",
-            "LANG": "C",
-            "RUSTUP_TOOLCHAIN": TOOLCHAIN_CHANNEL,
-            "SOURCE_DATE_EPOCH": "0",
-            "ZERO_AR_DATE": "1",
             "CARGO_ENCODED_RUSTFLAGS": "\x1f".join(
                 (
                     f"--remap-path-prefix={source.resolve()}=/whitefoot/compiler",
@@ -179,20 +181,31 @@ def build(
 ) -> dict[tuple, str]:
     """Build one physical copy and inventory every declared workspace artifact."""
     environment = build_environment(source, target, cargo_home)
+    working_directory = target.parent / f"cargo-work-{target.name}"
+    working_directory.mkdir()
+    configurations = cargo_policy.ambient_tool_configuration_files(
+        working_directory,
+        cargo_home,
+        source,
+    )
+    if configurations:
+        fail(f"Cargo configuration reached reproducibility build: {configurations}")
 
-    metadata = cargo_metadata(source, environment)
+    metadata = cargo_metadata(source, environment, working_directory)
     workspace_ids = set(metadata["workspace_members"])
     result = subprocess.run(
-        [
-            "cargo",
-            "build",
-            "--workspace",
-            "--release",
-            "--locked",
-            "--offline",
-            "--message-format=json",
-        ],
-        cwd=source,
+        cargo_policy.cargo_command(
+            (
+                "build",
+                "--workspace",
+                "--release",
+                "--locked",
+                "--offline",
+                "--message-format=json",
+            ),
+            source,
+        ),
+        cwd=working_directory,
         env=environment,
         check=False,
         stdout=subprocess.PIPE,

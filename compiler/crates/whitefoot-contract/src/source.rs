@@ -592,5 +592,4 @@ impl fmt::Display for SpanError {
 impl std::error::Error for SpanError {}
 
 #[cfg(test)]
-#[path = "source_tests.rs"]
 mod tests;

@@ -31,8 +31,19 @@ expected-verdict, or release field exists. The static catalog and discrepancy
 sidecar are rebuilt and revalidated on every repository audit.
 
 The overlay remains outside the exact Cargo workspace and outside production
-crate dependencies. Compile-time textual `include*` and `#[path]` inputs cannot
-escape `compiler/`, and production Rust may not contain facet IDs. When an
+crate dependencies. The workspace policy scans every `.rs` file under
+`compiler/crates/`, rejects direct contiguous facet-ID source occurrences,
+forbids `#[path]`, source-splicing `include!`, and local `macro_rules!`, rejects
+compile-time environment macros and aliased data macros, limits conditional
+compilation to canonical `#[cfg(test)]`, and permits only the exact
+specification-lock file as a source-level included data file. Crate doctest
+targets are disabled and gate commands forbid explicit doctest execution. Active
+compiler Cargo configuration and every rustfmt or Clippy configuration
+discoverable from source ancestry are forbidden. Every
+workspace-resolving or compiling gate Cargo command uses isolated Cargo and
+process homes, fresh target and temporary directories, a configuration-free
+working directory, closed environment, exact toolchain, and explicit manifest;
+Make variables cannot replace that runner. When an
 executable adapter exists, its gate must run an identical-result differential
 with the overlay and derived report absent from the filesystem, working
 directory, environment, arguments, and compile-time inputs, plus hostile overlay

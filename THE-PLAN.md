@@ -386,10 +386,22 @@ artifact authority. The implementation capability overlay now lives outside the
 Cargo workspace, binds the exact catalog, rejects blocked handler claims, and
 contains no verdict or completion state. The foundation registers no evidence
 replay provider, so its empty overlay closes nothing; opaque receipt references
-would remain unresolved and grant nothing. Production Rust cannot embed facet
-IDs, and compile-time textual `include*` and `#[path]` inputs cannot escape
-`compiler/`. The first executable adapter must also pass identical-result tests
-with capability metadata absent from every input channel and with hostile
+would remain unresolved and grant nothing. Production Rust cannot contain direct
+contiguous facet-ID source occurrences. Workspace policy scans every `.rs` file
+under `compiler/crates/`, forbids `#[path]`, and permits only the exact
+specification lock as a source-level included data file. Source-splicing
+`include!` and local `macro_rules!` are forbidden so comments, token spacing, or
+macro generation cannot evade that scan; compile-time environment macros and
+aliased data macros are also rejected, and conditional compilation is limited to
+canonical `#[cfg(test)]`. Crate doctest targets are disabled and gate commands
+forbid explicit doctest execution. Active compiler Cargo configuration and every
+rustfmt or Clippy configuration discoverable from source ancestry are forbidden.
+Every workspace-resolving or compiling gate Cargo
+command runs with isolated Cargo and process homes, fresh target and temporary
+directories, a configuration-free working directory, closed environment, exact
+toolchain, and explicit manifest; Make variables cannot replace that runner. The
+first executable adapter must pass identical-result
+tests with capability metadata absent from every input channel and with hostile
 metadata mutations. The next slice freezes the remaining stable identities and
 canonical artifact envelope. A red gate, specification conflict,
 protected-surface guard, unverified authority path, unexplained verdict, or need

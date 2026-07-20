@@ -29,11 +29,21 @@ No active code imports the retired implementations under `archive/`.
 
 The implementation overlay lives at `../capabilities/whitefoot-rust/v0.8/`,
 outside this Cargo workspace. It is audit metadata, not a compiler input. The
-workspace policy forbids production Rust from embedding static-catalog facet
-IDs and rejects compile-time textual `include*` and `#[path]` inputs outside
-`compiler/`; exact package and dependency checks keep the overlay outside crate
-APIs. No evidence replay provider exists yet, so the overlay cannot close any
-semantic obligation.
+workspace policy rejects direct contiguous static-catalog facet-ID source
+occurrences, scans every `.rs` file under `compiler/crates/`, forbids `#[path]`,
+source-splicing `include!`, and local `macro_rules!`, rejects compile-time
+environment macros and aliased data macros, limits conditional compilation to
+canonical `#[cfg(test)]`, and permits only
+the exact specification-lock file as a source-level included data file. Exact
+package and dependency checks keep the overlay outside crate APIs. Crate doctest
+targets are disabled and gate commands forbid explicit doctest execution;
+active compiler Cargo configuration and every rustfmt or Clippy configuration
+discoverable from source ancestry are forbidden. Every
+workspace-resolving or compiling gate Cargo command uses isolated Cargo and
+process homes, fresh target and temporary directories, a configuration-free
+working directory, closed environment, exact toolchain, and explicit manifest;
+Make variables cannot replace that runner. No evidence replay provider exists
+yet, so the overlay cannot close any semantic obligation.
 
 When an executable conformance adapter is added, its gate must compare identical
 results with the overlay and derived report absent from the filesystem, working
