@@ -92,6 +92,85 @@ class GeneralizedParserTests(unittest.TestCase):
         )
         self.assertEqual(proposal_tokens.slots[0].labels, ("fixed:6465726566",))
 
+    def test_law_syntax_leaves_name_and_arity_to_the_checker(self) -> None:
+        current, proposal = fixture_grammars()
+        compiled_current = compile_grammar(current)
+        compiled_proposal = compile_grammar(proposal)
+        limits = fixture_inputs().limits
+        for source in (
+            b"law associative(combine);",
+            b"law commutative(combine);",
+            b"law identity(combine, zero);",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    parse_source(current, compiled_current, "law", source, limits).classification,
+                    "one",
+                )
+                self.assertEqual(
+                    parse_source(proposal, compiled_proposal, "law", source, limits).classification,
+                    "one",
+                )
+
+        identity_literal = b"law identity(combine, 0_u64);"
+        self.assertEqual(
+            parse_source(
+                current,
+                compiled_current,
+                "law",
+                identity_literal,
+                limits,
+            ).classification,
+            "zero",
+        )
+        proposal_result = parse_source(
+            proposal,
+            compiled_proposal,
+            "law",
+            identity_literal,
+            limits,
+        )
+        self.assertEqual(proposal_result.classification, "one")
+        proposal_tree, end = decode_tree(proposal_result.traces[0])
+        self.assertEqual(end, len(proposal_result.traces[0]))
+        self.assertIn("production:6c61775f617267", tree_labels(proposal_tree))
+
+        for semantic_rejection in (
+            b"law distributive(combine, combine);",
+            b"law associative();",
+            b"law associative(0_u64);",
+            b"law identity(0_u64, combine);",
+        ):
+            with self.subTest(semantic_rejection=semantic_rejection):
+                self.assertEqual(
+                    parse_source(
+                        proposal,
+                        compiled_proposal,
+                        "law",
+                        semantic_rejection,
+                        limits,
+                    ).classification,
+                    "one",
+                )
+
+        function_source = b"fn identity() -> own unit pure { return unit; }"
+        function_result = parse_source(
+            proposal,
+            compiled_proposal,
+            "fn_decl",
+            function_source,
+            limits,
+        )
+        self.assertEqual(function_result.classification, "one")
+        tokens = tokenize_source(proposal, function_source, limits)
+        identity_slot = next(
+            slot for slot in tokens.slots if function_source[slot.start : slot.end] == b"identity"
+        )
+        self.assertEqual(
+            identity_slot.labels,
+            ("lexical:4944454e54",),
+        )
+
     def test_deref_cases_retain_one_tree_and_remove_one(self) -> None:
         evidence = fixture_evidence()
         for identifier in ("deref-p", "deref-x"):
@@ -179,6 +258,44 @@ class GeneralizedParserTests(unittest.TestCase):
             )
             self.assertFalse(any("helper:" in label for label in retained_labels))
             self.assertFalse(any("helper:" in label for label in removed_labels))
+
+    def test_authored_statement_families_select_distinct_proposal_nodes(self) -> None:
+        evidence = fixture_evidence()
+        expected_nodes = {
+            "ordinary-let": {"ordinary_let_rhs"},
+            "requires-value-match": {"requires_entry", "let_stmt", "value_match"},
+            "statement-match": {"match_stmt"},
+            "try-let": {"try_let_rhs"},
+            "value-match": {"value_match"},
+        }
+        forbidden_nodes = {
+            "ordinary-let": {"try_let_rhs", "value_match", "match_stmt"},
+            "requires-value-match": {"try_let_rhs", "match_stmt"},
+            "statement-match": {"value_match"},
+            "try-let": {"ordinary_let_rhs", "value_match", "match_stmt"},
+            "value-match": {"match_stmt"},
+        }
+        for identifier, required in expected_nodes.items():
+            with self.subTest(identifier=identifier):
+                result = next(
+                    item.result
+                    for item in evidence.cases
+                    if item.document == "proposal" and item.identifier == identifier
+                )
+                self.assertEqual(result.classification, "one")
+                tree, end = decode_tree(result.traces[0])
+                self.assertEqual(end, len(result.traces[0]))
+                labels = set(tree_labels(tree))
+                for production in required:
+                    self.assertIn(
+                        f"production:{production.encode('ascii').hex()}",
+                        labels,
+                    )
+                for production in forbidden_nodes[identifier]:
+                    self.assertNotIn(
+                        f"production:{production.encode('ascii').hex()}",
+                        labels,
+                    )
 
     def test_adjacent_optional_ambiguity_retains_two_tree_shapes(self) -> None:
         inputs = fixture_inputs()

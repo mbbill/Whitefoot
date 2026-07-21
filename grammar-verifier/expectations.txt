@@ -1,6 +1,50 @@
-whitefoot.grammar-expectations.v1
+whitefoot.grammar-expectations.v2
 case	deref-p	current	many
 case	deref-p	proposal	one
 case	deref-x	current	many
 case	deref-x	proposal	one
+case	law-unknown-name	current	zero
+case	law-unknown-name	proposal	one
+case	law-wrong-function-role	current	zero
+case	law-wrong-function-role	proposal	one
+case	law-wrong-identity-roles	current	zero
+case	law-wrong-identity-roles	proposal	one
+case	law-zero-arity	current	zero
+case	law-zero-arity	proposal	one
+case	ordinary-let	current	one
+case	ordinary-let	proposal	one
+case	requires-control	current	zero
+case	requires-control	proposal	one
+case	requires-doc-only	current	zero
+case	requires-doc-only	proposal	one
+case	requires-no-check	current	zero
+case	requires-no-check	proposal	one
+case	requires-nonfinal-check	current	zero
+case	requires-nonfinal-check	proposal	one
+case	requires-set	current	zero
+case	requires-set	proposal	one
+case	requires-value-match	current	one
+case	requires-value-match	proposal	one
+case	statement-match	current	one
+case	statement-match	proposal	one
+case	try-let	current	one
+case	try-let	proposal	one
+case	value-match	current	one
+case	value-match	proposal	one
+case-delta	deref-p	trace-subset
+case-delta	deref-x	trace-subset
+case-delta	law-unknown-name	trace-replacement
+case-delta	law-wrong-function-role	trace-replacement
+case-delta	law-wrong-identity-roles	trace-replacement
+case-delta	law-zero-arity	trace-replacement
+case-delta	ordinary-let	trace-replacement
+case-delta	requires-control	trace-replacement
+case-delta	requires-doc-only	trace-replacement
+case-delta	requires-no-check	trace-replacement
+case-delta	requires-nonfinal-check	trace-replacement
+case-delta	requires-set	trace-replacement
+case-delta	requires-value-match	trace-replacement
+case-delta	statement-match	trace-replacement
+case-delta	try-let	trace-replacement
+case-delta	value-match	trace-replacement
 transition	fixed-ident-partition	removes-call-through-ident

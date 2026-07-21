@@ -34,8 +34,15 @@ IDENT_MODIFIER = (
     b" excluding every lowercase token spelling produced by exact fixed grammar atoms "
     b"in the complete grammar"
 )
-LITERAL_DESCRIPTOR = (
+CURRENT_LITERAL_DESCRIPTOR = (
     b"integer=-?[0-9]+_TYPE;float=-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE;"
+    b"unit=unit;generic=0_T,1_T"
+)
+PROPOSAL_LITERAL_DESCRIPTOR = (
+    b"integer=-?[0-9]+_TYPE;"
+    b"float=-?(0|[1-9][0-9]*)\\.[0-9]+(e-?(0|[1-9][0-9]*))?_TYPE;"
+    b"float-value=signed-zero-or-sign*C*10^(E-F);e-0=0;round=ieee-rne;"
+    b"canonical=min-prefix-bytes,ascii-lex;finite=required;"
     b"unit=unit;generic=0_T,1_T"
 )
 BYTE_STRING_DESCRIPTOR = (
@@ -206,7 +213,23 @@ def _validate_lexical(
             fail("report_lexical", "a regex predicate does not match its exact source span")
         return
     if record.kind == b"literal-union":
-        if name != b"literal" or predicate != LITERAL_DESCRIPTOR:
+        if name != b"literal":
+            fail("report_lexical", "a literal lexical predicate is outside the closed form")
+        if predicate == CURRENT_LITERAL_DESCRIPTOR:
+            float_fragments = (
+                b"floats `-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE`",
+            )
+        elif predicate == PROPOSAL_LITERAL_DESCRIPTOR:
+            float_fragments = (
+                b"finite floats use the grammar "
+                b"`-?(0|[1-9][0-9]*)\\.[0-9]+(e-?(0|[1-9][0-9]*))?_TYPE`",
+                b"TYPE is `f32` (IEEE 754 binary32) or `f64` (IEEE 754 binary64)",
+                "magnitude is C × 10^(E − F)".encode("utf-8"),
+                b"IEEE 754 round-to-nearest, ties-to-even",
+                b"fewest ASCII bytes before `_TYPE`",
+                b"lexicographically least unsigned ASCII bytes",
+            )
+        else:
             fail("report_lexical", "a literal lexical predicate is outside the closed form")
         _require_source_signature(
             source_slice,
@@ -214,7 +237,7 @@ def _validate_lexical(
             b"[OP-1].",
             (
                 b"integers `-?[0-9]+_TYPE`",
-                b"floats `-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE`",
+                *float_fragments,
                 b"`unit`",
                 b"STRING `\"...\"`",
                 b"Generic-numeric literals `0_T` and `1_T`",

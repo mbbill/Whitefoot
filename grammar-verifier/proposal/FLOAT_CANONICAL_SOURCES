@@ -1,0 +1,3 @@
+proposal/float_canonical_evidence.py
+proposal/float_exact.py
+tests/test_float_canonicality.py

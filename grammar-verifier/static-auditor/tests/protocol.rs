@@ -21,6 +21,26 @@ fn inputs() -> [Vec<u8>; 5] {
     ]
 }
 
+fn inputs_with_synthetic_closed_table() -> [Vec<u8>; 5] {
+    let mut values = inputs();
+    values[2] = replace_once(
+        &values[2],
+        b"program      := item*",
+        b"program      := table_probe item*",
+    );
+    values[2].extend_from_slice(
+        concat!(
+            "\n[GRAM-99] Closed-table extraction probe.\n\n",
+            "```\n",
+            "table_probe := EXTRANAME \"(\" IDENT \")\"\n",
+            "```\n\n",
+            "[FN-99] EXTRANAME is a closed table: `alpha(f)`, `beta(f)`.\n"
+        )
+        .as_bytes(),
+    );
+    values
+}
+
 fn frame(parts: &[Vec<u8>; 5]) -> Vec<u8> {
     let mut output = b"WFGRAMV1".to_vec();
     for part in parts {
@@ -122,6 +142,33 @@ fn reviewed_partition_removes_the_real_deref_collision() {
 }
 
 #[test]
+fn replacement_proposal_has_no_strong_ll2_conflict() {
+    let output = report(&inputs());
+    assert!(!output.contains("\nFAIL\t"), "{output}");
+    assert!(
+        !output
+            .lines()
+            .any(|line| line.starts_with("STATIC-CONFLICT\tproposal\t")),
+        "proposal must have zero strong-LL(2) conflicts"
+    );
+    for identifier in [
+        "ordinary-let",
+        "requires-value-match",
+        "statement-match",
+        "try-let",
+        "value-match",
+    ] {
+        assert!(
+            output.lines().any(|line| {
+                line.starts_with(&format!("STATIC-CASE\tproposal\t{identifier}\t"))
+                    && line.ends_with("\t0")
+            }),
+            "proposal case {identifier} must be conflict-free"
+        );
+    }
+}
+
+#[test]
 fn literal_membership_matches_the_grammar_layer_exactly() {
     let output = report(&inputs());
     let string = ascii_hex(format!("lex:{}", ascii_hex(b"STRING")).as_bytes());
@@ -149,6 +196,157 @@ fn literal_membership_matches_the_grammar_layer_exactly() {
             && line.contains(&fixed)
             && line.contains(&literal)
     }));
+}
+
+#[test]
+fn float_membership_preserves_the_successor_grammar_and_v08_descriptor() {
+    let mut values = inputs();
+    let replacement = b"program      := float_probe item*";
+    let probe = concat!(
+        "\n[GRAM-99] Float terminal membership probes.\n\n",
+        "```\n",
+        "float_probe := \"0.0_f32\" | \"-1.50e-0_f64\" | \"01.5_f32\" | ",
+        "\"1.5e01_f64\" | \"1.5e-01_f64\" | \"1.5e+1_f64\"\n",
+        "```\n"
+    )
+    .as_bytes();
+    values[2] = replace_once(&values[2], b"program      := item*", replacement);
+    values[2].extend_from_slice(probe);
+    let output = report(&values);
+    assert!(!output.contains("\nFAIL\t"), "{output}");
+    let current_predicate = concat!(
+        "integer=-?[0-9]+_TYPE;float=-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE;",
+        "unit=unit;generic=0_T,1_T"
+    );
+    let proposal_predicate = concat!(
+        "integer=-?[0-9]+_TYPE;",
+        "float=-?(0|[1-9][0-9]*)\\.[0-9]+(e-?(0|[1-9][0-9]*))?_TYPE;",
+        "float-value=signed-zero-or-sign*C*10^(E-F);e-0=0;round=ieee-rne;",
+        "canonical=min-prefix-bytes,ascii-lex;finite=required;",
+        "unit=unit;generic=0_T,1_T"
+    );
+    for (document, predicate) in [
+        ("current", current_predicate),
+        ("proposal", proposal_predicate),
+    ] {
+        let prefix = format!(
+            "LEX\t{document}\t{}\t{}\tliteral-union\t",
+            ascii_hex(b"FORM-5"),
+            ascii_hex(b"literal")
+        );
+        assert!(output.lines().any(|line| {
+            line.starts_with(&prefix) && line.ends_with(&ascii_hex(predicate.as_bytes()))
+        }));
+    }
+    let literal = ascii_hex(format!("lex:{}", ascii_hex(b"literal")).as_bytes());
+    let has_intersection = |document: &str, spelling: &[u8]| {
+        let fixed = ascii_hex(format!("fixed:{}", ascii_hex(spelling)).as_bytes());
+        output.lines().any(|line| {
+            line.starts_with(&format!("STATIC-INTERSECTION\t{document}\t"))
+                && line.contains(&fixed)
+                && line.contains(&literal)
+        })
+    };
+
+    for spelling in [b"0.0_f32".as_slice(), b"-1.50e-0_f64"] {
+        assert!(has_intersection("proposal", spelling));
+    }
+    for spelling in [b"01.5_f32".as_slice(), b"1.5e01_f64", b"1.5e-01_f64"] {
+        assert!(!has_intersection("proposal", spelling));
+    }
+    assert!(!has_intersection("proposal", b"1.5e+1_f64"));
+}
+
+#[test]
+fn proposal_float_contract_clauses_fail_closed_under_hostile_mutation() {
+    let mutations: &[(&[u8], &[u8], &str)] = &[
+        (
+            b"`f32` (IEEE 754 binary32) or `f64` (IEEE 754 binary64)",
+            b"`f32` (IEEE 754 binary16) or `f64` (IEEE 754 binary64)",
+            "float-contract-form5",
+        ),
+        (
+            b"Let C be the nonnegative integer formed by concatenating",
+            b"Let C be the nonpositive integer formed by concatenating",
+            "float-contract-form5",
+        ),
+        (
+            b"let F be the number of fraction digits",
+            b"let F be the number of integer digits",
+            "float-contract-form5",
+        ),
+        (
+            b"let E be the signed integer formed by the exponent digits",
+            b"let E be the unsigned integer formed by the exponent digits",
+            "float-contract-form5",
+        ),
+        (
+            "magnitude is C × 10^(E − F)".as_bytes(),
+            "magnitude is C × 10^(E + F)".as_bytes(),
+            "float-contract-form5",
+        ),
+        (
+            b"a leading literal `-` selects negative zero and its absence selects positive zero",
+            b"a leading literal `-` selects positive zero and its absence selects negative zero",
+            "float-contract-form5",
+        ),
+        (
+            b"IEEE 754 round-to-nearest, ties-to-even",
+            b"IEEE 754 round-to-nearest, ties-away",
+            "float-contract-form5",
+        ),
+        (
+            b"fewest ASCII bytes before `_TYPE`",
+            b"most ASCII bytes before `_TYPE`",
+            "float-contract-form5",
+        ),
+        (
+            b"lexicographically least unsigned ASCII bytes",
+            b"lexicographically greatest unsigned ASCII bytes",
+            "float-contract-form5",
+        ),
+        (
+            b"denotes a finite value of its stated TYPE",
+            b"denotes a non-finite value of its stated TYPE",
+            "float-contract-form7",
+        ),
+    ];
+    for (from, to, failure) in mutations {
+        let mut values = inputs();
+        values[2] = replace_once(&values[2], from, to);
+        let output = report(&values);
+        assert!(
+            output.contains(&format!("FAIL\textraction\t{failure}\n")),
+            "mutation {:?} was not rejected as {failure}: {output}",
+            String::from_utf8_lossy(from)
+        );
+    }
+}
+
+#[test]
+fn proposal_production_owners_pin_pre_tree_diagnostic_attribution() {
+    let output = report(&inputs());
+    assert!(!output.contains("\nFAIL\t"), "{output}");
+    for (production, owner) in [
+        ("program", "GRAM-2"),
+        ("requires_block", "GRAM-2"),
+        ("requires_entry", "GRAM-2"),
+        ("law", "GRAM-2"),
+        ("const", "CONST-1"),
+        ("cvalue", "CONST-2"),
+        ("effects", "EFF-1"),
+        ("effect", "EFF-1"),
+    ] {
+        let prefix = format!(
+            "PROD\tproposal\t{}\t{}\t",
+            ascii_hex(owner.as_bytes()),
+            ascii_hex(production.as_bytes())
+        );
+        assert!(
+            output.lines().any(|line| line.starts_with(&prefix)),
+            "missing exact owner {owner} for {production}"
+        );
+    }
 }
 
 #[test]
@@ -252,28 +450,24 @@ fn class_patterns_annotations_and_table_signatures_fail_closed() {
     );
     assert!(report(&annotation).contains("FAIL\textraction\tlexical-class-annotation\n"));
 
-    let mut table = original;
-    table[2] = replace_once(&table[2], b"identity(f, e)", b"identity(foo)");
+    let mut table = inputs_with_synthetic_closed_table();
+    table[2] = replace_once(&table[2], b"alpha(f)", b"alpha(foo)");
     assert!(report(&table).contains("FAIL\textraction\tclosed-table-signature\n"));
 }
 
 #[test]
 fn generic_closed_table_names_are_extracted_without_a_lawname_special_case() {
-    let mut values = inputs();
-    assert_eq!(
-        values[2]
-            .windows(b"LAWNAME".len())
-            .filter(|window| *window == b"LAWNAME")
-            .count(),
-        2
-    );
-    values[2] = String::from_utf8(values[2].clone())
-        .expect("proposal UTF-8")
-        .replace("LAWNAME", "EXTRANAME")
-        .into_bytes();
+    let values = inputs_with_synthetic_closed_table();
     let output = report(&values);
     assert!(!output.contains("\nFAIL\t"), "{output}");
-    assert!(output.contains("45585452414e414d45\tclosed-table"));
+    let prefix = format!(
+        "LEX\tproposal\t{}\t{}\tclosed-table\t",
+        ascii_hex(b"FN-99"),
+        ascii_hex(b"EXTRANAME")
+    );
+    assert!(output.lines().any(|line| {
+        line.starts_with(&prefix) && line.ends_with(&ascii_hex(b"alpha(f),beta(f)"))
+    }));
 }
 
 #[test]

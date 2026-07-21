@@ -58,11 +58,13 @@ def inputs() -> Inputs:
     )
     expectations = BoundBytes(
         "expectations",
-        b"whitefoot.grammar-expectations.v1\n"
+        b"whitefoot.grammar-expectations.v2\n"
         b"case\tderef-p\tcurrent\tmany\n"
         b"case\tderef-p\tproposal\tone\n"
         b"case\tderef-x\tcurrent\tmany\n"
         b"case\tderef-x\tproposal\tone\n"
+        b"case-delta\tderef-p\ttrace-subset\n"
+        b"case-delta\tderef-x\ttrace-subset\n"
         b"transition\tfixed-ident-partition\tremoves-call-through-ident\n",
     )
     return Inputs(sections, expectations, parse_limits(limits_raw))

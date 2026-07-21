@@ -3,8 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ebnf::{NodeKind, expanded_fixed_lowerwords};
+use crate::float_contract::{self, Dialect as FloatDialect};
 use crate::grammar::Grammar;
-use crate::lexical::Lexical;
+use crate::lexical::{LexKind, Lexical};
 use crate::wire::{Failure, Work};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -44,6 +45,7 @@ impl Word {
 
 pub(crate) struct Context {
     ident_excludes_fixed: bool,
+    float_dialect: Option<FloatDialect>,
     lowerwords: BTreeSet<String>,
     tables: BTreeMap<String, BTreeSet<String>>,
 }
@@ -71,6 +73,10 @@ impl Context {
             ident_excludes_fixed: lexical
                 .iter()
                 .any(|item| item.name == "IDENT" && item.excludes_fixed_lowerwords),
+            float_dialect: lexical.iter().find_map(|item| match item.kind {
+                LexKind::LiteralUnion(dialect) => Some(dialect),
+                LexKind::Regex | LexKind::ByteString | LexKind::ClosedTable => None,
+            }),
             lowerwords,
             tables,
         }
@@ -121,45 +127,10 @@ fn integer_literal(bytes: &[u8]) -> bool {
     !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
 }
 
-fn float_literal(bytes: &[u8]) -> bool {
-    let Some(split) = bytes.iter().rposition(|byte| *byte == b'_') else {
-        return false;
-    };
-    if !matches!(&bytes[split + 1..], b"f32" | b"f64") {
-        return false;
-    }
-    let number = &bytes[..split];
-    let number = number.strip_prefix(b"-").unwrap_or(number);
-    let Some(dot) = number.iter().position(|byte| *byte == b'.') else {
-        return false;
-    };
-    if dot == 0 || !number[..dot].iter().all(u8::is_ascii_digit) {
-        return false;
-    }
-    let fraction_start = dot + 1;
-    let exponent = number[fraction_start..]
-        .iter()
-        .position(|byte| *byte == b'e')
-        .map(|relative| fraction_start + relative);
-    let fraction_end = exponent.unwrap_or(number.len());
-    if fraction_start == fraction_end
-        || !number[fraction_start..fraction_end]
-            .iter()
-            .all(u8::is_ascii_digit)
-    {
-        return false;
-    }
-    let Some(exponent) = exponent else {
-        return true;
-    };
-    let digits = number[exponent + 1..]
-        .strip_prefix(b"-")
-        .unwrap_or(&number[exponent + 1..]);
-    !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
-}
-
-fn literal(bytes: &[u8]) -> bool {
-    matches!(bytes, b"unit" | b"0_T" | b"1_T") || integer_literal(bytes) || float_literal(bytes)
+fn literal(bytes: &[u8], float_dialect: FloatDialect) -> bool {
+    matches!(bytes, b"unit" | b"0_T" | b"1_T")
+        || integer_literal(bytes)
+        || float_contract::accepts(bytes, float_dialect)
 }
 
 pub(crate) fn accepts(predicate: &Predicate, spelling: &[u8], context: &Context) -> bool {
@@ -190,7 +161,9 @@ pub(crate) fn accepts(predicate: &Predicate, spelling: &[u8], context: &Context)
             ]
             .iter()
             .any(|suffix| spelling.strip_suffix(*suffix).is_some_and(lower_identifier)),
-            "literal" => literal(spelling),
+            "literal" => context
+                .float_dialect
+                .is_some_and(|dialect| literal(spelling, dialect)),
             "STRING" => string_literal(spelling),
             table => context.tables.get(table).is_some_and(|spellings| {
                 core::str::from_utf8(spelling)
@@ -394,46 +367,10 @@ fn integer_prefix_end(source: &[u8], start: usize) -> Option<usize> {
     )
 }
 
-fn float_prefix_end(source: &[u8], start: usize) -> Option<usize> {
-    let mut cursor = start;
-    if source.get(cursor) == Some(&b'-') {
-        cursor += 1;
-    }
-    let integer_start = cursor;
-    while source.get(cursor).is_some_and(u8::is_ascii_digit) {
-        cursor += 1;
-    }
-    if cursor == integer_start || source.get(cursor) != Some(&b'.') {
-        return None;
-    }
-    cursor += 1;
-    let fraction_start = cursor;
-    while source.get(cursor).is_some_and(u8::is_ascii_digit) {
-        cursor += 1;
-    }
-    if cursor == fraction_start {
-        return None;
-    }
-    if source.get(cursor) == Some(&b'e') {
-        cursor += 1;
-        if source.get(cursor) == Some(&b'-') {
-            cursor += 1;
-        }
-        let exponent_start = cursor;
-        while source.get(cursor).is_some_and(u8::is_ascii_digit) {
-            cursor += 1;
-        }
-        if cursor == exponent_start {
-            return None;
-        }
-    }
-    suffix_end(source, cursor, &[b"_f32", b"_f64"])
-}
-
-fn literal_prefix_end(source: &[u8], start: usize) -> Option<usize> {
+fn literal_prefix_end(source: &[u8], start: usize, float_dialect: FloatDialect) -> Option<usize> {
     let mut end = integer_prefix_end(source, start)
         .into_iter()
-        .chain(float_prefix_end(source, start))
+        .chain(float_contract::prefix_end(source, start, float_dialect))
         .max();
     for spelling in [b"unit".as_slice(), b"0_T", b"1_T"] {
         if source
@@ -483,7 +420,9 @@ fn lexical_prefix_end(name: &str, source: &[u8], start: usize, context: &Context
                 &[b".wrap", b".trap", b".checked", b".sat", b".strict"],
             )
         }
-        "literal" => literal_prefix_end(source, start),
+        "literal" => context
+            .float_dialect
+            .and_then(|dialect| literal_prefix_end(source, start, dialect)),
         "STRING" => string_prefix_end(source, start),
         table => context.tables.get(table).and_then(|spellings| {
             spellings
@@ -568,11 +507,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        Predicate, float_literal, integer_literal, literal, predicate_universe, source_lookahead,
-        string_literal,
+        Predicate, integer_literal, literal, predicate_universe, source_lookahead, string_literal,
     };
     use crate::document::Span;
     use crate::ebnf::{Node, NodeKind};
+    use crate::float_contract::Dialect as FloatDialect;
     use crate::grammar::Grammar;
     use crate::lexical::{LexKind, Lexical};
     use crate::wire::Work;
@@ -584,13 +523,14 @@ mod tests {
         assert!(integer_literal(b"-1_u8"));
         assert!(integer_literal(b"01_i32"));
         assert!(!integer_literal(b"1_f32"));
-        assert!(float_literal(b"1.5_f64"));
-        assert!(float_literal(b"6.022e23_f64"));
-        assert!(float_literal(b"01.5_f64"));
-        assert!(!float_literal(b"1.5e+2_f64"));
+        assert!(literal(b"1.5_f64", FloatDialect::V08));
+        assert!(literal(b"6.022e23_f64", FloatDialect::Successor));
+        assert!(literal(b"01.5_f64", FloatDialect::V08));
+        assert!(!literal(b"01.5_f64", FloatDialect::Successor));
+        assert!(!literal(b"1.5e+2_f64", FloatDialect::V08));
         assert!(string_literal(b"\"a\\n\""));
         assert!(!string_literal(b"\"a\\t\""));
-        assert!(!literal(b"\"\""));
+        assert!(!literal(b"\"\"", FloatDialect::V08));
     }
 
     #[test]
@@ -643,7 +583,7 @@ mod tests {
         let literal = Lexical {
             owner: "FORM-5",
             name: "literal",
-            kind: LexKind::LiteralUnion,
+            kind: LexKind::LiteralUnion(FloatDialect::V08),
             span: Span { start: 0, end: 1 },
             predicate: String::new(),
             excludes_fixed_lowerwords: false,

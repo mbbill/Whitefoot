@@ -22,7 +22,27 @@ class IngressTests(unittest.TestCase):
         sections = fixture_sections()
         parsed = read_frame(BytesIO(frame_bytes(sections)))
         self.assertEqual(tuple(item.data for item in parsed.bound_sections()), sections)
-        self.assertEqual([case.identifier for case in parsed.cases], ["deref-p", "deref-x"])
+        self.assertEqual(
+            [case.identifier for case in parsed.cases],
+            [
+                "deref-p",
+                "deref-x",
+                "law-unknown-name",
+                "law-wrong-function-role",
+                "law-wrong-identity-roles",
+                "law-zero-arity",
+                "ordinary-let",
+                "requires-control",
+                "requires-doc-only",
+                "requires-no-check",
+                "requires-nonfinal-check",
+                "requires-set",
+                "requires-value-match",
+                "statement-match",
+                "try-let",
+                "value-match",
+            ],
+        )
         self.assertEqual([domain.identifier for domain in parsed.domains], ["fixed-lowerword-calls"])
 
     def test_header_lengths_eof_and_current_identity_fail_closed(self) -> None:
@@ -75,7 +95,22 @@ class IngressTests(unittest.TestCase):
     def test_symbol_limit_applies_to_manifest_ids_and_starts(self) -> None:
         cases = fixture_sections()[3]
         domains = fixture_sections()[4]
-        self.assertEqual(len(parse_cases(cases, limits_with(max_symbol_bytes=7))), 2)
+        parsed_cases = parse_cases(cases, limits_with(max_symbol_bytes=64))
+        maximum_case_symbol = max(
+            len(value.encode("ascii"))
+            for case in parsed_cases
+            for value in (case.identifier, case.start)
+        )
+        self.assertEqual(
+            len(parse_cases(cases, limits_with(max_symbol_bytes=maximum_case_symbol))),
+            len(parsed_cases),
+        )
+        with self.assertRaises(Failure) as raised:
+            parse_cases(cases, limits_with(max_symbol_bytes=maximum_case_symbol - 1))
+        self.assertEqual(
+            (raised.exception.family, raised.exception.code),
+            ("input", "case_identifier"),
+        )
         self.assertEqual(len(parse_domains(domains, limits_with(max_symbol_bytes=21))), 1)
 
         exact_cases = b"whitefoot.grammar-cases.v1\ncase\taaa\texpr\t78\n"

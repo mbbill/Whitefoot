@@ -3,7 +3,7 @@ override PYTHON_ISOLATED := $(PYTHON) -I -S -B
 override RUST_TOOLCHAIN := 1.91.1
 override PINNED_CARGO := env RUSTUP_TOOLCHAIN=$(RUST_TOOLCHAIN) CARGO_NET_OFFLINE=true cargo
 
-check: test evidence
+check: test evidence float-evidence form2-evidence frontend-boundary-evidence
 	@echo "== GRAMMAR EVIDENCE GREEN; NO LANGUAGE-CHANGE CLAIM =="
 
 test: runner-test oracle-test static-test static-quality
@@ -25,4 +25,14 @@ static-quality:
 evidence:
 	$(PYTHON_ISOLATED) run.py
 
-.PHONY: check test runner-test oracle-test static-test static-quality evidence
+float-evidence:
+	$(PYTHON_ISOLATED) $(CURDIR)/proposal/float_canonical_evidence.py --check
+
+form2-evidence:
+	$(PYTHON_ISOLATED) $(CURDIR)/proposal/form2_audit.py --check
+	$(PYTHON_ISOLATED) $(CURDIR)/proposal/form2_independent_audit.py --check
+
+frontend-boundary-evidence:
+	$(PYTHON_ISOLATED) $(CURDIR)/proposal/frontend_boundary_evidence.py --check
+
+.PHONY: check test runner-test oracle-test static-test static-quality evidence float-evidence form2-evidence frontend-boundary-evidence

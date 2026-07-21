@@ -184,7 +184,7 @@ def _validate_table(raw: bytes, kind: str, maximum_records: int, maximum_symbol_
     headers = {
         "cases": (b"whitefoot.grammar-cases.v1", b"case", 4),
         "domains": (b"whitefoot.grammar-domains.v1", b"domain", 5),
-        "expectations": (b"whitefoot.grammar-expectations.v1", None, None),
+        "expectations": (b"whitefoot.grammar-expectations.v2", None, None),
     }
     if not raw.endswith(b"\n") or b"\r" in raw:
         fail(f"{kind}_layout", f"{kind}.txt is not canonical LF text")
@@ -226,6 +226,16 @@ def _validate_table(raw: bytes, kind: str, maximum_records: int, maximum_symbol_
             if len(fields[1]) > maximum_symbol_bytes:
                 fail("expectations_record", "expectations.txt contains an oversized case id")
             logical_key = (fields[0], fields[1], fields[2])
+        elif fields[0] == b"case-delta":
+            if (
+                len(fields) != 3
+                or not _IDENTIFIER.fullmatch(fields[1])
+                or fields[2] not in (b"trace-identical", b"trace-replacement", b"trace-subset")
+            ):
+                fail("expectations_record", "expectations.txt contains a malformed case-delta policy")
+            if len(fields[1]) > maximum_symbol_bytes:
+                fail("expectations_record", "expectations.txt contains an oversized case id")
+            logical_key = (fields[0], fields[1])
         elif fields[0] == b"transition":
             if len(fields) != 3 or not _IDENTIFIER.fullmatch(fields[1]) or not _IDENTIFIER.fullmatch(fields[2]):
                 fail("expectations_record", "expectations.txt contains a malformed transition expectation")
@@ -261,7 +271,7 @@ def load_inputs(root: Path, expected_current_sha256: str = CURRENT_SHA256) -> In
     symbol_cap = limits["max_symbol_bytes"]
     _validate_table(sections[3].data, "cases", limits["max_cases"], symbol_cap)
     _validate_table(sections[4].data, "domains", limits["max_domains"], symbol_cap)
-    expectation_cap = 2 * limits["max_cases"] + len(TRANSITION_IDS)
+    expectation_cap = 3 * limits["max_cases"] + len(TRANSITION_IDS)
     _validate_table(expectations.data, "expectations", expectation_cap, symbol_cap)
     case_ids = {line.split(b"\t")[1] for line in sections[3].data.splitlines()[1:]}
     expectation_fields = [line.split(b"\t") for line in expectations.data.splitlines()[1:]]
@@ -269,11 +279,21 @@ def load_inputs(root: Path, expected_current_sha256: str = CURRENT_SHA256) -> In
     observed_case_keys = {
         (fields[1], fields[2]) for fields in expectation_fields if fields[0] == b"case"
     }
+    observed_case_delta_ids = {
+        fields[1] for fields in expectation_fields if fields[0] == b"case-delta"
+    }
     observed_transitions = {
         fields[1] for fields in expectation_fields if fields[0] == b"transition"
     }
-    if observed_case_keys != expected_case_keys or observed_transitions != set(TRANSITION_IDS):
-        fail("expectations_coverage", "expectations.txt does not cover every case and closed transition")
+    if (
+        observed_case_keys != expected_case_keys
+        or observed_case_delta_ids != case_ids
+        or observed_transitions != set(TRANSITION_IDS)
+    ):
+        fail(
+            "expectations_coverage",
+            "expectations.txt does not cover every case, case-delta policy, and closed transition",
+        )
     return Inputs(sections, expectations, limits)
 
 
@@ -331,6 +351,8 @@ def runner_sources(root: Path) -> set[str]:
         "FORMAT.md",
         "Makefile",
         "RUNNER_SOURCES",
+        "evidence/v0.9-manifest-metadata.patch",
+        "evidence/v0.9-post-form2-case-intent.patch",
     }
     excluded_roots = {"oracle", "static-auditor"}
     result.update(

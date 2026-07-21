@@ -1,0 +1,4019 @@
+--- a/conformance/cases/const1-neg-noninteger.wf
++++ b/conformance/cases/const1-neg-noninteger.wf
+@@ -1,7 +1,7 @@
+-const NAME: unit = unit;
++const name: unit = unit;
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A non-integer const in a const-expr position is rejected [CONST-1].";
+-  let xs: own array<i32, NAME> = array_new<i32, NAME>(0_i32);
++  let xs: own array<i32, name> = array_new<i32, name>(0_i32);
+   return unit;
+ }
+--- a/conformance/cases/const1-pos-array-size.wf
++++ b/conformance/cases/const1-pos-array-size.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A decimal literal is a constant-expression for an array<T, N> size [CONST-1].";
+   let xs: own array<i32, 4> = array_new<i32, 4>(0_i32);
+   return unit;
+--- a/conformance/cases/const2-neg-noneligible.wf
++++ b/conformance/cases/const2-neg-noneligible.wf
+@@ -1,6 +1,6 @@
+ const bad: box<i32> = 0_i32;
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "box<T> is not const-eligible: a const is static rodata, no allocation [CONST-2].";
+   return unit;
+ }
+--- a/conformance/cases/const2-neg-set.wf
++++ b/conformance/cases/const2-neg-set.wf
+@@ -1,6 +1,6 @@
+ const table: array<u8, 4> = [10_u8, 20_u8, 30_u8, 40_u8];
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A const item is immutable: writing through it is rejected [CONST-2].";
+   set index<u8>(table, 0_u64) = 99_u8;
+   return unit;
+--- a/conformance/cases/const2-pos-array-lookup.wf
++++ b/conformance/cases/const2-pos-array-lookup.wf
+@@ -1,6 +1,6 @@
+ const table: array<u8, 4> = [10_u8, 20_u8, 30_u8, 40_u8];
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A const array is read-only static rodata, indexed with copy-out [CONST-2].";
+   let v: own u8 = index<u8>(table, 2_u64);
+   check ieq<u8>(v, 30_u8) else trap "const table drift";
+--- a/conformance/cases/const2-pos-item.wf
++++ b/conformance/cases/const2-pos-item.wf
+@@ -1,6 +1,6 @@
+ const limit: i32 = 100_i32;
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A named, immutable, program-lifetime const item [CONST-2].";
+   return unit;
+ }
+--- a/conformance/cases/eff1-neg-wrong-order-row.wf
++++ b/conformance/cases/eff1-neg-wrong-order-row.wf
+@@ -1,9 +1,9 @@
+-fn f (x: own i32) -> own i32 traps, allocates(heap) {
++fn f(x: own i32) -> own i32 traps, allocates(heap) {
+   doc "Row order violates EFF-1 canonical order (allocates before traps).";
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let a: own i32 = f(x: 7_i32);
+   check ieq<i32>(a, 7_i32) else trap "x";
+   return unit;
+--- a/conformance/cases/eff1-pos-pure-and-traps-rows.wf
++++ b/conformance/cases/eff1-pos-pure-and-traps-rows.wf
+@@ -1,9 +1,9 @@
+-fn inc (x: own i32) -> own i32 pure {
++fn inc(x: own i32) -> own i32 pure {
+   doc "Empty-row `pure` spelling [EFF-1].";
+   return iadd.wrap<i32>(x, 1_i32);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Canonical effect rows: `pure` (empty row) and `traps` [EFF-1].";
+   let a: own i32 = inc(x: 41_i32);
+   check ieq<i32>(a, 42_i32) else trap "drift";
+--- a/conformance/cases/eff2-neg-declared-unexhibited.wf
++++ b/conformance/cases/eff2-neg-declared-unexhibited.wf
+@@ -1,9 +1,9 @@
+-fn f (x: own i32) -> own i32 traps {
++fn f(x: own i32) -> own i32 traps {
+   doc "Declares `traps` but body has no trapping op [EFF-2] declared-but-unexhibited.";
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let a: own i32 = f(x: 7_i32);
+   check ieq<i32>(a, 7_i32) else trap "x";
+   return unit;
+--- a/conformance/cases/eff2-neg-try-hidden-trap.wf
++++ b/conformance/cases/eff2-neg-try-hidden-trap.wf
+@@ -1,9 +1,9 @@
+-fn g ['r] (buf: &'r buffer<i32>, i: own u64) -> own Result<i32,Overflow> reads('r) {
++fn g ['r](buf: &'r buffer<i32>, i: own u64) -> own Result<i32, Overflow> reads('r) {
+   doc "EFF-2: a bounds-checked index inside a try scrutinee exhibits traps; the row omits it.";
+   let r: own i32 = try iadd.checked<i32>(index<i32>(deref(buf), i), 1_i32);
+   return Ok(value: r);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/eff2-neg-undeclared-exhibited.wf
++++ b/conformance/cases/eff2-neg-undeclared-exhibited.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Body exhibits traps (a `check`) but declares `pure` [EFF-2] undeclared-but-exhibited.";
+   check ieq<i32>(2_i32, 2_i32) else trap "x";
+   return unit;
+--- a/conformance/cases/eff2-pos-declared-traps-exhibited.wf
++++ b/conformance/cases/eff2-pos-declared-traps-exhibited.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Body exhibits traps (a `check`) and declares `traps` [EFF-2].";
+   check ieq<i32>(2_i32, 2_i32) else trap "x";
+   return unit;
+--- a/conformance/cases/eff2-pos-try-declared-trap.wf
++++ b/conformance/cases/eff2-pos-try-declared-trap.wf
+@@ -1,9 +1,9 @@
+-fn g ['r] (buf: &'r buffer<i32>, i: own u64) -> own Result<i32,Overflow> reads('r), traps {
++fn g ['r](buf: &'r buffer<i32>, i: own u64) -> own Result<i32, Overflow> reads('r), traps {
+   doc "EFF-2: the try-scrutinee index trap is declared; row and body agree.";
+   let r: own i32 = try iadd.checked<i32>(index<i32>(deref(buf), i), 1_i32);
+   return Ok(value: r);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/eff3-pos-pure-fn.wf
++++ b/conformance/cases/eff3-pos-pure-fn.wf
+@@ -1,10 +1,10 @@
+-fn dbl (x: own i32) -> own i32 pure {
++fn dbl(x: own i32) -> own i32 pure {
+   doc "A genuinely `pure` body: `.wrap` add, no traps/reads/writes/allocates [EFF-3].";
+   let r: own i32 = iadd.wrap<i32>(x, x);
+   return r;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let a: own i32 = dbl(x: 21_i32);
+   check ieq<i32>(a, 42_i32) else trap "x";
+   return unit;
+--- a/conformance/cases/eff4-pos-trap-aborts.wf
++++ b/conformance/cases/eff4-pos-trap-aborts.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Trap is abort: a failing `check` kills the process, no unwinding/cleanup [EFF-4].";
+   check ieq<i32>(1_i32, 2_i32) else trap "boom";
+   return unit;
+--- a/conformance/cases/err1-pos-result-value-match.wf
++++ b/conformance/cases/err1-pos-result-value-match.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Recoverable error is a value: a `Result` dispatched by `match` arms [ERR-1].";
+   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
+     Ok(value: w) => {
+--- a/conformance/cases/err2-neg-missing-variant.wf
++++ b/conformance/cases/err2-neg-missing-variant.wf
+@@ -1,13 +1,21 @@
+-enum Color { Red(); Green(); Blue(); }
++enum Color {
++  Red();
++  Green();
++  Blue();
++}
+ 
+-fn pick (c: own Color) -> own i32 pure {
++fn pick(c: own Color) -> own i32 pure {
+   match c {
+-    Red() => { return 1_i32; }
+-    Green() => { return 2_i32; }
++    Red() => {
++      return 1_i32;
++    }
++    Green() => {
++      return 2_i32;
++    }
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
+   let red_atom_0001: own Color = Red();
+   let n: own i32 = pick(c: red_atom_0001);
+--- a/conformance/cases/err2-pos-exhaustive-match.wf
++++ b/conformance/cases/err2-pos-exhaustive-match.wf
+@@ -1,14 +1,24 @@
+-enum Color { Red(); Green(); Blue(); }
++enum Color {
++  Red();
++  Green();
++  Blue();
++}
+ 
+-fn pick (c: own Color) -> own i32 pure {
++fn pick(c: own Color) -> own i32 pure {
+   match c {
+-    Red() => { return 1_i32; }
+-    Green() => { return 2_i32; }
+-    Blue() => { return 3_i32; }
++    Red() => {
++      return 1_i32;
++    }
++    Green() => {
++      return 2_i32;
++    }
++    Blue() => {
++      return 3_i32;
++    }
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "An exhaustive match over all declared variants is accepted [ERR-2].";
+   let green_atom_0001: own Color = Green();
+   let n: own i32 = pick(c: green_atom_0001);
+--- a/conformance/cases/err3-neg-error-type-mismatch.wf
++++ b/conformance/cases/err3-neg-error-type-mismatch.wf
+@@ -1,16 +1,21 @@
+-enum ErrA { A(); }
+-enum ErrB { B(); }
++enum ErrA {
++  A();
++}
+ 
+-fn step (x: own i32) -> own Result<i32, ErrA> pure {
++enum ErrB {
++  B();
++}
++
++fn step(x: own i32) -> own Result<i32, ErrA> pure {
+   return Ok(value: x);
+ }
+ 
+-fn use (x: own i32) -> own Result<i32, ErrB> pure {
++fn use(x: own i32) -> own Result<i32, ErrB> pure {
+   doc "`try` requires inner and outer E to match (no conversions) [ERR-3]; ErrA != ErrB.";
+   let y: own i32 = try step(x: x);
+   return Ok(value: y);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   return unit;
+ }
+--- a/conformance/cases/err3-neg-try-different-error-type.wf
++++ b/conformance/cases/err3-neg-try-different-error-type.wf
+@@ -1,10 +1,10 @@
+-fn bad (x: own i64) -> own Result<i64,DivError> pure {
+-  let d: own Result<i64,Overflow> = iadd.checked<i64>(x, x);
++fn bad(x: own i64) -> own Result<i64, DivError> pure {
++  let d: own Result<i64, Overflow> = iadd.checked<i64>(x, x);
+   let v: own i64 = try d;
+-  let r: own Result<i64,DivError> = idiv.checked<i64>(v, 2_i64);
++  let r: own Result<i64, DivError> = idiv.checked<i64>(v, 2_i64);
+   return r;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   return unit;
+ }
+--- a/conformance/cases/err3-pos-try-propagate.wf
++++ b/conformance/cases/err3-pos-try-propagate.wf
+@@ -1,18 +1,25 @@
+-enum MyErr { Bad(); }
++enum MyErr {
++  Bad();
++}
+ 
+-fn step (x: own i32) -> own Result<i32, MyErr> pure {
++fn step(x: own i32) -> own Result<i32, MyErr> pure {
+   match ilt<i32>(x, 0_i32) {
+-    True() => { let bad_atom_0001: own MyErr = Bad(); return Err(error: bad_atom_0001); }
+-    False() => { return Ok(value: x); }
++    True() => {
++      let bad_atom_0001: own MyErr = Bad();
++      return Err(error: bad_atom_0001);
++    }
++    False() => {
++      return Ok(value: x);
++    }
+   }
+ }
+ 
+-fn use (x: own i32) -> own Result<i32, MyErr> pure {
++fn use(x: own i32) -> own Result<i32, MyErr> pure {
+   doc "`try` binds Ok payload; Err returns Err(err) with same E [ERR-3].";
+   let y: own i32 = try step(x: x);
+   return Ok(value: y);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   return unit;
+ }
+--- a/conformance/cases/err3-pos-try-propagation.wf
++++ b/conformance/cases/err3-pos-try-propagation.wf
+@@ -1,21 +1,28 @@
+-fn half_checked (x: own i64) -> own Result<i64,Overflow> pure {
+-  let d: own Result<i64,Overflow> = iadd.checked<i64>(x, x);
++fn half_checked(x: own i64) -> own Result<i64, Overflow> pure {
++  let d: own Result<i64, Overflow> = iadd.checked<i64>(x, x);
+   let v: own i64 = try d;
+-  let r: own Result<i64,Overflow> = iadd.checked<i64>(v, 1_i64);
++  let r: own Result<i64, Overflow> = iadd.checked<i64>(v, 1_i64);
+   return r;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let big: own i64 = 4611686018427387904_i64;
+-  let a: own Result<i64,Overflow> = half_checked(x: 20_i64);
++  let a: own Result<i64, Overflow> = half_checked(x: 20_i64);
+   match a {
+-    Ok(value: v) => { check ieq<i64>(v, 41_i64) else trap "ok path drift"; }
+-    Err(error: e) => { check ieq<i64>(0_i64, 1_i64) else trap "unexpected err"; }
++    Ok(value: v) => {
++      check ieq<i64>(v, 41_i64) else trap "ok path drift";
++    }
++    Err(error: e) => {
++      check ieq<i64>(0_i64, 1_i64) else trap "unexpected err";
++    }
+   }
+-  let b: own Result<i64,Overflow> = half_checked(x: big);
++  let b: own Result<i64, Overflow> = half_checked(x: big);
+   match b {
+-    Ok(value: v) => { check ieq<i64>(0_i64, 1_i64) else trap "expected err"; }
+-    Err(error: e) => { }
++    Ok(value: v) => {
++      check ieq<i64>(0_i64, 1_i64) else trap "expected err";
++    }
++    Err(error: e) => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/err4-pos-contract-trap.wf
++++ b/conformance/cases/err4-pos-contract-trap.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Overflow via `.trap` is classified a contract violation: it aborts [ERR-4, SCOPE-4]; fixed by op table, not call site.";
+   let v: own i32 = 0_i32;
+   set v = iadd.trap<i32>(2147483647_i32, 1_i32);
+--- a/conformance/cases/err4-pos-recoverable-value.wf
++++ b/conformance/cases/err4-pos-recoverable-value.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Overflow via `.checked` is classified recoverable: delivered as a value (Err), not a trap [ERR-4].";
+   let v: own i32 = match iadd.checked<i32>(2147483647_i32, 1_i32) {
+     Ok(value: w) => {
+--- a/conformance/cases/ex1-pos-worked-example.wf
++++ b/conformance/cases/ex1-pos-worked-example.wf
+@@ -1,4 +1,8 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+ fn sign_of(x: own i32) -> own Sign pure {
+   doc "Conditional value produced by returning from arms (canonical for return position).";
+--- a/conformance/cases/fn1-pos-signature-driven-call.wf
++++ b/conformance/cases/fn1-pos-signature-driven-call.wf
+@@ -1,11 +1,11 @@
+-fn add (x: own i32, y: own i32) -> own i32 traps {
++fn add(x: own i32, y: own i32) -> own i32 traps {
+   doc "A full signature states param modes/types and return mode/type [FN-1].";
+   return iadd.trap<i32>(x, y);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Caller relies only on add's signature [FN-1].";
+   let s: own i32 = add(x: 40_i32, y: 2_i32);
+   check ieq<i32>(s, 42_i32) else trap "sig drift";
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn2-neg-eeq-implicit-type.wf
++++ b/conformance/cases/fn2-neg-eeq-implicit-type.wf
+@@ -1,5 +1,8 @@
+-enum TagEq { TagFirst(); TagSecond(); }
++enum TagEq {
++  TagFirst();
++  TagSecond();
++}
+ 
+-fn compare (left: own TagEq, right: own TagEq) -> own Bool pure {
++fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
+   return eeq(left, right);
+ }
+--- a/conformance/cases/fn2-neg-implicit-instantiation.wf
++++ b/conformance/cases/fn2-neg-implicit-instantiation.wf
+@@ -1,5 +1,5 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A generic op with no explicit instantiation argument [FN-2 violated].";
+   let a: own i32 = iadd.trap(40_i32, 2_i32);
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn2-pos-explicit-instantiation.wf
++++ b/conformance/cases/fn2-pos-explicit-instantiation.wf
+@@ -1,7 +1,7 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Generic ops are instantiated with explicit type arguments [FN-2].";
+   let a: own i32 = iadd.trap<i32>(40_i32, 2_i32);
+   let b: own i32 = imul.wrap<i32>(a, 1_i32);
+   check ieq<i32>(b, 42_i32) else trap "mono drift";
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn3-neg-requires-member.wf
++++ b/conformance/cases/fn3-neg-requires-member.wf
+@@ -1,18 +1,18 @@
+ contract CheckedMember {
+-  fn apply (x: own i32) -> own i32 traps;
++  fn apply(x: own i32) -> own i32 traps;
+ }
+ 
+-fn checked_apply (x: own i32) -> own i32 traps requires {
++fn checked_apply(x: own i32) -> own i32 traps requires {
+   let valid: own Bool = ige<i32>(x, 0_i32);
+   check valid else trap "nonnegative input";
+ } {
+   return x;
+ }
+ 
+-conform i32 : CheckedMember {
++conform i32: CheckedMember {
+   apply = checked_apply;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn3-neg-signature-effect-mismatch.wf
++++ b/conformance/cases/fn3-neg-signature-effect-mismatch.wf
+@@ -1,16 +1,16 @@
+ contract PureMember {
+-  fn apply (x: own i32) -> own i32 pure;
++  fn apply(x: own i32) -> own i32 pure;
+ }
+ 
+-fn trapping_apply (x: own i32) -> own i32 traps {
++fn trapping_apply(x: own i32) -> own i32 traps {
+   check ieq<i32>(x, x) else trap "retained explicit check";
+   return x;
+ }
+ 
+-conform i32 : PureMember {
++conform i32: PureMember {
+   apply = trapping_apply;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn3-neg-two-conformances.wf
++++ b/conformance/cases/fn3-neg-two-conformances.wf
+@@ -1,23 +1,23 @@
+ contract Zeroed {
+-  fn zero () -> own i32 pure;
++  fn zero() -> own i32 pure;
+ }
+ 
+-conform i32 : Zeroed {
++conform i32: Zeroed {
+   zero = i32_zero_a;
+ }
+ 
+-conform i32 : Zeroed {
++conform i32: Zeroed {
+   zero = i32_zero_b;
+ }
+ 
+-fn i32_zero_a () -> own i32 pure {
++fn i32_zero_a() -> own i32 pure {
+   return 0_i32;
+ }
+ 
+-fn i32_zero_b () -> own i32 pure {
++fn i32_zero_b() -> own i32 pure {
+   return 0_i32;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn3-pos-contract-conform.wf
++++ b/conformance/cases/fn3-pos-contract-conform.wf
+@@ -1,16 +1,16 @@
+ contract Zeroed {
+   doc "A contract declares fn signatures [FN-3].";
+-  fn zero () -> own i32 pure;
++  fn zero() -> own i32 pure;
+ }
+ 
+-conform i32 : Zeroed {
++conform i32: Zeroed {
+   zero = i32_zero;
+ }
+ 
+-fn i32_zero () -> own i32 pure {
++fn i32_zero() -> own i32 pure {
+   return 0_i32;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn4-neg-bad-lawname.wf
++++ b/conformance/cases/fn4-neg-bad-lawname.wf
+@@ -1,8 +1,8 @@
+ contract BadLaw {
+-  fn combine (x: own i32, y: own i32) -> own i32 pure;
++  fn combine(x: own i32, y: own i32) -> own i32 pure;
+   law distributive(combine, combine);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn4-neg-law-refuted-signedness.wf
++++ b/conformance/cases/fn4-neg-law-refuted-signedness.wf
+@@ -1,17 +1,17 @@
+ contract BadMonoid {
+   doc "FN-4: signed saturating add is NOT associative ((MAX sat+ 1) sat+ -1 != MAX sat+ (1 sat+ -1)); the stated law must be refuted, not trusted.";
+-  fn combine (x: own i64, y: own i64) -> own i64 pure;
++  fn combine(x: own i64, y: own i64) -> own i64 pure;
+   law associative(combine);
+ }
+ 
+-fn satadd_signed (x: own i64, y: own i64) -> own i64 pure {
++fn satadd_signed(x: own i64, y: own i64) -> own i64 pure {
+   return iadd.sat<i64>(x, y);
+ }
+ 
+-conform i64 : BadMonoid {
++conform i64: BadMonoid {
+   combine = satadd_signed;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn4-neg-law-undischarged.wf
++++ b/conformance/cases/fn4-neg-law-undischarged.wf
+@@ -1,18 +1,18 @@
+ contract OpaqueMonoid {
+   doc "FN-4: a stated law on a fn whose body is not a single table op has no static proof; stated-but-unchecked is a hard reject, never a trusted fact.";
+-  fn combine (x: own u64, y: own u64) -> own u64 pure;
++  fn combine(x: own u64, y: own u64) -> own u64 pure;
+   law associative(combine);
+ }
+ 
+-fn twostep (x: own u64, y: own u64) -> own u64 pure {
++fn twostep(x: own u64, y: own u64) -> own u64 pure {
+   let t: own u64 = iadd.wrap<u64>(x, y);
+   return iadd.wrap<u64>(t, 1_u64);
+ }
+ 
+-conform u64 : OpaqueMonoid {
++conform u64: OpaqueMonoid {
+   combine = twostep;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn4-pos-law-discharged.wf
++++ b/conformance/cases/fn4-pos-law-discharged.wf
+@@ -1,19 +1,19 @@
+ contract SatMonoid {
+   doc "FN-4 stated-and-checked: laws discharged statically because the bound fn's body is a single table op whose law is OP-8 table data.";
+-  fn combine (x: own u64, y: own u64) -> own u64 pure;
++  fn combine(x: own u64, y: own u64) -> own u64 pure;
+   law associative(combine);
+   law commutative(combine);
+   law identity(combine, 0_u64);
+ }
+ 
+-fn satadd (x: own u64, y: own u64) -> own u64 pure {
++fn satadd(x: own u64, y: own u64) -> own u64 pure {
+   return iadd.sat<u64>(x, y);
+ }
+ 
+-conform u64 : SatMonoid {
++conform u64: SatMonoid {
+   combine = satadd;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn4-pos-law-in-contract.wf
++++ b/conformance/cases/fn4-pos-law-in-contract.wf
+@@ -1,9 +1,9 @@
+ contract Semigroup {
+   doc "A law uses a closed LAWNAME from {associative, commutative, identity} [FN-4].";
+-  fn combine (x: own i32, y: own i32) -> own i32 pure;
++  fn combine(x: own i32, y: own i32) -> own i32 pure;
+   law associative(combine);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn5-pos-match-dispatch.wf
++++ b/conformance/cases/fn5-pos-match-dispatch.wf
+@@ -1,6 +1,9 @@
+-enum Op { Inc(); Dec(); }
++enum Op {
++  Inc();
++  Dec();
++}
+ 
+-fn apply (op: own Op, x: own i32) -> own i32 traps {
++fn apply(op: own Op, x: own i32) -> own i32 traps {
+   doc "Closed-set dispatch is match, not a function value [FN-5].";
+   match op {
+     Inc() => {
+@@ -12,9 +15,9 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let inc_atom_0001: own Op = Inc();
+   let r: own i32 = apply(op: inc_atom_0001, x: 41_i32);
+   check ieq<i32>(r, 42_i32) else trap "dispatch drift";
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn6-neg-polymorphic-recursion.wf
++++ b/conformance/cases/fn6-neg-polymorphic-recursion.wf
+@@ -1,10 +1,10 @@
+-fn poly <T> (x: own T) -> own T pure {
++fn poly<T>(x: own T) -> own T pure {
+   doc "Polymorphic recursion: the call instantiates the callee at a different type parameter [FN-6 violated].";
+   let y: own i32 = poly<i32>(x: 0_i32);
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let z: own i32 = poly<i32>(x: 0_i32);
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn6-pos-recursion.wf
++++ b/conformance/cases/fn6-pos-recursion.wf
+@@ -1,4 +1,4 @@
+-fn sumto (n: own i32) -> own i32 traps {
++fn sumto(n: own i32) -> own i32 traps {
+   doc "Recursion is permitted [FN-6].";
+   match ieq<i32>(n, 0_i32) {
+     True() => {
+@@ -12,8 +12,8 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let s: own i32 = sumto(n: 4_i32);
+   check ieq<i32>(s, 10_i32) else trap "recursion drift";
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn7-neg-two-mains.wf
++++ b/conformance/cases/fn7-neg-two-mains.wf
+@@ -1,9 +1,9 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "First main.";
+   return unit;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Second main violates exactly-one-main [FN-7].";
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn7-pos-single-main.wf
++++ b/conformance/cases/fn7-pos-single-main.wf
+@@ -1,5 +1,5 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Exactly one fn main with an at-most allocates(heap),traps row [FN-7].";
+   check ieq<i32>(2_i32, 2_i32) else trap "unreachable";
+   return unit;
+-}
+\ No newline at end of file
++}
+--- a/conformance/cases/fn8-neg-doc-only-clause.wf
++++ b/conformance/cases/fn8-neg-doc-only-clause.wf
+@@ -1,9 +1,9 @@
+-fn f (a: own u64) -> own u64 traps requires {
++fn f(a: own u64) -> own u64 traps requires {
+   doc "a clause with no final check must not count as a requires";
+ } {
+   return a;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-control.wf
++++ b/conformance/cases/fn8-neg-requires-control.wf
+@@ -1,4 +1,4 @@
+-fn control (x: own i32) -> own i32 traps requires {
++fn control(x: own i32) -> own i32 traps requires {
+   let permitted: own Bool = ige<i32>(x, 0_i32);
+   check permitted else trap "x must be nonnegative";
+   return x;
+@@ -7,6 +7,6 @@
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-eeq-integer.wf
++++ b/conformance/cases/fn8-neg-requires-eeq-integer.wf
+@@ -1,4 +1,4 @@
+-fn guarded (left: own u32, right: own u32) -> own unit traps requires {
++fn guarded(left: own u32, right: own u32) -> own unit traps requires {
+   let same: own Bool = eeq<u32>(left, right);
+   check same else trap "integer precondition escaped";
+ } {
+--- a/conformance/cases/fn8-neg-requires-eeq-payload-enum.wf
++++ b/conformance/cases/fn8-neg-requires-eeq-payload-enum.wf
+@@ -1,6 +1,9 @@
+-enum ClausePayloadEq { ClausePayloadEmpty(); ClausePayloadValue(value: u32); }
++enum ClausePayloadEq {
++  ClausePayloadEmpty();
++  ClausePayloadValue(value: u32);
++}
+ 
+-fn guarded (left: own ClausePayloadEq, right: own ClausePayloadEq) -> own unit traps requires {
++fn guarded(left: own ClausePayloadEq, right: own ClausePayloadEq) -> own unit traps requires {
+   let same: own Bool = eeq<ClausePayloadEq>(left, right);
+   check same else trap "payload precondition escaped";
+ } {
+--- a/conformance/cases/fn8-neg-requires-local-in-body.wf
++++ b/conformance/cases/fn8-neg-requires-local-in-body.wf
+@@ -1,4 +1,4 @@
+-fn hidden_local (x: own i32) -> own Bool traps requires {
++fn hidden_local(x: own i32) -> own Bool traps requires {
+   let permitted: own Bool = ige<i32>(x, 0_i32);
+   check permitted else trap "x must be nonnegative";
+ } {
+@@ -6,6 +6,6 @@
+   return permitted;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-missing-traps.wf
++++ b/conformance/cases/fn8-neg-requires-missing-traps.wf
+@@ -1,4 +1,4 @@
+-fn missing_effect (x: own i32) -> own i32 pure requires {
++fn missing_effect(x: own i32) -> own i32 pure requires {
+   let permitted: own Bool = ige<i32>(x, 0_i32);
+   check permitted else trap "x must be nonnegative";
+ } {
+@@ -6,6 +6,6 @@
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-no-check.wf
++++ b/conformance/cases/fn8-neg-requires-no-check.wf
+@@ -1,10 +1,10 @@
+-fn no_check (x: own i32) -> own i32 pure requires {
++fn no_check(x: own i32) -> own i32 pure requires {
+   let permitted: own Bool = ige<i32>(x, 0_i32);
+ } {
+   doc "A requirement clause without its terminal checked Bool fact is malformed [FN-8].";
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-non-bool-check.wf
++++ b/conformance/cases/fn8-neg-requires-non-bool-check.wf
+@@ -1,10 +1,10 @@
+-fn non_bool (x: own i32) -> own i32 traps requires {
++fn non_bool(x: own i32) -> own i32 traps requires {
+   check x else trap "not a Bool";
+ } {
+   doc "A requirement check condition must have type Bool [FN-8/TYPE-5].";
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-set.wf
++++ b/conformance/cases/fn8-neg-requires-set.wf
+@@ -1,4 +1,4 @@
+-fn mutable_clause (x: own i32) -> own i32 traps requires {
++fn mutable_clause(x: own i32) -> own i32 traps requires {
+   let candidate: own i32 = x;
+   set candidate = iadd.wrap<i32>(candidate, 1_i32);
+   let permitted: own Bool = igt<i32>(candidate, x);
+@@ -8,6 +8,6 @@
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-trapping-op.wf
++++ b/conformance/cases/fn8-neg-requires-trapping-op.wf
+@@ -1,4 +1,4 @@
+-fn trapping_op (x: own i32) -> own i32 traps requires {
++fn trapping_op(x: own i32) -> own i32 traps requires {
+   let incremented: own i32 = iadd.trap<i32>(x, 1_i32);
+   let permitted: own Bool = igt<i32>(incremented, x);
+   check permitted else trap "increment must increase";
+@@ -7,6 +7,6 @@
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-neg-requires-user-call.wf
++++ b/conformance/cases/fn8-neg-requires-user-call.wf
+@@ -1,8 +1,8 @@
+-fn identity (x: own i32) -> own i32 pure {
++fn identity(x: own i32) -> own i32 pure {
+   return x;
+ }
+ 
+-fn user_call (x: own i32) -> own i32 traps requires {
++fn user_call(x: own i32) -> own i32 traps requires {
+   let copied: own i32 = identity(x: x);
+   let permitted: own Bool = ieq<i32>(copied, x);
+   check permitted else trap "identity mismatch";
+@@ -11,6 +11,6 @@
+   return x;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/fn8-pos-requires-eeq.wf
++++ b/conformance/cases/fn8-pos-requires-eeq.wf
+@@ -1,13 +1,17 @@
+-enum ClauseEq { ClauseFirst(); ClauseSecond(); ClauseThird(); }
++enum ClauseEq {
++  ClauseFirst();
++  ClauseSecond();
++  ClauseThird();
++}
+ 
+-fn guarded (left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
++fn guarded(left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
+   let same: own Bool = eeq<ClauseEq>(left, right);
+   check same else trap "enum precondition failed";
+ } {
+   return unit;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let left: own ClauseEq = ClauseSecond();
+   let right: own ClauseEq = ClauseSecond();
+   guarded(left: left, right: right);
+--- a/conformance/cases/fn8-pos-requires-name-reuse.wf
++++ b/conformance/cases/fn8-pos-requires-name-reuse.wf
+@@ -1,4 +1,4 @@
+-fn increment (x: own i32) -> own i32 traps requires {
++fn increment(x: own i32) -> own i32 traps requires {
+   let value: own Bool = ige<i32>(x, 0_i32);
+   check value else trap "x must be nonnegative";
+ } {
+@@ -7,7 +7,7 @@
+   return value;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let value: own i32 = increment(x: 7_i32);
+   check ieq<i32>(value, 8_i32) else trap "requires scope drift";
+   return unit;
+--- a/conformance/cases/fn8-pos-requires-run.wf
++++ b/conformance/cases/fn8-pos-requires-run.wf
+@@ -1,4 +1,4 @@
+-fn bounded (x: own i32) -> own i32 traps requires {
++fn bounded(x: own i32) -> own i32 traps requires {
+   let permitted: own Bool = ige<i32>(x, 0_i32);
+   check permitted else trap "x must be nonnegative";
+ } {
+@@ -6,7 +6,7 @@
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let value: own i32 = bounded(x: 7_i32);
+   check ieq<i32>(value, 7_i32) else trap "requires result drift";
+   return unit;
+--- a/conformance/cases/fn8-trap-requires-false.wf
++++ b/conformance/cases/fn8-trap-requires-false.wf
+@@ -1,4 +1,4 @@
+-fn positive (x: own i32) -> own i32 traps requires {
++fn positive(x: own i32) -> own i32 traps requires {
+   let permitted: own Bool = igt<i32>(x, 0_i32);
+   check permitted else trap "x must be positive";
+ } {
+@@ -6,7 +6,7 @@
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let value: own i32 = positive(x: 0_i32);
+   check ieq<i32>(value, 0_i32) else trap "unreachable body result";
+   return unit;
+--- a/conformance/cases/form1-pos-canonical.wf
++++ b/conformance/cases/form1-pos-canonical.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Canonical form: one spelling, one legal byte formatting [FORM-1].";
+   return unit;
+ }
+--- a/conformance/cases/form2-neg-noncanonical-ws.wf
++++ b/conformance/cases/form2-neg-noncanonical-ws.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
+-    let a:own i32 = 1_i32;
+-    return unit;
++fn main() -> own unit pure {
++    let a: own i32 = 1_i32;
++  return unit;
+ }
+--- a/conformance/cases/form2-pos-canonical-bytes.wf
++++ b/conformance/cases/form2-pos-canonical-bytes.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Byte-level formatting: two-space indent, canonical spacing [FORM-2].";
+   let a: own i32 = 1_i32;
+   return unit;
+--- a/conformance/cases/form3-pos-lexical-classes.wf
++++ b/conformance/cases/form3-pos-lexical-classes.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "IDENT, TYPEID, REGIONID, LABEL, and OPNAME lexical classes [FORM-3].";
+   let a: own i32 = 3_i32;
+   region 'r {
+--- a/conformance/cases/form4-pos-doc-not-comment.wf
++++ b/conformance/cases/form4-pos-doc-not-comment.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "There are no comments; documentation is the doc field [FORM-4].";
+   return unit;
+ }
+--- a/conformance/cases/form5-pos-suffixed-literal.wf
++++ b/conformance/cases/form5-pos-suffixed-literal.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "An integer literal carries its mandatory type suffix [FORM-5].";
+   let a: own i32 = 42_i32;
+   return unit;
+--- a/conformance/cases/form6-pos-unit-type-and-value.wf
++++ b/conformance/cases/form6-pos-unit-type-and-value.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "unit names the type in type position and the value in value position [FORM-6].";
+   let u: own unit = unit;
+   return unit;
+--- a/conformance/cases/form7-neg-leading-zero.wf
++++ b/conformance/cases/form7-neg-leading-zero.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A leading-zero integer literal is illegal; 0 is its own form [FORM-7].";
+   let a: own i32 = 007_i32;
+   return unit;
+--- a/conformance/cases/form7-neg-out-of-range.wf
++++ b/conformance/cases/form7-neg-out-of-range.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "An out-of-range integer literal is a hard error at check time [FORM-7].";
+   let a: own i32 = 9999999999_i32;
+   return unit;
+--- a/conformance/cases/form7-pos-in-range.wf
++++ b/conformance/cases/form7-pos-in-range.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "An in-range integer literal is well-formed [FORM-7].";
+   let a: own i32 = 2147483647_i32;
+   return unit;
+--- a/conformance/cases/gram1-pos-lookahead.wf
++++ b/conformance/cases/gram1-pos-lookahead.wf
+@@ -1,22 +1,36 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn id (x: own i32) -> own i32 pure {
++fn id(x: own i32) -> own i32 pure {
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-1: FIRST-set overlaps (construct K() vs op op<t>() vs call f() ; stmt-match vs let-match) resolved by two-token lookahead; one parse each.";
+   let a: own i32 = id(x: 20_i32);
+   let b: own i32 = iadd.wrap<i32>(a, 22_i32);
+   let s: own Sign = Neg();
+   let c: own i32 = match ilt<i32>(b, 100_i32) {
+-    True() => { give b; }
+-    False() => { give a; }
++    True() => {
++      give b;
++    }
++    False() => {
++      give a;
++    }
+   }
+   match s {
+-    Neg() => { check ieq<i32>(c, 42_i32) else trap "drift"; }
+-    Zero() => { return unit; }
+-    Pos() => { return unit; }
++    Neg() => {
++      check ieq<i32>(c, 42_i32) else trap "drift";
++    }
++    Zero() => {
++      return unit;
++    }
++    Pos() => {
++      return unit;
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/gram10-neg-wrong-field.wf
++++ b/conformance/cases/gram10-neg-wrong-field.wf
+@@ -1,9 +1,13 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-10: a misspelled binder field name is a hard error citing GRAM-10.";
+   let a: own i32 = 40_i32;
+   let v: own i32 = match iadd.checked<i32>(a, 2_i32) {
+-    Ok(val: w) => { give w; }
+-    Err(error: e) => { return unit; }
++    Ok(val: w) => {
++      give w;
++    }
++    Err(error: e) => {
++      return unit;
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/gram10-pos-named-binders.wf
++++ b/conformance/cases/gram10-pos-named-binders.wf
+@@ -1,9 +1,13 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-10: named match binders - each field written as field:binder (a fresh IDENT) in declared order.";
+   let a: own i32 = 40_i32;
+   let v: own i32 = match iadd.checked<i32>(a, 2_i32) {
+-    Ok(value: w) => { give w; }
+-    Err(error: e) => { return unit; }
++    Ok(value: w) => {
++      give w;
++    }
++    Err(error: e) => {
++      return unit;
++    }
+   }
+   check ieq<i32>(v, 42_i32) else trap "drift";
+   return unit;
+--- a/conformance/cases/gram11-neg-misspelled.wf
++++ b/conformance/cases/gram11-neg-misspelled.wf
+@@ -1,8 +1,8 @@
+-fn add2 (x: own i32, y: own i32) -> own i32 pure {
++fn add2(x: own i32, y: own i32) -> own i32 pure {
+   return iadd.wrap<i32>(x, y);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-11: a misspelled parameter name in a call is a hard error citing GRAM-11.";
+   let r: own i32 = add2(x: 40_i32, z: 2_i32);
+   return unit;
+--- a/conformance/cases/gram11-neg-out-of-order.wf
++++ b/conformance/cases/gram11-neg-out-of-order.wf
+@@ -1,8 +1,8 @@
+-fn sub2 (x: own i32, y: own i32) -> own i32 pure {
++fn sub2(x: own i32, y: own i32) -> own i32 pure {
+   return isub.wrap<i32>(x, y);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-11: arguments out of declared order are rejected; declared order is the one legal byte sequence.";
+   let r: own i32 = sub2(y: 2_i32, x: 40_i32);
+   return unit;
+--- a/conformance/cases/gram11-pos-named-args.wf
++++ b/conformance/cases/gram11-pos-named-args.wf
+@@ -1,8 +1,8 @@
+-fn add2 (x: own i32, y: own i32) -> own i32 pure {
++fn add2(x: own i32, y: own i32) -> own i32 pure {
+   return iadd.wrap<i32>(x, y);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-11: a user-fn call names its arguments in declared parameter order.";
+   let r: own i32 = add2(x: 40_i32, y: 2_i32);
+   check ieq<i32>(r, 42_i32) else trap "drift";
+--- a/conformance/cases/gram2-pos-items.wf
++++ b/conformance/cases/gram2-pos-items.wf
+@@ -1,10 +1,14 @@
+-enum Color { Red(); Green(); Blue(); }
++enum Color {
++  Red();
++  Green();
++  Blue();
++}
+ 
+-fn pick (x: own i32) -> own Color pure {
++fn pick(x: own i32) -> own Color pure {
+   return Red();
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-2: a program is item* - two fn_decl items and one enum_decl item.";
+   let c: own Color = pick(x: 1_i32);
+   return unit;
+--- a/conformance/cases/gram3-pos-modes.wf
++++ b/conformance/cases/gram3-pos-modes.wf
+@@ -1,4 +1,4 @@
+-fn use3 ['r] (a: own i32, b: &'r i32, c: &uniq 'r i32) -> own i32 pure {
++fn use3 ['r](a: own i32, b: &'r i32, c: &uniq 'r i32) -> own i32 pure {
+   doc "GRAM-3: the three modes own / &'r / &uniq 'r written on i32 params.";
+   let x: own i32 = iadd.wrap<i32>(a, deref(b));
+   return x;
+--- a/conformance/cases/gram4-pos-stmts.wf
++++ b/conformance/cases/gram4-pos-stmts.wf
+@@ -1,18 +1,25 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-4: let, region, loop, match(stmt), break, set, give(let-match), check, return statements.";
+   let i: own i32 = 0_i32;
+   region 'r {
+     loop @l {
+       match ige<i32>(i, 3_i32) {
+-        True() => { break @l; }
+-        False() => { }
++        True() => {
++          break @l;
++        }
++        False() => {
++        }
+       }
+       set i = iadd.wrap<i32>(i, 1_i32);
+     }
+   }
+   let d: own i32 = match ieq<i32>(i, 3_i32) {
+-    True() => { give 7_i32; }
+-    False() => { give 0_i32; }
++    True() => {
++      give 7_i32;
++    }
++    False() => {
++      give 0_i32;
++    }
+   }
+   check ieq<i32>(d, 7_i32) else trap "bad";
+   return unit;
+--- a/conformance/cases/gram5-pos-exprs-places.wf
++++ b/conformance/cases/gram5-pos-exprs-places.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-5: literal atom, place atom, borrow_expr atom, deref place, call, construct.";
+   let a: own i32 = 5_i32;
+   region 'r {
+--- a/conformance/cases/gram5-pos-recursive-place-projection.wf
++++ b/conformance/cases/gram5-pos-recursive-place-projection.wf
+@@ -6,11 +6,11 @@
+   inner: InnerProjection;
+ }
+ 
+-fn read_projection ['r] (outer: &'r OuterProjection) -> own i32 reads('r) {
++fn read_projection ['r](outer: &'r OuterProjection) -> own i32 reads('r) {
+   return deref(outer).inner.value;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-5: a structural place base can be followed by multiple field suffixes, each denoting one field projection.";
+   let inner: own InnerProjection = InnerProjection(value: 42_i32);
+   let outer: own OuterProjection = OuterProjection(inner: move inner);
+--- a/conformance/cases/gram6-pos-no-operators.wf
++++ b/conformance/cases/gram6-pos-no-operators.wf
+@@ -1,11 +1,14 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-6: no operators/if/while/for - arithmetic is named ops, conditional is match, iteration is loop+break.";
+   let n: own i32 = 4_i32;
+   let acc: own i32 = 0_i32;
+   loop @l {
+     match ieq<i32>(n, 0_i32) {
+-      True() => { break @l; }
+-      False() => { }
++      True() => {
++        break @l;
++      }
++      False() => {
++      }
+     }
+     set acc = iadd.wrap<i32>(acc, n);
+     set n = isub.wrap<i32>(n, 1_i32);
+--- a/conformance/cases/gram7-pos-two-productions.wf
++++ b/conformance/cases/gram7-pos-two-productions.wf
+@@ -1,21 +1,35 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn classify (x: own i32) -> own Sign pure {
++fn classify(x: own i32) -> own Sign pure {
+   return Pos();
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-7: match as a let-initializer (value, give) AND as a statement (effect); one arm shape, one node kind.";
+   let v: own i32 = 21_i32;
+   let d: own i32 = match igt<i32>(v, 0_i32) {
+-    True() => { give 42_i32; }
+-    False() => { give 0_i32; }
++    True() => {
++      give 42_i32;
++    }
++    False() => {
++      give 0_i32;
++    }
+   }
+   let s: own Sign = classify(x: d);
+   match s {
+-    Neg() => { return unit; }
+-    Zero() => { return unit; }
+-    Pos() => { check ieq<i32>(d, 42_i32) else trap "drift"; }
++    Neg() => {
++      return unit;
++    }
++    Zero() => {
++      return unit;
++    }
++    Pos() => {
++      check ieq<i32>(d, 42_i32) else trap "drift";
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/gram8-neg-out-of-order.wf
++++ b/conformance/cases/gram8-neg-out-of-order.wf
+@@ -1,6 +1,8 @@
+-enum Pair { P(a: i32, b: i32); }
++enum Pair {
++  P(a: i32, b: i32);
++}
+ 
+-fn make () -> own Pair pure {
++fn make() -> own Pair pure {
+   doc "GRAM-8: out-of-order field names are rejected; declared order is the one legal byte sequence.";
+   return P(b: 2_i32, a: 1_i32);
+ }
+--- a/conformance/cases/gram8-neg-wrong-field.wf
++++ b/conformance/cases/gram8-neg-wrong-field.wf
+@@ -1,6 +1,8 @@
+-enum Wrap { W(inner: i32); }
++enum Wrap {
++  W(inner: i32);
++}
+ 
+-fn make () -> own Wrap pure {
++fn make() -> own Wrap pure {
+   doc "GRAM-8: a misspelled field name is a hard error citing GRAM-8.";
+   return W(inr: 7_i32);
+ }
+--- a/conformance/cases/gram8-pos-construct.wf
++++ b/conformance/cases/gram8-pos-construct.wf
+@@ -1,6 +1,9 @@
+-enum Wrap { W(inner: i32); N(); }
++enum Wrap {
++  W(inner: i32);
++  N();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-8: named construction - declared field written once as IDENT:atom in order; nullary written K().";
+   let a: own Wrap = W(inner: 7_i32);
+   let b: own Wrap = N();
+--- a/conformance/cases/gram9-pos-three-address.wf
++++ b/conformance/cases/gram9-pos-three-address.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-9: flat three-address - each computed value is bound by a let and forwarded by name; no nesting.";
+   let a: own i32 = 3_i32;
+   let b: own i32 = 4_i32;
+--- a/conformance/cases/op1-neg-eeq-arity.wf
++++ b/conformance/cases/op1-neg-eeq-arity.wf
+@@ -1,5 +1,8 @@
+-enum TagEq { TagFirst(); TagSecond(); }
++enum TagEq {
++  TagFirst();
++  TagSecond();
++}
+ 
+-fn compare (left: own TagEq) -> own Bool pure {
++fn compare(left: own TagEq) -> own Bool pure {
+   return eeq<TagEq>(left);
+ }
+--- a/conformance/cases/op1-neg-eeq-distinct-enums.wf
++++ b/conformance/cases/op1-neg-eeq-distinct-enums.wf
+@@ -1,6 +1,13 @@
+-enum LeftEq { LeftFirst(); LeftSecond(); }
+-enum RightEq { RightFirst(); RightSecond(); }
++enum LeftEq {
++  LeftFirst();
++  LeftSecond();
++}
+ 
+-fn compare (left: own LeftEq, right: own RightEq) -> own Bool pure {
++enum RightEq {
++  RightFirst();
++  RightSecond();
++}
++
++fn compare(left: own LeftEq, right: own RightEq) -> own Bool pure {
+   return eeq<LeftEq>(left, right);
+ }
+--- a/conformance/cases/op1-neg-eeq-integer.wf
++++ b/conformance/cases/op1-neg-eeq-integer.wf
+@@ -1,3 +1,3 @@
+-fn compare (left: own u32, right: own u32) -> own Bool pure {
++fn compare(left: own u32, right: own u32) -> own Bool pure {
+   return eeq<u32>(left, right);
+ }
+--- a/conformance/cases/op1-neg-eeq-payload-enum.wf
++++ b/conformance/cases/op1-neg-eeq-payload-enum.wf
+@@ -1,5 +1,8 @@
+-enum PayloadEq { PayloadEmpty(); PayloadValue(value: u32); }
++enum PayloadEq {
++  PayloadEmpty();
++  PayloadValue(value: u32);
++}
+ 
+-fn compare (left: own PayloadEq, right: own PayloadEq) -> own Bool pure {
++fn compare(left: own PayloadEq, right: own PayloadEq) -> own Bool pure {
+   return eeq<PayloadEq>(left, right);
+ }
+--- a/conformance/cases/op1-neg-ene-integer.wf
++++ b/conformance/cases/op1-neg-ene-integer.wf
+@@ -1,3 +1,3 @@
+-fn compare (left: own u32, right: own u32) -> own Bool pure {
++fn compare(left: own u32, right: own u32) -> own Bool pure {
+   return ene<u32>(left, right);
+ }
+--- a/conformance/cases/op1-neg-enum-ordering.wf
++++ b/conformance/cases/op1-neg-enum-ordering.wf
+@@ -1,5 +1,9 @@
+-enum TagEq { TagFirst(); TagSecond(); TagThird(); }
++enum TagEq {
++  TagFirst();
++  TagSecond();
++  TagThird();
++}
+ 
+-fn compare (left: own TagEq, right: own TagEq) -> own Bool pure {
++fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
+   return ilt<TagEq>(left, right);
+ }
+--- a/conformance/cases/op1-neg-ieq-bool.wf
++++ b/conformance/cases/op1-neg-ieq-bool.wf
+@@ -1,3 +1,3 @@
+-fn compare (left: own Bool, right: own Bool) -> own Bool pure {
++fn compare(left: own Bool, right: own Bool) -> own Bool pure {
+   return ieq<Bool>(left, right);
+ }
+--- a/conformance/cases/op1-neg-ieq-tag-enum.wf
++++ b/conformance/cases/op1-neg-ieq-tag-enum.wf
+@@ -1,5 +1,8 @@
+-enum TagEq { TagFirst(); TagSecond(); }
++enum TagEq {
++  TagFirst();
++  TagSecond();
++}
+ 
+-fn compare (left: own TagEq, right: own TagEq) -> own Bool pure {
++fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
+   return ieq<TagEq>(left, right);
+ }
+--- a/conformance/cases/op1-neg-ine-bool.wf
++++ b/conformance/cases/op1-neg-ine-bool.wf
+@@ -1,3 +1,3 @@
+-fn compare (left: own Bool, right: own Bool) -> own Bool pure {
++fn compare(left: own Bool, right: own Bool) -> own Bool pure {
+   return ine<Bool>(left, right);
+ }
+--- a/conformance/cases/op1-neg-ine-tag-enum.wf
++++ b/conformance/cases/op1-neg-ine-tag-enum.wf
+@@ -1,5 +1,8 @@
+-enum TagEq { TagFirst(); TagSecond(); }
++enum TagEq {
++  TagFirst();
++  TagSecond();
++}
+ 
+-fn compare (left: own TagEq, right: own TagEq) -> own Bool pure {
++fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
+   return ine<TagEq>(left, right);
+ }
+--- a/conformance/cases/op1-pos-bool-enum-equality.wf
++++ b/conformance/cases/op1-pos-bool-enum-equality.wf
+@@ -1,25 +1,21 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let false_value: own Bool = False();
+   let true_value: own Bool = True();
+-
+   let eq00: own Bool = eeq<Bool>(false_value, false_value);
+   let ne00: own Bool = ene<Bool>(false_value, false_value);
+   check eq00 else trap "Bool eeq diagonal drift";
+   let not_ne00: own Bool = bnot<Bool>(ne00);
+   check not_ne00 else trap "Bool ene diagonal drift";
+-
+   let eq01: own Bool = eeq<Bool>(false_value, true_value);
+   let ne01: own Bool = ene<Bool>(false_value, true_value);
+   let not_eq01: own Bool = bnot<Bool>(eq01);
+   check not_eq01 else trap "Bool eeq off-diagonal drift";
+   check ne01 else trap "Bool ene off-diagonal drift";
+-
+   let eq10: own Bool = eeq<Bool>(true_value, false_value);
+   let ne10: own Bool = ene<Bool>(true_value, false_value);
+   let not_eq10: own Bool = bnot<Bool>(eq10);
+   check not_eq10 else trap "Bool eeq off-diagonal drift";
+   check ne10 else trap "Bool ene off-diagonal drift";
+-
+   let eq11: own Bool = eeq<Bool>(true_value, true_value);
+   let ne11: own Bool = ene<Bool>(true_value, true_value);
+   check eq11 else trap "Bool eeq diagonal drift";
+--- a/conformance/cases/op1-pos-table-op.wf
++++ b/conformance/cases/op1-pos-table-op.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Every computation is a call naming one operation from the table [OP-1]: a wrapping add and an integer compare, nothing overloaded.";
+   let x: own i32 = iadd.wrap<i32>(20_i32, 22_i32);
+   check ieq<i32>(x, 42_i32) else trap "op drift";
+--- a/conformance/cases/op1-pos-tag-enum-equality.wf
++++ b/conformance/cases/op1-pos-tag-enum-equality.wf
+@@ -11,70 +11,60 @@
+   TrioThird();
+ }
+ 
+-fn empty_compile_only (left: own EmptyEq, right: own EmptyEq) -> own Bool pure {
++fn empty_compile_only(left: own EmptyEq, right: own EmptyEq) -> own Bool pure {
+   return eeq<EmptyEq>(left, right);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let one: own OneEq = OneOnly();
+   let one_eq: own Bool = eeq<OneEq>(one, one);
+   let one_ne: own Bool = ene<OneEq>(one, one);
+   check one_eq else trap "one-variant eeq drift";
+   let not_one_ne: own Bool = bnot<Bool>(one_ne);
+   check not_one_ne else trap "one-variant ene drift";
+-
+   let first: own TrioEq = TrioFirst();
+   let second: own TrioEq = TrioSecond();
+   let third: own TrioEq = TrioThird();
+-
+   let eq00: own Bool = eeq<TrioEq>(first, first);
+   let ne00: own Bool = ene<TrioEq>(first, first);
+   check eq00 else trap "trio eeq diagonal drift";
+   let not_ne00: own Bool = bnot<Bool>(ne00);
+   check not_ne00 else trap "trio ene diagonal drift";
+-
+   let eq01: own Bool = eeq<TrioEq>(first, second);
+   let ne01: own Bool = ene<TrioEq>(first, second);
+   let not_eq01: own Bool = bnot<Bool>(eq01);
+   check not_eq01 else trap "trio eeq off-diagonal drift";
+   check ne01 else trap "trio ene off-diagonal drift";
+-
+   let eq02: own Bool = eeq<TrioEq>(first, third);
+   let ne02: own Bool = ene<TrioEq>(first, third);
+   let not_eq02: own Bool = bnot<Bool>(eq02);
+   check not_eq02 else trap "trio eeq off-diagonal drift";
+   check ne02 else trap "trio ene off-diagonal drift";
+-
+   let eq10: own Bool = eeq<TrioEq>(second, first);
+   let ne10: own Bool = ene<TrioEq>(second, first);
+   let not_eq10: own Bool = bnot<Bool>(eq10);
+   check not_eq10 else trap "trio eeq off-diagonal drift";
+   check ne10 else trap "trio ene off-diagonal drift";
+-
+   let eq11: own Bool = eeq<TrioEq>(second, second);
+   let ne11: own Bool = ene<TrioEq>(second, second);
+   check eq11 else trap "trio eeq diagonal drift";
+   let not_ne11: own Bool = bnot<Bool>(ne11);
+   check not_ne11 else trap "trio ene diagonal drift";
+-
+   let eq12: own Bool = eeq<TrioEq>(second, third);
+   let ne12: own Bool = ene<TrioEq>(second, third);
+   let not_eq12: own Bool = bnot<Bool>(eq12);
+   check not_eq12 else trap "trio eeq off-diagonal drift";
+   check ne12 else trap "trio ene off-diagonal drift";
+-
+   let eq20: own Bool = eeq<TrioEq>(third, first);
+   let ne20: own Bool = ene<TrioEq>(third, first);
+   let not_eq20: own Bool = bnot<Bool>(eq20);
+   check not_eq20 else trap "trio eeq off-diagonal drift";
+   check ne20 else trap "trio ene off-diagonal drift";
+-
+   let eq21: own Bool = eeq<TrioEq>(third, second);
+   let ne21: own Bool = ene<TrioEq>(third, second);
+   let not_eq21: own Bool = bnot<Bool>(eq21);
+   check not_eq21 else trap "trio eeq off-diagonal drift";
+   check ne21 else trap "trio ene off-diagonal drift";
+-
+   let eq22: own Bool = eeq<TrioEq>(third, third);
+   let ne22: own Bool = ene<TrioEq>(third, third);
+   check eq22 else trap "trio eeq diagonal drift";
+--- a/conformance/cases/op2-neg-div-wrap.wf
++++ b/conformance/cases/op2-neg-div-wrap.wf
+@@ -1,4 +1,4 @@
+-fn bad (x: own i32, y: own i32) -> own i32 pure {
++fn bad(x: own i32, y: own i32) -> own i32 pure {
+   doc "Division and remainder carry no wrap mode [OP-2]; idiv.wrap names no table op and must be rejected.";
+   return idiv.wrap<i32>(x, y);
+ }
+--- a/conformance/cases/op2-pos-div-checked.wf
++++ b/conformance/cases/op2-pos-div-checked.wf
+@@ -1,7 +1,11 @@
+-fn classify (x: own i32, y: own i32) -> own i32 pure {
++fn classify(x: own i32, y: own i32) -> own i32 pure {
+   doc "idiv.checked yields Result<T, DivError> [OP-2]: Err(DivideByZero()) for a zero divisor, Err(DivOverflow()) for signed iK::MIN/-1, else Ok.";
+   match idiv.checked<i32>(x, y) {
+-    Ok(value: q) => { return q; }
+-    Err(error: e) => { return 0_i32; }
++    Ok(value: q) => {
++      return q;
++    }
++    Err(error: e) => {
++      return 0_i32;
++    }
+   }
+ }
+--- a/conformance/cases/op2-pos-sat-mode.wf
++++ b/conformance/cases/op2-pos-sat-mode.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OP-2: add/sub carry the sat mode; unsigned clamps to the type ceiling (OP-8).";
+   let a: own u64 = iadd.sat<u64>(18446744073709551615_u64, 1_u64);
+   check ieq<u64>(a, 18446744073709551615_u64) else trap "sat clamp drift";
+--- a/conformance/cases/op3-neg-exact-dotted.wf
++++ b/conformance/cases/op3-neg-exact-dotted.wf
+@@ -1,4 +1,4 @@
+-fn bad (a: own f32) -> own f32 pure {
++fn bad(a: own f32) -> own f32 pure {
+   doc "fneg is EXACT and dotless [OP-3]; fneg.strict names no table op and must be rejected.";
+   return fneg.strict<f32>(a);
+ }
+--- a/conformance/cases/op3-pos-fadd-strict.wf
++++ b/conformance/cases/op3-pos-fadd-strict.wf
+@@ -1,4 +1,4 @@
+-fn fsum (a: own f32, b: own f32) -> own f32 pure {
++fn fsum(a: own f32, b: own f32) -> own f32 pure {
+   doc "A float op that ROUNDS carries .strict [OP-3]: fadd.strict is IEEE-754 with no reassociation and no contraction.";
+   return fadd.strict<f32>(a, b);
+ }
+--- a/conformance/cases/op4-pos-index.wf
++++ b/conformance/cases/op4-pos-index.wf
+@@ -1,4 +1,4 @@
+-fn get (b: own buffer<i32>, i: own u64) -> own i32 traps {
++fn get(b: own buffer<i32>, i: own u64) -> own i32 traps {
+   doc "index<T>(p, i) reads are bounds-checked in all build modes when unproven [OP-4]; a buffer index is checked against the runtime length.";
+   return index<i32>(b, i);
+ }
+--- a/conformance/cases/op4-trap-index-oob.wf
++++ b/conformance/cases/op4-trap-index-oob.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Out-of-bounds buffer index traps at runtime [OP-4/SCOPE-4].";
+   let b: own buffer<i64> = buffer_new<i64>(4_u64, 0_i64);
+   let n: own u64 = len<i64>(b);
+--- a/conformance/cases/op5-neg-check-fails.wf
++++ b/conformance/cases/op5-neg-check-fails.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A failing check is a runtime check in all build modes, never elided; it traps and aborts [OP-5].";
+   check ilt<i32>(3_i32, 2_i32) else trap "impossible order";
+   return unit;
+--- a/conformance/cases/op5-pos-check-pass.wf
++++ b/conformance/cases/op5-pos-check-pass.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A check that holds passes and the program continues [OP-5]; the passed check creates a checked fact on the dominated path.";
+   let x: own i32 = iadd.wrap<i32>(1_i32, 2_i32);
+   check ieq<i32>(x, 3_i32) else trap "check drift";
+--- a/conformance/cases/op6-neg-cvt-identity.wf
++++ b/conformance/cases/op6-neg-cvt-identity.wf
+@@ -1,4 +1,4 @@
+-fn ident (x: own i32) -> own i32 pure {
++fn ident(x: own i32) -> own i32 pure {
+   doc "cvt<T, T> is not an operation [OP-6]; a same-type conversion must be rejected.";
+   return cvt<i32, i32>(x);
+ }
+--- a/conformance/cases/op6-pos-cvt-checked.wf
++++ b/conformance/cases/op6-pos-cvt-checked.wf
+@@ -1,7 +1,11 @@
+-fn narrow (x: own i32) -> own i32 pure {
++fn narrow(x: own i32) -> own i32 pure {
+   doc "cvt on a non-total pair returns Result<Dst, NarrowError> and is EXACT [OP-6]: i32->i8 yields Err(NarrowError()) when not exactly representable.";
+   match cvt<i32, i8>(x) {
+-    Ok(value: v) => { return cvt<i8, i32>(v); }
+-    Err(error: e) => { return 0_i32; }
++    Ok(value: v) => {
++      return cvt<i8, i32>(v);
++    }
++    Err(error: e) => {
++      return 0_i32;
++    }
+   }
+ }
+--- a/conformance/cases/op6-pos-cvt-total.wf
++++ b/conformance/cases/op6-pos-cvt-total.wf
+@@ -1,4 +1,4 @@
+-fn widen (x: own i8) -> own i32 pure {
++fn widen(x: own i8) -> own i32 pure {
+   doc "cvt on a value-preserving (total) pair has signature (Src)->own Dst with no Result [OP-6]: i8->i32 is one of the 29 total pairs.";
+   return cvt<i8, i32>(x);
+ }
+--- a/conformance/cases/op7-neg-missing-prefix.wf
++++ b/conformance/cases/op7-neg-missing-prefix.wf
+@@ -1,4 +1,4 @@
+-fn bad (a: own i32, b: own i32) -> own i32 pure {
++fn bad(a: own i32, b: own i32) -> own i32 pure {
+   doc "An arithmetic op carries a domain prefix whether or not a twin exists [OP-7]; unprefixed 'add.wrap' names no table op and must be rejected.";
+   return add.wrap<i32>(a, b);
+ }
+--- a/conformance/cases/op7-pos-name-convention.wf
++++ b/conformance/cases/op7-pos-name-convention.wf
+@@ -1,8 +1,12 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Op names carry a domain prefix and a .mode suffix iff on a mode axis [OP-7]: iadd.checked (i-prefix, checked mode) and dotless ieq.";
+   let r: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
+-    Ok(value: v) => { give v; }
+-    Err(error: e) => { return unit; }
++    Ok(value: v) => {
++      give v;
++    }
++    Err(error: e) => {
++      return unit;
++    }
+   }
+   check ieq<i32>(r, 42_i32) else trap "name drift";
+   return unit;
+--- a/conformance/cases/op8-neg-rotate-trap.wf
++++ b/conformance/cases/op8-neg-rotate-trap.wf
+@@ -1,4 +1,4 @@
+-fn bad (a: own u32, n: own u32) -> own u32 traps {
++fn bad(a: own u32, n: own u32) -> own u32 traps {
+   doc "A rotate amount is taken modulo width, so rotates are dotless-total [OP-8]; irotl.trap names no table op and must be rejected.";
+   return irotl.trap<u32>(a, n);
+ }
+--- a/conformance/cases/op8-pos-iand.wf
++++ b/conformance/cases/op8-pos-iand.wf
+@@ -1,4 +1,4 @@
+-fn mask (a: own u32, b: own u32) -> own u32 pure {
++fn mask(a: own u32, b: own u32) -> own u32 pure {
+   doc "iand lowers to LLVM and and is total [OP-8]; the bitwise ops carry no mode suffix.";
+   return iand<u32>(a, b);
+ }
+--- a/conformance/cases/op8-pos-u64-shift-u32.wf
++++ b/conformance/cases/op8-pos-u64-shift-u32.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let q: own u64 = ishr.wrap<u64>(16_u64, 2_u32);
+   check ieq<u64>(q, 4_u64) else trap "u32 shift amount drift";
+   return unit;
+--- a/conformance/cases/op9-pos-buffer-new.wf
++++ b/conformance/cases/op9-pos-buffer-new.wf
+@@ -1,4 +1,4 @@
+-fn make (n: own u64) -> own buffer<i32> allocates(heap), traps {
++fn make(n: own u64) -> own buffer<i32> allocates(heap), traps {
+   doc "buffer_new<T>(n, v) allocates a flat runtime-length buffer and fills every element [OP-9]; its byte-size n*sizeof(T) is computed in u64.";
+   return buffer_new<i32>(n, 0_i32);
+ }
+--- a/conformance/cases/own1-neg-bare-affine-call.wf
++++ b/conformance/cases/own1-neg-bare-affine-call.wf
+@@ -1,8 +1,8 @@
+-fn consume (buf: own buffer<u8>) -> own unit pure {
++fn consume(buf: own buffer<u8>) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   let b: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+   consume(buf: b);
+   return unit;
+--- a/conformance/cases/own1-neg-bare-uniq-copy.wf
++++ b/conformance/cases/own1-neg-bare-uniq-copy.wf
+@@ -1,12 +1,12 @@
+-fn consume ['r] (x: &uniq 'r i32) -> own unit pure {
++fn consume ['r](x: &uniq 'r i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn forward ['r] (x: &uniq 'r i32) -> own unit pure {
++fn forward ['r](x: &uniq 'r i32) -> own unit pure {
+   consume(x: x);
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/own1-neg-index-atom-after-move.wf
++++ b/conformance/cases/own1-neg-index-atom-after-move.wf
+@@ -3,7 +3,7 @@
+   g: u64;
+ }
+ 
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   let b: own buffer<u64> = buffer_new<u64>(8_u64, 0_u64);
+   let r: own Rec = Rec(f: 1_u64, g: 2_u64);
+   let s: own Rec = move r;
+--- a/conformance/cases/own1-neg-index-move-copy-offset.wf
++++ b/conformance/cases/own1-neg-index-move-copy-offset.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   doc "OWN-1 applies inside an index place: a u64 offset is Copy and cannot be written with move.";
+   let items: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+   let offset: own u64 = 0_u64;
+--- a/conformance/cases/own1-neg-match-move-copy.wf
++++ b/conformance/cases/own1-neg-match-move-copy.wf
+@@ -1,6 +1,9 @@
+-enum State { Ready(); Done(); }
++enum State {
++  Ready();
++  Done();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-1: an explicit move in a match scrutinee cannot consume a copy tag-only enum; copy values are matched bare.";
+   let state: own State = Ready();
+   match move state {
+--- a/conformance/cases/own1-neg-match-move-through-borrow.wf
++++ b/conformance/cases/own1-neg-match-move-through-borrow.wf
+@@ -1,6 +1,8 @@
+-enum Packet { Data(value: i32); }
++enum Packet {
++  Data(value: i32);
++}
+ 
+-fn inspect ['r] (holder: &'r Packet) -> own unit pure {
++fn inspect ['r](holder: &'r Packet) -> own unit pure {
+   doc "OWN-1: move deref(holder) cannot steal a borrowed enum; bare match deref(holder) derives borrowed payload binders.";
+   match move deref(holder) {
+     Data(value: value) => {
+--- a/conformance/cases/own1-neg-move-of-copy.wf
++++ b/conformance/cases/own1-neg-move-of-copy.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-1: move of a copy value is a hard error - one spelling per meaning; copies are used bare.";
+   let flag: own Bool = ieq<u64>(1_u64, 1_u64);
+   let dup: own Bool = move flag;
+--- a/conformance/cases/own1-neg-return-borrowed-box.wf
++++ b/conformance/cases/own1-neg-return-borrowed-box.wf
+@@ -1,6 +1,8 @@
+-enum State { Ready(); }
++enum State {
++  Ready();
++}
+ 
+-fn steal ['r] (holder: &'r box<State>) -> own box<State> pure {
++fn steal ['r](holder: &'r box<State>) -> own box<State> pure {
+   doc "OWN-1: one dereference exposes the borrowed box value, which remains non-owning even though State is Copy.";
+   return deref(holder);
+ }
+--- a/conformance/cases/own1-neg-return-through-shared-borrow.wf
++++ b/conformance/cases/own1-neg-return-through-shared-borrow.wf
+@@ -3,7 +3,7 @@
+   right: i32;
+ }
+ 
+-fn steal ['r] (holder: &'r Pair) -> own Pair pure {
++fn steal ['r](holder: &'r Pair) -> own Pair pure {
+   doc "OWN-1: contextual affine return cannot move the Pair referent through a shared borrow.";
+   return deref(holder);
+ }
+--- a/conformance/cases/own1-neg-use-after-move.wf
++++ b/conformance/cases/own1-neg-use-after-move.wf
+@@ -1,17 +1,27 @@
+-enum Sign { Neg(mag: i32); Zero(); Pos(); }
++enum Sign {
++  Neg(mag: i32);
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-1/OWN-13: matching an own value moves it; a second use is use-after-move.";
+   let s: own Sign = Pos();
+   match s {
+-    Neg(mag: m) => { }
+-    Zero() => { }
+-    Pos() => { }
++    Neg(mag: m) => {
++    }
++    Zero() => {
++    }
++    Pos() => {
++    }
+   }
+   match s {
+-    Neg(mag: m) => { }
+-    Zero() => { }
+-    Pos() => { }
++    Neg(mag: m) => {
++    }
++    Zero() => {
++    }
++    Pos() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/own1-pos-consume-once.wf
++++ b/conformance/cases/own1-pos-consume-once.wf
+@@ -1,11 +1,21 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-1: an affine value (own enum) is consumed by exactly one match-move.";
+   let s: own Sign = Pos();
+   match s {
+-    Neg() => { return unit; }
+-    Zero() => { return unit; }
+-    Pos() => { return unit; }
++    Neg() => {
++      return unit;
++    }
++    Zero() => {
++      return unit;
++    }
++    Pos() => {
++      return unit;
++    }
+   }
+ }
+--- a/conformance/cases/own1-pos-explicit-affine-call.wf
++++ b/conformance/cases/own1-pos-explicit-affine-call.wf
+@@ -1,8 +1,8 @@
+-fn consume (buf: own buffer<u8>) -> own unit pure {
++fn consume(buf: own buffer<u8>) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   let b: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+   consume(buf: move b);
+   return unit;
+--- a/conformance/cases/own1-pos-match-copy-payload-reuse.wf
++++ b/conformance/cases/own1-pos-match-copy-payload-reuse.wf
+@@ -1,15 +1,22 @@
+-enum State { Ready(); }
+-enum Wrapper { Wrapped(state: State); }
++enum State {
++  Ready();
++}
+ 
+-fn inspect (wrapper: own Wrapper) -> own unit pure {
++enum Wrapper {
++  Wrapped(state: State);
++}
++
++fn inspect(wrapper: own Wrapper) -> own unit pure {
+   doc "OWN-1: a concrete tag-only payload binder remains Copy and may be matched repeatedly.";
+   match wrapper {
+     Wrapped(state: state) => {
+       match state {
+-        Ready() => { }
++        Ready() => {
++        }
+       }
+       match state {
+-        Ready() => { }
++        Ready() => {
++        }
+       }
+     }
+   }
+--- a/conformance/cases/own1-pos-match-projected-copy.wf
++++ b/conformance/cases/own1-pos-match-projected-copy.wf
+@@ -1,10 +1,13 @@
+-enum State { Ready(); Done(); }
++enum State {
++  Ready();
++  Done();
++}
+ 
+ struct Holder {
+   state: State;
+ }
+ 
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   doc "OWN-1: matching a Copy enum field or element does not consume its affine struct or buffer owner.";
+   let state: own State = Ready();
+   let holder: own Holder = Holder(state: state);
+@@ -21,7 +24,6 @@
+     }
+   }
+   let saved_holder: own Holder = move holder;
+-
+   let initial: own Bool = True();
+   let items: own buffer<Bool> = buffer_new<Bool>(2_u64, initial);
+   match index<Bool>(items, 0_u64) {
+--- a/conformance/cases/own1-pos-return-affine-contextual-move.wf
++++ b/conformance/cases/own1-pos-return-affine-contextual-move.wf
+@@ -3,12 +3,12 @@
+   right: i32;
+ }
+ 
+-fn pass_pair (item: own Pair) -> own Pair pure {
++fn pass_pair(item: own Pair) -> own Pair pure {
+   doc "OWN-1: an own affine place in return position is contextually moved exactly once.";
+   return item;
+ }
+ 
+-fn pass_box (holder: own box<i32>) -> own box<i32> pure {
++fn pass_box(holder: own box<i32>) -> own box<i32> pure {
+   doc "OWN-1: contextual return transfers an own box as a box; it does not dereference the holder.";
+   return holder;
+ }
+--- a/conformance/cases/own1-pos-tagonly-copy.wf
++++ b/conformance/cases/own1-pos-tagonly-copy.wf
+@@ -1,6 +1,10 @@
+-enum Tri { Lo(); Mid(); Hi(); }
++enum Tri {
++  Lo();
++  Mid();
++  Hi();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-1 amendment: tag-only enums are copy - matched twice, passed bare, loop-carried, and set-mutated without move.";
+   let t: own Tri = Mid();
+   match t {
+--- a/conformance/cases/own1-pos-try-copy-payload-reuse.wf
++++ b/conformance/cases/own1-pos-try-copy-payload-reuse.wf
+@@ -1,14 +1,21 @@
+-enum State { Ready(); }
+-enum StepError { Failed(); }
++enum State {
++  Ready();
++}
+ 
+-fn forward (incoming: own Result<State, StepError>) -> own Result<i32, StepError> pure {
++enum StepError {
++  Failed();
++}
++
++fn forward(incoming: own Result<State, StepError>) -> own Result<i32, StepError> pure {
+   doc "OWN-1: try records the concrete tag-only Ok payload type, so the bound state remains Copy across repeated matches.";
+   let state: own State = try incoming;
+   match state {
+-    Ready() => { }
++    Ready() => {
++    }
+   }
+   match state {
+-    Ready() => { }
++    Ready() => {
++    }
+   }
+   return Ok(value: 0_i32);
+ }
+--- a/conformance/cases/own10-neg-dangle-caller.wf
++++ b/conformance/cases/own10-neg-dangle-caller.wf
+@@ -1,3 +1,3 @@
+-fn dangle ['r0] (x: own i32) -> &'r0 i32 pure {
++fn dangle ['r0](x: own i32) -> &'r0 i32 pure {
+   return &'r0 x;
+ }
+--- a/conformance/cases/own10-pos-local-region.wf
++++ b/conformance/cases/own10-pos-local-region.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-10: an own binding may be borrowed into a region within its scope.";
+   let a: own i32 = 4_i32;
+   region 'r {
+--- a/conformance/cases/own11-neg-borrow-outer-region.wf
++++ b/conformance/cases/own11-neg-borrow-outer-region.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-11: inside a loop, a borrow may only name regions introduced in the loop body.";
+   let a: own i32 = 0_i32;
+   region 'r {
+--- a/conformance/cases/own11-neg-move-outer-in-loop.wf
++++ b/conformance/cases/own11-neg-move-outer-in-loop.wf
+@@ -1,13 +1,20 @@
+-enum Sign { Neg(mag: i32); Zero(); Pos(); }
++enum Sign {
++  Neg(mag: i32);
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-11: a binding declared outside a loop may not be moved inside it.";
+   let s: own Sign = Pos();
+   loop @l {
+     match s {
+-      Neg(mag: m) => { }
+-      Zero() => { }
+-      Pos() => { }
++      Neg(mag: m) => {
++      }
++      Zero() => {
++      }
++      Pos() => {
++      }
+     }
+     break @l;
+   }
+--- a/conformance/cases/own11-pos-loop-inner-region.wf
++++ b/conformance/cases/own11-pos-loop-inner-region.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-11: a borrow naming a region introduced inside the loop body is allowed.";
+   let a: own i32 = 0_i32;
+   loop @l {
+--- a/conformance/cases/own12-neg-alias-uniq-args.wf
++++ b/conformance/cases/own12-neg-alias-uniq-args.wf
+@@ -1,8 +1,8 @@
+-fn two ['r] (a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
++fn two ['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-12: two &uniq call arguments over the same place alias - rejected.";
+   let x: own i32 = 0_i32;
+   region 'r {
+--- a/conformance/cases/own12-pos-distinct-uniq-args.wf
++++ b/conformance/cases/own12-pos-distinct-uniq-args.wf
+@@ -1,8 +1,8 @@
+-fn two ['r] (a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
++fn two ['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-12: distinct &uniq arguments do not alias - accepted.";
+   let x: own i32 = 0_i32;
+   let y: own i32 = 1_i32;
+--- a/conformance/cases/own13-pos-borrow-affine-payload.wf
++++ b/conformance/cases/own13-pos-borrow-affine-payload.wf
+@@ -3,9 +3,12 @@
+   right: i32;
+ }
+ 
+-enum Packet { Data(item: Pair); Empty(); }
++enum Packet {
++  Data(item: Pair);
++  Empty();
++}
+ 
+-fn inspect ['r] (packet: &'r Packet) -> own i32 pure {
++fn inspect ['r](packet: &'r Packet) -> own i32 pure {
+   doc "OWN-13: matching deref(packet) derives a shared Pair binder; deref(item).left reads through that provenance.";
+   match deref(packet) {
+     Data(item: item) => {
+--- a/conformance/cases/own13-pos-borrow-match-live.wf
++++ b/conformance/cases/own13-pos-borrow-match-live.wf
+@@ -1,16 +1,26 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn twice ['r] (s: &'r Sign) -> own i32 pure {
++fn twice ['r](s: &'r Sign) -> own i32 pure {
+   doc "OWN-13: matching through &'r leaves the scrutinee live; s is matched again after.";
+   match deref(s) {
+-    Neg() => { }
+-    Zero() => { }
+-    Pos() => { }
++    Neg() => {
++    }
++    Zero() => {
++    }
++    Pos() => {
++    }
+   }
+   match deref(s) {
+-    Neg() => { }
+-    Zero() => { }
+-    Pos() => { }
++    Neg() => {
++    }
++    Zero() => {
++    }
++    Pos() => {
++    }
+   }
+   return 0_i32;
+ }
+--- a/conformance/cases/own13-pos-let-match-give.wf
++++ b/conformance/cases/own13-pos-let-match-give.wf
+@@ -1,8 +1,12 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-13: let-initializer value-match; the taken arm's own result is moved exactly once.";
+   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
+-    Ok(value: w) => { give w; }
+-    Err(error: e) => { return unit; }
++    Ok(value: w) => {
++      give w;
++    }
++    Err(error: e) => {
++      return unit;
++    }
+   }
+   check ieq<i32>(v, 42_i32) else trap "drift";
+   return unit;
+--- a/conformance/cases/own13-pos-uniq-match-payloads.wf
++++ b/conformance/cases/own13-pos-uniq-match-payloads.wf
+@@ -1,6 +1,8 @@
+-enum Packet { Data(value: i32); }
++enum Packet {
++  Data(value: i32);
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-13: a local exclusive borrow match derives an &uniq payload binder that reads through its parent provenance.";
+   let packet: own Packet = Data(value: 4_i32);
+   region 'r {
+--- a/conformance/cases/own2-pos-three-modes.wf
++++ b/conformance/cases/own2-pos-three-modes.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-2: the three modes own / shared / uniq borrow are always written.";
+   let a: own i32 = 5_i32;
+   region 'r {
+--- a/conformance/cases/own3-neg-undeclared-signature-region.wf
++++ b/conformance/cases/own3-neg-undeclared-signature-region.wf
+@@ -1,7 +1,7 @@
+-fn invalid_signature (value: &'missing i32) -> own unit pure {
++fn invalid_signature(value: &'missing i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/own3-neg-unknown-region.wf
++++ b/conformance/cases/own3-neg-unknown-region.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-3: naming a region that was never introduced is rejected.";
+   let a: own i32 = 1_i32;
+   let p: &'z i32 = &'z a;
+--- a/conformance/cases/own3-pos-outlives-store.wf
++++ b/conformance/cases/own3-pos-outlives-store.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-3: an enclosing region outlives an inner one; a 'r borrow satisfies an 's destination.";
+   let a: own i32 = 7_i32;
+   region 'r {
+--- a/conformance/cases/own4-neg-return-local-borrow.wf
++++ b/conformance/cases/own4-neg-return-local-borrow.wf
+@@ -1,4 +1,4 @@
+-fn leak ['r0] (x: &'r0 i32) -> &'r0 i32 pure {
++fn leak ['r0](x: &'r0 i32) -> &'r0 i32 pure {
+   region 's {
+     return &'s deref(x);
+   }
+--- a/conformance/cases/own4-pos-return-caller-borrow.wf
++++ b/conformance/cases/own4-pos-return-caller-borrow.wf
+@@ -1,3 +1,3 @@
+-fn passthru ['r0] (x: &'r0 i32) -> &'r0 i32 pure {
++fn passthru ['r0](x: &'r0 i32) -> &'r0 i32 pure {
+   return &'r0 deref(x);
+ }
+--- a/conformance/cases/own5-neg-match-borrow-affine-payload-move.wf
++++ b/conformance/cases/own5-neg-match-borrow-affine-payload-move.wf
+@@ -3,15 +3,19 @@
+   right: i32;
+ }
+ 
+-enum Packet { Data(item: Pair); Empty(); }
++enum Packet {
++  Data(item: Pair);
++  Empty();
++}
+ 
+-fn steal ['r] (packet: &'r Packet) -> own unit pure {
++fn steal ['r](packet: &'r Packet) -> own unit pure {
+   doc "OWN-5: a payload binder derived from a shared match is non-owning and cannot move its affine referent.";
+   match deref(packet) {
+     Data(item: item) => {
+       let stolen: own Pair = move deref(item);
+     }
+-    Empty() => { }
++    Empty() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/own5-neg-read-while-uniq.wf
++++ b/conformance/cases/own5-neg-read-while-uniq.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-5: reading a place while a &uniq borrow of it is live is rejected.";
+   let a: own i32 = 3_i32;
+   region 'r {
+--- a/conformance/cases/own5-pos-read-through-holder.wf
++++ b/conformance/cases/own5-pos-read-through-holder.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-5: reads and writes through the &uniq holder are permitted while it is live.";
+   let a: own i32 = 3_i32;
+   region 'r {
+--- a/conformance/cases/own6-pos-callscoped-temp.wf
++++ b/conformance/cases/own6-pos-callscoped-temp.wf
+@@ -1,8 +1,8 @@
+-fn bump ['r] (n: &uniq 'r i32) -> own unit pure {
++fn bump ['r](n: &uniq 'r i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-6: an unbound borrow is a call-scoped temporary, dead at statement end.";
+   let a: own i32 = 5_i32;
+   region 'r {
+--- a/conformance/cases/own7-pos-distinct-noverlap.wf
++++ b/conformance/cases/own7-pos-distinct-noverlap.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-7: borrows of distinct roots do not overlap; two uniq borrows coexist.";
+   let a: own i32 = 1_i32;
+   let b: own i32 = 2_i32;
+--- a/conformance/cases/pending-const2-item.wf
++++ b/conformance/cases/pending-const2-item.wf
+@@ -1,6 +1,6 @@
+-const LIMIT: i32 = 100_i32;
++const limit: i32 = 100_i32;
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Named const item [CONST-2] - pending democ const support.";
+   return unit;
+ }
+--- a/conformance/cases/pending-op9-buffer-new.wf
++++ b/conformance/cases/pending-op9-buffer-new.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "buffer_new size-overflow trap [OP-9] - pending democ buffer support.";
+   let b: own buffer<i32> = buffer_new<i32>(4_u64, 0_i32);
+   return unit;
+--- a/conformance/cases/pending-result-aggregate-payload.wf
++++ b/conformance/cases/pending-result-aggregate-payload.wf
+@@ -2,7 +2,7 @@
+   value: u64;
+ }
+ 
+-fn make () -> own Result<Pair,u64> pure {
++fn make() -> own Result<Pair, u64> pure {
+   let pair: own Pair = Pair(value: 1_u64);
+   return Ok(value: move pair);
+ }
+--- a/conformance/cases/pre1-pos-prelude-enums.wf
++++ b/conformance/cases/pre1-pos-prelude-enums.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "PRE-1: prelude enums are usable with no declaration in the unit -- Bool (True/False) from a compare, Result (Ok/Err) from checked arithmetic.";
+   let r: own i32 = match iadd.checked<i32>(3_i32, 4_i32) {
+     Ok(value: w) => {
+--- a/conformance/cases/prog1-pos-closed-unit.wf
++++ b/conformance/cases/prog1-pos-closed-unit.wf
+@@ -1,9 +1,9 @@
+-fn helper (x: own i32) -> own i32 traps {
++fn helper(x: own i32) -> own i32 traps {
+   doc "In-unit helper; every callee name is defined within this compilation unit.";
+   return iadd.trap<i32>(x, 1_i32);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "PROG-1 closed world: helper is defined in-unit, ieq/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
+   let a: own i32 = 6_i32;
+   let b: own i32 = helper(x: a);
+--- a/conformance/cases/reject-err2-nonexhaustive.wf
++++ b/conformance/cases/reject-err2-nonexhaustive.wf
+@@ -1,7 +1,13 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn bad (x: own i32) -> own Sign pure {
++fn bad(x: own i32) -> own Sign pure {
+   match ilt<i32>(x, 0_i32) {
+-    True() => { return Neg(); }
++    True() => {
++      return Neg();
++    }
+   }
+ }
+--- a/conformance/cases/reject-gram11-unnamed-call.wf
++++ b/conformance/cases/reject-gram11-unnamed-call.wf
+@@ -1,8 +1,8 @@
+-fn id (x: own i32) -> own i32 pure {
++fn id(x: own i32) -> own i32 pure {
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A user-fn call must use named args [GRAM-11]; positional is rejected.";
+   let a: own i32 = id(40_i32);
+   return unit;
+--- a/conformance/cases/reject-own10-dangle.wf
++++ b/conformance/cases/reject-own10-dangle.wf
+@@ -1,3 +1,3 @@
+-fn dangle ['r0] (x: own i32) -> &'r0 i32 pure {
++fn dangle ['r0](x: own i32) -> &'r0 i32 pure {
+   return &'r0 x;
+ }
+--- a/conformance/cases/run-ex1-value-match.wf
++++ b/conformance/cases/run-ex1-value-match.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn sign_of (x: own i32) -> own Sign pure {
++fn sign_of(x: own i32) -> own Sign pure {
+   doc "Conditional value produced by returning from arms (return-position match).";
+   match ilt<i32>(x, 0_i32) {
+     True() => {
+@@ -19,7 +23,7 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "let-initializer match with give, named construction, named user-fn call.";
+   let a: own i32 = 40_i32;
+   region 'r {
+--- a/conformance/cases/run-ex2-loop-trap-folds.wf
++++ b/conformance/cases/run-ex2-loop-trap-folds.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Loop, break, mutable locals, and a give value-match: sum 0..4 == 10.";
+   let i: own i32 = 0_i32;
+   let sum: own i32 = 0_i32;
+--- a/conformance/cases/scope1-pos-kernel-no-gated.wf
++++ b/conformance/cases/scope1-pos-kernel-no-gated.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A conformant kernel program contains no gated constructs [SCOPE-1].";
+   return unit;
+ }
+--- a/conformance/cases/scope2-pos-accepted.wf
++++ b/conformance/cases/scope2-pos-accepted.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Accepted: parses, satisfies every rule, checks are carried [SCOPE-2].";
+   let a: own i32 = 7_i32;
+   return unit;
+--- a/conformance/cases/scope3-pos-defined-run.wf
++++ b/conformance/cases/scope3-pos-defined-run.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "An accepted program has defined behavior and runs to normal exit [SCOPE-3].";
+   let a: own i32 = 20_i32;
+   let b: own i32 = iadd.trap<i32>(a, 22_i32);
+--- a/conformance/cases/scope4-pos-check-traps.wf
++++ b/conformance/cases/scope4-pos-check-traps.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A contract violation at runtime traps and aborts; no unwinding [SCOPE-4].";
+   check ieq<i32>(2_i32, 3_i32) else trap "contract violated";
+   return unit;
+--- a/conformance/cases/stor1-neg-whole-buffer-replacement.wf
++++ b/conformance/cases/stor1-neg-whole-buffer-replacement.wf
+@@ -1,8 +1,8 @@
+-fn replace ['r] (out: &uniq 'r buffer<u8>, replacement: own buffer<u8>) -> own unit writes('r) {
++fn replace ['r](out: &uniq 'r buffer<u8>, replacement: own buffer<u8>) -> own unit writes('r) {
+   set deref(out) = move replacement;
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/stor1-pos-frame-resident.wf
++++ b/conformance/cases/stor1-pos-frame-resident.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Storage class is a function of type [STOR-1]: an i32 local is frame-resident with no per-binding storage annotation and no default clause.";
+   let a: own i32 = 7_i32;
+   let b: own i32 = iadd.wrap<i32>(a, 3_i32);
+--- a/conformance/cases/stor2-pos-box-new.wf
++++ b/conformance/cases/stor2-pos-box-new.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Creation: box_new<T>(v) returns own box<T> [STOR-2]; content is read through deref.";
+   let b: own box<i32> = box_new<i32>(5_i32);
+   let v: own i32 = deref(b);
+--- a/conformance/cases/stor3-pos-box-drop-region.wf
++++ b/conformance/cases/stor3-pos-box-drop-region.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A box allocated in a region is freed by a compiler-derived drop on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
+   region 'r {
+     let b: own box<i32> = box_new<i32>(9_i32);
+--- a/conformance/cases/stor4-neg-arena-escape.wf
++++ b/conformance/cases/stor4-neg-arena-escape.wf
+@@ -1,4 +1,4 @@
+-fn make ['r] () -> own arena<'r, i32> allocates(arena 'r) {
++fn make ['r]() -> own arena<'r, i32> allocates(arena 'r) {
+   doc "A value of type arena<'r,T> may not be returned outside 'r's block [STOR-4]; returning it escapes the region.";
+   let a: own arena<'r, i32> = arena_new<'r, i32>(3_i32);
+   return a;
+--- a/conformance/cases/stor4-pos-arena-confined.wf
++++ b/conformance/cases/stor4-pos-arena-confined.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "An arena<'r,T> stays within its region 'r and is released at block exit [STOR-4].";
+   region 'r {
+     let a: own arena<'r, i32> = arena_new<'r, i32>(4_i32);
+--- a/conformance/cases/trap-op5-check-fails.wf
++++ b/conformance/cases/trap-op5-check-fails.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A failing check traps at runtime [OP-5, SCOPE-4].";
+   check ieq<i32>(2_i32, 3_i32) else trap "boom";
+   return unit;
+--- a/conformance/cases/type1-pos-i32-unit.wf
++++ b/conformance/cases/type1-pos-i32-unit.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Primitive types i32 and unit are in-language [TYPE-1].";
+   let a: own i32 = 7_i32;
+   let b: own i32 = iadd.trap<i32>(a, 35_i32);
+--- a/conformance/cases/type1-pos-wide-prims.wf
++++ b/conformance/cases/type1-pos-wide-prims.wf
+@@ -1,8 +1,8 @@
+-fn widths (a: own i8, b: own i64, c: own u32, d: own f64) -> own unit pure {
++fn widths(a: own i8, b: own i64, c: own u32, d: own f64) -> own unit pure {
+   doc "The remaining primitive types are nameable and type-check [TYPE-1].";
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/type2-pos-buffer-tagonly.wf
++++ b/conformance/cases/type2-pos-buffer-tagonly.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   let f: own Bool = ieq<u64>(1_u64, 0_u64);
+   let t: own Bool = ieq<u64>(1_u64, 1_u64);
+   let b: own buffer<Bool> = buffer_new<Bool>(8_u64, f);
+--- a/conformance/cases/type2-pos-enum.wf
++++ b/conformance/cases/type2-pos-enum.wf
+@@ -1,6 +1,9 @@
+-enum Light { Off(); On(); }
++enum Light {
++  Off();
++  On();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "enum is a composite type [TYPE-2]: construct and match a value.";
+   let s: own Light = On();
+   match s {
+--- a/conformance/cases/type2-pos-twostate-enum-i1.wf
++++ b/conformance/cases/type2-pos-twostate-enum-i1.wf
+@@ -3,7 +3,7 @@
+   InWord();
+ }
+ 
+-fn flip (s: own ScanState) -> own ScanState pure {
++fn flip(s: own ScanState) -> own ScanState pure {
+   let out: own ScanState = match s {
+     InSpace() => {
+       give InWord();
+@@ -15,7 +15,7 @@
+   return out;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A 2-variant tag-only enum is Bool-isomorphic: copy semantics, matched twice, loop-carried and set-mutated; lowers as i1.";
+   let st: own ScanState = InSpace();
+   let i: own u64 = 0_u64;
+--- a/conformance/cases/type3-pos-nameable.wf
++++ b/conformance/cases/type3-pos-nameable.wf
+@@ -1,10 +1,14 @@
+-enum Color { Red(); Green(); Blue(); }
++enum Color {
++  Red();
++  Green();
++  Blue();
++}
+ 
+-fn paint ['r] (x: &'r i32, y: &uniq 'r i32) -> own Color pure {
++fn paint ['r](x: &'r i32, y: &uniq 'r i32) -> own Color pure {
+   doc "Every mode (own, &'r, &uniq 'r) and type has a written canonical name [TYPE-3].";
+   return Red();
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/type4-pos-cvt.wf
++++ b/conformance/cases/type4-pos-cvt.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Representation change is the single explicit op cvt [TYPE-4]; i32->i64 is total.";
+   let x: own i32 = 7_i32;
+   let y: own i64 = cvt<i32, i64>(x);
+--- a/conformance/cases/type5-neg-arg-mismatch.wf
++++ b/conformance/cases/type5-neg-arg-mismatch.wf
+@@ -1,8 +1,8 @@
+-fn takes_i32 (x: own i32) -> own unit pure {
++fn takes_i32(x: own i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A unit argument where i32 is declared violates exact argument typing [TYPE-5].";
+   let u: own unit = unit;
+   let r: own unit = takes_i32(x: u);
+--- a/conformance/cases/type5-neg-index-element-type.wf
++++ b/conformance/cases/type5-neg-index-element-type.wf
+@@ -1,4 +1,4 @@
+-fn read (items: own buffer<u8>) -> own u32 traps {
++fn read(items: own buffer<u8>) -> own u32 traps {
+   doc "TYPE-5: index<T> must state the container's actual element type.";
+   return index<u32>(items, 0_u64);
+ }
+--- a/conformance/cases/type5-neg-index-offset-type.wf
++++ b/conformance/cases/type5-neg-index-offset-type.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   doc "TYPE-5: an index offset has the required type u64; a u32 atom is not accepted implicitly.";
+   let items: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+   let value: own u8 = index<u8>(items, 0_u32);
+--- a/conformance/cases/type5-neg-match-non-enum.wf
++++ b/conformance/cases/type5-neg-match-non-enum.wf
+@@ -1,7 +1,8 @@
+-fn inspect (value: own i32) -> own unit pure {
++fn inspect(value: own i32) -> own unit pure {
+   doc "TYPE-5: a match scrutinee must have an enum type; globally known arm names cannot type a scalar match.";
+   match value {
+-    True() => { }
++    True() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/type5-neg-shared-for-uniq-arg.wf
++++ b/conformance/cases/type5-neg-shared-for-uniq-arg.wf
+@@ -1,8 +1,8 @@
+-fn mutate ['r] (x: &uniq 'r u64) -> own unit pure {
++fn mutate ['r](x: &uniq 'r u64) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   let value: own u64 = 0_u64;
+   region 'r {
+     let shared: &'r u64 = &'r value;
+--- a/conformance/cases/type5-neg-wrong-region-arg-count.wf
++++ b/conformance/cases/type5-neg-wrong-region-arg-count.wf
+@@ -1,8 +1,8 @@
+-fn takes_one ['p] (x: &'p i32) -> own unit pure {
++fn takes_one ['p](x: &'p i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A call stating two region arguments to a fn declaring one region parameter is a region-arg arity mismatch [TYPE-5].";
+   let v: own i32 = 3_i32;
+   region 'r {
+--- a/conformance/cases/type5-pos-explicit.wf
++++ b/conformance/cases/type5-pos-explicit.wf
+@@ -1,8 +1,8 @@
+-fn addk (x: own i32) -> own i32 traps {
++fn addk(x: own i32) -> own i32 traps {
+   return iadd.trap<i32>(x, 1_i32);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Every let states full mode+type; the call states its type arg; types match [TYPE-5].";
+   let a: own i32 = 41_i32;
+   let b: own i32 = addk(x: a);
+--- a/conformance/cases/type6-neg-dup-variant.wf
++++ b/conformance/cases/type6-neg-dup-variant.wf
+@@ -1,3 +1,7 @@
+-enum A { Dup(); }
++enum A {
++  Dup();
++}
+ 
+-enum B { Dup(); }
++enum B {
++  Dup();
++}
+--- a/conformance/cases/type6-neg-shadow.wf
++++ b/conformance/cases/type6-neg-shadow.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Redeclaring a live name shadows it, which TYPE-6 forbids.";
+   let a: own i32 = 1_i32;
+   let a: own i32 = 2_i32;
+--- a/conformance/cases/type6-pos-distinct-names.wf
++++ b/conformance/cases/type6-pos-distinct-names.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Distinct value names and a break to a lexically enclosing loop [TYPE-6].";
+   let i: own i32 = 0_i32;
+   let total: own i32 = 0_i32;
+--- a/conformance/cases/type7-neg-deref-nonref.wf
++++ b/conformance/cases/type7-neg-deref-nonref.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "deref of a non-reference value is malformed [TYPE-7].";
+   let a: own i32 = 42_i32;
+   let v: own i32 = deref(a);
+--- a/conformance/cases/type7-neg-implicit-read.wf
++++ b/conformance/cases/type7-neg-implicit-read.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Using a borrow where a value is expected, without deref, is forbidden [TYPE-7/TYPE-5].";
+   let a: own i32 = 1_i32;
+   region 'r {
+--- a/conformance/cases/type7-neg-index-box-holder.wf
++++ b/conformance/cases/type7-neg-index-box-holder.wf
+@@ -1,4 +1,4 @@
+-fn read (holder: own box<buffer<u8>>) -> own u8 traps {
++fn read(holder: own box<buffer<u8>>) -> own u8 traps {
+   doc "TYPE-7: index cannot implicitly read through a box holder; write index<u8>(deref(holder), offset).";
+   return index<u8>(holder, 0_u64);
+ }
+--- a/conformance/cases/type7-neg-index-reference-holder.wf
++++ b/conformance/cases/type7-neg-index-reference-holder.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit allocates(heap), traps {
++fn main() -> own unit allocates(heap), traps {
+   doc "TYPE-7 applies to an index base: a reference holder requires explicit deref(.) before indexing its referent.";
+   let items: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+   region 'r {
+--- a/conformance/cases/type7-neg-match-borrow-expression.wf
++++ b/conformance/cases/type7-neg-match-borrow-expression.wf
+@@ -1,12 +1,13 @@
+-enum State { Ready(); }
++enum State {
++  Ready();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "TYPE-7: a borrow expression is a reference value, not an enum value; bind it and match deref(holder).";
+   let state: own State = Ready();
+   region 'r {
+     match &'r state {
+       Ready() => {
+-        doc "A second arm statement pins rejection before temporary-borrow cleanup.";
+         set state = Ready();
+       }
+     }
+--- a/conformance/cases/type7-neg-match-box-holder.wf
++++ b/conformance/cases/type7-neg-match-box-holder.wf
+@@ -1,9 +1,12 @@
+-enum State { Ready(); }
++enum State {
++  Ready();
++}
+ 
+-fn inspect (holder: own box<State>) -> own unit pure {
++fn inspect(holder: own box<State>) -> own unit pure {
+   doc "TYPE-7: match requires the enum inside a box holder, written match deref(holder).";
+   match holder {
+-    Ready() => { }
++    Ready() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/type7-neg-match-reference-call.wf
++++ b/conformance/cases/type7-neg-match-reference-call.wf
+@@ -1,13 +1,16 @@
+-enum State { Ready(); }
++enum State {
++  Ready();
++}
+ 
+-fn view ['r] (state: &'r State) -> &'r State pure {
++fn view ['r](state: &'r State) -> &'r State pure {
+   return state;
+ }
+ 
+-fn inspect ['r] (state: &'r State) -> own unit pure {
++fn inspect ['r](state: &'r State) -> own unit pure {
+   doc "TYPE-7: a reference-returning call is still a reference value and cannot be matched without an explicit holder and dereference.";
+   match view(state: state) {
+-    Ready() => { }
++    Ready() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/type7-neg-match-reference-holder.wf
++++ b/conformance/cases/type7-neg-match-reference-holder.wf
+@@ -1,6 +1,9 @@
+-enum State { Ready(); Done(); }
++enum State {
++  Ready();
++  Done();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "TYPE-7 applies to match scrutinees: a reference holder requires explicit deref(.) before matching its referent.";
+   let state: own State = Ready();
+   region 'r {
+--- a/conformance/cases/type7-neg-return-box-as-referent.wf
++++ b/conformance/cases/type7-neg-return-box-as-referent.wf
+@@ -1,4 +1,4 @@
+-fn read (holder: own box<i32>) -> own i32 pure {
++fn read(holder: own box<i32>) -> own i32 pure {
+   doc "TYPE-7: returning a box referent requires deref(holder); returning the box itself is a distinct affine transfer.";
+   return holder;
+ }
+--- a/conformance/cases/type7-neg-return-reference-holder.wf
++++ b/conformance/cases/type7-neg-return-reference-holder.wf
+@@ -1,4 +1,4 @@
+-fn read ['r] (holder: &'r i32) -> own i32 pure {
++fn read ['r](holder: &'r i32) -> own i32 pure {
+   doc "TYPE-7: returning a referent value cannot implicitly read through a reference holder.";
+   return holder;
+ }
+--- a/conformance/cases/type7-neg-try-box-holder.wf
++++ b/conformance/cases/type7-neg-try-box-holder.wf
+@@ -1,6 +1,8 @@
+-enum StepError { Failed(); }
++enum StepError {
++  Failed();
++}
+ 
+-fn forward (holder: own box<Result<i32, StepError>>) -> own Result<i32, StepError> pure {
++fn forward(holder: own box<Result<i32, StepError>>) -> own Result<i32, StepError> pure {
+   doc "TYPE-7: try cannot implicitly read a Result from a box holder; write deref(holder).";
+   let value: own i32 = try holder;
+   return Ok(value: value);
+--- a/conformance/cases/type7-neg-try-reference-holder.wf
++++ b/conformance/cases/type7-neg-try-reference-holder.wf
+@@ -1,6 +1,8 @@
+-enum StepError { Failed(); }
++enum StepError {
++  Failed();
++}
+ 
+-fn forward ['r] (holder: &'r Result<i32, StepError>) -> own Result<i32, StepError> pure {
++fn forward ['r](holder: &'r Result<i32, StepError>) -> own Result<i32, StepError> pure {
+   doc "TYPE-7: try cannot implicitly consume a Result through a reference holder; deref remains explicit.";
+   let value: own i32 = try holder;
+   return Ok(value: value);
+--- a/conformance/cases/type7-pos-deref.wf
++++ b/conformance/cases/type7-pos-deref.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Reading through a reference is explicit via deref(place) [TYPE-7].";
+   let a: own i32 = 42_i32;
+   region 'r {
+--- a/conformance/cases/x-arith-check-catches-wrapped-overflow-traps.wf
++++ b/conformance/cases/x-arith-check-catches-wrapped-overflow-traps.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A check is a runtime check in all build modes, never elided [OP-5]; the wrapped i32::MAX + 1 is negative, so an `igt 0` invariant is violated and the process traps and aborts [SCOPE-4].";
+   let hi: own i32 = 2147483647_i32;
+   let w: own i32 = iadd.wrap<i32>(hi, 1_i32);
+--- a/conformance/cases/x-arith-iadd-checked-overflow-err-arm-runs.wf
++++ b/conformance/cases/x-arith-iadd-checked-overflow-err-arm-runs.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "iadd.checked returns Result<T, Overflow> [OP-1]; i32::MAX + 1 yields Err, so the Err arm runs and the Ok arm's guard would trap if overflow went undetected [OP-5].";
+   let hi: own i32 = 2147483647_i32;
+   match iadd.checked<i32>(hi, 1_i32) {
+--- a/conformance/cases/x-arith-iadd-wrap-overflow-to-negative.wf
++++ b/conformance/cases/x-arith-iadd-wrap-overflow-to-negative.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "iadd.wrap wraps two's-complement on overflow [OP-1]; i32::MAX + 1 wraps to a negative value, confirmed on the dominated path by a passed check [OP-5].";
+   let hi: own i32 = 2147483647_i32;
+   let w: own i32 = iadd.wrap<i32>(hi, 1_i32);
+--- a/conformance/cases/x-arith-idiv-trap-zero-divisor-traps.wf
++++ b/conformance/cases/x-arith-idiv-trap-zero-divisor-traps.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "idiv.trap traps on a zero divisor [OP-2]; division carries no wrap mode and the zero-divisor contract violation aborts the process [SCOPE-4].";
+   let x: own i32 = 10_i32;
+   let q: own i32 = idiv.trap<i32>(x, 0_i32);
+--- a/conformance/cases/x-arith-isub-wrap-min-roundtrip-runs.wf
++++ b/conformance/cases/x-arith-isub-wrap-min-roundtrip-runs.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "isub.wrap underflow round-trips [OP-1]: wrapping i32::MAX + 1 yields i32::MIN, and isub.wrap(i32::MIN, 1) wraps back to i32::MAX, confirmed by an equality check [OP-5].";
+   let hi: own i32 = 2147483647_i32;
+   let lo: own i32 = iadd.wrap<i32>(hi, 1_i32);
+--- a/conformance/cases/x-arith-loop-imul-trap-folds-overflow-traps.wf
++++ b/conformance/cases/x-arith-loop-imul-trap-folds-overflow-traps.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A loop folds a running product with imul.trap [OP-1]; the accumulator overflows i32 before the comparison-driven break bound is reached, so the trapping multiply aborts the process [SCOPE-4].";
+   let i: own i32 = 0_i32;
+   let acc: own i32 = 1_i32;
+--- a/conformance/cases/x-borrow-own-param-escape-no-return.wf
++++ b/conformance/cases/x-borrow-own-param-escape-no-return.wf
+@@ -1,4 +1,4 @@
+-fn hold ['r0] (x: own i32) -> own unit pure {
++fn hold ['r0](x: own i32) -> own unit pure {
+   let p: &'r0 i32 = &'r0 x;
+   return unit;
+ }
+--- a/conformance/cases/x-borrow-return-uniq-local-region.wf
++++ b/conformance/cases/x-borrow-return-uniq-local-region.wf
+@@ -1,4 +1,4 @@
+-fn leak_uniq ['r0] (x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
++fn leak_uniq ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
+   region 's {
+     return &uniq 's deref(x);
+   }
+--- a/conformance/cases/x-borrow-two-shared-reads-run.wf
++++ b/conformance/cases/x-borrow-two-shared-reads-run.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-5: two shared borrows of one place coexist and are both read - shared reads never conflict.";
+   let a: own i32 = 7_i32;
+   region 'r {
+--- a/conformance/cases/x-borrow-two-uniq-same-place.wf
++++ b/conformance/cases/x-borrow-two-uniq-same-place.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-5: a second uniq borrow of an already-uniquely-borrowed place overlaps its predecessor.";
+   let a: own i32 = 3_i32;
+   region 'r {
+--- a/conformance/cases/x-borrow-uniq-shared-call-args-overlap.wf
++++ b/conformance/cases/x-borrow-uniq-shared-call-args-overlap.wf
+@@ -1,8 +1,8 @@
+-fn mix ['r] (a: &uniq 'r i32, b: &'r i32) -> own unit pure {
++fn mix ['r](a: &uniq 'r i32, b: &'r i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-12: a uniq argument and a shared argument over the same place alias at the call - rejected.";
+   let x: own i32 = 0_i32;
+   region 'r {
+--- a/conformance/cases/x-borrow-write-through-shared-borrow.wf
++++ b/conformance/cases/x-borrow-write-through-shared-borrow.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-5: writing through a shared borrow is illegal - only reads pass through a non-uniq holder.";
+   let a: own i32 = 1_i32;
+   region 'r {
+--- a/conformance/cases/x-const-scalar-u64-width.wf
++++ b/conformance/cases/x-const-scalar-u64-width.wf
+@@ -1,6 +1,6 @@
+ const maximum: u64 = 18446744073709551615_u64;
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let copy: own u64 = maximum;
+   check ieq<u64>(copy, 18446744073709551615_u64) else trap "scalar const width changed";
+   return unit;
+--- a/conformance/cases/x-eff-dup-reads-effect.wf
++++ b/conformance/cases/x-eff-dup-reads-effect.wf
+@@ -1,9 +1,9 @@
+-fn f (x: own i32) -> own i32 reads('r), reads('s) {
++fn f(x: own i32) -> own i32 reads('r), reads('s) {
+   doc "Two separate reads effects duplicate the reads kind [EFF-1]; canonical is reads('r 's).";
+   return x;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Driver.";
+   let a: own i32 = f(x: 7_i32);
+   check ieq<i32>(a, 7_i32) else trap "x";
+--- a/conformance/cases/x-eff-pure-fn-calls-traps-fn.wf
++++ b/conformance/cases/x-eff-pure-fn-calls-traps-fn.wf
+@@ -1,16 +1,16 @@
+-fn guarded (x: own i32) -> own i32 traps {
++fn guarded(x: own i32) -> own i32 traps {
+   doc "Declares traps and exhibits a check.";
+   check ilt<i32>(x, 100_i32) else trap "range";
+   return x;
+ }
+ 
+-fn f (x: own i32) -> own i32 pure {
++fn f(x: own i32) -> own i32 pure {
+   doc "Declares pure but calls a traps fn [EFF-2] undeclared-but-exhibited.";
+   let a: own i32 = guarded(x: x);
+   return a;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Driver.";
+   let a: own i32 = f(x: 7_i32);
+   check ieq<i32>(a, 7_i32) else trap "x";
+--- a/conformance/cases/x-eff-traps-fn-calls-only-pure.wf
++++ b/conformance/cases/x-eff-traps-fn-calls-only-pure.wf
+@@ -1,15 +1,15 @@
+-fn bump (x: own i32) -> own i32 pure {
++fn bump(x: own i32) -> own i32 pure {
+   doc "A pure helper with no trapping construct.";
+   return iadd.wrap<i32>(x, 1_i32);
+ }
+ 
+-fn f (x: own i32) -> own i32 traps {
++fn f(x: own i32) -> own i32 traps {
+   doc "Declares traps but its body only calls a pure fn [EFF-2] declared-but-unexhibited.";
+   let a: own i32 = bump(x: x);
+   return a;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Driver.";
+   let a: own i32 = f(x: 7_i32);
+   check ieq<i32>(a, 8_i32) else trap "x";
+--- a/conformance/cases/x-enum-borrow-payload-live.wf
++++ b/conformance/cases/x-enum-borrow-payload-live.wf
+@@ -1,6 +1,9 @@
+-enum Cell { Full(v: i32); Void(); }
++enum Cell {
++  Full(v: i32);
++  Void();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Borrow-match a payload enum through &'r: the scrutinee stays live for a second read, and each derived shared payload binder is explicitly dereferenced before its copy value is used [OWN-13, TYPE-7, GIVE-1, GRAM-10, OP-1, SCOPE-3].";
+   let c: own Cell = Full(v: 20_i32);
+   region 'r {
+--- a/conformance/cases/x-enum-multiwidth-dispatch.wf
++++ b/conformance/cases/x-enum-multiwidth-dispatch.wf
+@@ -1,6 +1,10 @@
+-enum Val { Small(a: i32); Big(b: u64); Bare(); }
++enum Val {
++  Small(a: i32);
++  Big(b: u64);
++  Bare();
++}
+ 
+-fn classify (v: own Val) -> own i32 traps {
++fn classify(v: own Val) -> own i32 traps {
+   doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
+   match v {
+     Small(a: n) => {
+@@ -22,7 +26,7 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
+   let small_atom_0001: own Val = Small(a: 40_i32);
+   let a: own i32 = classify(v: move small_atom_0001);
+--- a/conformance/cases/x-enum-option-context-free-constructor.wf
++++ b/conformance/cases/x-enum-option-context-free-constructor.wf
+@@ -1,6 +1,9 @@
+-enum Flag { First(); Second(); }
++enum Flag {
++  First();
++  Second();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   let first_atom_0001: own Flag = First();
+   match Some(value: first_atom_0001) {
+     None() => {
+--- a/conformance/cases/x-enum-payload-give.wf
++++ b/conformance/cases/x-enum-payload-give.wf
+@@ -1,6 +1,9 @@
+-enum Box { Item(n: i32); Empty(); }
++enum Box {
++  Item(n: i32);
++  Empty();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A payload-carrying variant is constructed, matched, and its bound payload feeds arithmetic delivered by give; the value-match round-trips the payload through codegen [TYPE-2, GRAM-8, GRAM-10, GIVE-1].";
+   let b: own Box = Item(n: 7_i32);
+   let r: own i32 = match b {
+--- a/conformance/cases/x-enum-result-context-free-constructor.wf
++++ b/conformance/cases/x-enum-result-context-free-constructor.wf
+@@ -1,6 +1,9 @@
+-enum Flag { First(); Second(); }
++enum Flag {
++  First();
++  Second();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   let first_atom_0001: own Flag = First();
+   match Err(error: first_atom_0001) {
+     Ok(value: value) => {
+--- a/conformance/cases/x-enum-result-payload-type-mismatch.wf
++++ b/conformance/cases/x-enum-result-payload-type-mismatch.wf
+@@ -1,9 +1,12 @@
+-enum Flag { First(); Second(); }
++enum Flag {
++  First();
++  Second();
++}
+ 
+-fn bad () -> own Result<u64,Flag> pure {
++fn bad() -> own Result<u64, Flag> pure {
+   return Err(error: 1_u64);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   return unit;
+ }
+--- a/conformance/cases/x-enum-stmt-payload-check.wf
++++ b/conformance/cases/x-enum-stmt-payload-check.wf
+@@ -1,6 +1,9 @@
+-enum Tagged { Num(n: i32); Nil(); }
++enum Tagged {
++  Num(n: i32);
++  Nil();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local and gates a check [TYPE-2, GRAM-10, OWN-13, OP-1].";
+   let t: own Tagged = Num(n: 21_i32);
+   match t {
+--- a/conformance/cases/x-enum-twostate-result-payload.wf
++++ b/conformance/cases/x-enum-twostate-result-payload.wf
+@@ -1,10 +1,13 @@
+-enum Flag { First(); Second(); }
++enum Flag {
++  First();
++  Second();
++}
+ 
+-fn make_ok (value: own u64) -> own Result<u64,Flag> pure {
++fn make_ok(value: own u64) -> own Result<u64, Flag> pure {
+   return Ok(value: value);
+ }
+ 
+-fn make_err (second: own Bool) -> own Result<u64,Flag> pure {
++fn make_err(second: own Bool) -> own Result<u64, Flag> pure {
+   match second {
+     True() => {
+       let second_atom_0001: own Flag = Second();
+@@ -17,7 +20,7 @@
+   }
+ }
+ 
+-fn result_code (result: own Result<u64,Flag>) -> own u64 pure {
++fn result_code(result: own Result<u64, Flag>) -> own u64 pure {
+   match result {
+     Ok(value: value) => {
+       return value;
+@@ -35,7 +38,7 @@
+   }
+ }
+ 
+-fn make_some (second: own Bool) -> own Option<Flag> pure {
++fn make_some(second: own Bool) -> own Option<Flag> pure {
+   match second {
+     True() => {
+       let second_atom_0003: own Flag = Second();
+@@ -48,11 +51,11 @@
+   }
+ }
+ 
+-fn make_none () -> own Option<Flag> pure {
++fn make_none() -> own Option<Flag> pure {
+   return None();
+ }
+ 
+-fn option_code (option: own Option<Flag>) -> own u64 pure {
++fn option_code(option: own Option<Flag>) -> own u64 pure {
+   match option {
+     None() => {
+       return 30_u64;
+@@ -70,16 +73,16 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
+-  let ok: own Result<u64,Flag> = make_ok(value: 7_u64);
++fn main() -> own unit traps {
++  let ok: own Result<u64, Flag> = make_ok(value: 7_u64);
+   let ok_code: own u64 = result_code(result: move ok);
+   check ieq<u64>(ok_code, 7_u64) else trap "Ok payload drift";
+   let false_atom_0005: own Bool = False();
+-  let first_error: own Result<u64,Flag> = make_err(second: false_atom_0005);
++  let first_error: own Result<u64, Flag> = make_err(second: false_atom_0005);
+   let first_code: own u64 = result_code(result: move first_error);
+   check ieq<u64>(first_code, 10_u64) else trap "First payload drift";
+   let true_atom_0006: own Bool = True();
+-  let second_error: own Result<u64,Flag> = make_err(second: true_atom_0006);
++  let second_error: own Result<u64, Flag> = make_err(second: true_atom_0006);
+   let second_code: own u64 = result_code(result: move second_error);
+   check ieq<u64>(second_code, 20_u64) else trap "Second payload drift";
+   let false_atom_0007: own Bool = False();
+--- a/conformance/cases/x-fn-arg-type-mismatch.wf
++++ b/conformance/cases/x-fn-arg-type-mismatch.wf
+@@ -1,9 +1,9 @@
+-fn takesint (n: own i32) -> own i32 pure {
++fn takesint(n: own i32) -> own i32 pure {
+   doc "Parameter n is an own i32 [FN-1].";
+   return n;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Caller passes a Bool where the signature declares i32 [FN-1].";
+   let true_atom_0001: own Bool = True();
+   let r: own i32 = takesint(n: true_atom_0001);
+--- a/conformance/cases/x-fn-cross-fn-call-chain.wf
++++ b/conformance/cases/x-fn-cross-fn-call-chain.wf
+@@ -1,15 +1,15 @@
+-fn dbl (x: own i32) -> own i32 traps {
++fn dbl(x: own i32) -> own i32 traps {
+   doc "Leaf of the chain: doubles its argument [FN-1].";
+   return iadd.trap<i32>(x, x);
+ }
+ 
+-fn quad (x: own i32) -> own i32 traps {
++fn quad(x: own i32) -> own i32 traps {
+   doc "Middle of the chain: calls dbl twice through a temporary [FN-1].";
+   let d: own i32 = dbl(x: x);
+   return dbl(x: d);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Three-deep call chain; each caller relies only on the callee signature [FN-1].";
+   let q: own i32 = quad(x: 5_i32);
+   check ieq<i32>(q, 20_i32) else trap "chain drift";
+--- a/conformance/cases/x-fn-mutual-recursion-runs.wf
++++ b/conformance/cases/x-fn-mutual-recursion-runs.wf
+@@ -1,4 +1,4 @@
+-fn iseven (n: own i32) -> own i32 traps {
++fn iseven(n: own i32) -> own i32 traps {
+   doc "Mutually recursive with isodd; returns 1 when n is even [FN-1, FN-6].";
+   match ieq<i32>(n, 0_i32) {
+     True() => {
+@@ -11,7 +11,7 @@
+   }
+ }
+ 
+-fn isodd (n: own i32) -> own i32 traps {
++fn isodd(n: own i32) -> own i32 traps {
+   doc "Mutually recursive with iseven; returns 0 when n is even [FN-1, FN-6].";
+   match ieq<i32>(n, 0_i32) {
+     True() => {
+@@ -24,7 +24,7 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Mutual recursion resolves across two signatures; forward reference is legal [FN-1].";
+   let r: own i32 = iseven(n: 8_i32);
+   check ieq<i32>(r, 1_i32) else trap "8 is even";
+--- a/conformance/cases/x-fn-own-arg-for-ref-param.wf
++++ b/conformance/cases/x-fn-own-arg-for-ref-param.wf
+@@ -1,9 +1,9 @@
+-fn takesref ['r] (x: &'r i32) -> own i32 pure {
++fn takesref ['r](x: &'r i32) -> own i32 pure {
+   doc "Parameter x is a shared borrow &'r i32 [FN-1].";
+   return deref(x);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Caller passes an own value where the signature declares a shared borrow [FN-1].";
+   let a: own i32 = 5_i32;
+   let r: own i32 = takesref(x: a);
+--- a/conformance/cases/x-fn-ref-arg-for-own-param.wf
++++ b/conformance/cases/x-fn-ref-arg-for-own-param.wf
+@@ -1,9 +1,9 @@
+-fn takesown (n: own i32) -> own i32 pure {
++fn takesown(n: own i32) -> own i32 pure {
+   doc "Parameter n is an own i32 [FN-1].";
+   return n;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Caller passes a shared borrow where the signature declares an own value [FN-1].";
+   let a: own i32 = 5_i32;
+   region 'r {
+--- a/conformance/cases/x-form-form2-tab-indent.wf
++++ b/conformance/cases/x-form-form2-tab-indent.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+ 	let a: own i32 = 1_i32;
+-	return unit;
++  return unit;
+ }
+--- a/conformance/cases/x-form-form7-i32-max-plus-one.wf
++++ b/conformance/cases/x-form-form7-i32-max-plus-one.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "i32 max + 1 is out of range [FORM-7].";
+   let a: own i32 = 2147483648_i32;
+   return unit;
+--- a/conformance/cases/x-form-form7-overflow-trap-canonical.wf
++++ b/conformance/cases/x-form-form7-overflow-trap-canonical.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "iadd.trap overflows i32 max by one and traps [FORM-7].";
+   let a: own i32 = 2147483647_i32;
+   let b: own i32 = iadd.trap<i32>(a, 1_i32);
+--- a/conformance/cases/x-give-result-aggregate.wf
++++ b/conformance/cases/x-give-result-aggregate.wf
+@@ -1,5 +1,5 @@
+-fn choose (b: own Bool) -> own Result<u64,u64> pure {
+-  let result: own Result<u64,u64> = match b {
++fn choose(b: own Bool) -> own Result<u64, u64> pure {
++  let result: own Result<u64, u64> = match b {
+     True() => {
+       give Ok(value: 1_u64);
+     }
+@@ -10,9 +10,9 @@
+   return move result;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   let true_atom_0001: own Bool = True();
+-  let first: own Result<u64,u64> = choose(b: true_atom_0001);
++  let first: own Result<u64, u64> = choose(b: true_atom_0001);
+   match move first {
+     Ok(value: value) => {
+       check ieq<u64>(value, 1_u64) else trap "wrong Ok payload";
+@@ -22,7 +22,7 @@
+     }
+   }
+   let false_atom_0002: own Bool = False();
+-  let second: own Result<u64,u64> = choose(b: false_atom_0002);
++  let second: own Result<u64, u64> = choose(b: false_atom_0002);
+   match move second {
+     Ok(value: value) => {
+       check ieq<u64>(0_u64, 1_u64) else trap "expected Err";
+--- a/conformance/cases/x-gram-call-repeated-arg.wf
++++ b/conformance/cases/x-gram-call-repeated-arg.wf
+@@ -1,8 +1,8 @@
+-fn add2 (x: own i32, y: own i32) -> own i32 pure {
++fn add2(x: own i32, y: own i32) -> own i32 pure {
+   return iadd.wrap<i32>(x, y);
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-11: a call to add2 repeating parameter x (x, x) is rejected - the second slot must be y; a repeat is never a reordering license.";
+   let r: own i32 = add2(x: 1_i32, x: 2_i32);
+   return unit;
+--- a/conformance/cases/x-gram-combo-flat-call-construct-match.wf
++++ b/conformance/cases/x-gram-combo-flat-call-construct-match.wf
+@@ -1,10 +1,13 @@
+-enum Parity { Even(n: i32); Odd(n: i32); }
++enum Parity {
++  Even(n: i32);
++  Odd(n: i32);
++}
+ 
+-fn double (x: own i32) -> own i32 pure {
++fn double(x: own i32) -> own i32 pure {
+   return imul.wrap<i32>(x, 2_i32);
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Combination: a GRAM-9 three-address chain feeds a GRAM-11 named call whose result fills a GRAM-8 named construct, then a GRAM-10 match selects the arm; runs to exit 0.";
+   let a: own i32 = 3_i32;
+   let b: own i32 = 4_i32;
+--- a/conformance/cases/x-gram-construct-missing-field.wf
++++ b/conformance/cases/x-gram-construct-missing-field.wf
+@@ -1,6 +1,8 @@
+-enum Pair { P(a: i32, b: i32); }
++enum Pair {
++  P(a: i32, b: i32);
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-8: constructing P with only field a (b missing) is rejected - every declared field must be written exactly once.";
+   let x: own Pair = P(a: 1_i32);
+   return unit;
+--- a/conformance/cases/x-gram-construct-repeated-field.wf
++++ b/conformance/cases/x-gram-construct-repeated-field.wf
+@@ -1,6 +1,8 @@
+-enum Pair { P(a: i32, b: i32); }
++enum Pair {
++  P(a: i32, b: i32);
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-8: constructing P writing field a twice (a, a) is rejected - the second slot must be b, and a repeat is not a spelling of it.";
+   let x: own Pair = P(a: 1_i32, a: 2_i32);
+   return unit;
+--- a/conformance/cases/x-integ-checked-overflow-diverts-to-err.wf
++++ b/conformance/cases/x-integ-checked-overflow-diverts-to-err.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Checked arithmetic feeding a match: an i32 overflow diverts to the Err arm (bound via give), and the recovered sentinel then feeds a second compare-match, so overflow is handled as defined behavior, never UB [OP-1, GIVE-1, OWN-13, SCOPE-3].";
+   let sum: own i32 = match iadd.checked<i32>(2000000000_i32, 200000000_i32) {
+     Ok(value: w) => {
+--- a/conformance/cases/x-integ-coin-borrow-match-score-twice.wf
++++ b/conformance/cases/x-integ-coin-borrow-match-score-twice.wf
+@@ -1,6 +1,9 @@
+-enum Coin { Heads(); Tails(); }
++enum Coin {
++  Heads();
++  Tails();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Match a coin twice through shared borrows in a region and give a score each time; borrow-mode matching leaves the coin live for the second read [OWN-13, GIVE-1, OP-1, SCOPE-3].";
+   let c: own Coin = Heads();
+   region 'r {
+--- a/conformance/cases/x-integ-give-in-statement-match-rejected.wf
++++ b/conformance/cases/x-integ-give-in-statement-match-rejected.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "give is legal only inside a let-initializer match arm; a give in a statement match, which acts by effect and yields no value, is rejected citing GIVE-1 (the break-precedent checker-scoped restriction) [GIVE-1, OWN-13, OP-1].";
+   let s: own Sign = Zero();
+   match s {
+--- a/conformance/cases/x-integ-loop-product-overflow-traps.wf
++++ b/conformance/cases/x-integ-loop-product-overflow-traps.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A running product overflows i32 mid-loop; imul.trap turns the overflow into a deterministic trap rather than UB, and the seed is bound from a checked op via give [OP-1, GIVE-1, SCOPE-3].";
+   let prod: own i32 = match iadd.checked<i32>(1_i32, 0_i32) {
+     Ok(value: seed) => {
+--- a/conformance/cases/x-integ-sign-weight-accumulate.wf
++++ b/conformance/cases/x-integ-sign-weight-accumulate.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn classify (x: own i32) -> own Sign pure {
++fn classify(x: own i32) -> own Sign pure {
+   doc "Classify an integer's sign; the closed-set result is consumed by match at each call site [FN-5].";
+   match ilt<i32>(x, 0_i32) {
+     True() => {
+@@ -19,7 +23,7 @@
+   }
+ }
+ 
+-fn weight (x: own i32) -> own i32 pure {
++fn weight(x: own i32) -> own i32 pure {
+   doc "Map a sign to a weight; matching the own Sign moves it exactly once [OWN-13].";
+   match classify(x: x) {
+     Neg() => {
+@@ -34,7 +38,7 @@
+   }
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Accumulate sign-weights of three inputs via cross-fn enum dispatch, then verify the sum [OP-1, OWN-13].";
+   let neg: own i32 = isub.wrap<i32>(0_i32, 5_i32);
+   let wa: own i32 = weight(x: neg);
+--- a/conformance/cases/x-integ-traffic-light-state-machine.wf
++++ b/conformance/cases/x-integ-traffic-light-state-machine.wf
+@@ -1,6 +1,10 @@
+-enum Light { Red(); Green(); Yellow(); }
++enum Light {
++  Red();
++  Green();
++  Yellow();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "A traffic-light state machine advanced by value-matches: each match moves the own state and gives its own successor, so after three transitions the light returns to Red [OWN-13, GIVE-1, OP-1, SCOPE-3].";
+   let s0: own Light = Red();
+   let s1: own Light = match s0 {
+--- a/conformance/cases/x-match-err2-value-match-missing-err.wf
++++ b/conformance/cases/x-match-err2-value-match-missing-err.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "ERR-2 over a value-match: a `let`-initializer match on a prelude Result [PRE-1] that omits the Err arm is non-exhaustive; rejected citing ERR-2 before any give-completeness check.";
+   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
+     Ok(value: w) => {
+--- a/conformance/cases/x-match-give1-give-in-stmt-match.wf
++++ b/conformance/cases/x-match-give1-give-in-stmt-match.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GIVE-1 is checker-scoped like break: `give` is legal only inside a `let`-initializer match arm; a give in a statement-position match is a hard error citing GIVE-1.";
+   match ilt<i32>(3_i32, 4_i32) {
+     True() => {
+--- a/conformance/cases/x-match-give1-nested-value-match.wf
++++ b/conformance/cases/x-match-give1-nested-value-match.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Value-match giving from a nested value-match: the outer Ok arm delivers by giving `inner`, itself bound by an inner Result match [PRE-1]; both matches are exhaustive [ERR-2] and every arm delivers [GIVE-1]. Runs to exit 0.";
+   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
+     Ok(value: w) => {
+--- a/conformance/cases/x-match-give1-wrong-type.wf
++++ b/conformance/cases/x-match-give1-wrong-type.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GIVE-1 type requirement: `give` must deliver the let's declared mode type; giving an i32 where the binder declares Bool is rejected citing TYPE-5 (the binder's type rule GIVE-1 defers to).";
+   let v: own Bool = match ilt<i32>(3_i32, 4_i32) {
+     True() => {
+--- a/conformance/cases/x-match-gram10-binder-not-fresh.wf
++++ b/conformance/cases/x-match-gram10-binder-not-fresh.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-10 freshness: a match binder that reuses a live outer name (w) is not fresh and is a hard error citing GRAM-10 [TYPE-6].";
+   let w: own i32 = 7_i32;
+   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
+--- a/conformance/cases/x-match-gram10-out-of-order-fields.wf
++++ b/conformance/cases/x-match-gram10-out-of-order-fields.wf
+@@ -1,6 +1,8 @@
+-enum Pair { Both(a: i32, b: i32); }
++enum Pair {
++  Both(a: i32, b: i32);
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "GRAM-10 declared order: a two-field variant bound out of declared order (b before a) is a hard error citing GRAM-10 and Both's declared field list.";
+   let p: own Pair = Both(a: 1_i32, b: 2_i32);
+   let v: own i32 = match p {
+--- a/conformance/cases/x-ownmove-borrow-after-match-move.wf
++++ b/conformance/cases/x-ownmove-borrow-after-match-move.wf
+@@ -1,12 +1,19 @@
+-enum Sign { Neg(mag: i32); Zero(); Pos(); }
++enum Sign {
++  Neg(mag: i32);
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-1/OWN-13: matching an own value moves it; borrowing the now-dead binding afterward is a use-after-move.";
+   let s: own Sign = Pos();
+   match s {
+-    Neg(mag: m) => { }
+-    Zero() => { }
+-    Pos() => { }
++    Neg(mag: m) => {
++    }
++    Zero() => {
++    }
++    Pos() => {
++    }
+   }
+   region 'r {
+     let b: &'r Sign = &'r s;
+--- a/conformance/cases/x-ownmove-borrow-match-live-then-own-move.wf
++++ b/conformance/cases/x-ownmove-borrow-match-live-then-own-move.wf
+@@ -1,20 +1,30 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "OWN-13 both modes: a shared-borrow match leaves s live; a later own match then moves it exactly once.";
+   let s: own Sign = Pos();
+   region 'r {
+     let b: &'r Sign = &'r s;
+     match deref(b) {
+-      Neg() => { }
+-      Zero() => { }
+-      Pos() => { }
++      Neg() => {
++      }
++      Zero() => {
++      }
++      Pos() => {
++      }
+     }
+   }
+   match s {
+-    Neg() => { }
+-    Zero() => { }
+-    Pos() => { }
++    Neg() => {
++    }
++    Zero() => {
++    }
++    Pos() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/x-ownmove-copy-reused-affine-consumed-once.wf
++++ b/conformance/cases/x-ownmove-copy-reused-affine-consumed-once.wf
+@@ -1,6 +1,9 @@
+-enum Flag { A(); B(); }
++enum Flag {
++  A();
++  B();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-1 copy vs affine: i32 n is reused three times (copy on use); the enum is consumed by exactly one match (affine).";
+   let n: own i32 = 14_i32;
+   let s: own i32 = iadd.trap<i32>(n, n);
+@@ -8,7 +11,8 @@
+   check ieq<i32>(t, 42_i32) else trap "copy drift";
+   let f: own Flag = A();
+   match f {
+-    A() => { }
++    A() => {
++    }
+     B() => {
+       check ieq<i32>(0_i32, 1_i32) else trap "b";
+     }
+--- a/conformance/cases/x-ownmove-owned-temporary-scrutinee.wf
++++ b/conformance/cases/x-ownmove-owned-temporary-scrutinee.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(); Zero(); Pos(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "OWN-13 owned temporary: a non-place scrutinee (a construction) is an owned temporary moved into the match.";
+   match Pos() {
+     Neg() => {
+@@ -9,7 +13,8 @@
+     Zero() => {
+       check ieq<i32>(0_i32, 1_i32) else trap "zero";
+     }
+-    Pos() => { }
++    Pos() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/x-ownmove-partial-move-kills-binding.wf
++++ b/conformance/cases/x-ownmove-partial-move-kills-binding.wf
+@@ -1,17 +1,29 @@
+-enum Sign { Neg(); Zero(); Pos(); }
+-enum Wrap { W(inner: Sign); N(); }
++enum Sign {
++  Neg();
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++enum Wrap {
++  W(inner: Sign);
++  N();
++}
++
++fn main() -> own unit pure {
+   doc "OWN-1/OWN-13: matching an own composite moves the whole binding (partial move kills it); a second match of the moved binding is a use of a dead binding.";
+   let pos_atom_0001: own Sign = Pos();
+   let w: own Wrap = W(inner: pos_atom_0001);
+   match w {
+-    W(inner: s) => { }
+-    N() => { }
++    W(inner: s) => {
++    }
++    N() => {
++    }
+   }
+   match w {
+-    W(inner: s) => { }
+-    N() => { }
++    W(inner: s) => {
++    }
++    N() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/x-ownmove-payload-binder-consumed-twice.wf
++++ b/conformance/cases/x-ownmove-payload-binder-consumed-twice.wf
+@@ -1,22 +1,34 @@
+-enum Inner { Value(number: i32); Empty(); }
+-enum Wrap { W(inner: Inner); N(); }
++enum Inner {
++  Value(number: i32);
++  Empty();
++}
+ 
+-fn main () -> own unit pure {
++enum Wrap {
++  W(inner: Inner);
++  N();
++}
++
++fn main() -> own unit pure {
+   doc "OWN-1: an affine payload binder is consumed by one inner match; a second inner match of it is a use-after-consume.";
+   let inner: own Inner = Value(number: 7_i32);
+   let w: own Wrap = W(inner: move inner);
+   match w {
+     W(inner: s) => {
+       match s {
+-        Value(number: first) => { }
+-        Empty() => { }
++        Value(number: first) => {
++        }
++        Empty() => {
++        }
+       }
+       match s {
+-        Value(number: second) => { }
+-        Empty() => { }
++        Value(number: second) => {
++        }
++        Empty() => {
++        }
+       }
+     }
+-    N() => { }
++    N() => {
++    }
+   }
+   return unit;
+ }
+--- a/conformance/cases/x-struct-construct-read-field.wf
++++ b/conformance/cases/x-struct-construct-read-field.wf
+@@ -3,7 +3,7 @@
+   y: i32;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "TYPE-2/GRAM-8: construct a struct, read its fields, use them in arithmetic, check the sum.";
+   let p: own Point = Point(x: 3_i32, y: 4_i32);
+   let s: own i32 = iadd.trap<i32>(p.x, p.y);
+--- a/conformance/cases/x-struct-cross-fn.wf
++++ b/conformance/cases/x-struct-cross-fn.wf
+@@ -3,13 +3,13 @@
+   y: i32;
+ }
+ 
+-fn sum_xy (v: own Vec2) -> own i32 pure {
++fn sum_xy(v: own Vec2) -> own i32 pure {
+   doc "TYPE-5: read the fields of an own struct parameter and return their sum.";
+   let s: own i32 = iadd.wrap<i32>(v.x, v.y);
+   return s;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
+   let vec2_atom_0001: own Vec2 = Vec2(x: 20_i32, y: 22_i32);
+   let total: own i32 = sum_xy(v: move vec2_atom_0001);
+--- a/conformance/cases/x-struct-mixed-width.wf
++++ b/conformance/cases/x-struct-mixed-width.wf
+@@ -4,7 +4,7 @@
+   c: u64;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "TYPE-2: mixed-width integer fields (i32/u8/u64) exercise per-field load/store widths.";
+   let m: own Mixed = Mixed(a: 100_i32, b: 5_u8, c: 1000_u64);
+   check ieq<i32>(m.a, 100_i32) else trap "i32 field drift";
+--- a/conformance/cases/x-struct-neg-field-order.wf
++++ b/conformance/cases/x-struct-neg-field-order.wf
+@@ -3,7 +3,7 @@
+   b: i32;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "GRAM-8: constructing a struct with out-of-order field names is rejected; declared order is the one legal byte sequence.";
+   let p: own Pair = Pair(b: 2_i32, a: 1_i32);
+   return unit;
+--- a/conformance/cases/x-struct-nested-field.wf
++++ b/conformance/cases/x-struct-nested-field.wf
+@@ -7,7 +7,7 @@
+   k: i32;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "TYPE-2: a nested struct field (a struct-typed field); read the inner field through the outer.";
+   let inner_atom_0001: own Inner = Inner(v: 10_i32);
+   let o: own Outer = Outer(inner: move inner_atom_0001, k: 5_i32);
+--- a/conformance/cases/x-struct-set-field.wf
++++ b/conformance/cases/x-struct-set-field.wf
+@@ -2,7 +2,7 @@
+   n: i32;
+ }
+ 
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, check the result.";
+   let c: own Counter = Counter(n: 1_i32);
+   set c.n = 41_i32;
+--- a/conformance/cases/x-typ-bool-cmp-result-as-int.wf
++++ b/conformance/cases/x-typ-bool-cmp-result-as-int.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Binding a Bool comparison result to an own i32 let is a type mismatch [TYPE-5].";
+   let a: own i32 = 1_i32;
+   let b: own i32 = 2_i32;
+--- a/conformance/cases/x-typ-borrow-arg-missing-deref.wf
++++ b/conformance/cases/x-typ-borrow-arg-missing-deref.wf
+@@ -1,8 +1,8 @@
+-fn takes_i32 (x: own i32) -> own unit pure {
++fn takes_i32(x: own i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Passing a borrow where an own i32 argument is declared needs deref [TYPE-7].";
+   let a: own i32 = 7_i32;
+   region 'r {
+--- a/conformance/cases/x-typ-let-shadows-param.wf
++++ b/conformance/cases/x-typ-let-shadows-param.wf
+@@ -1,10 +1,10 @@
+-fn shadow_param (x: own i32) -> own unit pure {
++fn shadow_param(x: own i32) -> own unit pure {
+   doc "A let redeclaring the live parameter name x shadows it [TYPE-6].";
+   let x: own i32 = 9_i32;
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   let r: own unit = shadow_param(x: 3_i32);
+   return unit;
+ }
+--- a/conformance/cases/x-typ-match-foreign-variant.wf
++++ b/conformance/cases/x-typ-match-foreign-variant.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A match on a Bool with a Some arm names a variant outside the scrutinee enum [TYPE-6].";
+   let b: own Bool = True();
+   match b {
+--- a/conformance/cases/x-typ-uniq-deref-write-roundtrip.wf
++++ b/conformance/cases/x-typ-uniq-deref-write-roundtrip.wf
+@@ -1,4 +1,4 @@
+-fn main () -> own unit traps {
++fn main() -> own unit traps {
+   doc "Writing through a &uniq borrow via set deref(p) and reading the value back [TYPE-7].";
+   let a: own i32 = 40_i32;
+   region 'r {
+--- a/conformance/cases/x-typ-value-where-borrow-param.wf
++++ b/conformance/cases/x-typ-value-where-borrow-param.wf
+@@ -1,8 +1,8 @@
+-fn needs_ref ['r] (p: &'r i32) -> own unit pure {
++fn needs_ref ['r](p: &'r i32) -> own unit pure {
+   return unit;
+ }
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "Passing an own i32 value where a &'r i32 borrow parameter is declared [TYPE-5].";
+   let a: own i32 = 5_i32;
+   region 'call_region {
+--- a/conformance/cases/xfail-own1-bare-affine-use.wf
++++ b/conformance/cases/xfail-own1-bare-affine-use.wf
+@@ -1,6 +1,10 @@
+-enum Sign { Neg(mag: i32); Zero(); Pos(); }
++enum Sign {
++  Neg(mag: i32);
++  Zero();
++  Pos();
++}
+ 
+-fn main () -> own unit pure {
++fn main() -> own unit pure {
+   doc "A bare use of an affine value must be rejected [OWN-1] (write move). KNOWN GAP.";
+   let a: own Sign = Neg(mag: 1_i32);
+   let b: own Sign = a;

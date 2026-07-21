@@ -1,29 +1,29 @@
 {
   "comparison": {
-    "common_block_byte_length": 134019,
-    "common_block_sha256": "2014897a6d2a4599957bad140f0de73c0d42c559ec629a3fdc20fe0b4d238b27",
+    "common_block_byte_length": 135581,
+    "common_block_sha256": "e725430cc6a4bb87c5d1aa4673576efc77018e61d302850d142246872e285d30",
     "generated_domain_count": 2,
     "status": "agree"
   },
   "engines": {
     "oracle": {
       "raw": {
-        "byte_length": 326432,
-        "sha256": "599ccde7e4c717fd3fcce690b564600d802df810cc8e8315a6bda94b191b9dbe"
+        "byte_length": 540101,
+        "sha256": "d86b73aff8779b1213ec4b6359a4d6c670158accb56046fae0b82be650cabddb"
       },
       "specific": {
-        "byte_length": 192335,
-        "sha256": "daf0f470deb0aed242cbddf2ece528f03fa56a3cb7a00c2f9fe928ab59fbae85"
+        "byte_length": 404442,
+        "sha256": "ad960cf0aef23ec91283654fd731c0a9910644f45e954d88826982a49b64cb99"
       }
     },
     "static": {
       "raw": {
-        "byte_length": 814446,
-        "sha256": "9452c5eebe7f84e9da78a8ba1bfad975daa7476a5cd4d4327661284eaff6a6f4"
+        "byte_length": 858315,
+        "sha256": "230b273c0df040e5a1b38690c082817843d5ce6febadeb9ec11f253523214d61"
       },
       "specific": {
-        "byte_length": 680349,
-        "sha256": "363b4f8101378c8867108ad93c6b2025addc4682fbb0b215307380332c1f95b8"
+        "byte_length": 722656,
+        "sha256": "6f228bc97754c4b4712ff6a3c34f68089562212cf1d1647cc36040daa7f4392a"
       }
     }
   },
@@ -34,8 +34,8 @@
   },
   "inputs": {
     "cases": {
-      "byte_length": 97,
-      "sha256": "eb4f3dec28b02dd1bf9216f73a1e27c79ad1666e0d30b47def1fd14a3e741d9a"
+      "byte_length": 1542,
+      "sha256": "3185a3d890a6099e11b8cae8ff3cc26e27ec1217f80ea66ffacdb66ed173df4b"
     },
     "current": {
       "byte_length": 63571,
@@ -46,16 +46,16 @@
       "sha256": "8500959f3aa10afbf0c5a33b4f940c2794a0e38a24850dd8d475d82fc0f25adb"
     },
     "expectations": {
-      "byte_length": 198,
-      "sha256": "b9cc736ec89f18bb733a71370a6a95a932df88f52c8cb651fbb9e15e1be5274f"
+      "byte_length": 1890,
+      "sha256": "f949dd9ce8b2dbd178908e4316da4266ea5883a1271cb46dd92211eedd65e404"
     },
     "limits": {
       "byte_length": 652,
       "sha256": "74c575ee48b98dfe6804dbf47116d628b1dfc7b529c5d2088a63721b58b00aa0"
     },
     "proposal": {
-      "byte_length": 64476,
-      "sha256": "cfd76a2bf9293519623c2448280f4d6f76f32be26cc1b2dadc487415e063f166"
+      "byte_length": 98044,
+      "sha256": "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
     }
   },
   "observations": {
@@ -69,6 +69,76 @@
         "introduced": 0,
         "removed": 1,
         "retained": 1
+      },
+      "law-unknown-name": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "law-wrong-function-role": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "law-wrong-identity-roles": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "law-zero-arity": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "ordinary-let": {
+        "introduced": 1,
+        "removed": 1,
+        "retained": 0
+      },
+      "requires-control": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "requires-doc-only": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "requires-no-check": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "requires-nonfinal-check": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "requires-set": {
+        "introduced": 1,
+        "removed": 0,
+        "retained": 0
+      },
+      "requires-value-match": {
+        "introduced": 1,
+        "removed": 1,
+        "retained": 0
+      },
+      "statement-match": {
+        "introduced": 1,
+        "removed": 1,
+        "retained": 0
+      },
+      "try-let": {
+        "introduced": 1,
+        "removed": 1,
+        "retained": 0
+      },
+      "value-match": {
+        "introduced": 1,
+        "removed": 1,
+        "retained": 0
       }
     },
     "cases": {
@@ -86,6 +156,146 @@
         "current": {
           "class": "many",
           "trace_count": 2
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "law-unknown-name": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "law-wrong-function-role": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "law-wrong-identity-roles": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "law-zero-arity": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "ordinary-let": {
+        "current": {
+          "class": "one",
+          "trace_count": 1
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "requires-control": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "requires-doc-only": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "requires-no-check": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "requires-nonfinal-check": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "requires-set": {
+        "current": {
+          "class": "zero",
+          "trace_count": 0
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "requires-value-match": {
+        "current": {
+          "class": "one",
+          "trace_count": 1
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "statement-match": {
+        "current": {
+          "class": "one",
+          "trace_count": 1
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "try-let": {
+        "current": {
+          "class": "one",
+          "trace_count": 1
+        },
+        "proposal": {
+          "class": "one",
+          "trace_count": 1
+        }
+      },
+      "value-match": {
+        "current": {
+          "class": "one",
+          "trace_count": 1
         },
         "proposal": {
           "class": "one",
@@ -114,13 +324,13 @@
     "static_delta_status_counts": {
       "conflict": {
         "introduced": 0,
-        "removed": 33,
-        "retained": 1
+        "removed": 34,
+        "retained": 0
       },
       "intersection": {
         "introduced": 0,
-        "removed": 49,
-        "retained": 76
+        "removed": 51,
+        "retained": 74
       }
     },
     "static_transitions": {
@@ -134,30 +344,30 @@
   },
   "proposal_artifacts": {
     "delta": {
-      "byte_length": 3218,
-      "sha256": "f0492617ded5353ff29440ba4a6004dc1c92916b4d60fcf6ece2bcca6ace3d63"
+      "byte_length": 31571,
+      "sha256": "4b4e583f8469b4f58fffac3263437300a58ca126e7f8dca5f6d055599938eab0"
     },
     "protected_surface_census": {
-      "byte_length": 11800,
-      "sha256": "485ced56f07c9f071d174be68f3220bcec78fe5ab3753cdcbf1a8173cf55847e"
+      "byte_length": 39073,
+      "sha256": "bb224651916f9ad49186b51c7963b9792ee7b698fff7c875dc4806b106241bda"
     }
   },
   "schema": "whitefoot.grammar-evidence.v1",
   "source_revisions": {
     "oracle": {
-      "byte_length": 121298,
-      "file_count": 17,
-      "sha256": "cda39ccadf25556d8a69788c6fe3d7013e20957bde6edcb9734de508ea08a28e"
+      "byte_length": 139028,
+      "file_count": 19,
+      "sha256": "b9012cb000b69dcafc638fc6b3569d780e18e33631f6715044659952397de35f"
     },
     "runner": {
-      "byte_length": 226503,
-      "file_count": 28,
-      "sha256": "dd85fef8c45211c7a6ed201a2f06cb35cb2e7dd1adbe68417f6a12e041466225"
+      "byte_length": 769865,
+      "file_count": 83,
+      "sha256": "e9ad4249dd03f0ba44458c50f66353d672e2d9e7d24c8201460fd01765ee3677"
     },
     "static": {
-      "byte_length": 158974,
-      "file_count": 16,
-      "sha256": "006430876fa331be8b1dd52b2dc3541b1877a412bca334464b5c852405fa2245"
+      "byte_length": 173789,
+      "file_count": 17,
+      "sha256": "26c6ed035d10186379179d3b7dc8cca4d6bf154fc4c47acd54aa548cb05e6c86"
     }
   }
 }

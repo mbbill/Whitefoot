@@ -1,0 +1,7586 @@
+{
+  "authority": "proposal evidence only; never language or compiler authority",
+  "bundles": {
+    "bundle-duplicate-path": [
+      {
+        "path": "a.wf",
+        "source_hex": "0a"
+      },
+      {
+        "path": "a.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-four-bytes": [
+      {
+        "path": "a.wf",
+        "source_hex": "61626364"
+      }
+    ],
+    "bundle-invalid-absolute-path": [
+      {
+        "path": "/a.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-invalid-double-separator": [
+      {
+        "path": "a//b.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-invalid-empty-path": [
+      {
+        "path": "",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-invalid-parent-path": [
+      {
+        "path": "../a.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-one-lf": [
+      {
+        "path": "empty.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-two-records": [
+      {
+        "path": "a.wf",
+        "source_hex": "0a"
+      },
+      {
+        "path": "b.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "bundle-zero-byte": [
+      {
+        "path": "empty.wf",
+        "source_hex": ""
+      }
+    ],
+    "bundle-zero-records": [],
+    "diag-dotted-alpha-omega": [
+      {
+        "path": "diag-dotted-alpha-omega.wf",
+        "source_hex": "616c7068612e6f6d6567613c"
+      }
+    ],
+    "diag-dotted-iadd-bogus": [
+      {
+        "path": "diag-dotted-iadd-bogus.wf",
+        "source_hex": "696164642e626f67757328"
+      }
+    ],
+    "diag-dotted-priority": [
+      {
+        "path": "diag-dotted-priority.wf",
+        "source_hex": "782e666f6f28"
+      }
+    ],
+    "diag-dotted-window-call": [
+      {
+        "path": "diag-dotted-window-call.wf",
+        "source_hex": "612e6228"
+      }
+    ],
+    "diag-dotted-window-targs": [
+      {
+        "path": "diag-dotted-window-targs.wf",
+        "source_hex": "612e623c"
+      }
+    ],
+    "diag-eff-pure-continuation": [
+      {
+        "path": "diag-eff-pure-continuation.wf",
+        "source_hex": "707572652c207472617073"
+      }
+    ],
+    "diag-eff-trailing-comma": [
+      {
+        "path": "diag-eff-trailing-comma.wf",
+        "source_hex": "74726170732c207b"
+      }
+    ],
+    "diag-eff-writes-missing-paren": [
+      {
+        "path": "diag-eff-writes-missing-paren.wf",
+        "source_hex": "777269746573202772"
+      }
+    ],
+    "diag-enum-sign": [
+      {
+        "path": "diag-enum-sign.wf",
+        "source_hex": "656e756d207369676e"
+      }
+    ],
+    "diag-fn-main": [
+      {
+        "path": "diag-fn-main.wf",
+        "source_hex": "666e204d61696e"
+      }
+    ],
+    "diag-foo-structural-choice": [
+      {
+        "path": "diag-foo-structural-choice.wf",
+        "source_hex": "466f6f2829"
+      }
+    ],
+    "diag-gimble-declared": [
+      {
+        "path": "diag-gimble-declared.wf",
+        "source_hex": "67696d626c6520783b"
+      }
+    ],
+    "diag-gimble-undeclared": [
+      {
+        "path": "diag-gimble-undeclared.wf",
+        "source_hex": "67696d626c6520783b"
+      }
+    ],
+    "diag-gram9-atom_list-ident-call": [
+      {
+        "path": "diag-gram9-atom_list-ident-call.wf",
+        "source_hex": "666f6f28"
+      }
+    ],
+    "diag-gram9-atom_list-ident-targs": [
+      {
+        "path": "diag-gram9-atom_list-ident-targs.wf",
+        "source_hex": "666f6f3c"
+      }
+    ],
+    "diag-gram9-atom_list-legal-place-near-miss": [
+      {
+        "path": "diag-gram9-atom_list-legal-place-near-miss.wf",
+        "source_hex": "666f6f2e6669656c64"
+      }
+    ],
+    "diag-gram9-atom_list-opname-call": [
+      {
+        "path": "diag-gram9-atom_list-opname-call.wf",
+        "source_hex": "696164642e7472617028"
+      }
+    ],
+    "diag-gram9-atom_list-opname-targs": [
+      {
+        "path": "diag-gram9-atom_list-opname-targs.wf",
+        "source_hex": "696164642e747261703c"
+      }
+    ],
+    "diag-gram9-atom_list-typeid-call": [
+      {
+        "path": "diag-gram9-atom_list-typeid-call.wf",
+        "source_hex": "4e6f646528"
+      }
+    ],
+    "diag-gram9-atom_list-typeid-targs": [
+      {
+        "path": "diag-gram9-atom_list-typeid-targs.wf",
+        "source_hex": "4e6f64653c"
+      }
+    ],
+    "diag-gram9-fieldinit-ident-call": [
+      {
+        "path": "diag-gram9-fieldinit-ident-call.wf",
+        "source_hex": "666f6f28"
+      }
+    ],
+    "diag-gram9-fieldinit-ident-targs": [
+      {
+        "path": "diag-gram9-fieldinit-ident-targs.wf",
+        "source_hex": "666f6f3c"
+      }
+    ],
+    "diag-gram9-fieldinit-legal-place-near-miss": [
+      {
+        "path": "diag-gram9-fieldinit-legal-place-near-miss.wf",
+        "source_hex": "666f6f2e6669656c64"
+      }
+    ],
+    "diag-gram9-fieldinit-opname-call": [
+      {
+        "path": "diag-gram9-fieldinit-opname-call.wf",
+        "source_hex": "696164642e7472617028"
+      }
+    ],
+    "diag-gram9-fieldinit-opname-targs": [
+      {
+        "path": "diag-gram9-fieldinit-opname-targs.wf",
+        "source_hex": "696164642e747261703c"
+      }
+    ],
+    "diag-gram9-fieldinit-typeid-call": [
+      {
+        "path": "diag-gram9-fieldinit-typeid-call.wf",
+        "source_hex": "4e6f646528"
+      }
+    ],
+    "diag-gram9-fieldinit-typeid-targs": [
+      {
+        "path": "diag-gram9-fieldinit-typeid-targs.wf",
+        "source_hex": "4e6f64653c"
+      }
+    ],
+    "diag-gram9-index-offset-ident-call": [
+      {
+        "path": "diag-gram9-index-offset-ident-call.wf",
+        "source_hex": "666f6f28"
+      }
+    ],
+    "diag-gram9-index-offset-ident-targs": [
+      {
+        "path": "diag-gram9-index-offset-ident-targs.wf",
+        "source_hex": "666f6f3c"
+      }
+    ],
+    "diag-gram9-index-offset-legal-place-near-miss": [
+      {
+        "path": "diag-gram9-index-offset-legal-place-near-miss.wf",
+        "source_hex": "666f6f2e6669656c64"
+      }
+    ],
+    "diag-gram9-index-offset-opname-call": [
+      {
+        "path": "diag-gram9-index-offset-opname-call.wf",
+        "source_hex": "696164642e7472617028"
+      }
+    ],
+    "diag-gram9-index-offset-opname-targs": [
+      {
+        "path": "diag-gram9-index-offset-opname-targs.wf",
+        "source_hex": "696164642e747261703c"
+      }
+    ],
+    "diag-gram9-index-offset-typeid-call": [
+      {
+        "path": "diag-gram9-index-offset-typeid-call.wf",
+        "source_hex": "4e6f646528"
+      }
+    ],
+    "diag-gram9-index-offset-typeid-targs": [
+      {
+        "path": "diag-gram9-index-offset-typeid-targs.wf",
+        "source_hex": "4e6f64653c"
+      }
+    ],
+    "diag-grammar-rank-not-lexical-sort": [
+      {
+        "path": "diag-grammar-rank-not-lexical-sort.wf",
+        "source_hex": "6164"
+      }
+    ],
+    "diag-name-nested-contract": [
+      {
+        "path": "diag-name-nested-contract.wf",
+        "source_hex": "636f6e74726163742043207b204d61696e207d"
+      }
+    ],
+    "diag-name-nested-field": [
+      {
+        "path": "diag-name-nested-field.wf",
+        "source_hex": "7374727563742053207b20466f6f3a6933323b7d"
+      }
+    ],
+    "diag-name-nested-variant": [
+      {
+        "path": "diag-name-nested-variant.wf",
+        "source_hex": "656e756d2045207b2062616428293b7d"
+      }
+    ],
+    "diag-name-param-list": [
+      {
+        "path": "diag-name-param-list.wf",
+        "source_hex": "666e206628506172616d3a693332292d3e756e697420707572653b"
+      }
+    ],
+    "diag-name-vfield-list": [
+      {
+        "path": "diag-name-vfield-list.wf",
+        "source_hex": "656e756d2045207b2056285061796c6f61643a693332293b207d"
+      }
+    ],
+    "diag-numeric-membership": [
+      {
+        "path": "diag-numeric-membership.wf",
+        "source_hex": "313233"
+      }
+    ],
+    "diag-program-residual-source-end": [
+      {
+        "path": "diag-program-residual-source-end.wf",
+        "source_hex": "466f6f"
+      }
+    ],
+    "diag-region-scope": [
+      {
+        "path": "diag-region-scope.wf",
+        "source_hex": "5b73636f70655d"
+      }
+    ],
+    "diag-repeat-tie": [
+      {
+        "path": "diag-repeat-tie.wf",
+        "source_hex": "6164"
+      }
+    ],
+    "diag-synthetic-end-token": [
+      {
+        "path": "diag-synthetic-end-token.wf",
+        "source_hex": "61"
+      }
+    ],
+    "diag-synthetic-second-token": [
+      {
+        "path": "diag-synthetic-second-token.wf",
+        "source_hex": "6164"
+      }
+    ],
+    "diag-unknown-item-entry": [
+      {
+        "path": "diag-unknown-item-entry.wf",
+        "source_hex": "6d79737465727920783b"
+      }
+    ],
+    "diag-unknown-requires-entry": [
+      {
+        "path": "diag-unknown-requires-entry.wf",
+        "source_hex": "6d79737465727920783b"
+      }
+    ],
+    "diag-wrapper-requires": [
+      {
+        "path": "diag-wrapper-requires.wf",
+        "source_hex": "666e207265717569726573"
+      }
+    ],
+    "diag-wrapper-trap": [
+      {
+        "path": "diag-wrapper-trap.wf",
+        "source_hex": "6c65742074726170"
+      }
+    ],
+    "diag-written-before-source-end": [
+      {
+        "path": "diag-written-before-source-end.wf",
+        "source_hex": "7879"
+      }
+    ],
+    "form2-final-missing": [
+      {
+        "path": "a.wf",
+        "source_hex": "61"
+      }
+    ],
+    "form2-interitem-excess": [
+      {
+        "path": "a.wf",
+        "source_hex": "610a0a0a62"
+      }
+    ],
+    "form2-leading-excess": [
+      {
+        "path": "a.wf",
+        "source_hex": "0a61"
+      }
+    ],
+    "form2-production-missing": [
+      {
+        "path": "a.wf",
+        "source_hex": "6162"
+      }
+    ],
+    "form2-production-wrong": [
+      {
+        "path": "a.wf",
+        "source_hex": "61202062"
+      }
+    ],
+    "identity-base": [
+      {
+        "path": "z.wf",
+        "source_hex": "6161"
+      },
+      {
+        "path": "a.wf",
+        "source_hex": "6262"
+      }
+    ],
+    "identity-empty-base": [
+      {
+        "path": "main.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "identity-empty-retained": [
+      {
+        "path": "main.wf",
+        "source_hex": "0a"
+      },
+      {
+        "path": "empty.wf",
+        "source_hex": "0a"
+      }
+    ],
+    "identity-path-exchanged": [
+      {
+        "path": "a.wf",
+        "source_hex": "6161"
+      },
+      {
+        "path": "z.wf",
+        "source_hex": "6262"
+      }
+    ],
+    "identity-reordered": [
+      {
+        "path": "a.wf",
+        "source_hex": "6262"
+      },
+      {
+        "path": "z.wf",
+        "source_hex": "6161"
+      }
+    ],
+    "identity-repartition-left": [
+      {
+        "path": "a.wf",
+        "source_hex": "6161"
+      },
+      {
+        "path": "b.wf",
+        "source_hex": "6262"
+      }
+    ],
+    "identity-repartition-right": [
+      {
+        "path": "a.wf",
+        "source_hex": "61616262"
+      }
+    ],
+    "lex-block-comment": [
+      {
+        "path": "lex-block-comment.wf",
+        "source_hex": "2f2a"
+      }
+    ],
+    "lex-cr": [
+      {
+        "path": "lex-cr.wf",
+        "source_hex": "0d"
+      }
+    ],
+    "lex-invalid-utf8": [
+      {
+        "path": "lex-invalid-utf8.wf",
+        "source_hex": "ff"
+      }
+    ],
+    "lex-label": [
+      {
+        "path": "lex-label.wf",
+        "source_hex": "4041"
+      }
+    ],
+    "lex-line-comment": [
+      {
+        "path": "lex-line-comment.wf",
+        "source_hex": "2f2f"
+      }
+    ],
+    "lex-other-whitespace": [
+      {
+        "path": "lex-other-whitespace.wf",
+        "source_hex": "0b"
+      }
+    ],
+    "lex-region": [
+      {
+        "path": "lex-region.wf",
+        "source_hex": "2741"
+      }
+    ],
+    "lex-source-order": [
+      {
+        "path": "first.wf",
+        "source_hex": "61617e"
+      },
+      {
+        "path": "second.wf",
+        "source_hex": "7e"
+      }
+    ],
+    "lex-stage-first": [
+      {
+        "path": "early.wf",
+        "source_hex": "67696d626c65"
+      },
+      {
+        "path": "late.wf",
+        "source_hex": "ff"
+      }
+    ],
+    "lex-string": [
+      {
+        "path": "lex-string.wf",
+        "source_hex": "22"
+      }
+    ],
+    "lex-tab": [
+      {
+        "path": "lex-tab.wf",
+        "source_hex": "09"
+      }
+    ],
+    "lex-unknown": [
+      {
+        "path": "lex-unknown.wf",
+        "source_hex": "7e"
+      }
+    ],
+    "root-order": [
+      {
+        "items": [
+          {
+            "id": "z0",
+            "span": [
+              0,
+              1
+            ]
+          },
+          {
+            "id": "z1",
+            "span": [
+              2,
+              3
+            ]
+          }
+        ],
+        "path": "z.wf",
+        "source_hex": "616263"
+      },
+      {
+        "items": [],
+        "path": "a.wf",
+        "source_hex": "0a"
+      },
+      {
+        "items": [
+          {
+            "id": "m0",
+            "span": [
+              0,
+              2
+            ]
+          }
+        ],
+        "path": "m.wf",
+        "source_hex": "7879"
+      }
+    ],
+    "topology-two-records": [
+      {
+        "path": "z.wf",
+        "source_hex": "6161"
+      },
+      {
+        "path": "a.wf",
+        "source_hex": "6262"
+      }
+    ],
+    "visibility-earlier-constant": [
+      {
+        "path": "later.wf",
+        "source_hex": "636f6e7374206c617465723a20693332203d20315f6933323b0a"
+      },
+      {
+        "path": "first.wf",
+        "source_hex": "636f6e73742066697273743a20693332203d206c617465723b0a"
+      }
+    ],
+    "visibility-forward-constant": [
+      {
+        "path": "first.wf",
+        "source_hex": "636f6e73742066697273743a20693332203d206c617465723b0a"
+      },
+      {
+        "path": "later.wf",
+        "source_hex": "636f6e7374206c617465723a20693332203d20315f6933323b0a"
+      }
+    ],
+    "visibility-forward-function": [
+      {
+        "path": "main.wf",
+        "source_hex": "666e206d61696e2829202d3e20756e697420656666656374732070757265207b0a20206c6174657228293b0a7d0a"
+      },
+      {
+        "path": "later.wf",
+        "source_hex": "666e206c617465722829202d3e20756e697420656666656374732070757265207b0a7d0a"
+      }
+    ],
+    "visibility-label": [
+      {
+        "path": "main.wf",
+        "source_hex": "40616761696e2040616761696e"
+      }
+    ],
+    "visibility-local": [
+      {
+        "path": "main.wf",
+        "source_hex": "75736520783b206c657420783b0a"
+      }
+    ],
+    "visibility-region": [
+      {
+        "path": "main.wf",
+        "source_hex": "2772202772"
+      }
+    ],
+    "whole-duplicate": [
+      {
+        "path": "main.wf",
+        "source_hex": "666f6f20666f6f206d61696e"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "bundle": "bundle-zero-records",
+      "expect": {
+        "code": "zero-records",
+        "family": "input-envelope-failure"
+      },
+      "id": "envelope-zero-records",
+      "kind": "envelope"
+    },
+    {
+      "bundle": "bundle-invalid-empty-path",
+      "expect": {
+        "code": "invalid-logical-path",
+        "family": "input-envelope-failure",
+        "record_ordinal": 0
+      },
+      "id": "envelope-empty-path",
+      "kind": "envelope"
+    },
+    {
+      "bundle": "bundle-invalid-parent-path",
+      "expect": {
+        "code": "invalid-logical-path",
+        "family": "input-envelope-failure",
+        "record_ordinal": 0
+      },
+      "id": "envelope-parent-path",
+      "kind": "envelope"
+    },
+    {
+      "bundle": "bundle-invalid-double-separator",
+      "expect": {
+        "code": "invalid-logical-path",
+        "family": "input-envelope-failure",
+        "record_ordinal": 0
+      },
+      "id": "envelope-double-separator",
+      "kind": "envelope"
+    },
+    {
+      "bundle": "bundle-invalid-absolute-path",
+      "expect": {
+        "code": "invalid-logical-path",
+        "family": "input-envelope-failure",
+        "record_ordinal": 0
+      },
+      "id": "envelope-absolute-path",
+      "kind": "envelope"
+    },
+    {
+      "bundle": "bundle-duplicate-path",
+      "expect": {
+        "code": "duplicate-logical-path",
+        "family": "input-envelope-failure",
+        "record_ordinal": 1
+      },
+      "id": "envelope-duplicate-path",
+      "kind": "envelope"
+    },
+    {
+      "bundle": "bundle-two-records",
+      "expect": {
+        "code": "record-limit",
+        "family": "resource-failure"
+      },
+      "id": "resource-record-limit",
+      "kind": "envelope",
+      "profile": {
+        "max_observations": 64,
+        "max_record_bytes": 256,
+        "max_records": 1,
+        "max_total_source_bytes": 512
+      }
+    },
+    {
+      "bundle": "bundle-four-bytes",
+      "expect": {
+        "code": "record-byte-limit",
+        "family": "resource-failure"
+      },
+      "id": "resource-record-byte-limit",
+      "kind": "envelope",
+      "profile": {
+        "max_observations": 64,
+        "max_record_bytes": 3,
+        "max_records": 8,
+        "max_total_source_bytes": 512
+      }
+    },
+    {
+      "bundle": "bundle-zero-byte",
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            0
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "form2-zero-byte-source",
+      "kind": "form2",
+      "mismatch": {
+        "actual_interval": [
+          0,
+          0
+        ],
+        "boundary": "source-final",
+        "left_terminal_path": null,
+        "node_extent": null,
+        "right_terminal_path": null
+      },
+      "rendered_hex": "0a",
+      "source": 0
+    },
+    {
+      "bundle": "bundle-one-lf",
+      "expect": {
+        "family": "frontend-complete"
+      },
+      "id": "form2-one-lf-source",
+      "kind": "form2",
+      "rendered_hex": "0a",
+      "source": 0
+    },
+    {
+      "bundle": "form2-production-missing",
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            1
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            0,
+            2
+          ]
+        },
+        "rule": "FORM-2"
+      },
+      "id": "form2-production-missing-separator",
+      "kind": "form2",
+      "mismatch": {
+        "actual_interval": [
+          1,
+          1
+        ],
+        "boundary": "production-separator",
+        "left_terminal_path": [
+          0,
+          2,
+          0
+        ],
+        "node_extent": [
+          0,
+          2
+        ],
+        "right_terminal_path": [
+          0,
+          2,
+          1
+        ]
+      },
+      "rendered_hex": "612062",
+      "source": 0
+    },
+    {
+      "bundle": "form2-production-wrong",
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            3
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            0,
+            2
+          ]
+        },
+        "rule": "FORM-2"
+      },
+      "id": "form2-production-wrong-separator",
+      "kind": "form2",
+      "mismatch": {
+        "actual_interval": [
+          1,
+          3
+        ],
+        "boundary": "production-separator",
+        "left_terminal_path": [
+          0,
+          2,
+          0
+        ],
+        "node_extent": [
+          0,
+          4
+        ],
+        "right_terminal_path": [
+          0,
+          2,
+          1
+        ]
+      },
+      "rendered_hex": "612062",
+      "source": 0
+    },
+    {
+      "bundle": "form2-leading-excess",
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "form2-source-leading-excess",
+      "kind": "form2",
+      "mismatch": {
+        "actual_interval": [
+          0,
+          1
+        ],
+        "boundary": "source-leading",
+        "left_terminal_path": null,
+        "node_extent": null,
+        "right_terminal_path": null
+      },
+      "rendered_hex": "61",
+      "source": 0
+    },
+    {
+      "bundle": "form2-final-missing",
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "form2-source-final-missing",
+      "kind": "form2",
+      "mismatch": {
+        "actual_interval": [
+          1,
+          1
+        ],
+        "boundary": "source-final",
+        "left_terminal_path": null,
+        "node_extent": null,
+        "right_terminal_path": null
+      },
+      "rendered_hex": "610a",
+      "source": 0
+    },
+    {
+      "bundle": "form2-interitem-excess",
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "form2-interitem-excess",
+      "kind": "form2",
+      "mismatch": {
+        "actual_interval": [
+          1,
+          4
+        ],
+        "boundary": "inter-item",
+        "left_terminal_path": null,
+        "node_extent": null,
+        "right_terminal_path": null
+      },
+      "rendered_hex": "610a0a62",
+      "source": 0
+    },
+    {
+      "expect": {
+        "family": "identity-comparison",
+        "left_record_count": 2,
+        "right_record_count": 2,
+        "same": false
+      },
+      "id": "identity-source-order",
+      "kind": "identity",
+      "left": "identity-base",
+      "right": "identity-reordered"
+    },
+    {
+      "expect": {
+        "family": "identity-comparison",
+        "left_record_count": 2,
+        "right_record_count": 2,
+        "same": false
+      },
+      "id": "identity-path-binding",
+      "kind": "identity",
+      "left": "identity-base",
+      "right": "identity-path-exchanged"
+    },
+    {
+      "expect": {
+        "family": "identity-comparison",
+        "left_record_count": 2,
+        "right_record_count": 1,
+        "same": false
+      },
+      "id": "identity-record-repartition",
+      "kind": "identity",
+      "left": "identity-repartition-left",
+      "right": "identity-repartition-right"
+    },
+    {
+      "expect": {
+        "family": "identity-comparison",
+        "left_record_count": 1,
+        "right_record_count": 2,
+        "same": false
+      },
+      "id": "identity-empty-record-retention",
+      "kind": "identity",
+      "left": "identity-empty-base",
+      "right": "identity-empty-retained"
+    },
+    {
+      "bundle": "visibility-forward-function",
+      "events": [
+        {
+          "action": "declare",
+          "binding": "function",
+          "name": "main",
+          "node_path": [
+            0
+          ],
+          "scope": "unit",
+          "source": 0,
+          "span": [
+            3,
+            7
+          ]
+        },
+        {
+          "action": "reference",
+          "binding": "function",
+          "name": "later",
+          "node_path": [
+            0,
+            0
+          ],
+          "scope": "unit",
+          "source": 0,
+          "span": [
+            35,
+            40
+          ]
+        },
+        {
+          "action": "declare",
+          "binding": "function",
+          "name": "later",
+          "node_path": [
+            1
+          ],
+          "scope": "unit",
+          "source": 1,
+          "span": [
+            3,
+            8
+          ]
+        }
+      ],
+      "expect": {
+        "family": "frontend-complete"
+      },
+      "id": "visibility-forward-function",
+      "kind": "visibility"
+    },
+    {
+      "bundle": "visibility-forward-constant",
+      "events": [
+        {
+          "action": "reference",
+          "binding": "constant",
+          "name": "later",
+          "node_path": [
+            0,
+            0
+          ],
+          "scope": "unit",
+          "source": 0,
+          "span": [
+            19,
+            24
+          ]
+        },
+        {
+          "action": "declare",
+          "binding": "constant",
+          "name": "later",
+          "node_path": [
+            1
+          ],
+          "scope": "unit",
+          "source": 1,
+          "span": [
+            6,
+            11
+          ]
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            19,
+            24
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            0,
+            0
+          ]
+        },
+        "rule": "TYPE-6"
+      },
+      "id": "visibility-forward-constant-rejected",
+      "kind": "visibility"
+    },
+    {
+      "bundle": "visibility-earlier-constant",
+      "events": [
+        {
+          "action": "declare",
+          "binding": "constant",
+          "name": "later",
+          "node_path": [
+            0
+          ],
+          "scope": "unit",
+          "source": 0,
+          "span": [
+            6,
+            11
+          ]
+        },
+        {
+          "action": "reference",
+          "binding": "constant",
+          "name": "later",
+          "node_path": [
+            1,
+            0
+          ],
+          "scope": "unit",
+          "source": 1,
+          "span": [
+            19,
+            24
+          ]
+        }
+      ],
+      "expect": {
+        "family": "frontend-complete"
+      },
+      "id": "visibility-earlier-constant-accepted",
+      "kind": "visibility"
+    },
+    {
+      "bundle": "visibility-local",
+      "events": [
+        {
+          "action": "reference",
+          "binding": "local",
+          "name": "x",
+          "node_path": [
+            0,
+            0
+          ],
+          "scope": "fn:main",
+          "source": 0,
+          "span": [
+            4,
+            5
+          ]
+        },
+        {
+          "action": "declare",
+          "binding": "local",
+          "name": "x",
+          "node_path": [
+            0,
+            1
+          ],
+          "scope": "fn:main",
+          "source": 0,
+          "span": [
+            11,
+            12
+          ]
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            4,
+            5
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            0,
+            0
+          ]
+        },
+        "rule": "TYPE-6"
+      },
+      "id": "visibility-forward-local-rejected",
+      "kind": "visibility"
+    },
+    {
+      "bundle": "visibility-region",
+      "events": [
+        {
+          "action": "reference",
+          "binding": "region",
+          "name": "'r",
+          "node_path": [
+            0,
+            0
+          ],
+          "scope": "fn:main",
+          "source": 0,
+          "span": [
+            0,
+            2
+          ]
+        },
+        {
+          "action": "declare",
+          "binding": "region",
+          "name": "'r",
+          "node_path": [
+            0,
+            1
+          ],
+          "scope": "fn:main",
+          "source": 0,
+          "span": [
+            3,
+            5
+          ]
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            2
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            0,
+            0
+          ]
+        },
+        "rule": "TYPE-6"
+      },
+      "id": "visibility-forward-region-rejected",
+      "kind": "visibility"
+    },
+    {
+      "bundle": "visibility-label",
+      "events": [
+        {
+          "action": "reference",
+          "binding": "label",
+          "name": "@again",
+          "node_path": [
+            0,
+            0
+          ],
+          "scope": "fn:main",
+          "source": 0,
+          "span": [
+            0,
+            6
+          ]
+        },
+        {
+          "action": "declare",
+          "binding": "label",
+          "name": "@again",
+          "node_path": [
+            0,
+            1
+          ],
+          "scope": "fn:main",
+          "source": 0,
+          "span": [
+            7,
+            13
+          ]
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            6
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            0,
+            0
+          ]
+        },
+        "rule": "TYPE-6"
+      },
+      "id": "visibility-forward-label-rejected",
+      "kind": "visibility"
+    },
+    {
+      "bundle": "topology-two-records",
+      "expect": {
+        "family": "frontend-complete"
+      },
+      "fragments": [
+        {
+          "kind": "token",
+          "member_sources": [
+            0
+          ],
+          "owner_source": 0,
+          "span": [
+            0,
+            1
+          ]
+        },
+        {
+          "kind": "trivia",
+          "member_sources": [
+            0
+          ],
+          "owner_source": 0,
+          "span": [
+            1,
+            2
+          ]
+        },
+        {
+          "kind": "production",
+          "member_sources": [
+            1,
+            1
+          ],
+          "owner_source": 1,
+          "span": [
+            0,
+            2
+          ]
+        },
+        {
+          "kind": "source-span",
+          "member_sources": [
+            1
+          ],
+          "owner_source": 1,
+          "span": [
+            0,
+            2
+          ]
+        }
+      ],
+      "id": "boundary-all-fragments-source-local",
+      "kind": "topology"
+    },
+    {
+      "bundle": "topology-two-records",
+      "expect": {
+        "code": "token-crosses-record-boundary",
+        "family": "compiler-invariant-failure"
+      },
+      "fragments": [
+        {
+          "kind": "token",
+          "member_sources": [
+            0,
+            1
+          ],
+          "owner_source": 0,
+          "span": [
+            0,
+            2
+          ]
+        }
+      ],
+      "id": "boundary-token-crossing-rejected",
+      "kind": "topology"
+    },
+    {
+      "bundle": "topology-two-records",
+      "expect": {
+        "code": "trivia-crosses-record-boundary",
+        "family": "compiler-invariant-failure"
+      },
+      "fragments": [
+        {
+          "kind": "trivia",
+          "member_sources": [
+            0,
+            1
+          ],
+          "owner_source": 0,
+          "span": [
+            0,
+            2
+          ]
+        }
+      ],
+      "id": "boundary-trivia-crossing-rejected",
+      "kind": "topology"
+    },
+    {
+      "bundle": "topology-two-records",
+      "expect": {
+        "code": "production-crosses-record-boundary",
+        "family": "compiler-invariant-failure"
+      },
+      "fragments": [
+        {
+          "kind": "production",
+          "member_sources": [
+            0,
+            1
+          ],
+          "owner_source": 0,
+          "span": [
+            0,
+            2
+          ]
+        }
+      ],
+      "id": "boundary-production-crossing-rejected",
+      "kind": "topology"
+    },
+    {
+      "bundle": "topology-two-records",
+      "expect": {
+        "code": "source-span-outside-source",
+        "family": "compiler-invariant-failure"
+      },
+      "fragments": [
+        {
+          "kind": "source-span",
+          "member_sources": [
+            0
+          ],
+          "owner_source": 0,
+          "span": [
+            0,
+            3
+          ]
+        }
+      ],
+      "id": "boundary-source-span-crossing-rejected",
+      "kind": "topology"
+    },
+    {
+      "bundle": "root-order",
+      "expect": {
+        "children": [
+          {
+            "coordinate": [
+              0,
+              0,
+              1
+            ],
+            "id": "z0",
+            "node_path": [
+              0
+            ],
+            "source_local_item_ordinal": 0
+          },
+          {
+            "coordinate": [
+              0,
+              2,
+              3
+            ],
+            "id": "z1",
+            "node_path": [
+              1
+            ],
+            "source_local_item_ordinal": 1
+          },
+          {
+            "coordinate": [
+              2,
+              0,
+              2
+            ],
+            "id": "m0",
+            "node_path": [
+              2
+            ],
+            "source_local_item_ordinal": 0
+          }
+        ],
+        "extent": [
+          [
+            0,
+            0,
+            3
+          ],
+          [
+            1,
+            0,
+            1
+          ],
+          [
+            2,
+            0,
+            2
+          ]
+        ],
+        "family": "root-projection",
+        "node_path": [],
+        "program_root_count": 1,
+        "source_forests": [
+          {
+            "item_node_paths": [
+              [
+                0
+              ],
+              [
+                1
+              ]
+            ],
+            "source_ordinal": 0
+          },
+          {
+            "item_node_paths": [],
+            "source_ordinal": 1
+          },
+          {
+            "item_node_paths": [
+              [
+                2
+              ]
+            ],
+            "source_ordinal": 2
+          }
+        ]
+      },
+      "id": "root-flatten-order-and-extents",
+      "kind": "root"
+    },
+    {
+      "bundle": "lex-invalid-utf8",
+      "defects": [
+        {
+          "actual_hex": "ff",
+          "kind": "invalid-utf8",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "raw-invalid-utf8",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-cr",
+      "defects": [
+        {
+          "actual_hex": "0d",
+          "kind": "cr",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "raw-cr",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-tab",
+      "defects": [
+        {
+          "actual_hex": "09",
+          "kind": "tab",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "raw-tab",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-other-whitespace",
+      "defects": [
+        {
+          "actual_hex": "0b",
+          "kind": "other-whitespace",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "raw-other-whitespace",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-line-comment",
+      "defects": [
+        {
+          "actual_hex": "2f2f",
+          "kind": "line-comment-prefix",
+          "source": 0,
+          "span": [
+            0,
+            2
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            2
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-4"
+      },
+      "id": "raw-line-comment-prefix",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-block-comment",
+      "defects": [
+        {
+          "actual_hex": "2f2a",
+          "kind": "block-comment-prefix",
+          "source": 0,
+          "span": [
+            0,
+            2
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            2
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-4"
+      },
+      "id": "raw-block-comment-prefix",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-string",
+      "defects": [
+        {
+          "actual_hex": "22",
+          "kind": "malformed-string",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-5"
+      },
+      "id": "raw-malformed-string",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-region",
+      "defects": [
+        {
+          "actual_hex": "27",
+          "kind": "malformed-region",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "id": "raw-malformed-region",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-label",
+      "defects": [
+        {
+          "actual_hex": "40",
+          "kind": "malformed-label",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "id": "raw-malformed-label",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-unknown",
+      "defects": [
+        {
+          "actual_hex": "7e",
+          "kind": "unrecognized-token-start",
+          "source": 0,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-1"
+      },
+      "id": "raw-unrecognized-token-start",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-stage-first",
+      "defects": [
+        {
+          "actual_hex": "67696d626c65",
+          "kind": "unknown-construct",
+          "source": 0,
+          "span": [
+            0,
+            6
+          ],
+          "stage": "grammar-derivation"
+        },
+        {
+          "actual_hex": "ff",
+          "kind": "invalid-utf8",
+          "source": 1,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            1,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-2"
+      },
+      "id": "raw-stage-before-earlier-grammar",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "lex-source-order",
+      "defects": [
+        {
+          "actual_hex": "7e",
+          "kind": "unrecognized-token-start",
+          "source": 1,
+          "span": [
+            0,
+            1
+          ],
+          "stage": "raw-lexical-formation"
+        },
+        {
+          "actual_hex": "7e",
+          "kind": "unrecognized-token-start",
+          "source": 0,
+          "span": [
+            2,
+            3
+          ],
+          "stage": "raw-lexical-formation"
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            2,
+            3
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-1"
+      },
+      "id": "raw-source-order-before-byte-offset",
+      "kind": "lexical"
+    },
+    {
+      "bundle": "diag-fn-main",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            3,
+            7
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              3,
+              7
+            ],
+            "spelling": "Main"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              7,
+              7
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-fn-main",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-enum-sign",
+      "expect": {
+        "expected_terminals": [
+          "TYPEID"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            5,
+            9
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "TYPEID",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              5,
+              9
+            ],
+            "spelling": "sign"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              9,
+              9
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-enum-sign",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-region-scope",
+      "expect": {
+        "expected_terminals": [
+          "REGIONID"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            6
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "REGIONID",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              1,
+              6
+            ],
+            "spelling": "scope"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              7,
+              7
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-region-scope",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-wrapper-requires",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            3,
+            11
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              3,
+              11
+            ],
+            "spelling": "requires"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              11,
+              11
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-wrapper-requires",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-wrapper-trap",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            4,
+            8
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "GRAM-4",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              4,
+              8
+            ],
+            "spelling": "trap"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              8,
+              8
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-wrapper-trap",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-name-nested-field",
+      "expect": {
+        "expected_terminals": [
+          "doc",
+          "IDENT",
+          "}"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            11,
+            14
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:doc",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "LITERAL",
+                  "origin": "inside",
+                  "rank": 2
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed::",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:}",
+                  "origin": "caller",
+                  "rank": 30
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [
+            {
+              "start": {
+                "name": "fixed:doc",
+                "origin": "inside",
+                "rank": 1
+              },
+              "topology": {
+                "directions": [
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:doc",
+                      "origin": "inside",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "directions": [
+                      {
+                        "body": {
+                          "kind": "terminal",
+                          "predicate": {
+                            "name": "IDENT",
+                            "origin": "inside",
+                            "rank": 10
+                          }
+                        },
+                        "kind": "production"
+                      },
+                      {
+                        "kind": "terminal",
+                        "predicate": {
+                          "name": "fixed:}",
+                          "origin": "caller",
+                          "rank": 30
+                        }
+                      }
+                    ],
+                    "kind": "nullable",
+                    "source": "field*"
+                  }
+                ],
+                "kind": "nullable",
+                "source": "doc?"
+              }
+            },
+            {
+              "start": {
+                "name": "IDENT",
+                "origin": "inside",
+                "rank": 10
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:}",
+                "origin": "caller",
+                "rank": 30
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:}",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              }
+            }
+          ],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              11,
+              14
+            ],
+            "spelling": "Foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              14,
+              15
+            ],
+            "spelling": ":"
+          }
+        ]
+      },
+      "id": "diag-name-nested-doc-field-star",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-name-nested-variant",
+      "expect": {
+        "expected_terminals": [
+          "doc",
+          "TYPEID",
+          "}"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            9,
+            12
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:doc",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "LITERAL",
+                  "origin": "inside",
+                  "rank": 2
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "TYPEID",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:}",
+                  "origin": "caller",
+                  "rank": 30
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [
+            {
+              "start": {
+                "name": "fixed:doc",
+                "origin": "inside",
+                "rank": 1
+              },
+              "topology": {
+                "directions": [
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:doc",
+                      "origin": "inside",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "directions": [
+                      {
+                        "body": {
+                          "kind": "terminal",
+                          "predicate": {
+                            "name": "TYPEID",
+                            "origin": "inside",
+                            "rank": 10
+                          }
+                        },
+                        "kind": "production"
+                      },
+                      {
+                        "kind": "terminal",
+                        "predicate": {
+                          "name": "fixed:}",
+                          "origin": "caller",
+                          "rank": 30
+                        }
+                      }
+                    ],
+                    "kind": "nullable",
+                    "source": "variant*"
+                  }
+                ],
+                "kind": "nullable",
+                "source": "doc?"
+              }
+            },
+            {
+              "start": {
+                "name": "TYPEID",
+                "origin": "inside",
+                "rank": 10
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "TYPEID",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:}",
+                "origin": "caller",
+                "rank": 30
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:}",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              }
+            }
+          ],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              9,
+              12
+            ],
+            "spelling": "bad"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              12,
+              13
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-name-nested-doc-variant-star",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-name-nested-contract",
+      "expect": {
+        "expected_terminals": [
+          "doc",
+          "fn",
+          "law",
+          "}"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            13,
+            17
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-2"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:doc",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "LITERAL",
+                  "origin": "inside",
+                  "rank": 2
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:fn",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:law",
+                  "origin": "inside",
+                  "rank": 20
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:}",
+                  "origin": "caller",
+                  "rank": 30
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [
+            {
+              "start": {
+                "name": "fixed:doc",
+                "origin": "inside",
+                "rank": 1
+              },
+              "topology": {
+                "directions": [
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:doc",
+                      "origin": "inside",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "directions": [
+                      {
+                        "body": {
+                          "children": [
+                            {
+                              "kind": "terminal",
+                              "predicate": {
+                                "name": "fixed:fn",
+                                "origin": "inside",
+                                "rank": 10
+                              }
+                            },
+                            {
+                              "kind": "terminal",
+                              "predicate": {
+                                "name": "IDENT",
+                                "origin": "inside",
+                                "rank": 11
+                              }
+                            }
+                          ],
+                          "kind": "sequence"
+                        },
+                        "kind": "production"
+                      },
+                      {
+                        "directions": [
+                          {
+                            "body": {
+                              "children": [
+                                {
+                                  "kind": "terminal",
+                                  "predicate": {
+                                    "name": "fixed:law",
+                                    "origin": "inside",
+                                    "rank": 20
+                                  }
+                                },
+                                {
+                                  "kind": "terminal",
+                                  "predicate": {
+                                    "name": "IDENT",
+                                    "origin": "inside",
+                                    "rank": 21
+                                  }
+                                }
+                              ],
+                              "kind": "sequence"
+                            },
+                            "kind": "production"
+                          },
+                          {
+                            "kind": "terminal",
+                            "predicate": {
+                              "name": "fixed:}",
+                              "origin": "caller",
+                              "rank": 30
+                            }
+                          }
+                        ],
+                        "kind": "nullable",
+                        "source": "law*"
+                      }
+                    ],
+                    "kind": "nullable",
+                    "source": "fn_sig*"
+                  }
+                ],
+                "kind": "nullable",
+                "source": "doc?"
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:fn",
+                "origin": "inside",
+                "rank": 10
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:fn",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:law",
+                "origin": "inside",
+                "rank": 20
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:law",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:}",
+                "origin": "caller",
+                "rank": 30
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:}",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              }
+            }
+          ],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              13,
+              17
+            ],
+            "spelling": "Main"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              18,
+              19
+            ],
+            "spelling": "}"
+          }
+        ]
+      },
+      "id": "diag-name-nested-doc-contract-negative",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-name-param-list",
+      "expect": {
+        "expected_terminals": [
+          "IDENT",
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            5,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed::",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 20
+                },
+                {
+                  "name": "fixed:->",
+                  "origin": "caller",
+                  "rank": 21
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [
+            {
+              "start": {
+                "name": "IDENT",
+                "origin": "inside",
+                "rank": 10
+              },
+              "topology": {
+                "directions": [
+                  {
+                    "body": {
+                      "kind": "terminal",
+                      "predicate": {
+                        "name": "IDENT",
+                        "origin": "inside",
+                        "rank": 10
+                      }
+                    },
+                    "kind": "production"
+                  },
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:)",
+                      "origin": "caller",
+                      "rank": 20
+                    }
+                  }
+                ],
+                "kind": "nullable",
+                "source": "param_list?"
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:)",
+                "origin": "caller",
+                "rank": 20
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 20
+                }
+              }
+            }
+          ],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              5,
+              10
+            ],
+            "spelling": "Param"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              10,
+              11
+            ],
+            "spelling": ":"
+          }
+        ]
+      },
+      "id": "diag-name-param-list-optional",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-name-vfield-list",
+      "expect": {
+        "expected_terminals": [
+          "IDENT",
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            11,
+            18
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed::",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 20
+                },
+                {
+                  "name": "fixed:;",
+                  "origin": "caller",
+                  "rank": 21
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [
+            {
+              "start": {
+                "name": "IDENT",
+                "origin": "inside",
+                "rank": 10
+              },
+              "topology": {
+                "directions": [
+                  {
+                    "body": {
+                      "kind": "terminal",
+                      "predicate": {
+                        "name": "IDENT",
+                        "origin": "inside",
+                        "rank": 10
+                      }
+                    },
+                    "kind": "production"
+                  },
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:)",
+                      "origin": "caller",
+                      "rank": 20
+                    }
+                  }
+                ],
+                "kind": "nullable",
+                "source": "vfield_list?"
+              }
+            },
+            {
+              "start": {
+                "name": "fixed:)",
+                "origin": "caller",
+                "rank": 20
+              },
+              "topology": {
+                "kind": "terminal",
+                "predicate": {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 20
+                }
+              }
+            }
+          ],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              11,
+              18
+            ],
+            "spelling": "Payload"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              18,
+              19
+            ],
+            "spelling": ":"
+          }
+        ]
+      },
+      "id": "diag-name-vfield-list-optional",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-numeric-membership",
+      "expect": {
+        "expected_terminals": [
+          "LITERAL"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            3
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-5"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "LITERAL",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "numeric",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "123"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              3,
+              3
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-numeric-membership",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gimble-declared",
+      "expect": {
+        "expected_terminals": [
+          "(",
+          "<"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            6
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:<",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:let",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": "stmt",
+          "lookup_state": "declared",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-4",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              6
+            ],
+            "spelling": "gimble"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              7,
+              8
+            ],
+            "spelling": "x"
+          }
+        ]
+      },
+      "id": "diag-gimble-declared",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gimble-undeclared",
+      "expect": {
+        "expected_terminals": [
+          "(",
+          "<"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            6
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:<",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:let",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": "stmt",
+          "lookup_state": "undeclared",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-4",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              6
+            ],
+            "spelling": "gimble"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              7,
+              8
+            ],
+            "spelling": "x"
+          }
+        ]
+      },
+      "id": "diag-gimble-undeclared",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-unknown-item-entry",
+      "expect": {
+        "expected_terminals": [
+          "(",
+          "<"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            7
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:<",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:let",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": "item",
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              7
+            ],
+            "spelling": "mystery"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              8,
+              9
+            ],
+            "spelling": "x"
+          }
+        ]
+      },
+      "id": "diag-unknown-item-entry",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-unknown-requires-entry",
+      "expect": {
+        "expected_terminals": [
+          "(",
+          "<"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            7
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:<",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:let",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": "requires-entry",
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-4",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              7
+            ],
+            "spelling": "mystery"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              8,
+              9
+            ],
+            "spelling": "x"
+          }
+        ]
+      },
+      "id": "diag-unknown-requires-entry",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-eff-pure-continuation",
+      "expect": {
+        "expected_terminals": [
+          "{"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            4,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "EFF-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": {
+              "arms": [
+                {
+                  "child": null,
+                  "rows": [
+                    [
+                      {
+                        "name": "fixed:}",
+                        "origin": "inside",
+                        "rank": 50
+                      },
+                      {
+                        "name": "SOURCE_END",
+                        "origin": "caller",
+                        "rank": 999
+                      }
+                    ]
+                  ]
+                }
+              ],
+              "context": {
+                "atom_slot": null,
+                "dotted_window": null,
+                "entry": null,
+                "lookup_state": "not-applicable",
+                "mandatory_name_roots": [],
+                "program_leftover": false
+              },
+              "direct": true,
+              "owner": "GRAM-2",
+              "tokens": [
+                {
+                  "shape": "punctuation",
+                  "span": [
+                    4,
+                    5
+                  ],
+                  "spelling": ","
+                },
+                {
+                  "shape": "source-end",
+                  "span": [
+                    11,
+                    11
+                  ],
+                  "spelling": ""
+                }
+              ]
+            },
+            "rows": [
+              [
+                {
+                  "name": "fixed:pure",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:{",
+                  "origin": "caller",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:reads",
+                  "origin": "inside",
+                  "rank": 11
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "EFF-1",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "pure"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": ","
+          }
+        ]
+      },
+      "id": "diag-eff-pure-continuation",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-eff-writes-missing-paren",
+      "expect": {
+        "expected_terminals": [
+          "("
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            7,
+            9
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "EFF-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:writes",
+                  "origin": "inside",
+                  "rank": 20
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 21
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": true,
+        "owner": "EFF-1",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              6
+            ],
+            "spelling": "writes"
+          },
+          {
+            "shape": "region",
+            "span": [
+              7,
+              9
+            ],
+            "spelling": "'r"
+          }
+        ]
+      },
+      "id": "diag-eff-writes-missing-paren",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-eff-trailing-comma",
+      "expect": {
+        "expected_terminals": [
+          "reads",
+          "writes",
+          "allocates",
+          "traps"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            7,
+            8
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "EFF-1"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": {
+              "arms": [
+                {
+                  "child": null,
+                  "rows": [
+                    [
+                      {
+                        "name": "fixed:reads",
+                        "origin": "inside",
+                        "rank": 100
+                      },
+                      {
+                        "name": "SOURCE_END",
+                        "origin": "caller",
+                        "rank": 999
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "child": null,
+                  "rows": [
+                    [
+                      {
+                        "name": "fixed:writes",
+                        "origin": "inside",
+                        "rank": 101
+                      },
+                      {
+                        "name": "SOURCE_END",
+                        "origin": "caller",
+                        "rank": 999
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "child": null,
+                  "rows": [
+                    [
+                      {
+                        "name": "fixed:allocates",
+                        "origin": "inside",
+                        "rank": 102
+                      },
+                      {
+                        "name": "SOURCE_END",
+                        "origin": "caller",
+                        "rank": 999
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "child": null,
+                  "rows": [
+                    [
+                      {
+                        "name": "fixed:traps",
+                        "origin": "inside",
+                        "rank": 103
+                      },
+                      {
+                        "name": "SOURCE_END",
+                        "origin": "caller",
+                        "rank": 999
+                      }
+                    ]
+                  ]
+                }
+              ],
+              "context": {
+                "atom_slot": null,
+                "dotted_window": null,
+                "entry": null,
+                "lookup_state": "not-applicable",
+                "mandatory_name_roots": [],
+                "program_leftover": false
+              },
+              "direct": false,
+              "owner": "EFF-1",
+              "tokens": [
+                {
+                  "shape": "punctuation",
+                  "span": [
+                    7,
+                    8
+                  ],
+                  "spelling": "{"
+                },
+                {
+                  "shape": "source-end",
+                  "span": [
+                    8,
+                    8
+                  ],
+                  "spelling": ""
+                }
+              ]
+            },
+            "rows": [
+              [
+                {
+                  "name": "fixed:,",
+                  "origin": "inside",
+                  "rank": 30
+                },
+                {
+                  "name": "fixed:reads",
+                  "origin": "inside",
+                  "rank": 100
+                }
+              ],
+              [
+                {
+                  "name": "fixed:,",
+                  "origin": "inside",
+                  "rank": 30
+                },
+                {
+                  "name": "fixed:writes",
+                  "origin": "inside",
+                  "rank": 101
+                }
+              ],
+              [
+                {
+                  "name": "fixed:,",
+                  "origin": "inside",
+                  "rank": 30
+                },
+                {
+                  "name": "fixed:allocates",
+                  "origin": "inside",
+                  "rank": 102
+                }
+              ],
+              [
+                {
+                  "name": "fixed:,",
+                  "origin": "inside",
+                  "rank": 30
+                },
+                {
+                  "name": "fixed:traps",
+                  "origin": "inside",
+                  "rank": 103
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:{",
+                  "origin": "caller",
+                  "rank": 40
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "EFF-1",
+        "tokens": [
+          {
+            "shape": "punctuation",
+            "span": [
+              5,
+              6
+            ],
+            "spelling": ","
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              7,
+              8
+            ],
+            "spelling": "{"
+          }
+        ]
+      },
+      "id": "diag-eff-trailing-comma",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-dotted-iadd-bogus",
+      "expect": {
+        "expected_terminals": [
+          ";"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:;",
+                  "origin": "caller",
+                  "rank": 40
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": [
+            {
+              "shape": "lower-word",
+              "span": [
+                0,
+                4
+              ],
+              "spelling": "iadd"
+            },
+            {
+              "shape": "punctuation",
+              "span": [
+                4,
+                5
+              ],
+              "spelling": "."
+            },
+            {
+              "shape": "lower-word",
+              "span": [
+                5,
+                10
+              ],
+              "spelling": "bogus"
+            },
+            {
+              "shape": "punctuation",
+              "span": [
+                10,
+                11
+              ],
+              "spelling": "("
+            }
+          ],
+          "entry": null,
+          "lookup_state": "undeclared",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              5,
+              10
+            ],
+            "spelling": "bogus"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              10,
+              11
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-dotted-iadd-bogus",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-dotted-alpha-omega",
+      "expect": {
+        "expected_terminals": [
+          ";"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            11
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:;",
+                  "origin": "caller",
+                  "rank": 40
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": [
+            {
+              "shape": "lower-word",
+              "span": [
+                0,
+                5
+              ],
+              "spelling": "alpha"
+            },
+            {
+              "shape": "punctuation",
+              "span": [
+                5,
+                6
+              ],
+              "spelling": "."
+            },
+            {
+              "shape": "lower-word",
+              "span": [
+                6,
+                11
+              ],
+              "spelling": "omega"
+            },
+            {
+              "shape": "punctuation",
+              "span": [
+                11,
+                12
+              ],
+              "spelling": "<"
+            }
+          ],
+          "entry": null,
+          "lookup_state": "declared",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              6,
+              11
+            ],
+            "spelling": "omega"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              11,
+              12
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-dotted-alpha-omega",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-dotted-priority",
+      "expect": {
+        "expected_terminals": [
+          ";"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "FORM-3"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:;",
+                  "origin": "caller",
+                  "rank": 40
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": [
+            {
+              "shape": "lower-word",
+              "span": [
+                0,
+                1
+              ],
+              "spelling": "x"
+            },
+            {
+              "shape": "punctuation",
+              "span": [
+                1,
+                2
+              ],
+              "spelling": "."
+            },
+            {
+              "shape": "lower-word",
+              "span": [
+                2,
+                5
+              ],
+              "spelling": "foo"
+            },
+            {
+              "shape": "punctuation",
+              "span": [
+                5,
+                6
+              ],
+              "spelling": "("
+            }
+          ],
+          "entry": null,
+          "lookup_state": "declared",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              2,
+              5
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              5,
+              6
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-dotted-priority",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "boundary_index": 0,
+      "bundle": "diag-dotted-window-call",
+      "expect": {
+        "attribution": {
+          "expected_terminals": [
+            ";"
+          ],
+          "family": "source-language-rejection",
+          "location": {
+            "coordinate": [
+              0,
+              0,
+              3
+            ],
+            "kind": "SourceBytes"
+          },
+          "rule": "FORM-3"
+        },
+        "boundary_index": 0,
+        "boundary_span": [
+          0,
+          1
+        ],
+        "family": "dotted-position-evidence"
+      },
+      "id": "diag-dotted-call-boundary-first-ident",
+      "kind": "dotted-position",
+      "source": 0
+    },
+    {
+      "boundary_index": 1,
+      "bundle": "diag-dotted-window-call",
+      "expect": {
+        "attribution": {
+          "expected_terminals": [
+            ";"
+          ],
+          "family": "source-language-rejection",
+          "location": {
+            "coordinate": [
+              0,
+              0,
+              3
+            ],
+            "kind": "SourceBytes"
+          },
+          "rule": "FORM-3"
+        },
+        "boundary_index": 1,
+        "boundary_span": [
+          1,
+          2
+        ],
+        "family": "dotted-position-evidence"
+      },
+      "id": "diag-dotted-call-boundary-dot",
+      "kind": "dotted-position",
+      "source": 0
+    },
+    {
+      "boundary_index": 2,
+      "bundle": "diag-dotted-window-call",
+      "expect": {
+        "attribution": {
+          "expected_terminals": [
+            ";"
+          ],
+          "family": "source-language-rejection",
+          "location": {
+            "coordinate": [
+              0,
+              0,
+              3
+            ],
+            "kind": "SourceBytes"
+          },
+          "rule": "FORM-3"
+        },
+        "boundary_index": 2,
+        "boundary_span": [
+          2,
+          3
+        ],
+        "family": "dotted-position-evidence"
+      },
+      "id": "diag-dotted-call-boundary-second-ident",
+      "kind": "dotted-position",
+      "source": 0
+    },
+    {
+      "boundary_index": 0,
+      "bundle": "diag-dotted-window-targs",
+      "expect": {
+        "attribution": {
+          "expected_terminals": [
+            ";"
+          ],
+          "family": "source-language-rejection",
+          "location": {
+            "coordinate": [
+              0,
+              0,
+              3
+            ],
+            "kind": "SourceBytes"
+          },
+          "rule": "FORM-3"
+        },
+        "boundary_index": 0,
+        "boundary_span": [
+          0,
+          1
+        ],
+        "family": "dotted-position-evidence"
+      },
+      "id": "diag-dotted-targs-boundary-first-ident",
+      "kind": "dotted-position",
+      "source": 0
+    },
+    {
+      "boundary_index": 1,
+      "bundle": "diag-dotted-window-targs",
+      "expect": {
+        "attribution": {
+          "expected_terminals": [
+            ";"
+          ],
+          "family": "source-language-rejection",
+          "location": {
+            "coordinate": [
+              0,
+              0,
+              3
+            ],
+            "kind": "SourceBytes"
+          },
+          "rule": "FORM-3"
+        },
+        "boundary_index": 1,
+        "boundary_span": [
+          1,
+          2
+        ],
+        "family": "dotted-position-evidence"
+      },
+      "id": "diag-dotted-targs-boundary-dot",
+      "kind": "dotted-position",
+      "source": 0
+    },
+    {
+      "boundary_index": 2,
+      "bundle": "diag-dotted-window-targs",
+      "expect": {
+        "attribution": {
+          "expected_terminals": [
+            ";"
+          ],
+          "family": "source-language-rejection",
+          "location": {
+            "coordinate": [
+              0,
+              0,
+              3
+            ],
+            "kind": "SourceBytes"
+          },
+          "rule": "FORM-3"
+        },
+        "boundary_index": 2,
+        "boundary_span": [
+          2,
+          3
+        ],
+        "family": "dotted-position-evidence"
+      },
+      "id": "diag-dotted-targs-boundary-second-ident",
+      "kind": "dotted-position",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-ident-call",
+      "expect": {
+        "expected_terminals": [
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-atom_list-ident-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-ident-targs",
+      "expect": {
+        "expected_terminals": [
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-atom_list-ident-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-opname-call",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "opname",
+            "span": [
+              0,
+              9
+            ],
+            "spelling": "iadd.trap"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              9,
+              10
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-atom_list-opname-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-opname-targs",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "opname",
+            "span": [
+              0,
+              9
+            ],
+            "spelling": "iadd.trap"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              9,
+              10
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-atom_list-opname-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-typeid-call",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "Node"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-atom_list-typeid-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-typeid-targs",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "atom_list",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "Node"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-atom_list-typeid-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-atom_list-legal-place-near-miss",
+      "expect": {
+        "family": "diagnostic-shape-probe",
+        "forbidden_call_or_construct_start": false,
+        "slot": "atom_list"
+      },
+      "id": "diag-gram9-atom_list-legal-place-near-miss",
+      "kind": "atom-shape",
+      "slot": "atom_list",
+      "source": 0,
+      "tokens": [
+        {
+          "shape": "lower-word",
+          "span": [
+            0,
+            3
+          ],
+          "spelling": "foo"
+        },
+        {
+          "shape": "punctuation",
+          "span": [
+            3,
+            4
+          ],
+          "spelling": "."
+        }
+      ]
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-ident-call",
+      "expect": {
+        "expected_terminals": [
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "fieldinit",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-fieldinit-ident-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-ident-targs",
+      "expect": {
+        "expected_terminals": [
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "fieldinit",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-fieldinit-ident-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-opname-call",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "fieldinit",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "opname",
+            "span": [
+              0,
+              9
+            ],
+            "spelling": "iadd.trap"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              9,
+              10
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-fieldinit-opname-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-opname-targs",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "fieldinit",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "opname",
+            "span": [
+              0,
+              9
+            ],
+            "spelling": "iadd.trap"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              9,
+              10
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-fieldinit-opname-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-typeid-call",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "fieldinit",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "Node"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-fieldinit-typeid-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-typeid-targs",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "fieldinit",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "Node"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-fieldinit-typeid-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-fieldinit-legal-place-near-miss",
+      "expect": {
+        "family": "diagnostic-shape-probe",
+        "forbidden_call_or_construct_start": false,
+        "slot": "fieldinit"
+      },
+      "id": "diag-gram9-fieldinit-legal-place-near-miss",
+      "kind": "atom-shape",
+      "slot": "fieldinit",
+      "source": 0,
+      "tokens": [
+        {
+          "shape": "lower-word",
+          "span": [
+            0,
+            3
+          ],
+          "spelling": "foo"
+        },
+        {
+          "shape": "punctuation",
+          "span": [
+            3,
+            4
+          ],
+          "spelling": "."
+        }
+      ]
+    },
+    {
+      "bundle": "diag-gram9-index-offset-ident-call",
+      "expect": {
+        "expected_terminals": [
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "index-offset",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-index-offset-ident-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-index-offset-ident-targs",
+      "expect": {
+        "expected_terminals": [
+          ")"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            4
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "index-offset",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-index-offset-ident-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-index-offset-opname-call",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "index-offset",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "opname",
+            "span": [
+              0,
+              9
+            ],
+            "spelling": "iadd.trap"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              9,
+              10
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-index-offset-opname-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-index-offset-opname-targs",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            10
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "index-offset",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "opname",
+            "span": [
+              0,
+              9
+            ],
+            "spelling": "iadd.trap"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              9,
+              10
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-index-offset-opname-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-index-offset-typeid-call",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "index-offset",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "Node"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-gram9-index-offset-typeid-call",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-index-offset-typeid-targs",
+      "expect": {
+        "expected_terminals": [
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            5
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-9"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 10
+                },
+                {
+                  "name": "fixed:)",
+                  "origin": "caller",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": "index-offset",
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-5",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              4
+            ],
+            "spelling": "Node"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              4,
+              5
+            ],
+            "spelling": "<"
+          }
+        ]
+      },
+      "id": "diag-gram9-index-offset-typeid-targs",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-gram9-index-offset-legal-place-near-miss",
+      "expect": {
+        "family": "diagnostic-shape-probe",
+        "forbidden_call_or_construct_start": false,
+        "slot": "index-offset"
+      },
+      "id": "diag-gram9-index-offset-legal-place-near-miss",
+      "kind": "atom-shape",
+      "slot": "index-offset",
+      "source": 0,
+      "tokens": [
+        {
+          "shape": "lower-word",
+          "span": [
+            0,
+            3
+          ],
+          "spelling": "foo"
+        },
+        {
+          "shape": "punctuation",
+          "span": [
+            3,
+            4
+          ],
+          "spelling": "."
+        }
+      ]
+    },
+    {
+      "bundle": "diag-foo-structural-choice",
+      "expect": {
+        "expected_terminals": [
+          "let",
+          "IDENT"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            3
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-4"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:let",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 20
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": "stmt",
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [
+            {
+              "start": {
+                "name": "fixed:let",
+                "origin": "inside",
+                "rank": 1
+              },
+              "topology": {
+                "arms": [
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:let",
+                      "origin": "inside",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "IDENT",
+                      "origin": "inside",
+                      "rank": 20
+                    }
+                  }
+                ],
+                "kind": "choice"
+              }
+            },
+            {
+              "start": {
+                "name": "IDENT",
+                "origin": "inside",
+                "rank": 20
+              },
+              "topology": {
+                "arms": [
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "fixed:let",
+                      "origin": "inside",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "kind": "terminal",
+                    "predicate": {
+                      "name": "IDENT",
+                      "origin": "inside",
+                      "rank": 20
+                    }
+                  }
+                ],
+                "kind": "choice"
+              }
+            }
+          ],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-4",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "Foo"
+          },
+          {
+            "shape": "punctuation",
+            "span": [
+              3,
+              4
+            ],
+            "spelling": "("
+          }
+        ]
+      },
+      "id": "diag-foo-structural-choice",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-repeat-tie",
+      "expect": {
+        "expected_terminals": [
+          "b",
+          "c"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            2
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-4"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:b",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:c",
+                  "origin": "caller",
+                  "rank": 11
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-4",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              1
+            ],
+            "spelling": "a"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              1,
+              2
+            ],
+            "spelling": "d"
+          }
+        ]
+      },
+      "id": "diag-repeat-tie",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-synthetic-second-token",
+      "expect": {
+        "expected_terminals": [
+          "b",
+          "c"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            2
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-2"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:b",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:c",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              1
+            ],
+            "spelling": "a"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              1,
+              2
+            ],
+            "spelling": "d"
+          }
+        ]
+      },
+      "id": "diag-synthetic-second-token",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-synthetic-end-token",
+      "expect": {
+        "expected_terminals": [
+          "b",
+          "c"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-2"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:b",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:c",
+                  "origin": "inside",
+                  "rank": 11
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              1
+            ],
+            "spelling": "a"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              1,
+              1
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-synthetic-end-token",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-grammar-rank-not-lexical-sort",
+      "expect": {
+        "expected_terminals": [
+          "z",
+          "a"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            1,
+            2
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-2"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:z",
+                  "origin": "inside",
+                  "rank": 10
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "fixed:a",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              1
+            ],
+            "spelling": "a"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              1,
+              2
+            ],
+            "spelling": "d"
+          }
+        ]
+      },
+      "id": "diag-grammar-rank-not-lexical-sort",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-written-before-source-end",
+      "expect": {
+        "expected_terminals": [
+          "z",
+          "SOURCE_END"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            1
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-2"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:z",
+                  "origin": "inside",
+                  "rank": 50
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 1
+                },
+                {
+                  "name": "SOURCE_END",
+                  "origin": "caller",
+                  "rank": 999
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": false
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "lower-word",
+            "span": [
+              0,
+              1
+            ],
+            "spelling": "x"
+          },
+          {
+            "shape": "lower-word",
+            "span": [
+              1,
+              2
+            ],
+            "spelling": "y"
+          }
+        ]
+      },
+      "id": "diag-written-before-source-end",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "diag-program-residual-source-end",
+      "expect": {
+        "expected_terminals": [
+          "SOURCE_END"
+        ],
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            0,
+            3
+          ],
+          "kind": "SourceBytes"
+        },
+        "rule": "GRAM-2"
+      },
+      "frontier": {
+        "arms": [
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "fixed:fn",
+                  "origin": "inside",
+                  "rank": 1
+                },
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 20
+                }
+              ]
+            ]
+          },
+          {
+            "child": null,
+            "rows": [
+              [
+                {
+                  "name": "IDENT",
+                  "origin": "inside",
+                  "rank": 20
+                },
+                {
+                  "name": "fixed:(",
+                  "origin": "inside",
+                  "rank": 30
+                }
+              ]
+            ]
+          }
+        ],
+        "context": {
+          "atom_slot": null,
+          "dotted_window": null,
+          "entry": null,
+          "lookup_state": "not-applicable",
+          "mandatory_name_roots": [],
+          "program_leftover": true
+        },
+        "direct": false,
+        "owner": "GRAM-2",
+        "tokens": [
+          {
+            "shape": "upper-word",
+            "span": [
+              0,
+              3
+            ],
+            "spelling": "Foo"
+          },
+          {
+            "shape": "source-end",
+            "span": [
+              3,
+              3
+            ],
+            "spelling": ""
+          }
+        ]
+      },
+      "id": "diag-program-residual-source-end",
+      "kind": "grammar",
+      "source": 0
+    },
+    {
+      "bundle": "bundle-one-lf",
+      "declarations": [],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "extent": [
+            [
+              0,
+              0,
+              1
+            ]
+          ],
+          "kind": "BundleRoot",
+          "node_path": []
+        },
+        "rule": "FN-7"
+      },
+      "id": "whole-missing-main",
+      "kind": "whole-unit"
+    },
+    {
+      "bundle": "whole-duplicate",
+      "declarations": [
+        {
+          "kind": "function",
+          "name": "foo",
+          "node_path": [
+            0
+          ],
+          "source": 0,
+          "span": [
+            0,
+            3
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "foo",
+          "node_path": [
+            1
+          ],
+          "source": 0,
+          "span": [
+            4,
+            7
+          ]
+        },
+        {
+          "kind": "function",
+          "name": "main",
+          "node_path": [
+            2
+          ],
+          "source": 0,
+          "span": [
+            8,
+            12
+          ]
+        }
+      ],
+      "expect": {
+        "family": "source-language-rejection",
+        "location": {
+          "coordinate": [
+            0,
+            4,
+            7
+          ],
+          "kind": "SourceNode",
+          "node_path": [
+            1
+          ]
+        },
+        "rule": "TYPE-6"
+      },
+      "id": "whole-duplicate-declaration",
+      "kind": "whole-unit"
+    }
+  ],
+  "limits": {
+    "max_observations": 64,
+    "max_record_bytes": 256,
+    "max_records": 8,
+    "max_total_source_bytes": 512
+  },
+  "raw_cases": [
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-invalid-utf8-outside",
+      "sources_hex": [
+        "ff"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          2,
+          3
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-invalid-utf8-inside-string",
+      "sources_hex": [
+        "2261ff"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          2,
+          3
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-invalid-utf8-after-backslash",
+      "sources_hex": [
+        "225cff"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-1"
+      },
+      "id": "raw-exact-nonascii-outside",
+      "sources_hex": [
+        "c3a9"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          3
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-nonascii-inside-string",
+      "sources_hex": [
+        "22c3a9"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          4
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-nonascii-after-backslash",
+      "sources_hex": [
+        "225cc3a9"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-cr-outside",
+      "sources_hex": [
+        "0d"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-tab-outside",
+      "sources_hex": [
+        "09"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-nul-outside",
+      "sources_hex": [
+        "00"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-del-outside",
+      "sources_hex": [
+        "7f"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [],
+            "trivia": [
+              [
+                0,
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-lf-outside",
+      "sources_hex": [
+        "0a"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-cr-inside-string",
+      "sources_hex": [
+        "220d22"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-tab-inside-string",
+      "sources_hex": [
+        "220922"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-lf-inside-string",
+      "sources_hex": [
+        "220a22"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-4"
+      },
+      "id": "raw-exact-line-comment-outside",
+      "sources_hex": [
+        "2f2f"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-4"
+      },
+      "id": "raw-exact-block-comment-outside",
+      "sources_hex": [
+        "2f2a"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "string",
+                0,
+                4
+              ]
+            ],
+            "trivia": []
+          }
+        ]
+      },
+      "id": "raw-exact-line-comment-inside-string",
+      "sources_hex": [
+        "222f2f22"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "string",
+                0,
+                4
+              ]
+            ],
+            "trivia": []
+          }
+        ]
+      },
+      "id": "raw-exact-block-comment-inside-string",
+      "sources_hex": [
+        "222f2a22"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          3
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-invalid-string-escape",
+      "sources_hex": [
+        "225c7122"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          4,
+          5
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-final-string-backslash",
+      "sources_hex": [
+        "226162635c"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          4
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-unterminated-string",
+      "sources_hex": [
+        "22616263"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          1,
+          2
+        ],
+        "family": "rejection",
+        "rule": "FORM-5"
+      },
+      "id": "raw-exact-del-inside-string",
+      "sources_hex": [
+        "227f22"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-3"
+      },
+      "id": "raw-exact-malformed-region-sigil",
+      "sources_hex": [
+        "2741"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-3"
+      },
+      "id": "raw-exact-malformed-label-sigil",
+      "sources_hex": [
+        "4031"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          0,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-1"
+      },
+      "id": "raw-exact-unknown-ascii-token-start",
+      "sources_hex": [
+        "3f"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "numeric",
+                0,
+                3
+              ],
+              [
+                "numeric",
+                4,
+                12
+              ],
+              [
+                "numeric",
+                13,
+                22
+              ],
+              [
+                "numeric",
+                23,
+                28
+              ]
+            ],
+            "trivia": [
+              [
+                3,
+                4
+              ],
+              [
+                12,
+                13
+              ],
+              [
+                22,
+                23
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-broad-numeric-maximal-munch",
+      "sources_hex": [
+        "31652b20312e30305f66363420312e3045325f663634202d39616263"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "opname",
+                0,
+                9
+              ],
+              [
+                "lower-word",
+                10,
+                14
+              ],
+              [
+                "punctuation",
+                14,
+                15
+              ],
+              [
+                "lower-word",
+                15,
+                20
+              ],
+              [
+                "lower-word",
+                21,
+                26
+              ],
+              [
+                "punctuation",
+                26,
+                27
+              ],
+              [
+                "lower-word",
+                27,
+                32
+              ],
+              [
+                "lower-word",
+                33,
+                37
+              ],
+              [
+                "punctuation",
+                37,
+                38
+              ],
+              [
+                "lower-word",
+                38,
+                46
+              ]
+            ],
+            "trivia": [
+              [
+                9,
+                10
+              ],
+              [
+                20,
+                21
+              ],
+              [
+                32,
+                33
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-operation-suffix-boundaries",
+      "sources_hex": [
+        "696164642e7472617020696164642e747261707820616c7068612e6f6d65676120696164642e636865636b656432"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "punctuation",
+                0,
+                2
+              ],
+              [
+                "punctuation",
+                3,
+                5
+              ],
+              [
+                "numeric",
+                6,
+                8
+              ],
+              [
+                "punctuation",
+                9,
+                10
+              ],
+              [
+                "punctuation",
+                11,
+                12
+              ]
+            ],
+            "trivia": [
+              [
+                2,
+                3
+              ],
+              [
+                5,
+                6
+              ],
+              [
+                8,
+                9
+              ],
+              [
+                10,
+                11
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-punctuation-arrows",
+      "sources_hex": [
+        "2d3e203d3e202d31203d203e"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "region",
+                0,
+                2
+              ],
+              [
+                "label",
+                3,
+                8
+              ]
+            ],
+            "trivia": [
+              [
+                2,
+                3
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-valid-sigils",
+      "sources_hex": [
+        "277220406c6f6f70"
+      ]
+    },
+    {
+      "expect": {
+        "coordinate": [
+          1,
+          0,
+          1
+        ],
+        "family": "rejection",
+        "rule": "FORM-2"
+      },
+      "id": "raw-exact-source-order",
+      "sources_hex": [
+        "6f6b",
+        "ff"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "lower-word",
+                0,
+                4
+              ]
+            ],
+            "trivia": []
+          },
+          {
+            "tokens": [
+              [
+                "punctuation",
+                0,
+                1
+              ],
+              [
+                "lower-word",
+                1,
+                5
+              ]
+            ],
+            "trivia": []
+          }
+        ]
+      },
+      "id": "raw-exact-no-cross-source-token",
+      "sources_hex": [
+        "69616464",
+        "2e74726170"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [],
+            "trivia": [
+              [
+                0,
+                2
+              ],
+              [
+                2,
+                3
+              ],
+              [
+                3,
+                4
+              ],
+              [
+                4,
+                5
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-trivia-segmentation",
+      "sources_hex": [
+        "20200a0a20"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "lower-word",
+                0,
+                5
+              ],
+              [
+                "upper-word",
+                6,
+                10
+              ]
+            ],
+            "trivia": [
+              [
+                5,
+                6
+              ]
+            ]
+          }
+        ]
+      },
+      "id": "raw-exact-word-boundaries",
+      "sources_hex": [
+        "6162635f312041624339"
+      ]
+    },
+    {
+      "expect": {
+        "family": "complete",
+        "sources": [
+          {
+            "tokens": [
+              [
+                "string",
+                0,
+                10
+              ]
+            ],
+            "trivia": []
+          }
+        ]
+      },
+      "id": "raw-exact-valid-string-escapes",
+      "sources_hex": [
+        "22615c6e5c225c5c7a22"
+      ]
+    }
+  ],
+  "requirements": {
+    "B01": [
+      "envelope-absolute-path",
+      "envelope-double-separator",
+      "envelope-duplicate-path",
+      "envelope-empty-path",
+      "envelope-parent-path",
+      "envelope-zero-records",
+      "resource-record-byte-limit",
+      "resource-record-limit"
+    ],
+    "B02": [
+      "form2-one-lf-source",
+      "form2-zero-byte-source"
+    ],
+    "B03": [
+      "identity-empty-record-retention",
+      "identity-path-binding",
+      "identity-record-repartition",
+      "identity-source-order"
+    ],
+    "B04": [
+      "visibility-earlier-constant-accepted",
+      "visibility-forward-constant-rejected",
+      "visibility-forward-function",
+      "visibility-forward-label-rejected",
+      "visibility-forward-local-rejected",
+      "visibility-forward-region-rejected"
+    ],
+    "B05": [
+      "boundary-all-fragments-source-local",
+      "boundary-production-crossing-rejected",
+      "boundary-source-span-crossing-rejected",
+      "boundary-token-crossing-rejected",
+      "boundary-trivia-crossing-rejected"
+    ],
+    "B06": [
+      "root-flatten-order-and-extents"
+    ],
+    "B07": [
+      "raw-block-comment-prefix",
+      "raw-cr",
+      "raw-exact-block-comment-inside-string",
+      "raw-exact-block-comment-outside",
+      "raw-exact-broad-numeric-maximal-munch",
+      "raw-exact-cr-inside-string",
+      "raw-exact-cr-outside",
+      "raw-exact-del-inside-string",
+      "raw-exact-del-outside",
+      "raw-exact-final-string-backslash",
+      "raw-exact-invalid-string-escape",
+      "raw-exact-invalid-utf8-after-backslash",
+      "raw-exact-invalid-utf8-inside-string",
+      "raw-exact-invalid-utf8-outside",
+      "raw-exact-lf-inside-string",
+      "raw-exact-lf-outside",
+      "raw-exact-line-comment-inside-string",
+      "raw-exact-line-comment-outside",
+      "raw-exact-malformed-label-sigil",
+      "raw-exact-malformed-region-sigil",
+      "raw-exact-no-cross-source-token",
+      "raw-exact-nonascii-after-backslash",
+      "raw-exact-nonascii-inside-string",
+      "raw-exact-nonascii-outside",
+      "raw-exact-nul-outside",
+      "raw-exact-operation-suffix-boundaries",
+      "raw-exact-punctuation-arrows",
+      "raw-exact-source-order",
+      "raw-exact-tab-inside-string",
+      "raw-exact-tab-outside",
+      "raw-exact-trivia-segmentation",
+      "raw-exact-unknown-ascii-token-start",
+      "raw-exact-unterminated-string",
+      "raw-exact-valid-sigils",
+      "raw-exact-valid-string-escapes",
+      "raw-exact-word-boundaries",
+      "raw-invalid-utf8",
+      "raw-line-comment-prefix",
+      "raw-malformed-label",
+      "raw-malformed-region",
+      "raw-malformed-string",
+      "raw-other-whitespace",
+      "raw-source-order-before-byte-offset",
+      "raw-stage-before-earlier-grammar",
+      "raw-tab",
+      "raw-unrecognized-token-start"
+    ],
+    "B08": [
+      "diag-dotted-alpha-omega",
+      "diag-dotted-call-boundary-dot",
+      "diag-dotted-call-boundary-first-ident",
+      "diag-dotted-call-boundary-second-ident",
+      "diag-dotted-iadd-bogus",
+      "diag-dotted-priority",
+      "diag-dotted-targs-boundary-dot",
+      "diag-dotted-targs-boundary-first-ident",
+      "diag-dotted-targs-boundary-second-ident",
+      "diag-eff-pure-continuation",
+      "diag-eff-trailing-comma",
+      "diag-eff-writes-missing-paren",
+      "diag-enum-sign",
+      "diag-fn-main",
+      "diag-foo-structural-choice",
+      "diag-gimble-declared",
+      "diag-gimble-undeclared",
+      "diag-gram9-atom_list-ident-call",
+      "diag-gram9-atom_list-ident-targs",
+      "diag-gram9-atom_list-legal-place-near-miss",
+      "diag-gram9-atom_list-opname-call",
+      "diag-gram9-atom_list-opname-targs",
+      "diag-gram9-atom_list-typeid-call",
+      "diag-gram9-atom_list-typeid-targs",
+      "diag-gram9-fieldinit-ident-call",
+      "diag-gram9-fieldinit-ident-targs",
+      "diag-gram9-fieldinit-legal-place-near-miss",
+      "diag-gram9-fieldinit-opname-call",
+      "diag-gram9-fieldinit-opname-targs",
+      "diag-gram9-fieldinit-typeid-call",
+      "diag-gram9-fieldinit-typeid-targs",
+      "diag-gram9-index-offset-ident-call",
+      "diag-gram9-index-offset-ident-targs",
+      "diag-gram9-index-offset-legal-place-near-miss",
+      "diag-gram9-index-offset-opname-call",
+      "diag-gram9-index-offset-opname-targs",
+      "diag-gram9-index-offset-typeid-call",
+      "diag-gram9-index-offset-typeid-targs",
+      "diag-grammar-rank-not-lexical-sort",
+      "diag-name-nested-doc-contract-negative",
+      "diag-name-nested-doc-field-star",
+      "diag-name-nested-doc-variant-star",
+      "diag-name-param-list-optional",
+      "diag-name-vfield-list-optional",
+      "diag-numeric-membership",
+      "diag-program-residual-source-end",
+      "diag-region-scope",
+      "diag-repeat-tie",
+      "diag-synthetic-end-token",
+      "diag-synthetic-second-token",
+      "diag-unknown-item-entry",
+      "diag-unknown-requires-entry",
+      "diag-wrapper-requires",
+      "diag-wrapper-trap",
+      "diag-written-before-source-end"
+    ],
+    "B09": [
+      "form2-interitem-excess",
+      "form2-one-lf-source",
+      "form2-production-missing-separator",
+      "form2-production-wrong-separator",
+      "form2-source-final-missing",
+      "form2-source-leading-excess",
+      "form2-zero-byte-source"
+    ],
+    "B10": [
+      "boundary-production-crossing-rejected",
+      "boundary-source-span-crossing-rejected",
+      "boundary-token-crossing-rejected",
+      "boundary-trivia-crossing-rejected",
+      "resource-record-byte-limit",
+      "resource-record-limit",
+      "whole-duplicate-declaration",
+      "whole-missing-main"
+    ]
+  },
+  "schema": "whitefoot.frontend-boundary-cases.v2"
+}

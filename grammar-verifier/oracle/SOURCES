@@ -2,6 +2,7 @@ SOURCES
 core.py
 ebnf.py
 extract.py
+float_contract.py
 generalized.py
 ingress.py
 lexical.py
@@ -11,6 +12,7 @@ source.py
 tests/run.py
 tests/support.py
 tests/test_extraction.py
+tests/test_float_contract.py
 tests/test_generalized.py
 tests/test_ingress.py
 tests/test_reachability.py

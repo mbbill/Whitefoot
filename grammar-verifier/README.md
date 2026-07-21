@@ -24,9 +24,13 @@ not parse EBNF or compute language facts.
 The committed evidence binds exact v0.8 SHA-256
 `d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`
 and candidate SHA-256
-`cfd76a2bf9293519623c2448280f4d6f76f32be26cc1b2dadc487415e063f166`.
-Both engines emit the same 134,019-byte common extraction ledger, SHA-256
-`2014897a6d2a4599957bad140f0de73c0d42c559ec629a3fdc20fe0b4d238b27`.
+`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
+Both engines emit the same 135,581-byte common extraction ledger, SHA-256
+`e725430cc6a4bb87c5d1aa4673576efc77018e61d302850d142246872e285d30`.
+The final canonical report has SHA-256
+`1e26d171b58504e10a9a2d4510f1e5f6fd6c7190a70ad4cccacd558db0905789`;
+the package manifest that binds every published component has SHA-256
+`39436bbabaf194be43251a6afa028ff2b95c53c309ae906020672e2be959d03d`.
 
 For both `deref(p)` and the exact transition witness `deref(x)`, v0.8 has two
 complete derivations and the candidate has one: one fixed-place derivation is
@@ -37,8 +41,58 @@ domain, SHA-256
 `f3e54408ce7c4234bb3b61e27f2decd6c84ffcc4d7fb1b201c9583dd0190480c`,
 with no introduced terminal intersection or predictive conflict.
 
+The authored ordinary-let, try-let, statement-match, value-match, and
+requires-value-match probes each retain exactly one complete source derivation
+in both documents. Their proposal trees select the new typed productions;
+`match_stmt` and `value_match` are distinct, while a value match inside
+`requires` still parses so FN-8 remains the rejection owner. The static engine
+reports 34 current strong-LL(2) conflicts and zero proposal conflicts: all 34
+are removed, with none retained or introduced. Retained terminal-predicate
+intersections remain legal census facts when the predicates never compete at a
+grammar decision.
+
 The proposal remains non-authoritative. Phase 3 requires exact owner review and
 advance approval before any numbered specification or protected surface moves.
+
+## Owner-review migration material
+
+The packet proposes three protected patches in one exact order, but applies
+none of them: the combined 274-path FORM-2 patch
+`4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2`,
+the post-FORM2 case-intent patch
+`62916bfc1bcc9e4eaa0461c33015cb30a2abe113f3aebcc807a3b8c492c0d54a`,
+and the manifest metadata patch
+`ae48711659c881ab2e3ca4794641ffae948ed52a2e1bdf62f61da764c7be48a6`.
+Ordinary application in that order yields a 99,869-byte manifest with SHA-256
+`0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c`
+and changes no expected verdict or runnable status. `proposal/DELTA.md` and
+`proposal/protected-surface-census.json` contain the exact approval items,
+postimage hashes, reviews, and explicit non-authorizations.
+
+## Frontend-boundary proposal evidence
+
+The separate frontend-boundary gate checks the proposed source-bundle,
+tokenization, tree, visibility, and diagnostic contracts before any production
+parser exists. A primary model and an independently implemented model evaluate
+the same closed descriptor of 100 structured cases and 34 exact-byte scanner
+cases. The committed canonical report records their complete agreement, all ten
+boundary-requirement projections, the descriptor and source revisions, and the
+full current candidate bytes by length and SHA-256.
+
+The candidate digest is generated from
+`proposal/kernel-spec-successor-candidate.md` on every run and checked against
+the value reported above. Regenerate review evidence after an intentional
+candidate edit with:
+
+```text
+python3 -I -S -B proposal/frontend_boundary_evidence.py --write
+```
+
+`make -C grammar-verifier frontend-boundary-evidence` then requires exact
+regeneration of both `evidence/frontend-boundary-evidence.json` and its
+`.sha256` sidecar. These artifacts are proposal-only executable evidence. They
+do not approve the candidate, amend the active specification, or authorize a
+production frontend.
 
 ## Trust boundary
 

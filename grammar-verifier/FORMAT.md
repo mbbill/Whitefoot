@@ -1,4 +1,4 @@
-# Grammar verifier format version 1
+# Grammar verifier engine format version 1 and runner policy version 2
 
 This file defines the complete interchange contract. Unknown fields, tags,
 records, input files, or declaration shapes are errors. All offsets are
@@ -121,8 +121,26 @@ records are concatenated in spelling order before hashing. A runner-generated
 corpus is never substituted for independent generation.
 
 `expectations.txt` is runner/test policy and is not engine input. Its first
-line is `whitefoot.grammar-expectations.v1`; remaining tab-separated records
-are defined by the integration tests and kept sorted.
+line is `whitefoot.grammar-expectations.v2`; remaining tab-separated records
+are kept sorted and use these closed forms:
+
+```text
+case<TAB>ASCII-id<TAB>current|proposal<TAB>zero|one|many
+case-delta<TAB>ASCII-id<TAB>trace-identical|trace-subset|trace-replacement
+transition<TAB>ASCII-id<TAB>ASCII-status
+```
+
+Every authored case has two `case` records and one `case-delta` record.
+`trace-identical` requires equal derivation-tree sets. `trace-subset` requires
+every proposal tree to be a current tree and permits only removals.
+`trace-replacement` requires the tree sets to be disjoint. It is used when
+source-preserving grammar factoring intentionally changes typed tree shape or
+when a proposal deliberately moves a closed restriction from syntax formation
+to a later semantic check; the paired case counts distinguish replacement from
+intentional introduction. These are exact tree policies, not merely
+derivation-count policies.
+Policy version 2 adds `case-delta`; it does not change the version-1 engine
+frame or raw-report wire contract.
 
 ## Closed specification meta-notation
 
@@ -340,7 +358,11 @@ A conflict delta key is lowercase hex of the ASCII tab-joined `lhs_hex`,
 `path`, `decision_kind`, `left_arm`, `right_arm`, `left_word_hex`, and
 `right_word_hex` fields; its derived witness is not identity. The records must
 classify the complete current/proposal union for both kinds. The current policy
-admits no `introduced` delta. The sole transition succeeds only when its
+admits no `introduced` delta and requires the proposal to contain zero
+strong-LL(2) decision conflicts. Terminal-predicate intersections remain a
+complete census rather than a global-disjointness requirement: an overlap is
+permitted when the predicates never compete at one grammar decision. The sole
+transition succeeds only when its
 expectation label matches; the authored case `deref-x` has exact start `expr`
 and exact source bytes `deref(x)`; that static probe has `current_count` one and
 `proposal_count` zero; and `witness_hex_or_dash` is the lowercase hex of the
@@ -360,9 +382,10 @@ and `repeat1` decision has its exact closed arm set, and every common terminal
 predicate has its self-intersection. Every conflict names a common decision,
 uses words emitted for its two ordered arms, and carries a witness with the same
 one- or two-position shape and end markers as those words. Case and domain start
-symbols exist in the common production schema. Cases and transitions cover the
-complete authored expectation registry; the format-v1 transition is bound to
-the exact `deref-x` case, counts, complete source, and witness described above.
+symbols exist in the common production schema. Cases, case-delta policies, and
+transitions cover the complete authored expectation registry; the format-v1
+transition is bound to the exact `deref-x` case, counts, complete source, and
+witness described above.
 
 Static records are ordered by the layout's tag order, then by the complete
 line bytes. Within a tag this places `current` before `proposal`. Duplicate
@@ -385,9 +408,12 @@ METRIC doc parsed_streams source_tokens chart_items packed_edges proof_nodes
 respectively. Ordinals are contiguous from zero. Each CASE-TRACE belongs to the
 immediately preceding logical CASE identity; each STREAM-TRACE belongs to an
 existing STREAM identity. CASE-DELTA classifies the exact union of current and
-proposal case traces as `introduced|removed|retained`; expectations require
-the registered transition to have zero introduced traces, retain every
-proposal trace, and remove the remaining current trace.
+proposal case traces as `introduced|removed|retained`. The runner enforces each
+case's closed trace-delta policy. In particular, the registered lexical
+transition cases use `trace-subset`. Authored grammar-factoring cases use
+`trace-replacement` when their typed production trees intentionally change,
+and semantic-subset cases use it with exact `zero`/`one` counts when the
+proposal intentionally forms a tree for later checker rejection.
 
 A decoded trace is one recursive source-grammar tree. Each node is byte `T`, a
 four-byte big-endian label length, that many ASCII label bytes, a four-byte
@@ -417,8 +443,9 @@ its traces; then CASE-DELTA by ID, status rank `removed`, `retained`,
 `introduced`, and trace bytes; then domain ID, `current` then `proposal`, with
 each DOMAIN followed by streams and each stream by traces; then METRIC for
 `current` and `proposal`. Every ordinal and semantic identity is unique.
-The case set equals `expectations.txt` exactly, every case and domain start is a
-common production, and all declared zero/one/many trace ordinals are present.
+The case set and case-delta policy set equal `expectations.txt` exactly, every
+case and domain start is a common production, and all declared zero/one/many
+trace ordinals are present.
 Each trace root is that start production; every trace label and parent-child edge
 is validated against the common grammar schema, and its token spans cover the
 complete source apart from SP and LF.
@@ -503,3 +530,65 @@ published package.
 
 Two fresh-work-directory runs must produce byte-identical raw reports and
 combined semantic report bytes. Binary byte identity is not required.
+
+## Proposal-only frontend-boundary evidence
+
+The frontend-boundary evidence is a separate, non-production contract. It does
+not extend the engine frame above and is never language, compiler, numbered
+specification, or protected-expectation authority.
+
+`proposal/frontend-boundary-cases.json` is canonical pretty-printed ASCII JSON
+followed by one LF. Its objects use sorted keys, strings use ASCII escapes, and
+the rendering is Python JSON indentation level two with the standard `,` and
+`: ` separators. Its exact schema tag is
+`whitefoot.frontend-boundary-cases.v2`; its exact top-level keys are
+`authority`, `bundles`, `cases`, `limits`, `raw_cases`, `requirements`, and
+`schema`. The inventory contains 100 structured cases and 34 raw exact-byte
+cases. Structured cases refer to closed source-bundle records and expected
+boundary observations. Raw cases carry source bytes as lowercase hexadecimal
+and exact expected source-local scanner observations. The limits are exact
+positive integers for observations, record bytes, records, and total source
+bytes. Requirements are exactly `B01` through `B10`; every case identity is
+unique, appears in at least one requirement, and no requirement names a missing
+case. Both models independently reject malformed descriptor fields and enforce
+the focused per-case invariants before evaluating them.
+
+The primary typed-record interpreter and the independent tuple-and-event
+interpreter may share only the candidate bytes, descriptor bytes, and declared
+resource limits. They do not import one another. Each independently extracts
+the load-bearing candidate rule text, validates the descriptor, evaluates all
+cases, and emits its complete case and requirement projections. A successful
+evidence build requires byte-equal candidate contracts, descriptor bindings,
+case outcomes, and requirement projections. A model rejection, disagreement,
+missing case, changed inventory count, resource failure, or malformed input is
+tool-inconclusive and cannot support approval.
+
+`evidence/frontend-boundary-evidence.json` is canonical ASCII JSON followed by
+one LF with exact schema tag `whitefoot.frontend-boundary-evidence.v1`. Its
+exact top-level keys are `agreement`, `authority`, `candidate`, `cases`,
+`descriptor`, `models`, `requirements`, `schema`, `source_manifest`, and
+`source_revisions`. `candidate` binds the full candidate path, byte length, and
+SHA-256 plus the byte length and SHA-256 of every extracted rule. `descriptor`
+binds the descriptor path, byte length, and SHA-256. `cases` preserves the 100
+structured-case order followed by the 34 raw-case order, with each record
+containing only `id` and its complete derived `outcome`. `requirements` is the
+agreed derived projection. `models` names the two implementation and result
+schemas. `source_revisions` binds every path declared by the exact sorted
+`proposal/FRONTEND_BOUNDARY_SOURCES` manifest; `source_manifest` binds that
+manifest itself.
+
+`agreement` contains exact structured, raw, and total case counts; the SHA-256
+of canonical JSON for the complete case projection; and four booleans for
+candidate-contract, descriptor-binding, outcome, and requirement equality. All
+four booleans must be true. The candidate hash is computed from the candidate
+file on every build. No documentation value, previous report, or baseline may
+substitute for those bytes.
+
+`evidence/frontend-boundary-evidence.sha256` contains exactly 64 lowercase
+hexadecimal digits, two SP bytes, the ASCII filename
+`frontend-boundary-evidence.json`, and one LF. It is the SHA-256 of the complete
+JSON report bytes. Publication replaces the report first and this checksum
+marker last. `frontend_boundary_evidence.py --check` accepts only exact
+regeneration of both regular, non-symlink files; `--write` atomically replaces
+each artifact in that order. The Makefile frontend-boundary target invokes the
+check mode and the complete grammar-verifier gate depends on that target.

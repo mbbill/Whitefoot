@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use crate::document::{Document, Span};
 use crate::ebnf::NodeKind;
+use crate::float_contract::{self, Dialect as FloatDialect};
 use crate::grammar::{Grammar, Surface, SurfaceKind};
 use crate::wire::{Failure, Limits, Work};
 
@@ -14,36 +15,24 @@ const IDENT_EXCLUSION: &[u8] =
     b" excluding every lowercase token spelling produced by exact fixed grammar atoms in the complete grammar";
 
 const REGION_ANNOTATION: &[u8] = b" (apostrophe-prefixed, the only region spelling)";
-const OPNAME_ANNOTATION: &[u8] = concat!(
+const OPNAME_V08_ANNOTATION: &[u8] = concat!(
     " (single token; the base is an IDENT and the mode suffix is a closed word set, ",
     "so an OPNAME can never maximal-munch a field-access place `p.field` [GRAM-5]; ",
     "e.g. `iadd.checked`)"
 )
 .as_bytes();
-
-const LITERAL_LINE: &[u8] = concat!(
-    "Literals, exhaustively: integers `-?[0-9]+_TYPE` (decimal only, mandatory suffix; a leading ",
-    "`-` is legal for signed TYPE, and the signed value must lie in TYPE's range [FORM-7]; e.g. ",
-    "`42_i32`, `-2147483648_i32`); floats `-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE` (a leading `-` ",
-    "is legal for the value; the canonical spelling is the unique shortest decimal digit string ",
-    "that round-trips under round-to-nearest-even, with at least one integer and one fraction digit, ",
-    "lowercase `e`, and no leading zeros; `-0.0` is distinct from `0.0`; e.g. `1.5_f64`, ",
-    "`6.022e23_f64`); `unit`; STRING `\"...\"` whose interior is a sequence of items, each one raw ",
-    "ASCII-printable byte in U+0020..U+007E other than `\"` and `\\`, or one of exactly three escapes ",
-    "`\\\\ \\\" \\n`; no other byte is legal, and each character has exactly one spelling (the escape where one is ",
-    "defined, the raw byte otherwise). STRING appears only in `doc` and `check` messages; non-ASCII ",
-    "diagnostic text is DEFERRED. There are no boolean literals: `Bool` is a prelude enum (§15). ",
-    "Generic-numeric literals `0_T` and `1_T` are legal where `T` is a gparam bound by a numeric ",
-    "contract (`Int` or `Float`, §15), denoting T's additive and multiplicative identity; a concrete ",
-    "type uses `0_i32` and the like, so there is no dual spelling. NaN and the infinities are not ",
-    "literals; they are the nullary ops `fnan` and `finf` [OP-1]."
+const OPNAME_PARTITIONED_ANNOTATION: &[u8] = concat!(
+    " (single token; the base has the raw lowercase-word shape used by IDENT and the mode ",
+    "suffix is a closed word set, so an OPNAME can never maximal-munch a valid field-access ",
+    "place `p.field`: all five suffix words are reserved from field binding [OP-1, GRAM-5]; ",
+    "e.g. `iadd.checked`)"
 )
 .as_bytes();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LexKind {
     Regex,
-    LiteralUnion,
+    LiteralUnion(FloatDialect),
     ByteString,
     ClosedTable,
 }
@@ -52,7 +41,7 @@ impl LexKind {
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Regex => "regex",
-            Self::LiteralUnion => "literal-union",
+            Self::LiteralUnion(_) => "literal-union",
             Self::ByteString => "byte-string",
             Self::ClosedTable => "closed-table",
         }
@@ -149,7 +138,7 @@ fn extract_classes<'a>(
         (
             "OPNAME",
             b"[a-z][a-z0-9_]*\\.(wrap|trap|checked|sat|strict)",
-            OPNAME_ANNOTATION,
+            OPNAME_V08_ANNOTATION,
         ),
     ];
     let mut cursor = cue + CLASSES_CUE.len();
@@ -157,7 +146,8 @@ fn extract_classes<'a>(
         return Err(Failure::extraction("lexical-classes-structure"));
     }
     cursor += 1;
-    for (index, (name, pattern, annotation)) in SLOTS.into_iter().enumerate() {
+    let mut fixed_lowerword_partition = false;
+    for (index, (name, pattern, default_annotation)) in SLOTS.into_iter().enumerate() {
         let start = cursor;
         if document.bytes.get(cursor..cursor + name.len()) != Some(name.as_bytes()) {
             return Err(Failure::extraction("lexical-class-name"));
@@ -182,8 +172,14 @@ fn extract_classes<'a>(
                 .is_some_and(|tail| tail.starts_with(IDENT_EXCLUSION));
         if modifier {
             cursor += IDENT_EXCLUSION.len();
+            fixed_lowerword_partition = true;
         }
         let semantic_end = cursor;
+        let annotation = if name == "OPNAME" && fixed_lowerword_partition {
+            OPNAME_PARTITIONED_ANNOTATION
+        } else {
+            default_annotation
+        };
         if document.bytes.get(cursor..cursor + annotation.len()) != Some(annotation) {
             return Err(Failure::extraction("lexical-class-annotation"));
         }
@@ -231,9 +227,7 @@ fn extract_literals<'a>(
 ) -> Result<(), Failure> {
     let cue = find_unique(document.bytes, LITERALS_CUE, "literal-cue-missing")?;
     let line = line_bounds(document, cue)?;
-    if &document.bytes[cue..line.end] != LITERAL_LINE {
-        return Err(Failure::extraction("literal-declaration-structure"));
-    }
+    let float_dialect = float_contract::extract(document)?;
     let owner = surface(
         grammar,
         document,
@@ -247,16 +241,15 @@ fn extract_literals<'a>(
         Lexical {
             owner,
             name: "literal",
-            kind: LexKind::LiteralUnion,
+            kind: LexKind::LiteralUnion(float_dialect),
             span: Span {
                 start: cue,
                 end: line.end,
             },
-            predicate: concat!(
-                "integer=-?[0-9]+_TYPE;float=-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE;",
-                "unit=unit;generic=0_T,1_T"
-            )
-            .to_owned(),
+            predicate: format!(
+                "integer=-?[0-9]+_TYPE;{};unit=unit;generic=0_T,1_T",
+                float_dialect.predicate()
+            ),
             excludes_fixed_lowerwords: false,
             table_spellings: Vec::new(),
         },

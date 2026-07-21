@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import re
 
 from core import LogicalBudget, fail
+from float_contract import FloatContract, extract_float_contract
 from source import LexicalCue, SourceScan, Surface
 
 
@@ -16,10 +17,16 @@ _MODIFIER = (
     b"complete grammar"
 )
 _REGION_ANNOTATION = b" (apostrophe-prefixed, the only region spelling)"
-_OPNAME_ANNOTATION = (
-        b" (single token; the base is an IDENT and the mode suffix is a closed word set, "
-        b"so an OPNAME can never maximal-munch a field-access place `p.field` [GRAM-5]; "
-        b"e.g. `iadd.checked`)"
+_OPNAME_V08_ANNOTATION = (
+    b" (single token; the base is an IDENT and the mode suffix is a closed word set, "
+    b"so an OPNAME can never maximal-munch a field-access place `p.field` [GRAM-5]; "
+    b"e.g. `iadd.checked`)"
+)
+_OPNAME_PARTITIONED_ANNOTATION = (
+    b" (single token; the base has the raw lowercase-word shape used by IDENT and the mode "
+    b"suffix is a closed word set, so an OPNAME can never maximal-munch a valid field-access "
+    b"place `p.field`: all five suffix words are reserved from field binding [OP-1, GRAM-5]; "
+    b"e.g. `iadd.checked`)"
 )
 _CLASS_SPECS = (
     (b"IDENT", b"[a-z][a-z0-9_]*", None),
@@ -29,53 +36,17 @@ _CLASS_SPECS = (
     (
         b"OPNAME",
         b"[a-z][a-z0-9_]*\\.(wrap|trap|checked|sat|strict)",
-        _OPNAME_ANNOTATION,
+        _OPNAME_V08_ANNOTATION,
     ),
 )
 _INTEGER_TEMPLATE = b"-?[0-9]+_TYPE"
-_FLOAT_TEMPLATE = b"-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE"
-_BETWEEN_PATTERNS = (
-    b" (decimal only, mandatory suffix; a leading `-` is legal for signed TYPE, "
-    b"and the signed value must lie in TYPE's range [FORM-7]; e.g. `42_i32`, "
-    b"`-2147483648_i32`); floats `"
-)
-_AFTER_FLOAT = (
-    b"` (a leading `-` is legal for the value; the canonical spelling is the unique "
-    b"shortest decimal digit string that round-trips under round-to-nearest-even, "
-    b"with at least one integer and one fraction digit, lowercase `e`, and no leading "
-    b"zeros; `-0.0` is distinct from `0.0`; e.g. `1.5_f64`, `6.022e23_f64`); "
-    b'`unit`; STRING `"..."` whose interior is a sequence of items, each one raw '
-    b'ASCII-printable byte in U+0020..U+007E other than `"` and `\\`, or one of '
-    b'exactly three escapes `\\\\ \\" \\n`; no other byte is legal, and each character '
-    b"has exactly one spelling (the escape where one is defined, the raw byte otherwise). "
-    b"STRING appears only in `doc` and `check` messages; non-ASCII diagnostic text is "
-    b"DEFERRED. There are no boolean literals: `Bool` is a prelude enum (\xc2\xa715). "
-    b"Generic-numeric literals `0_T` and `1_T` are legal where `T` is a gparam bound "
-    b"by a numeric contract (`Int` or `Float`, \xc2\xa715), denoting T's additive and "
-    b"multiplicative identity; a concrete type uses `0_i32` and the like, so there is "
-    b"no dual spelling. NaN and the infinities are not literals; they are the nullary "
-    b"ops `fnan` and `finf` [OP-1]."
-)
-_FORM5_PAYLOAD = (
-    b"Literals, exhaustively: integers `"
-    + _INTEGER_TEMPLATE
-    + b"`"
-    + _BETWEEN_PATTERNS
-    + _FLOAT_TEMPLATE
-    + _AFTER_FLOAT
-)
 _STRING_START = b'STRING `"..."`'
 _STRING_END = b"non-ASCII diagnostic text is DEFERRED."
 
-_LITERAL_PREDICATE = (
-    b"integer=-?[0-9]+_TYPE;float=-?[0-9]+\\.[0-9]+(e-?[0-9]+)?_TYPE;"
-    b"unit=unit;generic=0_T,1_T"
-)
 _STRING_PREDICATE = (
     b"range=32-126;exclude=34,92;escapes=backslash,quote,n;contexts=doc,check"
 )
 _INTEGER = re.compile(rb"-?[0-9]+_(?:i8|i16|i32|i64|u8|u16|u32|u64)")
-_FLOAT = re.compile(rb"-?[0-9]+\.[0-9]+(?:e-?[0-9]+)?_(?:f32|f64)")
 _GENERIC = re.compile(rb"(?:0|1)_T")
 
 
@@ -90,6 +61,7 @@ class LexicalDefinition:
     pattern: re.Pattern[bytes] | None = None
     exclude_fixed_lowerwords: bool = False
     spellings: tuple[bytes, ...] = ()
+    literal_patterns: tuple[re.Pattern[bytes], ...] = ()
 
     def match_prefix(
         self,
@@ -110,7 +82,7 @@ class LexicalDefinition:
         if self.kind == "literal-union":
             ends = [
                 match.end()
-                for matcher in (_FLOAT, _INTEGER, _GENERIC)
+                for matcher in self.literal_patterns
                 if (match := matcher.match(source, start)) is not None
             ]
             if source.startswith(b"unit", start):
@@ -249,6 +221,7 @@ def _classes(
         fail("extraction", "lexical_classes_shape")
     cursor = local_start + len(prefix)
     result: list[LexicalDefinition] = []
+    fixed_lowerword_partition = False
     for index, (expected_name, expected_pattern, expected_annotation) in enumerate(
         _CLASS_SPECS
     ):
@@ -278,10 +251,14 @@ def _classes(
             cursor += len(_MODIFIER)
             semantic_end = cursor
             excluded = True
-        if expected_annotation is not None:
-            if not content.startswith(expected_annotation, cursor):
+            fixed_lowerword_partition = True
+        annotation = expected_annotation
+        if expected_name == b"OPNAME" and fixed_lowerword_partition:
+            annotation = _OPNAME_PARTITIONED_ANNOTATION
+        if annotation is not None:
+            if not content.startswith(annotation, cursor):
                 fail("extraction", "lexical_classes_shape")
-            cursor += len(expected_annotation)
+            cursor += len(annotation)
         if content.startswith(b" (", cursor):
             fail("extraction", "lexical_annotation")
         budget.add("max_lexical_definitions")
@@ -321,10 +298,11 @@ def _literals(
     line_start: int,
     content: bytes,
     budget: LogicalBudget,
+    contract: FloatContract,
 ) -> tuple[list[LexicalDefinition], Surface]:
     local_start = cue.start - line_start
     payload = content[local_start:]
-    if payload != _FORM5_PAYLOAD:
+    if payload != contract.form5_payload:
         fail("extraction", "literal_shape")
     string_start = payload.index(_STRING_START)
     string_end = payload.index(_STRING_END, string_start) + len(_STRING_END)
@@ -336,7 +314,8 @@ def _literals(
             "literal-union",
             cue.start,
             line_start + len(content),
-            _LITERAL_PREDICATE,
+            contract.literal_predicate,
+            literal_patterns=(_INTEGER, contract.float_pattern, _GENERIC),
         ),
         LexicalDefinition(
             cue.owner,
@@ -410,6 +389,7 @@ def extract_lexical(
     scan: SourceScan,
     budget: LogicalBudget,
 ) -> tuple[tuple[LexicalDefinition, ...], tuple[Surface, ...]]:
+    float_contract = extract_float_contract(scan)
     definitions: list[LexicalDefinition] = []
     surfaces: list[Surface] = []
     for cue in scan.lexical_cues:
@@ -420,7 +400,13 @@ def extract_lexical(
             definitions.extend(added)
             surfaces.append(surface)
         elif cue.dialect == "literal" and spelling == b"Literals, exhaustively:":
-            added, surface = _literals(cue, line.start, line.content, budget)
+            added, surface = _literals(
+                cue,
+                line.start,
+                line.content,
+                budget,
+                float_contract,
+            )
             definitions.extend(added)
             surfaces.append(surface)
         elif cue.dialect == "table":

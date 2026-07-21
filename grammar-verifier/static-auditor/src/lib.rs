@@ -6,6 +6,7 @@
 mod document;
 mod ebnf;
 mod emit;
+mod float_contract;
 mod grammar;
 mod hash;
 mod lexical;

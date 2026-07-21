@@ -2,7 +2,8 @@
 
 Status: CANONICAL ROADMAP, updated 2026-07-21. Phase 1's audited foundation
 handoff and Phase 2's standalone grammar-change evidence package are complete.
-Phase 3 is the next conditional gate; no normative edit is pre-authorized.
+The exact Phase-3 owner-review packet is ready and awaiting explicit approval;
+no normative or protected edit is pre-authorized.
 
 ## Objective
 
@@ -395,7 +396,17 @@ or red repository gate.
 
 ## Phase 3: approve and install a successor specification
 
-Status: conditional; no normative edit is pre-authorized.
+Status: exact owner-review packet ready; awaiting explicit advance approval.
+No normative or protected edit is pre-authorized.
+
+The packet binds the 98,044-byte v0.9 candidate at SHA-256
+`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`,
+the exact ordered protected-patch sequence, its 99,869-byte final manifest
+postimage at SHA-256
+`0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c`,
+the derivation-ledger amendment, protected-surface census, independent evidence,
+and hostile reviews. The packet requests zero expected-verdict, runnable-status,
+frozen-oracle, or existing reference-test changes.
 
 Present the exact proposal bytes and hash, grammar reports, every relevant
 semantic discrepancy record, protected-surface impact census, and exact
@@ -709,11 +720,11 @@ manifest SHA-256
 These close no semantic facet and grant no parser, artifact, or release
 authority.
 
-Phases 1 and 2 are complete. The next roadmap action is the Phase-3 owner review
-of the exact proposal bytes, hash, evidence, and protected-surface census. No
-successor installation, active-target switch, or production parser work is
-authorized until that exact review receives advance approval and the guarded
-installation procedure succeeds.
+Phases 1 and 2 are complete. The next roadmap action is owner review of the
+ready Phase-3 packet's exact proposal bytes, hashes, evidence, protected-patch
+sequence, and census. No successor installation, active-target switch, or
+production parser work is authorized until that exact review receives advance
+approval and the guarded installation procedure succeeds.
 
 Until Phase 3 exits and every later gate is separately satisfied:
 

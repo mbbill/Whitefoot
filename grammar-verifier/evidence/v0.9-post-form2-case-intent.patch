@@ -1,0 +1,70 @@
+--- a/conformance/cases/fn4-pos-law-discharged.wf
++++ b/conformance/cases/fn4-pos-law-discharged.wf
+@@ -1,3 +1,3 @@
+ contract SatMonoid {
+-  doc "FN-4 stated-and-checked: laws discharged statically because the bound fn's body is a single table op whose law is OP-8 table data.";
++  doc "FN-4 stated-and-checked: the exact direct iadd.sat body and closed unsigned table cells discharge these laws.";
+   fn combine(x: own u64, y: own u64) -> own u64 pure;
+--- a/conformance/cases/fn4-pos-law-in-contract.wf
++++ b/conformance/cases/fn4-pos-law-in-contract.wf
+@@ -1,3 +1,3 @@
+ contract Semigroup {
+-  doc "A law uses a closed LAWNAME from {associative, commutative, identity} [FN-4].";
++  doc "A law uses a semantic name from the closed {associative, commutative, identity} table [FN-4].";
+   fn combine(x: own i32, y: own i32) -> own i32 pure;
+--- a/conformance/cases/fn8-neg-requires-control.wf
++++ b/conformance/cases/fn8-neg-requires-control.wf
+@@ -2,4 +2,4 @@
+   let permitted: own Bool = ige<i32>(x, 0_i32);
+-  check permitted else trap "x must be nonnegative";
+   return x;
++  check permitted else trap "x must be nonnegative";
+ } {
+--- a/conformance/cases/gram1-pos-lookahead.wf
++++ b/conformance/cases/gram1-pos-lookahead.wf
+@@ -11,3 +11,3 @@
+ fn main() -> own unit traps {
+-  doc "GRAM-1: FIRST-set overlaps (construct K() vs op op<t>() vs call f() ; stmt-match vs let-match) resolved by two-token lookahead; one parse each.";
++  doc "GRAM-1: IDENT-headed place versus user call uses two-token lookahead; construction, table-op, statement-match, and value-match positions stay distinct; one parse each.";
+   let a: own i32 = id(x: 20_i32);
+--- a/conformance/cases/gram7-pos-two-productions.wf
++++ b/conformance/cases/gram7-pos-two-productions.wf
+@@ -11,3 +11,3 @@
+ fn main() -> own unit traps {
+-  doc "GRAM-7: match as a let-initializer (value, give) AND as a statement (effect); one arm shape, one node kind.";
++  doc "GRAM-7: match as a let-initializer (value, give) AND as a statement (effect); one arm shape, two distinct node kinds.";
+   let v: own i32 = 21_i32;
+--- a/conformance/manifest.jsonl
++++ b/conformance/manifest.jsonl
+@@ -18,3 +18,3 @@
+ {"id": "form2-pos-canonical-bytes", "rules": ["FORM-2"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "doc": "A byte-canonical program (two-space indent, one space after ':', one statement per line) is accepted and runs [FORM-2]."}
+-{"id": "form2-neg-noncanonical-ws", "rules": ["FORM-2"], "expect": {"kind": "reject", "rule": "FORM-2"}, "status": "runnable", "doc": "Non-canonical whitespace (four-space indent, no space after ':') must be a hard error [FORM-2]; democ is whitespace-insensitive and accepts it."}
++{"id": "form2-neg-noncanonical-ws", "rules": ["FORM-2"], "expect": {"kind": "reject", "rule": "FORM-2"}, "status": "runnable", "doc": "The isolated retained four-space indentation violates the canonical two-spaces-per-level byte format and is a hard error [FORM-2]."}
+ {"id": "form3-pos-lexical-classes", "rules": ["FORM-3"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "doc": "IDENT, TYPEID, REGIONID ('r), LABEL (@l), and OPNAME (iadd.checked) lexical classes used canonically; runs [FORM-3]."}
+@@ -30,9 +30,9 @@
+ {"id": "form7-neg-leading-zero", "rules": ["FORM-7"], "expect": {"kind": "reject", "rule": "FORM-7"}, "status": "runnable", "doc": "A leading-zero integer literal is illegal; the single digit 0 is its own form [FORM-7]."}
+-{"id": "gram1-pos-lookahead", "rules": ["GRAM-1"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No checkable negative: grammar determinism is a meta-property; a violation would be a spec defect, not a writer-emittable program that democ could reject with a rule id.", "doc": "GRAM-1: the FIRST-set overlaps between construct K(), table-op op<t>(), and user call f(param:atom), and between a statement match and a let-initializer match, each parse to exactly one core-tree node under two-token lookahead; runs to exit 0."}
+-{"id": "gram2-pos-items", "rules": ["GRAM-2"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No checkable negative: a malformed item is a parse-level error democ reports as a bare assertion without a rule id (DIAG-1 gap), and the spec attaches no citation to item-grammar violations.", "doc": "GRAM-2: a program is item* \u2014 here two fn_decl items and one enum_decl item; compiles and runs to exit 0."}
+-{"id": "gram3-pos-modes", "rules": ["GRAM-3"], "expect": {"kind": "accept"}, "status": "runnable", "reason": "No checkable negative: a bad type/mode token is a bare parse assertion without a rule id, not a rule-cited rejection.", "doc": "GRAM-3: the three modes own / &'r / &uniq 'r written explicitly on i32 params, with a region_param declaring 'r; accepted."}
+-{"id": "gram4-pos-stmts", "rules": ["GRAM-4"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No checkable negative: an ill-formed statement is a bare parse assertion without a rule id (DIAG-1 gap).", "doc": "GRAM-4: exercises let, region, loop, statement-match, break, set, give (let-initializer match), check, and return statements; runs to exit 0."}
++{"id": "gram1-pos-lookahead", "rules": ["GRAM-1"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No checkable negative: grammar determinism is a meta-property; a violation would be a spec defect, not a writer-emittable program that democ could reject with a rule id.", "doc": "GRAM-1: the IDENT-headed place-versus-user-call fork is resolved by two-token lookahead; construction, table-op, statement-match, and value-match positions remain distinct; each source position has one core-tree derivation; runs to exit 0."}
++{"id": "gram2-pos-items", "rules": ["GRAM-2"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No protected negative is assigned to this positive case. Under v0.9, malformed item grammar is attributed deterministically by DIAG-1 and the source EBNF; additive diagnostic cases are separate.", "doc": "GRAM-2: a program is item* \u2014 here two fn_decl items and one enum_decl item; compiles and runs to exit 0."}
++{"id": "gram3-pos-modes", "rules": ["GRAM-3"], "expect": {"kind": "accept"}, "status": "runnable", "reason": "No protected negative is assigned to this positive case. Under v0.9, malformed type or mode syntax receives deterministic source-EBNF attribution through DIAG-1.", "doc": "GRAM-3: the three modes own / &'r / &uniq 'r written explicitly on i32 params, with a region_param declaring 'r; accepted."}
++{"id": "gram4-pos-stmts", "rules": ["GRAM-4"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No protected negative is assigned to this positive case. Under v0.9, ill-formed statement syntax receives deterministic source-EBNF attribution through DIAG-1.", "doc": "GRAM-4: exercises let, region, loop, statement-match, break, set, give (let-initializer match), check, and return statements; runs to exit 0."}
+ {"id": "gram5-pos-exprs-places", "rules": ["GRAM-5"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "The `move place` atom is a GRAM-5 form democ's parser does not yet handle (outside the profile), so it is omitted; no rule-cited negative exists (bad expressions are bare parse assertions).", "doc": "GRAM-5: literal atom, place atom, borrow_expr atom (&'r p), deref place, a table-op call, and a construct \u2014 the expression/place forms; runs to exit 0."}
+ {"id": "gram6-pos-no-operators", "rules": ["GRAM-6"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No checkable negative: an infix operator, `if`, `while`, or `for` fails to tokenize/parse and surfaces as a bare assertion without a rule id, not a rule-cited rejection.", "doc": "GRAM-6: no operators/if/while/for \u2014 arithmetic is named ops (iadd/isub), the conditional is a match on prelude Bool, and iteration is loop+break; sums 4..1 == 10 and runs to exit 0."}
+-{"id": "gram7-pos-two-productions", "rules": ["GRAM-7"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "No checkable negative for GRAM-7 itself: give-freedom / double-give in a let-match arm is GIVE-1, and a give in a statement match is GIVE-1's checker-scoped restriction, not a GRAM-7 citation.", "doc": "GRAM-7: one match arm shape used in both disjoint productions \u2014 a let-initializer (value-producing, terminates in give) and a statement match (acts by effect, no value) \u2014 sharing one core-tree node kind; runs to exit 0."}
++{"id": "gram7-pos-two-productions", "rules": ["GRAM-7"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "reason": "GRAM-7 owns two disjoint productions and their distinct node kinds; give-freedom, double-give, or give in statement position remains a GIVE-1 semantic rejection rather than a GRAM-7 citation.", "doc": "GRAM-7: one match arm shape is used by two disjoint productions \u2014 a value_match initializer and a match_stmt statement \u2014 with two distinct core-tree node kinds; runs to exit 0."}
+ {"id": "gram8-pos-construct", "rules": ["GRAM-8"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "doc": "GRAM-8 positive: named construction writes W's declared field once as inner:atom, and the nullary variant is written N(); accepted and runs to exit 0."}
+@@ -113,4 +113,4 @@
+ {"id": "fn3-neg-two-conformances", "rules": ["FN-3"], "expect": {"kind": "reject", "rule": "FN-3"}, "status": "runnable", "doc": "Two conform blocks for the same (type, contract) pair violate FN-3's at-most-one-conformance rule."}
+-{"id": "fn4-pos-law-in-contract", "rules": ["FN-4"], "expect": {"kind": "accept"}, "status": "runnable", "doc": "A contract states a law using a closed LAWNAME from {associative, commutative, identity} (FN-4): 'law associative(combine);'."}
+-{"id": "fn4-neg-bad-lawname", "rules": ["FN-4"], "expect": {"kind": "reject", "rule": "FN-4"}, "status": "runnable", "doc": "A law using a LAWNAME outside the closed table (distributive) violates FN-4's closed LAWNAME table."}
++{"id": "fn4-pos-law-in-contract", "rules": ["FN-4"], "expect": {"kind": "accept"}, "status": "runnable", "doc": "A contract states a semantic law name from the closed {associative, commutative, identity} table (FN-4): 'law associative(combine);'."}
++{"id": "fn4-neg-bad-lawname", "rules": ["FN-4"], "expect": {"kind": "reject", "rule": "FN-4"}, "status": "runnable", "doc": "The semantic law name distributive is outside FN-4's closed law-name table and is rejected by FN-4."}
+ {"id": "fn5-pos-match-dispatch", "rules": ["FN-5"], "expect": {"kind": "run", "exit": 0}, "status": "runnable", "doc": "Behavior is selected by match over a closed enum (FN-5's 'closed-set dispatch is match'), not a function value; there is no fn-value construct to violate. Runs to exit 0."}
+@@ -226,3 +226,3 @@
+ {"id": "err3-neg-try-different-error-type", "rules": ["ERR-3"], "expect": {"kind": "reject", "rule": "ERR-3"}, "status": "runnable", "doc": "try requires the enclosing fn to return Result with the SAME error type; no conversions [ERR-3/TYPE-4]."}
+-{"id": "fn4-pos-law-discharged", "rules": ["FN-4", "FN-3"], "expect": {"kind": "accept"}, "status": "runnable", "doc": "A stated law is discharged statically when the conform-bound fn's body is a single table op whose law is OP-8 table data (unsigned sat-add: associative, commutative, identity 0)."}
++{"id": "fn4-pos-law-discharged", "rules": ["FN-4", "FN-3"], "expect": {"kind": "accept"}, "status": "runnable", "doc": "FN-4's mandatory calculus discharges the stated laws because the conform-bound function has the exact direct iadd.sat<u64> body and the closed unsigned table cells hold for associativity, commutativity, and zero identity."}
+ {"id": "fn4-neg-law-refuted-signedness", "rules": ["FN-4"], "expect": {"kind": "reject", "rule": "FN-4"}, "status": "runnable", "doc": "Signed saturating add is not associative; the stated law is REFUTED by the checked table \u2014 the W3 case Rust cannot catch (a hand-reassociated signed sat-add reduction silently computes garbage)."}

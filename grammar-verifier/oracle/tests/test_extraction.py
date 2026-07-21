@@ -14,13 +14,28 @@ from support import fixture_grammars, fixture_inputs
 class ExtractionTests(unittest.TestCase):
     def test_exact_documents_have_complete_expected_census(self) -> None:
         current, proposal = fixture_grammars()
+        expected = {
+            "current": (91, 59, 8, 169, 176),
+            "proposal": (92, 62, 7, 169, 178),
+        }
         for grammar in (current, proposal):
             with self.subTest(document=grammar.name):
-                self.assertEqual(len(grammar.rules), 91)
-                self.assertEqual(len(grammar.productions), 59)
-                self.assertEqual(len(grammar.lexical), 8)
-                self.assertEqual(len(grammar.fixed), 169)
-                self.assertEqual(len(grammar.references), 176)
+                (
+                    rule_count,
+                    production_count,
+                    lexical_count,
+                    fixed_count,
+                    reference_count,
+                ) = expected[grammar.name]
+                self.assertEqual(len(grammar.rules), rule_count)
+                self.assertEqual(len(grammar.productions), production_count)
+                self.assertEqual(len(grammar.lexical), lexical_count)
+                self.assertEqual(len(grammar.fixed), fixed_count)
+                self.assertEqual(len(grammar.references), reference_count)
+                expected_coverage = {
+                    "current": (production_count, 4, 2, 3, 0),
+                    "proposal": (production_count, 4, 4, 2, 0),
+                }
                 self.assertEqual(
                     (
                         grammar.coverage.assignments,
@@ -29,12 +44,32 @@ class ExtractionTests(unittest.TestCase):
                         grammar.coverage.lexical_cues,
                         grammar.coverage.unclassified,
                     ),
-                    (59, 4, 2, 3, 0),
+                    expected_coverage[grammar.name],
                 )
                 self.assertEqual(len(grammar.source_lowerwords), 47)
                 self.assertEqual(len(grammar.expanded_lowerwords), 48)
                 self.assertIn(b"uniq", grammar.expanded_lowerwords)
                 self.assertNotIn(b"uniq", grammar.source_lowerwords)
+
+    def test_proposal_productions_retain_their_numbered_rule_owners(self) -> None:
+        _current, proposal = fixture_grammars()
+        expected = {
+            "program": "GRAM-2",
+            "requires_block": "GRAM-2",
+            "requires_entry": "GRAM-2",
+            "law": "GRAM-2",
+            "const": "CONST-1",
+            "cvalue": "CONST-2",
+            "effects": "EFF-1",
+            "effect": "EFF-1",
+        }
+        self.assertEqual(
+            {
+                name: proposal.production_by_name[name].owner
+                for name in expected
+            },
+            expected,
+        )
 
     def test_rule_heading_inside_fence_is_masked(self) -> None:
         source = (

@@ -132,6 +132,20 @@ class OracleReportTests(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "expectations"):
             parse_report(oracle_report(value), "oracle", altered)
 
+    def test_oracle_trace_delta_policy_is_enforced(self) -> None:
+        value = inputs()
+        changed = BoundBytes(
+            "expectations",
+            value.expectations.data.replace(
+                b"case-delta\tderef-p\ttrace-subset",
+                b"case-delta\tderef-p\ttrace-replacement",
+                1,
+            ),
+        )
+        altered = Inputs(value.sections, changed, value.limits)
+        with self.assertRaisesRegex(RunnerError, "trace-replacement"):
+            parse_report(oracle_report(value), "oracle", altered)
+
 
 if __name__ == "__main__":
     unittest.main()

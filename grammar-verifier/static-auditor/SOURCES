@@ -5,6 +5,7 @@ rust-toolchain.toml
 src/document.rs
 src/ebnf.rs
 src/emit.rs
+src/float_contract.rs
 src/grammar.rs
 src/hash.rs
 src/lexical.rs

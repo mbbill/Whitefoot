@@ -87,7 +87,18 @@ class InputTests(unittest.TestCase):
             root = Path(directory)
             for name in ("FORMAT.md", "Makefile", "base.py"):
                 (root / name).write_text(f"{name}\n", encoding="ascii")
-            runner_manifest = ("FORMAT.md", "Makefile", "RUNNER_SOURCES", "base.py")
+            evidence = root / "evidence"
+            evidence.mkdir()
+            for name in ("v0.9-manifest-metadata.patch", "v0.9-post-form2-case-intent.patch"):
+                (evidence / name).write_text(f"{name}\n", encoding="ascii")
+            runner_manifest = (
+                "FORMAT.md",
+                "Makefile",
+                "RUNNER_SOURCES",
+                "base.py",
+                "evidence/v0.9-manifest-metadata.patch",
+                "evidence/v0.9-post-form2-case-intent.patch",
+            )
             (root / "RUNNER_SOURCES").write_text("\n".join(runner_manifest) + "\n", encoding="ascii")
             static = root / "static-auditor"
             (static / "src").mkdir(parents=True)
@@ -140,13 +151,13 @@ class InputTests(unittest.TestCase):
             ),
             (
                 "expectations",
-                b"whitefoot.grammar-expectations.v1\n"
+                b"whitefoot.grammar-expectations.v2\n"
                 b"case\tsame\tcurrent\tone\n"
                 b"case\tsame\tcurrent\tzero\n",
             ),
             (
                 "expectations",
-                b"whitefoot.grammar-expectations.v1\n"
+                b"whitefoot.grammar-expectations.v2\n"
                 b"transition\tsame\tintroduced\n"
                 b"transition\tsame\tremoved\n",
             ),

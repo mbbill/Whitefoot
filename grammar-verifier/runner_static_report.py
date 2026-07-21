@@ -264,6 +264,8 @@ def validate_static(
         fail("static_delta", "static delta records do not classify the complete evidence union")
     if b"introduced" in deltas.values():
         fail("static_delta", "the current policy permits no introduced intersection or conflict")
+    if classified["conflict"][b"proposal"]:
+        fail("static_conflict", "the proposal must have zero strong-LL(2) decision conflicts")
     required_cases = {(identifier, document) for identifier in case_inputs for document in (b"current", b"proposal")}
     if observed_cases != required_cases:
         fail("static_cases", "static omitted a required authored case")

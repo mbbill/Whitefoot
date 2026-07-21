@@ -62,7 +62,7 @@ def validate_oracle(
 ) -> tuple[dict[tuple[bytes, bytes], tuple[bytes, ...]], dict[str, object]]:
     case_inputs = _case_inputs(inputs)
     domain_inputs = _domain_inputs(inputs)
-    expected_cases = _expectations(inputs)[0]
+    expected_cases, _transitions, expected_delta_policies = _expectations(inputs)
     observed_cases: dict[tuple[bytes, bytes], bytes] = {}
     case_sources: dict[tuple[bytes, bytes], tuple[bytes, bytes]] = {}
     trace_limits: dict[tuple[bytes, bytes], int] = {}
@@ -211,13 +211,34 @@ def validate_oracle(
             expected_case_deltas[(identifier.hex().encode("ascii"), trace)] = status
         current_count = class_count[expected_cases[(identifier, b"current")]]
         proposal_count = class_count[expected_cases[(identifier, b"proposal")]]
-        if proposal_count > current_count:
-            fail("oracle_delta", "case expectations do not permit an introduction-free transition")
-        expected_status_counts[identifier.hex().encode("ascii")] = {
-            b"removed": current_count - proposal_count,
-            b"retained": proposal_count,
-            b"introduced": 0,
-        }
+        policy = expected_delta_policies.get(identifier)
+        if policy == b"trace-subset":
+            if not proposal.issubset(current):
+                fail("oracle_delta", "case trace-subset policy is not satisfied")
+            expected_counts = {
+                b"removed": current_count - proposal_count,
+                b"retained": proposal_count,
+                b"introduced": 0,
+            }
+        elif policy == b"trace-identical":
+            if proposal != current:
+                fail("oracle_delta", "case trace-identical policy is not satisfied")
+            expected_counts = {
+                b"removed": 0,
+                b"retained": current_count,
+                b"introduced": 0,
+            }
+        elif policy == b"trace-replacement":
+            if proposal & current:
+                fail("oracle_delta", "case trace-replacement policy is not satisfied")
+            expected_counts = {
+                b"removed": current_count,
+                b"retained": 0,
+                b"introduced": proposal_count,
+            }
+        else:
+            fail("oracle_expectations", "oracle case is missing a closed trace-delta policy")
+        expected_status_counts[identifier.hex().encode("ascii")] = expected_counts
     if case_deltas != expected_case_deltas:
         fail("oracle_delta", "oracle case deltas do not classify the complete trace union")
     for identifier_hex, counts in expected_status_counts.items():

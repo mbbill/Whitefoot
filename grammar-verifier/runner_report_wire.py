@@ -72,16 +72,21 @@ def witness_stream_hex(value: bytes) -> tuple[bytes, ...]:
     return tuple(tokens)
 
 
-def expectations(inputs: Inputs) -> tuple[dict[tuple[bytes, bytes], bytes], dict[bytes, bytes]]:
+def expectations(
+    inputs: Inputs,
+) -> tuple[dict[tuple[bytes, bytes], bytes], dict[bytes, bytes], dict[bytes, bytes]]:
     cases: dict[tuple[bytes, bytes], bytes] = {}
     transitions: dict[bytes, bytes] = {}
+    case_deltas: dict[bytes, bytes] = {}
     for line in inputs.expectations.data.splitlines()[1:]:
         fields = line.split(b"\t")
         if fields[0] == b"case":
             cases[(fields[1], fields[2])] = fields[3]
+        elif fields[0] == b"case-delta":
+            case_deltas[fields[1]] = fields[2]
         else:
             transitions[fields[1]] = fields[2]
-    return cases, transitions
+    return cases, transitions, case_deltas
 
 
 def case_inputs(inputs: Inputs) -> dict[bytes, tuple[bytes, bytes]]:

@@ -48,6 +48,33 @@ class StaticReportTests(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "complete evidence union|permits no introduced"):
             parse_report(introduced, "static", value)
 
+    def test_proposal_must_have_zero_strong_ll2_conflicts(self) -> None:
+        value = inputs()
+        lines = static_report(value).splitlines()
+        conflict_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith(b"STATIC-CONFLICT\tcurrent")
+        )
+        proposal_conflict = lines[conflict_index].replace(
+            b"STATIC-CONFLICT\tcurrent",
+            b"STATIC-CONFLICT\tproposal",
+            1,
+        )
+        lines.insert(conflict_index + 1, proposal_conflict)
+        delta_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.startswith(b"STATIC-DELTA\tconflict\tremoved")
+        )
+        lines[delta_index] = lines[delta_index].replace(
+            b"STATIC-DELTA\tconflict\tremoved",
+            b"STATIC-DELTA\tconflict\tretained",
+            1,
+        )
+        with self.assertRaisesRegex(RunnerError, "zero strong-LL\\(2\\)"):
+            parse_report(b"\n".join(lines) + b"\n", "static", value)
+
     def test_static_core_analysis_coverage_cannot_be_omitted(self) -> None:
         value = inputs()
         removed_tags = (

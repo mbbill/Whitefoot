@@ -38,6 +38,13 @@ def mutant_copy() -> Iterator[Path]:
                 "*.pyc",
             ),
         )
+        evidence = verifier / "evidence"
+        evidence.mkdir()
+        for name in (
+            "v0.9-manifest-metadata.patch",
+            "v0.9-post-form2-case-intent.patch",
+        ):
+            shutil.copyfile(ROOT / "evidence" / name, evidence / name)
         current = (REPOSITORY / "spec" / "kernel-spec-v0.8.md").read_bytes()
         if hashlib.sha256(current).hexdigest() != CURRENT_SHA256:
             raise AssertionError("the mutation gate requires exact v0.8 specification bytes")
