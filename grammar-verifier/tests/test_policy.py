@@ -6,12 +6,25 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = ROOT.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from installed_policy import (  # noqa: E402
+    DERIVATION_AMENDMENT_SHA256,
+    HISTORICAL_V08_BINDINGS,
+    PRE_V09_DERIVATION_LEDGER_SHA256,
+    REVIEW_PACKET_BINDINGS,
+    validate_derivation_ledger,
+    validate_review_packet,
+)
+from runner_inputs import RunnerError, SUCCESSOR_SHA256  # noqa: E402
 EXPECTED_CHANGED_RULES = {
     "CONST-1",
     "CONST-2",
@@ -79,6 +92,7 @@ class ProposalBindingTests(unittest.TestCase):
     def test_declared_current_and_proposal_hashes_are_exact(self) -> None:
         current = REPOSITORY / "spec" / "kernel-spec-v0.8.md"
         proposal = ROOT / "proposal" / "kernel-spec-successor-candidate.md"
+        installed = REPOSITORY / "spec" / "kernel-spec-v0.9.md"
         inventory = census()
         current_sha = hashlib.sha256(current.read_bytes()).hexdigest()
         proposal_sha = hashlib.sha256(proposal.read_bytes()).hexdigest()
@@ -88,6 +102,8 @@ class ProposalBindingTests(unittest.TestCase):
         declared = re.findall(r"SHA-256: `([0-9a-f]{64})`", delta)
         self.assertEqual(declared, [current_sha, proposal_sha])
         self.assertEqual(inventory["candidate_installation"]["candidate_byte_length"], len(proposal.read_bytes()))
+        self.assertEqual(proposal_sha, SUCCESSOR_SHA256)
+        self.assertEqual(installed.read_bytes(), proposal.read_bytes())
 
     def test_phase_two_declares_no_guarded_edit(self) -> None:
         self.assertEqual(census()["phase_2_guarded_edits"], [])
@@ -138,49 +154,56 @@ class ProposalBindingTests(unittest.TestCase):
         for owner in set(current_rules) - EXPECTED_CHANGED_RULES:
             self.assertEqual(current_rules[owner], proposal_rules[owner], owner)
 
-    def test_census_protected_hashes_and_counts_match_repository_bytes(self) -> None:
+    def test_historical_review_packet_and_census_remain_exact(self) -> None:
+        validate_review_packet(ROOT)
+        evidence_files = {
+            path.name
+            for path in (ROOT / "evidence").iterdir()
+            if path.is_file()
+        }
+        self.assertEqual(evidence_files, set(REVIEW_PACKET_BINDINGS))
+        for name, expected in REVIEW_PACKET_BINDINGS.items():
+            self.assertEqual(sha256(ROOT / "evidence" / name), expected, name)
+        for relative, expected in HISTORICAL_V08_BINDINGS.items():
+            self.assertEqual(sha256(REPOSITORY / relative), expected, relative)
+
         inventory = census()
         declared = inventory["protected_surface_baseline"]
-        baseline_path = REPOSITORY / declared["path"]
-        self.assertEqual(sha256(baseline_path), declared["sha256"])
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(baseline["kernel_specs"]), declared["kernel_specification_records"])
-        self.assertEqual(len(baseline["conformance"]), declared["conformance_records"])
         self.assertEqual(
-            {path: len(records) for path, records in baseline["oracles"].items()},
-            declared["guarded_oracle_digest_counts"],
+            declared["sha256"],
+            "9d4ff925668a3341543d555c5243ef0b74ca5e7e275617ff4808d90c290dc48a",
+        )
+        self.assertEqual(declared["kernel_specification_records"], 9)
+        self.assertEqual(declared["conformance_records"], 307)
+        self.assertEqual(
+            declared["legacy_unmanifested_case"]["sha256"],
+            "ae99d9b9b99e02e9c6c5f2af54f0924b7b1a0f5ee0422d29958b01b597adf759",
         )
         self.assertEqual(
-            {path: len(records) for path, records in baseline["tests"].items()},
-            declared["guarded_reference_test_counts"],
+            (ROOT / "proposal" / "DELTA.md").read_bytes(),
+            (ROOT / "evidence" / "proposal-delta.md").read_bytes(),
         )
-        legacy = declared["legacy_unmanifested_case"]
-        self.assertEqual(sha256(REPOSITORY / legacy["path"]), legacy["sha256"])
+        self.assertEqual(
+            (ROOT / "proposal" / "protected-surface-census.json").read_bytes(),
+            (ROOT / "evidence" / "protected-surface-census.json").read_bytes(),
+        )
 
-        reviewed = inventory["protected_surfaces_reviewed_without_expected_edits"]
-        cases = reviewed["conformance_cases"]
-        self.assertEqual(sha256(REPOSITORY / "conformance" / "manifest.jsonl"), cases["manifest_sha256"])
-        discovered = sorted(
-            f"conformance/cases/{identifier}.wf"
-            for identifier in baseline["conformance"]
-            if ":" not in identifier
-            and b"deref(" in (REPOSITORY / "conformance" / "cases" / f"{identifier}.wf").read_bytes()
-        )
-        self.assertEqual(discovered, cases["deref_source_paths"])
-        self.assertEqual(len(discovered), cases["deref_source_case_count"])
-        encoded = b"".join(path.encode("utf-8") + b"\n" for path in sorted(discovered, key=lambda item: item.encode("utf-8")))
-        self.assertEqual(
-            cases["deref_source_path_inventory_encoding"],
-            "UTF-8 paths sorted bytewise, each followed by LF",
-        )
-        self.assertEqual(hashlib.sha256(encoded).hexdigest(), cases["deref_source_path_inventory_sha256"])
-
-        frozen = reviewed["frozen_oracles"]
-        self.assertEqual(sorted(frozen["paths"]), sorted(frozen["sha256"]))
-        for relative, digest in frozen["sha256"].items():
-            self.assertEqual(sha256(REPOSITORY / relative), digest)
-        reference = reviewed["reference_semantics_tests"]
-        self.assertEqual(sha256(REPOSITORY / reference["path"]), reference["sha256"])
+    def test_derivation_ledger_is_one_exact_append_to_the_pinned_prefix(self) -> None:
+        amendment = (
+            ROOT / "proposal" / "DERIVATION-LEDGER-v0.9-AMENDMENT.md"
+        ).read_bytes()
+        ledger = (REPOSITORY / "spec" / "derivation-ledger.md").read_bytes()
+        self.assertEqual(hashlib.sha256(amendment).hexdigest(), DERIVATION_AMENDMENT_SHA256)
+        validate_derivation_ledger(amendment, ledger)
+        body_marker = b"<!-- BEGIN EXACT V0.9 DERIVATION-LEDGER APPEND -->\n\n"
+        end_marker = b"\n<!-- END EXACT V0.9 DERIVATION-LEDGER APPEND -->\n"
+        body = amendment.split(body_marker, 1)[1].split(end_marker, 1)[0]
+        prefix = ledger[: -len(b"\n" + body)]
+        self.assertEqual(hashlib.sha256(prefix).hexdigest(), PRE_V09_DERIVATION_LEDGER_SHA256)
+        with self.assertRaises(RunnerError):
+            validate_derivation_ledger(amendment, b"changed\n" + ledger)
+        with self.assertRaises(RunnerError):
+            validate_derivation_ledger(amendment, ledger[:-1] + b"x")
 
     def test_protected_install_patches_compose_exactly_and_preserve_outcomes(self) -> None:
         patches = (
@@ -212,16 +235,27 @@ class ProposalBindingTests(unittest.TestCase):
             },
             {"conformance/manifest.jsonl"},
         )
-        original_rows = manifest_rows(REPOSITORY / "conformance" / "manifest.jsonl")
-        original_projection = expectation_projection(original_rows)
+        installed_manifest = REPOSITORY / "conformance" / "manifest.jsonl"
+        installed_rows = manifest_rows(installed_manifest)
+        installed_projection = expectation_projection(installed_rows)
         self.assertEqual(
-            hashlib.sha256(original_projection).hexdigest(),
+            hashlib.sha256(installed_projection).hexdigest(),
             "5fb0e54ec006c3fea82d5fc0d8c454e5e9f022ba472cdcc6a90c44a31ade2132",
+        )
+        self.assertEqual(installed_manifest.stat().st_size, 99869)
+        self.assertEqual(
+            sha256(installed_manifest),
+            "0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c",
         )
 
         with tempfile.TemporaryDirectory(prefix="whitefoot-protected-compose-") as temporary:
             root = Path(temporary)
             shutil.copytree(REPOSITORY / "conformance", root / "conformance")
+            installed_snapshot = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted((root / "conformance").rglob("*"))
+                if path.is_file()
+            }
             for index, (patch, _) in enumerate(patches):
                 numstat = subprocess.run(
                     ("git", "apply", "--numstat", str(patch)),
@@ -236,6 +270,37 @@ class ProposalBindingTests(unittest.TestCase):
                     self.assertEqual(len(observed_paths), 274)
                 else:
                     self.assertEqual(observed_paths, expected_paths[index])
+
+            for patch, _ in reversed(patches):
+                subprocess.run(
+                    ("git", "apply", "--reverse", "--check", str(patch)),
+                    cwd=root,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                subprocess.run(
+                    ("git", "apply", "--reverse", str(patch)),
+                    cwd=root,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+            base_manifest = root / "conformance" / "manifest.jsonl"
+            self.assertEqual(base_manifest.stat().st_size, 99776)
+            self.assertEqual(
+                sha256(base_manifest),
+                "20bb50032c112150c3d9a7387a17bde708922e426550b47b64f2214cd7341d69",
+            )
+            base_rows = manifest_rows(base_manifest)
+            self.assertEqual(expectation_projection(base_rows), installed_projection)
+            self.assertEqual(
+                sha256(root / "conformance" / "cases" / "pending-const2-item.wf"),
+                "ae99d9b9b99e02e9c6c5f2af54f0924b7b1a0f5ee0422d29958b01b597adf759",
+            )
+
+            for patch, _ in patches:
                 subprocess.run(
                     ("git", "apply", "--check", str(patch)),
                     cwd=root,
@@ -268,49 +333,36 @@ class ProposalBindingTests(unittest.TestCase):
                 "0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c",
             )
             final_rows = manifest_rows(final_manifest)
-            self.assertEqual(expectation_projection(final_rows), original_projection)
-            self.assertEqual(len(final_rows), len(original_rows))
-            for before, after in zip(original_rows, final_rows):
+            self.assertEqual(expectation_projection(final_rows), installed_projection)
+            self.assertEqual(len(final_rows), len(base_rows))
+            for before, after in zip(base_rows, final_rows):
                 for field in ("id", "rule", "rules", "expect", "status", "covered_by"):
                     self.assertEqual(before.get(field), after.get(field), field)
+            final_snapshot = {
+                path.relative_to(root).as_posix(): path.read_bytes()
+                for path in sorted((root / "conformance").rglob("*"))
+                if path.is_file()
+            }
+            self.assertEqual(final_snapshot, installed_snapshot)
 
-    def test_direct_v0_8_reference_inventory_is_complete_and_classified(self) -> None:
+    def test_historical_v0_8_reference_inventory_record_is_frozen(self) -> None:
         inventory = census()
         classification = inventory["v0_8_reference_classification"]
-        tracked = subprocess.run(
-            ("git", "ls-files", "-z"),
-            cwd=REPOSITORY,
-            check=True,
-            stdout=subprocess.PIPE,
-        ).stdout.split(b"\0")
-        current_digest = inventory["active_current_specification"]["sha256"].encode("ascii")
-        needles = (b"v0.8", b"v08", current_digest)
-        excluded = (b"archive/", b"mcts_mem/", b"grammar-verifier/")
-        direct: list[bytes] = []
-        for relative in tracked:
-            if not relative or relative.startswith(excluded):
-                continue
-            data = (REPOSITORY / relative.decode("utf-8")).read_bytes()
-            if any(needle in data for needle in needles):
-                direct.append(relative)
-        direct.sort()
-        encoded = b"".join(path + b"\n" for path in direct)
-        self.assertEqual(classification["canonical_path_encoding"], "UTF-8 paths sorted bytewise, each followed by LF")
-        self.assertEqual(len(direct), classification["direct_text_reference_file_count"])
-        self.assertEqual(hashlib.sha256(encoded).hexdigest(), classification["direct_text_reference_inventory_sha256"])
-
-        active = set(inventory["active_target_references_to_update_after_approval"])
-        historical = inventory["historical_v0_8_records_to_preserve"]
-
-        def classified(relative: str) -> bool:
-            return relative in active or any(
-                relative.startswith(entry) if entry.endswith("/") else relative == entry
-                for entry in historical
-            )
-
-        unclassified = [path.decode("utf-8") for path in direct if not classified(path.decode("utf-8"))]
-        self.assertEqual(len(unclassified), classification["unclassified_file_count"])
-        self.assertEqual(unclassified, [])
+        self.assertEqual(
+            classification["canonical_path_encoding"],
+            "UTF-8 paths sorted bytewise, each followed by LF",
+        )
+        self.assertEqual(classification["direct_text_reference_file_count"], 58)
+        self.assertEqual(
+            classification["direct_text_reference_inventory_sha256"],
+            "b12dc10231cd5daf42795997d66e3ba6468d8e4e22a4d61ec418ab5d177e92ae",
+        )
+        self.assertEqual(classification["unclassified_file_count"], 0)
+        self.assertEqual(len(inventory["active_target_references_to_update_after_approval"]), 40)
+        self.assertIn(
+            "spec/kernel-spec-v0.8.md",
+            inventory["historical_v0_8_records_to_preserve"],
+        )
 
 
 if __name__ == "__main__":

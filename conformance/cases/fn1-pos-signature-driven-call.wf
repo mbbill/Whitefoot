@@ -1,9 +1,9 @@
-fn add (x: own i32, y: own i32) -> own i32 traps {
+fn add(x: own i32, y: own i32) -> own i32 traps {
   doc "A full signature states param modes/types and return mode/type [FN-1].";
   return iadd.trap<i32>(x, y);
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Caller relies only on add's signature [FN-1].";
   let s: own i32 = add(x: 40_i32, y: 2_i32);
   check ieq<i32>(s, 42_i32) else trap "sig drift";

@@ -133,7 +133,7 @@ pub enum LexCompilerFailure {
 pub enum SourceIssueKind {
     /// The first byte of an invalid UTF-8 sequence.
     InvalidUtf8,
-    /// A byte is not part of any v0.8 token or retained trivia shape.
+    /// A byte is not part of the active raw token or retained trivia shape.
     UnexpectedByte,
     /// An apostrophe is not followed by a lowercase region-name start.
     MissingRegionName,

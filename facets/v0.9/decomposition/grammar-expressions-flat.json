@@ -1,0 +1,770 @@
+{
+  "clauses": [
+    {
+      "byte_end": 25125,
+      "byte_start": 25087,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/expression-form-closed-set"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "218f82748260e79d02f111d1e9f228c188d4e809ebcabe56e77c1c2d32e44b3d"
+    },
+    {
+      "byte_end": 25167,
+      "byte_start": 25125,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/expression-form-closed-set"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "30d222ef9603fd5d0aa81e0515ce1f1b9df1f1dea2780da697bddc60647695b3"
+    },
+    {
+      "byte_end": 25230,
+      "byte_start": 25167,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/atom-form-closed-set"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "d5f4da123e63126382aa144dfe92b918b9310d84b714667d28e1848e433ed9e6"
+    },
+    {
+      "byte_end": 25302,
+      "byte_start": 25230,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/call-and-callee-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "06bd6a04c3e1faeef87c41863fc3c1e58a668147397b46e8c25c4277c32eaf0b"
+    },
+    {
+      "byte_end": 25335,
+      "byte_start": 25302,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/call-and-callee-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "ff032dff50a091b9bf4215725efeb5febec7699dd2f9f6beb382e2e0fd52758c"
+    },
+    {
+      "byte_end": 25391,
+      "byte_start": 25335,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/construction-shape"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "ebb68f287d883ffc453c2abe79af07017a65b5467878f7492e1e2bf7d05be39e"
+    },
+    {
+      "byte_end": 25436,
+      "byte_start": 25391,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/named-operand-list-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "88e9d4ff25bb61a81629c88e480df627236256566cb2577c49fcaf683c555be6"
+    },
+    {
+      "byte_end": 25469,
+      "byte_start": 25436,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/named-operand-list-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "0c5c9b99b2c6c988f53bfb21d2e326a47028d2f1f2d9a9ef0e0f54834ed5f0bf"
+    },
+    {
+      "byte_end": 25531,
+      "byte_start": 25469,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/borrow-expression-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "96863547c90b53bf254706c4ced2ee644a6894a9225e24806923536785935fd5"
+    },
+    {
+      "byte_end": 25566,
+      "byte_start": 25531,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/positional-atom-list-shape"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "f905b6c93d16eade935b53a25d28c7b345766f7b89a4c9ef92fc6c906445f01c"
+    },
+    {
+      "byte_end": 25599,
+      "byte_start": 25566,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/place-chain-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "2848a8fe9ef2cba32ba4b5155c198b4da1aa3d21032c2dcd18f5437f2e166ae2"
+    },
+    {
+      "byte_end": 25708,
+      "byte_start": 25599,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/place-chain-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "95fd98f31347793769d8ed1ff0950acf70199a9d6507e4463a59dc075e7a3f0b"
+    },
+    {
+      "byte_end": 25736,
+      "byte_start": 25708,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/place-chain-shapes"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "f49077b55c1dceac8a465bec2c1e926ff5eaf92d18c6fd0e874605f3c175ce32"
+    },
+    {
+      "byte_end": 25740,
+      "byte_start": 25736,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-5/expression-form-closed-set"
+      ],
+      "owner_rule": "GRAM-5",
+      "sha256": "47c06c561d5c327343685268a46b3391f3998eee890d2be51f0d21cc4a53ae6d"
+    },
+    {
+      "byte_end": 25835,
+      "byte_start": 25741,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-6/operator-and-sugar-syntax-absent"
+      ],
+      "owner_rule": "GRAM-6",
+      "sha256": "2aa27b7a15e7e48a318ccf2e2d5c08dbff57067cb0698aab664d4c504b47e5e2"
+    },
+    {
+      "byte_end": 25893,
+      "byte_start": 25835,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-6/bool-match-conditional-form"
+      ],
+      "owner_rule": "GRAM-6",
+      "sha256": "f502cf7ae7cca3bd6337b30e4fc7fec7abe80be775d1471d19ab7bade2439a5e"
+    },
+    {
+      "byte_end": 25962,
+      "byte_start": 25893,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-6/conditional-value-let-match-form"
+      ],
+      "owner_rule": "GRAM-6",
+      "sha256": "b28587fe77f94b2a8aac3db541b74f6a0bdaf44e9165cbfad2670a94191814e3"
+    },
+    {
+      "byte_end": 25993,
+      "byte_start": 25962,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-6/loop-break-iteration-form"
+      ],
+      "owner_rule": "GRAM-6",
+      "sha256": "973a0293ea44e4cb4fb879df9e2cc70f52f250eeae38cd0ae6dc96a1f2d72e03"
+    },
+    {
+      "byte_end": 26029,
+      "byte_start": 25993,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-6/index-place-only"
+      ],
+      "owner_rule": "GRAM-6",
+      "sha256": "29d7b37433a43de5d31699ae6580fafa6962f84da5441ab13f64bff7013f592d"
+    },
+    {
+      "byte_end": 26058,
+      "byte_start": 26029,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-6/index-bounds-governed-by-op4"
+      ],
+      "owner_rule": "GRAM-6",
+      "sha256": "7c693e886898851547f0f78826272e49d0d636ae2bc672aac082bef246bd2418"
+    },
+    {
+      "byte_end": 29352,
+      "byte_start": 29309,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/operand-positions-are-atoms"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "3e58c3c2561c79a83deb87cd878d5ae8597b3845d0666a83cca149b42860c707"
+    },
+    {
+      "byte_end": 29438,
+      "byte_start": 29352,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/operand-positions-are-atoms"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "3813f0e129f64fdbf0dbf4fcc246581a9c5c7c685a116bd2151fbbcb7819047e"
+    },
+    {
+      "byte_end": 29551,
+      "byte_start": 29438,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/nested-computation-rejected"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "8f69722486ab0f17128eba8744d6afda04be25d490352670a4c64fb5e8ee47bf"
+    },
+    {
+      "byte_end": 29719,
+      "byte_start": 29551,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/computed-values-forward-through-explicit-let"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "2afa0d60de0f78295307fec9021d28e27c9380e87f91e57a93e02de20ee92107"
+    },
+    {
+      "byte_end": 29787,
+      "byte_start": 29719,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/no-expression-nesting-alternative"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "5f536b1c6d1c6ad2a596a64c695f4eab39c88e5f2aa0b37b7a28538eee169342"
+    },
+    {
+      "byte_end": 29840,
+      "byte_start": 29787,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/no-expression-nesting-alternative"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "ae8f28ccd1a6e53e1e95c430945c708f785922718d345067250a0332f7273578"
+    },
+    {
+      "byte_end": 29939,
+      "byte_start": 29840,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-9/borrow-arguments-remain-direct-atoms"
+      ],
+      "owner_rule": "GRAM-9",
+      "sha256": "f2fba505893d7769f614501d7fb15d9d3205eb2a322310ca3de73a2f5cd7d914"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:GRAM-5/atom-form-closed-set",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:atom"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/borrow-expression-shapes",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:borrow_expr"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/call-and-callee-shapes",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:call",
+        "production:GRAM-5:callee"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/construction-shape",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:construct"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/expression-form-closed-set",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-5",
+        "production:GRAM-5:expr"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/named-operand-list-shapes",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:fieldinit_list",
+        "production:GRAM-5:fieldinit"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/place-chain-shapes",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:place",
+        "production:GRAM-5:pbase",
+        "production:GRAM-5:psuffix"
+      ]
+    },
+    {
+      "id": "facet:GRAM-5/positional-atom-list-shape",
+      "owner_rule": "GRAM-5",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-5:atom_list"
+      ]
+    },
+    {
+      "id": "facet:GRAM-6/bool-match-conditional-form",
+      "owner_rule": "GRAM-6",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-6"
+      ]
+    },
+    {
+      "id": "facet:GRAM-6/conditional-value-let-match-form",
+      "owner_rule": "GRAM-6",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-6"
+      ]
+    },
+    {
+      "id": "facet:GRAM-6/index-bounds-governed-by-op4",
+      "owner_rule": "GRAM-6",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-6"
+      ]
+    },
+    {
+      "id": "facet:GRAM-6/index-place-only",
+      "owner_rule": "GRAM-6",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-6"
+      ]
+    },
+    {
+      "id": "facet:GRAM-6/loop-break-iteration-form",
+      "owner_rule": "GRAM-6",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-6"
+      ]
+    },
+    {
+      "id": "facet:GRAM-6/operator-and-sugar-syntax-absent",
+      "owner_rule": "GRAM-6",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-6"
+      ]
+    },
+    {
+      "id": "facet:GRAM-9/borrow-arguments-remain-direct-atoms",
+      "owner_rule": "GRAM-9",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-9"
+      ]
+    },
+    {
+      "id": "facet:GRAM-9/computed-values-forward-through-explicit-let",
+      "owner_rule": "GRAM-9",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-9"
+      ]
+    },
+    {
+      "id": "facet:GRAM-9/nested-computation-rejected",
+      "owner_rule": "GRAM-9",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-9"
+      ]
+    },
+    {
+      "id": "facet:GRAM-9/no-expression-nesting-alternative",
+      "owner_rule": "GRAM-9",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-9"
+      ]
+    },
+    {
+      "id": "facet:GRAM-9/operand-positions-are-atoms",
+      "owner_rule": "GRAM-9",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-9"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "GRAM-5",
+    "GRAM-6",
+    "GRAM-9"
+  ],
+  "schema": 1
+}

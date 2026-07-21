@@ -1,4 +1,4 @@
-fn fsum (a: own f32, b: own f32) -> own f32 pure {
+fn fsum(a: own f32, b: own f32) -> own f32 pure {
   doc "A float op that ROUNDS carries .strict [OP-3]: fadd.strict is IEEE-754 with no reassociation and no contraction.";
   return fadd.strict<f32>(a, b);
 }

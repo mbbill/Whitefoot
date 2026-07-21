@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate authored v0.8 semantic decomposition and build its static catalog.
+"""Validate authored v0.9 semantic decomposition and build its static catalog.
 
 This module owns only compiler-independent static metadata.  It deliberately
 has no vocabulary for implementation status, handlers, tests, or witnesses.
@@ -18,16 +18,16 @@ import semantic_catalog_io
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC_PATH = ROOT / "spec" / "kernel-spec-v0.8.md"
-SOURCE_INDEX_PATH = ROOT / "facets" / "v0.8" / "source.json"
-DECOMPOSITION_PATH = ROOT / "facets" / "v0.8" / "decomposition"
-SPEC_RELATIVE_PATH = "spec/kernel-spec-v0.8.md"
-SOURCE_INDEX_RELATIVE_PATH = "facets/v0.8/source.json"
-SPEC_VERSION = "0.8"
-SPEC_SHA256 = "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
-SOURCE_INDEX_SHA256 = "b5f52d81fe7aff0581a421c296a84f0b0fd1ebf7d9dee104988f096d5937379e"
-SPEC_BYTE_LENGTH = 63_571
-SOURCE_INDEX_BYTE_LENGTH = 80_411
+SPEC_PATH = ROOT / "spec" / "kernel-spec-v0.9.md"
+SOURCE_INDEX_PATH = ROOT / "facets" / "v0.9" / "source.json"
+DECOMPOSITION_PATH = ROOT / "facets" / "v0.9" / "decomposition"
+SPEC_RELATIVE_PATH = "spec/kernel-spec-v0.9.md"
+SOURCE_INDEX_RELATIVE_PATH = "facets/v0.9/source.json"
+SPEC_VERSION = "0.9"
+SPEC_SHA256 = "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+SOURCE_INDEX_SHA256 = "cc9aa86de0d59b9288d1f8fd7a6bde6f94fff26da139d73f91bcbcf71219d663"
+SPEC_BYTE_LENGTH = 98_044
+SOURCE_INDEX_BYTE_LENGTH = 81_996
 
 # Parsing and normalization are deliberately bounded.  The exact authorities
 # are much smaller than these ceilings, leaving room for the complete authored
@@ -52,37 +52,23 @@ REVIEWED_DISPOSITIONS = (
     (
         "explicitly-deferred",
         "FORM-5",
-        9_749,
-        9_788,
+        15_749,
+        15_788,
         "0cbec3066cc7e216554e03b29f95f8664198f04cdbd6df0e0c7a97e791a49ed4",
     ),
     (
         "explicitly-deferred",
-        "FORM-7",
-        11_240,
-        11_357,
-        "268dc6c19eacf8f247fad3a3402746692fee5ce709aeace0b3a1254f497f118e",
-    ),
-    (
-        "explicitly-deferred",
         "LEX-1",
-        11_958,
-        12_115,
+        17_941,
+        18_098,
         "23d98d39550622dd24d013800c1262209082accd33b73fa02ac3d840d7c4bacb",
     ),
     (
         "explicitly-nonnormative",
         "OWN-9",
-        30_436,
-        30_904,
+        41_341,
+        41_809,
         "1853bc29443f66b3e54c800026931ba0e380278a6a42980768580457b2d912a2",
-    ),
-    (
-        "explicitly-nonnormative",
-        "FN-4",
-        51_608,
-        51_678,
-        "81d5ee971632574011b34a653b327c776502004dd02f495434862e9b1dee4a0d",
     ),
 )
 
@@ -343,9 +329,9 @@ def _source_index_model(
         "sha256": SPEC_SHA256,
         "version": SPEC_VERSION,
     }:
-        fail("source index does not bind the exact v0.8 specification")
+        fail("source index does not bind the exact v0.9 specification")
     if sha256(specification) != SPEC_SHA256:
-        fail("specification hash is not exact v0.8")
+        fail("specification hash is not exact v0.9")
 
     rule_order: list[str] = []
     rule_spans: dict[str, tuple[int, int]] = {}
@@ -369,8 +355,8 @@ def _source_index_model(
         all_atom_ids.add(atom_id)
         atom_owner[atom_id] = rule_id
         positioned_atoms.append((rule_span[0], rule_span[1], atom_id))
-    if len(rule_order) != 91:
-        fail(f"source index must contain 91 rules, found {len(rule_order)}")
+    if len(rule_order) != 92:
+        fail(f"source index must contain 92 rules, found {len(rule_order)}")
 
     positioned_children: list[tuple[int, int, str]] = []
     for collection_name in CHILD_COLLECTIONS:
@@ -415,9 +401,9 @@ def _require_exact_authority(raw: bytes, label: str, length: int, digest: str) -
     if type(raw) is not bytes:
         fail(f"{label} must be exact bytes")
     if len(raw) != length:
-        fail(f"{label} byte length is not exact v0.8: {len(raw)} != {length}")
+        fail(f"{label} byte length is not exact v0.9: {len(raw)} != {length}")
     if sha256(raw) != digest:
-        fail(f"{label} hash is not exact v0.8")
+        fail(f"{label} hash is not exact v0.9")
 
 
 def _reviewed_disposition_set(
@@ -544,7 +530,7 @@ def _validate_decomposition(
     extra_rules = sorted(set(owned_rules) - set(rule_order))
     if duplicate_rules or extra_rules or (require_complete and missing_rules):
         fail(
-            "fragment rules do not form the required v0.8 partition: "
+            "fragment rules do not form the required v0.9 partition: "
             f"duplicates={duplicate_rules!r}, missing={missing_rules!r}, extra={extra_rules!r}"
         )
 
@@ -752,7 +738,7 @@ def audit_partial_static_decomposition(
     specification: bytes,
     source_index_bytes: bytes,
 ) -> dict[str, Any]:
-    """Validate the exact present subset and list every absent v0.8 rule."""
+    """Validate the exact present subset and list every absent v0.9 rule."""
     _, audit = _validate_decomposition(
         fragment_bytes,
         specification,
@@ -766,19 +752,19 @@ def _repository_inputs(repository_root: Path) -> tuple[tuple[bytes, ...], bytes,
     try:
         specification = semantic_catalog_io.read_fixed_file(
             repository_root,
-            ("spec", "kernel-spec-v0.8.md"),
+            ("spec", "kernel-spec-v0.9.md"),
             SPEC_BYTE_LENGTH,
-            "v0.8 specification",
+            "v0.9 specification",
         )
         source_index = semantic_catalog_io.read_fixed_file(
             repository_root,
-            ("facets", "v0.8", "source.json"),
+            ("facets", "v0.9", "source.json"),
             SOURCE_INDEX_BYTE_LENGTH,
-            "v0.8 source index",
+            "v0.9 source index",
         )
         fragments = semantic_catalog_io.read_fragment_directory(
             repository_root,
-            ("facets", "v0.8", "decomposition"),
+            ("facets", "v0.9", "decomposition"),
             max_entries=MAX_FRAGMENT_DIRECTORY_ENTRIES,
             max_count=MAX_FRAGMENT_COUNT,
             max_file_bytes=MAX_FRAGMENT_BYTES,
@@ -817,8 +803,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         audit = check_partial_from_files()
         missing = ", ".join(audit["missing_rules"])
         print(
-            f"{audit['rule_count']}/91 rules; "
-            f"{audit['source_atom_count']}/200 source atoms; missing: {missing}"
+            f"{audit['rule_count']}/92 rules; "
+            f"{audit['source_atom_count']}/204 source atoms; missing: {missing}"
         )
         return 0
     catalog = build_from_files()

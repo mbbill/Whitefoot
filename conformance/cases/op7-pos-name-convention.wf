@@ -1,8 +1,12 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Op names carry a domain prefix and a .mode suffix iff on a mode axis [OP-7]: iadd.checked (i-prefix, checked mode) and dotless ieq.";
   let r: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
-    Ok(value: v) => { give v; }
-    Err(error: e) => { return unit; }
+    Ok(value: v) => {
+      give v;
+    }
+    Err(error: e) => {
+      return unit;
+    }
   }
   check ieq<i32>(r, 42_i32) else trap "name drift";
   return unit;

@@ -1,12 +1,12 @@
-fn control (x: own i32) -> own i32 traps requires {
+fn control(x: own i32) -> own i32 traps requires {
   let permitted: own Bool = ige<i32>(x, 0_i32);
-  check permitted else trap "x must be nonnegative";
   return x;
+  check permitted else trap "x must be nonnegative";
 } {
   doc "Control transfer is forbidden in a requirement clause [FN-8].";
   return x;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

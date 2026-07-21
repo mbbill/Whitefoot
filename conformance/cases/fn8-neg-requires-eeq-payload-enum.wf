@@ -1,6 +1,9 @@
-enum ClausePayloadEq { ClausePayloadEmpty(); ClausePayloadValue(value: u32); }
+enum ClausePayloadEq {
+  ClausePayloadEmpty();
+  ClausePayloadValue(value: u32);
+}
 
-fn guarded (left: own ClausePayloadEq, right: own ClausePayloadEq) -> own unit traps requires {
+fn guarded(left: own ClausePayloadEq, right: own ClausePayloadEq) -> own unit traps requires {
   let same: own Bool = eeq<ClausePayloadEq>(left, right);
   check same else trap "payload precondition escaped";
 } {

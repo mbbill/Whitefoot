@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "ERR-2 over a value-match: a `let`-initializer match on a prelude Result [PRE-1] that omits the Err arm is non-exhaustive; rejected citing ERR-2 before any give-completeness check.";
   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
     Ok(value: w) => {

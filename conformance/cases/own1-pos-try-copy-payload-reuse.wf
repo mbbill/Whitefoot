@@ -1,14 +1,21 @@
-enum State { Ready(); }
-enum StepError { Failed(); }
+enum State {
+  Ready();
+}
 
-fn forward (incoming: own Result<State, StepError>) -> own Result<i32, StepError> pure {
+enum StepError {
+  Failed();
+}
+
+fn forward(incoming: own Result<State, StepError>) -> own Result<i32, StepError> pure {
   doc "OWN-1: try records the concrete tag-only Ok payload type, so the bound state remains Copy across repeated matches.";
   let state: own State = try incoming;
   match state {
-    Ready() => { }
+    Ready() => {
+    }
   }
   match state {
-    Ready() => { }
+    Ready() => {
+    }
   }
   return Ok(value: 0_i32);
 }

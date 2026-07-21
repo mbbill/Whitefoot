@@ -6,18 +6,32 @@ zero-based half-open byte offsets into the exact bound input.
 
 ## Invocation inputs
 
-The entry point reads six fixed files selected by code, never by framed input:
+The installed-v0.9 entry point reads seven fixed content inputs selected by
+code, never by framed input:
 
 1. `limits.txt`
 2. exact `../spec/kernel-spec-v0.8.md`
 3. `proposal/kernel-spec-successor-candidate.md`
-4. `cases.txt`
-5. `domains.txt`
-6. `expectations.txt`
+4. exact `../spec/kernel-spec-v0.9.md`
+5. `cases.txt`
+6. `domains.txt`
+7. `expectations.txt`
 
 Expected answers are bound into the final evidence package but are never sent
-to either engine. The engine frame contains the first five items except the
-expectation file.
+to either engine. The installed v0.9 bytes must be byte-for-byte identical to
+the reviewed candidate and must have SHA-256
+`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
+Only one copy of those equal successor bytes occupies the `proposal` frame
+section. The frame otherwise contains the limits, v0.8 comparison baseline,
+cases, and domains; it excludes the expectation file.
+
+The immutable owner-review package records the earlier review-mode run, in
+which the candidate supplied the same successor frame bytes before installation.
+`run.py` never republishes that package. It validates every historical packet
+artifact by its approved digest, then writes a distinct installed-v0.9 package.
+The same pre-run validation pins the frozen v0.8 lexical snapshot and requires
+the installed derivation ledger to be the pinned pre-v0.9 bytes followed by one
+LF and the exact delimited body of the approved v0.9 amendment.
 
 The current document must have SHA-256
 `d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`.
@@ -509,7 +523,11 @@ non-adversarial-workspace assumption, not executed-code attestation.
 
 The evidence package preserves both raw reports and a canonical ASCII JSON
 summary binding every input, source revision, environment receipt, raw output,
-proposal, census, and final component by byte length and SHA-256. A separate
+proposal, census, and final component by byte length and SHA-256. Installed
+reproduction uses schema `whitefoot.grammar-evidence.v2` and adds an
+`installation` object that binds the candidate and numbered v0.9 path, byte
+length, SHA-256, `installed-v0.9` mode, and `byte-identical` relation. The
+historical review packet remains schema `whitefoot.grammar-evidence.v1`. A separate
 `.sha256` sidecar binds the complete report; the report never embeds its own
 hash. Semantic output contains no timestamps, paths, PIDs, durations, runtime
 addresses, or directory-order dependence.

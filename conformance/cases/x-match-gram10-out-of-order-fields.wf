@@ -1,6 +1,8 @@
-enum Pair { Both(a: i32, b: i32); }
+enum Pair {
+  Both(a: i32, b: i32);
+}
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "GRAM-10 declared order: a two-field variant bound out of declared order (b before a) is a hard error citing GRAM-10 and Both's declared field list.";
   let p: own Pair = Both(a: 1_i32, b: 2_i32);
   let v: own i32 = match p {

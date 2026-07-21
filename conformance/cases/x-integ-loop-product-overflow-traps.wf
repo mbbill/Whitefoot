@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A running product overflows i32 mid-loop; imul.trap turns the overflow into a deterministic trap rather than UB, and the seed is bound from a checked op via give [OP-1, GIVE-1, SCOPE-3].";
   let prod: own i32 = match iadd.checked<i32>(1_i32, 0_i32) {
     Ok(value: seed) => {

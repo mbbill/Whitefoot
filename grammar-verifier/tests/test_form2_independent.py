@@ -16,7 +16,6 @@ import form2_independent_inputs  # noqa: E402
 import form2_independent_compare  # noqa: E402
 from form2_independent_inputs import (  # noqa: E402
     IndependentInputError,
-    load_independent_inputs,
 )
 from form2_independent_lex import (  # noqa: E402
     IndependentLexError,
@@ -47,6 +46,7 @@ from form2_independent_syntax import (  # noqa: E402
     PRODUCTION_KINDS,
     source_forest_projection,
 )
+from support_form2_installation import reconstruct_form2_inputs  # noqa: E402
 
 
 def derive(raw: bytes) -> tuple:
@@ -233,8 +233,11 @@ class IndependentStructuralTests(unittest.TestCase):
 class IndependentProtectedCorpusTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.inputs = load_independent_inputs()
-        cls.artifacts = build_independent_artifacts(compare_primary=False)
+        _, cls.inputs = reconstruct_form2_inputs()
+        cls.artifacts = build_independent_artifacts(
+            compare_primary=False,
+            inputs=cls.inputs,
+        )
         cls.report = json.loads(cls.artifacts["form2-independent-report.json"])
 
     def test_inventory_and_closed_outcomes_are_exact(self) -> None:
@@ -367,13 +370,16 @@ class IndependentProtectedCorpusTests(unittest.TestCase):
         self.assertEqual(observed, PRODUCTION_KINDS)
 
     def test_report_is_deterministic_and_patch_stays_in_memory(self) -> None:
-        self.assertEqual(self.artifacts, build_independent_artifacts(compare_primary=False))
+        self.assertEqual(
+            self.artifacts,
+            build_independent_artifacts(compare_primary=False, inputs=self.inputs),
+        )
         self.assertEqual(
             set(self.artifacts),
             {"form2-independent-report.json", "form2-independent-evidence.sha256"},
         )
         compared = json.loads(
-            build_independent_artifacts(compare_primary=True)[
+            build_independent_artifacts(compare_primary=True, inputs=self.inputs)[
                 "form2-independent-report.json"
             ]
         )["primary_comparison"]
@@ -426,7 +432,10 @@ class IndependentProtectedCorpusTests(unittest.TestCase):
             form2_independent_compare.PRIMARY_REPORT = Path(directory) / "absent.json"
             try:
                 with self.assertRaisesRegex(IndependentReportError, "absent"):
-                    build_independent_artifacts(compare_primary=True)
+                    build_independent_artifacts(
+                        compare_primary=True,
+                        inputs=self.inputs,
+                    )
             finally:
                 form2_independent_compare.PRIMARY_REPORT = previous
 

@@ -9,6 +9,7 @@
 - 2026-07-19 measurement: immediately before the approved v0.8 landing, the live compiler census found 255 non-integer equality sites, all `ieq`, in the same 92 functions, 18 files, and 22 tag-only types; four later `AstKind` call-validation comparisons explain the increase from 251, and non-integer `ine` remains absent. (code)
 - 2026-07-19 (489237a9) measurement: a three-variant probe lowered direct tag comparison to one raw-IR comparison; the mapper caller contained two helper calls, two stack temporaries, an integer comparison, and a branching helper, while optimized assembly recovered the caller comparison but retained the helper definition. No timing or byte-count claim was made. (sourced)
 - 2026-07-19 (489237a9) limitation: the operation family is evidence-selected, while the enum-domain prefix follows the established naming rule without an independent weak-writer naming trial. (sourced)
+- 2026-07-21 specification continuity: exact v0.9 retains the v0.8 `eeq`/`ene` nominal tag-only enum domain and its exclusions unchanged; the v0.9 installation changes no conformance verdict or optimizer authority for this family. (sourced)
 
 ## Moves
 

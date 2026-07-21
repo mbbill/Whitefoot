@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A loop folds a running product with imul.trap [OP-1]; the accumulator overflows i32 before the comparison-driven break bound is reached, so the trapping multiply aborts the process [SCOPE-4].";
   let i: own i32 = 0_i32;
   let acc: own i32 = 1_i32;

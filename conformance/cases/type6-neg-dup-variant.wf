@@ -1,3 +1,7 @@
-enum A { Dup(); }
+enum A {
+  Dup();
+}
 
-enum B { Dup(); }
+enum B {
+  Dup();
+}

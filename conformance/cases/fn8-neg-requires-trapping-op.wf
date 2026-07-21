@@ -1,4 +1,4 @@
-fn trapping_op (x: own i32) -> own i32 traps requires {
+fn trapping_op(x: own i32) -> own i32 traps requires {
   let incremented: own i32 = iadd.trap<i32>(x, 1_i32);
   let permitted: own Bool = igt<i32>(incremented, x);
   check permitted else trap "increment must increase";
@@ -7,6 +7,6 @@ fn trapping_op (x: own i32) -> own i32 traps requires {
   return x;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

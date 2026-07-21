@@ -1,6 +1,9 @@
-enum State { Ready(); Done(); }
+enum State {
+  Ready();
+  Done();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "TYPE-7 applies to match scrutinees: a reference holder requires explicit deref(.) before matching its referent.";
   let state: own State = Ready();
   region 'r {

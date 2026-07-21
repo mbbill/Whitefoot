@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A failing check traps at runtime [OP-5, SCOPE-4].";
   check ieq<i32>(2_i32, 3_i32) else trap "boom";
   return unit;

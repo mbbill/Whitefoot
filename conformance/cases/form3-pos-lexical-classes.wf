@@ -1,6 +1,10 @@
-enum Sign { Neg(); Zero(); Pos(); }
+enum Sign {
+  Neg();
+  Zero();
+  Pos();
+}
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "IDENT, TYPEID, REGIONID, LABEL, and OPNAME lexical classes [FORM-3].";
   let a: own i32 = 3_i32;
   region 'r {

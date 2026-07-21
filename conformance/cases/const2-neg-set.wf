@@ -1,6 +1,6 @@
 const table: array<u8, 4> = [10_u8, 20_u8, 30_u8, 40_u8];
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A const item is immutable: writing through it is rejected [CONST-2].";
   set index<u8>(table, 0_u64) = 99_u8;
   return unit;

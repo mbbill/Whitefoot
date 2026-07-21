@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "idiv.trap traps on a zero divisor [OP-2]; division carries no wrap mode and the zero-divisor contract violation aborts the process [SCOPE-4].";
   let x: own i32 = 10_i32;
   let q: own i32 = idiv.trap<i32>(x, 0_i32);

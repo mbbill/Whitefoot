@@ -1,4 +1,4 @@
-fn get (b: own buffer<i32>, i: own u64) -> own i32 traps {
+fn get(b: own buffer<i32>, i: own u64) -> own i32 traps {
   doc "index<T>(p, i) reads are bounds-checked in all build modes when unproven [OP-4]; a buffer index is checked against the runtime length.";
   return index<i32>(b, i);
 }

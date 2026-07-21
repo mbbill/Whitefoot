@@ -1,10 +1,13 @@
-enum Flag { First(); Second(); }
+enum Flag {
+  First();
+  Second();
+}
 
-fn make_ok (value: own u64) -> own Result<u64,Flag> pure {
+fn make_ok(value: own u64) -> own Result<u64, Flag> pure {
   return Ok(value: value);
 }
 
-fn make_err (second: own Bool) -> own Result<u64,Flag> pure {
+fn make_err(second: own Bool) -> own Result<u64, Flag> pure {
   match second {
     True() => {
       let second_atom_0001: own Flag = Second();
@@ -17,7 +20,7 @@ fn make_err (second: own Bool) -> own Result<u64,Flag> pure {
   }
 }
 
-fn result_code (result: own Result<u64,Flag>) -> own u64 pure {
+fn result_code(result: own Result<u64, Flag>) -> own u64 pure {
   match result {
     Ok(value: value) => {
       return value;
@@ -35,7 +38,7 @@ fn result_code (result: own Result<u64,Flag>) -> own u64 pure {
   }
 }
 
-fn make_some (second: own Bool) -> own Option<Flag> pure {
+fn make_some(second: own Bool) -> own Option<Flag> pure {
   match second {
     True() => {
       let second_atom_0003: own Flag = Second();
@@ -48,11 +51,11 @@ fn make_some (second: own Bool) -> own Option<Flag> pure {
   }
 }
 
-fn make_none () -> own Option<Flag> pure {
+fn make_none() -> own Option<Flag> pure {
   return None();
 }
 
-fn option_code (option: own Option<Flag>) -> own u64 pure {
+fn option_code(option: own Option<Flag>) -> own u64 pure {
   match option {
     None() => {
       return 30_u64;
@@ -70,16 +73,16 @@ fn option_code (option: own Option<Flag>) -> own u64 pure {
   }
 }
 
-fn main () -> own unit traps {
-  let ok: own Result<u64,Flag> = make_ok(value: 7_u64);
+fn main() -> own unit traps {
+  let ok: own Result<u64, Flag> = make_ok(value: 7_u64);
   let ok_code: own u64 = result_code(result: move ok);
   check ieq<u64>(ok_code, 7_u64) else trap "Ok payload drift";
   let false_atom_0005: own Bool = False();
-  let first_error: own Result<u64,Flag> = make_err(second: false_atom_0005);
+  let first_error: own Result<u64, Flag> = make_err(second: false_atom_0005);
   let first_code: own u64 = result_code(result: move first_error);
   check ieq<u64>(first_code, 10_u64) else trap "First payload drift";
   let true_atom_0006: own Bool = True();
-  let second_error: own Result<u64,Flag> = make_err(second: true_atom_0006);
+  let second_error: own Result<u64, Flag> = make_err(second: true_atom_0006);
   let second_code: own u64 = result_code(result: move second_error);
   check ieq<u64>(second_code, 20_u64) else trap "Second payload drift";
   let false_atom_0007: own Bool = False();

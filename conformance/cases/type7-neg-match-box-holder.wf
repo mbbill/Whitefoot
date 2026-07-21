@@ -1,9 +1,12 @@
-enum State { Ready(); }
+enum State {
+  Ready();
+}
 
-fn inspect (holder: own box<State>) -> own unit pure {
+fn inspect(holder: own box<State>) -> own unit pure {
   doc "TYPE-7: match requires the enum inside a box holder, written match deref(holder).";
   match holder {
-    Ready() => { }
+    Ready() => {
+    }
   }
   return unit;
 }

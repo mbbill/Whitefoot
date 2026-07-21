@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
 use whitefoot_contract::{
-    ByteOffset, DecodeError, EncodeError, KERNEL_SPEC_V0_8_HASH, SourceBundleError, SourceId,
-    SourceLimit, SourceLimits,
+    ByteOffset, DecodeError, EncodeError, SourceBundleError, SourceId, SourceLimit, SourceLimits,
 };
 use whitefoot_lexer::{LexCompilerFailure, LexLimit, LexOutcome, LexResourceFailure, LexStorage};
 
+use crate::ACTIVE_KERNEL_SPEC_HASH;
 use crate::protocol::{AdapterError, RESPONSE_MAGIC, RESPONSE_VERSION, read_request};
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -20,7 +20,7 @@ fn empty_binding() -> Vec<u8> {
     let mut binding = Vec::new();
     binding.extend_from_slice(b"WFSOURCE");
     binding.extend_from_slice(&1_u16.to_be_bytes());
-    binding.extend_from_slice(KERNEL_SPEC_V0_8_HASH.digest().as_bytes());
+    binding.extend_from_slice(ACTIVE_KERNEL_SPEC_HASH.digest().as_bytes());
     binding.extend_from_slice(&0_u64.to_be_bytes());
     binding
 }
@@ -148,7 +148,7 @@ fn magic_version_and_hard_profile_fail_before_payload_allocation() {
 #[test]
 fn empty_complete_response_has_one_exact_neutral_shape() {
     let bundle = whitefoot_contract::SourceBundle::with_limits(&[], SOURCE_LIMITS).unwrap();
-    let outcome = whitefoot_lexer::lex_v0_8(
+    let outcome = whitefoot_lexer::lex_v0_9(
         &bundle,
         whitefoot_lexer::LexLimits {
             max_sources: 8,
@@ -163,7 +163,7 @@ fn empty_complete_response_has_one_exact_neutral_shape() {
     let mut expected = Vec::new();
     expected.extend_from_slice(&RESPONSE_MAGIC);
     expected.extend_from_slice(&RESPONSE_VERSION.to_be_bytes());
-    expected.extend_from_slice(KERNEL_SPEC_V0_8_HASH.digest().as_bytes());
+    expected.extend_from_slice(ACTIVE_KERNEL_SPEC_HASH.digest().as_bytes());
     expected.push(0);
     expected.extend_from_slice(&0_u64.to_be_bytes());
     expected.extend_from_slice(&0_u32.to_be_bytes());
@@ -177,7 +177,10 @@ fn empty_bundle() -> whitefoot_contract::SourceBundle {
 fn payload(outcome: LexOutcome<'_>, bundle: &whitefoot_contract::SourceBundle) -> Vec<u8> {
     let response = crate::projection::encode_observation(bundle, outcome).unwrap();
     assert_eq!(&response[..8], b"WFLEXRSP");
-    assert_eq!(&response[10..42], KERNEL_SPEC_V0_8_HASH.digest().as_bytes());
+    assert_eq!(
+        &response[10..42],
+        ACTIVE_KERNEL_SPEC_HASH.digest().as_bytes()
+    );
     response[42..].to_vec()
 }
 
@@ -293,7 +296,7 @@ fn maximum_alternating_response_is_reserved_and_encoded_once() {
         limits,
     )
     .unwrap();
-    let outcome = whitefoot_lexer::lex_v0_8(
+    let outcome = whitefoot_lexer::lex_v0_9(
         &bundle,
         whitefoot_lexer::LexLimits {
             max_sources: 1,

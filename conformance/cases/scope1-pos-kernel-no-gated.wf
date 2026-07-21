@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "A conformant kernel program contains no gated constructs [SCOPE-1].";
   return unit;
 }

@@ -1,15 +1,15 @@
-fn dbl (x: own i32) -> own i32 traps {
+fn dbl(x: own i32) -> own i32 traps {
   doc "Leaf of the chain: doubles its argument [FN-1].";
   return iadd.trap<i32>(x, x);
 }
 
-fn quad (x: own i32) -> own i32 traps {
+fn quad(x: own i32) -> own i32 traps {
   doc "Middle of the chain: calls dbl twice through a temporary [FN-1].";
   let d: own i32 = dbl(x: x);
   return dbl(x: d);
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Three-deep call chain; each caller relies only on the callee signature [FN-1].";
   let q: own i32 = quad(x: 5_i32);
   check ieq<i32>(q, 20_i32) else trap "chain drift";

@@ -1,16 +1,16 @@
-fn guarded (x: own i32) -> own i32 traps {
+fn guarded(x: own i32) -> own i32 traps {
   doc "Declares traps and exhibits a check.";
   check ilt<i32>(x, 100_i32) else trap "range";
   return x;
 }
 
-fn f (x: own i32) -> own i32 pure {
+fn f(x: own i32) -> own i32 pure {
   doc "Declares pure but calls a traps fn [EFF-2] undeclared-but-exhibited.";
   let a: own i32 = guarded(x: x);
   return a;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Driver.";
   let a: own i32 = f(x: 7_i32);
   check ieq<i32>(a, 7_i32) else trap "x";

@@ -1,4 +1,7 @@
-"""Checker-core prototype (growing kernel-spec-v0.8 subset).
+"""Retained checker-core reference model for a kernel-spec-v0.8 subset.
+
+This focused historical model is not the active v0.9 compiler or a complete
+v0.9 semantic oracle. Its still-relevant judgments remain independent evidence.
 
 Implements the v0.6 ownership calculus (OWN-1..13 incl. the 2026-07-10 tag-only-copy
 amendment, CONST-2, GIVE-1, ERR-3 flow, EFF-1/2 rows-and-exhibits)

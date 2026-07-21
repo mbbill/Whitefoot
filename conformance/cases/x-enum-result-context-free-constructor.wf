@@ -1,6 +1,9 @@
-enum Flag { First(); Second(); }
+enum Flag {
+  First();
+  Second();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   let first_atom_0001: own Flag = First();
   match Err(error: first_atom_0001) {
     Ok(value: value) => {

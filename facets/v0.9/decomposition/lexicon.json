@@ -1,0 +1,161 @@
+{
+  "clauses": [
+    {
+      "byte_end": 17447,
+      "byte_start": 17341,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:LEX-1/surface-names-state-checked-invariants"
+      ],
+      "owner_rule": "LEX-1",
+      "sha256": "3fd8ddac322f5388afda964fe2544eb58fc03c039bb21abf42f2b3b63d3ff93f"
+    },
+    {
+      "byte_end": 17575,
+      "byte_start": 17447,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:LEX-1/backend-ir-vocabulary-excluded"
+      ],
+      "owner_rule": "LEX-1",
+      "sha256": "f81ff304e70fff502e56823a595ef4c88e0c8922794cd91ce034e8c863c3aebc"
+    },
+    {
+      "byte_end": 17701,
+      "byte_start": 17575,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:LEX-1/borrowed-names-require-divergence-census"
+      ],
+      "owner_rule": "LEX-1",
+      "sha256": "2aaff15f690f39f663b627e621e97bfdf5634a253c480297617ca5cc29a7a012"
+    },
+    {
+      "byte_end": 17782,
+      "byte_start": 17701,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:LEX-1/exclusive-borrow-name-uniq"
+      ],
+      "owner_rule": "LEX-1",
+      "sha256": "693c0648ce1c54cf3148383900c716349e07e2a2c47d13a54b784bf0bb2fd89e"
+    },
+    {
+      "byte_end": 17941,
+      "byte_start": 17782,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:LEX-1/exclusive-borrow-name-mut-excluded"
+      ],
+      "owner_rule": "LEX-1",
+      "sha256": "cb79585853db1a2e78bee464cabd038944625ea86cea4c822d1a384f504479c9"
+    },
+    {
+      "byte_end": 18098,
+      "byte_start": 17941,
+      "disposition": "explicitly-deferred",
+      "facet_ids": [],
+      "owner_rule": "LEX-1",
+      "sha256": "23d98d39550622dd24d013800c1262209082accd33b73fa02ac3d840d7c4bacb"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:LEX-1/backend-ir-vocabulary-excluded",
+      "owner_rule": "LEX-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEX-1"
+      ]
+    },
+    {
+      "id": "facet:LEX-1/borrowed-names-require-divergence-census",
+      "owner_rule": "LEX-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEX-1"
+      ]
+    },
+    {
+      "id": "facet:LEX-1/exclusive-borrow-name-mut-excluded",
+      "owner_rule": "LEX-1",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:LEX-1"
+      ]
+    },
+    {
+      "id": "facet:LEX-1/exclusive-borrow-name-uniq",
+      "owner_rule": "LEX-1",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:LEX-1"
+      ]
+    },
+    {
+      "id": "facet:LEX-1/surface-names-state-checked-invariants",
+      "owner_rule": "LEX-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEX-1"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "LEX-1"
+  ],
+  "schema": 1
+}

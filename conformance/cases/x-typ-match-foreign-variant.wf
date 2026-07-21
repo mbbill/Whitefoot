@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "A match on a Bool with a Some arm names a variant outside the scrutinee enum [TYPE-6].";
   let b: own Bool = True();
   match b {

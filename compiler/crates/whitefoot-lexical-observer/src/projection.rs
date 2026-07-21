@@ -1,9 +1,10 @@
-use whitefoot_contract::{KERNEL_SPEC_V0_8_HASH, SourceBundle, SourceId};
+use whitefoot_contract::{SourceBundle, SourceId};
 use whitefoot_lexer::{
     LexCompilerFailure, LexLimit, LexOutcome, LexResourceFailure, LexStorage, Lexeme,
     SourceIssueKind, TokenKind, TriviaKind,
 };
 
+use crate::ACTIVE_KERNEL_SPEC_HASH;
 use crate::protocol::{AdapterError, RESPONSE_MAGIC, RESPONSE_VERSION, ResponseEncoder};
 
 pub(crate) fn encode_observation(
@@ -14,7 +15,7 @@ pub(crate) fn encode_observation(
     let mut encoder = ResponseEncoder::with_capacity(response_length)?
         .bytes(&RESPONSE_MAGIC)?
         .u16(RESPONSE_VERSION)?
-        .bytes(KERNEL_SPEC_V0_8_HASH.digest().as_bytes())?;
+        .bytes(ACTIVE_KERNEL_SPEC_HASH.digest().as_bytes())?;
     encoder = match outcome {
         LexOutcome::Complete(lexed) => {
             let source_count =

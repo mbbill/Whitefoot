@@ -1,6 +1,6 @@
 const limit: i32 = 100_i32;
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "A named, immutable, program-lifetime const item [CONST-2].";
   return unit;
 }

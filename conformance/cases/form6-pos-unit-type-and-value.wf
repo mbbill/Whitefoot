@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "unit names the type in type position and the value in value position [FORM-6].";
   let u: own unit = unit;
   return unit;

@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-5: a second uniq borrow of an already-uniquely-borrowed place overlaps its predecessor.";
   let a: own i32 = 3_i32;
   region 'r {

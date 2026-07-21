@@ -11,19 +11,18 @@ authorization, gates, and stop conditions.
 
 ## Authority and handoff state
 
-[Kernel specification v0.8](spec/kernel-spec-v0.8.md), SHA-256
-`d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`,
-remains the immutable active specification and evidence baseline. Its recorded
-grammar and semantic contradictions block a production parser. Compiler code
-may not silently resolve them.
+[Kernel specification v0.9](spec/kernel-spec-v0.9.md), SHA-256
+`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`,
+is the immutable active specification and evidence baseline. Exact v0.8 and
+its version-bound evidence remain immutable history.
 
 The audited Rust-foundation handoff and standalone grammar-change verifier are
 complete. The verifier is outside the production compiler dependency graph. It
-reproduces exact-v0.8 and non-authoritative successor evidence, but it does not
-edit a numbered specification, change protected expectations, switch the active
-target, or authorize a parser. Phase 3 is the next conditional gate: the exact
-candidate bytes, hash, evidence, and impact census require advance owner review
-before any guarded installation.
+reported that the reviewed v0.9 bytes remove every v0.8 strong-LL(2) conflict
+without introducing one. The owner approved those exact bytes and the ordered
+protected migration; Phase 3 installed them without changing any expected
+verdict, runnable status, frozen oracle, or existing reference-semantics test.
+Phase 4's canonical frontend is now the next implementation phase.
 
 ## Production design
 
@@ -72,14 +71,15 @@ The safe-Rust foundation contains four narrowly scoped crates:
 The compiler-independent `grammar-verifier/` contains two deliberately
 independent engines: a safe-Rust strong-LL(2) auditor and a bounded Python
 generalized-parser Oracle. Their final common extraction ledger agrees byte for
-byte. Both registered dereference cases change from two derivations to one under
-the candidate terminal partition, with no introduced derivation or static
-intersection/conflict. This is review evidence, not specification authority.
+byte. Both registered dereference cases change from two v0.8 derivations to one
+v0.9 derivation, with no introduced derivation or static conflict. The numbered
+specification, not the verifier, is language authority.
 
-`SourceBundle` ordering is transport order, not normative multi-file or
-declaration-order semantics. The workspace has no production terminal
-classifier, parser, syntax authority, resolver, semantic kernel, checked
-artifact, backend, compiler executable, or release capability.
+Under PROG-2, one ordered nonempty `SourceBundle` forms one closed compilation
+unit. Record order fixes top-level declaration order; record paths contribute
+identity but never namespaces or lookup. The workspace still has no production
+terminal classifier, parser, syntax authority, resolver, semantic kernel,
+checked artifact, backend, compiler executable, or release capability.
 
 The compiler-independent conformance corpus, proof/code-shape premise corpus,
 focused reference models, and measured experiments remain active evidence.
@@ -112,13 +112,13 @@ scope, not general performance or product claims.
 | Purpose | Location |
 |---|---|
 | Current execution order and authorization | [THE-PLAN.md](THE-PLAN.md) |
-| Language specification | [spec/kernel-spec-v0.8.md](spec/kernel-spec-v0.8.md) |
-| Specification source index and semantic catalog | [facets/v0.8/](facets/v0.8/README.md) |
+| Language specification | [spec/kernel-spec-v0.9.md](spec/kernel-spec-v0.9.md) |
+| Specification source index and semantic catalog | [facets/v0.9/](facets/v0.9/README.md) |
 | Active Rust compiler workspace | [compiler/](compiler/README.md) |
 | Standalone grammar-change evidence | [grammar-verifier/](grammar-verifier/README.md) |
 | Project law and writer patterns | [CONSTITUTION.md](CONSTITUTION.md), [PATTERNS.md](PATTERNS.md) |
 | Compiler-independent behavior corpus | [conformance/](conformance/README.md) |
-| Compiler-independent lexical probes | [frontend-corpus/v0.8/](frontend-corpus/v0.8/README.md) |
+| Compiler-independent lexical probes | [frontend-corpus/v0.9/](frontend-corpus/v0.9/README.md) |
 | Proof/code-shape premise corpus | [codegen-corpus/](codegen-corpus/README.md) |
 | Focused reference semantics | [prototype/checker/](prototype/checker/) |
 | Measured evidence | [experiments/](experiments/README.md) |

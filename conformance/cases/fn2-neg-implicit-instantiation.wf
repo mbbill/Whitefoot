@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A generic op with no explicit instantiation argument [FN-2 violated].";
   let a: own i32 = iadd.trap(40_i32, 2_i32);
   return unit;

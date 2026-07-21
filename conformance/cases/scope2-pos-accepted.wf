@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "Accepted: parses, satisfies every rule, checks are carried [SCOPE-2].";
   let a: own i32 = 7_i32;
   return unit;

@@ -1,8 +1,12 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-13: let-initializer value-match; the taken arm's own result is moved exactly once.";
   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
-    Ok(value: w) => { give w; }
-    Err(error: e) => { return unit; }
+    Ok(value: w) => {
+      give w;
+    }
+    Err(error: e) => {
+      return unit;
+    }
   }
   check ieq<i32>(v, 42_i32) else trap "drift";
   return unit;

@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "An out-of-range integer literal is a hard error at check time [FORM-7].";
   let a: own i32 = 9999999999_i32;
   return unit;

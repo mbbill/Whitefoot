@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Value-match giving from a nested value-match: the outer Ok arm delivers by giving `inner`, itself bound by an inner Result match [PRE-1]; both matches are exhaustive [ERR-2] and every arm delivers [GIVE-1]. Runs to exit 0.";
   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
     Ok(value: w) => {

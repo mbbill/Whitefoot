@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-11: a borrow naming a region introduced inside the loop body is allowed.";
   let a: own i32 = 0_i32;
   loop @l {

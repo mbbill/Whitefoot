@@ -4,7 +4,7 @@
 PY=python3 -B
 
 check: project-state spec-guard spec facets catalog-identity capabilities lexical-model reference-model conformance grammar-evidence compiler
-	@echo "== DEVELOPMENT GATE GREEN; GRAMMAR EVIDENCE REPRODUCED; NO RELEASE CLAIM =="
+	@echo "== V0.9 DEVELOPMENT GATE GREEN; GRAMMAR EVIDENCE REPRODUCED; NO RELEASE CLAIM =="
 
 project-state:
 	$(PY) tools/test_verify_project_state.py
@@ -18,6 +18,7 @@ approve-spec:
 	$(PY) tools/spec_guard.py --approve --reason "$(REASON)"
 
 spec:
+	$(PY) tools/test_spec_ci.py
 	$(PY) tools/spec_ci.py
 
 facets:
@@ -26,7 +27,6 @@ facets:
 	$(PY) tools/test_semantic_catalog.py
 	$(PY) tools/semantic_catalog.py check
 	$(PY) tools/test_facet_discrepancies.py
-	$(PY) tools/test_v08_terminal_ident_audit.py
 	$(PY) tools/facet_discrepancies.py check
 
 catalog-identity:
@@ -38,17 +38,22 @@ capabilities:
 	$(PY) tools/capability_overlay.py check
 
 lexical-model:
+	# The v0.8 model remains executable, but its observer receipt is immutable:
+	# the active compiler accepts only exact-v0.9 requests.
 	$(PY) tools/test_v08_lexical_model.py
-	$(PY) tools/test_v08_lexical_observer.py
+	$(PY) tools/test_v09_lexical_model.py
+	$(PY) tools/test_v09_lexical_observer.py
 
 reference-model:
 	cd prototype/checker && $(PY) test_checker.py -v
 	cd prototype/checker && $(PY) modelcheck.py 10000
 
 conformance:
+	cd conformance && $(PY) test_runner.py
 	$(PY) conformance/runner.py coverage
 
 grammar-evidence:
+	cmp -s spec/kernel-spec-v0.9.md grammar-verifier/proposal/kernel-spec-successor-candidate.md
 	$(MAKE) -C grammar-verifier check
 
 compiler:
@@ -58,7 +63,7 @@ conformance-run:
 	$(PY) conformance/runner.py run
 
 release-check:
-	@echo "release gate unavailable: the exact-v0.8 Rust compiler is incomplete"
+	@echo "release gate unavailable: the exact-v0.9 Rust compiler is incomplete"
 	@false
 
 .PHONY: check project-state spec-guard approve-spec spec facets catalog-identity capabilities lexical-model reference-model conformance grammar-evidence compiler conformance-run release-check

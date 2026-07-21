@@ -20,6 +20,27 @@ import semantic_catalog_io
 CATALOG = semantic_catalog.build_from_files()
 CATALOG_BYTES = semantic_catalog.canonical_bytes(CATALOG)
 CATALOG_SHA256 = overlay.sha256(CATALOG_BYTES)
+EXPECTED_CATALOG_SHA256 = (
+    "3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae"
+)
+EXPECTED_SPECIFICATION_SHA256 = (
+    "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+)
+EXPECTED_DECOMPOSITION_SHA256 = (
+    "81cc67795feb9dfb9458df7987da44663b8d5ea034921a1c56322e2771e4310c"
+)
+HISTORICAL_V0_8_CATALOG_SHA256 = (
+    "2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d"
+)
+OPEN_DISCREPANCY_IDS = (
+    "discrepancy:v0.9/affine-deref-storage-lifecycle",
+    "discrepancy:v0.9/diag3-retained-proof-ref",
+    "discrepancy:v0.9/eff1-row-canonicality",
+    "discrepancy:v0.9/eff2-local-region-effects",
+    "discrepancy:v0.9/fn3-contract-member-semantics",
+    "discrepancy:v0.9/fn7-main-return-spelling",
+    "discrepancy:v0.9/op1-dotless-reservation",
+)
 SIDECAR_RAW = discrepancy_inputs.read_regular(
     discrepancy_inputs.ROOT,
     facet_discrepancies.SIDECAR_PATH,
@@ -80,11 +101,23 @@ def target_handlers() -> list[dict]:
 
 class LiveFoundationTests(unittest.TestCase):
     def test_live_overlay_is_honestly_empty_and_exactly_bound(self) -> None:
+        self.assertEqual(CATALOG_SHA256, EXPECTED_CATALOG_SHA256)
+        self.assertEqual(
+            CATALOG["specification"],
+            {
+                "path": "spec/kernel-spec-v0.9.md",
+                "sha256": EXPECTED_SPECIFICATION_SHA256,
+                "version": "0.9",
+            },
+        )
+        self.assertEqual(
+            CATALOG["decomposition_sha256"], EXPECTED_DECOMPOSITION_SHA256
+        )
         report = overlay.audit_repository()
-        self.assertEqual(len(report.facets), 587)
+        self.assertEqual(len(report.facets), 679)
         self.assertEqual(report.closed_facet_ids, ())
-        self.assertEqual(len(report.blocked_facet_ids), 49)
-        self.assertEqual(len(report.open_discrepancy_ids), 15)
+        self.assertEqual(len(report.blocked_facet_ids), 16)
+        self.assertEqual(report.open_discrepancy_ids, OPEN_DISCREPANCY_IDS)
         self.assertEqual(report.unresolved_receipt_ids, ())
 
     def test_live_fragment_has_no_verdict_or_claim(self) -> None:
@@ -115,8 +148,23 @@ class LiveFoundationTests(unittest.TestCase):
         self.assertFalse(state.is_closed)
         self.assertEqual(
             state.blocking_discrepancy_ids,
-            ("discrepancy:v0.8/diag3-retained-proof-ref",),
+            ("discrepancy:v0.9/diag3-retained-proof-ref",),
         )
+
+    def test_v0_8_fragment_remains_immutable_historical_evidence(self) -> None:
+        records = semantic_catalog_io.read_fragment_directory(
+            overlay.ROOT,
+            ("capabilities", "whitefoot-rust", "v0.8"),
+            label="historical v0.8 capability overlay",
+            max_count=overlay.MAX_FRAGMENT_COUNT,
+            max_file_bytes=overlay.MAX_FRAGMENT_BYTES,
+            max_total_bytes=overlay.MAX_FRAGMENT_TOTAL_BYTES,
+        )
+        self.assertEqual([name for name, _ in records], ["foundation.json"])
+        document = overlay.parse_fragment_bytes(records[0][1], "historical fragment")
+        expected = fragment()
+        expected["catalog_sha256"] = HISTORICAL_V0_8_CATALOG_SHA256
+        self.assertEqual(document, expected)
 
 
 class FailClosedEvidenceTests(unittest.TestCase):
@@ -237,7 +285,7 @@ class ClosedSchemaTests(unittest.TestCase):
         changed_sidecar["records"].append(
             {
                 "affected_facet_ids": [TARGET_FACET],
-                "id": "discrepancy:v0.8/zz-test-boundary",
+                "id": "discrepancy:v0.9/zz-test-boundary",
             }
         )
         with self.assertRaisesRegex(overlay.CapabilityOverlayError, "discrepancy-blocked"):
@@ -285,7 +333,7 @@ class DescriptorAndResourceTests(unittest.TestCase):
             root = Path(directory)
             parent = root / "capabilities" / "whitefoot-rust"
             parent.mkdir(parents=True)
-            (parent / "v0.8").symlink_to(
+            (parent / "v0.9").symlink_to(
                 overlay.ROOT.joinpath(*overlay.FRAGMENT_DIRECTORY),
                 target_is_directory=True,
             )

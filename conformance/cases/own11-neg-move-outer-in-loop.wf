@@ -1,13 +1,20 @@
-enum Sign { Neg(mag: i32); Zero(); Pos(); }
+enum Sign {
+  Neg(mag: i32);
+  Zero();
+  Pos();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-11: a binding declared outside a loop may not be moved inside it.";
   let s: own Sign = Pos();
   loop @l {
     match s {
-      Neg(mag: m) => { }
-      Zero() => { }
-      Pos() => { }
+      Neg(mag: m) => {
+      }
+      Zero() => {
+      }
+      Pos() => {
+      }
     }
     break @l;
   }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused hostile tests for the exact-v0.8 discrepancy-sidecar contract."""
+"""Focused hostile tests for the exact-v0.9 discrepancy-sidecar contract."""
 
 from __future__ import annotations
 
@@ -19,28 +19,14 @@ import semantic_catalog
 import semantic_catalog_io
 
 
-SYNTHETIC_FACETS = {
-    "FN-7": "facet:FN-7/main-return-spelling",
-    "GRAM-1": "facet:GRAM-1/production-node-bijection",
-    "GRAM-7": "facet:GRAM-7/shared-match-node-kind",
-    "OP-1": "facet:OP-1/dotless-operation-reservation",
-}
 EXPECTED_OPEN_IDS = (
-    "discrepancy:v0.8/affine-deref-storage-lifecycle",
-    "discrepancy:v0.8/diag1-pre-tree-node-path",
-    "discrepancy:v0.8/diag3-retained-proof-ref",
-    "discrepancy:v0.8/eff1-row-canonicality",
-    "discrepancy:v0.8/eff2-local-region-effects",
-    "discrepancy:v0.8/fn3-contract-member-semantics",
-    "discrepancy:v0.8/fn4-law-admission",
-    "discrepancy:v0.8/fn7-main-return-spelling",
-    "discrepancy:v0.8/fn8-reserved-rule-attribution",
-    "discrepancy:v0.8/form2-protected-conformance-spacing",
-    "discrepancy:v0.8/form4-doc-cross-reference",
-    "discrepancy:v0.8/form5-form7-float-canonical-spelling",
-    "discrepancy:v0.8/gram-terminal-ident-partition",
-    "discrepancy:v0.8/gram1-gram7-match-node-bijection",
-    "discrepancy:v0.8/op1-dotless-reservation",
+    "discrepancy:v0.9/affine-deref-storage-lifecycle",
+    "discrepancy:v0.9/diag3-retained-proof-ref",
+    "discrepancy:v0.9/eff1-row-canonicality",
+    "discrepancy:v0.9/eff2-local-region-effects",
+    "discrepancy:v0.9/fn3-contract-member-semantics",
+    "discrepancy:v0.9/fn7-main-return-spelling",
+    "discrepancy:v0.9/op1-dotless-reservation",
 )
 
 
@@ -92,7 +78,7 @@ def make_test_catalog(
     facets = []
     for record in missing_rules:
         owner = record["rule_id"]
-        facet_id = SYNTHETIC_FACETS.get(owner, f"facet:{owner}/test-contract")
+        facet_id = f"facet:{owner}/test-contract"
         facets.append(
             {
                 "id": facet_id,
@@ -152,7 +138,7 @@ def load_live_fragments() -> list[dict]:
     """Read and parse the actual checked-in decomposition fragments."""
     records = semantic_catalog_io.read_fragment_directory(
         semantic_catalog.ROOT,
-        ("facets", "v0.8", "decomposition"),
+        ("facets", "v0.9", "decomposition"),
         max_count=semantic_catalog.MAX_FRAGMENT_COUNT,
         max_file_bytes=semantic_catalog.MAX_FRAGMENT_BYTES,
         max_total_bytes=semantic_catalog.MAX_FRAGMENT_TOTAL_BYTES,
@@ -188,7 +174,7 @@ class PinnedPredicateTests(unittest.TestCase):
 
     def test_op1_set_predicate_pins_exact_evidence(self) -> None:
         evidence = self.by_id[
-            "discrepancy:v0.8/op1-dotless-reservation"
+            "discrepancy:v0.9/op1-dotless-reservation"
         ]["evidence"]
         self.assertEqual(evidence["operation_row_count"], 44)
         self.assertEqual(evidence["operation_name_occurrence_count"], 84)
@@ -197,172 +183,8 @@ class PinnedPredicateTests(unittest.TestCase):
         self.assertEqual(evidence["table_only_count"], 31)
         self.assertEqual(evidence["listed_only_count"], 0)
 
-    def test_form2_pins_grammar_complete_protected_census(self) -> None:
-        evidence = self.by_id[
-            "discrepancy:v0.8/form2-protected-conformance-spacing"
-        ]["evidence"]
-        self.assertEqual(evidence["protected_source_count"], 293)
-        self.assertEqual(evidence["protected_manifested_source_count"], 292)
-        self.assertEqual(evidence["protected_unmanifested_source_count"], 1)
-        self.assertEqual(evidence["direct_function_declaration_count"], 400)
-        self.assertEqual(
-            evidence["manifested_direct_function_declaration_count"], 399
-        )
-        self.assertEqual(
-            evidence["unmanifested_direct_function_declaration_count"], 1
-        )
-        self.assertEqual(evidence["single_space_declaration_count"], 398)
-        self.assertEqual(
-            evidence["manifested_single_space_declaration_count"], 397
-        )
-        self.assertEqual(
-            evidence["unmanifested_single_space_declaration_count"], 1
-        )
-        self.assertEqual(evidence["attached_declaration_count"], 2)
-        self.assertEqual(
-            evidence["protected_source_files_with_single_space_count"], 291
-        )
-        self.assertEqual(
-            evidence["protected_manifested_source_files_with_single_space_count"],
-            290,
-        )
-        self.assertEqual(
-            evidence[
-                "protected_unmanifested_source_files_with_single_space_count"
-            ],
-            1,
-        )
-        self.assertEqual(
-            evidence["manifested_runnable_other_expectation_count"], 274
-        )
-        self.assertEqual(
-            evidence["manifested_pending_source_files_with_single_space_count"],
-            14,
-        )
-        self.assertEqual(
-            evidence["manifested_runnable_source_files_with_single_space_count"],
-            276,
-        )
-        self.assertEqual(
-            evidence["manifested_expected_form2_rejection_count"], 2
-        )
-        self.assertEqual(
-            evidence["protected_source_inventory_sha256"],
-            "944773a3012e40d529f33b1bfe4d9069a11eb0c365ae938e27d58977830c9700",
-        )
-        self.assertEqual(
-            evidence["protected_census_sha256"],
-            "61fe48b74371fd2ea476cc901db8d30ce07921ffa4ce30ba9c32577a6394beb5",
-        )
-        self.assertEqual(
-            evidence["unmanifested_protected_sources"],
-            [
-                {
-                    "direct_function_declarations": [
-                        {
-                            "line": 3,
-                            "line_sha256": (
-                                "e58d474de015a09840860e8f233684239"
-                                "005a29ace4a3ba58c17903fdd13326e"
-                            ),
-                            "name_bytes_hex": "6d61696e",
-                            "spacing": "single-space",
-                        }
-                    ],
-                    "manifest": None,
-                    "path": authority.LEGACY_ORPHAN_PATH,
-                    "sha256": authority.LEGACY_ORPHAN_SHA256,
-                }
-            ],
-        )
-
-    def test_form4_predicate_pins_citation_and_indexed_owner(self) -> None:
-        evidence = self.by_id[
-            "discrepancy:v0.8/form4-doc-cross-reference"
-        ]["evidence"]
-        self.assertEqual(evidence["form4_cited_owner"], "GRAM-3")
-        self.assertEqual(evidence["doc_production_owner"], "GRAM-2")
-        self.assertEqual(
-            evidence["doc_production_source"]["sha256"],
-            "62075dc6f83e384ce0bea4df8876944089e916f855f9e78b315d02c34e3fccb1",
-        )
-
-    def test_float_record_blocks_form_and_meta_facets(self) -> None:
-        record = self.by_id[
-            "discrepancy:v0.8/form5-form7-float-canonical-spelling"
-        ]
-        self.assertEqual(
-            record["affected_facet_ids"],
-            [
-                "facet:FORM-1/noncanonical-input-rejected",
-                "facet:FORM-1/one-byte-format",
-                "facet:FORM-1/one-spelling-per-construct",
-                "facet:FORM-1/toolchain-does-not-autoformat",
-                "facet:FORM-5/float-lowercase-exponent",
-                "facet:FORM-5/float-no-leading-zeros",
-                "facet:FORM-5/float-required-integer-and-fraction-digits",
-                "facet:FORM-5/float-shortest-rne-roundtrip",
-                "facet:META-1/one-spelling-enforcement",
-            ],
-        )
-        evidence = record["evidence"]
-        self.assertEqual(evidence["form5_source"]["byte_start"], 9125)
-        self.assertEqual(evidence["form5_source"]["byte_end"], 9325)
-        self.assertEqual(evidence["form7_source"]["byte_start"], 11240)
-        self.assertEqual(evidence["form7_source"]["byte_end"], 11357)
-
-    def test_float_record_covers_every_facet_mapped_from_conflicting_sentence(self) -> None:
-        catalog = semantic_catalog.parse_strict_json(CATALOG, "test catalog")
-        clause = next(
-            item
-            for item in catalog["clauses"]
-            if item["owner_rule"] == "FORM-5"
-            and item["byte_start"] == 9125
-            and item["byte_end"] == 9325
-        )
-        affected = set(
-            self.by_id[
-                "discrepancy:v0.8/form5-form7-float-canonical-spelling"
-            ]["affected_facet_ids"]
-        )
-        self.assertEqual(set(clause["facet_ids"]) - affected, set())
-
-    def test_form5_cross_reference_does_not_duplicate_form7_verdict_ownership(self) -> None:
-        catalog = semantic_catalog.parse_strict_json(CATALOG, "test catalog")
-        facets = {item["id"]: item for item in catalog["facets"]}
-        dependency = facets[
-            "facet:FORM-5/integer-sign-and-range-governed-by-form7"
-        ]
-        self.assertEqual(
-            dependency["required_evidence"],
-            ["artifact-valid", "artifact-hostile", "static-audit"],
-        )
-        self.assertEqual(
-            dependency["required_lanes"], ["checker", "artifact", "verifier"]
-        )
-        self.assertNotIn("facet:FORM-5/integer-negative-signed-only", facets)
-        self.assertNotIn("facet:FORM-5/integer-signed-range", facets)
-
-    def test_gram1_gram7_bijection_conflict_is_exact(self) -> None:
-        record = self.by_id[
-            "discrepancy:v0.8/gram1-gram7-match-node-bijection"
-        ]
-        self.assertEqual(
-            record["affected_facet_ids"],
-            [
-                "facet:GRAM-1/production-node-bijection",
-                "facet:GRAM-7/shared-match-node-kind",
-                "facet:META-1/production-node-bijection-enforcement",
-            ],
-        )
-        evidence = record["evidence"]
-        self.assertEqual(evidence["gram1_source"]["byte_start"], 12268)
-        self.assertEqual(evidence["gram1_source"]["byte_end"], 12345)
-        self.assertEqual(evidence["gram7_source"]["byte_start"], 16129)
-        self.assertEqual(evidence["gram7_source"]["byte_end"], 16205)
-
     def test_fn7_predicate_pins_grammar_rule_and_example_spans(self) -> None:
-        record = self.by_id["discrepancy:v0.8/fn7-main-return-spelling"]
+        record = self.by_id["discrepancy:v0.9/fn7-main-return-spelling"]
         evidence = record["evidence"]
         self.assertEqual(evidence["fn_decl_return_nonterminal"], "rtype")
         self.assertEqual(evidence["rtype_shape"], "mode type")
@@ -378,105 +200,56 @@ class PinnedPredicateTests(unittest.TestCase):
             ],
         )
 
-    def test_new_internal_gaps_block_only_the_reviewed_facets(self) -> None:
+    def test_registered_gaps_block_only_the_reviewed_facets(self) -> None:
         expected = {
-            "discrepancy:v0.8/affine-deref-storage-lifecycle": [
+            "discrepancy:v0.9/affine-deref-storage-lifecycle": [
                 "facet:STOR-3/deallocation-compiler-derived",
                 "facet:STOR-3/drop-and-arena-release-artifact-operations",
             ],
-            "discrepancy:v0.8/diag3-retained-proof-ref": [
+            "discrepancy:v0.9/diag3-retained-proof-ref": [
                 "facet:DIAG-3/check-report-schema",
             ],
-            "discrepancy:v0.8/diag1-pre-tree-node-path": [
-                "facet:DIAG-1/node-path-attribution",
-            ],
-            "discrepancy:v0.8/eff1-row-canonicality": [
+            "discrepancy:v0.9/eff1-row-canonicality": [
                 "facet:EFF-1/canonical-effect-order",
                 "facet:EFF-1/effect-row-grammar",
             ],
-            "discrepancy:v0.8/eff2-local-region-effects": [
+            "discrepancy:v0.9/eff2-local-region-effects": [
                 "facet:EFF-2/effect-row-bidirectional-exactness",
                 "facet:EFF-2/syntactic-effect-exhibit-closure",
                 "facet:EX-1/byte-exact-canonical-program",
                 "facet:FN-7/main-effect-ceiling",
             ],
-            "discrepancy:v0.8/fn3-contract-member-semantics": [
+            "discrepancy:v0.9/fn3-contract-member-semantics": [
                 "facet:FN-3/contract-member-checking-boundary",
                 "facet:FN-5/behavior-parameterization",
                 "facet:FN-5/env-struct-direct-calls",
             ],
-            "discrepancy:v0.8/fn4-law-admission": [
-                "facet:FN-4/optimizer-law-fact-admission",
+            "discrepancy:v0.9/fn7-main-return-spelling": [
+                "facet:EX-1/byte-exact-canonical-program",
+                "facet:FN-7/main-return-spelling",
+                "facet:GRAM-2/function-and-contract-declaration-shapes",
+                "facet:GRAM-3/return-mode-type-shape",
             ],
-            "discrepancy:v0.8/fn8-reserved-rule-attribution": [
-                "facet:FN-8/keyword-reserved",
-                "facet:FORM-3/ident-lexical-class",
-            ],
-            "discrepancy:v0.8/gram-terminal-ident-partition": [
-                "facet:FORM-3/ident-lexical-class",
-                "facet:FORM-6/unit-grammar-positions-disjoint",
-                "facet:FORM-6/unit-lowercase-keyword",
-                "facet:FORM-6/unit-production-local-resolution",
-                "facet:FORM-6/unit-token-type-position",
-                "facet:FORM-6/unit-token-value-position",
-                "facet:GRAM-1/deterministic-single-parse",
-                "facet:GRAM-1/two-token-overlap-resolution",
-                "facet:GRAM-3/constant-value-tree-shape",
-                "facet:GRAM-3/type-argument-shapes",
-                "facet:GRAM-5/atom-form-closed-set",
-                "facet:GRAM-5/call-and-callee-shapes",
-                "facet:GRAM-5/expression-form-closed-set",
-                "facet:GRAM-5/place-chain-shapes",
-                "facet:GRAM-6/index-place-only",
-                "facet:META-2/context-independent-spellings",
+            "discrepancy:v0.9/op1-dotless-reservation": [
+                "facet:OP-1/dotless-operation-reservation",
             ],
         }
+        self.assertEqual(set(self.by_id), set(expected))
         for identifier, facets in expected.items():
             with self.subTest(identifier=identifier):
                 self.assertEqual(self.by_id[identifier]["affected_facet_ids"], facets)
 
-    def test_diag1_pre_tree_location_gap_is_exactly_anchored(self) -> None:
-        record = self.by_id["discrepancy:v0.8/diag1-pre-tree-node-path"]
-        self.assertEqual(record["class"], "internal-specification-gap")
-        self.assertEqual(
-            record["resolution_authorities"],
-            ["successor-numbered-specification"],
-        )
-        evidence = record["evidence"]
-        self.assertEqual(
-            evidence["missing_contract"],
-            "pre-canonical-tree-rejection-location-representation",
-        )
-        self.assertEqual(
-            evidence["scope2_parse_requirement_source"]["byte_start"],
-            6621,
-        )
-        self.assertEqual(
-            evidence["diag1_universal_path_source"]["byte_end"],
-            58633,
-        )
-
-    def test_new_protected_conflicts_pin_exact_case_expectations(self) -> None:
+    def test_protected_conflicts_pin_exact_case_expectations(self) -> None:
         expected = {
-            "discrepancy:v0.8/eff1-row-canonicality": (
+            "discrepancy:v0.9/eff1-row-canonicality": (
                 "x-eff-dup-reads-effect",
                 {"kind": "reject", "rule": "EFF-1"},
-                "6b3fdf57da232086c693c382549332d5a090ce0741aeb2cb0aee90459ffd74e5",
+                "fc1260d3d3bf3ef5fa0e55207e02b15e8a588dee69bca39aea4b66e3ea6e5521",
             ),
-            "discrepancy:v0.8/eff2-local-region-effects": (
+            "discrepancy:v0.9/eff2-local-region-effects": (
                 "stor4-pos-arena-confined",
                 {"exit": 0, "kind": "run"},
-                "fa0d1c15f32c5f2f4f26a3b5132d0fffe4d2365ef64d824e3b24995f4199a977",
-            ),
-            "discrepancy:v0.8/fn4-law-admission": (
-                "fn4-neg-law-undischarged",
-                {"kind": "reject", "rule": "FN-4"},
-                "5959185a75c17ac79c5fb336cb728873b6db8bd83b7174ae05bfd05460fb851a",
-            ),
-            "discrepancy:v0.8/fn8-reserved-rule-attribution": (
-                "form3-neg-requires-binding",
-                {"kind": "reject", "rule": "FORM-3"},
-                "18814d0b53a94300fe6e13f5ac1ea0cba45ac473ed2d05d4ec90a694291fedfe",
+                "e3a3a7c5930c82de534781bc2a988c467b34cbc421fdc8cf0ffbcabdf9fd1ba0",
             ),
         }
         for identifier, (case_id, expectation, digest) in expected.items():
@@ -486,17 +259,17 @@ class PinnedPredicateTests(unittest.TestCase):
                 self.assertEqual(case["manifest"]["expect"], expectation)
                 self.assertEqual(case["sha256"], digest)
 
-    def test_new_gap_evidence_is_exactly_anchored(self) -> None:
+    def test_gap_evidence_is_exactly_anchored(self) -> None:
         lifecycle = self.by_id[
-            "discrepancy:v0.8/affine-deref-storage-lifecycle"
+            "discrepancy:v0.9/affine-deref-storage-lifecycle"
         ]["evidence"]
-        self.assertEqual(lifecycle["type7_affine_move_source"]["byte_start"], 23112)
-        self.assertEqual(lifecycle["stor3_derived_drop_source"]["byte_end"], 35072)
+        self.assertEqual(lifecycle["type7_affine_move_source"]["byte_start"], 33999)
+        self.assertEqual(lifecycle["stor3_derived_drop_source"]["byte_end"], 45977)
         report = self.by_id[
-            "discrepancy:v0.8/diag3-retained-proof-ref"
+            "discrepancy:v0.9/diag3-retained-proof-ref"
         ]["evidence"]
-        self.assertEqual(report["report_header_source"]["byte_start"], 59223)
-        self.assertEqual(report["check_report_row_source"]["byte_end"], 59549)
+        self.assertEqual(report["report_header_source"]["byte_start"], 93668)
+        self.assertEqual(report["check_report_row_source"]["byte_end"], 93994)
 
     def test_records_have_closed_non_authorizing_fields(self) -> None:
         self.assertEqual(tuple(sorted(self.by_id)), EXPECTED_OPEN_IDS)
@@ -514,136 +287,44 @@ class PinnedPredicateTests(unittest.TestCase):
             )
 
 
-class Form2ScannerTests(unittest.TestCase):
-    """Cover every fn_decl head form and the bounded linear audit."""
-
-    def test_plain_generic_region_and_combined_heads(self) -> None:
-        cases = {
-            b"fn plain () -> own unit pure {\n": (b"plain", "single-space"),
-            b"fn generic<T: Int> () -> own unit pure {\n": (
-                b"generic",
-                "single-space",
-            ),
-            b"fn region ['r] () -> own unit pure {\n": (
-                b"region",
-                "single-space",
-            ),
-            b"fn both<T: Int> ['r] () -> own unit pure {\n": (
-                b"both",
-                "single-space",
-            ),
-            b"fn attached<T>['r]() -> own unit pure {\n": (
-                b"attached",
-                "attached",
-            ),
-        }
-        for line, expected in cases.items():
-            with self.subTest(line=line):
-                self.assertEqual(predicates.scan_direct_fn_head(line), expected)
-
-    def test_lexically_invalid_name_still_exposes_form2_spacing(self) -> None:
-        line = (authority.CASE_ROOT / "form3-neg-typeid-fn-name.wf").read_bytes()
-        self.assertEqual(
-            predicates.scan_direct_fn_head(line.splitlines(keepends=True)[0]),
-            (b"Main", "single-space"),
-        )
-        self.assertEqual(
-            predicates.scan_direct_fn_head(b"fn \xff () -> own unit pure {\n"),
-            (b"\xff", "single-space"),
-        )
-
-    def test_doc_and_indented_near_misses_do_not_match(self) -> None:
-        for line in (
-            b'  doc "fn ghost<T> () is documentation";\n',
-            b"  fn indented<T> () -> own unit pure {\n",
-            b"fn broken<T () -> own unit pure {\n",
-        ):
-            with self.subTest(line=line):
-                self.assertIsNone(predicates.scan_direct_fn_head(line))
-
-    def test_line_numbers_are_linear_and_exact(self) -> None:
-        manifest = (
-            b'{"expect":{"exit":0,"kind":"run"},"id":"synthetic",'
-            b'"rules":["FORM-2"],"status":"runnable"}\n'
-        )
-        source = (
-            b"fn plain () -> own unit pure {\n}\n"
-            b"fn generic<T> () -> own unit pure {\n}\n"
-            b"fn region ['r] () -> own unit pure {\n}\n"
-        )
-        records = predicates.scan_case_declarations(
-            source,
-            "conformance/cases/synthetic.wf",
-        )
-        self.assertEqual([record["line"] for record in records], [1, 3, 5])
-        self.assertEqual(
-            [record["name_bytes_hex"] for record in records],
-            ["706c61696e", "67656e65726963", "726567696f6e"],
-        )
-
-    def test_per_case_and_aggregate_declaration_caps_fail_before_append(self) -> None:
-        manifest = (
-            b'{"expect":{"exit":0,"kind":"run"},"id":"synthetic",'
-            b'"rules":["FORM-2"],"status":"runnable"}\n'
-        )
-        source = b"fn one ()\nfn two ()\n"
-        cases = {"conformance/cases/synthetic.wf": source}
-        with mock.patch.object(predicates, "MAX_DECLARATIONS_PER_CASE", 1):
-            with self.assertRaisesRegex(predicates.DiscrepancyError, "declarations"):
-                predicates.observe_form2(manifest, cases, enforce_pins=False)
-        with mock.patch.object(predicates, "MAX_DECLARATIONS_TOTAL", 1):
-            with self.assertRaisesRegex(predicates.DiscrepancyError, "corpus"):
-                predicates.observe_form2(manifest, cases, enforce_pins=False)
-
-
 class ProtectedSurfaceTests(unittest.TestCase):
-    """Ignore additions while preserving every baseline-bound expectation."""
+    """Ignore additions while preserving baseline-bound active evidence."""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.inputs = authority.load_authorities()
-        cls.base = predicates.observe_form2(
+        cls.base = predicates.observe_eff1_row_canonicality(
+            cls.inputs.specification,
             cls.inputs.manifest,
             cls.inputs.case_sources,
-            protected_surface=cls.inputs.protected_conformance,
+            cls.inputs.protected_conformance,
         )
 
     def test_additive_manifest_case_does_not_expand_or_change_audit(self) -> None:
         manifest = self.inputs.manifest + (
-            b'{"expect":{"exit":0,"kind":"run"},"id":"additive-form2",'
-            b'"rules":["FORM-2"],"status":"runnable"}\n'
+            b'{"expect":{"exit":0,"kind":"run"},"id":"additive-eff1",'
+            b'"rules":["EFF-1"],"status":"runnable"}\n'
         )
-        observation = predicates.observe_form2(
+        observation = predicates.observe_eff1_row_canonicality(
+            self.inputs.specification,
             manifest,
             self.inputs.case_sources,
-            protected_surface=self.inputs.protected_conformance,
+            self.inputs.protected_conformance,
         )
         self.assertEqual(observation, self.base)
 
     def test_protected_case_mutation_fails_against_baseline(self) -> None:
         cases = dict(self.inputs.case_sources)
-        path = "conformance/cases/form2-pos-canonical-bytes.wf"
+        path = "conformance/cases/x-eff-dup-reads-effect.wf"
         cases[path] += b"\n"
         with self.assertRaisesRegex(
             predicates.DiscrepancyError, "protected conformance entry changed"
         ):
-            predicates.observe_form2(
+            predicates.observe_eff1_row_canonicality(
+                self.inputs.specification,
                 self.inputs.manifest,
                 cases,
-                protected_surface=self.inputs.protected_conformance,
-            )
-
-    def test_legacy_orphan_mutation_fails_its_exact_pin(self) -> None:
-        cases = dict(self.inputs.case_sources)
-        cases[authority.LEGACY_ORPHAN_PATH] += b"\n"
-        with self.assertRaisesRegex(
-            predicates.DiscrepancyError, "legacy protected orphan source changed"
-        ):
-            predicates.observe_form2(
-                self.inputs.manifest,
-                cases,
-                protected_surface=self.inputs.protected_conformance,
-                enforce_pins=False,
+                self.inputs.protected_conformance,
             )
 
 
@@ -705,24 +386,24 @@ class CatalogAndRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(discrepancies.DiscrepancyError, "static catalog"):
             discrepancies.build_sidecar(dummy)
 
-        catalog_without_form4 = make_test_catalog(
+        catalog_without_diag3 = make_test_catalog(
             {
-                "facet:FORM-4/documentation-field-only":
-                    "facet:FORM-4/test-contract"
+                "facet:DIAG-3/check-report-schema":
+                    "facet:DIAG-3/test-contract"
             }
         )
         with self.assertRaisesRegex(discrepancies.DiscrepancyError, "unknown facets"):
-            discrepancies.build_sidecar(catalog_without_form4)
+            discrepancies.build_sidecar(catalog_without_diag3)
 
-        catalog_without_terminal_partition = make_test_catalog(
+        catalog_without_fn7 = make_test_catalog(
             {
-                "facet:GRAM-1/deterministic-single-parse": (
-                    "facet:GRAM-1/test-determinism"
+                "facet:FN-7/main-return-spelling": (
+                    "facet:FN-7/test-main-return"
                 )
             }
         )
         with self.assertRaisesRegex(discrepancies.DiscrepancyError, "unknown facets"):
-            discrepancies.build_sidecar(catalog_without_terminal_partition)
+            discrepancies.build_sidecar(catalog_without_fn7)
 
     def test_catalog_hash_or_normalized_content_substitution_fails(self) -> None:
         value = semantic_catalog.parse_strict_json(CATALOG, "catalog")
@@ -741,7 +422,7 @@ class CatalogAndRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(predicates.DiscrepancyError, "differ"):
             predicates.validate_registry(missing)
         extra = dict(observations)
-        extra["discrepancy:v0.8/unregistered"] = predicates.Observation(False, {})
+        extra["discrepancy:v0.9/unregistered"] = predicates.Observation(False, {})
         with self.assertRaisesRegex(predicates.DiscrepancyError, "differ"):
             predicates.validate_registry(extra)
 
@@ -817,7 +498,7 @@ class StrictValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(discrepancies.DiscrepancyError, "sorted"):
             self.validate(reordered)
         unregistered = copy.deepcopy(self.document)
-        unregistered["records"][0]["id"] = "discrepancy:v0.8/invented"
+        unregistered["records"][0]["id"] = "discrepancy:v0.9/invented"
         with self.assertRaisesRegex(discrepancies.DiscrepancyError, "unregistered"):
             self.validate(unregistered)
 

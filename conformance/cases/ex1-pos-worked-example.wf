@@ -1,4 +1,8 @@
-enum Sign { Neg(); Zero(); Pos(); }
+enum Sign {
+  Neg();
+  Zero();
+  Pos();
+}
 
 fn sign_of(x: own i32) -> own Sign pure {
   doc "Conditional value produced by returning from arms (canonical for return position).";

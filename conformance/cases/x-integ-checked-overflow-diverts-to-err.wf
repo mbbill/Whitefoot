@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Checked arithmetic feeding a match: an i32 overflow diverts to the Err arm (bound via give), and the recovered sentinel then feeds a second compare-match, so overflow is handled as defined behavior, never UB [OP-1, GIVE-1, OWN-13, SCOPE-3].";
   let sum: own i32 = match iadd.checked<i32>(2000000000_i32, 200000000_i32) {
     Ok(value: w) => {

@@ -1,11 +1,12 @@
 # Grammar-change verifier
 
-This directory contains the standalone Phase 2 evidence tool. It is outside
-the production compiler workspace, and normal compilation neither links nor
-invokes it.
+This directory contains the standalone grammar-change evidence tool, the
+immutable Phase 2 owner-review packet, and the separate installed-v0.9
+reproduction. It is outside the production compiler workspace, and normal
+compilation neither links nor invokes it.
 
-The tool compares exact v0.8 bytes with a full, non-authoritative successor
-candidate. Two engines independently extract the specification grammar:
+The tool compares exact v0.8 bytes with the exact successor bytes that became
+v0.9. Two engines independently extract the specification grammar:
 
 - `static-auditor/` is safe Rust. It computes terminal intersections,
   nullable, `FIRST_2`, `FOLLOW_2`, exact strong-LL(2) decision collisions, and
@@ -19,7 +20,7 @@ generated streams, expected results, or implementation modules. Their common
 source-coverage ledgers are compared byte for byte by a small runner that does
 not parse EBNF or compute language facts.
 
-## Checked result
+## Historical review result
 
 The committed evidence binds exact v0.8 SHA-256
 `d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`
@@ -51,13 +52,14 @@ are removed, with none retained or introduced. Retained terminal-predicate
 intersections remain legal census facts when the predicates never compete at a
 grammar decision.
 
-The proposal remains non-authoritative. Phase 3 requires exact owner review and
-advance approval before any numbered specification or protected surface moves.
+The owner approved this exact packet, and its candidate bytes are now installed
+unchanged as `spec/kernel-spec-v0.9.md`. The evidence remains historical: it is
+not rewritten to make its pre-installation statements sound current.
 
 ## Owner-review migration material
 
-The packet proposes three protected patches in one exact order, but applies
-none of them: the combined 274-path FORM-2 patch
+The historical packet proposed three protected patches in one exact order and
+applied none at review time: the combined 274-path FORM-2 patch
 `4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2`,
 the post-FORM2 case-intent patch
 `62916bfc1bcc9e4eaa0461c33015cb30a2abe113f3aebcc807a3b8c492c0d54a`,
@@ -67,7 +69,30 @@ Ordinary application in that order yields a 99,869-byte manifest with SHA-256
 `0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c`
 and changes no expected verdict or runnable status. `proposal/DELTA.md` and
 `proposal/protected-surface-census.json` contain the exact approval items,
-postimage hashes, reviews, and explicit non-authorizations.
+postimage hashes, reviews, and explicit non-authorizations as they stood when
+approved. The repository installation applies those exact postimages. The
+current gate proves this by reversing C, B, A to their reviewed preimages and
+then applying A, B, C back to byte-identical installed contents.
+The primary and independent FORM-2 suites also reconstruct that approved
+pre-migration corpus in temporary trees and rerun their parsing, rendering,
+repair, topology, and hostile-mutation checks. Installation does not disable
+the historical algorithm tests.
+
+## Installed-v0.9 reproduction
+
+`evidence/` is the immutable owner-review packet. `run.py` validates every
+approved artifact digest and never writes there. It requires
+`spec/kernel-spec-v0.9.md` to be byte-for-byte identical to the reviewed
+candidate, supplies the installed bytes as the successor engine input, and
+writes only `installed-v0.9-evidence/`. The installed report records both paths,
+their byte lengths and hashes, and their exact equality. This reproduces the
+grammar observations after installation; it grants no compiler authority.
+The same packet gate also keeps the complete v0.8 lexical model, observer,
+terminal audit, tests, and frontend-corpus snapshot hash-bound after active
+development switches to v0.9.
+It pins the approved derivation-ledger amendment and requires the live ledger
+to equal the pinned pre-v0.9 prefix plus exactly the text between the amendment's
+delimiters, with one separating LF and no other change.
 
 ## Frontend-boundary proposal evidence
 
@@ -80,19 +105,10 @@ boundary-requirement projections, the descriptor and source revisions, and the
 full current candidate bytes by length and SHA-256.
 
 The candidate digest is generated from
-`proposal/kernel-spec-successor-candidate.md` on every run and checked against
-the value reported above. Regenerate review evidence after an intentional
-candidate edit with:
-
-```text
-python3 -I -S -B proposal/frontend_boundary_evidence.py --write
-```
-
-`make -C grammar-verifier frontend-boundary-evidence` then requires exact
-regeneration of both `evidence/frontend-boundary-evidence.json` and its
-`.sha256` sidecar. These artifacts are proposal-only executable evidence. They
-do not approve the candidate, amend the active specification, or authorize a
-production frontend.
+`proposal/kernel-spec-successor-candidate.md` on every check and compared with
+the immutable `evidence/frontend-boundary-evidence.json` and its `.sha256`
+sidecar. These are historical approval evidence and are not regenerated by the
+normal gate. They do not authorize a production frontend.
 
 ## Trust boundary
 
@@ -119,6 +135,6 @@ make -C grammar-verifier check
 The root `make check` includes this gate. `FORMAT.md` is the complete wire,
 ledger, ordering, binding, and failure contract.
 
-The checked-in proposal and evidence are review material only. They do not
-amend a numbered specification, modify a protected expectation, switch the
-active language target, or authorize a production parser.
+The checked-in review packet records why the exact v0.9 installation was
+approved. Neither the historical packet nor its installed reproduction is a
+production-parser or compiler-capability claim.

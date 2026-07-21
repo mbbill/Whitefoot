@@ -2,7 +2,7 @@ struct Counter {
   n: i32;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, check the result.";
   let c: own Counter = Counter(n: 1_i32);
   set c.n = 41_i32;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the exact identity locks for the canonical v0.8 static catalog."""
+"""Verify the exact identity locks for the canonical v0.9 static catalog."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ import semantic_catalog_io
 
 ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_STATIC_SEMANTIC_CATALOG_SHA256 = (
-    "2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d"
+    "3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae"
 )
-ROOT_LOCK_COMPONENTS = ("facets", "v0.8", "static-catalog.sha256")
-COMPILER_LOCK_COMPONENTS = ("compiler", "static-semantic-catalog-v0.8.sha256")
+ROOT_LOCK_COMPONENTS = ("facets", "v0.9", "static-catalog.sha256")
+COMPILER_LOCK_COMPONENTS = ("compiler", "static-semantic-catalog-v0.9.sha256")
 LOCK_BYTES = 65
 
 
@@ -47,7 +47,7 @@ def validate_identities(catalog_digest: str, root_lock: bytes, compiler_lock: by
     """Require the derived, expected, root, and compiler identities to agree."""
     if catalog_digest != EXPECTED_STATIC_SEMANTIC_CATALOG_SHA256:
         raise CatalogIdentityError(
-            "canonical static-catalog identity differs from the reviewed v0.8 identity"
+            "canonical static-catalog identity differs from the reviewed v0.9 identity"
         )
     root_digest = parse_lock(root_lock, "root static-catalog lock")
     if root_digest != catalog_digest:

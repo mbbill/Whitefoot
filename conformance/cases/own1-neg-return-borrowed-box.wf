@@ -1,6 +1,8 @@
-enum State { Ready(); }
+enum State {
+  Ready();
+}
 
-fn steal ['r] (holder: &'r box<State>) -> own box<State> pure {
+fn steal ['r](holder: &'r box<State>) -> own box<State> pure {
   doc "OWN-1: one dereference exposes the borrowed box value, which remains non-owning even though State is Copy.";
   return deref(holder);
 }

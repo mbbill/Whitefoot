@@ -1,10 +1,14 @@
-enum Color { Red(); Green(); Blue(); }
+enum Color {
+  Red();
+  Green();
+  Blue();
+}
 
-fn paint ['r] (x: &'r i32, y: &uniq 'r i32) -> own Color pure {
+fn paint ['r](x: &'r i32, y: &uniq 'r i32) -> own Color pure {
   doc "Every mode (own, &'r, &uniq 'r) and type has a written canonical name [TYPE-3].";
   return Red();
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

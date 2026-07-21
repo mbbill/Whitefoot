@@ -1,9 +1,9 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "First main.";
   return unit;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Second main violates exactly-one-main [FN-7].";
   return unit;
 }

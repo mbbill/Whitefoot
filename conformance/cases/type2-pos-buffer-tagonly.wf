@@ -1,4 +1,4 @@
-fn main () -> own unit allocates(heap), traps {
+fn main() -> own unit allocates(heap), traps {
   let f: own Bool = ieq<u64>(1_u64, 0_u64);
   let t: own Bool = ieq<u64>(1_u64, 1_u64);
   let b: own buffer<Bool> = buffer_new<Bool>(8_u64, f);

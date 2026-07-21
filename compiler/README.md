@@ -5,12 +5,11 @@ Whitefoot compiler. There is no disposable compiler and no parallel
 self-hosting track.
 
 The immutable active specification and evidence baseline is
-`../spec/kernel-spec-v0.8.md`, SHA-256
-`d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`.
-Recorded contradictions in that specification block a production parser until
-an exact successor is separately approved and installed. Compiler code may not
-invent a resolution. `../THE-PLAN.md` is the sole source for implementation
-order and authorization.
+`../spec/kernel-spec-v0.9.md`, SHA-256
+`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
+The immutable v0.8 specification and its compiler-local identity locks remain
+historical evidence. Compiler code may not reinterpret either version.
+`../THE-PLAN.md` is the sole source for implementation order and authorization.
 
 ## Handoff state
 
@@ -19,12 +18,10 @@ source, lexical, identity, resource, and build boundaries only. It is not yet a
 source-to-code compiler and makes no conformance or release claim.
 
 Phase 2's standalone grammar-change verifier and evidence package are complete.
-That tool stays outside the production compiler dependency graph. It has
-prepared exact, non-authoritative successor bytes and impact evidence, but it
-does not edit a numbered specification, switch the active target, or create
-production parser or artifact structures. Phase 3 remains conditional on exact
-owner review and advance approval; no production frontend work is authorized
-by the Phase-2 result.
+That tool stays outside the production compiler dependency graph. The exact
+owner-approved v0.9 successor is now the active compiler target. Installing its
+identity does not create production parser, semantic, artifact, backend, or
+release authority; later work still follows the gates in `../THE-PLAN.md`.
 
 ## Current crates
 
@@ -47,9 +44,10 @@ by the Phase-2 result.
   not tokens with portable identity, parser output, verdicts, receipts, or
   checked artifacts.
 
-The `SourceBundle` sequence is transport order only. It does not define
-normative file composition, declaration order, zero-source behavior, or program
-root extent. Those meanings require an approved successor specification.
+The active specification forms one compilation unit from an ordered, nonempty
+sequence of logical source records. `SourceBundle` preserves source order and
+exact bytes, but this judgment-free contract alone does not prove every PROG-2
+input-envelope requirement or create a parsed program root.
 
 No production terminal classifier, parser, syntax tree authority, resolver,
 semantic kernel, semantic record, artifact schema, backend, compiler
@@ -85,7 +83,7 @@ correctly, preserving every unproved runtime check.
 
 ## Non-authority data
 
-The capability overlay at `../capabilities/whitefoot-rust/v0.8/`, the static
+The capability overlay at `../capabilities/whitefoot-rust/v0.9/`, the static
 semantic catalog, discrepancy registry, source index, corpora, and experiment
 receipts are audit evidence only. Production code must not read them to select
 acceptance, semantic handling, or lowering. A digest proves byte identity, not
@@ -111,7 +109,7 @@ slice:
 make check
 ```
 
-The compiler gate pins the exact Rust toolchain, v0.8 bytes, static catalog
+The compiler gate pins the exact Rust toolchain, v0.9 bytes, static catalog
 identity, package graph, dependencies, source policy, formatting, linting,
 tests, rustdoc, and cross-path reproducibility. Builds are locked and offline;
 the required toolchain must already be installed. The workspace forbids

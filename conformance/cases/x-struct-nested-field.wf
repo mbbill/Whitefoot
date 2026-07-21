@@ -7,7 +7,7 @@ struct Outer {
   k: i32;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "TYPE-2: a nested struct field (a struct-typed field); read the inner field through the outer.";
   let inner_atom_0001: own Inner = Inner(v: 10_i32);
   let o: own Outer = Outer(inner: move inner_atom_0001, k: 5_i32);

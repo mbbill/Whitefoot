@@ -1,10 +1,14 @@
-enum Color { Red(); Green(); Blue(); }
+enum Color {
+  Red();
+  Green();
+  Blue();
+}
 
-fn pick (x: own i32) -> own Color pure {
+fn pick(x: own i32) -> own Color pure {
   return Red();
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "GRAM-2: a program is item* - two fn_decl items and one enum_decl item.";
   let c: own Color = pick(x: 1_i32);
   return unit;

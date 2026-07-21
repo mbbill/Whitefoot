@@ -1,3 +1,3 @@
-fn passthru ['r0] (x: &'r0 i32) -> &'r0 i32 pure {
+fn passthru ['r0](x: &'r0 i32) -> &'r0 i32 pure {
   return &'r0 deref(x);
 }

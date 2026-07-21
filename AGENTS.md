@@ -14,7 +14,7 @@ discharges them — speed is earned by proof, never by weakening a check.
 3. The relevant live `mcts_mem/` node and its `.alt/` history before a
    non-trivial design change.
 4. As needed: `CONSTITUTION.md`, `PATTERNS.md`,
-   `spec/kernel-spec-v0.8.md`, and
+   `spec/kernel-spec-v0.9.md`, and
    `optimizer-language-research/notes/user-directives.md`.
 
 ## Verify
@@ -37,9 +37,10 @@ discharges them — speed is earned by proof, never by weakening a check.
   and external proper names are allowed.
 - `AGENTS.md` and `CLAUDE.md` must remain byte-identical.
 - The active numbered specification and evidence baseline is
-  `spec/kernel-spec-v0.8.md`, SHA-256
-  `d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`.
-  Compiler code does not reinterpret or edit that numbered file.
+  `spec/kernel-spec-v0.9.md`, SHA-256
+  `bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
+  Compiler code does not reinterpret or edit that numbered file. Exact v0.8
+  remains immutable historical authority for its versioned evidence.
 - Kernel-spec changes are owner-gated in advance. Present the exact delta, get
   explicit approval, create a new numbered version and update every live
   reference, then run `make approve-spec REASON="..."` to regenerate the
@@ -61,9 +62,9 @@ discharges them — speed is earned by proof, never by weakening a check.
   that same kernel before lowering authority can exist. There is no second
   production semantic verifier; replay checks the artifact boundary and is not
   independent semantic evidence.
-- `SourceBundle` order is transport order only. Multi-file composition,
-  declaration order, and program-root meaning require an approved successor
-  specification.
+- [PROG-2] gives `SourceBundle` transport exact language meaning: one ordered,
+  nonempty logical-source sequence forms one flattened program root; record
+  order fixes top-level declaration order, and paths never create namespaces.
 - Facts that can increase optimizer authority require hostile adversarial
   review before shipment. A green gate is not a review.
 - Never trade a source check for speed. Proof-elision is the only path.
@@ -99,14 +100,13 @@ discharges them — speed is earned by proof, never by weakening a check.
 ## Current authority
 
 The owner replaced the self-host-first wfc/democ route on 2026-07-20. The old
-implementations are archived and there is no disposable Rust compiler. Exact
-v0.8 remains the immutable active specification and evidence baseline, but its
-recorded contradictions block a production parser pending an approved
-successor. Phase 1's audited Rust-foundation handoff and Phase 2's standalone
-grammar-change verifier are complete. Phase 3 is next but remains conditional
-on exact owner review and advance approval. A specification change,
-active-target switch, production parser, release claim, and any future
-self-hosting require the separate gates in `THE-PLAN.md`.
+implementations are archived and there is no disposable Rust compiler. The
+owner-approved exact v0.9 specification is active; v0.8 remains immutable
+history. Phases 1 through 3 are complete, including the independently checked
+grammar repair, protected migration, and active-target switch. Phase 4's
+canonical frontend is next under the exact gates in `THE-PLAN.md`. Later
+specification changes, protected changes, release claims, and any future
+self-hosting remain separately gated.
 
 The active foundation contains `whitefoot-contract`, `whitefoot-lexer`,
 `whitefoot-source-audit`, and the binary-only

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hostile tests for the exact-v0.8 normative source index."""
+"""Hostile tests for the exact-v0.9 normative source index."""
 
 from __future__ import annotations
 
@@ -91,32 +91,32 @@ class FacetCatalogPinnedFactsTests(unittest.TestCase):
         cls.catalog = facet_catalog.extract_source_index(SPECIFICATION)
 
     def test_exact_specification_identity_and_shape(self) -> None:
-        self.assertEqual(len(SPECIFICATION), 63_571)
-        self.assertEqual(SPECIFICATION.count(b"\n"), 411)
+        self.assertEqual(len(SPECIFICATION), 98_044)
+        self.assertEqual(SPECIFICATION.count(b"\n"), 527)
         self.assertEqual(facet_catalog.sha256(SPECIFICATION), facet_catalog.SPEC_SHA256)
         self.assertEqual(
             self.catalog["counts"],
             {
                 "byte_exact_fences": 2,
-                "core_grammar_productions": 57,
-                "inline_grammar_productions": 2,
+                "core_grammar_productions": 58,
+                "inline_grammar_productions": 4,
                 "operation_name_occurrences": 84,
                 "operation_names": 83,
                 "operation_rows": 44,
                 "report_rows": 4,
-                "rules": 91,
+                "rules": 92,
                 "sections": 17,
-                "syntax_productions": 59,
+                "syntax_productions": 62,
             },
         )
 
     def test_all_syntax_productions_remain_distinct_source_atoms(self) -> None:
         productions = self.catalog["syntax_productions"]
-        self.assertEqual(len(productions), 59)
-        self.assertEqual(len({record["id"] for record in productions}), 59)
+        self.assertEqual(len(productions), 62)
+        self.assertEqual(len({record["id"] for record in productions}), 62)
         self.assertEqual(
             Counter(record["source_form"] for record in productions),
-            Counter({"fenced-core": 57, "inline-rule": 2}),
+            Counter({"fenced-core": 58, "inline-rule": 4}),
         )
         self.assertEqual(
             Counter(
@@ -124,7 +124,7 @@ class FacetCatalogPinnedFactsTests(unittest.TestCase):
                 for record in productions
                 if record["source_form"] == "fenced-core"
             ),
-            Counter({"GRAM-2": 22, "GRAM-3": 7, "GRAM-4": 16, "GRAM-5": 12}),
+            Counter({"GRAM-2": 24, "GRAM-3": 5, "GRAM-4": 17, "GRAM-5": 12}),
         )
         inline = [
             record
@@ -134,6 +134,8 @@ class FacetCatalogPinnedFactsTests(unittest.TestCase):
         self.assertEqual(
             [(record["id"], record["lhs"], record["owner_rule"]) for record in inline],
             [
+                ("production:CONST-1:const", "const", "CONST-1"),
+                ("production:CONST-2:cvalue", "cvalue", "CONST-2"),
                 ("production:EFF-1:effects", "effects", "EFF-1"),
                 ("production:EFF-1:effect", "effect", "EFF-1"),
             ],
@@ -151,7 +153,7 @@ class FacetCatalogPinnedFactsTests(unittest.TestCase):
             *self.catalog["report_rows"],
             *self.catalog["byte_exact_fences"],
         ]
-        self.assertEqual(len(atoms), 91 + 59 + 44 + 4 + 2)
+        self.assertEqual(len(atoms), 92 + 62 + 44 + 4 + 2)
         self.assertEqual(len({atom["id"] for atom in atoms}), len(atoms))
         sources = [atom["source"] for atom in atoms]
         name_sets = self.catalog["operation_name_sets"]
@@ -171,7 +173,7 @@ class FacetCatalogPinnedFactsTests(unittest.TestCase):
                 self.assertEqual(
                     source["line_end"], bisect_right(offsets, byte_end - 1)
                 )
-                self.assertTrue(1 <= source["line_start"] <= source["line_end"] <= 411)
+                self.assertTrue(1 <= source["line_start"] <= source["line_end"] <= 527)
                 self.assertEqual(
                     source["sha256"],
                     hashlib.sha256(SPECIFICATION[byte_start:byte_end]).hexdigest(),
@@ -194,16 +196,16 @@ class FacetCatalogPinnedFactsTests(unittest.TestCase):
             },
             {
                 "PRE-1": (
-                    342,
-                    356,
-                    281,
-                    "9be4318017d24afdfc6dadcd72d12fc7871131059c732a6cfc6955822b2514d8",
+                    436,
+                    468,
+                    303,
+                    "547eedebc7d9f262580c824045acf6b4643b10e42e388ce399479f901240c469",
                 ),
                 "EX-1": (
-                    364,
-                    401,
-                    857,
-                    "8e707165c64ec442b42c52d80cefbea7395ac685d7fc30320cc33f43347c8f42",
+                    476,
+                    517,
+                    863,
+                    "490b202c156669e29030a4e6c2b2a86434da0aa7d33005f3db5079d830cbec71",
                 ),
             },
         )
@@ -327,7 +329,10 @@ class FacetCatalogFailClosedTests(unittest.TestCase):
                 b"| op | domain | signature | effects |",
                 b"| operation | domain | signature | effects |",
             ),
-            (b"|---|---|---|---|", b"|---|---|---|:---|"),
+            (
+                b"| op | domain | signature | effects |\n|---|---|---|---|",
+                b"| op | domain | signature | effects |\n|---|---|---|:---|",
+            ),
             (
                 b"| `finf` `fnan` | f32 f64 | `() -> own T` | pure |",
                 b"  `finf` `fnan` | f32 f64 | `() -> own T` | pure |",

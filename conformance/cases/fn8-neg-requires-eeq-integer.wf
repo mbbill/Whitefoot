@@ -1,4 +1,4 @@
-fn guarded (left: own u32, right: own u32) -> own unit traps requires {
+fn guarded(left: own u32, right: own u32) -> own unit traps requires {
   let same: own Bool = eeq<u32>(left, right);
   check same else trap "integer precondition escaped";
 } {

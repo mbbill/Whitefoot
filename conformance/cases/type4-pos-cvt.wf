@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "Representation change is the single explicit op cvt [TYPE-4]; i32->i64 is total.";
   let x: own i32 = 7_i32;
   let y: own i64 = cvt<i32, i64>(x);

@@ -1,12 +1,13 @@
-enum State { Ready(); }
+enum State {
+  Ready();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "TYPE-7: a borrow expression is a reference value, not an enum value; bind it and match deref(holder).";
   let state: own State = Ready();
   region 'r {
     match &'r state {
       Ready() => {
-        doc "A second arm statement pins rejection before temporary-borrow cleanup.";
         set state = Ready();
       }
     }

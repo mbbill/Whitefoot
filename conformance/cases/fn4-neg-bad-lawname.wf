@@ -1,8 +1,8 @@
 contract BadLaw {
-  fn combine (x: own i32, y: own i32) -> own i32 pure;
+  fn combine(x: own i32, y: own i32) -> own i32 pure;
   law distributive(combine, combine);
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

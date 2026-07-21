@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # Support import as ``tools.*``.
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FRAGMENT_DIRECTORY = ("capabilities", "whitefoot-rust", "v0.8")
+FRAGMENT_DIRECTORY = ("capabilities", "whitefoot-rust", "v0.9")
 FORMAT = "whitefoot-capability-fragment-v1"
 IMPLEMENTATION_ID = "whitefoot-rust"
 

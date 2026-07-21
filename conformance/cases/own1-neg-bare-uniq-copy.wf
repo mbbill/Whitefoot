@@ -1,12 +1,12 @@
-fn consume ['r] (x: &uniq 'r i32) -> own unit pure {
+fn consume ['r](x: &uniq 'r i32) -> own unit pure {
   return unit;
 }
 
-fn forward ['r] (x: &uniq 'r i32) -> own unit pure {
+fn forward ['r](x: &uniq 'r i32) -> own unit pure {
   consume(x: x);
   return unit;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

@@ -1,6 +1,9 @@
-enum Coin { Heads(); Tails(); }
+enum Coin {
+  Heads();
+  Tails();
+}
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Match a coin twice through shared borrows in a region and give a score each time; borrow-mode matching leaves the coin live for the second read [OWN-13, GIVE-1, OP-1, SCOPE-3].";
   let c: own Coin = Heads();
   region 'r {

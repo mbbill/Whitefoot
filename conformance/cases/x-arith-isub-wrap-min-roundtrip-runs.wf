@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "isub.wrap underflow round-trips [OP-1]: wrapping i32::MAX + 1 yields i32::MIN, and isub.wrap(i32::MIN, 1) wraps back to i32::MAX, confirmed by an equality check [OP-5].";
   let hi: own i32 = 2147483647_i32;
   let lo: own i32 = iadd.wrap<i32>(hi, 1_i32);

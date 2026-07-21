@@ -1,5 +1,8 @@
-enum TagEq { TagFirst(); TagSecond(); }
+enum TagEq {
+  TagFirst();
+  TagSecond();
+}
 
-fn compare (left: own TagEq, right: own TagEq) -> own Bool pure {
+fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
   return ieq<TagEq>(left, right);
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and verify the exact-v0.8 normative source index.
+"""Generate and verify the exact-v0.9 normative source index.
 
 This tool performs structural extraction only. It does not infer semantic
 facets from prose and therefore cannot claim implementation completeness.
@@ -20,34 +20,38 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC_PATH = ROOT / "spec" / "kernel-spec-v0.8.md"
-OUTPUT_PATH = ROOT / "facets" / "v0.8" / "source.json"
-SPEC_RELATIVE_PATH = "spec/kernel-spec-v0.8.md"
-OUTPUT_RELATIVE_PATH = "facets/v0.8/source.json"
-SPEC_SHA256 = "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
+SPEC_PATH = ROOT / "spec" / "kernel-spec-v0.9.md"
+OUTPUT_PATH = ROOT / "facets" / "v0.9" / "source.json"
+SPEC_RELATIVE_PATH = "spec/kernel-spec-v0.9.md"
+OUTPUT_RELATIVE_PATH = "facets/v0.9/source.json"
+SPEC_SHA256 = "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
 
 EXPECTED_COUNTS = {
     "byte_exact_fences": 2,
-    "core_grammar_productions": 57,
-    "inline_grammar_productions": 2,
+    "core_grammar_productions": 58,
+    "inline_grammar_productions": 4,
     "operation_name_occurrences": 84,
     "operation_names": 83,
     "operation_rows": 44,
     "report_rows": 4,
-    "rules": 91,
+    "rules": 92,
     "sections": 17,
-    "syntax_productions": 59,
+    "syntax_productions": 62,
 }
 EXPECTED_CORE_GRAMMAR_OWNERS = {
-    "GRAM-2": 22,
-    "GRAM-3": 7,
-    "GRAM-4": 16,
+    "GRAM-2": 24,
+    "GRAM-3": 5,
+    "GRAM-4": 17,
     "GRAM-5": 12,
 }
-EXPECTED_INLINE_GRAMMAR_OWNERS = {"EFF-1": ("effects", "effect")}
+EXPECTED_INLINE_GRAMMAR_OWNERS = {
+    "CONST-1": ("const",),
+    "CONST-2": ("cvalue",),
+    "EFF-1": ("effects", "effect"),
+}
 EXPECTED_FENCE_DIGESTS = {
-    "PRE-1": "9be4318017d24afdfc6dadcd72d12fc7871131059c732a6cfc6955822b2514d8",
-    "EX-1": "8e707165c64ec442b42c52d80cefbea7395ac685d7fc30320cc33f43347c8f42",
+    "PRE-1": "547eedebc7d9f262580c824045acf6b4643b10e42e388ce399479f901240c469",
+    "EX-1": "490b202c156669e29030a4e6c2b2a86434da0aa7d33005f3db5079d830cbec71",
 }
 EXPECTED_DOTLESS_NAME_COUNTS = {
     "listed": 20,
@@ -198,7 +202,7 @@ def extract_rules(
     if duplicates:
         fail(f"duplicate rule definitions: {duplicates}")
     if len(starts) != EXPECTED_COUNTS["rules"]:
-        fail(f"expected 91 rules, found {len(starts)}")
+        fail(f"expected 92 rules, found {len(starts)}")
 
     records: List[Dict[str, Any]] = []
     intervals: Dict[str, Tuple[int, int]] = {}
@@ -322,11 +326,11 @@ def extract_syntax_productions(
     if len(set(identifiers)) != len(identifiers):
         fail("syntax production identifiers are not globally unique")
     if len(core) != EXPECTED_COUNTS["core_grammar_productions"]:
-        fail(f"expected 57 core grammar productions, found {len(core)}")
+        fail(f"expected 58 core grammar productions, found {len(core)}")
     if len(inline) != EXPECTED_COUNTS["inline_grammar_productions"]:
-        fail(f"expected 2 inline grammar productions, found {len(inline)}")
+        fail(f"expected 4 inline grammar productions, found {len(inline)}")
     if len(records) != EXPECTED_COUNTS["syntax_productions"]:
-        fail(f"expected 59 syntax productions, found {len(records)}")
+        fail(f"expected 62 syntax productions, found {len(records)}")
     if source.raw.count(b":=") != len(records):
         fail("the specification contains an unaccounted ':=' definition")
     return records
@@ -547,7 +551,7 @@ def extract_byte_exact_fences(
 def extract_source_index(
     specification: bytes, expected_spec_sha256: Optional[str] = SPEC_SHA256
 ) -> Dict[str, Any]:
-    """Build the complete mechanical source index for exact v0.8."""
+    """Build the complete mechanical source index for exact v0.9."""
     actual_spec_sha256 = sha256(specification)
     if expected_spec_sha256 is not None and actual_spec_sha256 != expected_spec_sha256:
         fail(
@@ -603,7 +607,7 @@ def extract_source_index(
             "byte_length": len(specification),
             "path": SPEC_RELATIVE_PATH,
             "sha256": actual_spec_sha256,
-            "version": "0.8",
+            "version": "0.9",
         },
         "syntax_productions": syntax_productions,
     }
@@ -627,15 +631,15 @@ def check() -> None:
             "owner-approved exact specification"
         )
     print(
-        "facet source index: exact v0.8 structure verified "
-        "(91 rules, 59 syntax productions [57 fenced + 2 inline], "
+        "facet source index: exact v0.9 structure verified "
+        "(92 rules, 62 syntax productions [58 fenced + 4 inline], "
         "44 OP-1 rows, 4 DIAG-3 rows, 2 byte-exact fences; "
         "OP-1 name-set difference exposed; semantic facets separate)"
     )
 
 
 def write() -> None:
-    """Regenerate the mechanical source index from exact approved v0.8 bytes."""
+    """Regenerate the mechanical source index from exact approved v0.9 bytes."""
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_bytes(generated_bytes())
     print(f"wrote {OUTPUT_RELATIVE_PATH}")

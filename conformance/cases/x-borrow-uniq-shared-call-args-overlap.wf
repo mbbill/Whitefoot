@@ -1,8 +1,8 @@
-fn mix ['r] (a: &uniq 'r i32, b: &'r i32) -> own unit pure {
+fn mix ['r](a: &uniq 'r i32, b: &'r i32) -> own unit pure {
   return unit;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-12: a uniq argument and a shared argument over the same place alias at the call - rejected.";
   let x: own i32 = 0_i32;
   region 'r {

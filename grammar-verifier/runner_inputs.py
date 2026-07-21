@@ -12,6 +12,7 @@ from typing import Mapping
 
 
 CURRENT_SHA256 = "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
+SUCCESSOR_SHA256 = "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
 MAGIC = b"WFGRAMV1"
 FRAME_NAMES = ("limits", "current", "proposal", "cases", "domains")
 TRANSITION_IDS = (b"fixed-ident-partition",)
@@ -86,6 +87,7 @@ class Inputs:
     sections: tuple[BoundBytes, ...]
     expectations: BoundBytes
     limits: Mapping[str, int]
+    installation: Mapping[str, object] | None = None
 
     def section(self, name: str) -> BoundBytes:
         return next(item for item in self.sections if item.name == name)
@@ -249,16 +251,56 @@ def _validate_table(raw: bytes, kind: str, maximum_records: int, maximum_symbol_
         logical_keys.add(logical_key)
 
 
-def load_inputs(root: Path, expected_current_sha256: str = CURRENT_SHA256) -> Inputs:
+def load_inputs(
+    root: Path,
+    expected_current_sha256: str = CURRENT_SHA256,
+    *,
+    installed: bool = False,
+) -> Inputs:
     limits_raw = read_regular(root / "limits.txt", HARD_PROFILE_BYTES, "limits.txt")
     limits = parse_limits(limits_raw)
     document_cap = min(HARD_DOCUMENT_BYTES, limits["max_document_bytes"])
     case_cap = min(HARD_AUXILIARY_BYTES, limits["max_case_bytes"])
     domain_cap = min(HARD_AUXILIARY_BYTES, limits["max_domain_bytes"])
+    candidate = read_regular(
+        root / "proposal" / "kernel-spec-successor-candidate.md",
+        document_cap,
+        "reviewed successor candidate",
+    )
+    candidate_binding = BoundBytes("proposal", candidate).binding
+    if candidate_binding["sha256"] != SUCCESSOR_SHA256:
+        fail("proposal_hash", "the successor candidate is not the reviewed v0.9 bytes")
+    installation: Mapping[str, object] | None = None
+    proposal = candidate
+    if installed:
+        installed_specification = read_regular(
+            root.parent / "spec" / "kernel-spec-v0.9.md",
+            document_cap,
+            "installed v0.9 specification",
+        )
+        if installed_specification != candidate:
+            fail(
+                "installed_specification",
+                "installed v0.9 is not byte-for-byte identical to the reviewed candidate",
+            )
+        proposal = installed_specification
+        installed_binding = BoundBytes("proposal", installed_specification).binding
+        installation = {
+            "candidate": {
+                **candidate_binding,
+                "path": "grammar-verifier/proposal/kernel-spec-successor-candidate.md",
+            },
+            "installed_specification": {
+                **installed_binding,
+                "path": "spec/kernel-spec-v0.9.md",
+            },
+            "mode": "installed-v0.9",
+            "relation": "byte-identical",
+        }
     sections = (
         BoundBytes("limits", limits_raw),
         BoundBytes("current", read_regular(root.parent / "spec" / "kernel-spec-v0.8.md", document_cap, "current specification")),
-        BoundBytes("proposal", read_regular(root / "proposal" / "kernel-spec-successor-candidate.md", document_cap, "proposal")),
+        BoundBytes("proposal", proposal),
         BoundBytes("cases", read_regular(root / "cases.txt", case_cap, "cases.txt")),
         BoundBytes("domains", read_regular(root / "domains.txt", domain_cap, "domains.txt")),
     )
@@ -294,7 +336,7 @@ def load_inputs(root: Path, expected_current_sha256: str = CURRENT_SHA256) -> In
             "expectations_coverage",
             "expectations.txt does not cover every case, case-delta policy, and closed transition",
         )
-    return Inputs(sections, expectations, limits)
+    return Inputs(sections, expectations, limits, installation)
 
 
 def make_frame(inputs: Inputs) -> bytes:

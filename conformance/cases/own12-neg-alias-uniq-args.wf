@@ -1,8 +1,8 @@
-fn two ['r] (a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
+fn two ['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
   return unit;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-12: two &uniq call arguments over the same place alias - rejected.";
   let x: own i32 = 0_i32;
   region 'r {

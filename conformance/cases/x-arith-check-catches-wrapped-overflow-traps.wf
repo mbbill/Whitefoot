@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A check is a runtime check in all build modes, never elided [OP-5]; the wrapped i32::MAX + 1 is negative, so an `igt 0` invariant is violated and the process traps and aborts [SCOPE-4].";
   let hi: own i32 = 2147483647_i32;
   let w: own i32 = iadd.wrap<i32>(hi, 1_i32);

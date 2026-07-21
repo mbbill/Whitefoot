@@ -1,4 +1,4 @@
-fn read (holder: own box<i32>) -> own i32 pure {
+fn read(holder: own box<i32>) -> own i32 pure {
   doc "TYPE-7: returning a box referent requires deref(holder); returning the box itself is a distinct affine transfer.";
   return holder;
 }

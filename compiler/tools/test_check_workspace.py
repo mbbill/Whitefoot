@@ -124,14 +124,14 @@ class CapabilityMetadataNonConsumptionTests(unittest.TestCase):
                 parent
                 / "capabilities"
                 / "whitefoot-rust"
-                / "v0.8"
+                / "v0.9"
                 / "foundation.json"
             )
             capability.parent.mkdir(parents=True)
             capability.write_text("{}\n", encoding="ascii")
             source.write_text(
                 'const DATA: &str = include_str!('
-                '"../../../../capabilities/whitefoot-rust/v0.8/foundation.json"'
+                '"../../../../capabilities/whitefoot-rust/v0.9/foundation.json"'
                 ");\n",
                 encoding="utf-8",
             )
@@ -217,7 +217,7 @@ class CapabilityMetadataNonConsumptionTests(unittest.TestCase):
                 parent
                 / "capabilities"
                 / "whitefoot-rust"
-                / "v0.8"
+                / "v0.9"
                 / "foundation.json"
             )
             capability.parent.mkdir(parents=True)
@@ -304,7 +304,9 @@ class CapabilityMetadataNonConsumptionTests(unittest.TestCase):
     def test_spaced_commented_data_include_uses_exact_allowlist(self) -> None:
         for lock_name in (
             "kernel-spec-v0.8.sha256",
+            "kernel-spec-v0.9.sha256",
             "static-semantic-catalog-v0.8.sha256",
+            "static-semantic-catalog-v0.9.sha256",
         ):
             with self.subTest(lock_name=lock_name):
                 with tempfile.TemporaryDirectory() as temporary:

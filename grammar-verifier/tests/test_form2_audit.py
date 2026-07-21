@@ -12,9 +12,10 @@ if str(PROPOSAL) not in sys.path:
     sys.path.insert(0, str(PROPOSAL))
 
 import form2_inputs  # noqa: E402
-from form2_inputs import InputError, load_protected_inputs, sha256  # noqa: E402
+from form2_inputs import InputError, sha256  # noqa: E402
 from form2_lex import tokenize  # noqa: E402
 from form2_model import audit_current, audit_proposed  # noqa: E402
+from support_form2_installation import reconstruct_form2_inputs  # noqa: E402
 
 
 def clauses(raw: bytes, *, proposed: bool = False) -> dict[str, int]:
@@ -113,7 +114,7 @@ class Form2ClauseTests(unittest.TestCase):
 class Form2ProtectedSurfaceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.inputs = load_protected_inputs()
+        cls.inputs, _ = reconstruct_form2_inputs()
 
     def test_inventory_is_exact_and_hash_bound(self) -> None:
         self.assertEqual(len(self.inputs.sources), 293)

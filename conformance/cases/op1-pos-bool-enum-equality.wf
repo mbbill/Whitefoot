@@ -1,25 +1,21 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let false_value: own Bool = False();
   let true_value: own Bool = True();
-
   let eq00: own Bool = eeq<Bool>(false_value, false_value);
   let ne00: own Bool = ene<Bool>(false_value, false_value);
   check eq00 else trap "Bool eeq diagonal drift";
   let not_ne00: own Bool = bnot<Bool>(ne00);
   check not_ne00 else trap "Bool ene diagonal drift";
-
   let eq01: own Bool = eeq<Bool>(false_value, true_value);
   let ne01: own Bool = ene<Bool>(false_value, true_value);
   let not_eq01: own Bool = bnot<Bool>(eq01);
   check not_eq01 else trap "Bool eeq off-diagonal drift";
   check ne01 else trap "Bool ene off-diagonal drift";
-
   let eq10: own Bool = eeq<Bool>(true_value, false_value);
   let ne10: own Bool = ene<Bool>(true_value, false_value);
   let not_eq10: own Bool = bnot<Bool>(eq10);
   check not_eq10 else trap "Bool eeq off-diagonal drift";
   check ne10 else trap "Bool ene off-diagonal drift";
-
   let eq11: own Bool = eeq<Bool>(true_value, true_value);
   let ne11: own Bool = ene<Bool>(true_value, true_value);
   check eq11 else trap "Bool eeq diagonal drift";

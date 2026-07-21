@@ -1,0 +1,985 @@
+{
+  "clauses": [
+    {
+      "byte_end": 77410,
+      "byte_start": 76975,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:PROG-1/closed-compilation-unit",
+        "facet:PROG-1/closed-name-universe",
+        "facet:PROG-1/forbidden-linkage-and-reflection",
+        "facet:PROG-1/gated-ffi-boundary",
+        "facet:PROG-1/logical-source-path-not-namespace",
+        "facet:PROG-1/source-lookup-absent"
+      ],
+      "owner_rule": "PROG-1",
+      "sha256": "949ec4f71d271e323ef5d3a82874aa8bbb47d0adbb663f4bbb3647525cf72973"
+    },
+    {
+      "byte_end": 79908,
+      "byte_start": 77411,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:PROG-2/bundle-root-extent",
+        "facet:PROG-2/duplicate-path-input-failure",
+        "facet:PROG-2/flattened-program-root-order",
+        "facet:PROG-2/independent-source-item-sequences",
+        "facet:PROG-2/no-cross-record-token-or-production",
+        "facet:PROG-2/ordered-nonempty-source-records",
+        "facet:PROG-2/paths-create-no-namespace",
+        "facet:PROG-2/portable-logical-path-validation",
+        "facet:PROG-2/record-boundary-identity",
+        "facet:PROG-2/record-identity-binding",
+        "facet:PROG-2/transport-order-preservation",
+        "facet:PROG-2/whole-unit-analysis-domain",
+        "facet:PROG-2/whole-unit-declaration-order",
+        "facet:PROG-2/zero-byte-source-versus-canonical-empty-source"
+      ],
+      "owner_rule": "PROG-2",
+      "sha256": "57ccd369315070b801d6522c57461755470b3828d1a1898747e6e0649014c9c7"
+    },
+    {
+      "byte_end": 94822,
+      "byte_start": 94400,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:CAP-1/capability-predicate-vocabulary",
+        "facet:CAP-1/concurrency-absence",
+        "facet:CAP-1/race-scope-boundary"
+      ],
+      "owner_rule": "CAP-1",
+      "sha256": "98497579f3ba5e232795cbcee342c96ff0bcdfff23ba25fb7b433ff5d8cf1c6b"
+    },
+    {
+      "byte_end": 95077,
+      "byte_start": 94866,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GATE-1/privileged-edit-boundary",
+        "facet:GATE-1/single-audit-trail",
+        "facet:GATE-1/steady-state-writer-exclusion"
+      ],
+      "owner_rule": "GATE-1",
+      "sha256": "0c9017ebbfbcc94914fe5233f7d102b8333f3c1d0df2bae426653feb97e048fc"
+    },
+    {
+      "byte_end": 95460,
+      "byte_start": 95078,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:LEDGER-1/boundary-family-inventory",
+        "facet:LEDGER-1/human-approved-authorship-gate",
+        "facet:LEDGER-1/manifest-free-unrepresentable",
+        "facet:LEDGER-1/opaque-writer-view",
+        "facet:LEDGER-1/per-fact-soundness-ledger"
+      ],
+      "owner_rule": "LEDGER-1",
+      "sha256": "6dcfeceb901ac4afe2276bd94892e46170fe36c896b38cef1576264507e3f54c"
+    },
+    {
+      "byte_end": 97026,
+      "byte_start": 96862,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-1/one-spelling-enforcement",
+        "facet:META-1/production-node-bijection-enforcement"
+      ],
+      "owner_rule": "META-1",
+      "sha256": "dcad36bf239501defcb857661e13f055bcd2bff92399d7cc11b7dd0d3c3e825c"
+    },
+    {
+      "byte_end": 97150,
+      "byte_start": 97026,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-1/cross-reference-resolution",
+        "facet:META-1/rule-id-uniqueness"
+      ],
+      "owner_rule": "META-1",
+      "sha256": "d0c4f27a25f597e80de20d2549197de7726825e7edbb1b59526ba664793df4f7"
+    },
+    {
+      "byte_end": 97289,
+      "byte_start": 97150,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-2/context-independent-spellings"
+      ],
+      "owner_rule": "META-2",
+      "sha256": "ff4bbb6ec18ad1b5824a7ba638034a35f18cd21e05ae51282f2d1f19e2fa3848"
+    },
+    {
+      "byte_end": 97409,
+      "byte_start": 97289,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-3/positive-total-rule-shapes"
+      ],
+      "owner_rule": "META-3",
+      "sha256": "c43cfc75187978efecbdf28a0036a1934a251dc18f581dfab621b2807f8a3413"
+    },
+    {
+      "byte_end": 97500,
+      "byte_start": 97409,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-4/single-source-normative-facts"
+      ],
+      "owner_rule": "META-4",
+      "sha256": "801df2a5bec52681ad3744d1104107ea52b06f67ed84e7820f9f4e45f05ce8c7"
+    },
+    {
+      "byte_end": 97753,
+      "byte_start": 97500,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-5/spec-change-delta-discipline"
+      ],
+      "owner_rule": "META-5",
+      "sha256": "888277b197abf4dfe1da21aadadd540b41a0faacec917042ebb8ebfe1ba9a2bd"
+    },
+    {
+      "byte_end": 98044,
+      "byte_start": 97753,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:META-6/derivation-ledger-grounding"
+      ],
+      "owner_rule": "META-6",
+      "sha256": "7e8e75ad937f7f3d06fb7b455b719e4fc63abc8e9fff0dd7112e8456166c2bf1"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:CAP-1/capability-predicate-vocabulary",
+      "owner_rule": "CAP-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CAP-1"
+      ]
+    },
+    {
+      "id": "facet:CAP-1/concurrency-absence",
+      "owner_rule": "CAP-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CAP-1"
+      ]
+    },
+    {
+      "id": "facet:CAP-1/race-scope-boundary",
+      "owner_rule": "CAP-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CAP-1"
+      ]
+    },
+    {
+      "id": "facet:GATE-1/privileged-edit-boundary",
+      "owner_rule": "GATE-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "report",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:GATE-1"
+      ]
+    },
+    {
+      "id": "facet:GATE-1/single-audit-trail",
+      "owner_rule": "GATE-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "report",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:GATE-1"
+      ]
+    },
+    {
+      "id": "facet:GATE-1/steady-state-writer-exclusion",
+      "owner_rule": "GATE-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:GATE-1"
+      ]
+    },
+    {
+      "id": "facet:LEDGER-1/boundary-family-inventory",
+      "owner_rule": "LEDGER-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEDGER-1"
+      ]
+    },
+    {
+      "id": "facet:LEDGER-1/human-approved-authorship-gate",
+      "owner_rule": "LEDGER-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEDGER-1"
+      ]
+    },
+    {
+      "id": "facet:LEDGER-1/manifest-free-unrepresentable",
+      "owner_rule": "LEDGER-1",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEDGER-1"
+      ]
+    },
+    {
+      "id": "facet:LEDGER-1/opaque-writer-view",
+      "owner_rule": "LEDGER-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEDGER-1"
+      ]
+    },
+    {
+      "id": "facet:LEDGER-1/per-fact-soundness-ledger",
+      "owner_rule": "LEDGER-1",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "report",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:LEDGER-1"
+      ]
+    },
+    {
+      "id": "facet:META-1/cross-reference-resolution",
+      "owner_rule": "META-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-1"
+      ]
+    },
+    {
+      "id": "facet:META-1/one-spelling-enforcement",
+      "owner_rule": "META-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-1"
+      ]
+    },
+    {
+      "id": "facet:META-1/production-node-bijection-enforcement",
+      "owner_rule": "META-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-1"
+      ]
+    },
+    {
+      "id": "facet:META-1/rule-id-uniqueness",
+      "owner_rule": "META-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-1"
+      ]
+    },
+    {
+      "id": "facet:META-2/context-independent-spellings",
+      "owner_rule": "META-2",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-2"
+      ]
+    },
+    {
+      "id": "facet:META-3/positive-total-rule-shapes",
+      "owner_rule": "META-3",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-3"
+      ]
+    },
+    {
+      "id": "facet:META-4/single-source-normative-facts",
+      "owner_rule": "META-4",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-4"
+      ]
+    },
+    {
+      "id": "facet:META-5/spec-change-delta-discipline",
+      "owner_rule": "META-5",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-5"
+      ]
+    },
+    {
+      "id": "facet:META-6/derivation-ledger-grounding",
+      "owner_rule": "META-6",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:META-6"
+      ]
+    },
+    {
+      "id": "facet:PROG-1/closed-compilation-unit",
+      "owner_rule": "PROG-1",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "artifact-valid",
+        "artifact-hostile",
+        "property"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:PROG-1"
+      ]
+    },
+    {
+      "id": "facet:PROG-1/closed-name-universe",
+      "owner_rule": "PROG-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "property"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-1"
+      ]
+    },
+    {
+      "id": "facet:PROG-1/forbidden-linkage-and-reflection",
+      "owner_rule": "PROG-1",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-1"
+      ]
+    },
+    {
+      "id": "facet:PROG-1/gated-ffi-boundary",
+      "owner_rule": "PROG-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:PROG-1"
+      ]
+    },
+    {
+      "id": "facet:PROG-1/logical-source-path-not-namespace",
+      "owner_rule": "PROG-1",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-1"
+      ]
+    },
+    {
+      "id": "facet:PROG-1/source-lookup-absent",
+      "owner_rule": "PROG-1",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-1"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/bundle-root-extent",
+      "owner_rule": "PROG-2",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/duplicate-path-input-failure",
+      "owner_rule": "PROG-2",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/flattened-program-root-order",
+      "owner_rule": "PROG-2",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/independent-source-item-sequences",
+      "owner_rule": "PROG-2",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/no-cross-record-token-or-production",
+      "owner_rule": "PROG-2",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/ordered-nonempty-source-records",
+      "owner_rule": "PROG-2",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/paths-create-no-namespace",
+      "owner_rule": "PROG-2",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/portable-logical-path-validation",
+      "owner_rule": "PROG-2",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/record-boundary-identity",
+      "owner_rule": "PROG-2",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/record-identity-binding",
+      "owner_rule": "PROG-2",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/transport-order-preservation",
+      "owner_rule": "PROG-2",
+      "owner_stage": "source-envelope",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/whole-unit-analysis-domain",
+      "owner_rule": "PROG-2",
+      "owner_stage": "whole-unit",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/whole-unit-declaration-order",
+      "owner_rule": "PROG-2",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    },
+    {
+      "id": "facet:PROG-2/zero-byte-source-versus-canonical-empty-source",
+      "owner_rule": "PROG-2",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:PROG-2"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "CAP-1",
+    "GATE-1",
+    "LEDGER-1",
+    "META-1",
+    "META-2",
+    "META-3",
+    "META-4",
+    "META-5",
+    "META-6",
+    "PROG-1",
+    "PROG-2"
+  ],
+  "schema": 1
+}

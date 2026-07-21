@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OP-2: add/sub carry the sat mode; unsigned clamps to the type ceiling (OP-8).";
   let a: own u64 = iadd.sat<u64>(18446744073709551615_u64, 1_u64);
   check ieq<u64>(a, 18446744073709551615_u64) else trap "sat clamp drift";

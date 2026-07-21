@@ -1,0 +1,740 @@
+{
+  "clauses": [
+    {
+      "byte_end": 35194,
+      "byte_start": 34306,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:CONST-1/bare-u64-decimal-constant-expression",
+        "facet:CONST-1/const-arithmetic-deferred-boundary",
+        "facet:CONST-1/const-generic-forwarding",
+        "facet:CONST-1/constant-expression-monomorphization-evaluation",
+        "facet:CONST-1/constant-expression-operator-free-closed-set",
+        "facet:CONST-1/constant-expression-use-sites",
+        "facet:CONST-1/constant-identifier-resolution-domain",
+        "facet:CONST-1/constant-identifier-type-rejection",
+        "facet:CONST-1/future-const-eval-effect-separation",
+        "facet:CONST-1/future-const-overflow-policy-distinct",
+        "facet:CONST-1/grammar-production-ownership"
+      ],
+      "owner_rule": "CONST-1",
+      "sha256": "b971ee70e5724fbeb81aa94166b0a7080b3ca51c1c3d9f37e14842d82b601875"
+    },
+    {
+      "byte_end": 36269,
+      "byte_start": 35195,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:CONST-2/allocation-region-drop-types-ineligible",
+        "facet:CONST-2/array-cvalue-exact-length-and-element-types",
+        "facet:CONST-2/const-array-shared-slice-view",
+        "facet:CONST-2/const-dependency-acyclicity",
+        "facet:CONST-2/const-dependency-declaration-order-binding",
+        "facet:CONST-2/const-eligible-type-closure",
+        "facet:CONST-2/const-evaluation-substitution-and-layout",
+        "facet:CONST-2/const-index-length-copy-read",
+        "facet:CONST-2/const-move-set-unique-borrow-forbidden",
+        "facet:CONST-2/const-static-lifetime-own10-binding",
+        "facet:CONST-2/cvalue-total-initialization",
+        "facet:CONST-2/grammar-production-ownership",
+        "facet:CONST-2/immutable-program-lifetime-readonly-static",
+        "facet:CONST-2/primitive-cvalue-domain-and-exact-earlier-reference",
+        "facet:CONST-2/struct-enum-const-deferred-boundary"
+      ],
+      "owner_rule": "CONST-2",
+      "sha256": "03624a624318898c5eab847223f30d1eb3fd66980a450977ecc0f317f8f49de9"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:CONST-1/bare-u64-decimal-constant-expression",
+      "owner_rule": "CONST-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/const-arithmetic-deferred-boundary",
+      "owner_rule": "CONST-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/const-generic-forwarding",
+      "owner_rule": "CONST-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "abi",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/constant-expression-monomorphization-evaluation",
+      "owner_rule": "CONST-1",
+      "owner_stage": "whole-unit",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/constant-expression-operator-free-closed-set",
+      "owner_rule": "CONST-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/constant-expression-use-sites",
+      "owner_rule": "CONST-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/constant-identifier-resolution-domain",
+      "owner_rule": "CONST-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/constant-identifier-type-rejection",
+      "owner_rule": "CONST-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/future-const-eval-effect-separation",
+      "owner_rule": "CONST-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/future-const-overflow-policy-distinct",
+      "owner_rule": "CONST-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CONST-1"
+      ]
+    },
+    {
+      "id": "facet:CONST-1/grammar-production-ownership",
+      "owner_rule": "CONST-1",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-1",
+        "production:CONST-1:const"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/allocation-region-drop-types-ineligible",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/array-cvalue-exact-length-and-element-types",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-array-shared-slice-view",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-dependency-acyclicity",
+      "owner_rule": "CONST-2",
+      "owner_stage": "whole-unit",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-dependency-declaration-order-binding",
+      "owner_rule": "CONST-2",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-eligible-type-closure",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-evaluation-substitution-and-layout",
+      "owner_rule": "CONST-2",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-index-length-copy-read",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-move-set-unique-borrow-forbidden",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/const-static-lifetime-own10-binding",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/cvalue-total-initialization",
+      "owner_rule": "CONST-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/grammar-production-ownership",
+      "owner_rule": "CONST-2",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2",
+        "production:CONST-2:cvalue"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/immutable-program-lifetime-readonly-static",
+      "owner_rule": "CONST-2",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/primitive-cvalue-domain-and-exact-earlier-reference",
+      "owner_rule": "CONST-2",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    },
+    {
+      "id": "facet:CONST-2/struct-enum-const-deferred-boundary",
+      "owner_rule": "CONST-2",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:CONST-2"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "CONST-1",
+    "CONST-2"
+  ],
+  "schema": 1
+}

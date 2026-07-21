@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Generic ops are instantiated with explicit type arguments [FN-2].";
   let a: own i32 = iadd.trap<i32>(40_i32, 2_i32);
   let b: own i32 = imul.wrap<i32>(a, 1_i32);

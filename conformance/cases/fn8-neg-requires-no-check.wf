@@ -1,10 +1,10 @@
-fn no_check (x: own i32) -> own i32 pure requires {
+fn no_check(x: own i32) -> own i32 pure requires {
   let permitted: own Bool = ige<i32>(x, 0_i32);
 } {
   doc "A requirement clause without its terminal checked Bool fact is malformed [FN-8].";
   return x;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

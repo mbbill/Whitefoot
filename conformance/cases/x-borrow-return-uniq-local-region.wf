@@ -1,4 +1,4 @@
-fn leak_uniq ['r0] (x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
+fn leak_uniq ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
   region 's {
     return &uniq 's deref(x);
   }

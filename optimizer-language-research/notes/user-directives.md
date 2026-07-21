@@ -956,3 +956,40 @@ successor-specification approval and target switch. This directive does not
 authorize an in-place specification edit, a protected expectation or oracle
 digest change, baseline regeneration without approval, or implementation past
 an unresolved entrance gate.
+
+## D26 (2026-07-21): Install the exact v0.9 owner-review packet
+
+The owner approved the exact nine-item Phase-3 packet committed at `7fbb018`:
+
+1. Install the 98,044-byte reviewed candidate as the new immutable
+   `spec/kernel-spec-v0.9.md`, SHA-256
+   `bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
+2. Approve the exact three-path protected syntax-repair layer, SHA-256
+   `724dbb970c8ce7ede7a52daf3ad2c9286b7872137e83f495fbf845df75252479`.
+3. Apply the combined 274-path FORM-2 migration patch, SHA-256
+   `4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2`,
+   exactly once.
+4. Apply the post-FORM-2 case-intent patch, SHA-256
+   `62916bfc1bcc9e4eaa0461c33015cb30a2abe113f3aebcc807a3b8c492c0d54a`,
+   second.
+5. Apply the manifest-metadata patch, SHA-256
+   `ae48711659c881ab2e3ca4794641ffae948ed52a2e1bdf62f61da764c7be48a6`,
+   third, yielding the exact 99,869-byte manifest with SHA-256
+   `0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c`.
+6. Append the exact v0.9 derivation-ledger amendment bound by SHA-256
+   `f29b326f446aa9e5f512d079f1dbd14e641e6d840f18b69faab0ea39950e52a0`.
+7. Create or regenerate v0.9-bound evidence and discrepancy assets and update
+   exact live references while preserving all v0.8 historical material.
+8. Switch the active compiler and roadmap target to the installed exact v0.9
+   bytes only after the preceding installation work is complete.
+9. Regenerate the protected-surface baseline and append the governance entry
+   only through `make approve-spec REASON="..."` after the full worktree has
+   been verified.
+
+This approval changes no expected verdict, runnable status, frozen oracle
+digest, or existing reference-semantics test. Their exact expectation/status
+projection remains SHA-256
+`5fb0e54ec006c3fea82d5fc0d8c454e5e9f022ba472cdcc6a90c44a31ade2132`.
+It authorizes only the reviewed sequence and its consistent active-target
+installation; later language deltas and protected changes remain separately
+owner-gated.

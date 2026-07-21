@@ -9,12 +9,31 @@ import unittest
 from support_common import inputs
 from support_oracle import oracle_report
 from support_static import static_report
-from runner_inputs import RunnerError, SourceRevision
+from runner_inputs import Inputs, RunnerError, SourceRevision
 from runner_package import validate_published_package, write_evidence
 from runner_report import parse_report
 
 
 class ReportPackageTests(unittest.TestCase):
+    def test_installed_report_has_explicit_v2_installation_binding(self) -> None:
+        base = inputs()
+        installation = {
+            "mode": "installed-v0.9",
+            "relation": "byte-identical",
+        }
+        value = Inputs(base.sections, base.expectations, base.limits, installation)
+        reports = (
+            parse_report(static_report(value), "static", value),
+            parse_report(oracle_report(value), "oracle", value),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._proposal_root(Path(directory))
+            output = root / "evidence"
+            write_evidence(output, root, value, self._revisions(), reports)
+            report = json.loads((output / "report.json").read_text(encoding="ascii"))
+            self.assertEqual(report["schema"], "whitefoot.grammar-evidence.v2")
+            self.assertEqual(report["installation"], installation)
+
     def test_common_disagreement_blocks_packaging(self) -> None:
         value = inputs()
         static = parse_report(static_report(value), "static", value)

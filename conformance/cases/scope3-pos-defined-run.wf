@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "An accepted program has defined behavior and runs to normal exit [SCOPE-3].";
   let a: own i32 = 20_i32;
   let b: own i32 = iadd.trap<i32>(a, 22_i32);

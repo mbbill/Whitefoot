@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-//! Bounded binary observation adapter for the Whitefoot v0.8 lexer.
+//! Bounded binary observation adapter for the Whitefoot v0.9 lexer.
 //!
 //! This program reads one canonical source-bound request from standard input
 //! and writes one lexical observation to standard output. It does not decide
@@ -15,20 +15,23 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use whitefoot_contract::{
-    DecodeError, EncodeError, KERNEL_SPEC_V0_8_HASH, SourceBinding, SourceBundle,
-    SourceBundleError, SourceInput,
+    DecodeError, EncodeError, KERNEL_SPEC_V0_9_HASH, SourceBinding, SourceBundle,
+    SourceBundleError, SourceInput, SpecHash,
 };
-use whitefoot_lexer::lex_v0_8;
+use whitefoot_lexer::lex_v0_9;
 
 use crate::projection::encode_observation;
 use crate::protocol::{AdapterError, read_request};
+
+/// The one specification identity accepted and emitted by this observer build.
+pub(crate) const ACTIVE_KERNEL_SPEC_HASH: SpecHash = KERNEL_SPEC_V0_9_HASH;
 
 fn observe() -> Result<(), AdapterError> {
     let input = io::stdin();
     let request = read_request(&mut input.lock())?;
     let candidate = SourceBinding::decode_canonical(&request.binding, request.source_limits)
         .map_err(map_binding_decode_error)?;
-    if candidate.spec_hash() != KERNEL_SPEC_V0_8_HASH {
+    if candidate.spec_hash() != ACTIVE_KERNEL_SPEC_HASH {
         return Err(AdapterError::SpecificationMismatch);
     }
 
@@ -45,7 +48,7 @@ fn observe() -> Result<(), AdapterError> {
     let bundle = SourceBundle::with_limits(&inputs, request.source_limits)
         .map_err(map_source_bundle_error)?;
     let reconstructed =
-        SourceBinding::try_from_bundle(KERNEL_SPEC_V0_8_HASH, &bundle, request.source_limits)
+        SourceBinding::try_from_bundle(ACTIVE_KERNEL_SPEC_HASH, &bundle, request.source_limits)
             .map_err(map_binding_encode_error)?;
     if reconstructed != candidate {
         return Err(AdapterError::SourceBindingDisagreement);
@@ -57,7 +60,7 @@ fn observe() -> Result<(), AdapterError> {
         return Err(AdapterError::SourceBindingDisagreement);
     }
 
-    let outcome = lex_v0_8(&bundle, request.lex_limits);
+    let outcome = lex_v0_9(&bundle, request.lex_limits);
     let response = encode_observation(&bundle, outcome)?;
     io::stdout()
         .lock()

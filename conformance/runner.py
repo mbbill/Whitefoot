@@ -22,13 +22,15 @@ Manifest line (JSON):
                   not yet produce it (a tracked gap) — reported, non-failing; if it
                   starts matching, it is flagged XPASS (fix landed; drop the xfail).
 """
-import json, re, sys
+import hashlib, json, re, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
+ACTIVE_SPEC = Path("spec/kernel-spec-v0.9.md")
+ACTIVE_SPEC_SHA256 = "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
 # A later entrance-gated integration may install a named Rust adapter. Keeping
 # this explicit prevents a missing compiler, crash, or broad exception from
 # becoming `Unsupported`.
@@ -80,12 +82,14 @@ def run_cases(cases):
     return results
 
 
-def spec_rule_ids():
-    def ver(f):
-        m = re.search(r"v(\d+)(?:\.(\d+))?", f.name)
-        return (int(m.group(1)), int(m.group(2) or 0))
-    spec = max((ROOT / "spec").glob("kernel-spec-v*.md"), key=ver)
-    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)\]", spec.read_text(), re.M)), spec.name
+def spec_rule_ids(root=ROOT):
+    spec = root / ACTIVE_SPEC
+    raw = spec.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != ACTIVE_SPEC_SHA256:
+        raise ValueError(f"active specification digest mismatch: {digest}")
+    text = raw.decode("utf-8")
+    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)\]", text, re.M)), spec.name
 
 
 def coverage(cases, annots):

@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Writing through a &uniq borrow via set deref(p) and reading the value back [TYPE-7].";
   let a: own i32 = 40_i32;
   region 'r {

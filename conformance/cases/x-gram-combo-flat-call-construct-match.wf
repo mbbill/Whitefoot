@@ -1,10 +1,13 @@
-enum Parity { Even(n: i32); Odd(n: i32); }
+enum Parity {
+  Even(n: i32);
+  Odd(n: i32);
+}
 
-fn double (x: own i32) -> own i32 pure {
+fn double(x: own i32) -> own i32 pure {
   return imul.wrap<i32>(x, 2_i32);
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Combination: a GRAM-9 three-address chain feeds a GRAM-11 named call whose result fills a GRAM-8 named construct, then a GRAM-10 match selects the arm; runs to exit 0.";
   let a: own i32 = 3_i32;
   let b: own i32 = 4_i32;

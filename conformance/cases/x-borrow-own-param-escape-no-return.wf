@@ -1,4 +1,4 @@
-fn hold ['r0] (x: own i32) -> own unit pure {
+fn hold ['r0](x: own i32) -> own unit pure {
   let p: &'r0 i32 = &'r0 x;
   return unit;
 }

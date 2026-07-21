@@ -1,20 +1,30 @@
-enum Sign { Neg(); Zero(); Pos(); }
+enum Sign {
+  Neg();
+  Zero();
+  Pos();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-13 both modes: a shared-borrow match leaves s live; a later own match then moves it exactly once.";
   let s: own Sign = Pos();
   region 'r {
     let b: &'r Sign = &'r s;
     match deref(b) {
-      Neg() => { }
-      Zero() => { }
-      Pos() => { }
+      Neg() => {
+      }
+      Zero() => {
+      }
+      Pos() => {
+      }
     }
   }
   match s {
-    Neg() => { }
-    Zero() => { }
-    Pos() => { }
+    Neg() => {
+    }
+    Zero() => {
+    }
+    Pos() => {
+    }
   }
   return unit;
 }

@@ -1,4 +1,4 @@
-fn positive (x: own i32) -> own i32 traps requires {
+fn positive(x: own i32) -> own i32 traps requires {
   let permitted: own Bool = igt<i32>(x, 0_i32);
   check permitted else trap "x must be positive";
 } {
@@ -6,7 +6,7 @@ fn positive (x: own i32) -> own i32 traps requires {
   return x;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let value: own i32 = positive(x: 0_i32);
   check ieq<i32>(value, 0_i32) else trap "unreachable body result";
   return unit;

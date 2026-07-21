@@ -31,45 +31,30 @@ EXPECTED_REVIEWED_DISPOSITIONS = (
     (
         "explicitly-deferred",
         "FORM-5",
-        9_749,
-        9_788,
+        15_749,
+        15_788,
         "0cbec3066cc7e216554e03b29f95f8664198f04cdbd6df0e0c7a97e791a49ed4",
     ),
     (
         "explicitly-deferred",
-        "FORM-7",
-        11_240,
-        11_357,
-        "268dc6c19eacf8f247fad3a3402746692fee5ce709aeace0b3a1254f497f118e",
-    ),
-    (
-        "explicitly-deferred",
         "LEX-1",
-        11_958,
-        12_115,
+        17_941,
+        18_098,
         "23d98d39550622dd24d013800c1262209082accd33b73fa02ac3d840d7c4bacb",
     ),
     (
         "explicitly-nonnormative",
         "OWN-9",
-        30_436,
-        30_904,
+        41_341,
+        41_809,
         "1853bc29443f66b3e54c800026931ba0e380278a6a42980768580457b2d912a2",
     ),
-    (
-        "explicitly-nonnormative",
-        "FN-4",
-        51_608,
-        51_678,
-        "81d5ee971632574011b34a653b327c776502004dd02f495434862e9b1dee4a0d",
-    ),
 )
-EXPECTED_FN_4_DISPOSITION = EXPECTED_REVIEWED_DISPOSITIONS[-1]
 UNAUTHORIZED_META_5_MARKER = (
     "explicitly-deferred",
     "META-5",
-    63_232,
-    63_279,
+    97_705,
+    97_752,
     "f5e0ed0496f9455a2ec0dc9c97a3f01223d18e1cec605f7a785c37670577fa07",
 )
 
@@ -246,21 +231,21 @@ class StaticCatalogTests(unittest.TestCase):
         self.assertEqual(
             catalog["specification"],
             {
-                "path": "spec/kernel-spec-v0.8.md",
-                "version": "0.8",
+                "path": "spec/kernel-spec-v0.9.md",
+                "version": "0.9",
                 "sha256": semantic_catalog.SPEC_SHA256,
             },
         )
         self.assertEqual(
             catalog["source_index"],
             {
-                "path": "facets/v0.8/source.json",
+                "path": "facets/v0.9/source.json",
                 "sha256": semantic_catalog.sha256(SOURCE_INDEX_BYTES),
             },
         )
-        self.assertEqual(len(catalog["clauses"]), 91)
-        self.assertEqual(len(catalog["facets"]), 91)
-        self.assertEqual(len(catalog["source_atom_coverage"]), 200)
+        self.assertEqual(len(catalog["clauses"]), 92)
+        self.assertEqual(len(catalog["facets"]), 92)
+        self.assertEqual(len(catalog["source_atom_coverage"]), 204)
         self.assertEqual(
             [entry["source_atom"] for entry in catalog["source_atom_coverage"]],
             ATOM_ORDER,
@@ -426,14 +411,14 @@ class ResourceBoundTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(semantic_catalog.SemanticCatalogError, "aggregate"):
                 build(valid_fragments())
-        with mock.patch.object(semantic_catalog, "MAX_CLAUSE_COUNT", 91):
+        with mock.patch.object(semantic_catalog, "MAX_CLAUSE_COUNT", 92):
             build(valid_fragments())
-        with mock.patch.object(semantic_catalog, "MAX_CLAUSE_COUNT", 90):
+        with mock.patch.object(semantic_catalog, "MAX_CLAUSE_COUNT", 91):
             with self.assertRaisesRegex(semantic_catalog.SemanticCatalogError, "clause count"):
                 build(valid_fragments())
-        with mock.patch.object(semantic_catalog, "MAX_FACET_COUNT", 91):
+        with mock.patch.object(semantic_catalog, "MAX_FACET_COUNT", 92):
             build(valid_fragments())
-        with mock.patch.object(semantic_catalog, "MAX_FACET_COUNT", 90):
+        with mock.patch.object(semantic_catalog, "MAX_FACET_COUNT", 91):
             with self.assertRaisesRegex(semantic_catalog.SemanticCatalogError, "facet count"):
                 build(valid_fragments())
 
@@ -557,25 +542,19 @@ class PartitionAndClauseTests(unittest.TestCase):
                 ):
                     build(fragments)
 
-    def test_fn_4_trailing_normative_sentence_cannot_be_excluded(self) -> None:
+    def test_fn_4_law_table_marker_has_no_exclusion_authority(self) -> None:
         fragments = valid_fragments()
-        replace_with_reviewed_exclusion(fragments[0], EXPECTED_FN_4_DISPOSITION)
-        excluded = next(
-            clause
-            for clause in fragments[0]["clauses"]
-            if clause["owner_rule"] == "FN-4"
-            and clause["disposition"] == "explicitly-nonnormative"
-        )
-        excluded["byte_end"] += len(b"it never licenses optimizer use. ")
-        excluded["sha256"] = exact_hash(
-            excluded["byte_start"], excluded["byte_end"]
-        )
-        following = fragments[0]["clauses"][
-            fragments[0]["clauses"].index(excluded) + 1
-        ]
-        following["byte_start"] = excluded["byte_end"]
-        following["sha256"] = exact_hash(
-            following["byte_start"], following["byte_end"]
+        marker = b"The v0.9 law table is closed:"
+        start = SPECIFICATION.index(marker)
+        replace_with_reviewed_exclusion(
+            fragments[0],
+            (
+                "explicitly-nonnormative",
+                "FN-4",
+                start,
+                start + len(marker),
+                semantic_catalog.sha256(marker),
+            ),
         )
         with self.assertRaisesRegex(semantic_catalog.SemanticCatalogError, "exact reviewed"):
             build(fragments)
@@ -682,10 +661,10 @@ class SourceBindingAndDiscoveryTests(unittest.TestCase):
         fragments: list[dict[str, object]] | None = None,
     ) -> None:
         (root / "spec").mkdir()
-        decomposition = root / "facets" / "v0.8" / "decomposition"
+        decomposition = root / "facets" / "v0.9" / "decomposition"
         decomposition.mkdir(parents=True)
-        (root / "spec" / "kernel-spec-v0.8.md").write_bytes(SPECIFICATION)
-        (root / "facets" / "v0.8" / "source.json").write_bytes(source_index)
+        (root / "spec" / "kernel-spec-v0.9.md").write_bytes(SPECIFICATION)
+        (root / "facets" / "v0.9" / "source.json").write_bytes(source_index)
         for index, fragment in enumerate(fragments or valid_fragments()):
             (decomposition / f"{index:02d}.json").write_bytes(
                 semantic_catalog.canonical_bytes(fragment)
@@ -767,21 +746,21 @@ class SourceBindingAndDiscoveryTests(unittest.TestCase):
                     target = base / "root-link"
                     target.symlink_to(real, target_is_directory=True)
                 elif case == "specification":
-                    path = real / "spec" / "kernel-spec-v0.8.md"
+                    path = real / "spec" / "kernel-spec-v0.9.md"
                     path.unlink()
                     path.symlink_to(base / "outside-spec")
                     (base / "outside-spec").write_bytes(SPECIFICATION)
                 elif case == "source-index":
-                    path = real / "facets" / "v0.8" / "source.json"
+                    path = real / "facets" / "v0.9" / "source.json"
                     path.unlink()
                     path.symlink_to(base / "outside-source")
                     (base / "outside-source").write_bytes(SOURCE_INDEX_BYTES)
                 elif case == "directory":
-                    path = real / "facets" / "v0.8" / "decomposition"
+                    path = real / "facets" / "v0.9" / "decomposition"
                     path.rename(base / "outside-decomposition")
                     path.symlink_to(base / "outside-decomposition", target_is_directory=True)
                 else:
-                    path = real / "facets" / "v0.8" / "decomposition" / "00.json"
+                    path = real / "facets" / "v0.9" / "decomposition" / "00.json"
                     path.unlink()
                     path.symlink_to(base / "outside-fragment")
                     (base / "outside-fragment").write_bytes(
@@ -808,8 +787,8 @@ class SourceBindingAndDiscoveryTests(unittest.TestCase):
         )
         tools_directory = str(Path(__file__).resolve().parent)
         fifo_paths = (
-            Path("spec/kernel-spec-v0.8.md"),
-            Path("facets/v0.8/decomposition/00.json"),
+            Path("spec/kernel-spec-v0.9.md"),
+            Path("facets/v0.9/decomposition/00.json"),
         )
         for fifo_path in fifo_paths:
             with self.subTest(path=str(fifo_path)), tempfile.TemporaryDirectory() as directory:
@@ -838,7 +817,7 @@ class SourceBindingAndDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.write_repository(root)
-            decomposition = root / "facets" / "v0.8" / "decomposition"
+            decomposition = root / "facets" / "v0.9" / "decomposition"
             (decomposition / "README.md").write_text("ignored\n", encoding="ascii")
             (decomposition / "nested").mkdir()
             with mock.patch.object(
@@ -857,7 +836,7 @@ class SourceBindingAndDiscoveryTests(unittest.TestCase):
             root = Path(directory)
             fragments = [fragment_for(RULES[::2]), fragment_for(RULES[1::2])]
             self.write_repository(root, fragments=fragments)
-            decomposition = root / "facets" / "v0.8" / "decomposition"
+            decomposition = root / "facets" / "v0.9" / "decomposition"
             with mock.patch.object(semantic_catalog, "MAX_FRAGMENT_COUNT", 2):
                 self.assertEqual(
                     semantic_catalog.build_from_files(root), build(fragments)
@@ -897,7 +876,7 @@ class SourceBindingAndDiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.write_repository(root)
-            decomposition = root / "facets" / "v0.8" / "decomposition"
+            decomposition = root / "facets" / "v0.9" / "decomposition"
             (decomposition / "README.md").write_text("ignored\n", encoding="ascii")
             nested = decomposition / "nested"
             nested.mkdir()
@@ -910,18 +889,18 @@ class LiveCatalogTests(unittest.TestCase):
         audit = semantic_catalog.check_partial_from_files()
         self.assertEqual(audit["rule_count"], len(RULES))
         self.assertEqual(audit["missing_rules"], [])
-        self.assertEqual(audit["source_atom_count"], 200)
+        self.assertEqual(audit["source_atom_count"], 204)
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             self.assertEqual(semantic_catalog.main(["check-partial"]), 0)
         self.assertEqual(
             output.getvalue(),
-            f"{len(RULES)}/{len(RULES)} rules; 200/200 source atoms; missing: \n",
+            f"{len(RULES)}/{len(RULES)} rules; 204/204 source atoms; missing: \n",
         )
 
     def test_live_full_build_is_complete_and_deterministic(self) -> None:
         catalog = semantic_catalog.build_from_files()
-        self.assertEqual(len(catalog["source_atom_coverage"]), 200)
+        self.assertEqual(len(catalog["source_atom_coverage"]), 204)
         self.assertEqual(
             catalog["specification"],
             {

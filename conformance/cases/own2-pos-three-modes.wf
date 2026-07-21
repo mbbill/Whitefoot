@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-2: the three modes own / shared / uniq borrow are always written.";
   let a: own i32 = 5_i32;
   region 'r {

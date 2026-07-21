@@ -3,7 +3,7 @@ enum ScanState {
   InWord();
 }
 
-fn flip (s: own ScanState) -> own ScanState pure {
+fn flip(s: own ScanState) -> own ScanState pure {
   let out: own ScanState = match s {
     InSpace() => {
       give InWord();
@@ -15,7 +15,7 @@ fn flip (s: own ScanState) -> own ScanState pure {
   return out;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A 2-variant tag-only enum is Bool-isomorphic: copy semantics, matched twice, loop-carried and set-mutated; lowers as i1.";
   let st: own ScanState = InSpace();
   let i: own u64 = 0_u64;

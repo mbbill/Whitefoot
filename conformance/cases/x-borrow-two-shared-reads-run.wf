@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-5: two shared borrows of one place coexist and are both read - shared reads never conflict.";
   let a: own i32 = 7_i32;
   region 'r {

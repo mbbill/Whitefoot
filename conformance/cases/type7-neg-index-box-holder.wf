@@ -1,4 +1,4 @@
-fn read (holder: own box<buffer<u8>>) -> own u8 traps {
+fn read(holder: own box<buffer<u8>>) -> own u8 traps {
   doc "TYPE-7: index cannot implicitly read through a box holder; write index<u8>(deref(holder), offset).";
   return index<u8>(holder, 0_u64);
 }

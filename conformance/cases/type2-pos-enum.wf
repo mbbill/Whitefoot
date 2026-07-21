@@ -1,6 +1,9 @@
-enum Light { Off(); On(); }
+enum Light {
+  Off();
+  On();
+}
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "enum is a composite type [TYPE-2]: construct and match a value.";
   let s: own Light = On();
   match s {

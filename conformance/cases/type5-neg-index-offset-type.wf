@@ -1,4 +1,4 @@
-fn main () -> own unit allocates(heap), traps {
+fn main() -> own unit allocates(heap), traps {
   doc "TYPE-5: an index offset has the required type u64; a u32 atom is not accepted implicitly.";
   let items: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
   let value: own u8 = index<u8>(items, 0_u32);

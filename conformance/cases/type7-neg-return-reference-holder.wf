@@ -1,4 +1,4 @@
-fn read ['r] (holder: &'r i32) -> own i32 pure {
+fn read ['r](holder: &'r i32) -> own i32 pure {
   doc "TYPE-7: returning a referent value cannot implicitly read through a reference holder.";
   return holder;
 }

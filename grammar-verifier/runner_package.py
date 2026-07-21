@@ -172,9 +172,15 @@ def write_evidence(
             "static_transitions": static_observations["transitions"],
         },
         "proposal_artifacts": {name: _binding(data) for name, data in sorted(proposal_artifacts.items())},
-        "schema": "whitefoot.grammar-evidence.v1",
+        "schema": (
+            "whitefoot.grammar-evidence.v2"
+            if inputs.installation is not None
+            else "whitefoot.grammar-evidence.v1"
+        ),
         "source_revisions": {name: revision.value() for name, revision in sorted(revisions.items())},
     }
+    if inputs.installation is not None:
+        summary["installation"] = dict(inputs.installation)
     report = _canonical_json(summary)
     if len(report) > inputs.limits["max_final_report_bytes"]:
         fail("final_report_size", "the canonical evidence report exceeds its byte limit")

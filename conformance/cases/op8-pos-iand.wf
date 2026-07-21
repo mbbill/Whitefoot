@@ -1,4 +1,4 @@
-fn mask (a: own u32, b: own u32) -> own u32 pure {
+fn mask(a: own u32, b: own u32) -> own u32 pure {
   doc "iand lowers to LLVM and and is total [OP-8]; the bitwise ops carry no mode suffix.";
   return iand<u32>(a, b);
 }

@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "iadd.wrap wraps two's-complement on overflow [OP-1]; i32::MAX + 1 wraps to a negative value, confirmed on the dominated path by a passed check [OP-5].";
   let hi: own i32 = 2147483647_i32;
   let w: own i32 = iadd.wrap<i32>(hi, 1_i32);

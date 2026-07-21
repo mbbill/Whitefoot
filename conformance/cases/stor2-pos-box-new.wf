@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Creation: box_new<T>(v) returns own box<T> [STOR-2]; content is read through deref.";
   let b: own box<i32> = box_new<i32>(5_i32);
   let v: own i32 = deref(b);

@@ -1,9 +1,9 @@
-fn f (a: own u64) -> own u64 traps requires {
+fn f(a: own u64) -> own u64 traps requires {
   doc "a clause with no final check must not count as a requires";
 } {
   return a;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

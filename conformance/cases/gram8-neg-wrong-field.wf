@@ -1,6 +1,8 @@
-enum Wrap { W(inner: i32); }
+enum Wrap {
+  W(inner: i32);
+}
 
-fn make () -> own Wrap pure {
+fn make() -> own Wrap pure {
   doc "GRAM-8: a misspelled field name is a hard error citing GRAM-8.";
   return W(inr: 7_i32);
 }

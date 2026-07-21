@@ -254,6 +254,19 @@ impl<'bytes> Scanner<'bytes> {
 /// acceptance, or normative diagnostics.
 #[must_use]
 pub fn lex_v0_8<'source>(source: &'source SourceBundle, limits: LexLimits) -> LexOutcome<'source> {
+    lex_shapes(source, limits)
+}
+
+/// Produces a failure-atomic, lossless lexical partition for v0.9 source.
+///
+/// This entry point does not decide terminal classification, canonical
+/// spacing, parseability, semantic acceptance, or normative diagnostics.
+#[must_use]
+pub fn lex_v0_9<'source>(source: &'source SourceBundle, limits: LexLimits) -> LexOutcome<'source> {
+    lex_shapes(source, limits)
+}
+
+fn lex_shapes<'source>(source: &'source SourceBundle, limits: LexLimits) -> LexOutcome<'source> {
     let source_count = match u32::try_from(source.len()) {
         Ok(value) => value,
         Err(_) => {

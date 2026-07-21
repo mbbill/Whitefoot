@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Recoverable error is a value: a `Result` dispatched by `match` arms [ERR-1].";
   let v: own i32 = match iadd.checked<i32>(40_i32, 2_i32) {
     Ok(value: w) => {

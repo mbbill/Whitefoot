@@ -1,4 +1,4 @@
-fn hidden_local (x: own i32) -> own Bool traps requires {
+fn hidden_local(x: own i32) -> own Bool traps requires {
   let permitted: own Bool = ige<i32>(x, 0_i32);
   check permitted else trap "x must be nonnegative";
 } {
@@ -6,6 +6,6 @@ fn hidden_local (x: own i32) -> own Bool traps requires {
   return permitted;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

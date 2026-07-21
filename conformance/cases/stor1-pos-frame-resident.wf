@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Storage class is a function of type [STOR-1]: an i32 local is frame-resident with no per-binding storage annotation and no default clause.";
   let a: own i32 = 7_i32;
   let b: own i32 = iadd.wrap<i32>(a, 3_i32);

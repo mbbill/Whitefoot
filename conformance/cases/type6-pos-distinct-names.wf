@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Distinct value names and a break to a lexically enclosing loop [TYPE-6].";
   let i: own i32 = 0_i32;
   let total: own i32 = 0_i32;

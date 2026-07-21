@@ -1,4 +1,4 @@
-fn sumto (n: own i32) -> own i32 traps {
+fn sumto(n: own i32) -> own i32 traps {
   doc "Recursion is permitted [FN-6].";
   match ieq<i32>(n, 0_i32) {
     True() => {
@@ -12,7 +12,7 @@ fn sumto (n: own i32) -> own i32 traps {
   }
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let s: own i32 = sumto(n: 4_i32);
   check ieq<i32>(s, 10_i32) else trap "recursion drift";
   return unit;

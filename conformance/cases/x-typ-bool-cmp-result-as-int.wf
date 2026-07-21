@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "Binding a Bool comparison result to an own i32 let is a type mismatch [TYPE-5].";
   let a: own i32 = 1_i32;
   let b: own i32 = 2_i32;

@@ -123,10 +123,12 @@ DIRECT_FACET_ID = re.compile(
 )
 EXPECTED_COMPILE_TIME_DATA_INPUTS = {
     Path("kernel-spec-v0.8.sha256"),
+    Path("kernel-spec-v0.9.sha256"),
     Path("static-semantic-catalog-v0.8.sha256"),
+    Path("static-semantic-catalog-v0.9.sha256"),
 }
 EXPECTED_STATIC_SEMANTIC_CATALOG_SHA256 = (
-    "2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d"
+    "3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae"
 )
 
 
@@ -481,27 +483,27 @@ def parse_sha256_lock(raw: bytes, label: str) -> str:
 
 
 def check_specification() -> None:
-    """Bind the compiler workspace to the immutable v0.8 bytes."""
+    """Bind the compiler workspace to the immutable v0.9 bytes."""
     locked = read_exact_lock(
-        ROOT / "kernel-spec-v0.8.sha256",
+        ROOT / "kernel-spec-v0.9.sha256",
         "kernel specification",
     )
 
-    spec = REPOSITORY / "spec" / "kernel-spec-v0.8.md"
+    spec = REPOSITORY / "spec" / "kernel-spec-v0.9.md"
     actual = hashlib.sha256(spec.read_bytes()).hexdigest()
     if actual != locked:
         fail(f"kernel specification hash is {actual}, expected {locked}")
 
 
 def check_static_catalog_identity() -> None:
-    """Pin the compiler's nominal v0.8 catalog identity to its reviewed value."""
+    """Pin the compiler's nominal v0.9 catalog identity to its reviewed value."""
     locked = read_exact_lock(
-        ROOT / "static-semantic-catalog-v0.8.sha256",
+        ROOT / "static-semantic-catalog-v0.9.sha256",
         "static semantic catalog",
     )
     if locked != EXPECTED_STATIC_SEMANTIC_CATALOG_SHA256:
         fail(
-            "static semantic catalog lock differs from the reviewed v0.8 identity"
+            "static semantic catalog lock differs from the reviewed v0.9 identity"
         )
 
 

@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-3: an enclosing region outlives an inner one; a 'r borrow satisfies an 's destination.";
   let a: own i32 = 7_i32;
   region 'r {

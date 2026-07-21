@@ -1,9 +1,9 @@
-fn takesref ['r] (x: &'r i32) -> own i32 pure {
+fn takesref ['r](x: &'r i32) -> own i32 pure {
   doc "Parameter x is a shared borrow &'r i32 [FN-1].";
   return deref(x);
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "Caller passes an own value where the signature declares a shared borrow [FN-1].";
   let a: own i32 = 5_i32;
   let r: own i32 = takesref(x: a);

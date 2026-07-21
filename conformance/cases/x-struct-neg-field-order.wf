@@ -3,7 +3,7 @@ struct Pair {
   b: i32;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "GRAM-8: constructing a struct with out-of-order field names is rejected; declared order is the one legal byte sequence.";
   let p: own Pair = Pair(b: 2_i32, a: 1_i32);
   return unit;

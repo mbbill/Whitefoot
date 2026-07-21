@@ -1,0 +1,29 @@
+{
+  "components": {
+    "oracle.raw": {
+      "byte_length": 540101,
+      "sha256": "d86b73aff8779b1213ec4b6359a4d6c670158accb56046fae0b82be650cabddb"
+    },
+    "proposal-delta.md": {
+      "byte_length": 31571,
+      "sha256": "4b4e583f8469b4f58fffac3263437300a58ca126e7f8dca5f6d055599938eab0"
+    },
+    "protected-surface-census.json": {
+      "byte_length": 39073,
+      "sha256": "bb224651916f9ad49186b51c7963b9792ee7b698fff7c875dc4806b106241bda"
+    },
+    "report.json": {
+      "byte_length": 9332,
+      "sha256": "6778dfe2066ec617353d4d47efaa86ba6a69c8872b29419f5fe09ae9c91091ff"
+    },
+    "report.sha256": {
+      "byte_length": 78,
+      "sha256": "3aa6ff72e4a326507283aaf1421782451fb9bb96c9e0e084107ad9f3f4f003f2"
+    },
+    "static.raw": {
+      "byte_length": 858315,
+      "sha256": "230b273c0df040e5a1b38690c082817843d5ce6febadeb9ec11f253523214d61"
+    }
+  },
+  "schema": "whitefoot.grammar-evidence-package.v1"
+}

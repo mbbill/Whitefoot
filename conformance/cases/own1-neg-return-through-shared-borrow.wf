@@ -3,7 +3,7 @@ struct Pair {
   right: i32;
 }
 
-fn steal ['r] (holder: &'r Pair) -> own Pair pure {
+fn steal ['r](holder: &'r Pair) -> own Pair pure {
   doc "OWN-1: contextual affine return cannot move the Pair referent through a shared borrow.";
   return deref(holder);
 }

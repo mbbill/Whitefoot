@@ -1,0 +1,968 @@
+{
+  "clauses": [
+    {
+      "byte_end": 25086,
+      "byte_start": 24193,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-4/assignment-and-call-statement-shapes",
+        "facet:GRAM-4/binding-statement-shapes",
+        "facet:GRAM-4/control-transfer-statement-shapes",
+        "facet:GRAM-4/distinct-statement-and-value-match-productions",
+        "facet:GRAM-4/match-statement-and-block-shapes",
+        "facet:GRAM-4/named-match-binder-shapes",
+        "facet:GRAM-4/ordinary-and-try-let-right-hand-sides",
+        "facet:GRAM-4/runtime-check-statement-shape",
+        "facet:GRAM-4/scoped-control-statement-shapes",
+        "facet:GRAM-4/statement-form-closed-set"
+      ],
+      "owner_rule": "GRAM-4",
+      "sha256": "933d12b6fd3433bbf46b7236064a63438857c1c03a3d12d26e927ca04d54d2a2"
+    },
+    {
+      "byte_end": 26974,
+      "byte_start": 26059,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GRAM-7/distinct-match-node-kinds",
+        "facet:GRAM-7/production-local-match-classification",
+        "facet:GRAM-7/return-arm-conditionals",
+        "facet:GRAM-7/single-match-arm-block-shape",
+        "facet:GRAM-7/source-position-only-match-classification",
+        "facet:GRAM-7/statement-and-value-match-forms",
+        "facet:GRAM-7/statement-match-has-no-value",
+        "facet:GRAM-7/value-match-path-delivery",
+        "facet:GRAM-7/value-production-position-confinement"
+      ],
+      "owner_rule": "GRAM-7",
+      "sha256": "ce4eefcb22aa5fcd8aab1bb6b37fa5a4c18304205354e1a1dfd924644240d34c"
+    },
+    {
+      "byte_end": 28632,
+      "byte_start": 26975,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:GIVE-1/arm-path-delivery-completeness",
+        "facet:GIVE-1/borrow-delivery-return-region-equivalence",
+        "facet:GIVE-1/continuing-path-closed-recursion",
+        "facet:GIVE-1/delivered-mode-type-exact",
+        "facet:GIVE-1/enclosing-scoped-legality",
+        "facet:GIVE-1/loop-nondivergence",
+        "facet:GIVE-1/move-or-copy-delivery",
+        "facet:GIVE-1/nearest-value-match-arm-delivery",
+        "facet:GIVE-1/nested-value-match-delivery",
+        "facet:GIVE-1/nested-value-match-nondelivery",
+        "facet:GIVE-1/structural-delivery-recursion",
+        "facet:GIVE-1/trap-capable-normal-continuation",
+        "facet:GIVE-1/value-match-arm-only"
+      ],
+      "owner_rule": "GIVE-1",
+      "sha256": "1a7fe386c57fa17a2de1a64f38b6ea3ec55ed7cfb263a711ad99d14767b39839"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:GIVE-1/arm-path-delivery-completeness",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/borrow-delivery-return-region-equivalence",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/continuing-path-closed-recursion",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/delivered-mode-type-exact",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/enclosing-scoped-legality",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/loop-nondivergence",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/move-or-copy-delivery",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/nearest-value-match-arm-delivery",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/nested-value-match-delivery",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/nested-value-match-nondelivery",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/structural-delivery-recursion",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/trap-capable-normal-continuation",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GIVE-1/value-match-arm-only",
+      "owner_rule": "GIVE-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GIVE-1"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/assignment-and-call-statement-shapes",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:set_stmt",
+        "production:GRAM-4:expr_stmt"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/binding-statement-shapes",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:let_stmt"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/control-transfer-statement-shapes",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:return_stmt",
+        "production:GRAM-4:break_stmt",
+        "production:GRAM-4:give_stmt"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/distinct-statement-and-value-match-productions",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-4",
+        "production:GRAM-4:value_match"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/match-statement-and-block-shapes",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:match_stmt",
+        "production:GRAM-4:arm"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/named-match-binder-shapes",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:fieldbind_list",
+        "production:GRAM-4:fieldbind"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/ordinary-and-try-let-right-hand-sides",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-4",
+        "production:GRAM-4:ordinary_let_rhs",
+        "production:GRAM-4:try_let_rhs"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/runtime-check-statement-shape",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:check_stmt"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/scoped-control-statement-shapes",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "production:GRAM-4:loop_stmt",
+        "production:GRAM-4:region_stmt"
+      ]
+    },
+    {
+      "id": "facet:GRAM-4/statement-form-closed-set",
+      "owner_rule": "GRAM-4",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-4",
+        "production:GRAM-4:stmt"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/distinct-match-node-kinds",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/production-local-match-classification",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/return-arm-conditionals",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/single-match-arm-block-shape",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/source-position-only-match-classification",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/statement-and-value-match-forms",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/statement-match-has-no-value",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/value-match-path-delivery",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    },
+    {
+      "id": "facet:GRAM-7/value-production-position-confinement",
+      "owner_rule": "GRAM-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:GRAM-7"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "GIVE-1",
+    "GRAM-4",
+    "GRAM-7"
+  ],
+  "schema": 1
+}

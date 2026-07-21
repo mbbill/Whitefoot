@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "GIVE-1 is checker-scoped like break: `give` is legal only inside a `let`-initializer match arm; a give in a statement-position match is a hard error citing GIVE-1.";
   match ilt<i32>(3_i32, 4_i32) {
     True() => {

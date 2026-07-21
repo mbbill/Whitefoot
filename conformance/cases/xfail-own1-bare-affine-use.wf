@@ -1,6 +1,10 @@
-enum Sign { Neg(mag: i32); Zero(); Pos(); }
+enum Sign {
+  Neg(mag: i32);
+  Zero();
+  Pos();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "A bare use of an affine value must be rejected [OWN-1] (write move). KNOWN GAP.";
   let a: own Sign = Neg(mag: 1_i32);
   let b: own Sign = a;

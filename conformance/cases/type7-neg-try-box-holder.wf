@@ -1,6 +1,8 @@
-enum StepError { Failed(); }
+enum StepError {
+  Failed();
+}
 
-fn forward (holder: own box<Result<i32, StepError>>) -> own Result<i32, StepError> pure {
+fn forward(holder: own box<Result<i32, StepError>>) -> own Result<i32, StepError> pure {
   doc "TYPE-7: try cannot implicitly read a Result from a box holder; write deref(holder).";
   let value: own i32 = try holder;
   return Ok(value: value);

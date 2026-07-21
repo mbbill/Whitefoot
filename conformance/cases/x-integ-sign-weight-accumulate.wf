@@ -1,6 +1,10 @@
-enum Sign { Neg(); Zero(); Pos(); }
+enum Sign {
+  Neg();
+  Zero();
+  Pos();
+}
 
-fn classify (x: own i32) -> own Sign pure {
+fn classify(x: own i32) -> own Sign pure {
   doc "Classify an integer's sign; the closed-set result is consumed by match at each call site [FN-5].";
   match ilt<i32>(x, 0_i32) {
     True() => {
@@ -19,7 +23,7 @@ fn classify (x: own i32) -> own Sign pure {
   }
 }
 
-fn weight (x: own i32) -> own i32 pure {
+fn weight(x: own i32) -> own i32 pure {
   doc "Map a sign to a weight; matching the own Sign moves it exactly once [OWN-13].";
   match classify(x: x) {
     Neg() => {
@@ -34,7 +38,7 @@ fn weight (x: own i32) -> own i32 pure {
   }
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Accumulate sign-weights of three inputs via cross-fn enum dispatch, then verify the sum [OP-1, OWN-13].";
   let neg: own i32 = isub.wrap<i32>(0_i32, 5_i32);
   let wa: own i32 = weight(x: neg);

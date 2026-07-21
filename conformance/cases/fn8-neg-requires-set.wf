@@ -1,4 +1,4 @@
-fn mutable_clause (x: own i32) -> own i32 traps requires {
+fn mutable_clause(x: own i32) -> own i32 traps requires {
   let candidate: own i32 = x;
   set candidate = iadd.wrap<i32>(candidate, 1_i32);
   let permitted: own Bool = igt<i32>(candidate, x);
@@ -8,6 +8,6 @@ fn mutable_clause (x: own i32) -> own i32 traps requires {
   return x;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

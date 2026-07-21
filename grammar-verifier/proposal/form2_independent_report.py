@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 import difflib
 import hashlib
-from typing import Any
+from typing import Any, Optional
 
 from form2_independent_compare import (
     COMPLETE_STAGE,
@@ -298,8 +298,12 @@ def _unified_patch(changes: list[tuple[str, bytes, bytes]]) -> bytes:
     return bytes(output)
 
 
-def build_independent_artifacts(*, compare_primary: bool = True) -> dict[str, bytes]:
-    inputs = load_independent_inputs()
+def build_independent_artifacts(
+    *,
+    compare_primary: bool = True,
+    inputs: Optional[IndependentInputs] = None,
+) -> dict[str, bytes]:
+    inputs = load_independent_inputs() if inputs is None else inputs
     _validate_candidate(inputs.candidate)
     raw_failure_paths = _raw_failure_paths(inputs)
     control_records, repairs = audit_failure_controls(inputs, raw_failure_paths)

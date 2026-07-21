@@ -1,9 +1,9 @@
-fn takesown (n: own i32) -> own i32 pure {
+fn takesown(n: own i32) -> own i32 pure {
   doc "Parameter n is an own i32 [FN-1].";
   return n;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "Caller passes a shared borrow where the signature declares an own value [FN-1].";
   let a: own i32 = 5_i32;
   region 'r {

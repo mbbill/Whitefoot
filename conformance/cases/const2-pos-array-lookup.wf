@@ -1,6 +1,6 @@
 const table: array<u8, 4> = [10_u8, 20_u8, 30_u8, 40_u8];
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A const array is read-only static rodata, indexed with copy-out [CONST-2].";
   let v: own u8 = index<u8>(table, 2_u64);
   check ieq<u8>(v, 30_u8) else trap "const table drift";

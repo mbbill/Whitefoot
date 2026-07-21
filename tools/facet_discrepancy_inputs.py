@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load exact v0.8 discrepancy authorities through bounded real paths."""
+"""Load exact v0.9 discrepancy authorities through bounded real paths."""
 
 from __future__ import annotations
 
@@ -14,17 +14,17 @@ from typing import Any, Sequence
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC_PATH = ROOT / "spec" / "kernel-spec-v0.8.md"
-SOURCE_INDEX_PATH = ROOT / "facets" / "v0.8" / "source.json"
+SPEC_PATH = ROOT / "spec" / "kernel-spec-v0.9.md"
+SOURCE_INDEX_PATH = ROOT / "facets" / "v0.9" / "source.json"
 GUARD_BASELINE_PATH = ROOT / "governance" / "guard-baseline.json"
 MANIFEST_PATH = ROOT / "conformance" / "manifest.jsonl"
 CASE_ROOT = ROOT / "conformance" / "cases"
 
-SPEC_SHA256 = "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
-SOURCE_INDEX_SHA256 = "b5f52d81fe7aff0581a421c296a84f0b0fd1ebf7d9dee104988f096d5937379e"
-GUARD_BASELINE_SHA256 = "9d4ff925668a3341543d555c5243ef0b74ca5e7e275617ff4808d90c290dc48a"
+SPEC_SHA256 = "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+SOURCE_INDEX_SHA256 = "cc9aa86de0d59b9288d1f8fd7a6bde6f94fff26da139d73f91bcbcf71219d663"
+GUARD_BASELINE_SHA256 = "bb7ce5ea5b3b2a169b259bcffc7add3234e89b50aa689d5f9df5a93a91325622"
 LEGACY_ORPHAN_PATH = "conformance/cases/pending-const2-item.wf"
-LEGACY_ORPHAN_SHA256 = "ae99d9b9b99e02e9c6c5f2af54f0924b7b1a0f5ee0422d29958b01b597adf759"
+LEGACY_ORPHAN_SHA256 = "5cec5d4e386df7383137fecdca7d4446274785f758fc563aa54ffb72e92cfe64"
 
 MAX_JSON_DEPTH = 128
 MAX_JSON_INTEGER_DIGITS = 20
@@ -533,16 +533,16 @@ def load_authorities(root: Path = ROOT) -> AuthorityInputs:
     root = require_directory(root, root, "repository root")
     specification = read_exact(
         root,
-        root / "spec" / "kernel-spec-v0.8.md",
+        root / "spec" / "kernel-spec-v0.9.md",
         SPEC_SHA256,
-        "v0.8 specification",
+        "v0.9 specification",
         MAX_SPECIFICATION_BYTES,
     )
     source_index_bytes = read_exact(
         root,
-        root / "facets" / "v0.8" / "source.json",
+        root / "facets" / "v0.9" / "source.json",
         SOURCE_INDEX_SHA256,
-        "v0.8 source index",
+        "v0.9 source index",
         MAX_SOURCE_INDEX_BYTES,
     )
     guard_baseline_bytes = read_exact(
@@ -561,7 +561,7 @@ def load_authorities(root: Path = ROOT) -> AuthorityInputs:
     source_index = strict_json_loads(
         source_index_bytes,
         max_bytes=MAX_SOURCE_INDEX_BYTES,
-        label="v0.8 source index",
+        label="v0.9 source index",
     )
     baseline = strict_json_loads(
         guard_baseline_bytes,
@@ -569,7 +569,7 @@ def load_authorities(root: Path = ROOT) -> AuthorityInputs:
         label="guard baseline",
     )
     if not isinstance(source_index, dict):
-        raise DiscrepancyError("v0.8 source index must be an object")
+        raise DiscrepancyError("v0.9 source index must be an object")
     if not isinstance(baseline, dict) or not isinstance(
         baseline.get("conformance"), dict
     ):

@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
-    let a:own i32 = 1_i32;
-    return unit;
+fn main() -> own unit pure {
+    let a: own i32 = 1_i32;
+  return unit;
 }

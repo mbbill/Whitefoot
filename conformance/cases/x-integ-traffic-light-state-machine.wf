@@ -1,6 +1,10 @@
-enum Light { Red(); Green(); Yellow(); }
+enum Light {
+  Red();
+  Green();
+  Yellow();
+}
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A traffic-light state machine advanced by value-matches: each match moves the own state and gives its own successor, so after three transitions the light returns to Red [OWN-13, GIVE-1, OP-1, SCOPE-3].";
   let s0: own Light = Red();
   let s1: own Light = match s0 {

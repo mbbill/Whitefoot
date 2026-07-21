@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-5: reads and writes through the &uniq holder are permitted while it is live.";
   let a: own i32 = 3_i32;
   region 'r {

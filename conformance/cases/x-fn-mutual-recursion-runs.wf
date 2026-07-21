@@ -1,4 +1,4 @@
-fn iseven (n: own i32) -> own i32 traps {
+fn iseven(n: own i32) -> own i32 traps {
   doc "Mutually recursive with isodd; returns 1 when n is even [FN-1, FN-6].";
   match ieq<i32>(n, 0_i32) {
     True() => {
@@ -11,7 +11,7 @@ fn iseven (n: own i32) -> own i32 traps {
   }
 }
 
-fn isodd (n: own i32) -> own i32 traps {
+fn isodd(n: own i32) -> own i32 traps {
   doc "Mutually recursive with iseven; returns 0 when n is even [FN-1, FN-6].";
   match ieq<i32>(n, 0_i32) {
     True() => {
@@ -24,7 +24,7 @@ fn isodd (n: own i32) -> own i32 traps {
   }
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Mutual recursion resolves across two signatures; forward reference is legal [FN-1].";
   let r: own i32 = iseven(n: 8_i32);
   check ieq<i32>(r, 1_i32) else trap "8 is even";

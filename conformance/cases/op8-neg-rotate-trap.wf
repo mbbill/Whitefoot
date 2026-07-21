@@ -1,4 +1,4 @@
-fn bad (a: own u32, n: own u32) -> own u32 traps {
+fn bad(a: own u32, n: own u32) -> own u32 traps {
   doc "A rotate amount is taken modulo width, so rotates are dotless-total [OP-8]; irotl.trap names no table op and must be rejected.";
   return irotl.trap<u32>(a, n);
 }

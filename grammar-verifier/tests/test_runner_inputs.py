@@ -8,6 +8,7 @@ import unittest
 from support_common import ROOT, inputs
 from runner_inputs import (
     CURRENT_SHA256,
+    SUCCESSOR_SHA256,
     Inputs,
     MAGIC,
     RunnerError,
@@ -26,6 +27,30 @@ class InputTests(unittest.TestCase):
     def test_repository_inputs_are_canonical_and_pinned(self) -> None:
         value = load_inputs(ROOT)
         self.assertEqual(value.section("current").binding["sha256"], CURRENT_SHA256)
+        self.assertEqual(value.section("proposal").binding["sha256"], SUCCESSOR_SHA256)
+        self.assertIsNone(value.installation)
+
+    def test_installed_inputs_require_the_reviewed_candidate_bytes(self) -> None:
+        value = load_inputs(ROOT, installed=True)
+        self.assertEqual(value.section("proposal").binding["sha256"], SUCCESSOR_SHA256)
+        self.assertEqual(value.installation["mode"], "installed-v0.9")
+        self.assertEqual(value.installation["relation"], "byte-identical")
+        self.assertEqual(
+            value.installation["candidate"],
+            {
+                "byte_length": 98044,
+                "path": "grammar-verifier/proposal/kernel-spec-successor-candidate.md",
+                "sha256": SUCCESSOR_SHA256,
+            },
+        )
+        self.assertEqual(
+            value.installation["installed_specification"],
+            {
+                "byte_length": 98044,
+                "path": "spec/kernel-spec-v0.9.md",
+                "sha256": SUCCESSOR_SHA256,
+            },
+        )
 
     def test_wrong_current_hash_stops(self) -> None:
         with self.assertRaisesRegex(RunnerError, "pinned v0.8"):

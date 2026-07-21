@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let q: own u64 = ishr.wrap<u64>(16_u64, 2_u32);
   check ieq<u64>(q, 4_u64) else trap "u32 shift amount drift";
   return unit;

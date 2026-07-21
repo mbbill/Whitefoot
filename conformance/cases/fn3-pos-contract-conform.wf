@@ -1,16 +1,16 @@
 contract Zeroed {
   doc "A contract declares fn signatures [FN-3].";
-  fn zero () -> own i32 pure;
+  fn zero() -> own i32 pure;
 }
 
-conform i32 : Zeroed {
+conform i32: Zeroed {
   zero = i32_zero;
 }
 
-fn i32_zero () -> own i32 pure {
+fn i32_zero() -> own i32 pure {
   return 0_i32;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

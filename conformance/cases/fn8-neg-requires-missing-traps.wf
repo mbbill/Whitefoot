@@ -1,4 +1,4 @@
-fn missing_effect (x: own i32) -> own i32 pure requires {
+fn missing_effect(x: own i32) -> own i32 pure requires {
   let permitted: own Bool = ige<i32>(x, 0_i32);
   check permitted else trap "x must be nonnegative";
 } {
@@ -6,6 +6,6 @@ fn missing_effect (x: own i32) -> own i32 pure requires {
   return x;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

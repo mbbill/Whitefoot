@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Reading through a reference is explicit via deref(place) [TYPE-7].";
   let a: own i32 = 42_i32;
   region 'r {

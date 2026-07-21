@@ -1,16 +1,16 @@
 contract PureMember {
-  fn apply (x: own i32) -> own i32 pure;
+  fn apply(x: own i32) -> own i32 pure;
 }
 
-fn trapping_apply (x: own i32) -> own i32 traps {
+fn trapping_apply(x: own i32) -> own i32 traps {
   check ieq<i32>(x, x) else trap "retained explicit check";
   return x;
 }
 
-conform i32 : PureMember {
+conform i32: PureMember {
   apply = trapping_apply;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

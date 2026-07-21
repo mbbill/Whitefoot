@@ -3,13 +3,13 @@ struct Vec2 {
   y: i32;
 }
 
-fn sum_xy (v: own Vec2) -> own i32 pure {
+fn sum_xy(v: own Vec2) -> own i32 pure {
   doc "TYPE-5: read the fields of an own struct parameter and return their sum.";
   let s: own i32 = iadd.wrap<i32>(v.x, v.y);
   return s;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
   let vec2_atom_0001: own Vec2 = Vec2(x: 20_i32, y: 22_i32);
   let total: own i32 = sum_xy(v: move vec2_atom_0001);

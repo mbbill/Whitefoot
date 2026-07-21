@@ -1,5 +1,8 @@
-enum PayloadEq { PayloadEmpty(); PayloadValue(value: u32); }
+enum PayloadEq {
+  PayloadEmpty();
+  PayloadValue(value: u32);
+}
 
-fn compare (left: own PayloadEq, right: own PayloadEq) -> own Bool pure {
+fn compare(left: own PayloadEq, right: own PayloadEq) -> own Bool pure {
   return eeq<PayloadEq>(left, right);
 }

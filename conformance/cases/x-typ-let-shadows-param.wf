@@ -1,10 +1,10 @@
-fn shadow_param (x: own i32) -> own unit pure {
+fn shadow_param(x: own i32) -> own unit pure {
   doc "A let redeclaring the live parameter name x shadows it [TYPE-6].";
   let x: own i32 = 9_i32;
   return unit;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   let r: own unit = shadow_param(x: 3_i32);
   return unit;
 }

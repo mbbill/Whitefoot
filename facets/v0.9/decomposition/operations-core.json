@@ -1,0 +1,1423 @@
+{
+  "clauses": [
+    {
+      "byte_end": 47631,
+      "byte_start": 47330,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/computation-closed-operation-inventory"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "abb8e5030a8e5b5d30db2241f7e289a55fd552ef04212bc990ca20eac8f146dc"
+    },
+    {
+      "byte_end": 48242,
+      "byte_start": 47631,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/integer-arithmetic-mode-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "c34855197c361dd98be4f9c93ba141229630e48d34edd90cd6e43648643b2184"
+    },
+    {
+      "byte_end": 48324,
+      "byte_start": 48242,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/integer-comparison-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "ab6d651809602f8010b36e3b30081947e83b84cce68d6657c49c59e06f780a5a"
+    },
+    {
+      "byte_end": 48448,
+      "byte_start": 48324,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/nominal-tag-equality-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "b80a63bf3b40ee771cee051e01e65cb469e5c00f36ac93c36d01612c51ec6ed8"
+    },
+    {
+      "byte_end": 48625,
+      "byte_start": 48448,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/float-operation-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "64c779efdc8079c1ba1182faa695a7571e5350f6822b0161689316ed99556550"
+    },
+    {
+      "byte_end": 48740,
+      "byte_start": 48625,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/boolean-logic-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "b073312f783d15f4216ab36efab50991e591319cf070944f599e6a0b13bb761e"
+    },
+    {
+      "byte_end": 48911,
+      "byte_start": 48740,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/conversion-reinterpret-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "b8b19745ad0b376617cfe0dab91e988ad61301c163383851304d7b968bb35cff"
+    },
+    {
+      "byte_end": 49116,
+      "byte_start": 48911,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/structural-query-borrow-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "cf46836d90383ac2ada8c32c5095360e87e82a6a3b469165936027f1a1927a1c"
+    },
+    {
+      "byte_end": 49590,
+      "byte_start": 49116,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/allocation-construction-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "20be9ea0ca623828210f6e5cf7b0c17d3768982f2173080f1a8c351678df885c"
+    },
+    {
+      "byte_end": 50024,
+      "byte_start": 49590,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/integer-bit-operation-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "fcec59721ca2c4c78cc4a1fcea742da0e15163d259fa2796430cbd25cb94c479"
+    },
+    {
+      "byte_end": 50396,
+      "byte_start": 50024,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/integer-arithmetic-mode-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "559810ac745615edd4f9dd228825d2a3a28924ba463fba770a33cd817d313df3"
+    },
+    {
+      "byte_end": 50548,
+      "byte_start": 50396,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/conversion-reinterpret-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "33edfaa4553ab0dc53959049c380d5ea241ee1dbaa8dc522545110103d361859"
+    },
+    {
+      "byte_end": 50996,
+      "byte_start": 50548,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/float-operation-table-contract"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "1f87dd94716c9cd7d6cf2544a7266a3ca5b75b19887f100f9e5fc008a3114382"
+    },
+    {
+      "byte_end": 51461,
+      "byte_start": 50996,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/operation-name-lookup-partition"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "1072865e1e2ec31f25c7f4a7954cf73264b5f0fc5be9e8f89c1cfa627f023f77"
+    },
+    {
+      "byte_end": 51756,
+      "byte_start": 51461,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-1/dotless-operation-reservation"
+      ],
+      "owner_rule": "OP-1",
+      "sha256": "b6bbfe0e16abc29b3de6f24d5df59db24f82c6a2c80723a9d87b34f376fe62b4"
+    },
+    {
+      "byte_end": 52034,
+      "byte_start": 51757,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-2/integer-family-mode-axis-membership"
+      ],
+      "owner_rule": "OP-2",
+      "sha256": "17a259865026e9bac69dec50ba5619577be175fcadebdcc5d710396f74d4c857"
+    },
+    {
+      "byte_end": 52531,
+      "byte_start": 52034,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-2/division-remainder-failure-classification"
+      ],
+      "owner_rule": "OP-2",
+      "sha256": "2f30d16d733f9cc1725eb6ae6cc7d64ec289df7edd3c060a7f3071e85955ae09"
+    },
+    {
+      "byte_end": 52725,
+      "byte_start": 52531,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-2/integer-family-mode-axis-membership"
+      ],
+      "owner_rule": "OP-2",
+      "sha256": "ec8d723c10f099c5ab8258b2d3cfd98bf3213ac9c423af17a63622b125ca9b07"
+    },
+    {
+      "byte_end": 52883,
+      "byte_start": 52725,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-2/shift-rotate-amount-policy"
+      ],
+      "owner_rule": "OP-2",
+      "sha256": "f154070518efbfecf811a522f467cb067308aa56341fcbbae14146fdb75e434b"
+    },
+    {
+      "byte_end": 53115,
+      "byte_start": 52884,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-3/strict-rounding-float-family"
+      ],
+      "owner_rule": "OP-3",
+      "sha256": "05fd69b495c89765626dab55a8e917e94132f0118e471ae9306eb42f69008b4a"
+    },
+    {
+      "byte_end": 53283,
+      "byte_start": 53115,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-3/dotless-exact-float-family"
+      ],
+      "owner_rule": "OP-3",
+      "sha256": "85bb701a3352651c15ea572724fa846ba8a9305149b0852c3070896430486e7c"
+    },
+    {
+      "byte_end": 53435,
+      "byte_start": 53283,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-3/future-relaxed-mode-is-additive"
+      ],
+      "owner_rule": "OP-3",
+      "sha256": "026735378c97f564a9c3f044e8e2a37acda91283239cddfe76ae007fed6ff22b"
+    },
+    {
+      "byte_end": 53557,
+      "byte_start": 53436,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-4/index-out-of-bounds-traps",
+        "facet:OP-4/index-proof-only-check-elision"
+      ],
+      "owner_rule": "OP-4",
+      "sha256": "ddb2e5b41324ef625d5f557dd34b84b1a6b6b10e55ea69db44307d185c6e68aa"
+    },
+    {
+      "byte_end": 53716,
+      "byte_start": 53557,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-4/index-proof-only-check-elision"
+      ],
+      "owner_rule": "OP-4",
+      "sha256": "4134d7b046594dc3fd9a9a707724df4d9daed679164c569cab49909b8a6123ac"
+    },
+    {
+      "byte_end": 53856,
+      "byte_start": 53716,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-4/index-domain-and-runtime-length"
+      ],
+      "owner_rule": "OP-4",
+      "sha256": "6b01147cb0383c9ec92e1eacc10dd5ab0572281dfe268a7e578e1f6321cf62a8"
+    },
+    {
+      "byte_end": 53944,
+      "byte_start": 53857,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-5/explicit-check-always-executes"
+      ],
+      "owner_rule": "OP-5",
+      "sha256": "ba72bd563b87f9846dbd4dc3486af63bb077645e26384a2e3f858ade4d116587"
+    },
+    {
+      "byte_end": 54036,
+      "byte_start": 53944,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-5/passed-check-dominating-fact"
+      ],
+      "owner_rule": "OP-5",
+      "sha256": "75cabcf30100dd947e698f95885b088c75515ebe9d10a85150a800d87fc07b0d"
+    },
+    {
+      "byte_end": 54131,
+      "byte_start": 54036,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-5/stated-checked-vocabulary-boundary"
+      ],
+      "owner_rule": "OP-5",
+      "sha256": "d56b2d358fcb032ee55dc1242efe081bb7f261aad7b93d498a0cbe0627f01a31"
+    },
+    {
+      "byte_end": 54308,
+      "byte_start": 54132,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-6/distinct-numeric-pair-domain"
+      ],
+      "owner_rule": "OP-6",
+      "sha256": "e60ce22f74593c8bedec15eb773c72fe08bc1bd8410c48f9a9f651770e8f1501"
+    },
+    {
+      "byte_end": 54503,
+      "byte_start": 54308,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-6/conversion-exact-or-error"
+      ],
+      "owner_rule": "OP-6",
+      "sha256": "5abff0e08d6e92e61f57eb9782c649642b335611417e84cc66cca8d1a3eb989c"
+    },
+    {
+      "byte_end": 54672,
+      "byte_start": 54503,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-6/non-total-conversion-failures"
+      ],
+      "owner_rule": "OP-6",
+      "sha256": "390d18311d07115f03cf90fc93c1093c57588b75dfc4469c27152eea6a10069f"
+    },
+    {
+      "byte_end": 54797,
+      "byte_start": 54672,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-6/conversion-special-float-values"
+      ],
+      "owner_rule": "OP-6",
+      "sha256": "7c23d393fcb7c3e1b1ea74a14bb1971494f32f8799f6167a909632632625cb33"
+    },
+    {
+      "byte_end": 55071,
+      "byte_start": 54797,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-6/total-conversion-pair-set"
+      ],
+      "owner_rule": "OP-6",
+      "sha256": "bd079b3d7f0da89a46ef9b986ac561767a448072890f291f1ba4f9e342400633"
+    },
+    {
+      "byte_end": 55154,
+      "byte_start": 55071,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-6/conversion-exact-or-error"
+      ],
+      "owner_rule": "OP-6",
+      "sha256": "4de3e2a62bca69cf4b9abd596ae2cbf3905050c06a971d184dd5335b771a8868"
+    },
+    {
+      "byte_end": 55534,
+      "byte_start": 55155,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-7/domain-prefix-and-structural-name-convention"
+      ],
+      "owner_rule": "OP-7",
+      "sha256": "3d8eecd16e0d5945df9ae96240e03ed3222e186a5b45fc4e6b4c37d7c70b50ef"
+    },
+    {
+      "byte_end": 55695,
+      "byte_start": 55534,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-7/bool-logic-and-enum-family-partition"
+      ],
+      "owner_rule": "OP-7",
+      "sha256": "3726781b3cf8c5b97127c644dbd0376ce19cd0177c737d3b68a4ec03d6c7e5cf"
+    },
+    {
+      "byte_end": 55999,
+      "byte_start": 55695,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-7/mode-suffix-if-and-only-if-axis"
+      ],
+      "owner_rule": "OP-7",
+      "sha256": "9e066211066961d9592b5b75b4ca5a4c17b0b0bb84c3c4242150e503f87986f2"
+    },
+    {
+      "byte_end": 56224,
+      "byte_start": 55999,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-7/explicit-type-controls-parametric-lowering"
+      ],
+      "owner_rule": "OP-7",
+      "sha256": "d97cb74e18c0560972c3dc33a81ecc727348788310e4961643938c4d89a758e2"
+    },
+    {
+      "byte_end": 56403,
+      "byte_start": 56224,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:OP-7/nominal-enum-type-validation"
+      ],
+      "owner_rule": "OP-7",
+      "sha256": "3e5d020dca5f17694c13eabe82d1a4bae94d2ead15007044802886269132e999"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:OP-1/allocation-construction-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:019",
+        "operation-row:OP-1:020",
+        "operation-row:OP-1:021",
+        "operation-row:OP-1:022"
+      ]
+    },
+    {
+      "id": "facet:OP-1/boolean-logic-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:013",
+        "operation-row:OP-1:014"
+      ]
+    },
+    {
+      "id": "facet:OP-1/computation-closed-operation-inventory",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1"
+      ]
+    },
+    {
+      "id": "facet:OP-1/conversion-reinterpret-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:015",
+        "operation-row:OP-1:016",
+        "operation-row:OP-1:036"
+      ]
+    },
+    {
+      "id": "facet:OP-1/dotless-operation-reservation",
+      "owner_rule": "OP-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:OP-1"
+      ]
+    },
+    {
+      "id": "facet:OP-1/float-operation-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:011",
+        "operation-row:OP-1:012",
+        "operation-row:OP-1:037",
+        "operation-row:OP-1:038",
+        "operation-row:OP-1:039",
+        "operation-row:OP-1:040",
+        "operation-row:OP-1:041",
+        "operation-row:OP-1:042",
+        "operation-row:OP-1:043",
+        "operation-row:OP-1:044"
+      ]
+    },
+    {
+      "id": "facet:OP-1/integer-arithmetic-mode-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:001",
+        "operation-row:OP-1:002",
+        "operation-row:OP-1:003",
+        "operation-row:OP-1:004",
+        "operation-row:OP-1:005",
+        "operation-row:OP-1:006",
+        "operation-row:OP-1:007",
+        "operation-row:OP-1:008",
+        "operation-row:OP-1:030",
+        "operation-row:OP-1:031",
+        "operation-row:OP-1:032",
+        "operation-row:OP-1:033",
+        "operation-row:OP-1:034",
+        "operation-row:OP-1:035"
+      ]
+    },
+    {
+      "id": "facet:OP-1/integer-bit-operation-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:023",
+        "operation-row:OP-1:024",
+        "operation-row:OP-1:025",
+        "operation-row:OP-1:026",
+        "operation-row:OP-1:027",
+        "operation-row:OP-1:028",
+        "operation-row:OP-1:029"
+      ]
+    },
+    {
+      "id": "facet:OP-1/integer-comparison-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:009"
+      ]
+    },
+    {
+      "id": "facet:OP-1/nominal-tag-equality-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:010"
+      ]
+    },
+    {
+      "id": "facet:OP-1/operation-name-lookup-partition",
+      "owner_rule": "OP-1",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1"
+      ]
+    },
+    {
+      "id": "facet:OP-1/structural-query-borrow-table-contract",
+      "owner_rule": "OP-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-1",
+        "operation-row:OP-1:017",
+        "operation-row:OP-1:018"
+      ]
+    },
+    {
+      "id": "facet:OP-2/division-remainder-failure-classification",
+      "owner_rule": "OP-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-2"
+      ]
+    },
+    {
+      "id": "facet:OP-2/integer-family-mode-axis-membership",
+      "owner_rule": "OP-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-2"
+      ]
+    },
+    {
+      "id": "facet:OP-2/shift-rotate-amount-policy",
+      "owner_rule": "OP-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-2"
+      ]
+    },
+    {
+      "id": "facet:OP-3/dotless-exact-float-family",
+      "owner_rule": "OP-3",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-3"
+      ]
+    },
+    {
+      "id": "facet:OP-3/future-relaxed-mode-is-additive",
+      "owner_rule": "OP-3",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:OP-3"
+      ]
+    },
+    {
+      "id": "facet:OP-3/strict-rounding-float-family",
+      "owner_rule": "OP-3",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:OP-3"
+      ]
+    },
+    {
+      "id": "facet:OP-4/index-domain-and-runtime-length",
+      "owner_rule": "OP-4",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "conformance-trap",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-4"
+      ]
+    },
+    {
+      "id": "facet:OP-4/index-out-of-bounds-traps",
+      "owner_rule": "OP-4",
+      "owner_stage": "runtime",
+      "required_evidence": [
+        "conformance-run",
+        "conformance-trap",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:OP-4"
+      ]
+    },
+    {
+      "id": "facet:OP-4/index-proof-only-check-elision",
+      "owner_rule": "OP-4",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "conformance-trap",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:OP-4"
+      ]
+    },
+    {
+      "id": "facet:OP-5/explicit-check-always-executes",
+      "owner_rule": "OP-5",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "conformance-trap",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:OP-5"
+      ]
+    },
+    {
+      "id": "facet:OP-5/passed-check-dominating-fact",
+      "owner_rule": "OP-5",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "conformance-trap",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:OP-5"
+      ]
+    },
+    {
+      "id": "facet:OP-5/stated-checked-vocabulary-boundary",
+      "owner_rule": "OP-5",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:OP-5"
+      ]
+    },
+    {
+      "id": "facet:OP-6/conversion-exact-or-error",
+      "owner_rule": "OP-6",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-6"
+      ]
+    },
+    {
+      "id": "facet:OP-6/conversion-special-float-values",
+      "owner_rule": "OP-6",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:OP-6"
+      ]
+    },
+    {
+      "id": "facet:OP-6/distinct-numeric-pair-domain",
+      "owner_rule": "OP-6",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-6"
+      ]
+    },
+    {
+      "id": "facet:OP-6/non-total-conversion-failures",
+      "owner_rule": "OP-6",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:OP-6"
+      ]
+    },
+    {
+      "id": "facet:OP-6/total-conversion-pair-set",
+      "owner_rule": "OP-6",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-6"
+      ]
+    },
+    {
+      "id": "facet:OP-7/bool-logic-and-enum-family-partition",
+      "owner_rule": "OP-7",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-7"
+      ]
+    },
+    {
+      "id": "facet:OP-7/domain-prefix-and-structural-name-convention",
+      "owner_rule": "OP-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-7"
+      ]
+    },
+    {
+      "id": "facet:OP-7/explicit-type-controls-parametric-lowering",
+      "owner_rule": "OP-7",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:OP-7"
+      ]
+    },
+    {
+      "id": "facet:OP-7/mode-suffix-if-and-only-if-axis",
+      "owner_rule": "OP-7",
+      "owner_stage": "canonical-tree",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "frontend",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-7"
+      ]
+    },
+    {
+      "id": "facet:OP-7/nominal-enum-type-validation",
+      "owner_rule": "OP-7",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:OP-7"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "OP-1",
+    "OP-2",
+    "OP-3",
+    "OP-4",
+    "OP-5",
+    "OP-6",
+    "OP-7"
+  ],
+  "schema": 1
+}

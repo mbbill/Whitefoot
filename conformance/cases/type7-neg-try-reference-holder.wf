@@ -1,6 +1,8 @@
-enum StepError { Failed(); }
+enum StepError {
+  Failed();
+}
 
-fn forward ['r] (holder: &'r Result<i32, StepError>) -> own Result<i32, StepError> pure {
+fn forward ['r](holder: &'r Result<i32, StepError>) -> own Result<i32, StepError> pure {
   doc "TYPE-7: try cannot implicitly consume a Result through a reference holder; deref remains explicit.";
   let value: own i32 = try holder;
   return Ok(value: value);

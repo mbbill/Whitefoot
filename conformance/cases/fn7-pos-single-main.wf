@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Exactly one fn main with an at-most allocates(heap),traps row [FN-7].";
   check ieq<i32>(2_i32, 2_i32) else trap "unreachable";
   return unit;

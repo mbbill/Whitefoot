@@ -3,6 +3,7 @@ Makefile
 RUNNER_SOURCES
 evidence/v0.9-manifest-metadata.patch
 evidence/v0.9-post-form2-case-intent.patch
+installed_policy.py
 proposal/float_canonical_evidence.py
 proposal/float_exact.py
 proposal/form2_audit.py
@@ -62,6 +63,7 @@ runner_report_wire.py
 runner_static_report.py
 runner_trace.py
 tests/support_common.py
+tests/support_form2_installation.py
 tests/support_oracle.py
 tests/support_static.py
 tests/test_float_canonicality.py

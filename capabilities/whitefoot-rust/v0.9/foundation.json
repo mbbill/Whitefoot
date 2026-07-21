@@ -1,0 +1,7 @@
+{
+  "catalog_sha256": "3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae",
+  "evidence": [],
+  "format": "whitefoot-capability-fragment-v1",
+  "handlers": [],
+  "implementation_id": "whitefoot-rust"
+}

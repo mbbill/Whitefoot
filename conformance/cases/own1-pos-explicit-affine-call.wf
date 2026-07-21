@@ -1,8 +1,8 @@
-fn consume (buf: own buffer<u8>) -> own unit pure {
+fn consume(buf: own buffer<u8>) -> own unit pure {
   return unit;
 }
 
-fn main () -> own unit allocates(heap), traps {
+fn main() -> own unit allocates(heap), traps {
   let b: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
   consume(buf: move b);
   return unit;

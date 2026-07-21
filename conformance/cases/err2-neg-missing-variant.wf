@@ -1,13 +1,21 @@
-enum Color { Red(); Green(); Blue(); }
+enum Color {
+  Red();
+  Green();
+  Blue();
+}
 
-fn pick (c: own Color) -> own i32 pure {
+fn pick(c: own Color) -> own i32 pure {
   match c {
-    Red() => { return 1_i32; }
-    Green() => { return 2_i32; }
+    Red() => {
+      return 1_i32;
+    }
+    Green() => {
+      return 2_i32;
+    }
   }
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
   let red_atom_0001: own Color = Red();
   let n: own i32 = pick(c: red_atom_0001);

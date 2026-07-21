@@ -1,4 +1,4 @@
-fn ident (x: own i32) -> own i32 pure {
+fn ident(x: own i32) -> own i32 pure {
   doc "cvt<T, T> is not an operation [OP-6]; a same-type conversion must be rejected.";
   return cvt<i32, i32>(x);
 }

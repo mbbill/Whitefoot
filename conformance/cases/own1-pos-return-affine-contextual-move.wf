@@ -3,12 +3,12 @@ struct Pair {
   right: i32;
 }
 
-fn pass_pair (item: own Pair) -> own Pair pure {
+fn pass_pair(item: own Pair) -> own Pair pure {
   doc "OWN-1: an own affine place in return position is contextually moved exactly once.";
   return item;
 }
 
-fn pass_box (holder: own box<i32>) -> own box<i32> pure {
+fn pass_box(holder: own box<i32>) -> own box<i32> pure {
   doc "OWN-1: contextual return transfers an own box as a box; it does not dereference the holder.";
   return holder;
 }

@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-5: writing through a shared borrow is illegal - only reads pass through a non-uniq holder.";
   let a: own i32 = 1_i32;
   region 'r {

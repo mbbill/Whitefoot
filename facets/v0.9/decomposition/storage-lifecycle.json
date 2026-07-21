@@ -1,0 +1,1526 @@
+{
+  "clauses": [
+    {
+      "byte_end": 44329,
+      "byte_start": 44270,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/storage-class-determined-by-type"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "35061462226a8f14b016b61a2a4b19742c36744055c198694c9ea4c46dacfccd"
+    },
+    {
+      "byte_end": 44353,
+      "byte_start": 44329,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/box-heap-storage-class"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "3345086df267965a6b2a5decacb54fee06a640759cd45498a9b50a74f1e5e9da"
+    },
+    {
+      "byte_end": 44401,
+      "byte_start": 44353,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/arena-region-bounded-storage-class"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "dff9563d61228cd2c6509b90766fa9fb336eef7fe1f9abce2ecdcaf7cfec3ed4"
+    },
+    {
+      "byte_end": 44535,
+      "byte_start": 44401,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/buffer-deallocation-owned-by-stor3",
+        "facet:STOR-1/buffer-heap-storage-class"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "045f1941d5c6c208e6f6497553e237d34d756ecb4642e83880f1f921bf40e32b"
+    },
+    {
+      "byte_end": 44634,
+      "byte_start": 44535,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/const-readonly-and-drop-owned-by-const2-stor3",
+        "facet:STOR-1/const-static-storage-class"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "7bc2cf94b00808359ed6f742510f027bbdd683c559c1357117dc1d5e7a132f8f"
+    },
+    {
+      "byte_end": 44718,
+      "byte_start": 44634,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/other-owned-values-frame-resident"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "aa6998cebd7f771d8424d19ef4ced92603652f3ea705c18fff20e4a8668e786a"
+    },
+    {
+      "byte_end": 44784,
+      "byte_start": 44718,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/per-binding-storage-annotation-absent",
+        "facet:STOR-1/storage-class-has-no-default-clause"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "671b8e2e19de67471721e2811e38397901ec9df620476fa1977d7b2d8ba333b3"
+    },
+    {
+      "byte_end": 44928,
+      "byte_start": 44784,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/foreign-shared-requires-gated-ffi-frame"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "10f51844d7865a51dbd8f50f18e8d37778d623118ed030644575cbfcbc9ec476"
+    },
+    {
+      "byte_end": 45012,
+      "byte_start": 44928,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/allocation-demotion-to-foreign-shared-forbidden"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "1c6e7f08932ebb36aa479fc3fdbb5a42d591342a41d89ead53365547eca6cd59"
+    },
+    {
+      "byte_end": 45144,
+      "byte_start": 45012,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/collections-not-kernel-constructs",
+        "facet:STOR-1/collections-not-storage-classes"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "835b2b2ba013047f76cf75da7800e2e1fd9dd8e840120a68c6e879d69e0fb2d4"
+    },
+    {
+      "byte_end": 45226,
+      "byte_start": 45144,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/future-collections-built-from-kernel-storage-and-aggregates"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "a5a13cb0e17ace113d28d4808357a457e73494ae55e86f5c60795e2035828276"
+    },
+    {
+      "byte_end": 45312,
+      "byte_start": 45226,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/recorded-byte-string-and-vector-encodings"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "1cf935b24ab925a7ca7c7d316cd1c2ce9c8cf978b8e4c6e8a8f469f50eea2c24"
+    },
+    {
+      "byte_end": 45451,
+      "byte_start": 45312,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/collections-not-kernel-constructs",
+        "facet:STOR-1/future-buffer-replacement-dependency"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "72d07e835d75892ffa0b6b160c76441bd2e3750cede20b1dfeebbb83d8429e57"
+    },
+    {
+      "byte_end": 45585,
+      "byte_start": 45451,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/arena-index-pool-not-collection-basis"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "7b3c677349915f4847e836d598fbd9d280a262720cc014ed22968c974016fce4"
+    },
+    {
+      "byte_end": 45632,
+      "byte_start": 45585,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-1/char-and-unicode-text-out-of-kernel"
+      ],
+      "owner_rule": "STOR-1",
+      "sha256": "a815ea439abe5fa163cfceaafef687b1e2ab9d7ab3b04d43d4b695323952f6ec"
+    },
+    {
+      "byte_end": 45690,
+      "byte_start": 45633,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-2/box-new-signature-owned-by-operation-table"
+      ],
+      "owner_rule": "STOR-2",
+      "sha256": "3399f3d62d1ffc01fc0edabdad801829e1370bb42b95e99fb1896c632dd8b6d9"
+    },
+    {
+      "byte_end": 45740,
+      "byte_start": 45690,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-2/arena-new-signature-owned-by-operation-table"
+      ],
+      "owner_rule": "STOR-2",
+      "sha256": "11584ac1b92bf123caeae907fa9e61375b77e59706e137ee5f135edca178cfb5"
+    },
+    {
+      "byte_end": 45788,
+      "byte_start": 45740,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-2/storage-creation-uses-ordinary-call-semantics"
+      ],
+      "owner_rule": "STOR-2",
+      "sha256": "d4cf6e810d36e7134fd186861c51dc3002b72f92bd90949d321869ab2c37c0c1"
+    },
+    {
+      "byte_end": 45823,
+      "byte_start": 45788,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-2/owned-storage-content-access-through-deref"
+      ],
+      "owner_rule": "STOR-2",
+      "sha256": "898e76a82b37cad8cb9c2297ab0d052a16066c1e05f7146f893ee1031be97bc7"
+    },
+    {
+      "byte_end": 45889,
+      "byte_start": 45824,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/deallocation-compiler-derived"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "800eaf620d77f60957024d65844fb36d4e9dea794d69723fb5baf016b6392cb9"
+    },
+    {
+      "byte_end": 45979,
+      "byte_start": 45889,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/drop-and-arena-release-artifact-operations"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "7b536b92a2c777f3d46e2338b976039e24de391de83bb5948958984ce8286130"
+    },
+    {
+      "byte_end": 46101,
+      "byte_start": 45979,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/region-exit-edges-carry-cleanup"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "5f68000a15f278f7dff581acf2a6b55aaf500b512927c6e2d48f1d50e3e7a8f4"
+    },
+    {
+      "byte_end": 46131,
+      "byte_start": 46101,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/region-cleanup-reverse-declaration-order"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "05fee57af3af686b339e56f0ff2e0f165c7da4f02163597cc51b53be4b3a4af8"
+    },
+    {
+      "byte_end": 46146,
+      "byte_start": 46131,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/finalizers-absent"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "ca2c7c474eb36f06f74e257069d49cd7a76b83f8fddea621e76de2ddfd209020"
+    },
+    {
+      "byte_end": 46169,
+      "byte_start": 46146,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/reference-counting-absent"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "89acd866de4488ef7a5a2b892e5f66d0180fe539d8565e098ef570db3d76b292"
+    },
+    {
+      "byte_end": 46221,
+      "byte_start": 46169,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/buffer-drop-performs-heap-free"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "f1141bc36b210c6f1c3c9eaf0461200b89b302c526a4ed50c4bae8b74646bc2d"
+    },
+    {
+      "byte_end": 46251,
+      "byte_start": 46221,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/buffer-drop-artifact-parity-with-box"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "c388d2d859c493c505c0b8ef20817af78c454c07bc94a2f8ea4118f41cb2c17e"
+    },
+    {
+      "byte_end": 46307,
+      "byte_start": 46251,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/buffer-free-on-all-region-exit-edges"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "3dfc50ab4476d1f2d1dc8d3ec99886e705002792c489debf4a7df8114a0342c3"
+    },
+    {
+      "byte_end": 46350,
+      "byte_start": 46307,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-3/const-items-never-dropped"
+      ],
+      "owner_rule": "STOR-3",
+      "sha256": "5e203244c5ed4fae5165f5f68bbaf502b6c67a0a061e45434386d3c642da35e7"
+    },
+    {
+      "byte_end": 46431,
+      "byte_start": 46351,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-4/arena-value-return-confinement"
+      ],
+      "owner_rule": "STOR-4",
+      "sha256": "5f575a01bddd29decba4534f09031a9993a0f2ff85b09efd1590ee7882b12672"
+    },
+    {
+      "byte_end": 46452,
+      "byte_start": 46431,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-4/arena-value-field-storage-confinement"
+      ],
+      "owner_rule": "STOR-4",
+      "sha256": "7afe4226bdcfc8bcc398e5af274a549b479c857e0d319d8ffa6abc44ba0d34a0"
+    },
+    {
+      "byte_end": 46500,
+      "byte_start": 46452,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-4/arena-value-move-confinement"
+      ],
+      "owner_rule": "STOR-4",
+      "sha256": "276cbabd5df398aad7a01686655ac1e85c419f14de560254fde22b03e264b352"
+    },
+    {
+      "byte_end": 46560,
+      "byte_start": 46500,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-4/arena-content-borrow-duration-owned-by-own10"
+      ],
+      "owner_rule": "STOR-4",
+      "sha256": "d039a637948da90a2bb501b4e196b8f9ee9929a28116b81fa7787632aba6d50a"
+    },
+    {
+      "byte_end": 46610,
+      "byte_start": 46561,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/stored-content-borrow-free",
+        "facet:STOR-5/stored-content-region-free"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "e6f33766fd372f50a14ef5dd4057832434b83e6054a7c4f89a646167d4d2fa98"
+    },
+    {
+      "byte_end": 46717,
+      "byte_start": 46610,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/borrow-types-excluded-from-stored-content"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "6de66cf2d357057511c604ab32d997545b27420db9885180d63c00f6eacf6060"
+    },
+    {
+      "byte_end": 46828,
+      "byte_start": 46717,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/stored-borrow-exclusion-owned-by-grammar"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "df62acc16a00f0db739956a9bf82446fd6da8343b33ea1c3adb46d06e2e254c8"
+    },
+    {
+      "byte_end": 46941,
+      "byte_start": 46828,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/aggregate-region-parameters-absent"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "fb3bb2442f9d4bad4f17d3a35d85e223298cbe45e20f11b40dc88be325c5f635"
+    },
+    {
+      "byte_end": 46989,
+      "byte_start": 46941,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/caller-region-bearing-fields-unspellable"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "719d1f4815a6530a1bab4a7709eb0c68933aa32176a2c4e54a9aac78053aaf72"
+    },
+    {
+      "byte_end": 47102,
+      "byte_start": 46989,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/slice-and-arena-fields-unspellable"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "c76e154f2d552f8a3e8da0569b308796ae007670086be4e91093d02ecc92492d"
+    },
+    {
+      "byte_end": 47152,
+      "byte_start": 47102,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/borrow-structurally-unstorable"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "bd2d5588801e65705acfbddf67e70de42eddc1eff92534f48a83e15c8016874c"
+    },
+    {
+      "byte_end": 47215,
+      "byte_start": 47152,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/borrow-egress-return-only"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "d694df2426b1aca02f276100ddae729d566866a3d974cec182548fbf841be5c0"
+    },
+    {
+      "byte_end": 47311,
+      "byte_start": 47215,
+      "disposition": "facet",
+      "facet_ids": [
+        "facet:STOR-5/child-reborrow-storage-nonescape"
+      ],
+      "owner_rule": "STOR-5",
+      "sha256": "3b6364ae6f506aaf1dc17501d4100f08bc78108d467e0e6e361ef5bd51c12196"
+    }
+  ],
+  "facets": [
+    {
+      "id": "facet:STOR-1/allocation-demotion-to-foreign-shared-forbidden",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/arena-index-pool-not-collection-basis",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/arena-region-bounded-storage-class",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/box-heap-storage-class",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/buffer-deallocation-owned-by-stor3",
+      "owner_rule": "STOR-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/buffer-heap-storage-class",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/char-and-unicode-text-out-of-kernel",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/collections-not-kernel-constructs",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/collections-not-storage-classes",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/const-readonly-and-drop-owned-by-const2-stor3",
+      "owner_rule": "STOR-1",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/const-static-storage-class",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/foreign-shared-requires-gated-ffi-frame",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/future-buffer-replacement-dependency",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/future-collections-built-from-kernel-storage-and-aggregates",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/other-owned-values-frame-resident",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/per-binding-storage-annotation-absent",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/recorded-byte-string-and-vector-encodings",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "static-audit"
+      ],
+      "required_lanes": [
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/storage-class-determined-by-type",
+      "owner_rule": "STOR-1",
+      "owner_stage": "facts-off-lowering",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "abi",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-1/storage-class-has-no-default-clause",
+      "owner_rule": "STOR-1",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "conformance-reject",
+        "diagnostic",
+        "artifact-hostile",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "frontend",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-1"
+      ]
+    },
+    {
+      "id": "facet:STOR-2/arena-new-signature-owned-by-operation-table",
+      "owner_rule": "STOR-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-2"
+      ]
+    },
+    {
+      "id": "facet:STOR-2/box-new-signature-owned-by-operation-table",
+      "owner_rule": "STOR-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-2"
+      ]
+    },
+    {
+      "id": "facet:STOR-2/owned-storage-content-access-through-deref",
+      "owner_rule": "STOR-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "conformance-run",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:STOR-2"
+      ]
+    },
+    {
+      "id": "facet:STOR-2/storage-creation-uses-ordinary-call-semantics",
+      "owner_rule": "STOR-2",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-2"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/buffer-drop-artifact-parity-with-box",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/buffer-drop-performs-heap-free",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/buffer-free-on-all-region-exit-edges",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/const-items-never-dropped",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/deallocation-compiler-derived",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/drop-and-arena-release-artifact-operations",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/finalizers-absent",
+      "owner_rule": "STOR-3",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/reference-counting-absent",
+      "owner_rule": "STOR-3",
+      "owner_stage": "toolchain-policy",
+      "required_evidence": [
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/region-cleanup-reverse-declaration-order",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-3/region-exit-edges-carry-cleanup",
+      "owner_rule": "STOR-3",
+      "owner_stage": "checked-artifact",
+      "required_evidence": [
+        "conformance-run",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "resource",
+        "code-shape",
+        "target"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "lowerer",
+        "runtime"
+      ],
+      "source_atoms": [
+        "rule:STOR-3"
+      ]
+    },
+    {
+      "id": "facet:STOR-4/arena-content-borrow-duration-owned-by-own10",
+      "owner_rule": "STOR-4",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-4"
+      ]
+    },
+    {
+      "id": "facet:STOR-4/arena-value-field-storage-confinement",
+      "owner_rule": "STOR-4",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:STOR-4"
+      ]
+    },
+    {
+      "id": "facet:STOR-4/arena-value-move-confinement",
+      "owner_rule": "STOR-4",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:STOR-4"
+      ]
+    },
+    {
+      "id": "facet:STOR-4/arena-value-return-confinement",
+      "owner_rule": "STOR-4",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism"
+      ],
+      "required_lanes": [
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:STOR-4"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/aggregate-region-parameters-absent",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/borrow-egress-return-only",
+      "owner_rule": "STOR-5",
+      "owner_stage": "whole-unit",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic",
+        "governance"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/borrow-structurally-unstorable",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/borrow-types-excluded-from-stored-content",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/caller-region-bearing-fields-unspellable",
+      "owner_rule": "STOR-5",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/child-reborrow-storage-nonescape",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/slice-and-arena-fields-unspellable",
+      "owner_rule": "STOR-5",
+      "owner_stage": "declaration-resolution",
+      "required_evidence": [
+        "conformance-accept",
+        "conformance-reject",
+        "diagnostic",
+        "artifact-valid",
+        "artifact-hostile",
+        "reference-model",
+        "property",
+        "fuzz",
+        "differential",
+        "determinism",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "resolution",
+        "checker",
+        "artifact",
+        "verifier",
+        "diagnostic"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/stored-borrow-exclusion-owned-by-grammar",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/stored-content-borrow-free",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    },
+    {
+      "id": "facet:STOR-5/stored-content-region-free",
+      "owner_rule": "STOR-5",
+      "owner_stage": "semantic-check",
+      "required_evidence": [
+        "artifact-valid",
+        "artifact-hostile",
+        "static-audit"
+      ],
+      "required_lanes": [
+        "artifact",
+        "verifier"
+      ],
+      "source_atoms": [
+        "rule:STOR-5"
+      ]
+    }
+  ],
+  "kind": "whitefoot-semantic-decomposition-fragment",
+  "rules": [
+    "STOR-1",
+    "STOR-2",
+    "STOR-3",
+    "STOR-4",
+    "STOR-5"
+  ],
+  "schema": 1
+}

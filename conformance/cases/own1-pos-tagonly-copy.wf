@@ -1,6 +1,10 @@
-enum Tri { Lo(); Mid(); Hi(); }
+enum Tri {
+  Lo();
+  Mid();
+  Hi();
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-1 amendment: tag-only enums are copy - matched twice, passed bare, loop-carried, and set-mutated without move.";
   let t: own Tri = Mid();
   match t {

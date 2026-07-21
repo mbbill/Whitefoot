@@ -1,6 +1,6 @@
-const LIMIT: i32 = 100_i32;
+const limit: i32 = 100_i32;
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Named const item [CONST-2] - pending democ const support.";
   return unit;
 }

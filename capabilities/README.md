@@ -1,9 +1,10 @@
 # Compiler capability audit
 
-`whitefoot-rust/v0.8/*.json` is the implementation-owned audit overlay for the
-safe-Rust compiler. It lives outside the Cargo workspace, binds the exact
-compiler-independent semantic catalog, and is never a compiler input or a
-source of language behavior.
+`whitefoot-rust/v0.9/*.json` is the active implementation-owned audit overlay
+for the safe-Rust compiler. It lives outside the Cargo workspace, binds the
+exact compiler-independent v0.9 semantic catalog, and is never a compiler input
+or a source of language behavior. `whitefoot-rust/v0.8/` remains an immutable
+version-bound snapshot; activating v0.9 does not rewrite historical evidence.
 
 The initial overlay is intentionally empty. Source binding is real production
 infrastructure, but it does not implement a semantic facet. A generic handler

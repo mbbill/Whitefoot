@@ -1,9 +1,8 @@
 # THE PLAN
 
-Status: CANONICAL ROADMAP, updated 2026-07-21. Phase 1's audited foundation
-handoff and Phase 2's standalone grammar-change evidence package are complete.
-The exact Phase-3 owner-review packet is ready and awaiting explicit approval;
-no normative or protected edit is pre-authorized.
+Status: CANONICAL ROADMAP, updated 2026-07-21. Phases 1 through 3 are complete:
+the audited foundation, standalone grammar evidence, and exact owner-approved
+v0.9 installation are durable. Phase 4's canonical frontend is next.
 
 ## Objective
 
@@ -13,14 +12,11 @@ specification, preserve every required safety check unless a machine-verified
 proof authorizes its removal, and lower all accepted programs through one
 general pipeline.
 
-The active language authority remains
-`spec/kernel-spec-v0.8.md`, SHA-256
-`d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`.
-That file is immutable. Its recorded contradictions block a production parser
-and later semantic boundaries; compiler code may not invent resolutions.
-Exact v0.8 remains the baseline for evidence until the owner approves a new
-numbered specification and every live authority is switched to its exact
-bytes and hash.
+The active language authority is `spec/kernel-spec-v0.9.md`, SHA-256
+`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
+Those exact reviewed bytes are immutable. Exact v0.8 and every v0.8-bound
+catalog, discrepancy record, fixture, lock, and report remain immutable
+historical evidence; they do not define v0.9 behavior.
 
 The durable products are:
 
@@ -67,10 +63,9 @@ The 2026-07-21 architecture handoff selects:
   tranche;
 - independent evidence at every assigned grammar, source/tree, semantic,
   target, backend, guard, publication, and optional-fact boundary; and
-- the A-01 direction that all top-level function signatures are visible
+- the A-01 rule that all top-level function signatures are visible
   throughout the closed compilation unit, while locals, regions, labels, and
-  named constants remain declaration-before-use. This rule has no compiler
-  authority until exact successor-specification bytes encode it.
+  named constants remain declaration-before-use, now encoded by exact v0.9.
 
 This roadmap supersedes D22 only where D22 selected an independent production
 semantic verifier and authorized implementation against an internally
@@ -85,13 +80,13 @@ Current execution authority is deliberately narrow:
 1. Phase 1's exact audit-selected foundation migration is complete.
 2. Phase 2's standalone grammar-change verifier has exited with reproducible
    exact-v0.8 and non-authoritative successor evidence.
-3. Phase 3 is next, but remains conditional on exact owner review and advance
-   approval. Phases 3 onward define mandatory order and entrance gates. They do not
-   authorize a specification edit, protected-surface change, active-target
-   switch, production parser, semantic schema, artifact schema, backend
-   profile, migration, or release merely by appearing here.
-4. Additive implementation-independent tests and read-only evidence may
-   continue when they do not cross a protected or earlier authority boundary.
+3. Phase 3 installed the exact owner-approved v0.9 bytes, ordered protected
+   migration, derivation amendment, version-bound evidence, locks, and active
+   references without changing expected verdicts, runnable statuses, frozen
+   oracles, or existing reference-semantics tests.
+4. Phase 4 is the active implementation phase. Its authority ends at one
+   source-bound `CanonicalSyntaxUnit`; semantic schemas, artifacts, backends,
+   releases, and later phases retain their own entrance gates.
 
 ## Specification and protected-surface protocol
 
@@ -230,25 +225,18 @@ an ambiguity absent.
 
 ## Active blockers
 
-The exact-v0.8 discrepancy registry is the machine-readable source of truth.
-Its fifteen open records remain: affine-dereference backing-storage cleanup,
-pre-tree DIAG-1 location, retained-check `proof_ref`, EFF-1 row canonicality,
-body-local region effects, contract-member semantics, optimizer-law admission,
-`main` return spelling, `requires` rejection attribution, protected FORM-2
-spacing, the FORM-4 cross-reference, FORM-5/FORM-7 float spelling, the
-fixed-terminal/`IDENT` partition, the GRAM-1/GRAM-7 node-kind conflict, and
-dotless-operation reservation.
+The exact-v0.9 discrepancy registry is the machine-readable source of truth.
+Seven open records remain: affine-dereference backing-storage cleanup,
+retained-check `proof_ref`, EFF-1 row canonicality, body-local region effects,
+contract-member semantics, `main` return spelling, and dotless-operation
+reservation. They block only their affected later stages; none is a license to
+invent semantics.
 
-A-01 has an owner-selected direction but remains blocked on exact successor
-encoding and the ordinary protected/specification protocol.
-
-All other architecture questions remain open:
+The following architecture questions remain open:
 
 - A-02 through A-09: affine overwrite disposition, evaluation order, ordinary
   scope cleanup, recursive nominal layout, frame-limit target binding, TYPEID
   collisions, continuing-join affine liveness, and unreachable suffix checking;
-- A-10: normative multi-file compilation-unit formation, zero-item files,
-  zero-source behavior, declaration order, and program-root extent;
 - A-11 through A-13: `slice_of` authority, returned-view provenance, and
   recursive region-free storage well-formedness;
 - A-14 and A-15: lifetime-report drop sites and logical-stack attribution;
@@ -258,7 +246,10 @@ All other architecture questions remain open:
   identity; and
 - A-18: FN-6's type/const-generic cycle domain and argument-vector test.
 
-The recursive-effect rule, exact target/frame behavior, concrete resource,
+Exact v0.9 resolves A-01 and A-10 and closes the canonical-frontend entrance
+questions for terminal partitioning, node-kind identity, pre-tree locations,
+FORM-2 interaction, source ordering, and program-root extent. The
+recursive-effect rule, exact target/frame behavior, concrete resource,
 backend, and host profiles, artifact records, and portable identity schemas
 also remain gated. A roadmap description is not a resolution. Each affected
 implementation waits for exact normative or owner-approved profile authority.
@@ -396,8 +387,8 @@ or red repository gate.
 
 ## Phase 3: approve and install a successor specification
 
-Status: exact owner-review packet ready; awaiting explicit advance approval.
-No normative or protected edit is pre-authorized.
+Status: complete. The owner approved the exact nine-item packet at `7fbb018`,
+and the guarded v0.9 installation followed that reviewed sequence.
 
 The packet binds the 98,044-byte v0.9 candidate at SHA-256
 `bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`,
@@ -408,12 +399,19 @@ the derivation-ledger amendment, protected-surface census, independent evidence,
 and hostile reviews. The packet requests zero expected-verdict, runnable-status,
 frozen-oracle, or existing reference-test changes.
 
-Present the exact proposal bytes and hash, grammar reports, every relevant
-semantic discrepancy record, protected-surface impact census, and exact
-owner-visible delta. Only explicit owner approval may create a new numbered
-specification and any separately approved protected changes.
+The installed v0.9 source index is 81,996 bytes at SHA-256
+`cc9aa86de0d59b9288d1f8fd7a6bde6f94fff26da139d73f91bcbcf71219d663`;
+the authored decomposition identity is
+`81cc67795feb9dfb9458df7987da44663b8d5ea034921a1c56322e2771e4310c`;
+and the 596,390-byte static catalog identity is
+`3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae`.
+The seven-record discrepancy sidecar is 13,614 bytes at SHA-256
+`39a1d6f869df08ef08f4a2a58ad07bf4c503f61a235601847ebdd716caf8bc3d`.
+The capability overlay remains empty, and the protected expectation/status
+projection remains
+`5fb0e54ec006c3fea82d5fc0d8c454e5e9f022ba472cdcc6a90c44a31ade2132`.
 
-After approval:
+The completed installation sequence was:
 
 1. create the new numbered file byte-for-byte from the reviewed proposal;
 2. apply only the separately approved protected changes;
@@ -433,9 +431,8 @@ location, FORM-2 interaction, and A-10 program-root/compilation-unit contract,
 with a conflict-free complete static grammar audit and every required bounded
 oracle result.
 
-Semantic work additionally requires owner-selected A-01 to be encoded exactly
-and each later A-question or discrepancy to be resolved before its affected
-stage.
+Semantic work still requires each later A-question or discrepancy to be
+resolved before its affected stage.
 
 **Exit:** one exact successor is active everywhere; all guards and ordinary
 gates are green; v0.8 remains immutable; and the next phase's exact entrance
@@ -447,8 +444,8 @@ non-passing grammar gate.
 
 ## Phase 4: build the canonical frontend
 
-Status: conditional on Phases 1 through 3 and the complete parser entrance
-gate.
+Status: active. Exact v0.9 and the independent grammar evidence close the
+complete parser entrance gate.
 
 Keep the existing shape lexer unchanged in authority. Add a
 specification-versioned terminal classifier whose accepted spelling sets form
@@ -650,8 +647,8 @@ one atomic authority switch; two production compilers do not grow together.
 
 ## Prohibited routes
 
-- No exact-v0.8 parser workaround using keyword priority, ordered choice,
-  invented reserved words, semantic disambiguation, or archived behavior.
+- No parser compatibility fallback that reintroduces v0.8 keyword priority,
+  ordered choice, semantic disambiguation, or archived behavior under v0.9.
 - No generalized parser in production; it is a bounded evidence oracle only.
 - No grammar-change tool linked into or invoked by normal compilation.
 - No grammar report, corpus, compiler behavior, or historical intent acting as
@@ -712,26 +709,32 @@ comment, diagnostic, fixture, and test name uses English. `AGENTS.md` and
 The completed current foundation contains three permanent library crates and
 one binary-only lexical observer, seven reproducible Cargo artifacts, the
 static catalog SHA-256
-`2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d`,
-the fifteen-record discrepancy sidecar, an empty capability overlay, the
-lossless lexer, and the 942-case lexical differential with request-input
-manifest SHA-256
-`5f84cc0982cd74c46fc9350da4ee6611ec5a513f0c3ede1d2f76dceeeab39ff9`.
-These close no semantic facet and grant no parser, artifact, or release
-authority.
+`3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae`,
+the seven-record discrepancy sidecar at SHA-256
+`39a1d6f869df08ef08f4a2a58ad07bf4c503f61a235601847ebdd716caf8bc3d`,
+the empty capability overlay at SHA-256
+`18cc29ecd5aad7ff69d3c548bab2b5fd8250fd2df38791b4032b922ee569d22c`,
+the lossless lexer, and the exact-v0.9 942-case lexical differential with
+request-input manifest SHA-256
+`3fdd322422999616b3d4bb09b01b23088c71c78d526d46305450220b571fa804`.
+Exact-v0.8 locks, assets, models, and receipts remain immutable historical
+evidence. These close no semantic facet and grant no semantic, artifact,
+backend, or release authority.
 
-Phases 1 and 2 are complete. The next roadmap action is owner review of the
-ready Phase-3 packet's exact proposal bytes, hashes, evidence, protected-patch
-sequence, and census. No successor installation, active-target switch, or
-production parser work is authorized until that exact review receives advance
-approval and the guarded installation procedure succeeds.
+Phases 1 through 3 are complete. The next roadmap action is Phase 4's
+canonical frontend against exact v0.9. Its first slice may define the terminal
+classifier and source-bound parser structures only through one
+`CanonicalSyntaxUnit`, subject to Phase 4's written witness and hostile-review
+gates.
 
-Until Phase 3 exits and every later gate is separately satisfied:
+Until Phase 4 exits and every later gate is separately satisfied:
 
-- do not edit a numbered specification or protected expectation;
-- do not switch the active target;
-- do not build a production classifier, parser, syntax tree schema, portable
-  identity, resolver, semantic record, artifact envelope, replay API, target
-  profile, lowerer, or publication path; and
+- do not change a numbered specification or protected surface without a new
+  exact owner approval and guarded installation;
+- do not cross the `CanonicalSyntaxUnit` boundary into name resolution,
+  semantic records, artifacts, replay, target profiles, lowering, or
+  publication;
+- do not treat an incomplete frontend as language acceptance or a release
+  capability; and
 - do not link or invoke the grammar-change verifier from normal compilation or
   treat its reports as specification or compiler authority.

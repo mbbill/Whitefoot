@@ -1,6 +1,8 @@
-enum Packet { Data(value: i32); }
+enum Packet {
+  Data(value: i32);
+}
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-13: a local exclusive borrow match derives an &uniq payload binder that reads through its parent provenance.";
   let packet: own Packet = Data(value: 4_i32);
   region 'r {

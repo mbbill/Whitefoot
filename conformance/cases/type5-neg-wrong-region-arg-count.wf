@@ -1,8 +1,8 @@
-fn takes_one ['p] (x: &'p i32) -> own unit pure {
+fn takes_one ['p](x: &'p i32) -> own unit pure {
   return unit;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "A call stating two region arguments to a fn declaring one region parameter is a region-arg arity mismatch [TYPE-5].";
   let v: own i32 = 3_i32;
   region 'r {

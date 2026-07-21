@@ -4,7 +4,7 @@ struct Mixed {
   c: u64;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "TYPE-2: mixed-width integer fields (i32/u8/u64) exercise per-field load/store widths.";
   let m: own Mixed = Mixed(a: 100_i32, b: 5_u8, c: 1000_u64);
   check ieq<i32>(m.a, 100_i32) else trap "i32 field drift";

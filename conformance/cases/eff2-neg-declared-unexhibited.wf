@@ -1,9 +1,9 @@
-fn f (x: own i32) -> own i32 traps {
+fn f(x: own i32) -> own i32 traps {
   doc "Declares `traps` but body has no trapping op [EFF-2] declared-but-unexhibited.";
   return x;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let a: own i32 = f(x: 7_i32);
   check ieq<i32>(a, 7_i32) else trap "x";
   return unit;

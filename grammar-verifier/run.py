@@ -25,6 +25,10 @@ from runner_inputs import (
 from runner_process import ProcessLimits, build_static, run_child
 from runner_package import write_evidence
 from runner_report import parse_report
+from installed_policy import validate_review_packet
+
+
+INSTALLED_OUTPUT = ROOT / "installed-v0.9-evidence"
 
 
 def source_revisions(root: Path) -> dict[str, SourceRevision]:
@@ -43,8 +47,13 @@ def source_revisions(root: Path) -> dict[str, SourceRevision]:
     }
 
 
-def run_repository(output: Path = ROOT / "evidence") -> bytes:
-    inputs = load_inputs(ROOT)
+def run_repository(
+    output: Path = INSTALLED_OUTPUT,
+    *,
+    installed: bool = True,
+) -> bytes:
+    validate_review_packet(ROOT)
+    inputs = load_inputs(ROOT, installed=installed)
     frame = make_frame(inputs)
     static_root = ROOT / "static-auditor"
     oracle_root = ROOT / "oracle"
@@ -83,19 +92,30 @@ def run_repository(output: Path = ROOT / "evidence") -> bytes:
     return write_evidence(output, ROOT, inputs, before, reports)
 
 
-def main() -> int:
+def main(arguments: tuple[str, ...] | None = None) -> int:
+    arguments = tuple(sys.argv[1:]) if arguments is None else arguments
     if sys.platform == "win32" or os.name != "posix":
         print(
             "grammar verifier: unsupported_host: POSIX process limits are required",
             file=sys.stderr,
         )
         return 1
+    if arguments not in ((), ("--review-packet-only",)):
+        print("usage: run.py [--review-packet-only]", file=sys.stderr)
+        return 2
     try:
+        if arguments == ("--review-packet-only",):
+            validate_review_packet(ROOT)
+            print("historical grammar review packet validated")
+            return 0
         run_repository()
     except RunnerError as error:
         print(f"grammar verifier: {error.code}: {error}", file=sys.stderr)
         return 1
-    print("grammar evidence reproduced; no language-change claim")
+    print(
+        "installed v0.9 grammar evidence reproduced; "
+        "historical review packet preserved; no compiler-authority claim"
+    )
     return 0
 
 

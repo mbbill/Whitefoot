@@ -1,13 +1,17 @@
-enum ClauseEq { ClauseFirst(); ClauseSecond(); ClauseThird(); }
+enum ClauseEq {
+  ClauseFirst();
+  ClauseSecond();
+  ClauseThird();
+}
 
-fn guarded (left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
+fn guarded(left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
   let same: own Bool = eeq<ClauseEq>(left, right);
   check same else trap "enum precondition failed";
 } {
   return unit;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let left: own ClauseEq = ClauseSecond();
   let right: own ClauseEq = ClauseSecond();
   guarded(left: left, right: right);

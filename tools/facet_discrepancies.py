@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, validate, and release-check exact-v0.8 discrepancy sidecars.
+"""Build, validate, and release-check exact-v0.9 discrepancy sidecars.
 
 The public sidecar is descriptive and non-authorizing. Every validation and
 release check reloads exact authorities, validates the catalog that supplies
@@ -37,7 +37,7 @@ MAX_JSON_DEPTH = authority.MAX_JSON_DEPTH
 MAX_SIDECAR_BYTES = authority.MAX_SIDECAR_BYTES
 MAX_CATALOG_BYTES = authority.MAX_CATALOG_BYTES
 FORMAT = "whitefoot-open-discrepancies-v1"
-SIDECAR_RELATIVE_PATH = Path("facets") / "v0.8" / "open-discrepancies.json"
+SIDECAR_RELATIVE_PATH = Path("facets") / "v0.9" / "open-discrepancies.json"
 SIDECAR_PATH = ROOT / SIDECAR_RELATIVE_PATH
 
 sha256 = authority.sha256
@@ -83,7 +83,7 @@ def _validate_static_catalog(
     catalog_bytes: bytes,
     inputs: authority.AuthorityInputs,
 ) -> ValidatedCatalog:
-    """Rebuild the normalized catalog against exact v0.8 authorities."""
+    """Rebuild the normalized catalog against exact v0.9 authorities."""
     authority.check_json_envelope(catalog_bytes, MAX_CATALOG_BYTES, "static catalog")
     try:
         try:
@@ -132,7 +132,7 @@ def _validate_static_catalog(
         raise DiscrepancyError(f"invalid static catalog: {error}") from error
     if rebuilt_bytes != catalog_bytes:
         raise DiscrepancyError(
-            "static catalog does not equal the exact normalized v0.8 catalog"
+            "static catalog does not equal the exact normalized v0.9 catalog"
         )
     return ValidatedCatalog(
         authority.sha256(catalog_bytes),

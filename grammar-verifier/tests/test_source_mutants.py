@@ -16,6 +16,11 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = ROOT.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from installed_policy import HISTORICAL_V08_BINDINGS  # noqa: E402
+
 CURRENT_SHA256 = "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
 SUBPROCESS_TIMEOUT_SECONDS = 180
 
@@ -31,6 +36,7 @@ def mutant_copy() -> Iterator[Path]:
             ignore=shutil.ignore_patterns(
                 "target",
                 "evidence",
+                "installed-v0.9-evidence",
                 "__pycache__",
                 ".pytest_cache",
                 ".mypy_cache",
@@ -38,19 +44,26 @@ def mutant_copy() -> Iterator[Path]:
                 "*.pyc",
             ),
         )
-        evidence = verifier / "evidence"
-        evidence.mkdir()
-        for name in (
-            "v0.9-manifest-metadata.patch",
-            "v0.9-post-form2-case-intent.patch",
-        ):
-            shutil.copyfile(ROOT / "evidence" / name, evidence / name)
+        shutil.copytree(ROOT / "evidence", verifier / "evidence")
         current = (REPOSITORY / "spec" / "kernel-spec-v0.8.md").read_bytes()
         if hashlib.sha256(current).hexdigest() != CURRENT_SHA256:
             raise AssertionError("the mutation gate requires exact v0.8 specification bytes")
         specification = temporary / "spec"
         specification.mkdir()
         (specification / "kernel-spec-v0.8.md").write_bytes(current)
+        installed = (REPOSITORY / "spec" / "kernel-spec-v0.9.md").read_bytes()
+        candidate = (ROOT / "proposal" / "kernel-spec-successor-candidate.md").read_bytes()
+        if installed != candidate:
+            raise AssertionError("the mutation gate requires exact installed v0.9 bytes")
+        (specification / "kernel-spec-v0.9.md").write_bytes(installed)
+        shutil.copyfile(
+            REPOSITORY / "spec" / "derivation-ledger.md",
+            specification / "derivation-ledger.md",
+        )
+        for relative in HISTORICAL_V08_BINDINGS:
+            destination = temporary / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPOSITORY / relative, destination)
         yield verifier
 
 

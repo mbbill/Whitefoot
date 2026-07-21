@@ -1,6 +1,10 @@
-enum Val { Small(a: i32); Big(b: u64); Bare(); }
+enum Val {
+  Small(a: i32);
+  Big(b: u64);
+  Bare();
+}
 
-fn classify (v: own Val) -> own i32 traps {
+fn classify(v: own Val) -> own i32 traps {
   doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
   match v {
     Small(a: n) => {
@@ -22,7 +26,7 @@ fn classify (v: own Val) -> own i32 traps {
   }
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
   let small_atom_0001: own Val = Small(a: 40_i32);
   let a: own i32 = classify(v: move small_atom_0001);

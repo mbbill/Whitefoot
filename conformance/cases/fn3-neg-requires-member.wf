@@ -1,18 +1,18 @@
 contract CheckedMember {
-  fn apply (x: own i32) -> own i32 traps;
+  fn apply(x: own i32) -> own i32 traps;
 }
 
-fn checked_apply (x: own i32) -> own i32 traps requires {
+fn checked_apply(x: own i32) -> own i32 traps requires {
   let valid: own Bool = ige<i32>(x, 0_i32);
   check valid else trap "nonnegative input";
 } {
   return x;
 }
 
-conform i32 : CheckedMember {
+conform i32: CheckedMember {
   apply = checked_apply;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

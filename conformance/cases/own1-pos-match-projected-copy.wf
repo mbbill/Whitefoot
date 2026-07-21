@@ -1,10 +1,13 @@
-enum State { Ready(); Done(); }
+enum State {
+  Ready();
+  Done();
+}
 
 struct Holder {
   state: State;
 }
 
-fn main () -> own unit allocates(heap), traps {
+fn main() -> own unit allocates(heap), traps {
   doc "OWN-1: matching a Copy enum field or element does not consume its affine struct or buffer owner.";
   let state: own State = Ready();
   let holder: own Holder = Holder(state: state);
@@ -21,7 +24,6 @@ fn main () -> own unit allocates(heap), traps {
     }
   }
   let saved_holder: own Holder = move holder;
-
   let initial: own Bool = True();
   let items: own buffer<Bool> = buffer_new<Bool>(2_u64, initial);
   match index<Bool>(items, 0_u64) {

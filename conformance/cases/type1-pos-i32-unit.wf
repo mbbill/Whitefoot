@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Primitive types i32 and unit are in-language [TYPE-1].";
   let a: own i32 = 7_i32;
   let b: own i32 = iadd.trap<i32>(a, 35_i32);

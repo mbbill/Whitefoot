@@ -11,7 +11,6 @@ PROPOSAL = ROOT / "proposal"
 if str(PROPOSAL) not in sys.path:
     sys.path.insert(0, str(PROPOSAL))
 
-from form2_inputs import load_protected_inputs  # noqa: E402
 from form2_patch import unified_patch  # noqa: E402
 from form2_render import (  # noqa: E402
     BLOCK_PRODUCTIONS,
@@ -27,6 +26,7 @@ from form2_tree import (  # noqa: E402
     load_candidate_parser,
     parse_one,
 )
+from support_form2_installation import reconstruct_form2_inputs  # noqa: E402
 
 
 class StructuralRendererTests(unittest.TestCase):
@@ -239,7 +239,7 @@ class StructuralRendererTests(unittest.TestCase):
 class StructuralProtectedSurfaceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.inputs = load_protected_inputs()
+        cls.inputs, _ = reconstruct_form2_inputs()
         cls.artifacts = build_structural_artifacts(cls.inputs, {})
         cls.evidence = json.loads(
             cls.artifacts["form2-structural-layout-evidence.json"]

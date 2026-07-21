@@ -1,0 +1,427 @@
+{
+  "bindings": {
+    "catalog_sha256": "3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae",
+    "guard_baseline_sha256": "bb7ce5ea5b3b2a169b259bcffc7add3234e89b50aa689d5f9df5a93a91325622",
+    "source_index_sha256": "cc9aa86de0d59b9288d1f8fd7a6bde6f94fff26da139d73f91bcbcf71219d663",
+    "specification_sha256": "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+  },
+  "format": "whitefoot-open-discrepancies-v1",
+  "records": [
+    {
+      "affected_facet_ids": [
+        "facet:STOR-3/deallocation-compiler-derived",
+        "facet:STOR-3/drop-and-arena-release-artifact-operations"
+      ],
+      "class": "internal-specification-gap",
+      "evidence": {
+        "missing_contract": "backing-allocation-and-remaining-payload-disposition-after-affine-referent-move",
+        "own1_partial_move_source": {
+          "byte_end": 36990,
+          "byte_start": 36900,
+          "line_end": 198,
+          "line_start": 198,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "385e180cf9a88c4fc0a2673b3a2a710fa8f27b7006dcef1c74d7c3acae2404fc"
+        },
+        "stor2_deref_access_source": {
+          "byte_end": 45822,
+          "byte_start": 45788,
+          "line_end": 228,
+          "line_start": 228,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "4e6f6d92f02bc31211cf29b2c676cd1891dffcb246752d9ed97cf2c70b57ca25"
+        },
+        "stor3_derived_drop_source": {
+          "byte_end": 45977,
+          "byte_start": 45889,
+          "line_end": 230,
+          "line_start": 230,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "450ffec2a8008c821a4181e34333a4c55bd938408183f45d4554779ea803dfad"
+        },
+        "type7_affine_move_source": {
+          "byte_end": 34088,
+          "byte_start": 33999,
+          "line_end": 190,
+          "line_start": 190,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "9e03775a3ee20b6d5779bb6fbe51ab8ca921cf58907d431e07a04714e86c0283"
+        }
+      },
+      "id": "discrepancy:v0.9/affine-deref-storage-lifecycle",
+      "predicate_id": "predicate:affine-deref-storage-lifecycle-completeness",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
+        "facet:DIAG-3/check-report-schema"
+      ],
+      "class": "internal-specification-gap",
+      "evidence": {
+        "check_report_row_source": {
+          "byte_end": 93994,
+          "byte_start": 93830,
+          "line_end": 415,
+          "line_start": 415,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "54c2c2e96227c74da8c6cefd61029eca7146a57a58363622d6d46a821f90e17c"
+        },
+        "missing_contract": "proof_ref-value-for-retained-check",
+        "report_header_source": {
+          "byte_end": 93702,
+          "byte_start": 93668,
+          "line_end": 412,
+          "line_start": 412,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "f403fac660ee6442a1a568edd22055cc8c476fe9e829de352d1eebf9471e8518"
+        }
+      },
+      "id": "discrepancy:v0.9/diag3-retained-proof-ref",
+      "predicate_id": "predicate:diag3-retained-check-proof-ref-completeness",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
+        "facet:EFF-1/canonical-effect-order",
+        "facet:EFF-1/effect-row-grammar"
+      ],
+      "class": "specification-protected-surface-conflict",
+      "evidence": {
+        "effect_kind_order_source": {
+          "byte_end": 74566,
+          "byte_start": 74501,
+          "line_end": 342,
+          "line_start": 342,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "8294f4112b0cca9c4c12fd43e3a1b7029187dd480248961b653f58dbddbb0763"
+        },
+        "missing_contract": "effect-kind-and-region-or-allocation-entry-uniqueness-and-order",
+        "protected_case": {
+          "manifest": {
+            "expect": {
+              "kind": "reject",
+              "rule": "EFF-1"
+            },
+            "id": "x-eff-dup-reads-effect",
+            "rules": [
+              "EFF-1"
+            ],
+            "status": "runnable"
+          },
+          "path": "conformance/cases/x-eff-dup-reads-effect.wf",
+          "sha256": "fc1260d3d3bf3ef5fa0e55207e02b15e8a588dee69bca39aea4b66e3ea6e5521"
+        },
+        "row_grammar_source": {
+          "byte_end": 74366,
+          "byte_start": 74311,
+          "line_end": 342,
+          "line_start": 342,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "bca021af57224f0154c77083fe0baf3ed3b0a0b88aea8e2b9189b934cd59ea15"
+        }
+      },
+      "id": "discrepancy:v0.9/eff1-row-canonicality",
+      "predicate_id": "predicate:eff1-row-canonicality-completeness",
+      "resolution_authorities": [
+        "owner-approved-protected-surface-change",
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
+        "facet:EFF-2/effect-row-bidirectional-exactness",
+        "facet:EFF-2/syntactic-effect-exhibit-closure",
+        "facet:EX-1/byte-exact-canonical-program",
+        "facet:FN-7/main-effect-ceiling"
+      ],
+      "class": "internal-specification-inconsistency",
+      "evidence": {
+        "eff2_bidirectional_check_source": {
+          "byte_end": 75131,
+          "byte_start": 75072,
+          "line_end": 344,
+          "line_start": 344,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "eb726a4ce9068a4da2877415481fa853996b5f2679610f97460a373b44fd8096"
+        },
+        "eff2_local_exhibits_source": {
+          "byte_end": 75070,
+          "byte_start": 74985,
+          "line_end": 344,
+          "line_start": 344,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "85180ce9cdf2eddb8a9cbc45651832517dd2258bede1efd8aa974e411ef2a07a"
+        },
+        "example_local_region_source": {
+          "byte_end": 96566,
+          "byte_start": 96527,
+          "line_end": 505,
+          "line_start": 504,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "ea63a7f4873f5f2b803e5f10e71f6730026ecbe63389a5450331c3d82b0ce886"
+        },
+        "fn7_main_effect_ceiling_source": {
+          "byte_end": 70657,
+          "byte_start": 70614,
+          "line_end": 336,
+          "line_start": 336,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "a206d85444b96a73e8c06f8bd745ea46fae4bfde3a281b26900bce4cbe4c982d"
+        },
+        "missing_contract": "body-local-region-effect-discharge-or-row-projection",
+        "protected_case": {
+          "manifest": {
+            "expect": {
+              "exit": 0,
+              "kind": "run"
+            },
+            "id": "stor4-pos-arena-confined",
+            "rules": [
+              "STOR-4"
+            ],
+            "status": "pending"
+          },
+          "path": "conformance/cases/stor4-pos-arena-confined.wf",
+          "sha256": "e3a3a7c5930c82de534781bc2a988c467b34cbc421fdc8cf0ffbcabdf9fd1ba0"
+        }
+      },
+      "id": "discrepancy:v0.9/eff2-local-region-effects",
+      "predicate_id": "predicate:eff2-local-region-effect-row-consistency",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
+        "facet:FN-3/contract-member-checking-boundary",
+        "facet:FN-5/behavior-parameterization",
+        "facet:FN-5/env-struct-direct-calls"
+      ],
+      "class": "internal-specification-gap",
+      "evidence": {
+        "fn3_conformance_source": {
+          "byte_end": 61801,
+          "byte_start": 61682,
+          "line_end": 311,
+          "line_start": 311,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "e047d27e9a2bc0feef8cf97911c9eba2723057e8bcdfb30c195a13ac237e8b89"
+        },
+        "fn5_behavior_source": {
+          "byte_end": 69796,
+          "byte_start": 69707,
+          "line_end": 332,
+          "line_start": 332,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "19bf72318a692d1ef8ddd3f9b83334e3e2c3456e1a9ed644f0b360be29420c13"
+        },
+        "missing_contract": "member-set-signature-effect-substitution-law-and-call-resolution"
+      },
+      "id": "discrepancy:v0.9/fn3-contract-member-semantics",
+      "predicate_id": "predicate:fn3-contract-member-semantics-completeness",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
+        "facet:EX-1/byte-exact-canonical-program",
+        "facet:FN-7/main-return-spelling",
+        "facet:GRAM-2/function-and-contract-declaration-shapes",
+        "facet:GRAM-3/return-mode-type-shape"
+      ],
+      "class": "internal-specification-inconsistency",
+      "evidence": {
+        "example_main_return_spelling": "own unit",
+        "example_main_source": {
+          "byte_end": 96416,
+          "byte_start": 96386,
+          "line_end": 501,
+          "line_start": 501,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "3c21e58f403384c5f0b6f119e1c6e64e916b48bea8a58355724ec5a9f4642165"
+        },
+        "fn7_main_return_spelling": "unit",
+        "fn7_main_source": {
+          "byte_end": 70607,
+          "byte_start": 70590,
+          "line_end": 336,
+          "line_start": 336,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "2687d72b3742432ba69de3203f96d29308347ac8825558f829fa766f6a3b8fc8"
+        },
+        "fn_decl_return_nonterminal": "rtype",
+        "fn_decl_source": {
+          "byte_end": 22994,
+          "byte_start": 22852,
+          "line_end": 81,
+          "line_start": 80,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "7937beaad997465d1e80dcc0eae3573d3de754bd5b7762a561760bf98adc9508"
+        },
+        "rtype_shape": "mode type",
+        "rtype_source": {
+          "byte_end": 24069,
+          "byte_start": 24049,
+          "line_end": 106,
+          "line_start": 106,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "c9e5b6dead005a9feb5a7adb849ce60d0bc0dcd6051f3b64892a0f7c383eeac4"
+        }
+      },
+      "id": "discrepancy:v0.9/fn7-main-return-spelling",
+      "predicate_id": "predicate:fn7-main-return-spelling-consistency",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    },
+    {
+      "affected_facet_ids": [
+        "facet:OP-1/dotless-operation-reservation"
+      ],
+      "class": "internal-specification-ambiguity",
+      "evidence": {
+        "listed_distinct_dotless_count": 20,
+        "listed_dotless_identifiers": [
+          "ieq",
+          "ine",
+          "ilt",
+          "ile",
+          "igt",
+          "ige",
+          "eeq",
+          "ene",
+          "feq",
+          "flt",
+          "fle",
+          "band",
+          "bor",
+          "bxor",
+          "bnot",
+          "cvt",
+          "len",
+          "slice_of",
+          "box_new",
+          "arena_new"
+        ],
+        "listed_only_count": 0,
+        "listed_only_identifiers": [],
+        "listed_source": {
+          "byte_end": 51195,
+          "byte_start": 51098,
+          "line_end": 287,
+          "line_start": 287,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "bca1f3a8ad911092756f1f18a459de95cd91062991b837b792e9d9de78fd41fc"
+        },
+        "operation_name_occurrence_count": 84,
+        "operation_row_count": 44,
+        "table_distinct_dotless_count": 51,
+        "table_dotless_identifiers": [
+          "ieq",
+          "ine",
+          "ilt",
+          "ile",
+          "igt",
+          "ige",
+          "eeq",
+          "ene",
+          "feq",
+          "flt",
+          "fle",
+          "fgt",
+          "fge",
+          "fne",
+          "band",
+          "bor",
+          "bxor",
+          "bnot",
+          "cvt",
+          "len",
+          "slice_of",
+          "box_new",
+          "arena_new",
+          "array_new",
+          "buffer_new",
+          "iand",
+          "ior",
+          "ixor",
+          "inot",
+          "irotl",
+          "irotr",
+          "ipopcount",
+          "iclz",
+          "ictz",
+          "ibswap",
+          "imulhi",
+          "imin",
+          "imax",
+          "reinterpret",
+          "fneg",
+          "fabs",
+          "fcopysign",
+          "fmin",
+          "fmax",
+          "ffloor",
+          "fceil",
+          "ftrunc",
+          "froundeven",
+          "frem",
+          "finf",
+          "fnan"
+        ],
+        "table_only_count": 31,
+        "table_only_identifiers": [
+          "fgt",
+          "fge",
+          "fne",
+          "array_new",
+          "buffer_new",
+          "iand",
+          "ior",
+          "ixor",
+          "inot",
+          "irotl",
+          "irotr",
+          "ipopcount",
+          "iclz",
+          "ictz",
+          "ibswap",
+          "imulhi",
+          "imin",
+          "imax",
+          "reinterpret",
+          "fneg",
+          "fabs",
+          "fcopysign",
+          "fmin",
+          "fmax",
+          "ffloor",
+          "fceil",
+          "ftrunc",
+          "froundeven",
+          "frem",
+          "finf",
+          "fnan"
+        ],
+        "table_source": {
+          "byte_end": 50995,
+          "byte_start": 47575,
+          "line_end": 285,
+          "line_start": 240,
+          "path": "spec/kernel-spec-v0.9.md",
+          "sha256": "415a65e25e5c070ccbb7a51ebfb0b3d4ff2a8c42f2f151d3a23720198c352297"
+        }
+      },
+      "id": "discrepancy:v0.9/op1-dotless-reservation",
+      "predicate_id": "predicate:op1-dotless-reservation-set-equality",
+      "resolution_authorities": [
+        "successor-numbered-specification"
+      ]
+    }
+  ]
+}

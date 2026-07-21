@@ -3,15 +3,19 @@ struct Pair {
   right: i32;
 }
 
-enum Packet { Data(item: Pair); Empty(); }
+enum Packet {
+  Data(item: Pair);
+  Empty();
+}
 
-fn steal ['r] (packet: &'r Packet) -> own unit pure {
+fn steal ['r](packet: &'r Packet) -> own unit pure {
   doc "OWN-5: a payload binder derived from a shared match is non-owning and cannot move its affine referent.";
   match deref(packet) {
     Data(item: item) => {
       let stolen: own Pair = move deref(item);
     }
-    Empty() => { }
+    Empty() => {
+    }
   }
   return unit;
 }

@@ -1,8 +1,8 @@
-fn identity (x: own i32) -> own i32 pure {
+fn identity(x: own i32) -> own i32 pure {
   return x;
 }
 
-fn user_call (x: own i32) -> own i32 traps requires {
+fn user_call(x: own i32) -> own i32 traps requires {
   let copied: own i32 = identity(x: x);
   let permitted: own Bool = ieq<i32>(copied, x);
   check permitted else trap "identity mismatch";
@@ -11,6 +11,6 @@ fn user_call (x: own i32) -> own i32 traps requires {
   return x;
 }
 
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   return unit;
 }

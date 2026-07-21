@@ -13,8 +13,12 @@ import catalog_identity
 import semantic_catalog
 
 
-EXPECTED = "2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d"
-DECOMPOSITION = "3ccd1c7b5113e176e7edac37eb4a98603d158cce41908a6297064bf5ded2d156"
+EXPECTED = "3ff82e48fc860c4a414e8e1a16a652426b7505d7b74beedf057e418533151aae"
+SPECIFICATION = "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+DECOMPOSITION = "81cc67795feb9dfb9458df7987da44663b8d5ea034921a1c56322e2771e4310c"
+HISTORICAL_V0_8_CATALOG = (
+    "2fa586a8a1d9a49f344d64ad2b5f450a2ae2e8362bc187c70267097b9b427e1d"
+)
 
 
 class CatalogIdentityTests(unittest.TestCase):
@@ -78,6 +82,14 @@ class CatalogIdentityTests(unittest.TestCase):
 
     def test_catalog_identity_is_not_the_decomposition_identity(self) -> None:
         catalog = semantic_catalog.build_from_files()
+        self.assertEqual(
+            catalog["specification"],
+            {
+                "path": "spec/kernel-spec-v0.9.md",
+                "sha256": SPECIFICATION,
+                "version": "0.9",
+            },
+        )
         self.assertEqual(catalog["decomposition_sha256"], DECOMPOSITION)
         self.assertEqual(catalog_identity.catalog_sha256(catalog), EXPECTED)
         self.assertNotEqual(EXPECTED, DECOMPOSITION)
@@ -98,7 +110,7 @@ class CatalogIdentityTests(unittest.TestCase):
     def test_lock_reader_rejects_symlink_substitution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            lock = root / "facets" / "v0.8" / "static-catalog.sha256"
+            lock = root.joinpath(*catalog_identity.ROOT_LOCK_COMPONENTS)
             lock.parent.mkdir(parents=True)
             outside = root / "outside"
             outside.write_text(EXPECTED + "\n", encoding="ascii")
@@ -113,7 +125,7 @@ class CatalogIdentityTests(unittest.TestCase):
     def test_lock_reader_rejects_oversized_regular_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            lock = root / "facets" / "v0.8" / "static-catalog.sha256"
+            lock = root.joinpath(*catalog_identity.ROOT_LOCK_COMPONENTS)
             lock.parent.mkdir(parents=True)
             lock.write_bytes((EXPECTED + "\n\n").encode("ascii"))
             with self.assertRaises(catalog_identity.CatalogIdentityError):
@@ -122,6 +134,23 @@ class CatalogIdentityTests(unittest.TestCase):
                     catalog_identity.ROOT_LOCK_COMPONENTS,
                     "probe lock",
                 )
+
+    def test_v0_8_catalog_locks_remain_immutable_historical_evidence(self) -> None:
+        expected = HISTORICAL_V0_8_CATALOG + "\n"
+        self.assertEqual(
+            (catalog_identity.ROOT / "facets/v0.8/static-catalog.sha256").read_text(
+                encoding="ascii"
+            ),
+            expected,
+        )
+        self.assertEqual(
+            (
+                catalog_identity.ROOT
+                / "compiler/static-semantic-catalog-v0.8.sha256"
+            ).read_text(encoding="ascii"),
+            expected,
+        )
+        self.assertNotEqual(EXPECTED, HISTORICAL_V0_8_CATALOG)
 
 
 if __name__ == "__main__":

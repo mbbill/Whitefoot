@@ -1,4 +1,4 @@
-fn main () -> own unit pure {
+fn main() -> own unit pure {
   doc "OWN-11: inside a loop, a borrow may only name regions introduced in the loop body.";
   let a: own i32 = 0_i32;
   region 'r {

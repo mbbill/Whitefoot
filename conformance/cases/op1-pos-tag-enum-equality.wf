@@ -11,70 +11,60 @@ enum TrioEq {
   TrioThird();
 }
 
-fn empty_compile_only (left: own EmptyEq, right: own EmptyEq) -> own Bool pure {
+fn empty_compile_only(left: own EmptyEq, right: own EmptyEq) -> own Bool pure {
   return eeq<EmptyEq>(left, right);
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let one: own OneEq = OneOnly();
   let one_eq: own Bool = eeq<OneEq>(one, one);
   let one_ne: own Bool = ene<OneEq>(one, one);
   check one_eq else trap "one-variant eeq drift";
   let not_one_ne: own Bool = bnot<Bool>(one_ne);
   check not_one_ne else trap "one-variant ene drift";
-
   let first: own TrioEq = TrioFirst();
   let second: own TrioEq = TrioSecond();
   let third: own TrioEq = TrioThird();
-
   let eq00: own Bool = eeq<TrioEq>(first, first);
   let ne00: own Bool = ene<TrioEq>(first, first);
   check eq00 else trap "trio eeq diagonal drift";
   let not_ne00: own Bool = bnot<Bool>(ne00);
   check not_ne00 else trap "trio ene diagonal drift";
-
   let eq01: own Bool = eeq<TrioEq>(first, second);
   let ne01: own Bool = ene<TrioEq>(first, second);
   let not_eq01: own Bool = bnot<Bool>(eq01);
   check not_eq01 else trap "trio eeq off-diagonal drift";
   check ne01 else trap "trio ene off-diagonal drift";
-
   let eq02: own Bool = eeq<TrioEq>(first, third);
   let ne02: own Bool = ene<TrioEq>(first, third);
   let not_eq02: own Bool = bnot<Bool>(eq02);
   check not_eq02 else trap "trio eeq off-diagonal drift";
   check ne02 else trap "trio ene off-diagonal drift";
-
   let eq10: own Bool = eeq<TrioEq>(second, first);
   let ne10: own Bool = ene<TrioEq>(second, first);
   let not_eq10: own Bool = bnot<Bool>(eq10);
   check not_eq10 else trap "trio eeq off-diagonal drift";
   check ne10 else trap "trio ene off-diagonal drift";
-
   let eq11: own Bool = eeq<TrioEq>(second, second);
   let ne11: own Bool = ene<TrioEq>(second, second);
   check eq11 else trap "trio eeq diagonal drift";
   let not_ne11: own Bool = bnot<Bool>(ne11);
   check not_ne11 else trap "trio ene diagonal drift";
-
   let eq12: own Bool = eeq<TrioEq>(second, third);
   let ne12: own Bool = ene<TrioEq>(second, third);
   let not_eq12: own Bool = bnot<Bool>(eq12);
   check not_eq12 else trap "trio eeq off-diagonal drift";
   check ne12 else trap "trio ene off-diagonal drift";
-
   let eq20: own Bool = eeq<TrioEq>(third, first);
   let ne20: own Bool = ene<TrioEq>(third, first);
   let not_eq20: own Bool = bnot<Bool>(eq20);
   check not_eq20 else trap "trio eeq off-diagonal drift";
   check ne20 else trap "trio ene off-diagonal drift";
-
   let eq21: own Bool = eeq<TrioEq>(third, second);
   let ne21: own Bool = ene<TrioEq>(third, second);
   let not_eq21: own Bool = bnot<Bool>(eq21);
   check not_eq21 else trap "trio eeq off-diagonal drift";
   check ne21 else trap "trio ene off-diagonal drift";
-
   let eq22: own Bool = eeq<TrioEq>(third, third);
   let ne22: own Bool = ene<TrioEq>(third, third);
   check eq22 else trap "trio eeq diagonal drift";

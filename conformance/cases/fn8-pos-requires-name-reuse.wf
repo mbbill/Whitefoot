@@ -1,4 +1,4 @@
-fn increment (x: own i32) -> own i32 traps requires {
+fn increment(x: own i32) -> own i32 traps requires {
   let value: own Bool = ige<i32>(x, 0_i32);
   check value else trap "x must be nonnegative";
 } {
@@ -7,7 +7,7 @@ fn increment (x: own i32) -> own i32 traps requires {
   return value;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let value: own i32 = increment(x: 7_i32);
   check ieq<i32>(value, 8_i32) else trap "requires scope drift";
   return unit;

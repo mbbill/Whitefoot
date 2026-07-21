@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "OWN-7: borrows of distinct roots do not overlap; two uniq borrows coexist.";
   let a: own i32 = 1_i32;
   let b: own i32 = 2_i32;

@@ -1,0 +1,762 @@
+{
+  "active_current_specification": {
+    "path": "spec/kernel-spec-v0.8.md",
+    "sha256": "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
+  },
+  "protected_surface_baseline": {
+    "path": "governance/guard-baseline.json",
+    "sha256": "9d4ff925668a3341543d555c5243ef0b74ca5e7e275617ff4808d90c290dc48a",
+    "kernel_specification_records": 9,
+    "conformance_records": 307,
+    "guarded_oracle_digest_counts": {
+      "tools/codegen_parity.py": 2,
+      "tools/test_checked_automation.py": 1
+    },
+    "guarded_reference_test_counts": {
+      "prototype/checker/test_checker.py": 119
+    },
+    "legacy_unmanifested_case": {
+      "path": "conformance/cases/pending-const2-item.wf",
+      "sha256": "ae99d9b9b99e02e9c6c5f2af54f0924b7b1a0f5ee0422d29958b01b597adf759"
+    },
+    "note": "This exact baseline plus the separately pinned unmanifested legacy case is the complete currently approved semantic surface. Phase 2 changes none of it."
+  },
+  "candidate_installation": {
+    "approval_status": "not approved",
+    "candidate_byte_length": 98044,
+    "installed_header_relation": "The frozen candidate already has the exact v0.9 installed-version title and DRAFT status. Its conditional authority sentence remains in the installed bytes; no post-approval header rewrite is permitted.",
+    "owner_approval_required": true,
+    "proposed_numbered_path": "spec/kernel-spec-v0.9.md",
+    "proposal_path": "grammar-verifier/proposal/kernel-spec-successor-candidate.md",
+    "proposal_sha256": "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68",
+    "required_numbered_file_relation": "spec/kernel-spec-v0.9.md must be byte-for-byte identical to the approved proposal"
+  },
+  "declared_successor_delta": {
+    "grammar": {
+      "candidate_external_lexical_definition_count": 7,
+      "candidate_fixed_terminal_occurrence_count": 169,
+      "candidate_production_count": 62,
+      "candidate_reference_occurrence_count": 178,
+      "current_external_lexical_definition_count": 8,
+      "current_fixed_terminal_occurrence_count": 169,
+      "current_production_count": 59,
+      "current_reference_occurrence_count": 176,
+      "productions_added": [
+        "law_arg",
+        "ordinary_let_rhs",
+        "requires_entry",
+        "try_let_rhs",
+        "value_match"
+      ],
+      "productions_modified": [
+        "law",
+        "let_stmt",
+        "match_stmt",
+        "requires_block",
+        "stmt"
+      ],
+      "productions_relocated_without_shape_change": [
+        {
+          "from_rule": "GRAM-3",
+          "name": "const",
+          "to_rule": "CONST-1"
+        },
+        {
+          "from_rule": "GRAM-3",
+          "name": "cvalue",
+          "to_rule": "CONST-2"
+        }
+      ],
+      "productions_removed": [
+        "match_block",
+        "try_stmt"
+      ],
+      "removed_external_lexical_definitions": [
+        "LAWNAME"
+      ]
+    },
+    "numbered_rules": {
+      "added": [
+        "PROG-2"
+      ],
+      "added_count": 1,
+      "candidate_count": 92,
+      "changed": [
+        "CONST-1",
+        "CONST-2",
+        "DIAG-1",
+        "EX-1",
+        "FN-1",
+        "FN-4",
+        "FN-8",
+        "FORM-2",
+        "FORM-3",
+        "FORM-4",
+        "FORM-5",
+        "FORM-7",
+        "GIVE-1",
+        "GRAM-1",
+        "GRAM-2",
+        "GRAM-3",
+        "GRAM-4",
+        "GRAM-7",
+        "PRE-1",
+        "PROG-1",
+        "TYPE-6"
+      ],
+      "changed_count": 21,
+      "current_count": 91,
+      "removed": [],
+      "removed_count": 0,
+      "unchanged_current_count": 70
+    },
+    "normative_families": [
+      "FORM-2 complete derivation-tree renderer and byte comparison, with EX-1 and PRE-1 exact-fence rerendering",
+      "FORM-3 generated fixed-lowerword exclusion and name-shape ownership",
+      "FORM-4 documentation cross-reference correction",
+      "FORM-5 and FORM-7 exact canonical finite-float spelling",
+      "GRAM-1 maximal raw forms, quoted fixed-atom expansion, sole numeric pattern atom, context-free all-match terminal membership, and strong-LL(2) contract",
+      "GRAM-2 and GRAM-4 factoring with distinct match node kinds",
+      "CONST-1 and CONST-2 ownership of const and cvalue productions",
+      "GIVE-1 exact nearest-value-match delivery and closed continuing-path recursion",
+      "FN-4 mandatory closed source-acceptance calculus and separately gated optional optimizer facts",
+      "FN-8 broad grammar followed by an early structural semantic pass",
+      "FN-1 and TYPE-6 owner-selected top-level signature visibility",
+      "PROG-1 and PROG-2 ordered logical-source compilation-unit formation",
+      "DIAG-1 truthful pre-tree locations and source-EBNF attribution"
+    ]
+  },
+  "existing_protected_changes_required_on_install": [
+    {
+      "change": "add the approved successor as a new numbered specification; retain v0.8 unchanged",
+      "path": "spec/kernel-spec-v0.9.md",
+      "surface": "numbered-specification"
+    },
+    {
+      "change": "approve the three-path syntax-repair layer separately, then apply the combined 274-path repository patch once; the combined patch already contains both syntax repair and FORM-2 rendering changes, and no expected-verdict edit",
+      "combined_patch_path": "grammar-verifier/evidence/form2-structural-migration.patch",
+      "combined_patch_sha256": "4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2",
+      "combined_unique_path_count": 274,
+      "surface": "conformance-source",
+      "syntax_repair_patch_path": "grammar-verifier/evidence/form2-protected-syntax-repairs.patch",
+      "syntax_repair_patch_sha256": "724dbb970c8ce7ede7a52daf3ad2c9286b7872137e83f495fbf845df75252479",
+      "syntax_repair_path_count": 3
+    },
+    {
+      "change": "after the combined FORM-2 patch, apply the exact post-FORM2 case-intent patch to five protected source files and nine manifest descriptions; preserve every expected verdict and runnable status",
+      "patch_path": "grammar-verifier/evidence/v0.9-post-form2-case-intent.patch",
+      "patch_sha256": "62916bfc1bcc9e4eaa0461c33015cb30a2abe113f3aebcc807a3b8c492c0d54a",
+      "source_path_count": 5,
+      "manifest_record_count": 9,
+      "surface": "conformance-source-and-description"
+    },
+    {
+      "change": "after the case-intent patch and separate approval, apply the exact proposal-only metadata patch to update only the active specification path, version, and rule-count statements in these spec_ci coverage explanations; keep each coverage classification unchanged",
+      "exact_metadata_intent": {
+        "META-1": "replace kernel-spec-v0.8.md with kernel-spec-v0.9.md and 91 rules with 92 rules",
+        "META-3": "replace kernel-spec-v0.8.md with kernel-spec-v0.9.md",
+        "META-4": "replace kernel-spec-v0.8.md with kernel-spec-v0.9.md"
+      },
+      "records": [
+        "META-1",
+        "META-3",
+        "META-4"
+      ],
+      "path": "conformance/manifest.jsonl",
+      "proposal_patch_path": "grammar-verifier/evidence/v0.9-manifest-metadata.patch",
+      "proposal_patch_sha256": "ae48711659c881ab2e3ca4794641ffae948ed52a2e1bdf62f61da764c7be48a6",
+      "surface": "conformance-metadata"
+    },
+    {
+      "change": "regenerate the guarded baseline only through make approve-spec after explicit owner approval of the candidate, source patches, and manifest metadata edits",
+      "path": "governance/guard-baseline.json",
+      "surface": "approval-baseline"
+    },
+    {
+      "change": "append the owner's exact approval and resulting baseline hash",
+      "path": "governance/APPROVALS.md",
+      "surface": "approval-ledger"
+    }
+  ],
+  "protected_source_migration": {
+    "authorization": {
+      "guarded_files_changed_now": false,
+      "migration_authorized": false,
+      "owner_approval_required": true
+    },
+    "combined_repository_patch": {
+      "artifact": "grammar-verifier/evidence/form2-structural-migration.patch",
+      "changed_path_count": 274,
+      "changed_paths_inventory_sha256": "72894313ab0e7f7db4fbdddf4bde13eb973df1a298abfa15ec473e448f9dba68",
+      "sha256": "4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2"
+    },
+    "expected_surface": {
+      "expected_verdict_change_count": 0,
+      "manifest_expect_and_status_projection_after_sha256": "5fb0e54ec006c3fea82d5fc0d8c454e5e9f022ba472cdcc6a90c44a31ade2132",
+      "manifest_expect_and_status_projection_before_sha256": "5fb0e54ec006c3fea82d5fc0d8c454e5e9f022ba472cdcc6a90c44a31ade2132",
+      "note": "The equal projection proves that the proposal does not edit an expected verdict or runnable status. It is not a production-compiler verdict-preservation claim; no production parser exists."
+    },
+    "form2_rendering_layer": {
+      "changed_path_count": 274,
+      "description": "Formatting-only patch computed from the syntax-repaired inputs; it preserves the independent terminal and derivation-tree projections.",
+      "patch_sha256": "1296a396b3297f2da64a8bfef2eb6fbf9b0d57bb6bfc622b20b4bfda7f74ae1e"
+    },
+    "inventory": {
+      "canonical_migrated_source_count": 272,
+      "complete_derivation_source_count_before_repair": 270,
+      "isolated_form2_fixture_count": 2,
+      "protected_and_pinned_source_count": 293,
+      "rendered_source_count_including_tab_recovery": 274,
+      "syntax_repair_then_complete_derivation_count": 3,
+      "unchanged_earlier_stage_negative_count": 19
+    },
+    "syntax_repair_layer": {
+      "artifact": "grammar-verifier/evidence/form2-protected-syntax-repairs.patch",
+      "expected_verdict_change_count": 0,
+      "path_count": 3,
+      "proposals": [
+        {
+          "after_sha256": "b4db8e74eb750c16395e6947e0480623c7253fa201c699cc24b9d73193c94183",
+          "before_sha256": "1f75fbf0693f0aafda635ad65fbdc75847c2e399d47bfbfc9db4ecb939a11718",
+          "edit": "replace the TYPEID-shaped constant binding NAME and its two uses with IDENT name",
+          "expected_rule": "CONST-1",
+          "path": "conformance/cases/const1-neg-noninteger.wf"
+        },
+        {
+          "after_sha256": "b02f9e292993dccfc4a61a4fbf21886812d6e1d80c0025c075e2a4bec882b70b",
+          "before_sha256": "ae99d9b9b99e02e9c6c5f2af54f0924b7b1a0f5ee0422d29958b01b597adf759",
+          "edit": "replace the TYPEID-shaped unused constant binding LIMIT with IDENT limit",
+          "expected_rule": null,
+          "note": "This is the separately pinned unmanifested legacy source and has no manifested expected verdict.",
+          "path": "conformance/cases/pending-const2-item.wf"
+        },
+        {
+          "after_sha256": "1a55873bdaeda3ccda6e21ff247c3e927ea61dadb2b8c0f7a9dc2053f3318beb",
+          "before_sha256": "d8e7ce4d9b282f6e6e830e1bd087af374a867952d72fe85ee9f323e81f001e31",
+          "edit": "remove one doc declaration from a stmt-only match arm while retaining the direct borrow match and following set statement",
+          "expected_rule": "TYPE-7",
+          "path": "conformance/cases/type7-neg-match-borrow-expression.wf"
+        }
+      ],
+      "sha256": "724dbb970c8ce7ede7a52daf3ad2c9286b7872137e83f495fbf845df75252479"
+    },
+    "two_engine_evidence": {
+      "independent_evidence_sidecar_path": "grammar-verifier/evidence/form2-independent-evidence.sha256",
+      "independent_evidence_sidecar_sha256": "d4dd3bd42759e9138a93514020ec2ca39adc2139651e43ee7a15ce21cf6f1fdc",
+      "independent_report_path": "grammar-verifier/evidence/form2-independent-report.json",
+      "independent_report_sha256": "142a34c3b9e9fd1f3c20da9848bda3984092a88b7c995c63a5c2dcf22333b404",
+      "migration_patch_bytes_equal": true,
+      "primary_evidence_sidecar_path": "grammar-verifier/evidence/form2-evidence.sha256",
+      "primary_evidence_sidecar_sha256": "b907fc38adbcf9174a832d66e36917f4df8c1c434d26651d65e39d9a0ec72a68",
+      "primary_report_path": "grammar-verifier/evidence/form2-structural-layout-evidence.json",
+      "primary_report_sha256": "7bab5d114dc1b4d0818232c88c580b1247e139e911eee6501c116bd6422fdf80",
+      "structural_migration_inventory_path": "grammar-verifier/evidence/form2-structural-migration.json",
+      "structural_migration_inventory_sha256": "775d54381999b670619e240426de285b28bb6483647d697d67db483e68c5f099",
+      "syntax_repair_patch_bytes_equal": true
+    }
+  },
+  "post_form2_case_intent_migration": {
+    "apply_order": 2,
+    "authorization": {
+      "guarded_files_changed_now": false,
+      "migration_authorized": false,
+      "owner_approval_required": true
+    },
+    "patch": {
+      "path": "grammar-verifier/evidence/v0.9-post-form2-case-intent.patch",
+      "sha256": "62916bfc1bcc9e4eaa0461c33015cb30a2abe113f3aebcc807a3b8c492c0d54a"
+    },
+    "precondition": {
+      "apply_after_patch": "grammar-verifier/evidence/form2-structural-migration.patch",
+      "apply_after_sha256": "4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2",
+      "relation": "Every source preimage below is the exact intermediate postimage produced by the approved combined FORM-2 patch. The manifest is still the current manifest because the FORM-2 patch does not edit it."
+    },
+    "source_postimages": [
+      {
+        "final_sha256": "9cd070cd331b163f0f230c8c57ee7c38f0d7aa23a6807987981bc29ee13c0418",
+        "intermediate_form2_sha256": "264ec02be1e00a8682a8792b950b63d78364d924d7398e3a0c55b5579a28489e",
+        "outcome_preserved": "accept; the exact direct iadd.sat<u64> body and three holding FN-4 cells are unchanged",
+        "path": "conformance/cases/fn4-pos-law-discharged.wf",
+        "repair": "replace obsolete OP-8 law-table attribution with the closed FN-4 calculus"
+      },
+      {
+        "final_sha256": "66f30c62380f95a332a00bd468ae9505307c87ca77db3c62dcb13f1e767b7d0d",
+        "intermediate_form2_sha256": "58bdefbfa7bd6b76019df7dac090bc07f5e2a02d1543aed87f002fdddb78fb4b",
+        "outcome_preserved": "accept; this declaration-only contract has no concrete conformance and emits no accepted-law record",
+        "path": "conformance/cases/fn4-pos-law-in-contract.wf",
+        "repair": "replace removed LAWNAME lexer-class wording with semantic closed-table wording"
+      },
+      {
+        "final_sha256": "00a2b65bbfd272897a2b0596123c32e0069306c680cb77c4f7f229337c25202f",
+        "intermediate_form2_sha256": "a0e5c4f6844f295515325070c21e29ec05b5be1c9c847e5ac785992c3ef7c1a0",
+        "outcome_preserved": "reject FN-8; let, return, check makes return the first invalid direct entry while retaining a final check",
+        "path": "conformance/cases/fn8-neg-requires-control.wf",
+        "repair": "reorder the requires entries so the early structural pass isolates control transfer rather than a nonfinal check"
+      },
+      {
+        "final_sha256": "3b146c7ac6185b12e5e703a4643cf0afd3c8b4f05ccc56fdd6ef5d6a07b71b18",
+        "intermediate_form2_sha256": "e536ee58cac178d0cd5a1b06ec91ab25d73782ff171db6b6947d9ff055bf0af5",
+        "outcome_preserved": "run exit 0; only the documentation string changes",
+        "path": "conformance/cases/gram1-pos-lookahead.wf",
+        "repair": "describe the real IDENT-headed two-token fork and distinct noncompeting positions"
+      },
+      {
+        "final_sha256": "a1c1986fedbbc00c0756986582dccebe07b7aad013258ccb4936a40dc5d6e43e",
+        "intermediate_form2_sha256": "7daf418c6a21a7a08dd6605469c44db43f8a22c270d4ae479077639427649353",
+        "outcome_preserved": "run exit 0; the value match and statement match retain their valid source behavior",
+        "path": "conformance/cases/gram7-pos-two-productions.wf",
+        "repair": "state one arm shape with two distinct production-node kinds"
+      }
+    ],
+    "manifest_description_repairs": {
+      "changed_record_count": 9,
+      "changed_records": [
+        "form2-neg-noncanonical-ws",
+        "fn4-neg-bad-lawname",
+        "fn4-pos-law-discharged",
+        "fn4-pos-law-in-contract",
+        "gram1-pos-lookahead",
+        "gram2-pos-items",
+        "gram3-pos-modes",
+        "gram4-pos-stmts",
+        "gram7-pos-two-productions"
+      ],
+      "current_preimage_byte_length": 99776,
+      "current_preimage_sha256": "20bb50032c112150c3d9a7387a17bde708922e426550b47b64f2214cd7341d69",
+      "postimage_byte_length": 99869,
+      "postimage_sha256": "e0e3138869c337c47f2c527bda359fef1108ca1483b8a3e3f22cb86140581c3f",
+      "scope": "Only doc and reason prose changes. Every id, rules, expect, status, and covered_by field is unchanged."
+    },
+    "expected_surface": {
+      "expected_verdict_change_count": 0,
+      "runnable_status_change_count": 0,
+      "expect_and_status_projection_sha256": "5fb0e54ec006c3fea82d5fc0d8c454e5e9f022ba472cdcc6a90c44a31ade2132",
+      "note": "The equal projection is a byte-level manifest-field check. Outcome preservation statements above are rule-and-source reasoning, not a production-compiler execution claim."
+    }
+  },
+  "manifest_metadata_migration": {
+    "after_manifest_byte_length": 99869,
+    "after_manifest_sha256": "0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c",
+    "apply_order": 3,
+    "authorization": {
+      "manifest_changed_now": false,
+      "migration_authorized": false,
+      "owner_approval_required": true
+    },
+    "before_manifest_byte_length": 99869,
+    "before_manifest_sha256": "e0e3138869c337c47f2c527bda359fef1108ca1483b8a3e3f22cb86140581c3f",
+    "current_repository_manifest_byte_length": 99776,
+    "current_repository_manifest_sha256": "20bb50032c112150c3d9a7387a17bde708922e426550b47b64f2214cd7341d69",
+    "exact_record_edits": [
+      {
+        "after_line_sha256": "df89084dc86a51f7ad25ca9762137b61c5e29d6c919e057c9e461b7604c1628b",
+        "before_line_sha256": "c098bc2fbf8c5a3bb183b674169e1558241ce80917e050ac7f85dfbe231d2094",
+        "byte_length": 628,
+        "record": "META-1",
+        "replacements": [
+          {
+            "after": "kernel-spec-v0.9.md",
+            "before": "kernel-spec-v0.8.md",
+            "occurrence_count": 1
+          },
+          {
+            "after": "92 rules",
+            "before": "91 rules",
+            "occurrence_count": 1
+          }
+        ]
+      },
+      {
+        "after_line_sha256": "63b79b22979b8649d7ff9f21a53a037871cbb6efcd6f246f6c3698cc3f70fb0f",
+        "before_line_sha256": "92aeebd56fd0c192e7d0feb36bd2aea0d86015e04101f0bd588fc3a5511e83ff",
+        "byte_length": 568,
+        "record": "META-3",
+        "replacements": [
+          {
+            "after": "kernel-spec-v0.9.md",
+            "before": "kernel-spec-v0.8.md",
+            "occurrence_count": 1
+          }
+        ]
+      },
+      {
+        "after_line_sha256": "ea35f06f203d256fca34f7a9e147ab01d477332a8073e136aac22779805ec8d2",
+        "before_line_sha256": "c7cb20fcc6ca9dd499894e0ec0271bdd81832ad8749f055e8b0d19229a70df75",
+        "byte_length": 608,
+        "record": "META-4",
+        "replacements": [
+          {
+            "after": "kernel-spec-v0.9.md",
+            "before": "kernel-spec-v0.8.md",
+            "occurrence_count": 1
+          }
+        ]
+      }
+    ],
+    "expected_verdict_change_count": 0,
+    "path": "conformance/manifest.jsonl",
+    "proposal_patch": {
+      "apply_mode": "ordinary contextual unified diff, applied after the post-FORM2 case-intent patch and only after exact owner approval",
+      "path": "grammar-verifier/evidence/v0.9-manifest-metadata.patch",
+      "sha256": "ae48711659c881ab2e3ca4794641ffae948ed52a2e1bdf62f61da764c7be48a6"
+    },
+    "record_count_changed": 3,
+    "unchanged_fields": [
+      "expect",
+      "status",
+      "rules",
+      "covered_by"
+    ]
+  },
+  "protected_surfaces_reviewed_without_expected_edits": {
+    "conformance_cases": {
+      "assessment": "The proposal requests zero expected-verdict or runnable-status changes. It separately requests the exact three-path syntax repair, 274-path combined FORM-2 migration, five-path post-FORM2 case-intent repair, and nine manifest-description repairs recorded above. A-01 formalizes the already-positive mutual-recursion case. No other protected source edit is proposed.",
+      "deref_source_case_count": 44,
+      "deref_source_paths": [
+        "conformance/cases/eff2-neg-try-hidden-trap.wf",
+        "conformance/cases/eff2-pos-try-declared-trap.wf",
+        "conformance/cases/ex1-pos-worked-example.wf",
+        "conformance/cases/form3-pos-lexical-classes.wf",
+        "conformance/cases/gram3-pos-modes.wf",
+        "conformance/cases/gram5-pos-exprs-places.wf",
+        "conformance/cases/gram5-pos-recursive-place-projection.wf",
+        "conformance/cases/own1-neg-match-move-through-borrow.wf",
+        "conformance/cases/own1-neg-return-borrowed-box.wf",
+        "conformance/cases/own1-neg-return-through-shared-borrow.wf",
+        "conformance/cases/own10-pos-local-region.wf",
+        "conformance/cases/own11-pos-loop-inner-region.wf",
+        "conformance/cases/own13-pos-borrow-affine-payload.wf",
+        "conformance/cases/own13-pos-borrow-match-live.wf",
+        "conformance/cases/own13-pos-uniq-match-payloads.wf",
+        "conformance/cases/own2-pos-three-modes.wf",
+        "conformance/cases/own3-pos-outlives-store.wf",
+        "conformance/cases/own4-neg-return-local-borrow.wf",
+        "conformance/cases/own4-pos-return-caller-borrow.wf",
+        "conformance/cases/own5-neg-match-borrow-affine-payload-move.wf",
+        "conformance/cases/own5-pos-read-through-holder.wf",
+        "conformance/cases/own7-pos-distinct-noverlap.wf",
+        "conformance/cases/run-ex1-value-match.wf",
+        "conformance/cases/stor1-neg-whole-buffer-replacement.wf",
+        "conformance/cases/stor2-pos-box-new.wf",
+        "conformance/cases/stor3-pos-box-drop-region.wf",
+        "conformance/cases/stor4-pos-arena-confined.wf",
+        "conformance/cases/type7-neg-deref-nonref.wf",
+        "conformance/cases/type7-neg-index-box-holder.wf",
+        "conformance/cases/type7-neg-index-reference-holder.wf",
+        "conformance/cases/type7-neg-match-borrow-expression.wf",
+        "conformance/cases/type7-neg-match-box-holder.wf",
+        "conformance/cases/type7-neg-match-reference-holder.wf",
+        "conformance/cases/type7-neg-return-box-as-referent.wf",
+        "conformance/cases/type7-neg-try-box-holder.wf",
+        "conformance/cases/type7-pos-deref.wf",
+        "conformance/cases/x-borrow-return-uniq-local-region.wf",
+        "conformance/cases/x-borrow-two-shared-reads-run.wf",
+        "conformance/cases/x-borrow-write-through-shared-borrow.wf",
+        "conformance/cases/x-enum-borrow-payload-live.wf",
+        "conformance/cases/x-fn-own-arg-for-ref-param.wf",
+        "conformance/cases/x-integ-coin-borrow-match-score-twice.wf",
+        "conformance/cases/x-ownmove-borrow-match-live-then-own-move.wf",
+        "conformance/cases/x-typ-uniq-deref-write-roundtrip.wf"
+      ],
+      "forward_signature_case": "conformance/cases/x-fn-mutual-recursion-runs.wf",
+      "deref_source_path_inventory_encoding": "UTF-8 paths sorted bytewise, each followed by LF",
+      "deref_source_path_inventory_sha256": "d41598ff03a0bc3f7e2f0ebe5ff4b3e33434aed4e1d4a59d244034c09dd1af5a",
+      "manifest_sha256": "20bb50032c112150c3d9a7387a17bde708922e426550b47b64f2214cd7341d69"
+    },
+    "frozen_oracles": {
+      "assessment": "No frozen oracle source or pinned digest edit is proposed. Their exact current bytes are preserved through installation.",
+      "paths": [
+        "tools/codegen_parity.py",
+        "tools/test_checked_automation.py"
+      ],
+      "sha256": {
+        "tools/codegen_parity.py": "712f596b1856c59b931602cbe2b82deb7363e1aeabc8d0324aad55c6ad459deb",
+        "tools/test_checked_automation.py": "defb31913e7cc905d5c4834946fababf6f452572e3f2067c12ab8210e4e5e943"
+      }
+    },
+    "reference_semantics_tests": {
+      "assessment": "No existing reference-semantics test is changed, deleted, or weakened. Successor-only evidence is additive and lives outside this protected file.",
+      "path": "prototype/checker/test_checker.py",
+      "sha256": "d9089fb1228b5f2adf22add88e017de8966c876ebdc3f3320d7660eeede6b9a5"
+    }
+  },
+  "selection_grounds": [
+    {
+      "family": "FORM-2",
+      "ground": "evidence-selected",
+      "reason": "Two structurally independent parsers and renderers bind the complete protected inventory and agree on the exact repair and migration patch bytes."
+    },
+    {
+      "family": "FORM-3 and deterministic grammar factoring",
+      "ground": "evidence-selected",
+      "reason": "The static strong-LL(2) auditor and independent generalized parser measure terminal competition and complete derivation counts."
+    },
+    {
+      "family": "FORM-4",
+      "ground": "minimality-selected erratum",
+      "reason": "GRAM-2 is the unique owner of doc; only the wrong cross-reference changes."
+    },
+    {
+      "family": "FORM-5 and FORM-7 finite floats",
+      "ground": "evidence-selected",
+      "reason": "The Python model performs exact-rational canonical search and membership. Rust independently extracts and pins the exact FORM-5/FORM-7 clauses and lexical grammar and rejects hostile clause mutations; it is not a second exact-rational canonicality implementation. Mathematical well-ordering supplies totality and uniqueness."
+    },
+    {
+      "family": "CONST-1 and CONST-2 grammar ownership",
+      "ground": "minimality-selected",
+      "reason": "The unchanged const and cvalue shapes move to their unique semantic rule owners instead of remaining definitions under GRAM-3."
+    },
+    {
+      "family": "GIVE-1 delivery",
+      "ground": "correctness-selected hostile-review repair",
+      "reason": "Delivery is relative to the same enclosing value match; nested value matches, normally continuing trap-capable operations, unproved loops, and breaks to non-enclosing loops cannot silently satisfy the outer arm."
+    },
+    {
+      "family": "FN-4 law admission",
+      "ground": "soundness-selected fact-channel closure",
+      "reason": "One closed mandatory direct-iadd.sat integer-table calculus decides source acceptance. Its base derivation grants no optimizer authority; optional facts require a separately approved independently verified family."
+    },
+    {
+      "family": "FN-8 requires admission",
+      "ground": "evidence-selected boundary repair",
+      "reason": "The general parser accepts ordinary typed children and one early structural pass enforces and attributes the semantic subset."
+    },
+    {
+      "family": "FN-1 and TYPE-6 A-01",
+      "ground": "owner-selected on 2026-07-21",
+      "reason": "Only top-level function signatures gain closed-unit visibility; all other declarations stay lexical."
+    },
+    {
+      "family": "PROG-2",
+      "ground": "minimality-selected architecture closure pending approval",
+      "reason": "Ordered logical source records preserve exact input identity and source boundaries without concatenation, path sorting, imports, or namespaces."
+    },
+    {
+      "family": "DIAG-1",
+      "ground": "correctness-selected and hostile-reviewed",
+      "reason": "A closed source-EBNF diagnostic machine makes rule, coordinate, and expected-terminal selection independent of parser implementation."
+    }
+  ],
+  "hostile_review_bindings": [
+    {
+      "path": "grammar-verifier/proposal/SUCCESSOR-HOSTILE-REVIEW.md",
+      "sha256": "e6e52759b74c43d82863b6ae2860605648a3cdead172585b3e33fc5acd7879c0",
+      "verdict": "GO for owner-approval presentation of the reviewed successor/frontend delta"
+    },
+    {
+      "path": "grammar-verifier/proposal/FN4-HOSTILE-REVIEW.md",
+      "sha256": "658f5a8ba03fcd1f6ce999a261a0fd57c0234d36be365df45b1727de61c87cc7",
+      "verdict": "GO for the mandatory FN-4 calculus and closed optimizer-authority boundary at the FORM-2 intermediate source layer"
+    },
+    {
+      "path": "grammar-verifier/proposal/FORM2-FROZEN-HOSTILE-REVIEW.md",
+      "sha256": "3998150ddd5aae1b5a44b9447de160bfc719502f467eca05b378af288f938fff",
+      "verdict": "GO for presentation of the exact FORM-2 migration artifacts"
+    },
+    {
+      "path": "grammar-verifier/proposal/REMAINING-SEMANTIC-HOSTILE-REVIEW.md",
+      "sha256": "2b9a86c1105dfec4691dff16b9c6a16d5085fe71b679e591b07ab1456f146abf",
+      "verdict": "GO for the reviewed FORM-5/FORM-7, FN-1/TYPE-6, PRE-1, and EX-1 deltas"
+    },
+    {
+      "path": "grammar-verifier/proposal/CASE-INTENT-HOSTILE-REVIEW.md",
+      "sha256": "9a28e0b935547b46764be398608959e5fcf6c4392615c78e3d6fdd481feb469b",
+      "verdict": "GO for exact A-to-B-to-C composition, final protected postimages, and all five FN-4 outcomes"
+    }
+  ],
+  "v0_8_discrepancy_accounting": {
+    "addressed_by_candidate": [
+      "discrepancy:v0.8/diag1-pre-tree-node-path",
+      "discrepancy:v0.8/fn4-law-admission",
+      "discrepancy:v0.8/fn8-reserved-rule-attribution",
+      "discrepancy:v0.8/form2-protected-conformance-spacing",
+      "discrepancy:v0.8/form4-doc-cross-reference",
+      "discrepancy:v0.8/form5-form7-float-canonical-spelling",
+      "discrepancy:v0.8/gram-terminal-ident-partition",
+      "discrepancy:v0.8/gram1-gram7-match-node-bijection"
+    ],
+    "addressed_count": 8,
+    "install_action": "Preserve every v0.8 record unchanged and generate a version-bound v0.9 discrepancy registry after approval; a candidate resolution does not rewrite history.",
+    "not_addressed_by_candidate": [
+      "discrepancy:v0.8/affine-deref-storage-lifecycle",
+      "discrepancy:v0.8/diag3-retained-proof-ref",
+      "discrepancy:v0.8/eff1-row-canonicality",
+      "discrepancy:v0.8/eff2-local-region-effects",
+      "discrepancy:v0.8/fn3-contract-member-semantics",
+      "discrepancy:v0.8/fn7-main-return-spelling",
+      "discrepancy:v0.8/op1-dotless-reservation"
+    ],
+    "not_addressed_count": 7,
+    "registry_path": "facets/v0.8/open-discrepancies.json",
+    "v0_8_open_record_count": 15
+  },
+  "active_target_references_to_update_after_approval": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "Makefile",
+    "README.md",
+    "THE-PLAN.md",
+    "capabilities/README.md",
+    "compiler/README.md",
+    "compiler/crates/whitefoot-lexer/Cargo.toml",
+    "compiler/crates/whitefoot-lexer/src/lib.rs",
+    "compiler/crates/whitefoot-lexer/src/outcome.rs",
+    "compiler/crates/whitefoot-lexer/src/scanner.rs",
+    "compiler/crates/whitefoot-lexical-observer/Cargo.toml",
+    "compiler/crates/whitefoot-lexical-observer/src/main.rs",
+    "compiler/crates/whitefoot-contract/src/digest.rs",
+    "compiler/tools/check_workspace.py",
+    "compiler/tools/test_check_workspace.py",
+    "conformance/manifest.jsonl",
+    "docs/why-whitefoot.md",
+    "governance/APPROVALS.md",
+    "governance/guard-baseline.json",
+    "mcts_mem/whitefoot/data-model/tag-only-equality.md",
+    "mcts_mem/whitefoot/surface-form.md",
+    "mcts_mem/whitefoot/toolchain.md",
+    "mcts_mem/whitefoot/toolchain/compiler-implementation.md",
+    "optimizer-language-research/implementation/decision-gates.md",
+    "optimizer-language-research/notes/user-directives.md",
+    "prototype/checker/checker.py",
+    "spec/derivation-ledger.md",
+    "tools/capability_overlay.py",
+    "tools/catalog_identity.py",
+    "tools/facet_catalog.py",
+    "tools/facet_discrepancies.py",
+    "tools/facet_discrepancy_inputs.py",
+    "tools/facet_discrepancy_predicates.py",
+    "tools/semantic_catalog.py",
+    "tools/test_capability_overlay.py",
+    "tools/test_catalog_identity.py",
+    "tools/test_facet_catalog.py",
+    "tools/test_facet_discrepancies.py",
+    "tools/test_semantic_catalog.py"
+  ],
+  "versioned_evidence_to_regenerate_without_rewriting_v0_8": [
+    "capabilities/whitefoot-rust/v0.9/foundation.json",
+    "compiler/kernel-spec-v0.9.sha256",
+    "compiler/static-semantic-catalog-v0.9.sha256",
+    "facets/v0.9/README.md",
+    "facets/v0.9/decomposition/",
+    "facets/v0.9/static-catalog.sha256",
+    "facets/v0.9/source.json",
+    "facets/v0.9/open-discrepancies.json",
+    "frontend-corpus/v0.9/README.md",
+    "frontend-corpus/v0.9/lexical-fixtures.json",
+    "tools/test_v09_lexical_model.py",
+    "tools/test_v09_lexical_observer.py",
+    "tools/v09_lexical_model.py",
+    "tools/v09_lexical_observer.py",
+    "tools/v09_lexical_observer_runner.py"
+  ],
+  "historical_v0_8_records_to_preserve": [
+    "capabilities/whitefoot-rust/v0.8/",
+    "compiler/kernel-spec-v0.8.sha256",
+    "compiler/static-semantic-catalog-v0.8.sha256",
+    "facets/v0.8/",
+    "frontend-corpus/v0.8/",
+    "optimizer-language-research/implementation/compiler-architecture-artifacts-backend.md",
+    "optimizer-language-research/implementation/compiler-architecture-design.md",
+    "optimizer-language-research/implementation/compiler-architecture-frontend.md",
+    "optimizer-language-research/implementation/compiler-architecture-preflight.md",
+    "optimizer-language-research/implementation/compiler-architecture-systems.md",
+    "optimizer-language-research/implementation/decision-gates.md",
+    "optimizer-language-research/implementation/enum-equality-investigation/",
+    "optimizer-language-research/notes/user-directives.md",
+    "spec/kernel-spec-v0.8.md",
+    "tools/test_v08_lexical_model.py",
+    "tools/test_v08_lexical_observer.py",
+    "tools/test_v08_terminal_ident_audit.py",
+    "tools/v08_lexical_model.py",
+    "tools/v08_lexical_observer.py",
+    "tools/v08_lexical_observer_runner.py",
+    "tools/v08_terminal_ident_audit.py"
+  ],
+  "v0_8_reference_classification": {
+    "scope": "Tracked non-archive, non-MCTS, non-grammar-verifier files containing v0.8, v08, or the exact v0.8 digest; version-named path-only assets are covered by the preserved directory prefixes; the four live MCTS nodes are listed explicitly in the update inventory.",
+    "canonical_path_encoding": "UTF-8 paths sorted bytewise, each followed by LF",
+    "direct_text_reference_file_count": 58,
+    "direct_text_reference_inventory_sha256": "b12dc10231cd5daf42795997d66e3ba6468d8e4e22a4d61ec418ab5d177e92ae",
+    "unclassified_file_count": 0
+  },
+  "successor_additive_tests_required": [
+    "the primary and independent FORM-2 renderers produce byte-identical repair and migration patches over all 293 protected and pinned sources",
+    "all expanded fixed lowercase token spellings reject in every IDENT binding position",
+    "ordinary nonterminal identifiers remain accepted",
+    "deref(p) and deref(x) have exactly one proposal derivation through fixed place syntax",
+    "ordinary let, try let, statement match, value match, broad requires entries, and broad law arguments each have their exact typed derivation",
+    "finite f32 and f64 spellings use exact rational round-to-nearest-ties-to-even membership, signed zero, shortest byte count, and ASCII tie breaking without host float formatting",
+    "unknown law names, wrong roles, incomplete-domain evidence, and sampling publish no optimizer fact",
+    "FN-8 rejects every direct child outside ordinary-let-star followed by one final check before recursively checking that child",
+    "top-level forward calls and mutual recursion resolve from the closed signature table",
+    "locals, regions, labels, and constants still reject lexical use before declaration",
+    "source bundle order, duplicate and invalid paths, zero records, zero-byte records, one-LF records, repartitioning, and empty-record retention have the exact PROG-2 outcome",
+    "raw lexical, terminal-membership, grammar, and FORM-2 failures produce the exact DIAG-1 rule, coordinate, expected-terminal set, and non-fabricated location family in independent models"
+  ],
+  "terminal_partition_discrepancy": {
+    "current_id": "discrepancy:v0.8/gram-terminal-ident-partition",
+    "install_action": "preserve the v0.8 record and require an independently generated successor discrepancy set in which this exact gap is absent",
+    "supporting_paths": [
+      "tools/v08_terminal_ident_audit.py",
+      "tools/test_v08_terminal_ident_audit.py",
+      "tools/facet_discrepancy_predicates.py",
+      "facets/v0.8/open-discrepancies.json"
+    ]
+  },
+  "owner_approval_packet": {
+    "approval_items_must_be_separate_and_exact": [
+      {
+        "item": "install the reviewed candidate as immutable spec/kernel-spec-v0.9.md",
+        "sha256": "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+      },
+      {
+        "item": "approve the three-path protected syntax-repair layer contained in the combined migration",
+        "sha256": "724dbb970c8ce7ede7a52daf3ad2c9286b7872137e83f495fbf845df75252479"
+      },
+      {
+        "item": "apply once, from the current repository state, the combined repository-form 274-path protected source migration containing both repair and rendering layers",
+        "sha256": "4b626ff44a9bc3cec96e41d9f3fa93b937a36397b7970b9310d39039cf8eb1f2"
+      },
+      {
+        "item": "after the combined FORM-2 patch, apply the exact five-source and nine-manifest-record post-FORM2 case-intent patch",
+        "sha256": "62916bfc1bcc9e4eaa0461c33015cb30a2abe113f3aebcc807a3b8c492c0d54a"
+      },
+      {
+        "item": "after the case-intent patch, apply the exact metadata-only META-1, META-3, and META-4 patch",
+        "sha256": "ae48711659c881ab2e3ca4794641ffae948ed52a2e1bdf62f61da764c7be48a6"
+      },
+      {
+        "item": "accept the complete resulting conformance/manifest.jsonl postimage after the exact A-to-B-to-C sequence",
+        "sha256": "0eff27bfb87ca14086f31f4b171d72c9eb1a49072aa4563a3f7c937d0b8bb90c"
+      },
+      {
+        "item": "append the exact v0.9 derivation-ledger amendment after installation",
+        "sha256": "f29b326f446aa9e5f512d079f1dbd14e641e6d840f18b69faab0ea39950e52a0"
+      },
+      {
+        "item": "create or regenerate v0.9-bound evidence and discrepancy assets and update exact live references while preserving every v0.8 historical asset",
+        "sha256": null
+      },
+      {
+        "item": "switch the active compiler and roadmap target to the exact installed v0.9 bytes only after the approved specification, protected patches, ledger, evidence, and live-reference updates are complete",
+        "sha256": "bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68"
+      },
+      {
+        "item": "after the exact approved edits, regenerate governance/guard-baseline.json and append governance/APPROVALS.md only through make approve-spec",
+        "sha256": null
+      }
+    ],
+    "explicit_non_authorizations": [
+      "no edit to spec/kernel-spec-v0.8.md or any v0.8 version-bound evidence",
+      "no conformance expected-verdict or runnable-status change",
+      "no frozen oracle digest regeneration",
+      "no existing reference-semantics test edit, deletion, or weakening",
+      "no production parser before the Phase 3 installation gate exits",
+      "no active-target switch except the exact v0.9 switch after every separately approved installation and migration item above is complete"
+    ],
+    "ready_for_owner_approval": true,
+    "ready_note": "The exact candidate, bound evidence, three protected patches, final postimages, and hostile reviews agree. Presentation requires the final regenerated package and green repository gates recorded with this packet."
+  },
+  "phase_2_guarded_edits": [],
+  "schema": "whitefoot.protected-surface-census.v1"
+}

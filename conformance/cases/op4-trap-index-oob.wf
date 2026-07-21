@@ -1,4 +1,4 @@
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "Out-of-bounds buffer index traps at runtime [OP-4/SCOPE-4].";
   let b: own buffer<i64> = buffer_new<i64>(4_u64, 0_i64);
   let n: own u64 = len<i64>(b);

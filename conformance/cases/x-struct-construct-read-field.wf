@@ -3,7 +3,7 @@ struct Point {
   y: i32;
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   doc "TYPE-2/GRAM-8: construct a struct, read its fields, use them in arithmetic, check the sum.";
   let p: own Point = Point(x: 3_i32, y: 4_i32);
   let s: own i32 = iadd.trap<i32>(p.x, p.y);

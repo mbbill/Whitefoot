@@ -1,6 +1,9 @@
-enum Op { Inc(); Dec(); }
+enum Op {
+  Inc();
+  Dec();
+}
 
-fn apply (op: own Op, x: own i32) -> own i32 traps {
+fn apply(op: own Op, x: own i32) -> own i32 traps {
   doc "Closed-set dispatch is match, not a function value [FN-5].";
   match op {
     Inc() => {
@@ -12,7 +15,7 @@ fn apply (op: own Op, x: own i32) -> own i32 traps {
   }
 }
 
-fn main () -> own unit traps {
+fn main() -> own unit traps {
   let inc_atom_0001: own Op = Inc();
   let r: own i32 = apply(op: inc_atom_0001, x: 41_i32);
   check ieq<i32>(r, 42_i32) else trap "dispatch drift";
