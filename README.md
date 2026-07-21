@@ -17,13 +17,13 @@ remains the immutable active specification and evidence baseline. Its recorded
 grammar and semantic contradictions block a production parser. Compiler code
 may not silently resolve them.
 
-The audited Rust-foundation handoff is complete. The active and sole authorized
-implementation tranche is the standalone grammar-change verifier and its exact
-evidence package. That tool is outside the production compiler dependency
-graph. It prepares reproducible evidence and non-authoritative proposal bytes;
-it does not edit a numbered specification, change protected expectations,
-switch the active target, or authorize a parser. Those actions retain their
-separate owner gates.
+The audited Rust-foundation handoff and standalone grammar-change verifier are
+complete. The verifier is outside the production compiler dependency graph. It
+reproduces exact-v0.8 and non-authoritative successor evidence, but it does not
+edit a numbered specification, change protected expectations, switch the active
+target, or authorize a parser. Phase 3 is the next conditional gate: the exact
+candidate bytes, hash, evidence, and impact census require advance owner review
+before any guarded installation.
 
 ## Production design
 
@@ -69,6 +69,13 @@ The safe-Rust foundation contains four narrowly scoped crates:
 - `whitefoot-lexical-observer` is a binary-only development adapter for an
   independent byte-level lexical differential. Its output is evidence only.
 
+The compiler-independent `grammar-verifier/` contains two deliberately
+independent engines: a safe-Rust strong-LL(2) auditor and a bounded Python
+generalized-parser Oracle. Their final common extraction ledger agrees byte for
+byte. Both registered dereference cases change from two derivations to one under
+the candidate terminal partition, with no introduced derivation or static
+intersection/conflict. This is review evidence, not specification authority.
+
 `SourceBundle` ordering is transport order, not normative multi-file or
 declaration-order semantics. The workspace has no production terminal
 classifier, parser, syntax authority, resolver, semantic kernel, checked
@@ -108,6 +115,7 @@ scope, not general performance or product claims.
 | Language specification | [spec/kernel-spec-v0.8.md](spec/kernel-spec-v0.8.md) |
 | Specification source index and semantic catalog | [facets/v0.8/](facets/v0.8/README.md) |
 | Active Rust compiler workspace | [compiler/](compiler/README.md) |
+| Standalone grammar-change evidence | [grammar-verifier/](grammar-verifier/README.md) |
 | Project law and writer patterns | [CONSTITUTION.md](CONSTITUTION.md), [PATTERNS.md](PATTERNS.md) |
 | Compiler-independent behavior corpus | [conformance/](conformance/README.md) |
 | Compiler-independent lexical probes | [frontend-corpus/v0.8/](frontend-corpus/v0.8/README.md) |

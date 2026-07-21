@@ -1,0 +1,237 @@
+{
+  "active_current_specification": {
+    "path": "spec/kernel-spec-v0.8.md",
+    "sha256": "d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8"
+  },
+  "protected_surface_baseline": {
+    "path": "governance/guard-baseline.json",
+    "sha256": "9d4ff925668a3341543d555c5243ef0b74ca5e7e275617ff4808d90c290dc48a",
+    "kernel_specification_records": 9,
+    "conformance_records": 307,
+    "guarded_oracle_digest_counts": {
+      "tools/codegen_parity.py": 2,
+      "tools/test_checked_automation.py": 1
+    },
+    "guarded_reference_test_counts": {
+      "prototype/checker/test_checker.py": 119
+    },
+    "legacy_unmanifested_case": {
+      "path": "conformance/cases/pending-const2-item.wf",
+      "sha256": "ae99d9b9b99e02e9c6c5f2af54f0924b7b1a0f5ee0422d29958b01b597adf759"
+    },
+    "note": "This exact baseline plus the separately pinned unmanifested legacy case is the complete currently approved semantic surface. Phase 2 changes none of it."
+  },
+  "candidate_installation": {
+    "owner_approval_required": true,
+    "proposed_numbered_path": "spec/kernel-spec-v0.9.md",
+    "proposal_path": "grammar-verifier/proposal/kernel-spec-successor-candidate.md",
+    "proposal_sha256": "cfd76a2bf9293519623c2448280f4d6f76f32be26cc1b2dadc487415e063f166"
+  },
+  "existing_protected_changes_required_on_install": [
+    {
+      "change": "add the approved successor as a new numbered specification; retain v0.8 unchanged",
+      "path": "spec/kernel-spec-v0.9.md",
+      "surface": "numbered-specification"
+    },
+    {
+      "change": "update only the referenced active specification version after the successor is installed; keep the coverage classification and verdict unchanged",
+      "records": [
+        "META-1",
+        "META-3",
+        "META-4"
+      ],
+      "path": "conformance/manifest.jsonl",
+      "surface": "conformance-metadata"
+    },
+    {
+      "change": "regenerate the guarded baseline only through make approve-spec after explicit owner approval",
+      "path": "governance/guard-baseline.json",
+      "surface": "approval-baseline"
+    },
+    {
+      "change": "append the owner's exact approval and resulting baseline hash",
+      "path": "governance/APPROVALS.md",
+      "surface": "approval-ledger"
+    }
+  ],
+  "protected_surfaces_reviewed_without_expected_edits": {
+    "conformance_cases": {
+      "assessment": "The terminal partition changes token membership, not source spelling or the intended verdict of existing programs. A-01 formalizes the already-positive mutual-recursion case. No existing case byte or expected verdict needs to change.",
+      "deref_source_case_count": 44,
+      "deref_source_paths": [
+        "conformance/cases/eff2-neg-try-hidden-trap.wf",
+        "conformance/cases/eff2-pos-try-declared-trap.wf",
+        "conformance/cases/ex1-pos-worked-example.wf",
+        "conformance/cases/form3-pos-lexical-classes.wf",
+        "conformance/cases/gram3-pos-modes.wf",
+        "conformance/cases/gram5-pos-exprs-places.wf",
+        "conformance/cases/gram5-pos-recursive-place-projection.wf",
+        "conformance/cases/own1-neg-match-move-through-borrow.wf",
+        "conformance/cases/own1-neg-return-borrowed-box.wf",
+        "conformance/cases/own1-neg-return-through-shared-borrow.wf",
+        "conformance/cases/own10-pos-local-region.wf",
+        "conformance/cases/own11-pos-loop-inner-region.wf",
+        "conformance/cases/own13-pos-borrow-affine-payload.wf",
+        "conformance/cases/own13-pos-borrow-match-live.wf",
+        "conformance/cases/own13-pos-uniq-match-payloads.wf",
+        "conformance/cases/own2-pos-three-modes.wf",
+        "conformance/cases/own3-pos-outlives-store.wf",
+        "conformance/cases/own4-neg-return-local-borrow.wf",
+        "conformance/cases/own4-pos-return-caller-borrow.wf",
+        "conformance/cases/own5-neg-match-borrow-affine-payload-move.wf",
+        "conformance/cases/own5-pos-read-through-holder.wf",
+        "conformance/cases/own7-pos-distinct-noverlap.wf",
+        "conformance/cases/run-ex1-value-match.wf",
+        "conformance/cases/stor1-neg-whole-buffer-replacement.wf",
+        "conformance/cases/stor2-pos-box-new.wf",
+        "conformance/cases/stor3-pos-box-drop-region.wf",
+        "conformance/cases/stor4-pos-arena-confined.wf",
+        "conformance/cases/type7-neg-deref-nonref.wf",
+        "conformance/cases/type7-neg-index-box-holder.wf",
+        "conformance/cases/type7-neg-index-reference-holder.wf",
+        "conformance/cases/type7-neg-match-borrow-expression.wf",
+        "conformance/cases/type7-neg-match-box-holder.wf",
+        "conformance/cases/type7-neg-match-reference-holder.wf",
+        "conformance/cases/type7-neg-return-box-as-referent.wf",
+        "conformance/cases/type7-neg-try-box-holder.wf",
+        "conformance/cases/type7-pos-deref.wf",
+        "conformance/cases/x-borrow-return-uniq-local-region.wf",
+        "conformance/cases/x-borrow-two-shared-reads-run.wf",
+        "conformance/cases/x-borrow-write-through-shared-borrow.wf",
+        "conformance/cases/x-enum-borrow-payload-live.wf",
+        "conformance/cases/x-fn-own-arg-for-ref-param.wf",
+        "conformance/cases/x-integ-coin-borrow-match-score-twice.wf",
+        "conformance/cases/x-ownmove-borrow-match-live-then-own-move.wf",
+        "conformance/cases/x-typ-uniq-deref-write-roundtrip.wf"
+      ],
+      "forward_signature_case": "conformance/cases/x-fn-mutual-recursion-runs.wf",
+      "deref_source_path_inventory_encoding": "UTF-8 paths sorted bytewise, each followed by LF",
+      "deref_source_path_inventory_sha256": "d41598ff03a0bc3f7e2f0ebe5ff4b3e33434aed4e1d4a59d244034c09dd1af5a",
+      "manifest_sha256": "20bb50032c112150c3d9a7387a17bde708922e426550b47b64f2214cd7341d69"
+    },
+    "frozen_oracles": {
+      "assessment": "The proposal changes parsing membership and name visibility, not the generated result of any existing protected case. No frozen digest regeneration is expected.",
+      "paths": [
+        "tools/codegen_parity.py",
+        "tools/test_checked_automation.py"
+      ],
+      "sha256": {
+        "tools/codegen_parity.py": "712f596b1856c59b931602cbe2b82deb7363e1aeabc8d0324aad55c6ad459deb",
+        "tools/test_checked_automation.py": "defb31913e7cc905d5c4834946fababf6f452572e3f2067c12ab8210e4e5e943"
+      }
+    },
+    "reference_semantics_tests": {
+      "assessment": "No existing test is changed. Successor work should add terminal-reservation and declaration-order tests; additive tests do not require weakening or deleting a guarded expectation.",
+      "path": "prototype/checker/test_checker.py",
+      "sha256": "d9089fb1228b5f2adf22add88e017de8966c876ebdc3f3320d7660eeede6b9a5"
+    }
+  },
+  "active_target_references_to_update_after_approval": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "Makefile",
+    "README.md",
+    "THE-PLAN.md",
+    "capabilities/README.md",
+    "compiler/README.md",
+    "compiler/crates/whitefoot-lexer/Cargo.toml",
+    "compiler/crates/whitefoot-lexer/src/lib.rs",
+    "compiler/crates/whitefoot-lexer/src/outcome.rs",
+    "compiler/crates/whitefoot-lexer/src/scanner.rs",
+    "compiler/crates/whitefoot-lexical-observer/Cargo.toml",
+    "compiler/crates/whitefoot-lexical-observer/src/main.rs",
+    "compiler/crates/whitefoot-contract/src/digest.rs",
+    "compiler/tools/check_workspace.py",
+    "compiler/tools/test_check_workspace.py",
+    "conformance/manifest.jsonl",
+    "docs/why-whitefoot.md",
+    "governance/APPROVALS.md",
+    "governance/guard-baseline.json",
+    "mcts_mem/whitefoot/data-model/tag-only-equality.md",
+    "mcts_mem/whitefoot/surface-form.md",
+    "mcts_mem/whitefoot/toolchain.md",
+    "mcts_mem/whitefoot/toolchain/compiler-implementation.md",
+    "optimizer-language-research/implementation/decision-gates.md",
+    "optimizer-language-research/notes/user-directives.md",
+    "prototype/checker/checker.py",
+    "spec/derivation-ledger.md",
+    "tools/capability_overlay.py",
+    "tools/catalog_identity.py",
+    "tools/facet_catalog.py",
+    "tools/facet_discrepancies.py",
+    "tools/facet_discrepancy_inputs.py",
+    "tools/facet_discrepancy_predicates.py",
+    "tools/semantic_catalog.py",
+    "tools/test_capability_overlay.py",
+    "tools/test_catalog_identity.py",
+    "tools/test_facet_catalog.py",
+    "tools/test_facet_discrepancies.py",
+    "tools/test_semantic_catalog.py"
+  ],
+  "versioned_evidence_to_regenerate_without_rewriting_v0_8": [
+    "capabilities/whitefoot-rust/v0.9/foundation.json",
+    "compiler/kernel-spec-v0.9.sha256",
+    "compiler/static-semantic-catalog-v0.9.sha256",
+    "facets/v0.9/README.md",
+    "facets/v0.9/decomposition/",
+    "facets/v0.9/static-catalog.sha256",
+    "facets/v0.9/source.json",
+    "facets/v0.9/open-discrepancies.json",
+    "frontend-corpus/v0.9/README.md",
+    "frontend-corpus/v0.9/lexical-fixtures.json",
+    "tools/test_v09_lexical_model.py",
+    "tools/test_v09_lexical_observer.py",
+    "tools/v09_lexical_model.py",
+    "tools/v09_lexical_observer.py",
+    "tools/v09_lexical_observer_runner.py"
+  ],
+  "historical_v0_8_records_to_preserve": [
+    "capabilities/whitefoot-rust/v0.8/",
+    "compiler/kernel-spec-v0.8.sha256",
+    "compiler/static-semantic-catalog-v0.8.sha256",
+    "facets/v0.8/",
+    "frontend-corpus/v0.8/",
+    "optimizer-language-research/implementation/compiler-architecture-artifacts-backend.md",
+    "optimizer-language-research/implementation/compiler-architecture-design.md",
+    "optimizer-language-research/implementation/compiler-architecture-frontend.md",
+    "optimizer-language-research/implementation/compiler-architecture-preflight.md",
+    "optimizer-language-research/implementation/compiler-architecture-systems.md",
+    "optimizer-language-research/implementation/decision-gates.md",
+    "optimizer-language-research/implementation/enum-equality-investigation/",
+    "optimizer-language-research/notes/user-directives.md",
+    "spec/kernel-spec-v0.8.md",
+    "tools/test_v08_lexical_model.py",
+    "tools/test_v08_lexical_observer.py",
+    "tools/test_v08_terminal_ident_audit.py",
+    "tools/v08_lexical_model.py",
+    "tools/v08_lexical_observer.py",
+    "tools/v08_lexical_observer_runner.py",
+    "tools/v08_terminal_ident_audit.py"
+  ],
+  "v0_8_reference_classification": {
+    "scope": "Tracked non-archive, non-MCTS, non-grammar-verifier files containing v0.8, v08, or the exact v0.8 digest; version-named path-only assets are covered by the preserved directory prefixes; the four live MCTS nodes are listed explicitly in the update inventory.",
+    "canonical_path_encoding": "UTF-8 paths sorted bytewise, each followed by LF",
+    "direct_text_reference_file_count": 58,
+    "direct_text_reference_inventory_sha256": "b12dc10231cd5daf42795997d66e3ba6468d8e4e22a4d61ec418ab5d177e92ae",
+    "unclassified_file_count": 0
+  },
+  "successor_additive_tests_required": [
+    "all expanded fixed lowercase token spellings reject in every IDENT binding position",
+    "ordinary nonterminal identifiers remain accepted",
+    "deref(p) and deref(x) have exactly one proposal derivation through fixed place syntax",
+    "top-level forward calls and mutual recursion resolve from the closed signature table",
+    "locals, regions, labels, and constants still reject lexical use before declaration"
+  ],
+  "terminal_partition_discrepancy": {
+    "current_id": "discrepancy:v0.8/gram-terminal-ident-partition",
+    "install_action": "preserve the v0.8 record and require an independently generated successor discrepancy set in which this exact gap is absent",
+    "supporting_paths": [
+      "tools/v08_terminal_ident_audit.py",
+      "tools/test_v08_terminal_ident_audit.py",
+      "tools/facet_discrepancy_predicates.py",
+      "facets/v0.8/open-discrepancies.json"
+    ]
+  },
+  "phase_2_guarded_edits": [],
+  "schema": "whitefoot.protected-surface-census.v1"
+}

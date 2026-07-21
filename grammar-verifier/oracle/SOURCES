@@ -1,0 +1,17 @@
+SOURCES
+core.py
+ebnf.py
+extract.py
+generalized.py
+ingress.py
+lexical.py
+main.py
+report.py
+source.py
+tests/run.py
+tests/support.py
+tests/test_extraction.py
+tests/test_generalized.py
+tests/test_ingress.py
+tests/test_reachability.py
+tests/test_resources.py

@@ -3,8 +3,8 @@
 
 PY=python3 -B
 
-check: project-state spec-guard spec facets catalog-identity capabilities lexical-model reference-model conformance compiler
-	@echo "== DEVELOPMENT GATE GREEN; GRAMMAR EVIDENCE ACTIVE; NO RELEASE CLAIM =="
+check: project-state spec-guard spec facets catalog-identity capabilities lexical-model reference-model conformance grammar-evidence compiler
+	@echo "== DEVELOPMENT GATE GREEN; GRAMMAR EVIDENCE REPRODUCED; NO RELEASE CLAIM =="
 
 project-state:
 	$(PY) tools/test_verify_project_state.py
@@ -48,6 +48,9 @@ reference-model:
 conformance:
 	$(PY) conformance/runner.py coverage
 
+grammar-evidence:
+	$(MAKE) -C grammar-verifier check
+
 compiler:
 	$(MAKE) -C compiler check
 
@@ -58,4 +61,4 @@ release-check:
 	@echo "release gate unavailable: the exact-v0.8 Rust compiler is incomplete"
 	@false
 
-.PHONY: check project-state spec-guard approve-spec spec facets catalog-identity capabilities lexical-model reference-model conformance compiler conformance-run release-check
+.PHONY: check project-state spec-guard approve-spec spec facets catalog-identity capabilities lexical-model reference-model conformance grammar-evidence compiler conformance-run release-check

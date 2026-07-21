@@ -1,0 +1,14 @@
+[package]
+name = "whitefoot-static-grammar-auditor"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "whitefoot-static-grammar-auditor"
+path = "src/main.rs"

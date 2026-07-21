@@ -1,0 +1,6 @@
+whitefoot.grammar-expectations.v1
+case	deref-p	current	many
+case	deref-p	proposal	one
+case	deref-x	current	many
+case	deref-x	proposal	one
+transition	fixed-ident-partition	removes-call-through-ident

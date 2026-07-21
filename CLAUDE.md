@@ -19,10 +19,11 @@ discharges them — speed is earned by proof, never by weakening a check.
 
 ## Verify
 
-- `make check` is always required. During Phase 2 it checks repository
-  structure, specification governance and integrity, the retained focused
-  reference model, conformance data, and the active Rust foundation. Its green
-  result is an exact development-capability statement, never a release claim.
+- `make check` is always required. It checks repository structure,
+  specification governance and integrity, the retained focused reference
+  model, conformance data, the standalone grammar evidence, and the active Rust
+  foundation. Its green result is an exact development-capability statement,
+  never a release claim.
 - `make -C compiler check` is also required before and after compiler work. The
   root gate incorporates it.
 - A release claim uses the separate release gate defined by `THE-PLAN.md`; a
@@ -85,6 +86,8 @@ discharges them — speed is earned by proof, never by weakening a check.
 - `prototype/checker/` — retained focused reference model, never compiler or
   language authority.
 - `compiler/` — the active safe-Rust production compiler workspace.
+- `grammar-verifier/` — separately runnable independent grammar-change
+  evidence; never production compiler authority.
 - `tools/` — active repository, governance, and verification tooling.
 - `experiments/` — measured evidence and open development workloads.
 - `optimizer-language-research/` — owner directives, decision log, design
@@ -99,10 +102,10 @@ The owner replaced the self-host-first wfc/democ route on 2026-07-20. The old
 implementations are archived and there is no disposable Rust compiler. Exact
 v0.8 remains the immutable active specification and evidence baseline, but its
 recorded contradictions block a production parser pending an approved
-successor. Phase 1's audited Rust-foundation handoff is complete. Phase 2's
-standalone grammar-change verifier and evidence package are the active and sole
-authorized implementation tranche. A specification change, active-target
-switch, production parser, Phase 3 or later work, release claim, and any future
+successor. Phase 1's audited Rust-foundation handoff and Phase 2's standalone
+grammar-change verifier are complete. Phase 3 is next but remains conditional
+on exact owner review and advance approval. A specification change,
+active-target switch, production parser, release claim, and any future
 self-hosting require the separate gates in `THE-PLAN.md`.
 
 The active foundation contains `whitefoot-contract`, `whitefoot-lexer`,

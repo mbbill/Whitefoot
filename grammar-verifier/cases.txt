@@ -1,0 +1,3 @@
+whitefoot.grammar-cases.v1
+case	deref-p	expr	6465726566287029
+case	deref-x	expr	6465726566287829

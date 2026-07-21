@@ -9,8 +9,9 @@ and gitignored. Chronology and decisions live in
 
 These results used the now-archived democ implementation. They remain measured
 evidence and regression requirements for the Rust compiler, but their harnesses
-are not active compiler gates during Phase 2. They return only through the
-later roadmap tranche that owns the relevant backend or real-project evidence.
+are not active compiler gates in the current foundation. They return only
+through the later roadmap tranche that owns the relevant backend or
+real-project evidence.
 
 - `effect-attrs-channel/` — channel 2: effect rows -> LLVM fn attributes.
   O(n)->O(1) at opaque boundaries; ties fat LTO at per-file build cost.

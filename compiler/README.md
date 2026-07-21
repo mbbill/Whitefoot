@@ -18,12 +18,13 @@ Phase 1's audited foundation handoff is complete. The workspace establishes
 source, lexical, identity, resource, and build boundaries only. It is not yet a
 source-to-code compiler and makes no conformance or release claim.
 
-Phase 2's standalone grammar-change verifier and evidence package are active as
-the sole authorized implementation tranche. That tool stays outside the
-production compiler dependency graph. It may prepare exact, non-authoritative
-successor bytes and impact evidence, but it may not edit a numbered
-specification, switch the active target, or create production parser or
-artifact structures.
+Phase 2's standalone grammar-change verifier and evidence package are complete.
+That tool stays outside the production compiler dependency graph. It has
+prepared exact, non-authoritative successor bytes and impact evidence, but it
+does not edit a numbered specification, switch the active target, or create
+production parser or artifact structures. Phase 3 remains conditional on exact
+owner review and advance approval; no production frontend work is authorized
+by the Phase-2 result.
 
 ## Current crates
 

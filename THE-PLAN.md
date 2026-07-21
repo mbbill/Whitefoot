@@ -1,8 +1,8 @@
 # THE PLAN
 
 Status: CANONICAL ROADMAP, updated 2026-07-21. Phase 1's audited foundation
-handoff is complete. Phase 2's standalone grammar-change verifier and evidence
-package are active as the only authorized implementation tranche.
+handoff and Phase 2's standalone grammar-change evidence package are complete.
+Phase 3 is the next conditional gate; no normative edit is pre-authorized.
 
 ## Objective
 
@@ -82,9 +82,10 @@ acceptance from optimizer proof.
 Current execution authority is deliberately narrow:
 
 1. Phase 1's exact audit-selected foundation migration is complete.
-2. Phase 2's standalone grammar-change verifier and exact evidence preparation
-   are authorized now as the current implementation tranche.
-3. Phases 3 onward define mandatory order and entrance gates. They do not
+2. Phase 2's standalone grammar-change verifier has exited with reproducible
+   exact-v0.8 and non-authoritative successor evidence.
+3. Phase 3 is next, but remains conditional on exact owner review and advance
+   approval. Phases 3 onward define mandatory order and entrance gates. They do not
    authorize a specification edit, protected-surface change, active-target
    switch, production parser, semantic schema, artifact schema, backend
    profile, migration, or release merely by appearing here.
@@ -317,8 +318,23 @@ append-only decision entry.
 
 ## Phase 2: grammar-change verifier and evidence package
 
-Status: active. Phase 1 has exited, and this is the sole post-handoff
-implementation tranche currently authorized.
+Status: complete. The separately runnable tool, both independent engines,
+canonical evidence package, exact proposal bytes, and protected-surface census
+have passed their written exit gate.
+
+The completion receipt binds exact v0.8 SHA-256
+`d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8`,
+candidate SHA-256
+`cfd76a2bf9293519623c2448280f4d6f76f32be26cc1b2dadc487415e063f166`,
+and a byte-identical 134,019-byte common extraction ledger with SHA-256
+`2014897a6d2a4599957bad140f0de73c0d42c559ec629a3fdc20fe0b4d238b27`.
+Both registered dereference cases change from two derivations to one with one
+removed, one retained, and zero introduced trace; the exact `deref(x)` static
+transition changes from one matching predictive conflict to zero. The complete
+48-stream generated domain agrees byte for byte. The final hostile runner
+review returned GO after source mutants, malformed-ledger probes, and 2,000
+deterministic field mutations. These are evidence results, not language
+authority.
 
 Build one separately runnable verification entry point outside the production
 compiler dependency graph. Normal compilation never links or invokes it. It
@@ -693,13 +709,13 @@ manifest SHA-256
 These close no semantic facet and grant no parser, artifact, or release
 authority.
 
-Phase 1 is complete. Phase 2 is active, and the next implementation is only the
-standalone grammar-change verifier and its tests. Its next evidence products
-are the exact-v0.8 baseline report, exact non-authoritative proposal report,
-`deref(x)` transition witness, protected-surface impact census, and
-owner-selected A-01 proposal encoding.
+Phases 1 and 2 are complete. The next roadmap action is the Phase-3 owner review
+of the exact proposal bytes, hash, evidence, and protected-surface census. No
+successor installation, active-target switch, or production parser work is
+authorized until that exact review receives advance approval and the guarded
+installation procedure succeeds.
 
-Until Phase 2 exits and every later gate is separately satisfied:
+Until Phase 3 exits and every later gate is separately satisfied:
 
 - do not edit a numbered specification or protected expectation;
 - do not switch the active target;
