@@ -862,3 +862,97 @@ with democ. Its bytes remain preserved under
 `archive/toolchains/self-hosting-2026-07-20/democ/test_codegen.py`. This
 authorization changes no kernel-specification byte, conformance verdict, frozen
 oracle digest, or active reference-checker expectation.
+
+## D23 (2026-07-21): Four narrow compiler-architecture rulings
+
+After three hostile scope reviews, the owner approved items 1 through 4 in the
+compiler-architecture dossier exactly as scoped:
+
+1. **Syntax construction direction.** Use one typed postorder derivation tree,
+   one linear topology finalizer, no copied second syntax tree, and a
+   tree-driven audit that reconstructs expected source bytes and compares them
+   with the input without normalizing or rewriting it. This selects a design
+   direction only; it does not authorize implementation or any blocked parser,
+   node, location, compilation-unit, formatting, identity, schema, or
+   `CanonicalSyntaxUnit` contract.
+2. **Future semantic trust topology.** Select as the proposed future replacement
+   for D22's independent production semantic certificate verifier one trusted
+   semantic kernel plus mandatory complete artifact-only same-kernel replay
+   before an originating invocation may construct lowering authority. Later,
+   cached, third-party, and hand-authored bytes can never construct lowering
+   authority. Replay is shared trusted authority, not independent evidence;
+   independent grammar, source/tree, conformance, model, target, backend,
+   guard, publication, and optional-fact evidence remain mandatory. D22 and
+   `THE-PLAN.md` remain current until a separate roadmap redecision. No concrete
+   replay type, record, order, schema, API, profile, crate, migration, or
+   implementation is approved.
+3. **Possible successor-specification evidence plan.** Prepare the reviewed
+   grammar-verifier design, discrepancy evidence, protected-surface impact
+   census, and exact non-authoritative candidate bytes. Exact v0.8 remains the
+   active target. Verifier implementation, normative bytes, parser work,
+   protected-expectation changes, oracle-digest changes, a successor version,
+   and an active-target change remain separately gated. The leading evidence
+   candidate subtracts the complete mechanically extracted set of 47 fixed
+   lowercase grammar terminals from the lowercase-word `IDENT` language; this
+   ruling does not select normative wording or approve that compatibility
+   restriction.
+4. **Read-only foundation audit.** Bind an exact manifest of the current dirty
+   workspace and inventory every crate, module, authority-bearing API,
+   dependency/feature, reachable allocation path, and publication path. The
+   audit may recommend a disposition but cannot edit, rename, refactor, delete,
+   create a crate, change a wire contract or A-10, alter specification/protected
+   content, make a capability or profile claim, revise roadmap/design-memory
+   authority, or perform an implementation migration. Every later mutation
+   requires separate review and approval.
+
+These rulings change no numbered specification, protected expectation,
+approved guard baseline, roadmap, design-tree node, or compiler implementation.
+
+## D24 (2026-07-21): Closed-unit top-level function visibility
+
+The owner selected A-01's language semantics:
+
+- All top-level function signatures are visible throughout the closed
+  compilation unit.
+- Locals, regions, labels, and named constants remain declaration-before-use.
+
+This resolves the semantic choice between TYPE-6 declaration-before-use and
+FN-1/FN-6 mutual recursion. Inventorying a declaration still does not grant
+visibility outside this rule. The decision must be encoded in the exact
+version-bumped successor-specification proposal before resolver implementation.
+It does not authorize editing v0.8 in place, creating the successor bytes,
+changing a protected expectation or approved guard baseline, switching the
+active target, or implementing the resolver.
+
+## D25 (2026-07-21): Prepare the repository for architecture handoff
+
+The owner stopped the section-by-section walkthrough and directed the
+repository to be prepared as a clean handoff for implementation under the new
+production-compiler architecture. This authorizes the following transition:
+
+1. Adopt the compiler-architecture dossier as the design record, with every
+   listed language, protected-surface, schema, profile, and entrance blocker
+   still enforced.
+2. Rewrite `THE-PLAN.md` as the sole implementation roadmap around one trusted
+   semantic kernel, mandatory complete artifact-only same-kernel replay before
+   originating-invocation lowering authority, and all assigned independent
+   grammar, source/tree, conformance, model, target, backend, guard,
+   publication, and optional-fact evidence lanes.
+3. Reconcile the live design tree, repository instructions, READMEs, status
+   text, and dependency/authority descriptions with that roadmap while
+   preserving superseded designs and dated records.
+4. Preserve the completed lexical-observer checkpoint separately, record the
+   exact Decision 18 audit, and apply the audit-selected foundation preparation:
+   truthful source-audit/lexer responsibilities and explicit fallible owned
+   source/source-binding boundaries. No placeholder parser, semantic, artifact,
+   backend, or publication schema is created.
+5. Leave one exact first implementation tranche: the standalone grammar-change
+   verifier and non-authoritative successor-specification evidence preparation.
+   Parser implementation remains stopped until the approved successor bytes and
+   complete grammar gate exist.
+
+Exact v0.8 remains the active numbered specification until a separate exact
+successor-specification approval and target switch. This directive does not
+authorize an in-place specification edit, a protected expectation or oracle
+digest change, baseline regeneration without approval, or implementation past
+an unresolved entrance gate.
