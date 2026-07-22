@@ -25,11 +25,10 @@ structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.9](spec/kernel-spec-v0.9.md), SHA-256
-`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`,
-is the immutable active specification. Exact v0.8 remains immutable history.
-The exact v0.10 candidate has been approved but is not active until guarded
-installation and frontend reproduction complete.
+[Kernel specification v0.10](spec/kernel-spec-v0.10.md), SHA-256
+`71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9`,
+is the immutable active specification. Exact v0.8 and v0.9 remain immutable
+history.
 
 The safe-Rust compiler currently implements:
 
@@ -44,9 +43,8 @@ ordered source bundle
 ```
 
 There is not yet a resolver, semantic checker, IR, LLVM backend, compiler
-executable, or runnable Whitefoot program. The immediate path is to activate
-v0.10, reproduce the frontend, implement direct general name resolution, and
-then drive the first coherent semantic slice through LLVM.
+executable, or runnable Whitefoot program. The immediate path is direct general
+name resolution, then the first coherent semantic slice through LLVM.
 
 ## Repository layout
 
@@ -59,8 +57,9 @@ live next to what they check.
 | [spec/](spec/) | The language: numbered kernel specifications (append-only) and the rule-derivation ledger under `spec/derivation/` |
 | [compiler/](compiler/README.md) | The safe-Rust compiler (frontend today; resolver → checker → IR → LLVM to come) |
 | [tests/](tests/) | Correctness evidence: `conformance/` behavior corpus, `reference/` semantics oracle, `codegen/` optimization-proof corpus (dormant, for the future backend) |
-| [governance/](governance/) | The append-only [decision log](governance/decision-log.md), standing directives, the small repository-invariant and spec-append-only guards, and the pending `spec-evolution/` v0.10 proposal |
-| [research/](research/) | Design memory: the [decision tree](research/design-tree/), measured `experiments/`, and exploratory notes |
+| [governance/](governance/) | The append-only [decision log](governance/decision-log.md), standing directives, the small repository-invariant and spec-append-only guards, and specification-evolution review records |
+| [research/](research/) | Active language and compiler experiments |
+| [mcts_mem/](mcts_mem/) | The live MCTS-Mem decision tree: current decisions, rejected alternatives, and their evidence |
 | [archive/](archive/) | Retired and superseded material, inert — no active source, build, test, or tool depends on it |
 
 ## Verification

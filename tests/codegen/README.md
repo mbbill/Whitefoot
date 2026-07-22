@@ -1,83 +1,27 @@
-# Codegen corpus format
+# Code generation and performance tests
 
-The corpus is organized into compact `cases.json` family manifests discovered
-recursively under `cases/`. Each family states one optimization hypothesis and
-a named-function metric; its nearby `.wf` sources vary one premise at a time.
-Adding a family never requires editing one central manifest.
+Performance is a project pillar, but this directory's current runner targets a
+retired compiler and is not an active gate. Its sources and manifests preserve
+useful hypotheses and negative controls until the LLVM backend exists. See
+`DORMANT.md` for the historical runner contract.
 
-Every positive proof case has near-identical negative controls. The facts-on
-and facts-off variants are synthesized by the runner, so generated manifests
-cannot accidentally compare different source programs. Proof classification
-uses the compiler's structured per-site report for the named function:
-optimized IR/assembly is recorded separately because LLVM may independently
-remove the same check.
+The replacement belongs beside the real backend and must exercise unchanged
+Whitefoot source through the normal compiler path. It has four layers:
 
-```text
-codegen-corpus/
-  schema.json
-  cases/
-    bounds/
-      dominating-guard/
-        cases.json
-        01-basic-read-positive.wf
-        05-wrong-buffer-negative.wf
-      masked-index/
-        cases.json
-        p01-mask3-table4.wf
-        n02-oversized-mask.wf
-      derived-range/
-        cases.json
-        p04-remainder-index-i.wf
-        n07-remainder-nonzero-init.wf
-      output-capacity-lockstep/
-        cases.json
-        p05-complete-groups.wf
-        n21-output-buffer-uniq-reborrow.wf
-```
+1. executable correctness for lowered programs and runtime checks;
+2. facts-off tests proving that every required check remains;
+3. facts-on/facts-off comparisons proving that only justified checks disappear,
+   with near-miss programs that must retain them; and
+4. runtime and code-shape measurements kept under `research/`, because noisy
+   timing is experimental evidence rather than an every-commit invariant.
 
-The source families and their premise/near-miss classifications remain active
-compiler-independent data. The former democ runner is dormant after the
-2026-07-20 toolchain reset. Phase 2 does not execute these manifests; a later,
-entrance-gated backend tranche must bind them to a Rust harness adapter before
-any family regains gate authority. Historical commands were:
+Before the old runner moves to `archive/`, the new Rust harness must map each
+retained high-value case to one of those layers, run through the current
+compiler, and preserve the negative controls. Cases that encode retired
+compiler APIs or product-policy machinery may be archived with the runner;
+the underlying semantic and performance hypothesis must either be mapped or
+explicitly rejected with a recorded reason.
 
-```sh
-make corpus
-python3 tools/codegen_parity.py --corpus --tag proof-2
-```
-
-## Field policy
-
-- Family `tags` are inherited by every contained case. Case tags add the
-  polarity, mutation shape, or specific premise under test.
-- `maturity` is `explore`, `audit`, or `gate`. Explore cases collect evidence;
-  audit cases describe a known target without blocking; gate cases are earned
-  invariants and may fail verification.
-- `hypothesis` must name the causal property being tested, not merely say that
-  one variant should be faster.
-- `proof_classification` is `proved`/`elided` for positive cases and
-  `retained`/`checked` for near-misses. Silently proving a near-miss is a
-  blocking soundness failure. `mixed` cases give exact `proved_sites` and
-  `retained_sites` counts to pin partial discharge within one function.
-- `bounds_sites` is the exact number of lowered/codegen bounds sites expected
-  in both facts-on and facts-off variants; this prevents a missing site from
-  disappearing symmetrically and escaping the gate.
-- Optional `checked_automation_ready` plus the complete four-key
-  `checked_automation_disposition_counts` map pins the facts-on policy result.
-  These are diagnostic oracles: a negative case is green when it produces the
-  expected hard/unaccounted promotion failure. They never nominate a promoted
-  root, and facts-off is never a promotion candidate.
-
-Paths in `source` are relative to the fragment containing them and must remain
-inside the repository. Source and recipes are tracked; generated IR, assembly,
-objects, binaries, and expanded metamorphic cases are temporary artifacts.
-Site ordinals are deterministic within each lowered function, after any
-fact-driven AST transform; they are not source locations or cross-variant IDs.
-
-Promotion is deliberate: an `explore` case becomes `audit` once its target is
-understood, and becomes `gate` only after the property is implemented, verified
-against adversarial near-misses, and stable on the supported toolchain.
-This corpus-maturity promotion is distinct from the checked-automation
-bounds-v1 build subgate. Only the dual-pinned review roots described in
-[`CODEGEN-PARITY.md`](../CODEGEN-PARITY.md) receive that evaluation, and
-protected external owner review is still required for coordinated pin changes.
+Do not make this corpus an optimizer dispatch table. Production compilation
+must implement grammar and semantic rules, never case names, source hashes, or
+manifest identities.

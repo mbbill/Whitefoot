@@ -1,0 +1,33 @@
+[workspace]
+members = [
+  "crates/whitefoot-contract",
+  "crates/whitefoot-language-data",
+  "crates/whitefoot-lexer",
+  "crates/whitefoot-source-audit",
+  "crates/whitefoot-syntax",
+  "crates/whitefoot-syntax-data",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91.1"
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused_lifetimes = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true

@@ -52,9 +52,10 @@ measurement does.
 
 ## Current state
 
-The active language authority is `spec/kernel-spec-v0.9.md`, SHA-256
-`bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68`.
-Those bytes are immutable. Exact v0.8 remains immutable historical evidence.
+The active language authority is `spec/kernel-spec-v0.10.md`, SHA-256
+`71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9`.
+Those bytes are immutable. Exact v0.8 and v0.9 remain immutable historical
+evidence.
 
 The Rust compiler currently has source transport, a lossless lexer, terminal
 classification, a strong-LL(2) parser, one finalized syntax tree, and exact
@@ -65,17 +66,10 @@ The owner approved the exact successor proposal SHA-256
 `7fc48cc30f94d25be5be1106e3265d92c1b0cdf2bfea5a7a17759a12f3cf092d` and
 the exact generated v0.10 candidate SHA-256
 `71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9`.
-The candidate becomes active only after guarded installation and frontend
-reproduction against its identity.
-
-The repository correction is complete. The current goal is to activate v0.10,
-reproduce the existing frontend, and then begin direct general name resolution.
-The sequence is:
-
-1. install the unchanged approved v0.10 candidate;
-2. reproduce the existing frontend for v0.10;
-3. implement one direct general resolver; and
-4. drive the first semantically checked program through a simple LLVM backend.
+The exact approved candidate is installed and the existing frontend is
+reproduced against its identity in one safe-Rust crate. The current goal is one
+direct general name resolver, followed by the first semantically checked
+program through a simple LLVM backend.
 
 ## Authority and specification changes
 
@@ -216,7 +210,7 @@ regression and direct fix; it does not justify a new support framework.
 
 ## Phase 5: activate v0.10
 
-Status: next.
+Status: complete.
 
 Install the exact approved v0.10 candidate without editing it. Update its live
 identity references and reproduce the current grammar and frontend evidence.
@@ -227,6 +221,8 @@ frontend architecture during the version switch.
 frontend passes against it.
 
 ## Phase 6: direct name resolver
+
+Status: next.
 
 Implement the exact v0.10 declaration inventory and lexical resolution rules
 over `CanonicalSyntaxUnit`. Use straightforward owned records and deterministic

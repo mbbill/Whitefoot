@@ -38,7 +38,7 @@ probably not the next work.
   language. Compiler behavior, tests, archived code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
-- Consult the relevant live `research/design-tree/` node and its rejected alternatives
+- Consult the relevant live `mcts_mem/` node and its rejected alternatives
   before a nontrivial design change.
 - Architecture dossiers and `governance/decision-log.md` are historical design and
   decision records. They can explain why something exists, but they cannot add

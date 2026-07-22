@@ -5,8 +5,8 @@ A **spec-anchored, rule-keyed, toolchain-agnostic** test system. It tests the
 suite can validate the future production Rust compiler and any later
 replacement.
 
-It is a production artifact of the toolchain. Compiler implementations are
-replaceable; the guarantees this suite pins are not.
+It is compiler-independent language evidence. Compiler implementations are
+replaceable; the expected source behavior is not.
 
 ## Layout
 - `cases/<id>.wf` — one canonical Whitefoot program per case (also a FORM-1/2 byte-exact fixture).
@@ -47,10 +47,7 @@ close a coverage gap, target a rule from the `untested` list the coverage report
 
 ## Plugging in a future compiler
 
-Phase 2 does not install a compiler adapter. After the roadmap's applicable
-frontend, semantic, artifact, and lowering entrance gates are satisfied, a
-separately authorized integration may replace the `ADAPTER` slot with a
-selectable, structured adapter protocol. Semantic expectations stay in this
-corpus; compiler capability and failures stay in adapter-owned data. The
-corpus is the contract and the implementation behind an adapter is
-replaceable.
+When the compiler implements semantic verdicts, add one small adapter that
+runs cases through its normal command-line path. Keep semantic expectations in
+this corpus and report unsupported compiler capability separately from source
+rejection. No stable adapter protocol is needed.
