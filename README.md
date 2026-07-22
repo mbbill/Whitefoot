@@ -70,7 +70,7 @@ live next to what they check.
 | [tests/](tests/) | Correctness evidence: `conformance/` behavior corpus, `reference/` semantics oracle, `codegen/` optimization-proof corpus (dormant until optimizer work) |
 | [governance/](governance/) | The protected approval ledger, exact successor candidates, and the tracked spec-append-only hook |
 | [research/](research/) | Active language and compiler experiments |
-| [mcts_mem/](mcts_mem/) | The live MCTS-Mem decision tree: current decisions, rejected alternatives, and their evidence |
+| [mcts_mem/](mcts_mem/) | The live design tree, consulted and maintained only through the `mcts-mem-use` skill |
 | [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md); inert — no active source, build, test, or tool depends on it |
 
 ## Verification

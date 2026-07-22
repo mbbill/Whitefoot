@@ -16,7 +16,8 @@ parent; participating directories do not carry their own workflow README.
 - `docs/constitution.md` is project law and `docs/patterns.md` defines writer
   forms.
 - `mcts_mem/` records durable design choices, rejected alternatives, and the
-  evidence behind them.
+  evidence behind them. Consult or modify it only through the installed
+  `mcts-mem-use` skill; never treat its files as ordinary Markdown.
 - `governance/APPROVALS.md` records explicit owner approval for protected
   changes.
 - Compiler behavior, tests, reference models, candidates, and archived records
@@ -71,9 +72,9 @@ cite the existing rule and must not alter a protected expectation.
 
 ### 1. Open and bound the change
 
-Confirm that the change unlocks current roadmap work. Consult the relevant live
-MCTS node and rejected alternatives. State the smallest coherent semantic
-change and the behavior that remains unchanged.
+Confirm that the change unlocks current roadmap work. Use the `mcts-mem-use`
+skill to consult the relevant live MCTS node and rejected alternatives. State
+the smallest coherent semantic change and the behavior that remains unchanged.
 
 Before drafting, inventory every potentially affected surface and mark it
 `change`, `unchanged` with a reason, or `not applicable`:
@@ -153,9 +154,12 @@ approval. If any candidate byte or protected-change boundary changes, return to
 this step.
 
 After explicit approval, append the exact artifact or change boundary, hash,
-reason, and evidence pointer to `governance/APPROVALS.md`. Record a durable
-design choice in `mcts_mem/` only when a real alternative existed; keep
-approval bookkeeping and implementation activity out of the tree.
+reason, and evidence pointer to `governance/APPROVALS.md`. Use the
+`mcts-mem-use` skill to record a durable design choice only when a real
+alternative existed. Never edit `mcts_mem/` without first loading and following
+that skill; its structure, provenance, paired-move, and lint requirements are
+part of the data format. Keep approval bookkeeping and implementation activity
+out of the tree.
 
 ### 5. Activate the approved language as one repository change
 
@@ -170,7 +174,8 @@ Copy the approved candidate byte-for-byte to the new immutable
    annotations, and active-spec identity;
 4. update focused reference models, their tests, and mutation checks;
 5. update writer patterns, examples, derivation evidence, and live docs; and
-6. append the approval and MCTS records required by the approved change.
+6. append the approval record and use the `mcts-mem-use` skill for any MCTS
+   update required by the approved change.
 
 The specification may describe a capability the research compiler does not yet
 support only when the roadmap says so explicitly. Such a gap remains an
@@ -235,6 +240,13 @@ the archive.
 derivation or reconciliation evidence. Released numbered files are immutable.
 The directory contains no mutable current plan, README, per-version update
 script, or tool that selects a different active version.
+
+### Design-memory resources
+
+`mcts_mem/` is maintained only through the installed `mcts-mem-use` skill. The
+skill owns traversal, admission, formatting, provenance, paired moves, and
+linting or its documented manual fallback. Do not read or edit the tree as
+ordinary repository Markdown, and do not invent a local replacement procedure.
 
 ### Conformance resources
 

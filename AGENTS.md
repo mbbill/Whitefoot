@@ -38,8 +38,10 @@ probably not the next work.
   language. Compiler behavior, tests, archived code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
-- Consult the relevant live `mcts_mem/` node and its rejected alternatives
-  before a nontrivial design change.
+- Use the installed `mcts-mem-use` skill to consult the relevant live
+  `mcts_mem/` node and its rejected alternatives before a nontrivial design
+  change. Never edit the tree without first loading and following that skill;
+  its formatting, provenance, paired-move, and lint rules are mandatory.
 - Architecture dossiers and `archive/governance/decision-log.md` are historical design and
   decision records. They can explain why something exists, but they cannot add
   current work or override `docs/roadmap.md`.
@@ -177,8 +179,8 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
 - A green gate states only the capabilities it exercises; it is not a
   completeness claim.
 - Keep commits cohesive. Record current status in `docs/roadmap.md`, durable
-  design choices and rejected alternatives in `mcts_mem/`, and protected owner
-  approvals in `governance/APPROVALS.md`; do not use agent instruction files as
-  a status log.
+  design choices and rejected alternatives through the `mcts-mem-use` skill,
+  and protected owner approvals in `governance/APPROVALS.md`; do not use agent
+  instruction files as a status log.
 - Delegate only concrete, independent work. Integrate and review delegated
   results against the same goal and relevance rules.
