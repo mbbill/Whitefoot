@@ -3,7 +3,7 @@
 Every directory is self-contained (sources + Makefile/run script + RESULTS.md
 with measured numbers and honest caveats). Binaries/corpora are regenerable
 and gitignored. Chronology and decisions live in
-`../optimizer-language-research/implementation/decision-gates.md`.
+`../../governance/decision-log.md`.
 
 ## Historical fact-channel benchmarks
 

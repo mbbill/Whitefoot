@@ -365,8 +365,8 @@ for each completed repository slice. A green gate states only what it tests;
 it is not a claim that the language or compiler is complete.
 
 Every reproducible defect receives the smallest practical regression before
-its fix. Each cohesive completed step gets one commit and one short append-only
-entry in `governance/decision-log.md`.
+its fix. Each cohesive completed step gets one commit and one short entry in
+the versioned history selected by `governance/decision-log.md`.
 
 Keep files cohesive and reviewable. Split by invariant-bearing responsibility,
 not arbitrary line counts or corpus functions. New and modified repository
