@@ -29,7 +29,7 @@ class MeaningIdentityTests(unittest.TestCase):
             (
                 "981878811e38716acfd5dc0bbacccf278c68b2db29aa987af98937e65649d754",
                 "2d085436e8d9288a982ef83a13554c2310cead38892e8223d7f2661b60b3c7e7",
-                "ab06a931bed253b4f539b9e2e0d7414f37dc9734ac672950a60c083b6b1b647f",
+                "6d624da13ddd48d6dd46f3a2feaac38b83b51e4154e0e70e08a73524e9e7505a",
             ),
         )
 

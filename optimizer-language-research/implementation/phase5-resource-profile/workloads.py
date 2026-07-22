@@ -4,6 +4,8 @@ import argparse
 from hashlib import sha256
 from pathlib import Path
 
+from evidence_manifest import build_manifest, encode_manifest, generator_revision
+
 
 class WorkloadError(ValueError):
     pass
@@ -113,14 +115,37 @@ def build(family: str, units: int) -> bytes:
     raise WorkloadError(f"unknown workload family: {family}")
 
 
+def manifest(family: str, units: int, source: bytes) -> bytes:
+    """Describe generator inputs and source identity without expected results."""
+
+    _validate_units(units, family)
+    data = build_manifest(
+        family=family,
+        units=units,
+        revision=generator_revision(Path(__file__)),
+        parameters={
+            "name_decimal_width": 6,
+            "source_records": 1,
+            "unit_count": units,
+        },
+        sources=((f"demand/{family}-{units:06d}.wf", source),),
+    )
+    return encode_manifest(data)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--family", choices=("compiler", "codec"), required=True)
     parser.add_argument("--units", type=int, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--manifest-output", type=Path)
     arguments = parser.parse_args()
     source = build(arguments.family, arguments.units)
     arguments.output.write_bytes(source)
+    if arguments.manifest_output is not None:
+        arguments.manifest_output.write_bytes(
+            manifest(arguments.family, arguments.units, source)
+        )
     print(
         f"family={arguments.family} units={arguments.units} "
         f"bytes={len(source)} sha256={sha256(source).hexdigest()}"

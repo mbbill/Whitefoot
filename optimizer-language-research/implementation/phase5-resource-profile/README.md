@@ -129,8 +129,18 @@ and an early FN-8 defect followed by the maximum scanned tail. It must also
 cover large low-topology strings and alternating one-byte lexical partitions.
 
 `workloads.py` currently supplies only deterministic, canonical smoke seeds
-for the two named families. Those seeds are not yet the complete demand or
-hostile set and do not establish resolution completeness or select a value.
+for the two named families. The independent source route has established that
+the scale-1, scale-2, and scale-17 seeds pass FN-8, complete declaration
+inventory, and complete lexical resolution. The independent analytic route
+also selects `Complete` from its separate construction relation. These seeds
+are not yet the complete demand or hostile set and do not select a value.
+
+`evidence_manifest.py` is the workload producer's neutral manifest codec. Its
+canonical v1 bytes contain only the closed family, scale units, exact generator
+revision, construction dimensions, and ordered logical-path/length/source-hash
+records. They contain no expected role, count, work, diagnostic, or grammar
+result. Each measurement route must decode those bytes independently and may
+not import the producer codec or the other route.
 
 ### Independent counters
 
@@ -148,6 +158,21 @@ They must agree on every profile field, every derived count, the selected
 diagnostic, and exact charged work. The proposal's existing role-stream models
 remain valuable differential evidence but cannot replace either complete
 source-to-role route.
+
+The current non-authoritative foundation implements both routes in
+`source-route/` and `analytic-route/`. `cross_route_agreement.py` invokes the
+workload producer and both routes as separate processes. For both families at
+scale 1, 2, and 17, it requires exact agreement on all 33 field states, the 27
+currently available field values, every analytic derived count reconstructed
+from independently reported source-route facts, the `Complete` result, the
+same neutral-manifest identity, and the same ordered source identities.
+
+That gate deliberately reports `trace-incomplete`. Both routes independently
+withhold fields 9, 14 through 17, and 33: lexical scan work, parser stack,
+selected list members, expected terminals, cumulative syntax work, and
+resolution work. Aggregate formulas are forbidden substitutes. A separate
+action-schedule replay must close those six gaps before the routes can satisfy
+the complete-counter requirement above.
 
 ### Work and scaling
 
@@ -181,6 +206,15 @@ must evaluate all twelve lifetime peaks in `STORAGE-MODEL.md`, not only success
 and diagnostic end states, and select the global maximum. Until finite
 allocator slack is pinned, requested-byte accounting and actual supervised RSS
 remain separate claims.
+
+`layout-witness/` is the current non-authoritative layout foundation. It checks
+the 25 candidate record charges with checked `u64`, `usize`, `isize`, and
+`Layout::array` arithmetic; measures the public active frontend layouts it can
+name; encodes all twelve peak categories as seventeen closed ledger rows; and
+pins the candidate proposal, specification, storage model, executable, host,
+and toolchain identities. It explicitly leaves private frontend layouts,
+future resolver records, allocator slack, populated peak rows, and externally
+supervised RSS unproved. Those omissions prevent numerical approval.
 
 ### Boundaries and failure authority
 

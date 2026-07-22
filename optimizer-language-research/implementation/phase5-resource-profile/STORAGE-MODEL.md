@@ -54,9 +54,12 @@ product and sum uses checked `u64` before
 | DiagnosticIssueElement | 128 | 16 |
 
 Source, logical-path, binding, and spelling byte arrays charge their exact byte
-length. Vector headers, profile/capability scalars, fixed tables, and allocator
-metadata appear separately in the peak ledger; they are not smuggled into a
-record stride.
+length. Vector headers, explicit padding, profile/capability scalars, and fixed
+tables appear separately in the peak ledger's accounted bytes; they are not
+smuggled into a record stride. Allocator metadata and slack remain outside the
+charged, accounted, and modeled-process byte totals until a finite bound is
+established. They are reconciled only through the separately supervised RSS
+and service evidence.
 
 ## `max_tree_bytes`
 

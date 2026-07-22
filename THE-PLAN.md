@@ -521,6 +521,19 @@ dependent v0.9 topology observer are test scaffolding only. Numerical selection
 remains stopped until both complete routes, boundary/failure evidence, layout
 witnesses, service-envelope measurements, and hostile review agree.
 
+The first evidence-construction boundary is complete but deliberately
+trace-incomplete. A source-derived route and a separately represented analytic
+route run as isolated processes and agree for both smoke families at scale 1,
+2, and 17 on all 33 field states, the 27 available values, 23 independently
+reported derived quantities, the `Complete` semantic outcome, and exact
+manifest/source/meaning/code identities. Both withhold lexical scan work,
+parser stack occupancy, selected list members, expected terminals, cumulative
+syntax work, and resolution work rather than substituting aggregate formulas.
+The safe-Rust layout witness closes the candidate charge arithmetic and ledger
+codec only; private frontend layouts, future resolver records, populated peak
+rows, allocator slack, supervisor identity, and external RSS remain open.
+These foundations select no value and do not satisfy the Phase-5 entrance gate.
+
 Implement one syntax-directed semantic kernel in this order:
 
 1. run the preserved FN-8 structural-admission pass, then complete declaration

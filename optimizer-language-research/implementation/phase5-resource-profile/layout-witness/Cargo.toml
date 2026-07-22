@@ -1,0 +1,28 @@
+[package]
+name = "whitefoot-resource-layout-witness"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91.1"
+publish = false
+
+[dependencies]
+whitefoot-contract = { path = "../../../../compiler/crates/whitefoot-contract" }
+whitefoot-lexer = { path = "../../../../compiler/crates/whitefoot-lexer" }
+whitefoot-syntax = { path = "../../../../compiler/crates/whitefoot-syntax" }
+
+[lints.rust]
+unsafe_code = "forbid"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused_lifetimes = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true

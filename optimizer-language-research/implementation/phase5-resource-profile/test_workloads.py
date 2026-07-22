@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from workloads import MAX_WORKLOAD_UNITS, WorkloadError, build
+from workloads import MAX_WORKLOAD_UNITS, WorkloadError, build, manifest
 
 
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -72,6 +72,38 @@ class WorkloadTests(unittest.TestCase):
                 int(large["projected_mixed_elements"]),
                 int(small["projected_mixed_elements"]),
             )
+
+    def test_manifest_is_neutral_canonical_and_source_bound(self) -> None:
+        source = build("compiler", 2)
+        encoded = manifest("compiler", 2, source)
+        self.assertEqual(encoded[-1:], b"\n")
+        decoded = json.loads(encoded)
+        self.assertEqual(decoded["schema"], "whitefoot-resource-workload-v1")
+        self.assertEqual(decoded["family"], "compiler")
+        self.assertEqual(decoded["units"], 2)
+        self.assertEqual(
+            decoded["parameters"],
+            [
+                {"name": "name_decimal_width", "value": 6},
+                {"name": "source_records", "value": 1},
+                {"name": "unit_count", "value": 2},
+            ],
+        )
+        self.assertEqual(decoded["sources"][0]["byte_length"], len(source))
+        self.assertEqual(
+            decoded["sources"][0]["sha256"], sha256(source).hexdigest()
+        )
+        self.assertEqual(
+            set(decoded),
+            {
+                "schema",
+                "family",
+                "units",
+                "generator_revision",
+                "parameters",
+                "sources",
+            },
+        )
 
     def test_invalid_family_and_zero_units_are_rejected(self) -> None:
         with self.assertRaises(WorkloadError):

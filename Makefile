@@ -67,10 +67,17 @@ phase5-proposal-evidence:
 phase5-resource-profile-protocol:
 	$(PY) optimizer-language-research/implementation/phase5-resource-profile/schema.py
 	$(PY) -m unittest discover -s optimizer-language-research/implementation/phase5-resource-profile -p 'test_*.py'
+	$(PY) -m unittest discover -s optimizer-language-research/implementation/phase5-resource-profile/source-route -p 'test_*.py'
+	$(PY) -m unittest discover -s optimizer-language-research/implementation/phase5-resource-profile/analytic-route -p 'test_*.py'
 	cargo fmt --manifest-path optimizer-language-research/implementation/phase5-resource-profile/frontend-observer/Cargo.toml -- --check
 	cargo check --locked --offline --all-targets --manifest-path optimizer-language-research/implementation/phase5-resource-profile/frontend-observer/Cargo.toml
 	cargo clippy --locked --offline --all-targets --manifest-path optimizer-language-research/implementation/phase5-resource-profile/frontend-observer/Cargo.toml -- -D warnings
 	cargo test --locked --offline --manifest-path optimizer-language-research/implementation/phase5-resource-profile/frontend-observer/Cargo.toml
+	cargo fmt --manifest-path optimizer-language-research/implementation/phase5-resource-profile/layout-witness/Cargo.toml -- --check
+	cargo check --locked --offline --all-targets --manifest-path optimizer-language-research/implementation/phase5-resource-profile/layout-witness/Cargo.toml
+	cargo clippy --locked --offline --all-targets --manifest-path optimizer-language-research/implementation/phase5-resource-profile/layout-witness/Cargo.toml -- -D warnings
+	cargo test --locked --offline --manifest-path optimizer-language-research/implementation/phase5-resource-profile/layout-witness/Cargo.toml
+	cargo run --locked --offline --manifest-path optimizer-language-research/implementation/phase5-resource-profile/layout-witness/Cargo.toml
 
 compiler:
 	$(MAKE) -C compiler check
