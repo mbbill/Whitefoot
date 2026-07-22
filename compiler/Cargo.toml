@@ -11,6 +11,10 @@ doctest = false
 name = "whitefoot-spec"
 path = "src/bin/spec.rs"
 
+[[bin]]
+name = "whitefoot-grammar"
+path = "src/bin/grammar.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 

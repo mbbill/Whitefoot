@@ -610,6 +610,22 @@ fn prelude_collision_payload_keeps_both_ordered_struct_domains() {
 }
 
 #[test]
+fn approved_duplicate_main_conformance_case_is_type6() {
+    let source = include_bytes!("../../../tests/conformance/cases/fn7-neg-two-mains.wf");
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the later main declaration must be rejected: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRuleV0_10::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::DeclarationCollision { spelling, conflicts }
+                if spelling == "main" && conflicts.len() == 1
+        ));
+    });
+}
+
+#[test]
 fn nested_declarations_cannot_shadow_source_later_global_functions() {
     let source = br#"fn main() -> own unit pure {
   let future: own i32 = 1_i32;

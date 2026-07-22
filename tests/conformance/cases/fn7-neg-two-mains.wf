@@ -4,6 +4,6 @@ fn main() -> own unit traps {
 }
 
 fn main() -> own unit traps {
-  doc "Second main violates exactly-one-main [FN-7].";
+  doc "The later duplicate main is rejected by [TYPE-6].";
   return unit;
 }

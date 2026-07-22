@@ -57,6 +57,13 @@ The active language authority is `spec/kernel-spec-v0.10.md`, SHA-256
 Those bytes are immutable. Exact v0.8 and v0.9 remain immutable historical
 evidence.
 
+The review-ready, non-authoritative v0.11 candidate is
+`governance/spec-evolution/kernel-spec-v0.11-candidate.md`, SHA-256
+`e4b3368a84c46235ad2bf6d91df6506050e116773cf183e001213b67f36cec1f`.
+The native grammar-preservation check and three independent hostile reviews
+pass. Exact owner approval and append-only activation are still required before
+it can define compiler behavior.
+
 The Rust compiler currently has source transport, a lossless lexer, terminal
 classification, a strong-LL(2) parser, one finalized syntax tree, exact FORM-2
 source validation, and one direct general v0.10 name resolver. It ends at
@@ -69,9 +76,9 @@ the exact generated v0.10 candidate SHA-256
 `71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9`.
 The exact approved candidate is installed and the existing frontend is
 reproduced against its identity in one safe-Rust crate. The resolver
-implementation is complete, but its Phase-6 exit awaits one owner-approved
-protected expectation correction described below. The next implementation goal
-is the first semantically checked program through a simple LLVM backend.
+implementation and its owner-approved duplicate-main expectation correction
+complete Phase 6. The next implementation goal is the first semantically
+checked program through a simple LLVM backend after v0.11 activation.
 
 ## Authority and specification changes
 
@@ -102,13 +109,14 @@ consistency is the responsibility of whoever changes the spec; it is not
 machine-enforced, and derived material is never silently weakened to make a
 check pass.
 
-**Build task — a correct grammar verifier.** The archived
-`archive/retired-gate/grammar-verifier` reimplemented grammar analysis in two
-independent engines instead of reusing the compiler. Replace it with a small
-tool that runs a proposed specification through the main compiler's own lexer
-and parser and checks the grammar constraints above. Build it, and use it,
-before the next numbered-specification change; it is not needed for routine
-compiler work.
+**Grammar proposal check.** The native `whitefoot-grammar` tool now verifies a
+grammar-preserving candidate against the complete active lexer/grammar
+contract, checks every compiler SELECT_2 decision, and runs the compiler's real
+lexer and parser. It deliberately fails closed on a grammar change. A future
+proposal that changes source grammar must extend this same native path to
+generate and check the changed compiler tables; it may not revive the archived
+independent grammar engines. This tool is run for specification proposals, not
+routine compilation.
 
 ## What “good enough” requires
 
@@ -187,13 +195,14 @@ Obsolete wfc and democ implementations were archived. The continuing safe-Rust
 workspace, specification governance, compiler-independent conformance data,
 and focused reference models were established.
 
-## Phase 2: independent grammar evidence
+## Phase 2: grammar evidence
 
 Status: complete.
 
-The separate grammar verifier established the terminal partition, grammar
-conflicts, and lookahead evidence needed for the frontend. It remains a spec
-development tool and is not part of normal compilation.
+The historical independent evidence established the terminal partition,
+grammar conflicts, and lookahead needed for the frontend. The active native
+proposal check now reuses the compiler as described above and is not part of
+normal compilation.
 
 ## Phase 3: exact v0.9 installation
 
@@ -224,7 +233,7 @@ frontend passes against it.
 
 ## Phase 6: direct name resolver
 
-Status: implementation complete; exit blocked on one protected expectation.
+Status: complete.
 
 Implement the exact v0.10 declaration inventory and lexical resolution rules
 over `CanonicalSyntaxUnit`. Use straightforward owned records and deterministic
@@ -244,16 +253,40 @@ data structures the algorithm needs.
 spec-defined resolution error, or an explicit later-stage/not-yet-implemented
 result. Resolver unit, property, mutation, and conformance cases are green.
 
-The resolver now covers D01-D14, X01-X03, U01-U18, and X04-X09 through one
-general path. Its unit, property, mutation, selected existing-conformance, and
-hostile-review cases are green. One existing protected case predates the v0.10
-diagnostic rule: `fn7-neg-two-mains` expects FN-7, while exact v0.10 requires
-the later duplicate `main` declaration to receive TYPE-6. Do not change that
-source or verdict without owner approval and an append-only decision-log entry.
+The resolver covers D01-D14, X01-X03, U01-U18, and X04-X09 through one general
+path. Its unit, property, mutation, selected existing-conformance, and
+hostile-review cases are green. The owner reconciled the protected
+`fn7-neg-two-mains` expectation with exact v0.10: the later duplicate `main`
+declaration receives TYPE-6, while a missing or unique wrong-signature `main`
+remains FN-7.
 
 ## Phase 7: first executable semantic slice
 
-Status: next after the Phase-6 protected expectation is reconciled.
+Status: exact semantic-closure candidate review-ready; implementation awaits
+owner approval and append-only activation of those exact bytes.
+
+Hostile preflight found that v0.10 deliberately leaves post-resolution
+semantic diagnostic validity and determinism boundary for later approval. It
+also does not close the ordinary `check` operand type, function fallthrough,
+the exact scalar integer wrap/trap/compare behavior needed by the first backend
+slice, or the conflict between DIAG-2/DIAG-3 product-scale artifact/report
+obligations and the current research-compiler architecture. Do not invent
+these behaviors in compiler code or derive them from LLVM.
+
+The owner authorized a minimal v0.11 proposal that closes only those semantic
+boundaries, preserves all required runtime checks, and replaces product-scale
+artifact/replay obligations with the smallest checked in-memory authority and
+runtime-report contract the research compiler needs. Review rejected both a
+whole-language diagnostic-owner census and a normative first-slice support
+profile: neither affects language acceptance, and both would couple the
+specification to implementation order. The candidate instead requires every
+semantic rejection to establish an actual numbered-rule violation, keeps
+rule-specific locations exact, makes simultaneous post-resolution first-error
+choice deterministic per compiler executable, and publishes checked authority
+only after every applicable whole-unit judgment succeeds. The compiler-sharing
+grammar verifier and hostile review are complete. Obtain owner approval of the
+exact bytes and hash before activating them or emitting semantic source
+rejections.
 
 Choose the smallest coherent language family that can compile and run a real
 program while exercising the actual semantic architecture. The expected first
