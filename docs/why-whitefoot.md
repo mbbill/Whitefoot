@@ -557,4 +557,4 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Reproducibility: whole-compiler object SHA-256-pinned | `THE-PLAN.md` (build-track record) |
 | Language rules cited (one spelling; reject-not-reformat; two-way effect checking; `requires` semantics; overflow op names; trap = abort) | `spec/kernel-spec-v0.9.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1 |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, traps-to-boundary) | `PATTERNS.md` |
-| Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `optimizer-language-research/notes/verified-findings.md`, `notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |
+| Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

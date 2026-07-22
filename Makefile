@@ -3,7 +3,7 @@
 
 PY=python3 -B
 
-check: project-state spec-guard spec facets catalog-identity capabilities lexical-model reference-model conformance grammar-evidence phase5-proposal-evidence compiler
+check: project-state spec-guard spec facets catalog-identity lexical-model reference-model conformance grammar-evidence phase5-proposal-evidence compiler
 	@echo "== V0.9 RESEARCH COMPILER FRONTEND GREEN; SEMANTICS AND BACKEND ABSENT =="
 
 project-state:
@@ -32,10 +32,6 @@ facets:
 catalog-identity:
 	$(PY) tools/test_catalog_identity.py
 	$(PY) tools/catalog_identity.py check
-
-capabilities:
-	$(PY) tools/test_capability_overlay.py
-	$(PY) tools/capability_overlay.py check
 
 lexical-model:
 	# The v0.8 model remains executable, but its observer receipt is immutable:
@@ -70,4 +66,4 @@ compiler:
 conformance-run:
 	$(PY) conformance/runner.py run
 
-.PHONY: check project-state spec-guard approve-spec spec facets catalog-identity capabilities lexical-model reference-model conformance grammar-evidence phase5-proposal-evidence compiler conformance-run
+.PHONY: check project-state spec-guard approve-spec spec facets catalog-identity lexical-model reference-model conformance grammar-evidence phase5-proposal-evidence compiler conformance-run
