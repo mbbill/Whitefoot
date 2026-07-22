@@ -1,6 +1,6 @@
 # The Whitefoot Constitution
 
-Adopted 2026-07-05; amended 2026-07-05 (priority structure) and 2026-07-07 (D2a). This document supersedes and grounds all owner directives; the individual rulings (D0–D4, D0a/D1a/D2a) live in `governance/directives.md`. Historical decision log: `archive/governance/decision-log.md`.
+Adopted 2026-07-05; amended 2026-07-05 (priority structure) and 2026-07-07 (D2a). This document supersedes and grounds the founding owner directives. Current project law is stated here, durable design choices live in `mcts_mem/`, and the original directive record and decision log live under `archive/governance/`.
 
 
 Structured objective, in priority order:
@@ -27,6 +27,3 @@ Decision rules R1-R6 remain in force under this ordering:
 - **R4 — Shift-left everything.** Unrepresentable > check-time rejection with rule-citing diagnostics > runtime trap > (forbidden) silent corruption.
 - **R5 — Human exceptions are explicit.** Readability is a non-goal; auditability of the trusted base (D0a) is the deliberate exception.
 - **R6 — The stack is negotiable long-horizon** (compiler, possibly self-improving; hardware); near-term, artifacts must not marry one backend or ISA.
-
-
-Subordinate owner directives (D0–D4) are instances of this constitution.

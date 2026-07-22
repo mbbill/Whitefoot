@@ -13,8 +13,6 @@ procedure. Do not create a second governance how-to; update this file instead.
 - `mcts_mem/` records durable design choices, rejected alternatives, and the
   evidence behind them.
 - `APPROVALS.md` records explicit owner approval for protected changes.
-- `directives.md` preserves standing owner rulings; it is a record, not a work
-  queue.
 - Historical transition logs and superseded review material live under
   `archive/governance/` and cannot authorize current work.
 
@@ -24,7 +22,6 @@ procedure. Do not create a second governance how-to; update this file instead.
 |---|---|
 | `README.md` | This procedure and folder map |
 | `APPROVALS.md` | Append-only protected approval record |
-| `directives.md` | Standing and historical owner rulings |
 | `spec-evolution/` | One exact, versioned candidate file per reviewed successor specification |
 | `hooks/pre-commit` | Invoke the Makefile's staged append-only check before a commit |
 
@@ -106,6 +103,9 @@ compiler capability is not a source-language rejection.
 
 ## Recording a decision or approval
 
+- Do not create or append to a directives log. Route each new ruling directly
+  to the authority that owns it; the retired mixed log is preserved at
+  `archive/governance/directives.md`.
 - Update `docs/roadmap.md` only when current status, authorization, or next work
   changes.
 - Update `mcts_mem/` only for a durable design choice with a real alternative;
