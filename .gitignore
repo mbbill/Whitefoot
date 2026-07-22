@@ -35,7 +35,7 @@ experiments/frequency-study/results/raw/
 *.profraw
 *.profdata
 target/
-experiments/**/big.txt
+**/big.txt
 experiments/**/xwc*
 experiments/**/xchunkwc*
 experiments/**/bench
