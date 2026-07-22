@@ -92,6 +92,13 @@ one-time cleanup.
   explicit one-shot deleted after use; a document ships into an existing home
   and is kept current or deleted. Material with no owner and no reader is rot
   the moment it lands.
+- Prefer native tooling; do not pollute the workspace with Python. The compiler
+  is Rust — check it with `cargo test`, `cargo clippy`, and the workspace
+  `forbid(unsafe_code)` lint, never a Python script that re-implements what
+  cargo or the type system already does, and never a script forked per spec
+  version. Python belongs only to genuinely compiler-independent tooling, such
+  as the standalone conformance corpus. A new script must justify why the
+  native path cannot do the job; if it cannot, it does not ship.
 - Supersede in place. When new material replaces old, update, merge, or delete
   the old in the same change. Do not accumulate parallel versions, stale
   dossiers, or abandoned experiments beside their replacements. The single
