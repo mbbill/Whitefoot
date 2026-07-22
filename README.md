@@ -59,7 +59,7 @@ live next to what they check.
 | [spec/](spec/) | The language: numbered kernel specifications (append-only) and the rule-derivation ledger under `spec/derivation/` |
 | [compiler/](compiler/README.md) | The safe-Rust compiler (frontend and resolver today; checker → IR → LLVM to come) |
 | [tests/](tests/) | Correctness evidence: `conformance/` behavior corpus, `reference/` semantics oracle, `codegen/` optimization-proof corpus (dormant, for the future backend) |
-| [governance/](governance/) | The versioned [decision history](governance/decision-log.md), approval ledger, standing directives, the small repository-invariant and spec-append-only guards, and specification-evolution review records |
+| [governance/](governance/) | The current transition log and archived-history [index](governance/decision-log.md), approval ledger, standing directives, the small repository-invariant and spec-append-only guards, and specification-evolution review records |
 | [research/](research/) | Active language and compiler experiments |
 | [mcts_mem/](mcts_mem/) | The live MCTS-Mem decision tree: current decisions, rejected alternatives, and their evidence |
 | [archive/](archive/) | Retired and superseded material, inert — no active source, build, test, or tool depends on it |
