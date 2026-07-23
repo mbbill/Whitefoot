@@ -520,15 +520,24 @@ fn signatures_equal(
 ) -> Result<bool, CheckStop> {
     if member.region_parameters.len() != function.region_parameters.len()
         || member.parameters.len() != function.parameters.len()
-        || member.result != function.result
+        || !alpha_equivalent_type(
+            member.result,
+            &member.region_parameters,
+            function.result,
+            &function.region_parameters,
+        )?
     {
         return Ok(false);
     }
     for (member_parameter, function_parameter) in member.parameters.iter().zip(&function.parameters)
     {
-        if member_parameter.ty != function_parameter.ty
-            || normalize_mode(member_parameter.mode, &member.region_parameters)?
-                != normalize_mode(function_parameter.mode, &function.region_parameters)?
+        if !alpha_equivalent_type(
+            member_parameter.ty,
+            &member.region_parameters,
+            function_parameter.ty,
+            &function.region_parameters,
+        )? || normalize_mode(member_parameter.mode, &member.region_parameters)?
+            != normalize_mode(function_parameter.mode, &function.region_parameters)?
         {
             return Ok(false);
         }
@@ -542,6 +551,36 @@ fn signatures_equal(
         normalize_effects(&member.effects, &member.region_parameters)?
             == normalize_effects(&function.declared_effects, &function.region_parameters)?,
     )
+}
+
+fn alpha_equivalent_type(
+    left: CheckedType,
+    left_regions: &[DeclarationId],
+    right: CheckedType,
+    right_regions: &[DeclarationId],
+) -> Result<bool, CheckStop> {
+    match (left, right) {
+        (
+            CheckedType::Slice {
+                region: left_region,
+                element: left_element,
+            },
+            CheckedType::Slice {
+                region: right_region,
+                element: right_element,
+            },
+        ) => Ok(left_element == right_element
+            && region_ordinal(left_region, left_regions)?
+                == region_ordinal(right_region, right_regions)?),
+        _ => Ok(left == right),
+    }
+}
+
+fn region_ordinal(region: DeclarationId, regions: &[DeclarationId]) -> Result<usize, CheckStop> {
+    regions
+        .iter()
+        .position(|candidate| *candidate == region)
+        .ok_or(SemanticCompilerFailure::InvalidResolution.into())
 }
 
 fn normalize_mode(

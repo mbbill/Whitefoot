@@ -3,6 +3,7 @@ use std::collections::HashMap;
 mod buffers;
 mod loops;
 mod results;
+mod slices;
 mod storage;
 
 use crate::CheckedProgram;
@@ -849,6 +850,16 @@ impl<'program> IrBuilder<'program> {
                 trap,
                 target_domain,
             } => self.lower_buffer_index(root, offset, trap, *target_domain),
+            CheckedExpression::SliceOf {
+                source, element, ..
+            } => self.lower_slice_of(source, *element),
+            CheckedExpression::SliceLength { root } => self.lower_slice_length(root),
+            CheckedExpression::SliceIndex {
+                root,
+                offset,
+                trap,
+                target_domain,
+            } => self.lower_slice_index(root, offset, trap, *target_domain),
             CheckedExpression::BoxNew { nominal, value } => {
                 let value = self.expression(value)?;
                 let nominal = IrNominalId(nominal.0);
@@ -958,7 +969,7 @@ impl<'program> IrBuilder<'program> {
         }
     }
 
-    fn array_root(
+    pub(super) fn array_root(
         &mut self,
         root: &CheckedArrayRoot,
     ) -> Result<(IrArrayRoot, IrType), LoweringFailure> {

@@ -315,6 +315,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         live: true,
                         loop_depth,
                         borrow,
+                        slice: None,
                     },
                 )
                 .is_some()

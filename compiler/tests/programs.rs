@@ -6,6 +6,7 @@ mod programs {
     mod hashing;
     mod heap;
     mod image;
+    mod network;
     mod numerics;
     mod raw_deflate;
     mod signal;

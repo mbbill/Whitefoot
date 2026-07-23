@@ -93,6 +93,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if spelling == "len" {
             return self.check_flat_length(node, function, bindings, loop_depth);
         }
+        if spelling == "slice_of" {
+            return self.check_slice_of(node, function, bindings, loop_depth);
+        }
         if spelling == "cvt" {
             return self.check_conversion(node, function, bindings, loop_depth);
         }

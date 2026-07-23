@@ -494,6 +494,32 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn positional_region_alpha_equality_includes_slice_type_regions() {
+    let source = br#"contract ByteReader {
+  fn first ['source](values: own slice<'source, u8>) -> own u8 reads('source), traps;
+}
+
+fn read_first ['input](bytes: own slice<'input, u8>) -> own u8 reads('input), traps {
+  return index<u8>(bytes, 0_u64);
+}
+
+conform u8: ByteReader {
+  first = read_first;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("slice regions must compare by parameter ordinal: {outcome:?}");
+        };
+        assert_eq!(checked.data.conformances.len(), 1);
+    });
+}
+
+#[test]
 fn positional_region_ordinal_swap_is_not_alpha_equal() {
     let source = br#"contract FirstLength {
   fn length ['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left);

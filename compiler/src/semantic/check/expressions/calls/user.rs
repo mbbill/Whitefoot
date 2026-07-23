@@ -6,7 +6,7 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode};
+use super::super::super::super::model::{CheckedExpression, CheckedMode, CheckedType};
 use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, places_overlap};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -101,14 +101,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             let expected_mode = self.substitute_mode(parameter.mode, signature, &actual_regions)?;
-            if argument.expression.ty() != parameter.ty {
+            let expected_type =
+                self.substitute_parameter_type(parameter.ty, signature, &actual_regions)?;
+            if argument.expression.ty() != expected_type {
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
+            let access_claim = if let Some(slice) = &argument.slice {
+                Some(BorrowInfo {
+                    kind: BorrowKind::Shared,
+                    region: slice.region,
+                    place: slice.place.clone(),
+                    origin_region: slice.origin_region,
+                })
+            } else {
+                passed_borrow
+            };
             if explicit_borrow && let Some(borrow) = &argument.borrow {
                 call_scoped_borrows.push(borrow.clone());
             }
-            checked_borrows.push(passed_borrow);
+            checked_borrows.push(access_claim);
             argument_holders.push(argument.holder);
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -131,6 +143,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             mode: signature.result_mode,
             borrow: None,
+            slice: None,
             holder: None,
             effects,
             accesses: Vec::new(),
@@ -201,6 +214,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    fn substitute_parameter_type(
+        &self,
+        ty: CheckedType,
+        signature: &FunctionSignature,
+        actual_regions: &[DeclarationId],
+    ) -> Result<CheckedType, CheckStop> {
+        let CheckedType::Slice { region, element } = ty else {
+            return Ok(ty);
+        };
+        let index = signature
+            .region_parameters
+            .iter()
+            .position(|formal| *formal == region)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(CheckedType::Slice {
+            region: *actual_regions
+                .get(index)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            element,
+        })
+    }
+
     fn check_call_borrow_overlap(
         &self,
         node: NodeId,
@@ -256,9 +291,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(argument) = argument else {
                 continue;
             };
-            let formal_region = match parameter.mode {
-                CheckedMode::Own => continue,
-                CheckedMode::Shared(region) | CheckedMode::Unique(region) => region,
+            let formal_region = match (parameter.mode, parameter.ty) {
+                (CheckedMode::Own, CheckedType::Slice { region, .. }) => region,
+                (CheckedMode::Own, _) => continue,
+                (CheckedMode::Shared(region) | CheckedMode::Unique(region), _) => region,
             };
             if signature.declared_effects.reads.contains(&formal_region) {
                 self.check_loan_access(bindings, *holder, &argument.place, AccessKind::Read, node)?;

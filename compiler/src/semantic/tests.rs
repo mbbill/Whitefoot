@@ -16,6 +16,7 @@ mod integer_negation;
 mod options;
 mod reinterpret;
 mod requires;
+mod slices;
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{

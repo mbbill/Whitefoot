@@ -34,6 +34,13 @@ pub(super) struct BorrowInfo {
     pub(super) origin_region: Option<DeclarationId>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct SliceInfo {
+    pub(super) region: DeclarationId,
+    pub(super) place: ResolvedPlace,
+    pub(super) origin_region: Option<DeclarationId>,
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum AccessKind {
     Read,
@@ -107,6 +114,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Some(BorrowInfo {
             kind,
+            region,
+            place: ResolvedPlace {
+                root: parameter.declaration,
+                fields: Vec::new(),
+            },
+            origin_region: Some(region),
+        })
+    }
+
+    pub(super) fn parameter_slice(&self, parameter: &ParameterSignature) -> Option<SliceInfo> {
+        let CheckedType::Slice { region, .. } = parameter.ty else {
+            return None;
+        };
+        Some(SliceInfo {
             region,
             place: ResolvedPlace {
                 root: parameter.declaration,
@@ -262,10 +283,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression,
             mode: borrow.mode(),
             borrow: Some(borrow),
+            slice: None,
             holder: None,
             effects: EffectSet::NONE,
             accesses: Vec::new(),
         })
+    }
+
+    pub(super) fn check_direct_slice_borrow_lifetime(
+        &self,
+        function: &FunctionSignature,
+        region: DeclarationId,
+        owner: Option<DeclarationId>,
+        node: NodeId,
+        loop_depth: usize,
+    ) -> Result<(), CheckStop> {
+        if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
+            return self.issue_node(
+                SemanticRule::Own11,
+                node,
+                SemanticIssueKind::BorrowRegionOutsideLoop {
+                    mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+                },
+            );
+        }
+        let Some(owner) = owner else {
+            return Ok(());
+        };
+        if function.region_parameters.contains(&region)
+            || !self.scope_is_within(
+                self.region_declaration(region)?.scope(),
+                self.declaration_scope(owner)?,
+            )?
+        {
+            return self.issue_node(
+                SemanticRule::Own10,
+                node,
+                SemanticIssueKind::InvalidBorrowLifetime,
+            );
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -367,6 +424,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression,
             mode: borrow.mode(),
             borrow: Some(borrow),
+            slice: None,
             holder: Some(holder),
             effects: EffectSet::NONE,
             accesses: Vec::new(),
@@ -552,18 +610,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
     ) -> Result<(), CheckStop> {
         for (declaration, local) in bindings {
-            let Some(loan) = &local.borrow else {
-                continue;
-            };
-            if Some(*declaration) == through_holder || !places_overlap(&loan.place, place) {
-                continue;
+            if let Some(loan) = &local.borrow
+                && Some(*declaration) != through_holder
+                && places_overlap(&loan.place, place)
+            {
+                let conflicts = match access {
+                    AccessKind::Read => loan.kind == BorrowKind::Unique,
+                    AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
+                    AccessKind::SharedBorrow => loan.kind == BorrowKind::Unique,
+                };
+                if conflicts {
+                    return self.issue_node(
+                        SemanticRule::Own5,
+                        node,
+                        SemanticIssueKind::BorrowConflict,
+                    );
+                }
             }
-            let conflicts = match access {
-                AccessKind::Read => loan.kind == BorrowKind::Unique,
-                AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
-                AccessKind::SharedBorrow => loan.kind == BorrowKind::Unique,
-            };
-            if conflicts {
+            if let Some(slice) = &local.slice
+                && places_overlap(&slice.place, place)
+                && matches!(
+                    access,
+                    AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
+                )
+            {
                 return self.issue_node(
                     SemanticRule::Own5,
                     node,

@@ -160,7 +160,8 @@ edge and exact trap record.
 This is not a completeness claim. Cyclic and region-bearing generic forms,
 generic `requires`, general borrow referents and borrowed affine match
 payloads, returned borrows, bound/result-carrying/grandchild reborrows, generic
-`Float`, affine moves out through owning indirection, arenas, slices, inline
+`Float`, affine moves out through owning indirection, arenas, returned slices,
+non-flat slice elements, slice formation through borrow holders, inline
 recursive nominal layouts, branch-dependent ownership/loan joins, projected
 array targets reached through borrow holders, and remaining effect-table
 operations are explicit unsupported compiler capabilities rather than
@@ -297,7 +298,9 @@ copy state such as `deref(pool).count` through a usable unique holder. One
 resolved place path retains the borrowed root, field prefix, ultimate caller
 origin, loan checks, and exact EFF-2 reads/writes. The implementation does not
 move affine fields out of a borrow, return references, admit bound or
-result-carrying child reborrows, or add slices or arenas.
+result-carrying child reborrows, or add arenas. Read-only slices over direct
+owned and constant storage use the separate path described below; forming one
+through a borrow holder remains unsupported.
 
 The owner-approved protected corrections to five inherited runnable
 conformance entries are applied. `pending-op9-buffer-new` and
@@ -932,6 +935,23 @@ RHS owner consumption, update ordering, and sibling preservation. The public
 eight-tap filter executes a 64-frame impulse response through nested array
 state and strict `f64` arithmetic. Array places reached through borrow holders
 remain part of the explicitly unsupported general-borrow-referent family.
+
+An IPv4 header checksum then selected the read-only slice family. `slice_of`
+now forms `slice<'r, T>` over a direct owned array or primitive buffer and over
+an immutable const array, with exact OWN-10/11 lifetime checks and one shared
+loan over the resolved source place. Moving and passing the descriptor
+preserves its source provenance; live slices block source writes, moves, and
+unique borrows under OWN-5. `len` and guarded `index` use one checked slice
+root, incoming slice reads contribute `reads('r)` under EFF-2, and SET-1
+continues to reject slice-rooted targets because the view is read-only.
+Lowering uses a distinct non-owning `{pointer, u64 length}` IR type: array
+sources receive stable stack or static storage, buffer sources reuse their
+owner's allocation, OP-4 guards every element address, and dropping a slice
+never frees its source. The public checksum executes the same consumer over a
+20-byte const header and a runtime buffer and verifies `0xb890` in both cases.
+Returned slices, non-flat slice elements, slice formation through `deref`
+borrow holders, region-bearing generic arguments, and branch-dependent
+slice-provenance joins remain explicit unsupported capability boundaries.
 
 The exact next work remains Phase 9: select another production-shaped dogfood
 target in a real-world domain not exercised by the current programs, observe

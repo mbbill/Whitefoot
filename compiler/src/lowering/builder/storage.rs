@@ -90,7 +90,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::BoxDeref { value, .. }
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
-        | CheckedExpression::BufferIndex { offset, .. } => collect_expression(offset, bindings),
+        | CheckedExpression::BufferIndex { offset, .. }
+        | CheckedExpression::SliceIndex { offset, .. } => collect_expression(offset, bindings),
         CheckedExpression::BufferFill { length, value, .. } => {
             collect_expression(length, bindings);
             collect_expression(value, bindings);
@@ -99,6 +100,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayLength { .. }
         | CheckedExpression::BufferLength { .. }
+        | CheckedExpression::SliceOf { .. }
+        | CheckedExpression::SliceLength { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::ReborrowStruct { .. }

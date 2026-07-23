@@ -291,6 +291,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if result_mode != super::super::model::CheckedMode::Own {
             return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
         }
+        if matches!(result, super::super::model::CheckedType::Slice { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
+        }
         let effects = self
             .tree
             .first_child_with(template.node, Production::Effects)?
@@ -548,6 +551,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         );
                     };
                     let ty = self.parse_type_with(ty, caller)?;
+                    if matches!(ty, CheckedType::Slice { .. }) {
+                        return self.unsupported(UnsupportedSemanticFeature::Generics, argument);
+                    }
                     if bound == GenericBound::Int
                         && !matches!(ty, CheckedType::Integer(_) | CheckedType::GenericInt(_))
                     {

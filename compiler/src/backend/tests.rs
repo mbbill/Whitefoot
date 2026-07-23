@@ -15,6 +15,7 @@ mod reborrows;
 mod reinterpret;
 mod requires;
 mod resource_enums;
+mod slices;
 
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};

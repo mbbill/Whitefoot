@@ -13,6 +13,7 @@ mod floating;
 mod integer;
 mod operations;
 mod reinterpret;
+mod slice;
 
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -26,6 +27,7 @@ use crate::{
 };
 use buffer::{buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
+use slice::slice_index_continue_label;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
@@ -564,6 +566,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 trap,
                 target_domain,
             } => self.emit_buffer_bounds_check(result, ty, *buffer, *offset, trap, *target_domain),
+            IrOperation::SliceFromArray { array } => self.emit_slice_from_array(result, ty, *array),
+            IrOperation::SliceFromBuffer { buffer } => {
+                self.emit_slice_from_buffer(result, ty, *buffer)
+            }
+            IrOperation::SliceLength { slice } => self.emit_slice_length(result, ty, *slice),
+            IrOperation::SliceIndex {
+                slice,
+                offset,
+                trap,
+                target_domain,
+            } => self.emit_slice_index(result, ty, *slice, *offset, trap, *target_domain),
             IrOperation::BoxNew { nominal, value } => {
                 self.emit_box_new(result, ty, *nominal, *value)
             }
@@ -741,7 +754,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         match drop.ty() {
-            IrType::Array { .. } => {}
+            IrType::Array { .. } | IrType::Slice { .. } => {}
             IrType::Buffer { .. } => {
                 emit_value_cleanup(
                     self.program,
@@ -806,7 +819,7 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
             "[{length} x {}]",
             llvm_type(program, element.ty())?
         )),
-        IrType::Buffer { .. } => Ok("{ ptr, i64 }".to_owned()),
+        IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
         IrType::NominalAddress(_) => Ok("ptr".to_owned()),
         IrType::GuardedArrayIndex { .. } => Ok("i64".to_owned()),
         IrType::GuardedBufferIndex { .. } => Ok("i64".to_owned()),
@@ -947,6 +960,11 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
                 operation: IrOperation::BufferIndex { .. },
                 ..
             } => label = buffer_index_continue_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::SliceIndex { .. },
+                ..
+            } => label = slice_index_continue_label(*result),
             IrInstruction::Define {
                 result,
                 operation: IrOperation::BufferBoundsCheck { .. },

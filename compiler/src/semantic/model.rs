@@ -170,6 +170,10 @@ pub(crate) enum CheckedType {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
+    Slice {
+        region: DeclarationId,
+        element: CheckedFlatElement,
+    },
     Buffer {
         element: CheckedFlatElement,
     },
@@ -180,6 +184,7 @@ impl CheckedType {
         match self {
             Self::Generic(_) | Self::GenericInt(_) => false,
             Self::Array { element, length } => element.ty().is_concrete() && length.is_concrete(),
+            Self::Slice { element, .. } => element.ty().is_concrete(),
             Self::Buffer { element } => element.ty().is_concrete(),
             Self::Unit | Self::Bool | Self::Integer(_) | Self::Float(_) | Self::Nominal(_) => true,
         }
@@ -544,6 +549,21 @@ pub(crate) struct CheckedBufferRoot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedSliceRoot {
+    pub(crate) binding: BindingId,
+    pub(crate) element: CheckedFlatElement,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedSliceSource {
+    Array {
+        root: CheckedArrayRoot,
+        length: CheckedConst,
+    },
+    Buffer(CheckedBufferRoot),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedExpression {
     Constant(CheckedValue),
     Binding {
@@ -620,6 +640,20 @@ pub(crate) enum CheckedExpression {
         trap: TrapSite,
         target_domain: CheckedTargetDomainObligation,
     },
+    SliceOf {
+        source: CheckedSliceSource,
+        region: DeclarationId,
+        element: CheckedFlatElement,
+    },
+    SliceLength {
+        root: CheckedSliceRoot,
+    },
+    SliceIndex {
+        root: CheckedSliceRoot,
+        offset: Box<CheckedExpression>,
+        trap: TrapSite,
+        target_domain: CheckedTargetDomainObligation,
+    },
     BoxNew {
         nominal: NominalId,
         value: Box<CheckedExpression>,
@@ -689,6 +723,14 @@ impl CheckedExpression {
             Self::BufferFill { element, .. } => CheckedType::Buffer { element: *element },
             Self::BufferLength { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
+            Self::SliceOf {
+                region, element, ..
+            } => CheckedType::Slice {
+                region: *region,
+                element: *element,
+            },
+            Self::SliceLength { .. } => CheckedType::Integer(IntegerType::U64),
+            Self::SliceIndex { root, .. } => root.element.ty(),
             Self::BoxNew { nominal, .. } => CheckedType::Nominal(*nominal),
             Self::BoxDeref { referent, .. } => *referent,
             Self::BorrowBuffer { root } => CheckedType::Buffer {

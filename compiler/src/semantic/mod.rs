@@ -22,8 +22,8 @@ pub(crate) use model::{
     CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
     CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
     CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
-    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, NominalId,
-    PropagationContext, TrapSite,
+    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
+    CheckedType, CheckedValue, NominalId, PropagationContext, TrapSite,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.

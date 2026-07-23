@@ -1,4 +1,5 @@
 mod borrowed;
+mod slices;
 
 use std::collections::HashMap;
 
@@ -12,8 +13,8 @@ use crate::{
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
     CheckedConst, CheckedExpression, CheckedFlatElement, CheckedMode,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedTargetDomainObligation, CheckedType,
-    IntegerType, TrapSite,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
+    CheckedTargetDomainObligation, CheckedType, IntegerType, TrapSite,
 };
 use super::super::borrows::{AccessKind, BorrowKind, ResolvedPlace};
 use super::super::{
@@ -55,9 +56,18 @@ struct CheckedBufferPlace {
 }
 
 #[derive(Clone)]
+struct CheckedSlicePlace {
+    root: CheckedSliceRoot,
+    declaration: DeclarationId,
+    resolved: ResolvedPlace,
+    origin_region: Option<DeclarationId>,
+}
+
+#[derive(Clone)]
 enum CheckedIndexedPlace {
     Array(CheckedArrayPlace),
     Buffer(CheckedBufferPlace),
+    Slice(CheckedSlicePlace),
 }
 
 impl CheckedIndexedPlace {
@@ -65,6 +75,7 @@ impl CheckedIndexedPlace {
         match self {
             Self::Array(array) => array.element_type,
             Self::Buffer(buffer) => buffer.element_type,
+            Self::Slice(slice) => slice.root.element.ty(),
         }
     }
 }
@@ -233,16 +244,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let mut effects = EffectSet::NONE;
-        if let CheckedIndexedPlace::Buffer(buffer) = &place {
-            self.check_loan_access(
-                bindings,
-                buffer.holder,
-                &buffer.resolved,
-                AccessKind::Read,
-                atoms[0],
-            )?;
-            if let Some(region) = buffer.origin_region {
-                effects.add_read(region);
+        match &place {
+            CheckedIndexedPlace::Array(_) => {}
+            CheckedIndexedPlace::Buffer(buffer) => {
+                self.check_loan_access(
+                    bindings,
+                    buffer.holder,
+                    &buffer.resolved,
+                    AccessKind::Read,
+                    atoms[0],
+                )?;
+                if let Some(region) = buffer.origin_region {
+                    effects.add_read(region);
+                }
+            }
+            CheckedIndexedPlace::Slice(slice) => {
+                self.check_loan_access(
+                    bindings,
+                    Some(slice.declaration),
+                    &slice.resolved,
+                    AccessKind::Read,
+                    atoms[0],
+                )?;
+                if let Some(region) = slice.origin_region {
+                    effects.add_read(region);
+                }
             }
         }
         Ok(TypedExpression::owned(
@@ -253,6 +279,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
                 CheckedIndexedPlace::Buffer(buffer) => {
                     CheckedExpression::BufferLength { root: buffer.root }
+                }
+                CheckedIndexedPlace::Slice(slice) => {
+                    CheckedExpression::SliceLength { root: slice.root }
                 }
             },
             effects,
@@ -312,6 +341,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     pbase,
                 )?;
             }
+            CheckedIndexedPlace::Slice(slice) => {
+                self.check_loan_access(
+                    bindings,
+                    Some(slice.declaration),
+                    &slice.resolved,
+                    AccessKind::Read,
+                    pbase,
+                )?;
+            }
         }
         let offset = self
             .tree
@@ -344,6 +382,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 place: buffer.resolved.clone(),
                 kind: AccessKind::Read,
             }),
+            CheckedIndexedPlace::Slice(slice) => accesses.push(PlaceAccess {
+                place: slice.resolved.clone(),
+                kind: AccessKind::Read,
+            }),
         }
         let expression = match indexed {
             CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayIndex {
@@ -365,11 +407,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
                 }
             }
+            CheckedIndexedPlace::Slice(slice) => {
+                if let Some(region) = slice.origin_region {
+                    effects.add_read(region);
+                }
+                CheckedExpression::SliceIndex {
+                    root: slice.root,
+                    offset: Box::new(offset.expression),
+                    trap,
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                }
+            }
         };
         Ok(TypedExpression {
             expression,
             mode: CheckedMode::Own,
             borrow: None,
+            slice: None,
             holder: None,
             effects,
             accesses,
@@ -429,6 +483,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     node,
                 )?;
             }
+            CheckedIndexedPlace::Slice(_) => {
+                return self.issue_node(
+                    SemanticRule::Set1,
+                    node,
+                    SemanticIssueKind::InvalidSetTarget {
+                        root_class: "slice view".to_owned(),
+                        required_classes: "live own storage or a live usable &uniq referent",
+                    },
+                );
+            }
         }
         let offset_node = self
             .tree
@@ -487,6 +551,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })),
                 )
             }
+            CheckedIndexedPlace::Slice(_) => {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
         };
         Ok((declaration, target, effects))
     }
@@ -530,7 +597,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ResolvedTarget::Source { declaration, class } = usage.target() else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        let (root, binding, declaration, fields, ty) = match class {
+        let (root, binding, declaration, fields, ty, slice) = match class {
             DeclarationClass::Value => {
                 let local = bindings
                     .get(&declaration)
@@ -564,6 +631,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Some(declaration),
                     fields,
                     ty,
+                    local.slice,
                 )
             }
             DeclarationClass::NamedConst => {
@@ -584,6 +652,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     None,
                     Vec::new(),
                     self.constant(id)?.ty,
+                    None,
                 )
             }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
@@ -629,6 +698,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     origin_region: None,
                     borrow_kind: None,
+                }))
+            }
+            CheckedType::Slice { region, element } => {
+                if !fields.is_empty() {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let (Some(binding), Some(declaration), Some(slice)) = (binding, declaration, slice)
+                else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                if slice.region != region {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Ok(CheckedIndexedPlace::Slice(CheckedSlicePlace {
+                    root: CheckedSliceRoot { binding, element },
+                    declaration,
+                    resolved: slice.place,
+                    origin_region: slice.origin_region,
                 }))
             }
             _ => self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch),

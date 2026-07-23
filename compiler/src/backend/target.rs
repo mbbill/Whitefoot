@@ -200,6 +200,7 @@ fn validate_target_obligation(
             layouts.layout(root_type)?;
         }
         IrOperation::BufferIndex { target_domain, .. }
+        | IrOperation::SliceIndex { target_domain, .. }
         | IrOperation::ArrayBoundsCheck { target_domain, .. }
         | IrOperation::BufferBoundsCheck { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
@@ -207,6 +208,7 @@ fn validate_target_obligation(
         | IrOperation::BufferFill { .. }
         | IrOperation::ArrayIndex { .. }
         | IrOperation::BufferIndex { .. }
+        | IrOperation::SliceIndex { .. }
         | IrOperation::ArrayBoundsCheck { .. }
         | IrOperation::BufferBoundsCheck { .. } => {
             return Err(TargetLayoutFailure::InvalidIr);
@@ -238,6 +240,13 @@ fn emitted_stack_slots(
                 .ok_or(TargetLayoutFailure::InvalidIr)?,
         ],
         IrOperation::InsertArray { .. } => vec![result_type],
+        IrOperation::SliceFromArray {
+            array: IrArrayRoot::Value(value),
+        } => vec![
+            function
+                .value_type(*value)
+                .ok_or(TargetLayoutFailure::InvalidIr)?,
+        ],
         IrOperation::AddressOfNominal { nominal, .. } => vec![IrType::Nominal(*nominal)],
         _ => Vec::new(),
     };
@@ -278,6 +287,7 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
             | IrOperation::ArrayBoundsCheck { trap, .. }
             | IrOperation::BufferFill { trap, .. }
             | IrOperation::BufferIndex { trap, .. }
+            | IrOperation::SliceIndex { trap, .. }
             | IrOperation::BufferBoundsCheck { trap, .. } => Some(trap),
             _ => None,
         },
@@ -331,6 +341,10 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 })
             }
             IrType::Buffer { element } => {
+                self.flat_element(element)?;
+                Ok(Layout { size: 16, align: 8 })
+            }
+            IrType::Slice { element } => {
                 self.flat_element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }

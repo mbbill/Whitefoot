@@ -95,6 +95,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression: place.expression,
             mode,
             borrow,
+            slice: None,
             holder,
             effects,
             accesses: vec![PlaceAccess {

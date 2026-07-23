@@ -1,0 +1,74 @@
+const ipv4_header: array<u8, 20> = [69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
+
+fn ipv4_checksum ['r](header: own slice<'r, u8>) -> own u16 reads('r), traps {
+  let length: own u64 = len<u8>(header);
+  let odd: own u64 = iand<u64>(length, 1_u64);
+  check ieq<u64>(odd, 0_u64) else trap "IPv4 header length";
+  let offset: own u64 = 0_u64;
+  let sum: own u32 = 0_u32;
+  loop @words {
+    let done: own Bool = ieq<u64>(offset, length);
+    match done {
+      True() => {
+        break @words;
+      }
+      False() => {
+      }
+    }
+    let low_offset: own u64 = iadd.wrap<u64>(offset, 1_u64);
+    let high_byte: own u8 = index<u8>(header, offset);
+    let low_byte: own u8 = index<u8>(header, low_offset);
+    let high_word: own u32 = cvt<u8, u32>(high_byte);
+    let low_word: own u32 = cvt<u8, u32>(low_byte);
+    let shifted_high: own u32 = ishl.wrap<u32>(high_word, 8_u32);
+    let word: own u32 = ior<u32>(shifted_high, low_word);
+    let combined: own u32 = iadd.wrap<u32>(sum, word);
+    let carry: own u32 = ishr.wrap<u32>(combined, 16_u32);
+    let low_sum: own u32 = iand<u32>(combined, 65535_u32);
+    let folded: own u32 = iadd.wrap<u32>(low_sum, carry);
+    set sum = folded;
+    set offset = iadd.wrap<u64>(offset, 2_u64);
+  }
+  let inverted: own u32 = inot<u32>(sum);
+  let checksum_word: own u32 = iand<u32>(inverted, 65535_u32);
+  let narrowed: own Result<u16, NarrowError> = cvt<u32, u16>(checksum_word);
+  let checksum: own u16 = match narrowed {
+    Ok(value: checksum_value) => {
+      give checksum_value;
+    }
+    Err(error: failure) => {
+      check False() else trap "checksum narrowing";
+      give 0_u16;
+    }
+  }
+  return checksum;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  region 'static_view {
+    let view: own slice<'static_view, u8> = slice_of<'static_view, u8>(&'static_view ipv4_header);
+    let checksum: own u16 = ipv4_checksum<'static_view>(header: move view);
+    check ieq<u16>(checksum, 47248_u16) else trap "static IPv4 checksum";
+  }
+  let runtime_header: own buffer<u8> = buffer_new<u8>(20_u64, 0_u8);
+  let offset: own u64 = 0_u64;
+  loop @copy_header {
+    let done: own Bool = ieq<u64>(offset, 20_u64);
+    match done {
+      True() => {
+        break @copy_header;
+      }
+      False() => {
+      }
+    }
+    let byte: own u8 = index<u8>(ipv4_header, offset);
+    set index<u8>(runtime_header, offset) = byte;
+    set offset = iadd.wrap<u64>(offset, 1_u64);
+  }
+  region 'runtime_view {
+    let view: own slice<'runtime_view, u8> = slice_of<'runtime_view, u8>(&'runtime_view runtime_header);
+    let checksum: own u16 = ipv4_checksum<'runtime_view>(header: move view);
+    check ieq<u16>(checksum, 47248_u16) else trap "runtime IPv4 checksum";
+  }
+  return unit;
+}

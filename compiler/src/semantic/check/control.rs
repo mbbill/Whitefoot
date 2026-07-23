@@ -352,6 +352,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self
                     .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, value_match);
             }
+            if matches!(expected, CheckedType::Slice { .. }) {
+                return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, value_match);
+            }
             let matched = self.check_match(
                 function,
                 value_match,
@@ -379,6 +382,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             live: true,
                             loop_depth: scope.loops.len(),
                             borrow: None,
+                            slice: None,
                         },
                     )
                     .is_some()
@@ -461,6 +465,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len(),
                     borrow,
+                    slice: value.slice,
                 },
             )
             .is_some()

@@ -104,6 +104,7 @@ pub enum IrType {
     NominalAddress(IrNominalId),
     Array { element: IrFlatElement, length: u64 },
     Buffer { element: IrFlatElement },
+    Slice { element: IrFlatElement },
     GuardedArrayIndex { length: u64 },
     GuardedBufferIndex { element: IrFlatElement },
 }
@@ -148,6 +149,9 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
         CheckedType::Buffer { element } => IrType::Buffer {
+            element: lower_flat_element(element)?,
+        },
+        CheckedType::Slice { element, .. } => IrType::Slice {
             element: lower_flat_element(element)?,
         },
     })
@@ -598,6 +602,21 @@ pub enum IrOperation {
     },
     BufferBoundsCheck {
         buffer: IrValueId,
+        offset: IrValueId,
+        trap: IrTrapSite,
+        target_domain: IrTargetDomainObligation,
+    },
+    SliceFromArray {
+        array: IrArrayRoot,
+    },
+    SliceFromBuffer {
+        buffer: IrValueId,
+    },
+    SliceLength {
+        slice: IrValueId,
+    },
+    SliceIndex {
+        slice: IrValueId,
         offset: IrValueId,
         trap: IrTrapSite,
         target_domain: IrTargetDomainObligation,

@@ -135,12 +135,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.checked_flat_element(element_type, element_node)?,
             });
         }
+        if self.has_fixed(node, FixedTerminal::Slice)? {
+            let usage = self.use_at(node, LexicalUseRole::TypeRegion)?;
+            let ResolvedTarget::Source {
+                declaration: region,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            let element_node = self
+                .tree
+                .first_child_with(node, Production::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let element_type = self.parse_type_with(element_node, substitution)?;
+            let Some(element) = self.flat_element(element_type)? else {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node);
+            };
+            return Ok(CheckedType::Slice { region, element });
+        }
         if self.has_fixed(node, FixedTerminal::Box)? {
             let referent_node = self
                 .tree
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let referent = self.parse_type_with(referent_node, substitution)?;
+            if matches!(referent, CheckedType::Slice { .. }) {
+                return self
+                    .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, referent_node);
+            }
             return self
                 .box_nominals
                 .get(&referent)
@@ -265,10 +288,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(error) = self.tree.first_child_with(*error, Production::Type)? else {
             return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         };
-        Ok((
-            self.parse_type_with(ok, substitution)?,
-            self.parse_type_with(error, substitution)?,
-        ))
+        let ok = self.parse_type_with(ok, substitution)?;
+        let error = self.parse_type_with(error, substitution)?;
+        if matches!(ok, CheckedType::Slice { .. }) || matches!(error, CheckedType::Slice { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
+        }
+        Ok((ok, error))
     }
 
     pub(super) fn option_type_argument_with(
@@ -286,7 +311,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(value) = self.tree.first_child_with(*value, Production::Type)? else {
             return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         };
-        self.parse_type_with(value, substitution)
+        let value = self.parse_type_with(value, substitution)?;
+        if matches!(value, CheckedType::Slice { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
+        }
+        Ok(value)
     }
 
     pub(super) fn integer_type(&self, node: NodeId) -> Result<Option<IntegerType>, CheckStop> {
@@ -566,7 +595,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::Nominal(_) => false,
-            CheckedType::Buffer { .. } => false,
+            CheckedType::Slice { .. } | CheckedType::Buffer { .. } => false,
         };
         if eligible {
             Ok(ty)
@@ -579,27 +608,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    fn checked_flat_element(
+    pub(super) fn checked_flat_element(
         &self,
         ty: CheckedType,
         node: NodeId,
     ) -> Result<CheckedFlatElement, CheckStop> {
-        match ty {
-            CheckedType::Unit => Ok(CheckedFlatElement::Unit),
-            CheckedType::Bool => Ok(CheckedFlatElement::Bool),
-            CheckedType::Integer(ty) => Ok(CheckedFlatElement::Integer(ty)),
-            CheckedType::Float(ty) => Ok(CheckedFlatElement::Float(ty)),
-            CheckedType::GenericInt(declaration) => Ok(CheckedFlatElement::GenericInt(declaration)),
+        match self.flat_element(ty)? {
+            Some(element) => Ok(element),
+            None => self.issue_node(SemanticRule::Type2, node, SemanticIssueKind::TypeMismatch),
+        }
+    }
+
+    pub(super) fn flat_element(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<CheckedFlatElement>, CheckStop> {
+        Ok(match ty {
+            CheckedType::Unit => Some(CheckedFlatElement::Unit),
+            CheckedType::Bool => Some(CheckedFlatElement::Bool),
+            CheckedType::Integer(ty) => Some(CheckedFlatElement::Integer(ty)),
+            CheckedType::Float(ty) => Some(CheckedFlatElement::Float(ty)),
+            CheckedType::GenericInt(declaration) => {
+                Some(CheckedFlatElement::GenericInt(declaration))
+            }
             CheckedType::Nominal(id) if self.nominal(id)?.is_copy() => {
-                Ok(CheckedFlatElement::TagOnlyNominal(id))
+                Some(CheckedFlatElement::TagOnlyNominal(id))
             }
             CheckedType::Generic(_)
             | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. } => {
-                self.issue_node(SemanticRule::Type2, node, SemanticIssueKind::TypeMismatch)
-            }
-        }
+            | CheckedType::Slice { .. }
+            | CheckedType::Buffer { .. } => None,
+        })
     }
 
     pub(super) fn parse_literal(

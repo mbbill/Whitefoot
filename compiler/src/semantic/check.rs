@@ -26,8 +26,8 @@ use super::model::{
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
-use borrows::BorrowInfo;
 use borrows::{AccessKind, ResolvedPlace};
+use borrows::{BorrowInfo, SliceInfo};
 use control::{ControlCounters, ControlScope};
 use generics::{GenericParameter, GenericSubstitution};
 
@@ -98,6 +98,7 @@ struct LocalBinding {
     live: bool,
     loop_depth: usize,
     borrow: Option<BorrowInfo>,
+    slice: Option<SliceInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -110,6 +111,7 @@ struct TypedExpression {
     expression: CheckedExpression,
     mode: CheckedMode,
     borrow: Option<BorrowInfo>,
+    slice: Option<SliceInfo>,
     holder: Option<DeclarationId>,
     effects: EffectSet,
     accesses: Vec<PlaceAccess>,
@@ -127,6 +129,7 @@ impl TypedExpression {
             expression,
             mode: CheckedMode::Own,
             borrow: None,
+            slice: None,
             holder: None,
             effects,
             accesses: Vec::new(),
@@ -143,6 +146,7 @@ impl TypedExpression {
             expression,
             mode: CheckedMode::Own,
             borrow: None,
+            slice: None,
             holder: None,
             effects,
             accesses: vec![PlaceAccess { place, kind }],
@@ -509,6 +513,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: 0,
                     borrow: self.parameter_borrow(parameter),
+                    slice: self.parameter_slice(parameter),
                 },
             );
             parameters.push(CheckedParameter {

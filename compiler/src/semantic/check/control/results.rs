@@ -70,6 +70,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     live: true,
                     loop_depth: scope.loops.len(),
                     borrow: None,
+                    slice: None,
                 },
             )
             .is_some()

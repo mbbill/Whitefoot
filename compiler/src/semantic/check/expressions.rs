@@ -177,6 +177,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
+            CheckedType::Slice { region, element } => format!(
+                "slice<'region#{}, {}>",
+                region.index(),
+                self.checked_type_name(element.ty())?
+            ),
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
             }
@@ -472,6 +477,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                         mode: local.mode,
                         borrow: local.borrow,
+                        slice: None,
                         holder: Some(declaration),
                         effects: EffectSet::NONE,
                         accesses: Vec::new(),
@@ -547,7 +553,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     AccessKind::Move
                 };
                 if fields.is_empty() {
-                    Ok(TypedExpression::owned_with_access(
+                    let mut expression = TypedExpression::owned_with_access(
                         CheckedExpression::Binding {
                             binding: local.binding,
                             ty,
@@ -555,7 +561,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         EffectSet::NONE,
                         access,
                         access_kind,
-                    ))
+                    );
+                    expression.slice = local.slice;
+                    Ok(expression)
                 } else {
                     Ok(TypedExpression::owned_with_access(
                         CheckedExpression::Project {
@@ -596,7 +604,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let constant = self.constant(constant)?;
                 if matches!(
                     constant.ty,
-                    CheckedType::Array { .. } | CheckedType::Buffer { .. }
+                    CheckedType::Array { .. }
+                        | CheckedType::Slice { .. }
+                        | CheckedType::Buffer { .. }
                 ) {
                     return self.issue_node(
                         SemanticRule::Own1,
