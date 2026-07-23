@@ -20,10 +20,10 @@ pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedBufferRoot,
     CheckedBufferSetTarget, CheckedDrop, CheckedEnumType, CheckedExpression, CheckedFlatElement,
     CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
-    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedParameter, CheckedProgramData,
-    CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, CheckedValue, NominalId, PropagationContext,
-    TrapSite,
+    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
+    CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, NominalId,
+    PropagationContext, TrapSite,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -353,7 +353,7 @@ pub enum UnsupportedSemanticFeature {
     CompositeValues,
     /// A generic parameter bound by the prelude `Float` contract.
     GenericFloatingPoint,
-    /// An OP-6 conversion with at least one floating-point endpoint.
+    /// A non-total OP-6 conversion with at least one floating-point endpoint.
     FloatingPointConversion,
     /// A loop with no structurally reachable break exit for current SSA lowering.
     StructuredControlFlow,

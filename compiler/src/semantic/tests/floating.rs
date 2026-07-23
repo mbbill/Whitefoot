@@ -1,6 +1,11 @@
+use std::fmt::Write;
+
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
-use super::super::model::{CheckedExpression, CheckedFloatOperation, CheckedStatement, FloatType};
+use super::super::model::{
+    CheckedExpression, CheckedFloatOperation, CheckedNumericType, CheckedStatement, FloatType,
+    IntegerType,
+};
 use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
@@ -70,6 +75,118 @@ fn retains_the_complete_direct_float_operation_family() {
 }
 
 #[test]
+fn retains_every_total_conversion_with_a_float_endpoint() {
+    let pairs = [
+        (
+            "i8",
+            "f32",
+            CheckedNumericType::Integer(IntegerType::I8),
+            CheckedNumericType::Float(FloatType::F32),
+        ),
+        (
+            "i16",
+            "f32",
+            CheckedNumericType::Integer(IntegerType::I16),
+            CheckedNumericType::Float(FloatType::F32),
+        ),
+        (
+            "u8",
+            "f32",
+            CheckedNumericType::Integer(IntegerType::U8),
+            CheckedNumericType::Float(FloatType::F32),
+        ),
+        (
+            "u16",
+            "f32",
+            CheckedNumericType::Integer(IntegerType::U16),
+            CheckedNumericType::Float(FloatType::F32),
+        ),
+        (
+            "i8",
+            "f64",
+            CheckedNumericType::Integer(IntegerType::I8),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+        (
+            "i16",
+            "f64",
+            CheckedNumericType::Integer(IntegerType::I16),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+        (
+            "i32",
+            "f64",
+            CheckedNumericType::Integer(IntegerType::I32),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+        (
+            "u8",
+            "f64",
+            CheckedNumericType::Integer(IntegerType::U8),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+        (
+            "u16",
+            "f64",
+            CheckedNumericType::Integer(IntegerType::U16),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+        (
+            "u32",
+            "f64",
+            CheckedNumericType::Integer(IntegerType::U32),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+        (
+            "f32",
+            "f64",
+            CheckedNumericType::Float(FloatType::F32),
+            CheckedNumericType::Float(FloatType::F64),
+        ),
+    ];
+    let mut source = String::new();
+    for (source_name, destination_name, _, _) in pairs {
+        writeln!(
+            source,
+            "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> own {destination_name} pure {{\n  return cvt<{source_name}, {destination_name}>(value);\n}}\n"
+        )
+        .expect("write conversion function");
+    }
+    source.push_str("fn main() -> own unit pure {\n  return unit;\n}\n");
+
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("total floating conversion family must check: {outcome:?}");
+        };
+        assert_eq!(checked.data.functions.len(), pairs.len() + 1);
+        for (function, (_, _, expected_source, expected_destination)) in
+            checked.data.functions.iter().zip(pairs)
+        {
+            let [
+                CheckedStatement::Return {
+                    value:
+                        CheckedExpression::NumericConversion {
+                            source,
+                            destination,
+                            result,
+                            ..
+                        },
+                    ..
+                },
+            ] = function.body.as_slice()
+            else {
+                panic!("conversion function must retain one numeric conversion");
+            };
+            assert_eq!(
+                (*source, *destination),
+                (expected_source, expected_destination)
+            );
+            assert_eq!(*result, expected_destination.ty());
+        }
+    });
+}
+
+#[test]
 fn float_literal_and_operation_failures_keep_their_rule_owners() {
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own f64 = 1.00_f64;\n  return unit;\n}\n",
@@ -87,7 +204,17 @@ fn float_literal_and_operation_failures_keep_their_rule_owners() {
         SemanticIssueKind::TypeMismatch,
     );
     assert_unsupported(
-        b"fn main() -> own unit pure {\n  let value: own f64 = cvt<f32, f64>(1.0_f32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value: own Result<f32, NarrowError> = cvt<f64, f32>(1.0_f64);\n  return unit;\n}\n",
         UnsupportedSemanticFeature::FloatingPointConversion,
+    );
+    assert_rule(
+        b"fn main() -> own unit pure {\n  let value: own f32 = cvt<f32, f32>(1.0_f32);\n  return unit;\n}\n",
+        SemanticRule::Op6,
+        SemanticIssueKind::InvalidOperation,
+    );
+    assert_rule(
+        b"fn main() -> own unit pure {\n  let value: own f64 = cvt<u32, f64>(1_u16);\n  return unit;\n}\n",
+        SemanticRule::Type5,
+        SemanticIssueKind::TypeMismatch,
     );
 }

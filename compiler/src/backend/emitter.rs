@@ -479,11 +479,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 operand_type,
                 arguments,
             } => self.emit_float(result, ty, *operation, *operand_type, arguments),
-            IrOperation::IntegerConversion {
+            IrOperation::NumericConversion {
                 source_type,
                 destination_type,
                 value,
-            } => self.emit_integer_conversion(result, ty, *source_type, *destination_type, *value),
+            } => self.emit_numeric_conversion(result, ty, *source_type, *destination_type, *value),
             IrOperation::Boolean {
                 operation,
                 arguments,

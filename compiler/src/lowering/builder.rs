@@ -683,7 +683,7 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::IntegerConversion {
+            CheckedExpression::NumericConversion {
                 source,
                 destination,
                 value,
@@ -692,9 +692,9 @@ impl<'program> IrBuilder<'program> {
                 let value = self.expression(value)?;
                 self.define(
                     lower_type(expression.ty())?,
-                    IrOperation::IntegerConversion {
-                        source_type: lower_type(CheckedType::Integer(*source))?,
-                        destination_type: lower_type(CheckedType::Integer(*destination))?,
+                    IrOperation::NumericConversion {
+                        source_type: lower_numeric_type(*source),
+                        destination_type: lower_numeric_type(*destination),
                         value,
                     },
                 )

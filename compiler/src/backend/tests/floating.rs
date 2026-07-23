@@ -86,6 +86,59 @@ fn every_direct_float_operation_executes_for_both_widths() {
 }
 
 #[test]
+fn every_total_conversion_with_a_float_endpoint_executes() {
+    let source = br#"fn main() -> own unit traps {
+  let i8_f32: own f32 = cvt<i8, f32>(-8_i8);
+  check feq<f32>(i8_f32, -8.0_f32) else trap "i8 to f32";
+  let i16_f32: own f32 = cvt<i16, f32>(32767_i16);
+  check feq<f32>(i16_f32, 32767.0_f32) else trap "i16 to f32";
+  let u8_f32: own f32 = cvt<u8, f32>(8_u8);
+  check feq<f32>(u8_f32, 8.0_f32) else trap "u8 to f32";
+  let u16_f32: own f32 = cvt<u16, f32>(65535_u16);
+  check feq<f32>(u16_f32, 65535.0_f32) else trap "u16 to f32";
+  let i8_f64: own f64 = cvt<i8, f64>(-8_i8);
+  check feq<f64>(i8_f64, -8.0_f64) else trap "i8 to f64";
+  let i16_f64: own f64 = cvt<i16, f64>(-16_i16);
+  check feq<f64>(i16_f64, -16.0_f64) else trap "i16 to f64";
+  let i32_f64: own f64 = cvt<i32, f64>(2147483647_i32);
+  check feq<f64>(i32_f64, 2147483647.0_f64) else trap "i32 to f64";
+  let u8_f64: own f64 = cvt<u8, f64>(8_u8);
+  check feq<f64>(u8_f64, 8.0_f64) else trap "u8 to f64";
+  let u16_f64: own f64 = cvt<u16, f64>(16_u16);
+  check feq<f64>(u16_f64, 16.0_f64) else trap "u16 to f64";
+  let u32_f64: own f64 = cvt<u32, f64>(4294967295_u32);
+  check feq<f64>(u32_f64, 4294967295.0_f64) else trap "u32 to f64";
+  let f32_f64: own f64 = cvt<f32, f64>(1.5_f32);
+  check feq<f64>(f32_f64, 1.5_f64) else trap "f32 to f64";
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    for instruction in [
+        "sitofp i8",
+        "sitofp i16",
+        "sitofp i32",
+        "uitofp i8",
+        "uitofp i16",
+        "uitofp i32",
+        "fpext float",
+    ] {
+        assert!(
+            llvm.contains(instruction),
+            "total conversion family must exercise {instruction}"
+        );
+    }
+    let output = compile_and_run(&llvm);
+    assert!(
+        output.status.success(),
+        "total floating conversion family failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn float_constants_work_in_aggregates_arrays_and_buffers() {
     let source = br#"struct Sample {
   value: f32;

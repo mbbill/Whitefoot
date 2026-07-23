@@ -12,3 +12,14 @@ fn feedback_controller_executes_as_a_sustained_float_workload() {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+#[test]
+fn mandelbrot_grid_executes_through_total_numeric_conversion() {
+    let llvm = compile_program("mandelbrot_grid.wf");
+    assert!(llvm.contains("uitofp i32"));
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}

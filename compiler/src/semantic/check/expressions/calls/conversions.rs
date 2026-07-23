@@ -6,7 +6,9 @@ use crate::{
     UnsupportedSemanticFeature,
 };
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode, CheckedType};
+use super::super::super::super::model::{
+    CheckedExpression, CheckedMode, CheckedNumericType, CheckedType,
+};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PreludeType, TypedExpression,
 };
@@ -52,7 +54,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
                 })?;
             let ty = match self.parse_type_with(type_node, &function.substitution)? {
-                ty @ (CheckedType::Integer(_) | CheckedType::Float(_)) => ty,
+                CheckedType::Integer(ty) => CheckedNumericType::Integer(ty),
+                CheckedType::Float(ty) => CheckedNumericType::Float(ty),
                 CheckedType::GenericInt(_) => {
                     return self.unsupported(UnsupportedSemanticFeature::Generics, type_node);
                 }
@@ -72,9 +75,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if source == destination {
             return self.issue_node(SemanticRule::Op6, node, SemanticIssueKind::InvalidOperation);
         }
-        let (CheckedType::Integer(source), CheckedType::Integer(destination)) =
+        let result = if source.converts_totally_to(*destination) {
+            destination.ty()
+        } else if let (CheckedNumericType::Integer(_), CheckedNumericType::Integer(destination)) =
             (*source, *destination)
-        else {
+        {
+            let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
+            CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(
+                CheckedType::Integer(destination),
+                error,
+            ))?)
+        } else {
             return self.unsupported(UnsupportedSemanticFeature::FloatingPointConversion, node);
         };
         let atom = self
@@ -83,24 +94,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .next()
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let argument = self.check_atom(function, atom, bindings, loop_depth)?;
-        if argument.expression.ty() != CheckedType::Integer(source)
-            || argument.mode != CheckedMode::Own
-        {
+        if argument.expression.ty() != source.ty() || argument.mode != CheckedMode::Own {
             return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
         }
-        let result = if source.converts_totally_to(destination) {
-            CheckedType::Integer(destination)
-        } else {
-            let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
-            CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(
-                CheckedType::Integer(destination),
-                error,
-            ))?)
-        };
         Ok(TypedExpression::owned(
-            CheckedExpression::IntegerConversion {
-                source,
-                destination,
+            CheckedExpression::NumericConversion {
+                source: *source,
+                destination: *destination,
                 value: Box::new(argument.expression),
                 result,
             },

@@ -95,6 +95,33 @@ impl FloatType {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CheckedNumericType {
+    Integer(IntegerType),
+    Float(FloatType),
+}
+
+impl CheckedNumericType {
+    pub(crate) const fn ty(self) -> CheckedType {
+        match self {
+            Self::Integer(ty) => CheckedType::Integer(ty),
+            Self::Float(ty) => CheckedType::Float(ty),
+        }
+    }
+
+    pub(crate) const fn converts_totally_to(self, destination: Self) -> bool {
+        match (self, destination) {
+            (Self::Integer(source), Self::Integer(destination)) => {
+                source.converts_totally_to(destination)
+            }
+            (Self::Integer(source), Self::Float(FloatType::F32)) => source.width() <= 16,
+            (Self::Integer(source), Self::Float(FloatType::F64)) => source.width() <= 32,
+            (Self::Float(FloatType::F32), Self::Float(FloatType::F64)) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedFlatElement {
     Unit,
     Bool,
@@ -524,9 +551,9 @@ pub(crate) enum CheckedExpression {
         operand_type: FloatType,
         arguments: Vec<CheckedExpression>,
     },
-    IntegerConversion {
-        source: IntegerType,
-        destination: IntegerType,
+    NumericConversion {
+        source: CheckedNumericType,
+        destination: CheckedNumericType,
         value: Box<CheckedExpression>,
         result: CheckedType,
     },
@@ -625,7 +652,7 @@ impl CheckedExpression {
         match self {
             Self::Constant(value) => value.ty(),
             Self::Binding { ty, .. } | Self::UserCall { result: ty, .. } => *ty,
-            Self::IntegerOperation { result, .. } | Self::IntegerConversion { result, .. } => {
+            Self::IntegerOperation { result, .. } | Self::NumericConversion { result, .. } => {
                 *result
             }
             Self::FloatOperation {

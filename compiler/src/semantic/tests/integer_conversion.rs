@@ -2,7 +2,9 @@ use std::fmt::Write;
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::super::model::{CheckedExpression, CheckedStatement, CheckedType, IntegerType};
+use super::super::model::{
+    CheckedExpression, CheckedNumericType, CheckedStatement, CheckedType, IntegerType,
+};
 use super::{assert_rule, with_semantics};
 
 const INTEGER_TYPES: [(&str, IntegerType); 8] = [
@@ -52,7 +54,7 @@ fn classifies_every_distinct_integer_pair_through_one_conversion_judgment() {
             let [
                 CheckedStatement::Return {
                     value:
-                        CheckedExpression::IntegerConversion {
+                        CheckedExpression::NumericConversion {
                             source,
                             destination,
                             result,
@@ -64,7 +66,13 @@ fn classifies_every_distinct_integer_pair_through_one_conversion_judgment() {
             else {
                 panic!("conversion function must retain one conversion return");
             };
-            assert_eq!((*source, *destination), (source_type, destination_type));
+            assert_eq!(
+                (*source, *destination),
+                (
+                    CheckedNumericType::Integer(source_type),
+                    CheckedNumericType::Integer(destination_type)
+                )
+            );
             if total {
                 assert_eq!(*result, CheckedType::Integer(destination_type));
             } else {

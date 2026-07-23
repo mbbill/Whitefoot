@@ -1,7 +1,63 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    pub(super) fn emit_integer_conversion(
+    pub(super) fn emit_numeric_conversion(
+        &mut self,
+        result: IrValueId,
+        result_type: IrType,
+        source_type: IrType,
+        destination_type: IrType,
+        value: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        if source_type == destination_type || self.function.value_type(value) != Some(source_type) {
+            return Err(BackendFailure::InvalidIr);
+        }
+        match (source_type, destination_type) {
+            (IrType::Integer { .. }, IrType::Integer { .. }) => self.emit_integer_conversion(
+                result,
+                result_type,
+                source_type,
+                destination_type,
+                value,
+            ),
+            (
+                IrType::Integer { width, signed },
+                IrType::Float {
+                    width: destination_width,
+                },
+            ) if (destination_width == 32 && width <= 16)
+                || (destination_width == 64 && width <= 32) =>
+            {
+                if result_type != destination_type {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let opcode = if signed { "sitofp" } else { "uitofp" };
+                writeln!(
+                    self.output,
+                    "  {} = {opcode} i{width} {} to {}",
+                    value_name(result),
+                    value_name(value),
+                    llvm_type(self.program, destination_type)?
+                )
+                .map_err(|_| BackendFailure::TextEmission)
+            }
+            (IrType::Float { width: 32 }, IrType::Float { width: 64 }) => {
+                if result_type != destination_type {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                writeln!(
+                    self.output,
+                    "  {} = fpext float {} to double",
+                    value_name(result),
+                    value_name(value)
+                )
+                .map_err(|_| BackendFailure::TextEmission)
+            }
+            _ => Err(BackendFailure::InvalidIr),
+        }
+    }
+
+    fn emit_integer_conversion(
         &mut self,
         result: IrValueId,
         result_type: IrType,
@@ -22,9 +78,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if source_type == destination_type || self.function.value_type(value) != Some(source_type) {
-            return Err(BackendFailure::InvalidIr);
-        }
         let total = source_width < destination_width
             && (source_signed == destination_signed || (!source_signed && destination_signed));
         let converted = if total {

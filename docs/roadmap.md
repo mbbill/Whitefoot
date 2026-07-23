@@ -160,11 +160,11 @@ edge and exact trap record.
 This is not a completeness claim. Cyclic and region-bearing generic forms,
 generic `requires`, general borrow referents and borrowed affine match
 payloads, returned borrows, bound/result-carrying/grandchild reborrows, generic
-`Float`, floating-point OP-6 conversion, `reinterpret`, affine moves out
-through owning indirection, arenas, slices, inline recursive nominal layouts,
-branch-dependent ownership/loan joins, projected array targets, and remaining
-effect-table operations are explicit unsupported compiler capabilities rather
-than source-language rejections.
+`Float`, partial OP-6 conversions with a floating-point endpoint, `reinterpret`,
+affine moves out through owning indirection, arenas, slices, inline recursive
+nominal layouts, branch-dependent ownership/loan joins, projected array
+targets, and remaining effect-table operations are explicit unsupported
+compiler capabilities rather than source-language rejections.
 Generic source contracts and source-contract bounds instead receive v0.16's
 specified FN-3 rejection; contract-member calls have no v0.16 grammar or
 semantic operation.
@@ -879,8 +879,20 @@ OP-8 intrinsics, ordered comparisons except unordered `fne`, canonical quiet
 NaNs, and signed-zero-preserving minimum and maximum. Floats compose through
 calls, loop-carried mutation, structs, const arrays, buffers, checked indexing,
 and SET-1. Executable edge tests cover both widths, NaN propagation, infinities,
-and signed zero. Generic `Float`, OP-6 conversions with a float endpoint, and
-`reinterpret` remain separate explicit unsupported capabilities.
+and signed zero. Generic `Float`, partial OP-6 conversions with a float
+endpoint, and `reinterpret` remain separate explicit unsupported capabilities.
+
+A 64-by-48 Mandelbrot grid then selected OP-6's complete total-conversion
+family with a floating-point endpoint. One numeric-conversion judgment now
+classifies all integer pairs and the eleven exact total float-related pairs;
+the checked program retains concrete source, destination, and result types,
+and the typed IR carries that judgment unchanged. LLVM uses signed or unsigned
+integer-to-float conversion only for the exact-width rows and `fpext` for
+`f32` to `f64`. The grid executes nested loops, calls, mutation, integer
+control, strict float arithmetic, and `u32`-to-`f64` conversion through the
+public compiler boundary. Partial float conversions remain explicit
+unsupported capability stops rather than being rounded or misreported as
+invalid source.
 
 The exact next work remains Phase 9: select another production-shaped dogfood
 target in a real-world domain not exercised by the current programs, observe

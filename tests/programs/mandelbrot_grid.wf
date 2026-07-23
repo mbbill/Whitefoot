@@ -1,0 +1,83 @@
+fn mandelbrot_escapes(cx: own f64, cy: own f64) -> own Bool pure {
+  let real: own f64 = 0.0_f64;
+  let imaginary: own f64 = 0.0_f64;
+  let iteration: own u32 = 0_u32;
+  let escaped: own Bool = False();
+  loop @orbit {
+    let exhausted: own Bool = ieq<u32>(iteration, 64_u32);
+    match exhausted {
+      True() => {
+        break @orbit;
+      }
+      False() => {
+      }
+    }
+    let real_squared: own f64 = fmul.strict<f64>(real, real);
+    let imaginary_squared: own f64 = fmul.strict<f64>(imaginary, imaginary);
+    let difference: own f64 = fsub.strict<f64>(real_squared, imaginary_squared);
+    let next_real: own f64 = fadd.strict<f64>(difference, cx);
+    let product: own f64 = fmul.strict<f64>(real, imaginary);
+    let doubled_product: own f64 = fmul.strict<f64>(2.0_f64, product);
+    let next_imaginary: own f64 = fadd.strict<f64>(doubled_product, cy);
+    set real = next_real;
+    set imaginary = next_imaginary;
+    let next_real_squared: own f64 = fmul.strict<f64>(real, real);
+    let next_imaginary_squared: own f64 = fmul.strict<f64>(imaginary, imaginary);
+    let magnitude_squared: own f64 = fadd.strict<f64>(next_real_squared, next_imaginary_squared);
+    let outside: own Bool = fgt<f64>(magnitude_squared, 4.0_f64);
+    match outside {
+      True() => {
+        set escaped = True();
+        break @orbit;
+      }
+      False() => {
+      }
+    }
+    set iteration = iadd.wrap<u32>(iteration, 1_u32);
+  }
+  return escaped;
+}
+
+fn main() -> own unit traps {
+  let y: own u32 = 0_u32;
+  let escaped_points: own u32 = 0_u32;
+  loop @rows {
+    let rows_done: own Bool = ieq<u32>(y, 48_u32);
+    match rows_done {
+      True() => {
+        break @rows;
+      }
+      False() => {
+      }
+    }
+    let x: own u32 = 0_u32;
+    loop @columns {
+      let columns_done: own Bool = ieq<u32>(x, 64_u32);
+      match columns_done {
+        True() => {
+          break @columns;
+        }
+        False() => {
+        }
+      }
+      let x_float: own f64 = cvt<u32, f64>(x);
+      let y_float: own f64 = cvt<u32, f64>(y);
+      let scaled_x: own f64 = fmul.strict<f64>(x_float, 0.05_f64);
+      let scaled_y: own f64 = fmul.strict<f64>(y_float, 0.05_f64);
+      let cx: own f64 = fsub.strict<f64>(scaled_x, 2.0_f64);
+      let cy: own f64 = fsub.strict<f64>(scaled_y, 1.2_f64);
+      let escaped: own Bool = mandelbrot_escapes(cx: cx, cy: cy);
+      match escaped {
+        True() => {
+          set escaped_points = iadd.wrap<u32>(escaped_points, 1_u32);
+        }
+        False() => {
+        }
+      }
+      set x = iadd.wrap<u32>(x, 1_u32);
+    }
+    set y = iadd.wrap<u32>(y, 1_u32);
+  }
+  check ieq<u32>(escaped_points, 2437_u32) else trap "mandelbrot grid mismatch";
+  return unit;
+}

@@ -83,7 +83,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
                 collect_expression(argument, bindings);
             }
         }
-        CheckedExpression::IntegerConversion { value, .. }
+        CheckedExpression::NumericConversion { value, .. }
         | CheckedExpression::ArrayFill { value, .. }
         | CheckedExpression::BoxNew { value, .. }
         | CheckedExpression::BoxDeref { value, .. }

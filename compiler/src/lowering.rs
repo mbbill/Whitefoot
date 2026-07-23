@@ -7,7 +7,7 @@
 
 use crate::semantic::{
     CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedProgram, CheckedRuntimeTargetObligations,
+    CheckedIntegerOperation, CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
     CheckedTargetDomainObligation, CheckedType, TrapSite,
 };
 
@@ -151,6 +151,18 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
             element: lower_flat_element(element)?,
         },
     })
+}
+
+const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
+    match value {
+        CheckedNumericType::Integer(integer) => IrType::Integer {
+            width: integer.width(),
+            signed: integer.signed(),
+        },
+        CheckedNumericType::Float(float) => IrType::Float {
+            width: float.width(),
+        },
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -530,7 +542,7 @@ pub enum IrOperation {
         operand_type: IrType,
         arguments: Vec<IrValueId>,
     },
-    IntegerConversion {
+    NumericConversion {
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
