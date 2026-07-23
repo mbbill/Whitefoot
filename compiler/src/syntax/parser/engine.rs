@@ -1,8 +1,8 @@
 use crate::syntax::grammar::{
-    DecisionKindV0_13, GrammarNodeIdV0_13, GrammarNodeKindV0_13, LookaheadPredicateV0_13,
-    ProductionV0_13, SYNTAX_DATA_SPEC_V0_13, grammar_node_v0_13,
+    DecisionKindV0_14, GrammarNodeIdV0_14, GrammarNodeKindV0_14, LookaheadPredicateV0_14,
+    ProductionV0_14, SYNTAX_DATA_SPEC_V0_14, grammar_node_v0_14,
 };
-use crate::syntax::terminal::TerminalPredicateV0_13;
+use crate::syntax::terminal::TerminalPredicateV0_14;
 use crate::{ByteOffset, SourceId};
 
 use crate::{ClassifiedBundle, ClassifiedToken};
@@ -17,10 +17,10 @@ use super::{
 
 #[derive(Clone, Copy)]
 enum Task {
-    Execute(GrammarNodeIdV0_13),
-    Continue(GrammarNodeIdV0_13),
-    Match(TerminalPredicateV0_13),
-    Finish(ProductionV0_13),
+    Execute(GrammarNodeIdV0_14),
+    Continue(GrammarNodeIdV0_14),
+    Match(TerminalPredicateV0_14),
+    Finish(ProductionV0_14),
 }
 
 enum Stop {
@@ -97,7 +97,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         Ok(())
     }
 
-    fn push_frame(&mut self, production: ProductionV0_13, atom_only: bool) -> Result<(), Stop> {
+    fn push_frame(&mut self, production: ProductionV0_14, atom_only: bool) -> Result<(), Stop> {
         let actual = Self::requested_next(self.frames.len(), ParseStorage::Frames)
             .map_err(Stop::Resource)?;
         if actual > self.limits.max_frames {
@@ -160,7 +160,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         start: ByteOffset,
         end: ByteOffset,
     ) -> Result<(), Stop> {
-        if frame.production == ProductionV0_13::Program {
+        if frame.production == ProductionV0_14::Program {
             return Ok(());
         }
         match frame.extent {
@@ -189,7 +189,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     fn append_terminal(
         &mut self,
         token: ClassifiedToken<'source>,
-        predicate: TerminalPredicateV0_13,
+        predicate: TerminalPredicateV0_14,
         source: SourceId,
     ) -> Result<(), Stop> {
         let id = token.token().id();
@@ -213,7 +213,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         Ok(())
     }
 
-    fn finish_production(&mut self, expected: ProductionV0_13) -> Result<(), Stop> {
+    fn finish_production(&mut self, expected: ProductionV0_14) -> Result<(), Stop> {
         let frame = self
             .frames
             .pop()
@@ -223,7 +223,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 ParseCompilerFailure::ProductionFrameMismatch,
             ));
         }
-        let extent = if expected == ProductionV0_13::Program {
+        let extent = if expected == ProductionV0_14::Program {
             DerivationExtent::BundleRoot
         } else {
             let (source, start, end) = frame.extent.ok_or(Stop::Compiler(
@@ -258,10 +258,10 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
 
     fn begin_production(
         &mut self,
-        production: ProductionV0_13,
+        production: ProductionV0_14,
         atom_only: bool,
     ) -> Result<(), Stop> {
-        if production == ProductionV0_13::Program {
+        if production == ProductionV0_14::Program {
             return Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData));
         }
         self.push_frame(production, atom_only)?;
@@ -272,14 +272,14 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
 
     fn schedule_selected(
         &mut self,
-        node_id: GrammarNodeIdV0_13,
-        kind: DecisionKindV0_13,
+        node_id: GrammarNodeIdV0_14,
+        kind: DecisionKindV0_14,
         arm: u8,
     ) -> Result<(), Stop> {
-        let node = grammar_node_v0_13(node_id)
+        let node = grammar_node_v0_14(node_id)
             .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
         match kind {
-            DecisionKindV0_13::Choice => {
+            DecisionKindV0_14::Choice => {
                 let child = node
                     .children()
                     .get(usize::from(arm))
@@ -287,7 +287,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                     .ok_or(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData))?;
                 self.push_task(Task::Execute(child))
             }
-            DecisionKindV0_13::Optional => match arm {
+            DecisionKindV0_14::Optional => match arm {
                 0 => {
                     let child = node
                         .children()
@@ -299,7 +299,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 1 => Ok(()),
                 _ => Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData)),
             },
-            DecisionKindV0_13::Repeat0 | DecisionKindV0_13::Repeat1 => match arm {
+            DecisionKindV0_14::Repeat0 | DecisionKindV0_14::Repeat1 => match arm {
                 0 => {
                     let child = node
                         .children()
@@ -317,7 +317,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
 
     fn failed_decision(
         &mut self,
-        decision: crate::syntax::grammar::DecisionV0_13,
+        decision: crate::syntax::grammar::DecisionV0_14,
         source: SourceId,
         source_len: u64,
         tokens: &[ClassifiedToken<'source>],
@@ -344,34 +344,34 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
 
     fn execute_node(
         &mut self,
-        node_id: GrammarNodeIdV0_13,
+        node_id: GrammarNodeIdV0_14,
         source: SourceId,
         source_len: u64,
         tokens: &[ClassifiedToken<'source>],
         cursor: usize,
     ) -> Result<(), Stop> {
-        let node = grammar_node_v0_13(node_id)
+        let node = grammar_node_v0_14(node_id)
             .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
         match node.kind() {
-            GrammarNodeKindV0_13::Production(production) => {
+            GrammarNodeKindV0_14::Production(production) => {
                 self.begin_production(production, node.is_atom_only_reference())
             }
-            GrammarNodeKindV0_13::TerminalSequence => {
+            GrammarNodeKindV0_14::TerminalSequence => {
                 for terminal in node.terminals().iter().rev() {
-                    let LookaheadPredicateV0_13::Terminal(predicate) = terminal else {
+                    let LookaheadPredicateV0_14::Terminal(predicate) = terminal else {
                         return Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData));
                     };
                     self.push_task(Task::Match(*predicate))?;
                 }
                 Ok(())
             }
-            GrammarNodeKindV0_13::Sequence => {
+            GrammarNodeKindV0_14::Sequence => {
                 for child in node.children().iter().rev() {
                     self.push_task(Task::Execute(*child))?;
                 }
                 Ok(())
             }
-            GrammarNodeKindV0_13::Group => {
+            GrammarNodeKindV0_14::Group => {
                 let child = node
                     .children()
                     .first()
@@ -379,7 +379,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                     .ok_or(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData))?;
                 self.push_task(Task::Execute(child))
             }
-            GrammarNodeKindV0_13::RepeatOne => {
+            GrammarNodeKindV0_14::RepeatOne => {
                 let child = node
                     .children()
                     .first()
@@ -388,9 +388,9 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 self.push_task(Task::Continue(node_id))?;
                 self.push_task(Task::Execute(child))
             }
-            GrammarNodeKindV0_13::Choice
-            | GrammarNodeKindV0_13::Optional
-            | GrammarNodeKindV0_13::RepeatZero => {
+            GrammarNodeKindV0_14::Choice
+            | GrammarNodeKindV0_14::Optional
+            | GrammarNodeKindV0_14::RepeatZero => {
                 let decision = node
                     .decision()
                     .copied()
@@ -417,7 +417,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         source_len: u64,
         tokens: &[ClassifiedToken<'source>],
     ) -> Result<(), Stop> {
-        self.push_task(Task::Execute(ProductionV0_13::Program.root()))?;
+        self.push_task(Task::Execute(ProductionV0_14::Program.root()))?;
         let mut cursor = 0_usize;
         while let Some(task) = self.tasks.pop() {
             self.work.spend(1).map_err(Stop::Resource)?;
@@ -426,7 +426,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                     self.execute_node(node, source, source_len, tokens, cursor)?;
                 }
                 Task::Continue(node_id) => {
-                    let node = grammar_node_v0_13(node_id)
+                    let node = grammar_node_v0_14(node_id)
                         .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
                     let decision = node
                         .decision()
@@ -495,7 +495,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     }
 
     fn run(mut self) -> Result<DerivationTree<'source>, Stop> {
-        self.push_frame(ProductionV0_13::Program, false)?;
+        self.push_frame(ProductionV0_14::Program, false)?;
         for (source, file) in self.classified.source_bundle().iter() {
             let tokens = self
                 .classified
@@ -508,7 +508,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 ));
             }
         }
-        self.finish_production(ProductionV0_13::Program)?;
+        self.finish_production(ProductionV0_14::Program)?;
         if !self.frames.is_empty() || self.elements.is_empty() {
             return Err(Stop::Compiler(
                 ParseCompilerFailure::ProductionFrameMismatch,
@@ -534,9 +534,9 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                     if *subtree_elements == 0
                         || matches!(
                             (production, extent),
-                            (ProductionV0_13::Program, DerivationExtent::Source { .. })
+                            (ProductionV0_14::Program, DerivationExtent::Source { .. })
                                 | (_, DerivationExtent::BundleRoot)
-                                    if *production != ProductionV0_13::Program
+                                    if *production != ProductionV0_14::Program
                         )
                     {
                         return Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData));
@@ -565,18 +565,18 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     }
 }
 
-/// Derives the complete exact-v0.13 grammar with an iterative typed LL(2) parser.
+/// Derives the complete exact-v0.14 grammar with an iterative typed LL(2) parser.
 ///
 /// The parser consumes retained predicate sets, never priority-selected token
 /// kinds. It performs no recovery, backtracking, semantic lookup, canonical
 /// formatting audit, or tree finalization, and no partial derivation escapes a
 /// failure outcome.
 #[must_use]
-pub fn parse_v0_13<'classified, 'lexed, 'source>(
+pub fn parse_v0_14<'classified, 'lexed, 'source>(
     classified: &'classified ClassifiedBundle<'lexed, 'source>,
     limits: ParseLimits,
 ) -> ParseOutcome<'classified, 'lexed, 'source> {
-    if classified.spec_hash() != SYNTAX_DATA_SPEC_V0_13 {
+    if classified.spec_hash() != SYNTAX_DATA_SPEC_V0_14 {
         return ParseOutcome::InvocationFailure(ParseInvocationFailure::SpecificationMismatch);
     }
     if classified.source_bundle().is_empty() {

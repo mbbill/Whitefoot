@@ -3,7 +3,7 @@ use crate::{ByteOffset, SourceId};
 use super::topology::FinalizedTopology;
 use crate::ClassifiedBundle;
 
-use crate::syntax::parser::{ParsedBundle, SyntaxCoordinate, SyntaxRuleV0_13};
+use crate::syntax::parser::{ParsedBundle, SyntaxCoordinate, SyntaxRuleV0_14};
 
 /// Which inclusive finalization ceiling was exceeded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,7 +95,7 @@ pub enum FinalizeCompilerFailure {
     InvalidRoot,
     /// A production's direct-child count or subtree range was malformed.
     InvalidPostorder,
-    /// One local production shape disagreed with exact v0.13 source EBNF.
+    /// One local production shape disagreed with exact v0.14 source EBNF.
     InvalidProductionShape,
     /// A terminal leaf did not own the next exact classified token.
     InvalidTokenCoverage,
@@ -231,8 +231,8 @@ pub struct CanonicalIssue {
 impl CanonicalIssue {
     /// Returns the owning numbered rule, always FORM-2.
     #[must_use]
-    pub const fn rule(&self) -> SyntaxRuleV0_13 {
-        SyntaxRuleV0_13::Form2
+    pub const fn rule(&self) -> SyntaxRuleV0_14 {
+        SyntaxRuleV0_14::Form2
     }
 
     /// Returns the exact source-bound DIAG-1 location.
@@ -320,7 +320,7 @@ pub enum CanonicalCompilerFailure {
     CounterOverflow,
 }
 
-/// Opaque exact-v0.13 canonical syntax capability.
+/// Opaque exact-v0.14 canonical syntax capability.
 ///
 /// This capability proves one finalized derivation and byte-exact per-source
 /// FORM-2 rendering. It is not a semantic verdict, artifact, optimizer fact,

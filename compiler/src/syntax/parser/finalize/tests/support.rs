@@ -1,10 +1,10 @@
-use crate::lexer::{LexLimits, LexOutcome, lex_v0_13};
-use crate::{KERNEL_SPEC_V0_13_HASH, SourceBundle, SourceInput, SourceLimits};
+use crate::lexer::{LexLimits, LexOutcome, lex_v0_14};
+use crate::{KERNEL_SPEC_V0_14_HASH, SourceBundle, SourceInput, SourceLimits};
 
-use crate::{ClassifiedBundle, TerminalLimits, TerminalOutcome, classify_terminals_v0_13};
+use crate::{ClassifiedBundle, TerminalLimits, TerminalOutcome, classify_terminals_v0_14};
 
 use super::super::{CanonicalLimits, FinalizeLimits};
-use crate::syntax::parser::{ParseLimits, ParseOutcome, ParsedBundle, parse_v0_13};
+use crate::syntax::parser::{ParseLimits, ParseOutcome, ParsedBundle, parse_v0_14};
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
     max_sources: 16,
@@ -57,19 +57,19 @@ pub(super) fn with_parsed<ResultValue>(
     let Ok(bundle) = SourceBundle::with_limits(inputs, SOURCE_LIMITS) else {
         panic!("test source bundle must be valid");
     };
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits {
             max_tokens: LEX_LIMITS.max_tokens,
         },
     ) else {
         panic!("test source must classify");
     };
-    let ParseOutcome::Complete(parsed) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(parsed) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("test source must derive");
     };
     run(parsed)
@@ -84,14 +84,14 @@ pub(super) fn reaches_canonical_syntax(source: &[u8]) -> bool {
     let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
         panic!("generated source envelope must remain valid");
     };
-    let lexed = match lex_v0_13(&bundle, LEX_LIMITS) {
+    let lexed = match lex_v0_14(&bundle, LEX_LIMITS) {
         LexOutcome::Complete(lexed) => lexed,
         LexOutcome::SourceIssue(_) => return false,
         other => panic!("generated source must not hit a non-source lex outcome: {other:?}"),
     };
-    let classified = match classify_terminals_v0_13(
+    let classified = match classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits {
             max_tokens: LEX_LIMITS.max_tokens,
         },
@@ -100,16 +100,16 @@ pub(super) fn reaches_canonical_syntax(source: &[u8]) -> bool {
         TerminalOutcome::SourceIssue(_) => return false,
         other => panic!("generated source must not hit a non-source terminal outcome: {other:?}"),
     };
-    let parsed = match parse_v0_13(&classified, PARSE_LIMITS) {
+    let parsed = match parse_v0_14(&classified, PARSE_LIMITS) {
         ParseOutcome::Complete(parsed) => parsed,
         ParseOutcome::SourceIssue(_) => return false,
         other => panic!("generated source must not hit a non-source parse outcome: {other:?}"),
     };
-    let finalized = match super::super::finalize_v0_13(parsed, FINALIZE_LIMITS) {
+    let finalized = match super::super::finalize_v0_14(parsed, FINALIZE_LIMITS) {
         super::super::FinalizeOutcome::Complete(finalized) => finalized,
         other => panic!("trusted generated derivation must finalize: {other:?}"),
     };
-    match super::super::audit_canonical_v0_13(finalized, CANONICAL_LIMITS) {
+    match super::super::audit_canonical_v0_14(finalized, CANONICAL_LIMITS) {
         super::super::CanonicalOutcome::Complete(_) => true,
         super::super::CanonicalOutcome::SourceIssue(_) => false,
         other => panic!("generated source must not hit an internal canonical outcome: {other:?}"),

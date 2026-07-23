@@ -6,15 +6,15 @@ use super::{assert_rule, with_semantics};
 #[test]
 fn retains_each_mode_and_rejects_unsigned_types() {
     let source = br#"fn main() -> own unit traps {
-  let wrapped: own i8 = iabs.wrap<i8>(-128_i8);
-  let trapped: own i16 = iabs.trap<i16>(-42_i16);
-  let absolute_result: own Result<i32, Overflow> = iabs.checked<i32>(-42_i32);
+  let wrapped: own i8 = ineg.wrap<i8>(-128_i8);
+  let trapped: own i16 = ineg.trap<i16>(-42_i16);
+  let negation_result: own Result<i32, Overflow> = ineg.checked<i32>(-42_i32);
   return unit;
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("integer absolute-value family must check: {outcome:?}");
+            panic!("integer negation family must check: {outcome:?}");
         };
         let operations = checked.data.functions[0]
             .body
@@ -30,15 +30,15 @@ fn retains_each_mode_and_rejects_unsigned_types() {
         assert_eq!(
             operations,
             [
-                CheckedIntegerOperation::AbsoluteWrap,
-                CheckedIntegerOperation::AbsoluteTrap,
-                CheckedIntegerOperation::AbsoluteChecked,
+                CheckedIntegerOperation::NegateWrap,
+                CheckedIntegerOperation::NegateTrap,
+                CheckedIntegerOperation::NegateChecked,
             ]
         );
     });
 
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own u8 = iabs.wrap<u8>(1_u8);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value: own u8 = ineg.wrap<u8>(1_u8);\n  return unit;\n}\n",
         SemanticRuleV0_14::Op1,
         SemanticIssueKind::InvalidOperation,
     );

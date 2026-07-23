@@ -1,0 +1,5 @@
+fn main() -> own unit pure {
+  doc "OP-1: ineg is defined only for a signed integer type argument.";
+  let value: own u8 = ineg.wrap<u8>(1_u8);
+  return unit;
+}

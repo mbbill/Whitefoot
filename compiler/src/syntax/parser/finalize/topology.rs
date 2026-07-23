@@ -1,4 +1,4 @@
-use crate::syntax::grammar::ProductionV0_13;
+use crate::syntax::grammar::ProductionV0_14;
 use crate::{ByteOffset, SourceId};
 
 use super::outcome::BundleSourceExtent;
@@ -28,7 +28,7 @@ pub(crate) enum FinalizedExtent {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NodeRecord {
-    pub(crate) production: ProductionV0_13,
+    pub(crate) production: ProductionV0_14,
     pub(crate) parent: Option<NodeId>,
     pub(crate) child_ordinal: u32,
     pub(crate) child_start: u32,

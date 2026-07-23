@@ -1,4 +1,4 @@
-//! Target-independent lowering from semantically checked Whitefoot v0.13.
+//! Target-independent lowering from semantically checked Whitefoot v0.14.
 //!
 //! The private IR records exact value types, nominal construction/projection,
 //! direct calls, retained checks, and explicit control-flow edges. It performs
@@ -166,6 +166,9 @@ pub enum IrIntegerOperation {
     AbsoluteWrap,
     AbsoluteTrap,
     AbsoluteChecked,
+    NegateWrap,
+    NegateTrap,
+    NegateChecked,
     Equal,
     NotEqual,
     Less,
@@ -191,6 +194,9 @@ impl From<CheckedIntegerOperation> for IrIntegerOperation {
             CheckedIntegerOperation::AbsoluteWrap => Self::AbsoluteWrap,
             CheckedIntegerOperation::AbsoluteTrap => Self::AbsoluteTrap,
             CheckedIntegerOperation::AbsoluteChecked => Self::AbsoluteChecked,
+            CheckedIntegerOperation::NegateWrap => Self::NegateWrap,
+            CheckedIntegerOperation::NegateTrap => Self::NegateTrap,
+            CheckedIntegerOperation::NegateChecked => Self::NegateChecked,
             CheckedIntegerOperation::Equal => Self::Equal,
             CheckedIntegerOperation::NotEqual => Self::NotEqual,
             CheckedIntegerOperation::Less => Self::Less,
@@ -447,4 +453,4 @@ pub enum LoweringFailure {
 
 mod builder;
 
-pub use builder::lower_checked_v0_13;
+pub use builder::lower_checked_v0_14;

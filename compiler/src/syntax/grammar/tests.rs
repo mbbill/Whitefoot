@@ -1,30 +1,30 @@
 #![allow(clippy::panic)]
 
 use super::{
-    DecisionKindV0_13, GrammarNodeKindV0_13, LookaheadPredicateV0_13, ProductionV0_13,
-    SYNTAX_DATA_SPEC_V0_13, diagnostic_terminal_order_v0_13, grammar_node_v0_13, productions_v0_13,
+    DecisionKindV0_14, GrammarNodeKindV0_14, LookaheadPredicateV0_14, ProductionV0_14,
+    SYNTAX_DATA_SPEC_V0_14, diagnostic_terminal_order_v0_14, grammar_node_v0_14, productions_v0_14,
 };
-use crate::KERNEL_SPEC_V0_13_HASH;
-use crate::syntax::terminal::{FixedTerminalV0_13, TerminalPredicateV0_13};
+use crate::KERNEL_SPEC_V0_14_HASH;
+use crate::syntax::terminal::{FixedTerminalV0_14, TerminalPredicateV0_14};
 
 use super::generated::{DECISIONS, SELECT_ROWS};
 
 #[test]
-fn complete_inventory_is_bound_to_exact_v0_13() {
-    assert_eq!(SYNTAX_DATA_SPEC_V0_13, KERNEL_SPEC_V0_13_HASH);
-    assert_eq!(productions_v0_13().len(), 62);
-    assert_eq!(diagnostic_terminal_order_v0_13().len(), 72);
-    assert_eq!(productions_v0_13()[0], ProductionV0_13::Program);
-    assert_eq!(productions_v0_13()[61], ProductionV0_13::Effect);
+fn complete_inventory_is_bound_to_exact_v0_14() {
+    assert_eq!(SYNTAX_DATA_SPEC_V0_14, KERNEL_SPEC_V0_14_HASH);
+    assert_eq!(productions_v0_14().len(), 62);
+    assert_eq!(diagnostic_terminal_order_v0_14().len(), 72);
+    assert_eq!(productions_v0_14()[0], ProductionV0_14::Program);
+    assert_eq!(productions_v0_14()[61], ProductionV0_14::Effect);
 }
 
 #[test]
 fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
     let mut decisions = 0_usize;
-    for production in productions_v0_13() {
+    for production in productions_v0_14() {
         let mut stack = vec![production.root()];
         while let Some(node_id) = stack.pop() {
-            let Some(node) = grammar_node_v0_13(node_id) else {
+            let Some(node) = grammar_node_v0_14(node_id) else {
                 panic!("generated node must exist");
             };
             if let Some(decision) = node.decision() {
@@ -45,41 +45,41 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
 
 #[test]
 fn program_is_one_repeat_decision_over_items() {
-    let Some(root) = grammar_node_v0_13(ProductionV0_13::Program.root()) else {
+    let Some(root) = grammar_node_v0_14(ProductionV0_14::Program.root()) else {
         panic!("program root must exist");
     };
-    assert_eq!(root.kind(), GrammarNodeKindV0_13::RepeatZero);
+    assert_eq!(root.kind(), GrammarNodeKindV0_14::RepeatZero);
     let Some(decision) = root.decision() else {
         panic!("program repetition must own a decision");
     };
-    assert_eq!(decision.kind(), DecisionKindV0_13::Repeat0);
+    assert_eq!(decision.kind(), DecisionKindV0_14::Repeat0);
     assert_eq!(decision.arm_count(), 2);
 }
 
 #[test]
 fn diagnostic_order_contains_no_source_end() {
     assert!(
-        diagnostic_terminal_order_v0_13()
+        diagnostic_terminal_order_v0_14()
             .iter()
-            .all(|item| !matches!(item, LookaheadPredicateV0_13::SourceEnd))
+            .all(|item| !matches!(item, LookaheadPredicateV0_14::SourceEnd))
     );
 }
 
-fn overlaps(left: LookaheadPredicateV0_13, right: LookaheadPredicateV0_13) -> bool {
+fn overlaps(left: LookaheadPredicateV0_14, right: LookaheadPredicateV0_14) -> bool {
     if left == right {
         return true;
     }
     matches!(
         (left, right),
         (
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Fixed(
-                FixedTerminalV0_13::Unit
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Fixed(
+                FixedTerminalV0_14::Unit
             )),
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Literal)
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Literal)
         ) | (
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Literal),
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Fixed(
-                FixedTerminalV0_13::Unit
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Literal),
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Fixed(
+                FixedTerminalV0_14::Unit
             ))
         )
     )
@@ -97,8 +97,8 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
                     panic!("every row has exactly two atoms");
                 };
                 match atom.predicate() {
-                    LookaheadPredicateV0_13::Terminal(_) => assert!(atom.provenance().is_some()),
-                    LookaheadPredicateV0_13::SourceEnd => assert!(atom.provenance().is_none()),
+                    LookaheadPredicateV0_14::Terminal(_) => assert!(atom.provenance().is_some()),
+                    LookaheadPredicateV0_14::SourceEnd => assert!(atom.provenance().is_none()),
                 }
                 saw_atom_only |= atom.is_atom_only();
             }
@@ -111,20 +111,20 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
                 let first_overlaps = overlaps(
                     left.position(0)
                         .map(|atom| atom.predicate())
-                        .unwrap_or(LookaheadPredicateV0_13::SourceEnd),
+                        .unwrap_or(LookaheadPredicateV0_14::SourceEnd),
                     right
                         .position(0)
                         .map(|atom| atom.predicate())
-                        .unwrap_or(LookaheadPredicateV0_13::SourceEnd),
+                        .unwrap_or(LookaheadPredicateV0_14::SourceEnd),
                 );
                 let second_overlaps = overlaps(
                     left.position(1)
                         .map(|atom| atom.predicate())
-                        .unwrap_or(LookaheadPredicateV0_13::SourceEnd),
+                        .unwrap_or(LookaheadPredicateV0_14::SourceEnd),
                     right
                         .position(1)
                         .map(|atom| atom.predicate())
-                        .unwrap_or(LookaheadPredicateV0_13::SourceEnd),
+                        .unwrap_or(LookaheadPredicateV0_14::SourceEnd),
                 );
                 assert!(!(first_overlaps && second_overlaps));
             }

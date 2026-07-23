@@ -1,17 +1,17 @@
 use crate::lexer::TokenKind;
 use crate::syntax::grammar::{
-    DecisionContextV0_13, DecisionKindV0_13, DecisionV0_13, GrammarNodeIdV0_13,
-    GrammarNodeKindV0_13, LookaheadPredicateV0_13, NamePredicateV0_13, ProductionV0_13,
-    SelectRowV0_13, grammar_node_v0_13,
+    DecisionContextV0_14, DecisionKindV0_14, DecisionV0_14, GrammarNodeIdV0_14,
+    GrammarNodeKindV0_14, LookaheadPredicateV0_14, NamePredicateV0_14, ProductionV0_14,
+    SelectRowV0_14, grammar_node_v0_14,
 };
-use crate::syntax::terminal::{FixedTerminalV0_13, TerminalPredicateV0_13};
+use crate::syntax::terminal::{FixedTerminalV0_14, TerminalPredicateV0_14};
 use crate::{ByteOffset, SourceId};
 
 use crate::ClassifiedToken;
 
 use super::{
     ExpectedBuilder, ParseCompilerFailure, ParseLimit, ParseLimits, ParseResourceFailure,
-    ParseStorage, SyntaxCoordinate, SyntaxIssue, SyntaxRuleV0_13, Work,
+    ParseStorage, SyntaxCoordinate, SyntaxIssue, SyntaxRuleV0_14, Work,
 };
 
 pub(crate) enum DiagnosticResult {
@@ -37,19 +37,19 @@ pub(crate) struct DiagnosticSite<'tokens, 'source> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct ProbeContext {
-    pub(crate) production: ProductionV0_13,
+    pub(crate) production: ProductionV0_14,
     pub(crate) atom_only: bool,
 }
 
 #[derive(Clone, Copy)]
 enum ProbeTask {
-    Execute(GrammarNodeIdV0_13, ProbeContext),
-    Continue(GrammarNodeIdV0_13, ProbeContext),
-    Match(TerminalPredicateV0_13, ProbeContext),
+    Execute(GrammarNodeIdV0_14, ProbeContext),
+    Continue(GrammarNodeIdV0_14, ProbeContext),
+    Match(TerminalPredicateV0_14, ProbeContext),
 }
 
 fn accepts(
-    predicate: LookaheadPredicateV0_13,
+    predicate: LookaheadPredicateV0_14,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     position: usize,
@@ -58,16 +58,16 @@ fn accepts(
         .checked_add(position)
         .ok_or(ParseCompilerFailure::CounterOverflow)?;
     Ok(match (tokens.get(index), predicate) {
-        (Some(token), LookaheadPredicateV0_13::Terminal(expected)) => {
+        (Some(token), LookaheadPredicateV0_14::Terminal(expected)) => {
             token.terminals().contains(expected)
         }
-        (None, LookaheadPredicateV0_13::SourceEnd) => true,
+        (None, LookaheadPredicateV0_14::SourceEnd) => true,
         _ => false,
     })
 }
 
 fn row_score(
-    row: SelectRowV0_13,
+    row: SelectRowV0_14,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
 ) -> Result<u8, ParseCompilerFailure> {
@@ -88,7 +88,7 @@ fn row_score(
 }
 
 pub(crate) fn select_arm(
-    decision: DecisionV0_13,
+    decision: DecisionV0_14,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     work: &mut Work,
@@ -127,19 +127,19 @@ fn boundary_coordinate(
     }
 }
 
-fn has(token: &ClassifiedToken<'_>, predicate: TerminalPredicateV0_13) -> bool {
+fn has(token: &ClassifiedToken<'_>, predicate: TerminalPredicateV0_14) -> bool {
     token.terminals().contains(predicate)
 }
 
-fn fixed(token: &ClassifiedToken<'_>, terminal: FixedTerminalV0_13) -> bool {
-    has(token, TerminalPredicateV0_13::Fixed(terminal))
+fn fixed(token: &ClassifiedToken<'_>, terminal: FixedTerminalV0_14) -> bool {
+    has(token, TerminalPredicateV0_14::Fixed(terminal))
 }
 
 fn dotted_override(
     source: SourceId,
     tokens: &[ClassifiedToken<'_>],
     boundary: usize,
-    expected: super::ExpectedTerminalsV0_13,
+    expected: super::ExpectedTerminalsV0_14,
     work: &mut Work,
 ) -> Result<Option<SyntaxIssue>, ParseResourceFailure> {
     if boundary >= tokens.len() {
@@ -157,14 +157,14 @@ fn dotted_override(
         let Some(window) = tokens.get(start..end) else {
             continue;
         };
-        if has(&window[0], TerminalPredicateV0_13::Identifier)
-            && fixed(&window[1], FixedTerminalV0_13::Dot)
-            && has(&window[2], TerminalPredicateV0_13::Identifier)
-            && (fixed(&window[3], FixedTerminalV0_13::LeftParen)
-                || fixed(&window[3], FixedTerminalV0_13::LeftAngle))
+        if has(&window[0], TerminalPredicateV0_14::Identifier)
+            && fixed(&window[1], FixedTerminalV0_14::Dot)
+            && has(&window[2], TerminalPredicateV0_14::Identifier)
+            && (fixed(&window[3], FixedTerminalV0_14::LeftParen)
+                || fixed(&window[3], FixedTerminalV0_14::LeftAngle))
         {
             return Ok(Some(SyntaxIssue {
-                rule: SyntaxRuleV0_13::Form3,
+                rule: SyntaxRuleV0_14::Form3,
                 coordinate: SyntaxCoordinate::new(
                     source,
                     window[0].token().id().start(),
@@ -182,22 +182,22 @@ fn forbidden_atom_override(
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     atom_only: bool,
-    expected: super::ExpectedTerminalsV0_13,
+    expected: super::ExpectedTerminalsV0_14,
 ) -> Option<SyntaxIssue> {
     if !atom_only {
         return None;
     }
     let first = tokens.get(cursor)?;
     let second = tokens.get(cursor.checked_add(1)?)?;
-    let call_head = has(first, TerminalPredicateV0_13::Identifier)
-        || has(first, TerminalPredicateV0_13::OperationName)
-        || has(first, TerminalPredicateV0_13::TypeIdentifier);
+    let call_head = has(first, TerminalPredicateV0_14::Identifier)
+        || has(first, TerminalPredicateV0_14::OperationName)
+        || has(first, TerminalPredicateV0_14::TypeIdentifier);
     if call_head
-        && (fixed(second, FixedTerminalV0_13::LeftParen)
-            || fixed(second, FixedTerminalV0_13::LeftAngle))
+        && (fixed(second, FixedTerminalV0_14::LeftParen)
+            || fixed(second, FixedTerminalV0_14::LeftAngle))
     {
         return Some(SyntaxIssue {
-            rule: SyntaxRuleV0_13::Gram9,
+            rule: SyntaxRuleV0_14::Gram9,
             coordinate: SyntaxCoordinate::new(
                 source,
                 first.token().id().start(),
@@ -211,27 +211,27 @@ fn forbidden_atom_override(
 
 fn raw_restriction_owner(
     token: &ClassifiedToken<'_>,
-    expected: super::ExpectedTerminalsV0_13,
-) -> Option<SyntaxRuleV0_13> {
+    expected: super::ExpectedTerminalsV0_14,
+) -> Option<SyntaxRuleV0_14> {
     for predicate in expected.iter() {
         match predicate {
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Identifier)
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Identifier)
                 if token.token().kind() == TokenKind::LowerWordForm
-                    && !has(token, TerminalPredicateV0_13::Identifier) =>
+                    && !has(token, TerminalPredicateV0_14::Identifier) =>
             {
-                return Some(SyntaxRuleV0_13::Form3);
+                return Some(SyntaxRuleV0_14::Form3);
             }
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Literal)
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Literal)
                 if token.token().kind() == TokenKind::NumberForm
-                    && !has(token, TerminalPredicateV0_13::Literal) =>
+                    && !has(token, TerminalPredicateV0_14::Literal) =>
             {
-                return Some(SyntaxRuleV0_13::Form5);
+                return Some(SyntaxRuleV0_14::Form5);
             }
-            LookaheadPredicateV0_13::Terminal(TerminalPredicateV0_13::Digits)
+            LookaheadPredicateV0_14::Terminal(TerminalPredicateV0_14::Digits)
                 if token.token().kind() == TokenKind::NumberForm
-                    && !has(token, TerminalPredicateV0_13::Digits) =>
+                    && !has(token, TerminalPredicateV0_14::Digits) =>
             {
-                return Some(SyntaxRuleV0_13::Const1);
+                return Some(SyntaxRuleV0_14::Const1);
             }
             _ => {}
         }
@@ -239,13 +239,13 @@ fn raw_restriction_owner(
     None
 }
 
-fn actual_name(token: &ClassifiedToken<'_>) -> Option<NamePredicateV0_13> {
+fn actual_name(token: &ClassifiedToken<'_>) -> Option<NamePredicateV0_14> {
     [
-        NamePredicateV0_13::Identifier,
-        NamePredicateV0_13::TypeIdentifier,
-        NamePredicateV0_13::RegionIdentifier,
-        NamePredicateV0_13::Label,
-        NamePredicateV0_13::OperationName,
+        NamePredicateV0_14::Identifier,
+        NamePredicateV0_14::TypeIdentifier,
+        NamePredicateV0_14::RegionIdentifier,
+        NamePredicateV0_14::Label,
+        NamePredicateV0_14::OperationName,
     ]
     .into_iter()
     .find(|predicate| has(token, predicate.terminal()))
@@ -253,52 +253,52 @@ fn actual_name(token: &ClassifiedToken<'_>) -> Option<NamePredicateV0_13> {
 
 fn name_slot_owner(
     token: &ClassifiedToken<'_>,
-    transparent: Option<NamePredicateV0_13>,
+    transparent: Option<NamePredicateV0_14>,
     paths_agree: bool,
-) -> Option<SyntaxRuleV0_13> {
+) -> Option<SyntaxRuleV0_14> {
     let actual = actual_name(token)?;
     let expected = transparent?;
-    (paths_agree && actual != expected).then_some(SyntaxRuleV0_13::Form3)
+    (paths_agree && actual != expected).then_some(SyntaxRuleV0_14::Form3)
 }
 
 fn construct_override(
-    context: DecisionContextV0_13,
+    context: DecisionContextV0_14,
     source: SourceId,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
-    expected: super::ExpectedTerminalsV0_13,
+    expected: super::ExpectedTerminalsV0_14,
 ) -> Option<SyntaxIssue> {
     if !matches!(
         context,
-        DecisionContextV0_13::ConstructEntry | DecisionContextV0_13::ProgramItems
+        DecisionContextV0_14::ConstructEntry | DecisionContextV0_14::ProgramItems
     ) {
         return None;
     }
     let token = tokens.get(cursor)?;
-    if !has(token, TerminalPredicateV0_13::Identifier) {
+    if !has(token, TerminalPredicateV0_14::Identifier) {
         return None;
     }
     let id = token.token().id();
     Some(SyntaxIssue {
-        rule: SyntaxRuleV0_13::Form1,
+        rule: SyntaxRuleV0_14::Form1,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
         expected,
     })
 }
 
 fn program_leftover(
-    context: DecisionContextV0_13,
+    context: DecisionContextV0_14,
     source: SourceId,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
 ) -> Option<SyntaxIssue> {
-    if context != DecisionContextV0_13::ProgramItems {
+    if context != DecisionContextV0_14::ProgramItems {
         return None;
     }
     let token = tokens.get(cursor)?;
     let id = token.token().id();
     Some(SyntaxIssue {
-        rule: SyntaxRuleV0_13::Gram2,
+        rule: SyntaxRuleV0_14::Gram2,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
         expected: ExpectedBuilder::only_end().finish(),
     })
@@ -306,16 +306,16 @@ fn program_leftover(
 
 struct Frontier {
     maximum: u8,
-    expected: super::ExpectedTerminalsV0_13,
+    expected: super::ExpectedTerminalsV0_14,
     best_arm: Option<u8>,
     best_arm_internal: bool,
-    transparent_name: Option<NamePredicateV0_13>,
+    transparent_name: Option<NamePredicateV0_14>,
     transparent_disagreement: bool,
     atom_only: bool,
 }
 
 fn frontier(
-    decision: DecisionV0_13,
+    decision: DecisionV0_14,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     work: &mut Work,
@@ -410,7 +410,7 @@ fn frontier(
 }
 
 fn override_issue(
-    decision: DecisionV0_13,
+    decision: DecisionV0_14,
     frontier: &Frontier,
     site: DiagnosticSite<'_, '_>,
     atom_only: bool,
@@ -518,19 +518,19 @@ fn push_probe(
 }
 
 fn arm_node(
-    decision: DecisionV0_13,
+    decision: DecisionV0_14,
     arm: u8,
-) -> Result<Option<GrammarNodeIdV0_13>, ParseCompilerFailure> {
+) -> Result<Option<GrammarNodeIdV0_14>, ParseCompilerFailure> {
     let node =
-        grammar_node_v0_13(decision.node()).ok_or(ParseCompilerFailure::MissingGrammarNode)?;
+        grammar_node_v0_14(decision.node()).ok_or(ParseCompilerFailure::MissingGrammarNode)?;
     match decision.kind() {
-        DecisionKindV0_13::Choice => node
+        DecisionKindV0_14::Choice => node
             .children()
             .get(usize::from(arm))
             .copied()
             .map(Some)
             .ok_or(ParseCompilerFailure::InvalidGrammarData),
-        DecisionKindV0_13::Optional | DecisionKindV0_13::Repeat0 | DecisionKindV0_13::Repeat1 => {
+        DecisionKindV0_14::Optional | DecisionKindV0_14::Repeat0 | DecisionKindV0_14::Repeat1 => {
             match arm {
                 0 => node
                     .children()
@@ -546,7 +546,7 @@ fn arm_node(
 }
 
 fn descend_or_issue(
-    decision: DecisionV0_13,
+    decision: DecisionV0_14,
     context: ProbeContext,
     site: DiagnosticSite<'_, '_>,
     work: &mut Work,
@@ -563,7 +563,7 @@ fn descend_or_issue(
         let node = arm_node(decision, arm).map_err(DiagnosticResult::Compiler)?;
         let Some(node) = node else {
             return Ok(Some(SyntaxIssue {
-                rule: SyntaxRuleV0_13::from(decision.production().owner()),
+                rule: SyntaxRuleV0_14::from(decision.production().owner()),
                 coordinate: boundary_coordinate(
                     site.source,
                     site.source_len,
@@ -581,7 +581,7 @@ fn descend_or_issue(
         return Ok(None);
     }
     Ok(Some(SyntaxIssue {
-        rule: SyntaxRuleV0_13::from(decision.production().owner()),
+        rule: SyntaxRuleV0_14::from(decision.production().owner()),
         coordinate: boundary_coordinate(
             site.source,
             site.source_len,
@@ -595,13 +595,13 @@ fn descend_or_issue(
 }
 
 pub(crate) fn direct_mismatch(
-    expected_terminal: TerminalPredicateV0_13,
+    expected_terminal: TerminalPredicateV0_14,
     context: ProbeContext,
     site: DiagnosticSite<'_, '_>,
     work: &mut Work,
 ) -> DiagnosticResult {
     let mut builder = ExpectedBuilder::empty();
-    builder.insert(LookaheadPredicateV0_13::Terminal(expected_terminal));
+    builder.insert(LookaheadPredicateV0_14::Terminal(expected_terminal));
     let expected = builder.finish();
     match dotted_override(site.source, site.tokens, site.cursor, expected, work) {
         Ok(Some(issue)) => return DiagnosticResult::Issue(issue),
@@ -630,11 +630,11 @@ pub(crate) fn direct_mismatch(
             });
         }
         let transparent = [
-            NamePredicateV0_13::Identifier,
-            NamePredicateV0_13::TypeIdentifier,
-            NamePredicateV0_13::RegionIdentifier,
-            NamePredicateV0_13::Label,
-            NamePredicateV0_13::OperationName,
+            NamePredicateV0_14::Identifier,
+            NamePredicateV0_14::TypeIdentifier,
+            NamePredicateV0_14::RegionIdentifier,
+            NamePredicateV0_14::Label,
+            NamePredicateV0_14::OperationName,
         ]
         .into_iter()
         .find(|name| name.terminal() == expected_terminal);
@@ -652,7 +652,7 @@ pub(crate) fn direct_mismatch(
     }
     match boundary_coordinate(site.source, site.source_len, site.tokens, site.cursor, 0) {
         Ok(coordinate) => DiagnosticResult::Issue(SyntaxIssue {
-            rule: SyntaxRuleV0_13::from(context.production.owner()),
+            rule: SyntaxRuleV0_14::from(context.production.owner()),
             coordinate,
             expected,
         }),
@@ -661,7 +661,7 @@ pub(crate) fn direct_mismatch(
 }
 
 fn probe(
-    initial: GrammarNodeIdV0_13,
+    initial: GrammarNodeIdV0_14,
     context: ProbeContext,
     site: DiagnosticSite<'_, '_>,
     work: &mut Work,
@@ -699,11 +699,11 @@ fn probe(
                 cursor = next;
             }
             ProbeTask::Execute(node_id, task_context) => {
-                let Some(node) = grammar_node_v0_13(node_id) else {
+                let Some(node) = grammar_node_v0_14(node_id) else {
                     return DiagnosticResult::Compiler(ParseCompilerFailure::MissingGrammarNode);
                 };
                 match node.kind() {
-                    GrammarNodeKindV0_13::Production(production) => {
+                    GrammarNodeKindV0_14::Production(production) => {
                         let nested = ProbeContext {
                             production,
                             atom_only: node.is_atom_only_reference(),
@@ -716,9 +716,9 @@ fn probe(
                             return DiagnosticResult::Resource(failure);
                         }
                     }
-                    GrammarNodeKindV0_13::TerminalSequence => {
+                    GrammarNodeKindV0_14::TerminalSequence => {
                         for terminal in node.terminals().iter().rev() {
-                            let LookaheadPredicateV0_13::Terminal(predicate) = terminal else {
+                            let LookaheadPredicateV0_14::Terminal(predicate) = terminal else {
                                 return DiagnosticResult::Compiler(
                                     ParseCompilerFailure::InvalidGrammarData,
                                 );
@@ -732,7 +732,7 @@ fn probe(
                             }
                         }
                     }
-                    GrammarNodeKindV0_13::Sequence => {
+                    GrammarNodeKindV0_14::Sequence => {
                         for child in node.children().iter().rev() {
                             if let Err(failure) = push_probe(
                                 &mut tasks,
@@ -743,7 +743,7 @@ fn probe(
                             }
                         }
                     }
-                    GrammarNodeKindV0_13::Group => {
+                    GrammarNodeKindV0_14::Group => {
                         let Some(child) = node.children().first() else {
                             return DiagnosticResult::Compiler(
                                 ParseCompilerFailure::InvalidGrammarData,
@@ -757,7 +757,7 @@ fn probe(
                             return DiagnosticResult::Resource(failure);
                         }
                     }
-                    GrammarNodeKindV0_13::RepeatOne => {
+                    GrammarNodeKindV0_14::RepeatOne => {
                         let Some(child) = node.children().first() else {
                             return DiagnosticResult::Compiler(
                                 ParseCompilerFailure::InvalidGrammarData,
@@ -772,9 +772,9 @@ fn probe(
                             }
                         }
                     }
-                    GrammarNodeKindV0_13::Choice
-                    | GrammarNodeKindV0_13::Optional
-                    | GrammarNodeKindV0_13::RepeatZero => {
+                    GrammarNodeKindV0_14::Choice
+                    | GrammarNodeKindV0_14::Optional
+                    | GrammarNodeKindV0_14::RepeatZero => {
                         let Some(decision) = node.decision().copied() else {
                             return DiagnosticResult::Compiler(
                                 ParseCompilerFailure::InvalidGrammarData,
@@ -787,7 +787,7 @@ fn probe(
                                     Err(failure) => return DiagnosticResult::Compiler(failure),
                                 };
                                 if let Some(selected) = selected {
-                                    if decision.kind() == DecisionKindV0_13::Repeat0
+                                    if decision.kind() == DecisionKindV0_14::Repeat0
                                         && let Err(failure) = push_probe(
                                             &mut tasks,
                                             ProbeTask::Continue(node_id, task_context),
@@ -827,7 +827,7 @@ fn probe(
                 }
             }
             ProbeTask::Continue(node_id, task_context) => {
-                let Some(node) = grammar_node_v0_13(node_id) else {
+                let Some(node) = grammar_node_v0_14(node_id) else {
                     return DiagnosticResult::Compiler(ParseCompilerFailure::MissingGrammarNode);
                 };
                 let Some(decision) = node.decision().copied() else {
@@ -880,7 +880,7 @@ fn probe(
 }
 
 pub(crate) fn diagnose_decision(
-    decision: DecisionV0_13,
+    decision: DecisionV0_14,
     context: ProbeContext,
     site: DiagnosticSite<'_, '_>,
     work: &mut Work,
@@ -920,7 +920,7 @@ pub(crate) fn diagnose_decision(
         Err(failure) => return DiagnosticResult::Compiler(failure),
     };
     DiagnosticResult::Issue(SyntaxIssue {
-        rule: SyntaxRuleV0_13::from(decision.production().owner()),
+        rule: SyntaxRuleV0_14::from(decision.production().owner()),
         coordinate,
         expected: value.expected,
     })

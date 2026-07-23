@@ -52,16 +52,18 @@ measurement does.
 
 ## Current state
 
-The active language authority is `spec/kernel-spec-v0.13.md`, SHA-256
-`ed93cc43a6a224725f813b1adfc4c19fbb64dc5ab294b25d924392d2959b77cd`.
+The active language authority is `spec/kernel-spec-v0.14.md`, SHA-256
+`31c09313363304f405c8db1191d1982e3625b86788bf953ec3bb169648466e9f`.
 Those bytes are immutable and byte-identical to the owner-approved candidate.
-Exact v0.8 through v0.12 remain immutable historical evidence. v0.12 added the
+Exact v0.8 through v0.13 remain immutable historical evidence. v0.12 added the
 SET-1 copy-place assignment judgment, target-before-RHS ordering, post-RHS
 writability revalidation, and ultimate-storage-origin read/write effects.
 v0.13 makes a direct bare affine own-rooted `Result` place a consuming
 `propagate` operand, matching the already-approved writer form while retaining
 explicit `move` as a valid spelling and leaving every other ownership rule
-unchanged.
+unchanged. v0.14 closes the already-listed integer-negation rows: wrapping
+minimum remains minimum, trapping minimum emits OP-2's exact mandatory record,
+and checked minimum returns `Err(Overflow())`.
 
 The Rust compiler now has one ordinary path from ordered source transport
 through the lossless frontend and direct resolver into semantic checking, a
@@ -123,39 +125,44 @@ All three `iabs` modes now share one unary integer path for every signed width.
 The backend calls `llvm.abs` with `is_int_min_poison = false`, so the signed
 minimum edge is defined before the selected mode retains it, emits the exact
 OP-2 trap record, or constructs `Err(Overflow())`.
+All three `ineg` modes use the ordinary integer arithmetic path. Wrapping
+negation is a plain modular subtraction from zero without overflow flags;
+trapping and checked negation reuse defined signed-subtraction overflow
+detection. Executable tests cover every signed width, including the minimum
+edge and exact trap record.
 
 This is not a completeness claim. Generics and contracts, regions and borrows,
 floats, `Option`, allocations and containers, recursive nominal layouts,
 branch-dependent ownership joins, index and borrow-backed SET-1 targets,
-integer negation, and the remaining operation/effect table are explicit
-unsupported compiler capabilities rather than source-language rejections.
+and the remaining operation/effect table are explicit unsupported compiler
+capabilities rather than source-language rejections.
 Repeated exhaustive match arms also stop as
-unsupported because v0.13 defines neither duplicate-arm meaning nor a
+unsupported because v0.14 defines neither duplicate-arm meaning nor a
 duplicate-arm rejection rule.
 
-The exact approved v0.13 candidate is installed and every live identity names
+The exact approved v0.14 candidate is installed and every live identity names
 it. The resolver implementation completes Phase 6, the first executable scalar
 slice completes Phase 7, and nominal data, the current SET-1 place family,
 structured loops, and the first Result family advance Phase 8.
 
-The compiler implements that v0.13 consuming context through one general
+The compiler implements the v0.13 consuming context through one general
 expression judgment shared by `match` and `propagate`. A direct bare affine
 own-rooted operand consumes its whole storage root exactly once; an explicit
 `move` remains valid; copy operands remain ordinary reads; and a later reuse is
 rejected under OWN-1. The approved ERR-3 source repairs preserve every existing
 conformance verdict and status while restoring required affine returns, exact
 effect rows, complete programs, and fresh match binders. Checked
-division/remainder and all three `iabs` modes are complete. The active v0.13
-table names three `ineg` modes but does not define the trap and checked edge
-behavior; the next work is the bounded specification clarification, followed
-by the matching general unary implementation.
+division/remainder, all three `iabs` modes, and all three `ineg` modes are
+complete.
 
-The grammar-preserving v0.14 review candidate at
-`governance/spec-evolution/kernel-spec-v0.14-candidate.md`, SHA-256
-`31c09313363304f405c8db1191d1982e3625b86788bf953ec3bb169648466e9f`,
-closes only that `ineg` judgment. It is non-authoritative pending exact owner
-approval; normal compilation remains bound to v0.13, and no protected
-conformance verdict or status change is requested.
+The next implementation slice is the remaining non-floating integer operation
+family already defined by OP-1 and OP-8. It is one coherent capability, not a
+queue of spellings: complete its shared semantic shape and lowering for
+trapping division/remainder, bitwise operations, shifts, rotates, bit counts,
+byte swap, high multiply, saturating arithmetic, and min/max across their exact
+domains. This unlocks a binary-data/checksum dogfood program and tests the
+language's performance-oriented scalar design. Operations with separate
+representation or storage dependencies remain in their own later families.
 
 ## Authority and specification changes
 
@@ -473,8 +480,8 @@ add/subtract/multiply, and explicit ERR-3 forwarding. It does not special-case
 approved source repairs are synchronized through that same path. Checked
 division/remainder now produces `Result<T, DivError>` through this path and
 guards both LLVM hazards before the partial instruction. All three `iabs`
-modes use one defined-edge unary path. `ineg` follows after the missing
-trap/checked edge semantics are installed through the numbered workflow.
+modes use one defined-edge unary path. All three `ineg` modes reuse the
+ordinary wrapping and overflow-detecting subtraction path.
 Buffers, index places, and loan-aware SET-1 targets follow when their storage
 and borrow families become the experiment being unlocked.
 

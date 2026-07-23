@@ -1,4 +1,4 @@
-//! Exact-v0.13 declaration collection and lexical name resolution.
+//! Exact-v0.14 declaration collection and lexical name resolution.
 //!
 //! Resolution consumes canonical syntax, builds the specification-defined
 //! scope and declaration inventories, and fixes every lexical target. Typed
@@ -14,11 +14,11 @@ mod tests;
 
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
-pub use engine::resolve_v0_13;
+pub use engine::resolve_v0_14;
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
 #[must_use]
-pub fn operation_family_spelling_v0_13(id: OperationFamilyId) -> Option<&'static str> {
+pub fn operation_family_spelling_v0_14(id: OperationFamilyId) -> Option<&'static str> {
     catalog::operation_spelling(id)
 }
 
@@ -36,7 +36,7 @@ impl ScopeId {
     }
 }
 
-/// One scope kind from the v0.13 scope-construction matrix.
+/// One scope kind from the v0.14 scope-construction matrix.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ScopeKind {
     /// The complete closed compilation unit.
@@ -142,7 +142,7 @@ impl OperationFamilyId {
     }
 }
 
-/// Closed declaration-class order used by v0.13 resolution.
+/// Closed declaration-class order used by v0.14 resolution.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DeclarationClass {
     /// Top-level source function.
@@ -533,7 +533,7 @@ impl PreludeDeclarationRecord {
 
 /// Numbered rule owning one resolver rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ResolutionRuleV0_13 {
+pub enum ResolutionRuleV0_14 {
     /// Reserved declaration name.
     Form3,
     /// Generic numeric suffix.
@@ -703,10 +703,10 @@ pub enum ResolutionIssueKind {
     },
 }
 
-/// The first v0.13 resolver rejection in specified stage and event order.
+/// The first v0.14 resolver rejection in specified stage and event order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolutionIssue {
-    rule: ResolutionRuleV0_13,
+    rule: ResolutionRuleV0_14,
     origin: SourceOrigin,
     kind: ResolutionIssueKind,
 }
@@ -714,7 +714,7 @@ pub struct ResolutionIssue {
 impl ResolutionIssue {
     /// Returns the numbered rule owning this rejection.
     #[must_use]
-    pub const fn rule(&self) -> ResolutionRuleV0_13 {
+    pub const fn rule(&self) -> ResolutionRuleV0_14 {
         self.rule
     }
 
@@ -750,7 +750,7 @@ pub enum ResolutionCompilerFailure {
     CounterOverflow,
 }
 
-/// Canonical syntax plus complete v0.13 lexical resolution tables.
+/// Canonical syntax plus complete v0.14 lexical resolution tables.
 #[derive(Debug)]
 pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
@@ -827,7 +827,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
     }
 }
 
-/// Failure-atomic outcome of exact-v0.13 lexical resolution.
+/// Failure-atomic outcome of exact-v0.14 lexical resolution.
 #[derive(Debug)]
 pub enum ResolutionOutcome<'classified, 'lexed, 'source> {
     /// The complete scope, declaration, lexical-use, and deferred-role tables.

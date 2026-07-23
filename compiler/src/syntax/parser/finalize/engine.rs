@@ -1,6 +1,6 @@
 use crate::ByteOffset;
-use crate::syntax::grammar::ProductionV0_13;
-use crate::syntax::terminal::{FixedTerminalV0_13, TerminalPredicateV0_13};
+use crate::syntax::grammar::ProductionV0_14;
+use crate::syntax::terminal::{FixedTerminalV0_14, TerminalPredicateV0_14};
 
 use crate::syntax::parser::tree::DerivationExtent;
 use crate::syntax::parser::{DerivationElement, ParsedBundle};
@@ -211,7 +211,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
         &mut self,
         element_index: usize,
         token: crate::lexer::Token<'source>,
-        predicate: TerminalPredicateV0_13,
+        predicate: TerminalPredicateV0_14,
     ) -> Result<(), Stop> {
         let ordinal = u64::try_from(self.terminals.len())
             .map_err(|_| FinalizeCompilerFailure::CounterOverflow)?;
@@ -298,10 +298,10 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
     }
 
     fn finalized_extent(
-        production: ProductionV0_13,
+        production: ProductionV0_14,
         children: &[Completed],
     ) -> Result<(FinalizedExtent, u64, u64, u64), Stop> {
-        if production == ProductionV0_13::Program {
+        if production == ProductionV0_14::Program {
             let terminal_count = children.iter().try_fold(0_u64, |total, child| {
                 total
                     .checked_add(child.terminal_count)
@@ -388,7 +388,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             let CompletedKind::Production { production, .. } = child.kind else {
                 return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
             };
-            if production != ProductionV0_13::Item {
+            if production != ProductionV0_14::Item {
                 return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
             }
             let FinalizedExtent::Source { source, .. } = child.extent else {
@@ -405,7 +405,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
     fn production(
         &mut self,
         element_index: usize,
-        production: ProductionV0_13,
+        production: ProductionV0_14,
         child_count: u32,
         subtree_elements: u64,
         declared_extent: DerivationExtent,
@@ -426,7 +426,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             Self::finalized_extent(production, &self.roots[root_start..])?;
         Self::check_declared_extent(declared_extent, extent)?;
 
-        if production == ProductionV0_13::Program {
+        if production == ProductionV0_14::Program {
             Self::check_program_shape(&self.roots[root_start..])?;
         } else {
             let FinalizedExtent::Source { source, .. } = extent else {
@@ -476,10 +476,10 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
                         return Err(FinalizeCompilerFailure::InvalidParentTopology.into());
                     }
                     match predicate {
-                        TerminalPredicateV0_13::Fixed(FixedTerminalV0_13::LeftBrace) => {
+                        TerminalPredicateV0_14::Fixed(FixedTerminalV0_14::LeftBrace) => {
                             body_open = Some(child.first_terminal);
                         }
-                        TerminalPredicateV0_13::Fixed(FixedTerminalV0_13::RightBrace) => {
+                        TerminalPredicateV0_14::Fixed(FixedTerminalV0_14::RightBrace) => {
                             body_close = Some(child.first_terminal);
                         }
                         _ => {}
@@ -630,7 +630,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             return Err(FinalizeCompilerFailure::InvalidRoot.into());
         };
         let CompletedKind::Production {
-            production: ProductionV0_13::Program,
+            production: ProductionV0_14::Program,
             node: root,
         } = root_completion.kind
         else {
@@ -650,7 +650,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
         }
         for (index, node) in self.nodes.iter().enumerate() {
             if NodeId::from_index(index) == Some(root) {
-                if node.parent.is_some() || node.production != ProductionV0_13::Program {
+                if node.parent.is_some() || node.production != ProductionV0_14::Program {
                     return Err(FinalizeCompilerFailure::InvalidRoot.into());
                 }
             } else if node.parent.is_none() {
@@ -675,9 +675,9 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
     }
 }
 
-/// Finalizes one complete private exact-v0.13 derivation in linear space and work.
+/// Finalizes one complete private exact-v0.14 derivation in linear space and work.
 #[must_use]
-pub fn finalize_v0_13<'classified, 'lexed, 'source>(
+pub fn finalize_v0_14<'classified, 'lexed, 'source>(
     parsed: ParsedBundle<'classified, 'lexed, 'source>,
     limits: FinalizeLimits,
 ) -> FinalizeOutcome<'classified, 'lexed, 'source> {

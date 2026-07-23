@@ -123,6 +123,9 @@ pub(crate) enum CheckedIntegerOperation {
     AbsoluteWrap,
     AbsoluteTrap,
     AbsoluteChecked,
+    NegateWrap,
+    NegateTrap,
+    NegateChecked,
     Equal,
     NotEqual,
     Less,
@@ -143,13 +146,22 @@ impl CheckedIntegerOperation {
     pub(crate) const fn traps(self) -> bool {
         matches!(
             self,
-            Self::AddTrap | Self::SubtractTrap | Self::MultiplyTrap | Self::AbsoluteTrap
+            Self::AddTrap
+                | Self::SubtractTrap
+                | Self::MultiplyTrap
+                | Self::AbsoluteTrap
+                | Self::NegateTrap
         )
     }
 
     pub(crate) const fn operand_count(self) -> usize {
         match self {
-            Self::AbsoluteWrap | Self::AbsoluteTrap | Self::AbsoluteChecked => 1,
+            Self::AbsoluteWrap
+            | Self::AbsoluteTrap
+            | Self::AbsoluteChecked
+            | Self::NegateWrap
+            | Self::NegateTrap
+            | Self::NegateChecked => 1,
             _ => 2,
         }
     }
@@ -157,7 +169,12 @@ impl CheckedIntegerOperation {
     pub(crate) const fn signed_only(self) -> bool {
         matches!(
             self,
-            Self::AbsoluteWrap | Self::AbsoluteTrap | Self::AbsoluteChecked
+            Self::AbsoluteWrap
+                | Self::AbsoluteTrap
+                | Self::AbsoluteChecked
+                | Self::NegateWrap
+                | Self::NegateTrap
+                | Self::NegateChecked
         )
     }
 
@@ -168,7 +185,8 @@ impl CheckedIntegerOperation {
             | Self::MultiplyChecked
             | Self::DivideChecked
             | Self::RemainderChecked
-            | Self::AbsoluteChecked => None,
+            | Self::AbsoluteChecked
+            | Self::NegateChecked => None,
             Self::Equal
             | Self::NotEqual
             | Self::Less

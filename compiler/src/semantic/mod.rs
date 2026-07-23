@@ -1,4 +1,4 @@
-//! Target-independent semantic checking for exact Whitefoot v0.13.
+//! Target-independent semantic checking for exact Whitefoot v0.14.
 //!
 //! This stage consumes complete lexical resolution and is the sole producer of
 //! the private checked-program value that may later authorize lowering. A
@@ -14,7 +14,7 @@ mod tests;
 
 use crate::{BundleSourceExtent, NodePath, ResolvedSyntaxUnit, SyntaxCoordinate};
 
-pub use check::check_semantics_v0_13;
+pub use check::check_semantics_v0_14;
 
 pub(crate) use model::{
     BindingId, CheckedBooleanOperation, CheckedDrop, CheckedEnumType, CheckedExpression,
@@ -25,7 +25,7 @@ pub(crate) use model::{
 
 /// Numbered rule owning one post-resolution semantic rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SemanticRuleV0_13 {
+pub enum SemanticRuleV0_14 {
     /// Numeric literal range or canonicality.
     Form7,
     /// Named-constant type and value formation.
@@ -70,8 +70,8 @@ pub enum SemanticRuleV0_13 {
     Eff2,
 }
 
-impl SemanticRuleV0_13 {
-    /// Returns the exact numbered rule spelling from kernel specification v0.13.
+impl SemanticRuleV0_14 {
+    /// Returns the exact numbered rule spelling from kernel specification v0.14.
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
@@ -214,7 +214,7 @@ pub enum SemanticIssueKind {
 /// One deterministic post-resolution source-language rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticIssue {
-    rule: SemanticRuleV0_13,
+    rule: SemanticRuleV0_14,
     location: SemanticLocation,
     kind: SemanticIssueKind,
 }
@@ -229,7 +229,7 @@ impl SemanticIssue {
     /// Returns the exact numbered rule established by this issue.
     #[must_use]
     #[cfg(test)]
-    pub const fn rule(&self) -> SemanticRuleV0_13 {
+    pub const fn rule(&self) -> SemanticRuleV0_14 {
         self.rule
     }
 
@@ -250,7 +250,7 @@ impl SemanticIssue {
 
 /// A language family that the current compiler has not implemented yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnsupportedSemanticFeatureV0_13 {
+pub enum UnsupportedSemanticFeatureV0_14 {
     /// Contracts or conformances.
     ContractsAndConformances,
     /// Type, const, or region polymorphism.
@@ -271,7 +271,7 @@ pub enum UnsupportedSemanticFeatureV0_13 {
     RecursiveNominalLayout,
     /// An ownership-state join not yet covered by the selected finite rule.
     OwnershipJoin,
-    /// Repeated match arms, whose dispatch meaning v0.13 does not select.
+    /// Repeated match arms, whose dispatch meaning v0.14 does not select.
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
@@ -282,7 +282,7 @@ pub enum UnsupportedSemanticFeatureV0_13 {
 /// Exact source node at which an unimplemented compiler family was required.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticUnsupported {
-    feature: UnsupportedSemanticFeatureV0_13,
+    feature: UnsupportedSemanticFeatureV0_14,
     node: NodePath,
 }
 
@@ -290,7 +290,7 @@ impl SemanticUnsupported {
     /// Returns the unimplemented semantic family.
     #[must_use]
     #[cfg(test)]
-    pub const fn feature(&self) -> UnsupportedSemanticFeatureV0_13 {
+    pub const fn feature(&self) -> UnsupportedSemanticFeatureV0_14 {
         self.feature
     }
 }

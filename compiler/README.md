@@ -14,7 +14,7 @@ ordered source bundle
   -> strong-LL(2) parser
   -> finalized source-bound syntax tree
   -> exact FORM-2 validation
-  -> direct v0.13 lexical name resolution
+  -> direct v0.14 lexical name resolution
   -> semantic and ownership checking
   -> private checked program
   -> target-independent typed control-flow IR
@@ -23,7 +23,7 @@ ordered source bundle
 ```
 
 The frontend targets the exact bytes of
-`../spec/kernel-spec-v0.13.md`. `cargo run --bin whitefoot-spec` checks that
+`../spec/kernel-spec-v0.14.md`. `cargo run --bin whitefoot-spec` checks that
 those bytes are the approved candidate and that the terminal and grammar data
 name the same specification identity. The committed grammar tables are
 ordinary compiler data. For a specification proposal, run the native verifier
@@ -41,7 +41,7 @@ closed when a proposal changes that contract; a structural change must first
 extend this same native path rather than reviving an independent grammar
 engine.
 
-The resolver covers every v0.13 declaration, lexical-use, and deferred
+The resolver covers every v0.14 declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
 visibility, reservations, collisions, and deterministic diagnostics.
 
@@ -49,13 +49,15 @@ The implemented semantic families support exact scalar integers, unit,
 `Bool`, integer and unit constants, nongeneric own-mode functions, locals,
 direct calls, returns, pure/traps effects, wrapping and trapping
 add/subtract/multiply, checked add/subtract/multiply/divide/remainder, integer
-absolute value in all three modes, integer comparisons, Boolean operations,
-and nominal tag equality. Checked division and remainder guard divisor zero
-and signed minimum/-1 before the partial LLVM instruction and produce the exact
-`Result<T, DivError>` variant. Absolute value uses defined-edge `llvm.abs` for
-every signed width: wrapping retains the minimum value, trapping emits OP-2,
-and checked returns `Err(Overflow())`. Nongeneric acyclic structs and enums flow
-through the same path,
+absolute value and negation in all three modes, integer comparisons, Boolean
+operations, and nominal tag equality. Checked division and remainder guard
+divisor zero and signed minimum/-1 before the partial LLVM instruction and
+produce the exact `Result<T, DivError>` variant. Absolute value uses
+defined-edge `llvm.abs` for every signed width: wrapping retains the minimum
+value, trapping emits OP-2, and checked returns `Err(Overflow())`. Negation uses
+modular `sub 0, x` for wrapping and signed-subtraction overflow detection for
+trapping and checked modes, with no `nsw`/`nuw` promises. Nongeneric acyclic
+structs and enums flow through the same path,
 including construction, nested projection, statement/value matching, `give`,
 per-site exhaustiveness checking, whole-binding affine moves, and explicit
 reverse-order cleanup edges. Consuming field projections also retain the
@@ -65,7 +67,7 @@ STOR-1, and rechecks target liveness after the right-hand side. Semantic
 success produces the only lowering authority. The IR retains required checks,
 source trap sites, checked set paths, and cleanup;
 the backend uses conservative LLVM without unearned overflow flags or check
-elision. Unimplemented v0.13 families stop as explicit unsupported compiler
+elision. Unimplemented v0.14 families stop as explicit unsupported compiler
 capabilities rather than source-language rejections. Whole-unit ERR-2
 variant-addition edit-list enumeration and the full conformance adapter remain
 future work. Index and borrow-backed SET-1 targets remain explicit unsupported

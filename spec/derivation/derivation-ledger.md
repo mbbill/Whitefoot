@@ -2,14 +2,14 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-`kernel-spec-v0.13.md`. Requirement (owner + META-6): every rule is provably
+`kernel-spec-v0.14.md`. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
 **Current statistics: 52 derived · 41 existence-only · 0 underived**
-(93 rules in v0.13)
+(93 rules in v0.14)
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -94,8 +94,8 @@ exist; this form is minimality-selected and awaits its experiment),
 | ERR-2 | Exhaustive match, no wildcard arms, variant-addition edit lists | ✅ derived | W3 verbatim: 'exhaustiveness cannot be silenced' — a wildcard arm is precisely the silencing device, and the 2026-07-05 constitution amendment names no-wildcards among the scattered anti-cheat rules unified under W3. Round-2 decided law: exhaustive match is the core dispatch (D002 CONFIRMED 2026-07-02). R4 + R1: variant addition surfaces as check-time, site-enumerated edit lists instead of runtime surprises, feeding the repair loop with rule-citing diagnostics. | W3 is a P1 floor, so the unmeasured W1 cost (edit churn on variant addition across a large generated codebase, flagged in the round-2 AI-writer analysis) can price the toolchain contract but cannot flip the rule; the edit-list generator is that contract's unbuilt half. Statement-only match (GRAM-7) is R3-provisional, but that concerns arm SHAPE, not exhaustiveness — ERR-2 survives any GRAM-7 experimental outcome. |
 | PROG-1 | One closed compilation unit; no ABI, loading, reflection | ✅ derived | Round-2 modules verdict replace_with_alternative -> decided language law 'closed-world whole-program compilation'; P0 via D007 (verified — LTO/IPA cross-module visibility enables devirtualization and indirect inlining) and D002 (verified — dispatch opacity blocks inlining); no dynamic loading/reflection additionally closes a W3 injection channel and keeps the T1/T2 envelope decidable over the whole program (SCOPE-2/3). | Audit-recorded R1 tension: whole-program recompile latency at target scale (including FN-2 instantiation re-checking) is unmeasured; the check-loop latency budget is a registered blocking obligation. It could force a caching/incrementality strategy, but not a semantics change — the rule's derivation stands. |
 | DIAG-1 | Rejections cite one rule ID, node path, mechanical fix | ✅ derived | R4's own text names this rung: 'check-time rejection with rule-citing diagnostics'; W1 repair loop grounding via round-4 decided law (spec-primary pedagogy with repair loop as reinforcement); determinism/byte-stability from W3 reproducibility (nowhere to hide, stable feedback for the writer). Feasibility exercised by the D1a checker-core prototype gate (PASSED 2026-07-02; negatives asserting exact rule IDs per DIAG-1). | The 'mechanical fix or restructuring' clause's efficacy for W1 repair-loop convergence is unmeasured — round-4 compiler-as-teacher is still research_needed and the AI-codegen validation harness (first-parse success, repair iterations) is the completing instrument. Core form is nonetheless directly constitutional. |
-| DIAG-2 | Private checked-program lowering authority with explicit operations and checks | ✅ derived | W3 requires semantic authority to be unambiguous, T1 requires derived cleanup and retained checks to survive into execution, and SCOPE-2 permits check removal only after proof. v0.13 retains one private in-memory checked program as the sole lowering input; it records explicit operations, checks and dispositions without granting authority to a serialized replay format. | The representation is deliberately private and may evolve with the compiler. Acceptance remains determined by the source specification and semantic checker, never by backend or optimization success. |
-| DIAG-3 | One exact runtime trap record | ✅ derived | W3 requires failures to report rather than disappear; R4 requires a rule-citing runtime trap; SCOPE-4 fixes abort without unwinding. The exact v0.13 record contains the rule ID, fixed message, function name, and source node path in a fixed JSON field order, which is the minimum deterministic information needed to locate and classify a failing checked site. | v0.13 retains the reduced trap record selected in v0.11. Additional diagnostics remain implementation output and cannot affect acceptance or execution. |
+| DIAG-2 | Private checked-program lowering authority with explicit operations and checks | ✅ derived | W3 requires semantic authority to be unambiguous, T1 requires derived cleanup and retained checks to survive into execution, and SCOPE-2 permits check removal only after proof. v0.14 retains one private in-memory checked program as the sole lowering input; it records explicit operations, checks and dispositions without granting authority to a serialized replay format. | The representation is deliberately private and may evolve with the compiler. Acceptance remains determined by the source specification and semantic checker, never by backend or optimization success. |
+| DIAG-3 | One exact runtime trap record | ✅ derived | W3 requires failures to report rather than disappear; R4 requires a rule-citing runtime trap; SCOPE-4 fixes abort without unwinding. The exact v0.14 record contains the rule ID, fixed message, function name, and source node path in a fixed JSON field order, which is the minimum deterministic information needed to locate and classify a failing checked site. | v0.14 retains the reduced trap record selected in v0.11. Additional diagnostics remain implementation output and cannot affect acceptance or execution. |
 | CAP-1 | Reserve Shareable/Sendable capability predicates; no thread construct | 🟡 existence-only | T1 (standing theorem: data races unrepresentable) via C004 (verified 2026-07-02 with amended scope — Send/Sync-class predicates plus exclusive borrowing yield data-race freedom in safe code, letting the optimizer treat non-atomic memory as unshared -> P0); round-4 decided law prices capabilities inside the kernel FIRST, demanding the stub exist and be counted now. The rule's scope line (data races prevented, general races out of scope) transcribes C004's amended scope exactly. | Round-1 concurrency-model gate is research_needed: the Send/Sync-class route is the evidenced leading candidate, not a promoted design. Binding semantics (auto-derived vs declared, negative impls), and an LEX-1 divergence census for the Shareable/Sendable renames, all await the concurrency layer. Existence + scope are solid; the two-predicate form is unratified. |
 | GATE-1 | Contract/signature/law/storage edits are one gated, audited operation | ✅ derived | W3 literal text ('contracts cannot be weakened to make a failing body pass') made unrepresentable rather than detected, per R4 -> round-3 decided law (no free-form writer-emittable unsafe anywhere; exactly one gated construct family; foreign-shared pre-declared at allocation site grounds the storage-contract clause) -> D0a owner ruling (gated content AI-authored, human-approved) with R5 auditability of the trusted base as the recorded deliberate exception. | D0a's own revisit condition (gate-efficacy experiments) has no owning gate entry yet — a registered audit obligation. The single-operation/single-audit-trail packaging follows round-3's 'exactly one' discipline rather than a tested alternative, but W3 fully determines the rule's substance, so this stays derived. |
 | LEDGER-1 | One boundary-construct family with per-fact obligation ledger | ✅ derived | W3 (no writer-emittable unsafe or trust) + R4 (manifest-free members unrepresentable, not audited after the fact) -> round-3 synthesis decided law verbatim (exactly one gated fact-boundary construct family sharing a per-fact soundness-obligation ledger; formal spine amendment: toolchain-gated ledger entries are the sole trusted-assertion class) + D0a (AI-authored, human-approved); T2's conditionality on a declared TCB (SCOPE-3) requires exactly this explicit boundary. | The family/ledger form is the decided part. Member-level detail is still open: round-3 ffi-attenuation remains research_needed, and D4 (2026-07-06, rewrite-first FFI-narrow) rescoped FFI members to C-ABI out-calls, foreign_shared buffers, unwind-abort, single-threaded-entry. Per D4's gate entry the wall composite is unaffected, so the rule's derivation stands. |
@@ -523,7 +523,7 @@ judgments, their diagnostics, and current governance references. No derivation
 status is weakened. The current total is **52 derived · 41 existence-only · 0
 underived** across 93 rules.
 
-The active native `whitefoot-spec` gate checks exact v0.13 identity, unique
+The active native `whitefoot-spec` gate checks exact v0.14 identity, unique
 rule definitions, closed bracketed rule references, and one ledger row for
 every active rule. It checks structural coverage; the truth of each derivation
 chain remains a review responsibility.
@@ -538,3 +538,17 @@ Result-forwarding writer form with OWN-13's existing structurally declared
 consumption without expanding bare affine use in ordinary expressions.
 TYPE-6, STOR-1, FN-4, DIAG-2, and DIAG-3 receive only synchronized current-
 version references. No derivation status changes.
+
+## v0.14 amendment — exact integer negation (2026-07-22)
+
+`kernel-spec-v0.14.md` modifies six existing rules without changing grammar,
+terminal inventories, operation names, effects, or safety checks. OP-2 closes
+the semantics of the existing `ineg` rows: wrapping negation computes modulo
+the signed width, trapping negation traps when the mathematical result is not
+representable, and checked negation returns `Err(Overflow())` on that same
+edge. Thus signed minimum remains minimum only in wrapping mode; all other
+representable inputs produce their exact mathematical negation. This follows
+the already-derived OP-2 mode partition and OP-8 totality requirements rather
+than adding a new semantic mechanism. TYPE-6, STOR-1, FN-4, DIAG-2, and DIAG-3
+receive only synchronized current-version references. No derivation status
+changes.

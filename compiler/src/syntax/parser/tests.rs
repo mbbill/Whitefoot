@@ -1,15 +1,15 @@
 #![allow(clippy::panic)]
 
-use crate::lexer::{LexLimits, LexOutcome, lex_v0_13};
-use crate::syntax::grammar::{ProductionV0_13, productions_v0_13};
-use crate::{KERNEL_SPEC_V0_13_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
+use crate::lexer::{LexLimits, LexOutcome, lex_v0_14};
+use crate::syntax::grammar::{ProductionV0_14, productions_v0_14};
+use crate::{KERNEL_SPEC_V0_14_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
 
-use crate::{TerminalLimits, TerminalOutcome, classify_terminals_v0_13};
+use crate::{TerminalLimits, TerminalOutcome, classify_terminals_v0_14};
 
-use super::finalize::{FinalizeLimits, FinalizeOutcome, finalize_v0_13};
+use super::finalize::{FinalizeLimits, FinalizeOutcome, finalize_v0_14};
 use super::{
     DerivationElement, ParseInvocationFailure, ParseLimit, ParseLimits, ParseOutcome,
-    ParseResourceFailure, SyntaxRuleV0_13, parse_v0_13,
+    ParseResourceFailure, SyntaxRuleV0_14, parse_v0_14,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -50,17 +50,17 @@ fn minimal_function_and_multi_source_items_form_one_program_root() {
         SourceInput::new("two.wf", b"const answer: i32 = 42_i32;"),
     ];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 128 },
     ) else {
         panic!("test source must classify");
     };
-    let ParseOutcome::Complete(parsed) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(parsed) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("minimal multi-source program must parse");
     };
     assert_eq!(parsed.top_level_item_count(), Some(2));
@@ -79,20 +79,20 @@ fn ordered_sources_report_the_first_invalid_record() {
         ),
     ];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("ordered source fixture must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 64 },
     ) else {
         panic!("ordered source fixture must classify");
     };
-    let ParseOutcome::SourceIssue(issue) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::SourceIssue(issue) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("the first invalid source record must reject");
     };
-    assert_eq!(issue.rule(), SyntaxRuleV0_13::Form1);
+    assert_eq!(issue.rule(), SyntaxRuleV0_14::Form1);
     assert_eq!(issue.coordinate().source(), SourceId::from_ordinal(1));
 }
 
@@ -113,17 +113,17 @@ return unit;
 "#;
     let inputs = [SourceInput::new("prefixes.wf", source)];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("shared-prefix fixture must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 256 },
     ) else {
         panic!("shared-prefix fixture must classify");
     };
-    let outcome = parse_v0_13(&classified, PARSE_LIMITS);
+    let outcome = parse_v0_14(&classified, PARSE_LIMITS);
     assert!(
         matches!(outcome, ParseOutcome::Complete(_)),
         "every shared-prefix form must parse deterministically: {outcome:?}"
@@ -134,17 +134,17 @@ return unit;
 fn one_empty_record_derives_before_the_later_form2_audit() {
     let inputs = [SourceInput::new("empty.wf", b"")];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("empty source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 0 },
     ) else {
         panic!("empty source must classify");
     };
-    let ParseOutcome::Complete(parsed) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(parsed) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("empty item sequence must derive");
     };
     assert_eq!(parsed.top_level_item_count(), Some(0));
@@ -156,20 +156,20 @@ fn one_empty_record_derives_before_the_later_form2_audit() {
 fn unknown_ident_construct_uses_closed_form1_override() {
     let inputs = [SourceInput::new("unknown.wf", b"mystery value")];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 2 },
     ) else {
         panic!("test source must classify");
     };
-    let ParseOutcome::SourceIssue(issue) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::SourceIssue(issue) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("unknown construct must be a source issue");
     };
-    assert_eq!(issue.rule(), SyntaxRuleV0_13::Form1);
+    assert_eq!(issue.rule(), SyntaxRuleV0_14::Form1);
     assert_eq!(issue.coordinate().source(), SourceId::from_ordinal(0));
     assert_eq!(issue.coordinate().start().value(), 0);
     assert_eq!(issue.coordinate().end().value(), 7);
@@ -180,20 +180,20 @@ fn dotted_call_spelling_uses_bounded_form3_override() {
     let source = b"fn main() -> own unit pure { object.member(); }";
     let inputs = [SourceInput::new("dotted.wf", source)];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 32 },
     ) else {
         panic!("test source must classify");
     };
-    let ParseOutcome::SourceIssue(issue) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::SourceIssue(issue) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("dotted call spelling must be rejected");
     };
-    assert_eq!(issue.rule(), SyntaxRuleV0_13::Form3);
+    assert_eq!(issue.rule(), SyntaxRuleV0_14::Form3);
     let start = usize::try_from(issue.coordinate().start().value()).unwrap_or(usize::MAX);
     let end = usize::try_from(issue.coordinate().end().value()).unwrap_or(usize::MAX);
     assert_eq!(&source[start..end], b"object.member");
@@ -204,21 +204,21 @@ fn nested_call_in_atom_only_argument_uses_gram9_override() {
     let source = b"fn main() -> own unit pure { outer(inner()); }";
     let inputs = [SourceInput::new("nested.wf", source)];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 32 },
     ) else {
         panic!("test source must classify");
     };
-    let outcome = parse_v0_13(&classified, PARSE_LIMITS);
+    let outcome = parse_v0_14(&classified, PARSE_LIMITS);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("nested call must be rejected: {outcome:?}");
     };
-    assert_eq!(issue.rule(), SyntaxRuleV0_13::Gram9);
+    assert_eq!(issue.rule(), SyntaxRuleV0_14::Gram9);
     let start = usize::try_from(issue.coordinate().start().value()).unwrap_or(usize::MAX);
     let end = usize::try_from(issue.coordinate().end().value()).unwrap_or(usize::MAX);
     assert_eq!(&source[start..end], b"inner(");
@@ -229,27 +229,27 @@ fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
     for (source, expected_rule) in [
         (
             b"fn struct() -> own unit pure {}".as_slice(),
-            SyntaxRuleV0_13::Form3,
+            SyntaxRuleV0_14::Form3,
         ),
         (
             b"const value: array<i32, 1_i32> = [0_i32];".as_slice(),
-            SyntaxRuleV0_13::Const1,
+            SyntaxRuleV0_14::Const1,
         ),
-        (b"const value: i32 = 42;".as_slice(), SyntaxRuleV0_13::Form5),
+        (b"const value: i32 = 42;".as_slice(), SyntaxRuleV0_14::Form5),
     ] {
         let inputs = [SourceInput::new("owner.wf", source)];
         let bundle = bundle(&inputs);
-        let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+        let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
             panic!("test source must lex");
         };
-        let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+        let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
             &lexed,
-            KERNEL_SPEC_V0_13_HASH,
+            KERNEL_SPEC_V0_14_HASH,
             TerminalLimits { max_tokens: 64 },
         ) else {
             panic!("test source must classify");
         };
-        let outcome = parse_v0_13(&classified, PARSE_LIMITS);
+        let outcome = parse_v0_14(&classified, PARSE_LIMITS);
         let ParseOutcome::SourceIssue(issue) = outcome else {
             panic!("name or numeric mismatch must reject: {outcome:?}");
         };
@@ -261,25 +261,25 @@ fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
 fn non_ident_program_leftover_expects_only_source_end() {
     let inputs = [SourceInput::new("leftover.wf", b"return unit;")];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 8 },
     ) else {
         panic!("test source must classify");
     };
-    let ParseOutcome::SourceIssue(issue) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::SourceIssue(issue) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("top-level statement must reject");
     };
-    assert_eq!(issue.rule(), SyntaxRuleV0_13::Gram2);
+    assert_eq!(issue.rule(), SyntaxRuleV0_14::Gram2);
     assert_eq!(issue.expected().len(), 1);
     assert!(
         issue
             .expected()
-            .contains(crate::syntax::grammar::LookaheadPredicateV0_13::SourceEnd)
+            .contains(crate::syntax::grammar::LookaheadPredicateV0_14::SourceEnd)
     );
 }
 
@@ -290,12 +290,12 @@ fn element_limit_is_explicit_and_failure_atomic() {
         b"fn main() -> own unit pure {}",
     )];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 16 },
     ) else {
         panic!("test source must classify");
@@ -308,7 +308,7 @@ fn element_limit_is_explicit_and_failure_atomic() {
         limit: ParseLimit::Elements,
         maximum: 0,
         actual: 1,
-    }) = parse_v0_13(&classified, limits)
+    }) = parse_v0_14(&classified, limits)
     else {
         panic!("first element must hit the exact element ceiling");
     };
@@ -318,18 +318,18 @@ fn element_limit_is_explicit_and_failure_atomic() {
 fn envelope_and_each_control_stack_limit_are_distinct() {
     let no_inputs: [SourceInput<'_>; 0] = [];
     let empty_bundle = bundle(&no_inputs);
-    let LexOutcome::Complete(empty_lexed) = lex_v0_13(&empty_bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(empty_lexed) = lex_v0_14(&empty_bundle, LEX_LIMITS) else {
         panic!("empty transport must lex as an envelope candidate");
     };
-    let TerminalOutcome::Complete(empty_classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(empty_classified) = classify_terminals_v0_14(
         &empty_lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 0 },
     ) else {
         panic!("empty transport must classify as an envelope candidate");
     };
     assert!(matches!(
-        parse_v0_13(&empty_classified, PARSE_LIMITS),
+        parse_v0_14(&empty_classified, PARSE_LIMITS),
         ParseOutcome::InvocationFailure(ParseInvocationFailure::EmptySourceBundle)
     ));
 
@@ -338,12 +338,12 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
         b"fn main() -> own unit pure {}",
     )];
     let source_bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&source_bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&source_bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 16 },
     ) else {
         panic!("test source must classify");
@@ -372,7 +372,7 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
         ),
     ] {
         let ParseOutcome::ResourceFailure(ParseResourceFailure::LimitExceeded { limit, .. }) =
-            parse_v0_13(&classified, limits)
+            parse_v0_14(&classified, limits)
         else {
             panic!("each zero control ceiling must fail explicitly");
         };
@@ -387,17 +387,17 @@ fn sufficient_limits_produce_identical_derivation_metrics() {
         b"fn main() -> own unit pure { let x: own unit = unit; return x; }",
     )];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 64 },
     ) else {
         panic!("test source must classify");
     };
-    let ParseOutcome::Complete(first) = parse_v0_13(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(first) = parse_v0_14(&classified, PARSE_LIMITS) else {
         panic!("first sufficient limits must parse");
     };
     let larger = ParseLimits {
@@ -406,7 +406,7 @@ fn sufficient_limits_produce_identical_derivation_metrics() {
         max_frames: PARSE_LIMITS.max_frames * 2,
         max_elements: PARSE_LIMITS.max_elements * 2,
     };
-    let ParseOutcome::Complete(second) = parse_v0_13(&classified, larger) else {
+    let ParseOutcome::Complete(second) = parse_v0_14(&classified, larger) else {
         panic!("second sufficient limits must parse");
     };
     assert_eq!(first.terminal_count(), second.terminal_count());
@@ -460,21 +460,21 @@ fn main() -> own unit pure {}
 "#;
     let inputs = [SourceInput::new("all.wf", source)];
     let bundle = bundle(&inputs);
-    let LexOutcome::Complete(lexed) = lex_v0_13(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex_v0_14(&bundle, LEX_LIMITS) else {
         panic!("full fixture must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_13(
+    let TerminalOutcome::Complete(classified) = classify_terminals_v0_14(
         &lexed,
-        KERNEL_SPEC_V0_13_HASH,
+        KERNEL_SPEC_V0_14_HASH,
         TerminalLimits { max_tokens: 65_536 },
     ) else {
         panic!("full fixture must classify");
     };
-    let outcome = parse_v0_13(&classified, PARSE_LIMITS);
+    let outcome = parse_v0_14(&classified, PARSE_LIMITS);
     let ParseOutcome::Complete(parsed) = outcome else {
         panic!("full fixture must parse: {outcome:?}");
     };
-    for production in productions_v0_13() {
+    for production in productions_v0_14() {
         let present = parsed.tree.elements.iter().any(|element| {
             matches!(
                 element,
@@ -483,7 +483,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions_v0_13().len(), 62);
+    assert_eq!(productions_v0_14().len(), 62);
     assert_eq!(
         parsed
             .tree
@@ -493,9 +493,9 @@ fn main() -> own unit pure {}
                 DerivationElement::Production { production, .. } => Some(*production),
                 DerivationElement::Terminal { .. } => None,
             }),
-        Some(ProductionV0_13::Program)
+        Some(ProductionV0_14::Program)
     );
-    let FinalizeOutcome::Complete(finalized) = finalize_v0_13(
+    let FinalizeOutcome::Complete(finalized) = finalize_v0_14(
         parsed,
         FinalizeLimits {
             max_work: 8_000_000,
@@ -509,5 +509,5 @@ fn main() -> own unit pure {}
     ) else {
         panic!("the all-production derivation must pass the independent shape finalizer");
     };
-    assert!(finalized.node_count() >= productions_v0_13().len());
+    assert!(finalized.node_count() >= productions_v0_14().len());
 }

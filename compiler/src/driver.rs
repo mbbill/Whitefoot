@@ -1,4 +1,4 @@
-//! One ordinary exact-v0.13 compilation pipeline.
+//! One ordinary exact-v0.14 compilation pipeline.
 //!
 //! The driver keeps source failures, unsupported compiler capabilities,
 //! resource failures, invariant failures, lowering failures, and backend
@@ -8,10 +8,10 @@ use core::fmt;
 
 use crate::{
     BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    KERNEL_SPEC_V0_13_HASH, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
+    KERNEL_SPEC_V0_14_HASH, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical_v0_13, check_semantics_v0_13, classify_terminals_v0_13,
-    emit_llvm_v0_13, finalize_v0_13, lex_v0_13, lower_checked_v0_13, parse_v0_13, resolve_v0_13,
+    TerminalOutcome, audit_canonical_v0_14, check_semantics_v0_14, classify_terminals_v0_14,
+    emit_llvm_v0_14, finalize_v0_14, lex_v0_14, lower_checked_v0_14, parse_v0_14, resolve_v0_14,
 };
 
 /// Explicit implementation ceilings for one compiler invocation.
@@ -196,7 +196,7 @@ impl fmt::Display for CompilationFailure {
 impl std::error::Error for CompilationFailure {}
 
 /// Compiles one ordered closed source bundle to conservative textual LLVM.
-pub fn compile_v0_13(
+pub fn compile_v0_14(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<String, CompilationFailure> {
@@ -207,7 +207,7 @@ pub fn compile_v0_13(
             failure,
         )
     })?;
-    let lexed = match lex_v0_13(&bundle, limits.lexer) {
+    let lexed = match lex_v0_14(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::new(
@@ -232,7 +232,7 @@ pub fn compile_v0_13(
         }
     };
     let classified =
-        match classify_terminals_v0_13(&lexed, KERNEL_SPEC_V0_13_HASH, limits.terminals) {
+        match classify_terminals_v0_14(&lexed, KERNEL_SPEC_V0_14_HASH, limits.terminals) {
             TerminalOutcome::Complete(complete) => complete,
             TerminalOutcome::SourceIssue(issue) => {
                 return Err(CompilationFailure::new(
@@ -263,7 +263,7 @@ pub fn compile_v0_13(
                 ));
             }
         };
-    let parsed = match parse_v0_13(&classified, limits.parser) {
+    let parsed = match parse_v0_14(&classified, limits.parser) {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::new(
@@ -294,7 +294,7 @@ pub fn compile_v0_13(
             ));
         }
     };
-    let finalized = match finalize_v0_13(parsed, limits.finalizer) {
+    let finalized = match finalize_v0_14(parsed, limits.finalizer) {
         FinalizeOutcome::Complete(complete) => complete,
         FinalizeOutcome::ResourceFailure(failure) => {
             return Err(CompilationFailure::new(
@@ -311,7 +311,7 @@ pub fn compile_v0_13(
             ));
         }
     };
-    let canonical = match audit_canonical_v0_13(finalized, limits.canonical) {
+    let canonical = match audit_canonical_v0_14(finalized, limits.canonical) {
         CanonicalOutcome::Complete(complete) => complete,
         CanonicalOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::new(
@@ -335,7 +335,7 @@ pub fn compile_v0_13(
             ));
         }
     };
-    let resolved = match resolve_v0_13(canonical) {
+    let resolved = match resolve_v0_14(canonical) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
             return Err(CompilationFailure::new(
@@ -352,7 +352,7 @@ pub fn compile_v0_13(
             ));
         }
     };
-    let checked = match check_semantics_v0_13(resolved) {
+    let checked = match check_semantics_v0_14(resolved) {
         SemanticOutcome::Complete(complete) => *complete,
         SemanticOutcome::SourceIssue { issue, .. } => {
             return Err(CompilationFailure::semantic_source(issue));
@@ -372,14 +372,14 @@ pub fn compile_v0_13(
             ));
         }
     };
-    let ir = lower_checked_v0_13(checked).map_err(|failure: LoweringFailure| {
+    let ir = lower_checked_v0_14(checked).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
             CompilationFailureKind::Lowering,
             failure,
         )
     })?;
-    emit_llvm_v0_13(&ir)
+    emit_llvm_v0_14(&ir)
         .map(|module| module.into_string())
         .map_err(|failure: BackendFailure| {
             CompilationFailure::new(
@@ -392,13 +392,13 @@ pub fn compile_v0_13(
 
 #[cfg(test)]
 mod tests {
-    use super::{CompilationFailureKind, CompilationStage, CompilerLimits, compile_v0_13};
+    use super::{CompilationFailureKind, CompilationStage, CompilerLimits, compile_v0_14};
     use crate::SourceInput;
 
     #[test]
     fn driver_preserves_semantic_unsupported_as_a_semantic_stop() {
         let source = b"contract Empty {\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
-        let failure = compile_v0_13(
+        let failure = compile_v0_14(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
@@ -510,7 +510,7 @@ mod tests {
             ),
         ] {
             let failure =
-                compile_v0_13(&[SourceInput::new(name, source)], CompilerLimits::default())
+                compile_v0_14(&[SourceInput::new(name, source)], CompilerLimits::default())
                     .expect_err("negative conformance case must reject");
             assert_eq!(
                 failure.stage(),

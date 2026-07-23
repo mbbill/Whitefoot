@@ -1,4 +1,4 @@
-//! Conservative textual LLVM emission for exact Whitefoot v0.13.
+//! Conservative textual LLVM emission for exact Whitefoot v0.14.
 //!
 //! Emission consumes only target-independent IR. It preserves every retained
 //! check, emits no overflow or alias promises, initializes complete aggregate
@@ -34,7 +34,7 @@ impl LlvmModule {
     }
 }
 
-pub fn emit_llvm_v0_13(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
     let main = program
         .functions()
         .get(program.main_ordinal() as usize)
@@ -59,7 +59,7 @@ pub fn emit_llvm_v0_13(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
     });
 
     let mut text = String::from(
-        "; Whitefoot v0.13 conservative nominal-data module\nsource_filename = \"whitefoot\"\n\n",
+        "; Whitefoot v0.14 conservative nominal-data module\nsource_filename = \"whitefoot\"\n\n",
     );
     emit_nominal_declarations(&mut text, program)?;
     for (index, bytes) in traps.iter().enumerate() {

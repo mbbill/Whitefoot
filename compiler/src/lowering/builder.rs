@@ -12,7 +12,7 @@ use crate::semantic::{
 use super::*;
 use loops::LoopTarget;
 
-pub fn lower_checked_v0_13<'classified, 'lexed, 'source>(
+pub fn lower_checked_v0_14<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let nominals = lower_nominals(&checked.data)?;

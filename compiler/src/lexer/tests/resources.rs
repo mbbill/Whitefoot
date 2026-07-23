@@ -10,12 +10,12 @@ fn explicit_limits_accept_edges_and_reject_the_first_excess_piece() {
     limits.max_tokens = 2;
     limits.max_lexemes = 4;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::Complete(_)
     ));
     limits.max_tokens = 1;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::Tokens,
             maximum: 1,
@@ -25,7 +25,7 @@ fn explicit_limits_accept_edges_and_reject_the_first_excess_piece() {
     limits.max_tokens = 2;
     limits.max_lexemes = 3;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::Lexemes,
             maximum: 3,
@@ -40,7 +40,7 @@ fn source_and_token_byte_ceilings_are_explicit_and_independent() {
     let mut limits = generous_limits();
     limits.max_sources = 0;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::Sources,
             actual: 1,
@@ -51,7 +51,7 @@ fn source_and_token_byte_ceilings_are_explicit_and_independent() {
     limits = generous_limits();
     limits.max_source_bytes = 7;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::SourceBytes,
             actual: 8,
@@ -62,7 +62,7 @@ fn source_and_token_byte_ceilings_are_explicit_and_independent() {
     limits = generous_limits();
     limits.max_total_source_bytes = 7;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::TotalSourceBytes,
             actual: 8,
@@ -73,7 +73,7 @@ fn source_and_token_byte_ceilings_are_explicit_and_independent() {
     limits = generous_limits();
     limits.max_token_bytes = 7;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::TokenBytes,
             actual: 8,
@@ -125,7 +125,7 @@ fn exact_reservation_failure_is_reported_without_panicking() {
 #[test]
 fn different_sufficient_limits_produce_identical_partitions() {
     let source = bundle(&[("same.wf", b"fn  name() -> own unit\n")]);
-    let render = |limits| match crate::lex_v0_13(&source, limits) {
+    let render = |limits| match crate::lex_v0_14(&source, limits) {
         LexOutcome::Complete(lexed) => lexed
             .lexemes()
             .iter()
@@ -158,7 +158,7 @@ fn giant_token_and_alternating_partition_limits_fail_at_exact_edges() {
     let mut limits = generous_limits();
     limits.max_token_bytes = 8_191;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::TokenBytes,
             actual: 8_192,
@@ -171,12 +171,12 @@ fn giant_token_and_alternating_partition_limits_fail_at_exact_edges() {
     limits.max_tokens = 4;
     limits.max_lexemes = 7;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::Complete(_)
     ));
     limits.max_lexemes = 6;
     assert!(matches!(
-        crate::lex_v0_13(&source, limits),
+        crate::lex_v0_14(&source, limits),
         LexOutcome::ResourceFailure(LexResourceFailure::LimitExceeded {
             limit: LexLimit::Lexemes,
             actual: 7,

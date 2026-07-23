@@ -1,9 +1,9 @@
 use crate::syntax::NodeId;
-use crate::syntax::terminal::{FixedTerminalV0_13, TerminalPredicateV0_13};
+use crate::syntax::terminal::{FixedTerminalV0_14, TerminalPredicateV0_14};
 use crate::{
     DeclarationRole, DeferredUseRole, DependentDeclarationRole, LexicalUseRole,
-    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRuleV0_13,
-    SemanticUnsupported, UnsupportedSemanticFeatureV0_13,
+    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRuleV0_14,
+    SemanticUnsupported, UnsupportedSemanticFeatureV0_14,
 };
 
 use super::{CheckStop, Checker};
@@ -12,18 +12,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn has_fixed(
         &self,
         node: NodeId,
-        terminal: FixedTerminalV0_13,
+        terminal: FixedTerminalV0_14,
     ) -> Result<bool, CheckStop> {
         Ok(self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_13::Fixed(terminal))?
+            .direct_token_with(node, TerminalPredicateV0_14::Fixed(terminal))?
             .is_some())
     }
 
     pub(super) fn identifier(&self, node: NodeId) -> Result<String, CheckStop> {
         let terminal = self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_13::Identifier)?
+            .direct_token_with(node, TerminalPredicateV0_14::Identifier)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         std::str::from_utf8(self.tree.token_bytes(terminal)?)
             .map(str::to_owned)
@@ -84,7 +84,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn issue_value(
         &self,
-        rule: SemanticRuleV0_13,
+        rule: SemanticRuleV0_14,
         node: NodeId,
         kind: SemanticIssueKind,
     ) -> CheckStop {
@@ -100,7 +100,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn issue_node<ResultValue>(
         &self,
-        rule: SemanticRuleV0_13,
+        rule: SemanticRuleV0_14,
         node: NodeId,
         kind: SemanticIssueKind,
     ) -> Result<ResultValue, CheckStop> {
@@ -109,7 +109,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn unsupported<ResultValue>(
         &self,
-        feature: UnsupportedSemanticFeatureV0_13,
+        feature: UnsupportedSemanticFeatureV0_14,
         node: NodeId,
     ) -> Result<ResultValue, CheckStop> {
         let node = self.tree.path(node)?.clone();

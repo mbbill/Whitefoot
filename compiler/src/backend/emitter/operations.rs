@@ -80,20 +80,36 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             [left, right] => Some((value_name(*left), value_name(*right))),
             _ => None,
         };
+        let unary = match arguments {
+            [argument] => Some(value_name(*argument)),
+            _ => None,
+        };
         match operation {
             IrIntegerOperation::AddWrap
             | IrIntegerOperation::SubtractWrap
-            | IrIntegerOperation::MultiplyWrap => {
-                let Some((left, right)) = &binary else {
-                    return Err(BackendFailure::InvalidIr);
-                };
+            | IrIntegerOperation::MultiplyWrap
+            | IrIntegerOperation::NegateWrap => {
                 if result_type != operand_type || trap.is_some() {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let opcode = match operation {
-                    IrIntegerOperation::AddWrap => "add",
-                    IrIntegerOperation::SubtractWrap => "sub",
-                    IrIntegerOperation::MultiplyWrap => "mul",
+                let (opcode, left, right) = match operation {
+                    IrIntegerOperation::AddWrap => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("add", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::SubtractWrap => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("sub", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::MultiplyWrap => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("mul", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::NegateWrap if signed => (
+                        "sub",
+                        "0",
+                        unary.as_deref().ok_or(BackendFailure::InvalidIr)?,
+                    ),
                     _ => return Err(BackendFailure::InvalidIr),
                 };
                 writeln!(
@@ -105,18 +121,30 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             IrIntegerOperation::AddTrap
             | IrIntegerOperation::SubtractTrap
-            | IrIntegerOperation::MultiplyTrap => {
-                let Some((left, right)) = &binary else {
-                    return Err(BackendFailure::InvalidIr);
-                };
+            | IrIntegerOperation::MultiplyTrap
+            | IrIntegerOperation::NegateTrap => {
                 if result_type != operand_type {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let trap = trap.ok_or(BackendFailure::InvalidIr)?;
-                let stem = match operation {
-                    IrIntegerOperation::AddTrap => "add",
-                    IrIntegerOperation::SubtractTrap => "sub",
-                    IrIntegerOperation::MultiplyTrap => "mul",
+                let (stem, left, right) = match operation {
+                    IrIntegerOperation::AddTrap => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("add", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::SubtractTrap => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("sub", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::MultiplyTrap => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("mul", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::NegateTrap if signed => (
+                        "sub",
+                        "0",
+                        unary.as_deref().ok_or(BackendFailure::InvalidIr)?,
+                    ),
                     _ => return Err(BackendFailure::InvalidIr),
                 };
                 let sign = if signed { 's' } else { 'u' };
@@ -142,19 +170,31 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             IrIntegerOperation::AddChecked
             | IrIntegerOperation::SubtractChecked
-            | IrIntegerOperation::MultiplyChecked => {
-                let Some((left, right)) = &binary else {
-                    return Err(BackendFailure::InvalidIr);
-                };
+            | IrIntegerOperation::MultiplyChecked
+            | IrIntegerOperation::NegateChecked => {
                 if trap.is_some() {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let error_type = self.checked_result_error_type(result_type, operand_type, &[0])?;
 
-                let stem = match operation {
-                    IrIntegerOperation::AddChecked => "add",
-                    IrIntegerOperation::SubtractChecked => "sub",
-                    IrIntegerOperation::MultiplyChecked => "mul",
+                let (stem, left, right) = match operation {
+                    IrIntegerOperation::AddChecked => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("add", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::SubtractChecked => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("sub", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::MultiplyChecked => {
+                        let (left, right) = binary.as_ref().ok_or(BackendFailure::InvalidIr)?;
+                        ("mul", left.as_str(), right.as_str())
+                    }
+                    IrIntegerOperation::NegateChecked if signed => (
+                        "sub",
+                        "0",
+                        unary.as_deref().ok_or(BackendFailure::InvalidIr)?,
+                    ),
                     _ => return Err(BackendFailure::InvalidIr),
                 };
                 let sign = if signed { 's' } else { 'u' };
