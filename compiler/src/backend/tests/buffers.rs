@@ -71,6 +71,39 @@ fn op9_overflow_traps_before_allocation() {
 }
 
 #[test]
+fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let values: own buffer<u8> = buffer_new<u8>(18446744073709551615_u64, 0_u8);
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    let main = emitted_function(&llvm, "main");
+    let multiply = main
+        .find("@llvm.umul.with.overflow.i64")
+        .expect("OP-9 multiplication must remain first");
+    let target_check = main
+        .find("buffer.fill.target.check")
+        .expect("STOR-6 must retain its target-domain guard");
+    let target_failure = main
+        .find("buffer.fill.target.failure")
+        .expect("the target-domain guard needs a non-continuing edge");
+    let allocation = main
+        .find("call ptr @malloc")
+        .expect("allocation must follow both guards");
+    assert!(
+        multiply < target_check && target_check < target_failure && target_failure < allocation
+    );
+    assert!(main[target_failure..allocation].contains("call void @abort()"));
+    assert!(!main[target_failure..allocation].contains("@wf_trap"));
+
+    let output = compile_and_run(&llvm);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn failing_buffer_set_target_never_evaluates_rhs() {
     let source = br#"fn replacement() -> own u8 traps {
   check False() else trap "RHS evaluated";

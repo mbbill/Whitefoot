@@ -1,4 +1,4 @@
-//! Conservative textual LLVM emission for exact Whitefoot v0.14.
+//! Conservative textual LLVM emission for exact Whitefoot v0.15.
 //!
 //! Emission consumes only target-independent IR. It preserves every retained
 //! check, emits no overflow or alias promises, initializes complete aggregate
@@ -14,16 +14,19 @@ mod operations;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 
+use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
     IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEnumType,
     IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation, IrNominal, IrNominalId,
-    IrNominalKind, IrOperation, IrProgram, IrTerminator, IrTrapSite, IrType, IrValueId,
+    IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations, IrTargetDomainObligation,
+    IrTerminator, IrTrapSite, IrType, IrValueId,
 };
 use buffer::{buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label};
 use cleanup::{drop_helper_symbol, emit_resource_drop_helpers, type_contains_buffer};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
+    TargetLayout(TargetLayoutFailure),
     InvalidIr,
     CounterOverflow,
     TextEmission,
@@ -41,7 +44,9 @@ impl LlvmModule {
     }
 }
 
-pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+pub fn emit_llvm_v0_15(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+    let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
+    validate_program(target, program).map_err(BackendFailure::TargetLayout)?;
     let main = program
         .functions()
         .get(program.main_ordinal() as usize)
@@ -55,7 +60,7 @@ pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
     let mut functions = String::new();
     for function in program.functions() {
         functions.push_str(
-            &FunctionEmitter::new(program, function, &mut traps, &mut intrinsics).emit()?,
+            &FunctionEmitter::new(program, function, target, &mut traps, &mut intrinsics).emit()?,
         );
     }
     let has_matches = program.functions().iter().any(|function| {
@@ -68,8 +73,11 @@ pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
     let has_buffers =
         !drop_helpers.is_empty() || program.functions().iter().any(IrFunction::contains_buffer);
 
-    let mut text =
-        String::from("; Whitefoot v0.14 conservative module\nsource_filename = \"whitefoot\"\n\n");
+    let mut text = format!(
+        "; Whitefoot v0.15 conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
+        target.data_layout(),
+        target.triple(),
+    );
     emit_nominal_declarations(&mut text, program)?;
     emit_global_constants(&mut text, program)?;
     for (index, bytes) in traps.iter().enumerate() {
@@ -247,6 +255,7 @@ enum IntrinsicDeclaration {
 struct FunctionEmitter<'program, 'state> {
     program: &'program IrProgram<'program, 'program, 'program>,
     function: &'program IrFunction,
+    target: TargetLayout,
     traps: &'state mut Vec<Vec<u8>>,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
@@ -258,12 +267,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     fn new(
         program: &'program IrProgram<'_, '_, '_>,
         function: &'program IrFunction,
+        target: TargetLayout,
         traps: &'state mut Vec<Vec<u8>>,
         intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     ) -> Self {
         Self {
             program,
             function,
+            target,
             traps,
             intrinsics,
             incoming: Vec::new(),
@@ -470,13 +481,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 operand_type,
                 arguments,
             } => self.emit_enum_equality(result, ty, *equal, *operand_type, *arguments),
-            IrOperation::ArrayFill { value } => self.emit_array_fill(result, ty, *value),
-            IrOperation::ArrayIndex { root, offset, trap } => {
-                self.emit_array_index(result, ty, *root, *offset, trap)
-            }
-            IrOperation::ArrayBoundsCheck { offset, trap } => {
-                self.emit_array_bounds_check(result, ty, *offset, trap)
-            }
+            IrOperation::ArrayFill {
+                value,
+                target_domain,
+            } => self.emit_array_fill(result, ty, *value, *target_domain),
+            IrOperation::ArrayIndex {
+                root,
+                offset,
+                trap,
+                target_domain,
+            } => self.emit_array_index(result, ty, *root, *offset, trap, *target_domain),
+            IrOperation::ArrayBoundsCheck {
+                offset,
+                trap,
+                target_domain,
+            } => self.emit_array_bounds_check(result, ty, *offset, trap, *target_domain),
             IrOperation::InsertArray {
                 aggregate,
                 index,
@@ -486,18 +505,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 length,
                 value,
                 trap,
-            } => self.emit_buffer_fill(result, ty, *length, *value, trap),
+                target_domains,
+            } => self.emit_buffer_fill(result, ty, *length, *value, trap, *target_domains),
             IrOperation::BufferLength { buffer } => self.emit_buffer_length(result, ty, *buffer),
             IrOperation::BufferIndex {
                 buffer,
                 offset,
                 trap,
-            } => self.emit_buffer_index(result, ty, *buffer, *offset, trap),
+                target_domain,
+            } => self.emit_buffer_index(result, ty, *buffer, *offset, trap, *target_domain),
             IrOperation::BufferBoundsCheck {
                 buffer,
                 offset,
                 trap,
-            } => self.emit_buffer_bounds_check(result, ty, *buffer, *offset, trap),
+                target_domain,
+            } => self.emit_buffer_bounds_check(result, ty, *buffer, *offset, trap, *target_domain),
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
             }
@@ -948,7 +970,7 @@ fn source_symbol(name: &str) -> String {
     format!("wf_{name}")
 }
 
-fn trap_record(trap: &IrTrapSite) -> Vec<u8> {
+pub(super) fn trap_record(trap: &IrTrapSite) -> Vec<u8> {
     let components = trap
         .node_path
         .iter()

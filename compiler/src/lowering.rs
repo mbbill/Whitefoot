@@ -1,4 +1,4 @@
-//! Target-independent lowering from semantically checked Whitefoot v0.14.
+//! Target-independent lowering from semantically checked Whitefoot v0.15.
 //!
 //! The private IR records exact value types, nominal construction/projection,
 //! direct calls, retained checks, and explicit control-flow edges. It performs
@@ -7,7 +7,8 @@
 
 use crate::semantic::{
     CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedIntegerOperation,
-    CheckedProgram, CheckedType, TrapSite,
+    CheckedProgram, CheckedRuntimeTargetObligations, CheckedTargetDomainObligation, CheckedType,
+    TrapSite,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -399,6 +400,48 @@ pub enum IrArrayRoot {
     Constant(IrConstantId),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrTargetDomainObligation {
+    RuntimeSizedAllocation,
+    ElementAddress,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrRuntimeTargetObligations {
+    allocation: IrTargetDomainObligation,
+    element_address: IrTargetDomainObligation,
+}
+
+impl From<CheckedRuntimeTargetObligations> for IrRuntimeTargetObligations {
+    fn from(value: CheckedRuntimeTargetObligations) -> Self {
+        Self {
+            allocation: value.allocation().into(),
+            element_address: value.element_address().into(),
+        }
+    }
+}
+
+impl IrRuntimeTargetObligations {
+    pub(crate) const fn is_complete(self) -> bool {
+        matches!(
+            (self.allocation, self.element_address),
+            (
+                IrTargetDomainObligation::RuntimeSizedAllocation,
+                IrTargetDomainObligation::ElementAddress
+            )
+        )
+    }
+}
+
+impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
+    fn from(value: CheckedTargetDomainObligation) -> Self {
+        match value {
+            CheckedTargetDomainObligation::RuntimeSizedAllocation => Self::RuntimeSizedAllocation,
+            CheckedTargetDomainObligation::ElementAddress => Self::ElementAddress,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
@@ -428,15 +471,18 @@ pub enum IrOperation {
     },
     ArrayFill {
         value: IrValueId,
+        target_domain: IrTargetDomainObligation,
     },
     ArrayIndex {
         root: IrArrayRoot,
         offset: IrValueId,
         trap: IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     },
     ArrayBoundsCheck {
         offset: IrValueId,
         trap: IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     },
     InsertArray {
         aggregate: IrValueId,
@@ -447,6 +493,7 @@ pub enum IrOperation {
         length: IrValueId,
         value: IrValueId,
         trap: IrTrapSite,
+        target_domains: IrRuntimeTargetObligations,
     },
     BufferLength {
         buffer: IrValueId,
@@ -455,11 +502,13 @@ pub enum IrOperation {
         buffer: IrValueId,
         offset: IrValueId,
         trap: IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     },
     BufferBoundsCheck {
         buffer: IrValueId,
         offset: IrValueId,
         trap: IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     },
     ConstructStruct {
         nominal: IrNominalId,
@@ -673,4 +722,4 @@ pub enum LoweringFailure {
 
 mod builder;
 
-pub use builder::lower_checked_v0_14;
+pub use builder::lower_checked_v0_15;

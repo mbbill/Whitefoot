@@ -1,7 +1,7 @@
 CARGO := cargo
 
 check: format lint test docs spec
-	@echo "== WHITEFOOT V0.14 COMPILER GATE GREEN =="
+	@echo "== WHITEFOOT V0.15 COMPILER GATE GREEN =="
 
 format:
 	$(CARGO) fmt --all -- --check

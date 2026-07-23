@@ -1,4 +1,4 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_14};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
 
 use super::super::model::{CheckedExpression, CheckedMode, CheckedSetTarget, CheckedStatement};
 use super::{assert_rule, with_semantics};
@@ -61,7 +61,7 @@ fn borrowed_column_effect_rows_are_exact() {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("missing write effect must be rejected: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRuleV0_14::Eff2);
+        assert_eq!(issue.rule(), SemanticRuleV0_15::Eff2);
     });
 }
 
@@ -94,7 +94,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own5,
+        SemanticRuleV0_15::Own5,
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
@@ -107,7 +107,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own5,
+        SemanticRuleV0_15::Own5,
         SemanticIssueKind::BorrowConflict,
     );
 }
@@ -127,7 +127,7 @@ fn main() -> own unit allocates(heap), traps {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own12,
+        SemanticRuleV0_15::Own12,
         SemanticIssueKind::BorrowConflict,
     );
 }
@@ -144,7 +144,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own10,
+        SemanticRuleV0_15::Own10,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
 }
@@ -264,7 +264,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Set1,
+        SemanticRuleV0_15::Set1,
         SemanticIssueKind::InvalidSetTarget {
             root_class: "shared borrow".to_owned(),
             required_classes: "live own storage or a live usable &uniq referent",
@@ -290,7 +290,7 @@ fn main() -> own unit allocates(heap), traps {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own5,
+        SemanticRuleV0_15::Own5,
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
@@ -306,7 +306,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own5,
+        SemanticRuleV0_15::Own5,
         SemanticIssueKind::BorrowConflict,
     );
 }
@@ -330,7 +330,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own12,
+        SemanticRuleV0_15::Own12,
         SemanticIssueKind::BorrowConflict,
     );
 
@@ -407,7 +407,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own6,
+        SemanticRuleV0_15::Own6,
         SemanticIssueKind::InvalidChildReborrow,
     );
 
@@ -428,7 +428,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own6,
+        SemanticRuleV0_15::Own6,
         SemanticIssueKind::InvalidChildReborrow,
     );
 
@@ -448,7 +448,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own12,
+        SemanticRuleV0_15::Own12,
         SemanticIssueKind::BorrowConflict,
     );
 
@@ -491,7 +491,7 @@ fn main() -> own unit allocates(heap), traps {
   return unit;
 }
 "#,
-        SemanticRuleV0_14::Own11,
+        SemanticRuleV0_15::Own11,
         SemanticIssueKind::BorrowRegionOutsideLoop {
             mechanical_fix: "introduce the borrow region inside the enclosing loop body",
         },

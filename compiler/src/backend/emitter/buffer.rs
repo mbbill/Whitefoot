@@ -10,7 +10,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         length: IrValueId,
         value: IrValueId,
         trap: &IrTrapSite,
+        target_domains: IrRuntimeTargetObligations,
     ) -> Result<(), BackendFailure> {
+        if !target_domains.is_complete() {
+            return Err(BackendFailure::InvalidIr);
+        }
         let IrType::Buffer { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -35,6 +39,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let product = self.next_temporary()?;
         let bytes = self.next_temporary()?;
         let overflow = self.next_temporary()?;
+        let target_in_range = self.next_temporary()?;
         let pointer = self.next_temporary()?;
         let zero_size = self.next_temporary()?;
         let nonnull = self.next_temporary()?;
@@ -48,12 +53,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         writeln!(
             self.output,
-            "  %{product} = call {{ i64, i1 }} @{intrinsic}(i64 {}, i64 {element_size})\n  %{bytes} = extractvalue {{ i64, i1 }} %{product}, 0\n  %{overflow} = extractvalue {{ i64, i1 }} %{product}, 1\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
+            "  %{product} = call {{ i64, i1 }} @{intrinsic}(i64 {}, i64 {element_size})\n  %{bytes} = extractvalue {{ i64, i1 }} %{product}, 0\n  %{overflow} = extractvalue {{ i64, i1 }} %{product}, 1\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  %{target_in_range} = icmp ule i64 %{bytes}, {}\n  br i1 %{target_in_range}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
             value_name(length),
             buffer_fill_overflow_label(result),
-            buffer_fill_allocate_label(result),
+            buffer_fill_target_check_label(result),
             buffer_fill_overflow_label(result),
             self.traps[trap_id].len(),
+            buffer_fill_target_check_label(result),
+            self.target.runtime_allocation_max(),
+            buffer_fill_allocate_label(result),
+            buffer_fill_target_failure_label(result),
+            buffer_fill_target_failure_label(result),
             buffer_fill_allocate_label(result),
             buffer_fill_head_label(result),
             buffer_fill_oom_label(result),
@@ -114,7 +124,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         buffer: IrValueId,
         offset: IrValueId,
         trap: &IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
         let Some(buffer_type @ IrType::Buffer { element }) = self.function.value_type(buffer)
         else {
             return Err(BackendFailure::InvalidIr);
@@ -159,7 +173,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         buffer: IrValueId,
         offset: IrValueId,
         trap: &IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
         let IrType::GuardedBufferIndex { element } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -249,6 +267,14 @@ pub(super) fn buffer_fill_overflow_label(value: IrValueId) -> String {
 
 pub(super) fn buffer_fill_allocate_label(value: IrValueId) -> String {
     format!("buffer.fill.allocate.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_fill_target_check_label(value: IrValueId) -> String {
+    format!("buffer.fill.target.check.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_fill_target_failure_label(value: IrValueId) -> String {
+    format!("buffer.fill.target.failure.v{}", value.ordinal())
 }
 
 pub(super) fn buffer_fill_oom_label(value: IrValueId) -> String {

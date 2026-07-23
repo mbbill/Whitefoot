@@ -1,4 +1,4 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_14};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
 
 use super::super::model::CheckedStatement;
 use super::{assert_rule, with_semantics};
@@ -18,12 +18,12 @@ fn checked_requires_block_is_an_executable_function_prologue() {
 fn requires_rejects_user_calls_and_trapping_operations() {
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-user-call.wf"),
-        SemanticRuleV0_14::Fn8,
+        SemanticRuleV0_15::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-trapping-op.wf"),
-        SemanticRuleV0_14::Fn8,
+        SemanticRuleV0_15::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
 }
@@ -32,12 +32,12 @@ fn requires_rejects_user_calls_and_trapping_operations() {
 fn requires_check_participates_in_exact_effects_and_op5_typing() {
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-missing-traps.wf"),
-        SemanticRuleV0_14::Eff2,
+        SemanticRuleV0_15::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/fn8-neg-requires-non-bool-check.wf"),
-        SemanticRuleV0_14::Op5,
+        SemanticRuleV0_15::Op5,
         SemanticIssueKind::InvalidCheckCondition,
     );
 }

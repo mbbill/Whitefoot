@@ -17,7 +17,7 @@ use super::*;
 use loops::LoopTarget;
 use storage::collect_addressed_bindings;
 
-pub fn lower_checked_v0_14<'classified, 'lexed, 'source>(
+pub fn lower_checked_v0_15<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let nominals = lower_nominals(&checked.data)?;
@@ -705,7 +705,11 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::ArrayFill { ty, value } => {
+            CheckedExpression::ArrayFill {
+                ty,
+                value,
+                target_domain,
+            } => {
                 let IrType::Array { element, .. } = lower_type(*ty)? else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
@@ -713,7 +717,13 @@ impl<'program> IrBuilder<'program> {
                 if self.value_type(value)? != element.ty() {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                self.define(lower_type(*ty)?, IrOperation::ArrayFill { value })
+                self.define(
+                    lower_type(*ty)?,
+                    IrOperation::ArrayFill {
+                        value,
+                        target_domain: (*target_domain).into(),
+                    },
+                )
             }
             CheckedExpression::ArrayLength { root, length } => {
                 let (_, ty) = self.array_root(*root)?;
@@ -746,6 +756,7 @@ impl<'program> IrBuilder<'program> {
                 length,
                 offset,
                 trap,
+                target_domain,
             } => {
                 let (root, ty) = self.array_root(*root)?;
                 let IrType::Array {
@@ -776,6 +787,7 @@ impl<'program> IrBuilder<'program> {
                         root,
                         offset,
                         trap: trap.clone().into(),
+                        target_domain: (*target_domain).into(),
                     },
                 )
             }
@@ -784,11 +796,15 @@ impl<'program> IrBuilder<'program> {
                 length,
                 value,
                 trap,
-            } => self.lower_buffer_fill(*element, length, value, trap),
+                target_domains,
+            } => self.lower_buffer_fill(*element, length, value, trap, *target_domains),
             CheckedExpression::BufferLength { root } => self.lower_buffer_length(root),
-            CheckedExpression::BufferIndex { root, offset, trap } => {
-                self.lower_buffer_index(root, offset, trap)
-            }
+            CheckedExpression::BufferIndex {
+                root,
+                offset,
+                trap,
+                target_domain,
+            } => self.lower_buffer_index(root, offset, trap, *target_domain),
             CheckedExpression::BorrowBuffer { root } => self.lower_buffer_borrow(root),
             CheckedExpression::BorrowStruct { binding, nominal } => {
                 self.lower_struct_borrow(*binding, IrNominalId(nominal.0))
@@ -927,6 +943,7 @@ impl<'program> IrBuilder<'program> {
                     IrOperation::ArrayBoundsCheck {
                         offset,
                         trap: target.trap.clone().into(),
+                        target_domain: target.target_domain.into(),
                     },
                 )?;
                 let value = self.expression(value)?;

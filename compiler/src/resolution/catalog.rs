@@ -169,10 +169,10 @@ mod tests {
         reserved_name,
     };
 
-    const EXACT_SPEC: &str = include_str!("../../../spec/kernel-spec-v0.14.md");
+    const EXACT_SPEC: &str = include_str!("../../../spec/kernel-spec-v0.15.md");
 
     #[test]
-    fn exact_v0_14_catalogs_are_closed_and_unique_where_required() {
+    fn exact_v0_15_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
         assert_eq!(OPERATION_FAMILIES.len(), 83);
         assert_eq!(
@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn catalogs_match_independent_extraction_from_exact_v0_14() {
+    fn catalogs_match_independent_extraction_from_exact_v0_15() {
         let extracted_prelude = extract_prelude_records(EXACT_SPEC);
         let catalog_prelude: Vec<_> = PRELUDE_DECLARATIONS
             .iter()

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationId, ProductionV0_14, SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_14,
+    DeclarationId, ProductionV0_15, SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15,
 };
 
 use super::super::super::model::{
@@ -25,7 +25,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let expression_node = self
             .tree
-            .first_child_with(propagate, ProductionV0_14::Expr)?
+            .first_child_with(propagate, ProductionV0_15::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let expected_operand = match function.result {
             CheckedType::Nominal(return_nominal) => match self.prelude_type(return_nominal) {
@@ -98,7 +98,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn invalid_propagation<ResultValue>(&self, node: NodeId) -> Result<ResultValue, CheckStop> {
         self.issue_node(
-            SemanticRuleV0_14::Err3,
+            SemanticRuleV0_15::Err3,
             node,
             SemanticIssueKind::InvalidPropagation,
         )

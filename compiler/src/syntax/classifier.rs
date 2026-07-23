@@ -1,9 +1,9 @@
 use crate::SpecHash;
 use crate::lexer::{LexedBundle, Lexeme, Token, TokenKind};
 use crate::syntax::terminal::{
-    FixedTerminalV0_14, TERMINAL_CONTRACT_SPEC_V0_14, TerminalPredicateV0_14, TerminalSetV0_14,
-    is_digits_v0_14, is_identifier_v0_14, is_label_v0_14, is_literal_v0_14,
-    is_operation_name_v0_14, is_region_identifier_v0_14, is_string_v0_14, is_type_identifier_v0_14,
+    FixedTerminalV0_15, TERMINAL_CONTRACT_SPEC_V0_15, TerminalPredicateV0_15, TerminalSetV0_15,
+    is_digits_v0_15, is_identifier_v0_15, is_label_v0_15, is_literal_v0_15,
+    is_operation_name_v0_15, is_region_identifier_v0_15, is_string_v0_15, is_type_identifier_v0_15,
 };
 
 use crate::syntax::outcome::{
@@ -31,92 +31,92 @@ fn reserve_exact<T>(
     Ok(output)
 }
 
-fn fixed(set: &mut TerminalSetV0_14, terminal: FixedTerminalV0_14, spelling: &[u8]) -> bool {
+fn fixed(set: &mut TerminalSetV0_15, terminal: FixedTerminalV0_15, spelling: &[u8]) -> bool {
     if spelling != terminal.spelling() {
         return false;
     }
-    set.insert(TerminalPredicateV0_14::Fixed(terminal));
+    set.insert(TerminalPredicateV0_15::Fixed(terminal));
     true
 }
 
-fn membership(token: Token<'_>) -> Option<TerminalSetV0_14> {
+fn membership(token: Token<'_>) -> Option<TerminalSetV0_15> {
     let spelling = token.span().bytes();
-    let mut set = TerminalSetV0_14::empty();
+    let mut set = TerminalSetV0_15::empty();
     let valid_shape = match token.kind() {
         TokenKind::LowerWordForm => {
-            if let Some(terminal) = FixedTerminalV0_14::from_spelling(spelling) {
-                set.insert(TerminalPredicateV0_14::Fixed(terminal));
-                if is_literal_v0_14(spelling) {
-                    set.insert(TerminalPredicateV0_14::Literal);
+            if let Some(terminal) = FixedTerminalV0_15::from_spelling(spelling) {
+                set.insert(TerminalPredicateV0_15::Fixed(terminal));
+                if is_literal_v0_15(spelling) {
+                    set.insert(TerminalPredicateV0_15::Literal);
                 }
                 true
-            } else if is_identifier_v0_14(spelling) {
-                set.insert(TerminalPredicateV0_14::Identifier);
+            } else if is_identifier_v0_15(spelling) {
+                set.insert(TerminalPredicateV0_15::Identifier);
                 true
             } else {
                 false
             }
         }
         TokenKind::UpperWordForm => {
-            let valid = is_type_identifier_v0_14(spelling);
+            let valid = is_type_identifier_v0_15(spelling);
             if valid {
-                set.insert(TerminalPredicateV0_14::TypeIdentifier);
+                set.insert(TerminalPredicateV0_15::TypeIdentifier);
             }
             valid
         }
         TokenKind::RegionForm => {
-            let valid = is_region_identifier_v0_14(spelling);
+            let valid = is_region_identifier_v0_15(spelling);
             if valid {
-                set.insert(TerminalPredicateV0_14::RegionIdentifier);
+                set.insert(TerminalPredicateV0_15::RegionIdentifier);
             }
             valid
         }
         TokenKind::LabelForm => {
-            let valid = is_label_v0_14(spelling);
+            let valid = is_label_v0_15(spelling);
             if valid {
-                set.insert(TerminalPredicateV0_14::Label);
+                set.insert(TerminalPredicateV0_15::Label);
             }
             valid
         }
         TokenKind::OperationNameForm => {
-            let valid = is_operation_name_v0_14(spelling);
+            let valid = is_operation_name_v0_15(spelling);
             if valid {
-                set.insert(TerminalPredicateV0_14::OperationName);
+                set.insert(TerminalPredicateV0_15::OperationName);
             }
             valid
         }
         TokenKind::NumberForm => {
-            if is_literal_v0_14(spelling) {
-                set.insert(TerminalPredicateV0_14::Literal);
+            if is_literal_v0_15(spelling) {
+                set.insert(TerminalPredicateV0_15::Literal);
             }
-            if is_digits_v0_14(spelling) {
-                set.insert(TerminalPredicateV0_14::Digits);
+            if is_digits_v0_15(spelling) {
+                set.insert(TerminalPredicateV0_15::Digits);
             }
             true
         }
         TokenKind::StringForm => {
-            let valid = is_string_v0_14(spelling);
+            let valid = is_string_v0_15(spelling);
             if valid {
-                set.insert(TerminalPredicateV0_14::String);
+                set.insert(TerminalPredicateV0_15::String);
             }
             valid
         }
-        TokenKind::LeftParen => fixed(&mut set, FixedTerminalV0_14::LeftParen, spelling),
-        TokenKind::RightParen => fixed(&mut set, FixedTerminalV0_14::RightParen, spelling),
-        TokenKind::LeftBrace => fixed(&mut set, FixedTerminalV0_14::LeftBrace, spelling),
-        TokenKind::RightBrace => fixed(&mut set, FixedTerminalV0_14::RightBrace, spelling),
-        TokenKind::LeftBracket => fixed(&mut set, FixedTerminalV0_14::LeftBracket, spelling),
-        TokenKind::RightBracket => fixed(&mut set, FixedTerminalV0_14::RightBracket, spelling),
-        TokenKind::LeftAngle => fixed(&mut set, FixedTerminalV0_14::LeftAngle, spelling),
-        TokenKind::RightAngle => fixed(&mut set, FixedTerminalV0_14::RightAngle, spelling),
-        TokenKind::Comma => fixed(&mut set, FixedTerminalV0_14::Comma, spelling),
-        TokenKind::Colon => fixed(&mut set, FixedTerminalV0_14::Colon, spelling),
-        TokenKind::Semicolon => fixed(&mut set, FixedTerminalV0_14::Semicolon, spelling),
-        TokenKind::Dot => fixed(&mut set, FixedTerminalV0_14::Dot, spelling),
-        TokenKind::Equal => fixed(&mut set, FixedTerminalV0_14::Equal, spelling),
-        TokenKind::ThinArrow => fixed(&mut set, FixedTerminalV0_14::ThinArrow, spelling),
-        TokenKind::FatArrow => fixed(&mut set, FixedTerminalV0_14::FatArrow, spelling),
-        TokenKind::Ampersand => fixed(&mut set, FixedTerminalV0_14::Ampersand, spelling),
+        TokenKind::LeftParen => fixed(&mut set, FixedTerminalV0_15::LeftParen, spelling),
+        TokenKind::RightParen => fixed(&mut set, FixedTerminalV0_15::RightParen, spelling),
+        TokenKind::LeftBrace => fixed(&mut set, FixedTerminalV0_15::LeftBrace, spelling),
+        TokenKind::RightBrace => fixed(&mut set, FixedTerminalV0_15::RightBrace, spelling),
+        TokenKind::LeftBracket => fixed(&mut set, FixedTerminalV0_15::LeftBracket, spelling),
+        TokenKind::RightBracket => fixed(&mut set, FixedTerminalV0_15::RightBracket, spelling),
+        TokenKind::LeftAngle => fixed(&mut set, FixedTerminalV0_15::LeftAngle, spelling),
+        TokenKind::RightAngle => fixed(&mut set, FixedTerminalV0_15::RightAngle, spelling),
+        TokenKind::Comma => fixed(&mut set, FixedTerminalV0_15::Comma, spelling),
+        TokenKind::Colon => fixed(&mut set, FixedTerminalV0_15::Colon, spelling),
+        TokenKind::Semicolon => fixed(&mut set, FixedTerminalV0_15::Semicolon, spelling),
+        TokenKind::Dot => fixed(&mut set, FixedTerminalV0_15::Dot, spelling),
+        TokenKind::Equal => fixed(&mut set, FixedTerminalV0_15::Equal, spelling),
+        TokenKind::ThinArrow => fixed(&mut set, FixedTerminalV0_15::ThinArrow, spelling),
+        TokenKind::FatArrow => fixed(&mut set, FixedTerminalV0_15::FatArrow, spelling),
+        TokenKind::Ampersand => fixed(&mut set, FixedTerminalV0_15::Ampersand, spelling),
     };
     (valid_shape && !set.is_empty()).then_some(set)
 }
@@ -129,21 +129,21 @@ fn invalid_token(token: Token<'_>) -> TerminalCompilerFailure {
     }
 }
 
-/// Applies every exact v0.14 terminal predicate to every formed token.
+/// Applies every exact v0.15 terminal predicate to every formed token.
 ///
 /// Classification is context-free and failure-atomic. It never consults a
 /// parser position, another token, name lookup, or the operation table, and it
 /// retains all matching predicates rather than choosing one by priority.
 #[must_use]
-pub fn classify_terminals_v0_14<'lexed, 'source>(
+pub fn classify_terminals_v0_15<'lexed, 'source>(
     lexed: &'lexed LexedBundle<'source>,
     specification: SpecHash,
     limits: TerminalLimits,
 ) -> TerminalOutcome<'lexed, 'source> {
-    if specification != TERMINAL_CONTRACT_SPEC_V0_14 {
+    if specification != TERMINAL_CONTRACT_SPEC_V0_15 {
         return TerminalOutcome::InvocationFailure(
             TerminalInvocationFailure::SpecificationMismatch {
-                expected: TERMINAL_CONTRACT_SPEC_V0_14,
+                expected: TERMINAL_CONTRACT_SPEC_V0_15,
                 actual: specification,
             },
         );

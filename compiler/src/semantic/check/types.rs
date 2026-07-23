@@ -1,9 +1,9 @@
 use crate::syntax::NodeId;
-use crate::syntax::terminal::{FixedTerminalV0_14, TerminalPredicateV0_14};
+use crate::syntax::terminal::{FixedTerminalV0_15, TerminalPredicateV0_15};
 use crate::{
-    DeclarationClass, DeclarationRole, LexicalUseRole, PreludeDeclarationId, ProductionV0_14,
-    ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_14,
-    UnsupportedSemanticFeatureV0_14,
+    DeclarationClass, DeclarationRole, LexicalUseRole, PreludeDeclarationId, ProductionV0_15,
+    ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15,
+    UnsupportedSemanticFeatureV0_15,
 };
 
 use super::super::model::{
@@ -21,21 +21,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Vec<ParameterSignature>, CheckStop> {
         let Some(list) = self
             .tree
-            .first_child_with(function, ProductionV0_14::ParamList)?
+            .first_child_with(function, ProductionV0_15::ParamList)?
         else {
             return Ok(Vec::new());
         };
         let mut parameters = Vec::new();
-        for node in self.tree.children_with(list, ProductionV0_14::Param)? {
+        for node in self.tree.children_with(list, ProductionV0_15::Param)? {
             let declaration = self.declaration_at(node, DeclarationRole::Parameter)?;
             let mode = self
                 .tree
-                .first_child_with(node, ProductionV0_14::Mode)?
+                .first_child_with(node, ProductionV0_15::Mode)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let mode = self.parse_mode(mode)?;
             let ty_node = self
                 .tree
-                .first_child_with(node, ProductionV0_14::Type)?
+                .first_child_with(node, ProductionV0_15::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_type_with(ty_node, substitution)?;
             if mode != CheckedMode::Own {
@@ -50,7 +50,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 if !supported {
                     return self
-                        .unsupported(UnsupportedSemanticFeatureV0_14::RegionsAndBorrows, node);
+                        .unsupported(UnsupportedSemanticFeatureV0_15::RegionsAndBorrows, node);
                 }
             }
             parameters.push(ParameterSignature {
@@ -70,12 +70,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(CheckedMode, CheckedType), CheckStop> {
         let mode = self
             .tree
-            .first_child_with(node, ProductionV0_14::Mode)?
+            .first_child_with(node, ProductionV0_15::Mode)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let mode = self.parse_mode(mode)?;
         let ty = self
             .tree
-            .first_child_with(node, ProductionV0_14::Type)?
+            .first_child_with(node, ProductionV0_15::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         Ok((mode, self.parse_type_with(ty, substitution)?))
     }
@@ -89,40 +89,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
-        let targs = self.tree.first_child_with(node, ProductionV0_14::Targs)?;
+        let targs = self.tree.first_child_with(node, ProductionV0_15::Targs)?;
         if let Some(ty) = self.integer_type(node)? {
             if targs.is_some() {
                 return self.issue_node(
-                    SemanticRuleV0_14::Type5,
+                    SemanticRuleV0_15::Type5,
                     node,
                     SemanticIssueKind::TypeMismatch,
                 );
             }
             return Ok(CheckedType::Integer(ty));
         }
-        if self.has_fixed(node, FixedTerminalV0_14::Unit)? {
+        if self.has_fixed(node, FixedTerminalV0_15::Unit)? {
             if targs.is_some() {
                 return self.issue_node(
-                    SemanticRuleV0_14::Type5,
+                    SemanticRuleV0_15::Type5,
                     node,
                     SemanticIssueKind::TypeMismatch,
                 );
             }
             return Ok(CheckedType::Unit);
         }
-        if self.has_fixed(node, FixedTerminalV0_14::F32)?
-            || self.has_fixed(node, FixedTerminalV0_14::F64)?
+        if self.has_fixed(node, FixedTerminalV0_15::F32)?
+            || self.has_fixed(node, FixedTerminalV0_15::F64)?
         {
-            return self.unsupported(UnsupportedSemanticFeatureV0_14::FloatingPoint, node);
+            return self.unsupported(UnsupportedSemanticFeatureV0_15::FloatingPoint, node);
         }
-        if self.has_fixed(node, FixedTerminalV0_14::Array)? {
+        if self.has_fixed(node, FixedTerminalV0_15::Array)? {
             let element_node = self
                 .tree
-                .first_child_with(node, ProductionV0_14::Type)?
+                .first_child_with(node, ProductionV0_15::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let length_node = self
                 .tree
-                .first_child_with(node, ProductionV0_14::Const)?
+                .first_child_with(node, ProductionV0_15::Const)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
             let element = self.checked_flat_element(element_type, element_node)?;
@@ -131,10 +131,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length: self.parse_const_expression_with(length_node, substitution)?,
             });
         }
-        if self.has_fixed(node, FixedTerminalV0_14::Buffer)? {
+        if self.has_fixed(node, FixedTerminalV0_15::Buffer)? {
             let element_node = self
                 .tree
-                .first_child_with(node, ProductionV0_14::Type)?
+                .first_child_with(node, ProductionV0_15::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
             return Ok(CheckedType::Buffer {
@@ -143,7 +143,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::TypeIdentifier)?
+            .direct_token_with(node, TerminalPredicateV0_15::TypeIdentifier)?
             .is_some()
         {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
@@ -151,7 +151,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(0) => {
                     if targs.is_some() {
                         return self.issue_node(
-                            SemanticRuleV0_14::Type5,
+                            SemanticRuleV0_15::Type5,
                             node,
                             SemanticIssueKind::TypeMismatch,
                         );
@@ -179,7 +179,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::Prelude(id) if matches!(id.ordinal(), 15 | 17 | 20) => {
                     if targs.is_some() {
                         return self.issue_node(
-                            SemanticRuleV0_14::Type5,
+                            SemanticRuleV0_15::Type5,
                             node,
                             SemanticIssueKind::TypeMismatch,
                         );
@@ -194,7 +194,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 ResolvedTarget::Prelude(_) => {
                     return self
-                        .unsupported(UnsupportedSemanticFeatureV0_14::PreludeNominalValues, node);
+                        .unsupported(UnsupportedSemanticFeatureV0_15::PreludeNominalValues, node);
                 }
                 ResolvedTarget::Source {
                     declaration,
@@ -224,20 +224,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } => {
                     if targs.is_some() {
                         return self.issue_node(
-                            SemanticRuleV0_14::Type5,
+                            SemanticRuleV0_15::Type5,
                             node,
                             SemanticIssueKind::TypeMismatch,
                         );
                     }
                     let Some(ty) = substitution.type_argument(declaration) else {
-                        return self.unsupported(UnsupportedSemanticFeatureV0_14::Generics, node);
+                        return self.unsupported(UnsupportedSemanticFeatureV0_15::Generics, node);
                     };
                     return Ok(ty);
                 }
                 _ => {}
             }
         }
-        self.unsupported(UnsupportedSemanticFeatureV0_14::CompositeValues, node)
+        self.unsupported(UnsupportedSemanticFeatureV0_15::CompositeValues, node)
     }
 
     pub(super) fn result_type_arguments_with(
@@ -245,31 +245,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(CheckedType, CheckedType), CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, ProductionV0_14::Targs)? else {
+        let Some(targs) = self.tree.first_child_with(node, ProductionV0_15::Targs)? else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
         };
-        let arguments = self.tree.children_with(targs, ProductionV0_14::Targ)?;
+        let arguments = self.tree.children_with(targs, ProductionV0_15::Targ)?;
         let [ok, error] = arguments.as_slice() else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
         };
-        let Some(ok) = self.tree.first_child_with(*ok, ProductionV0_14::Type)? else {
+        let Some(ok) = self.tree.first_child_with(*ok, ProductionV0_15::Type)? else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
         };
-        let Some(error) = self.tree.first_child_with(*error, ProductionV0_14::Type)? else {
+        let Some(error) = self.tree.first_child_with(*error, ProductionV0_15::Type)? else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
@@ -285,24 +285,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, ProductionV0_14::Targs)? else {
+        let Some(targs) = self.tree.first_child_with(node, ProductionV0_15::Targs)? else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
         };
-        let arguments = self.tree.children_with(targs, ProductionV0_14::Targ)?;
+        let arguments = self.tree.children_with(targs, ProductionV0_15::Targ)?;
         let [value] = arguments.as_slice() else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
         };
-        let Some(value) = self.tree.first_child_with(*value, ProductionV0_14::Type)? else {
+        let Some(value) = self.tree.first_child_with(*value, ProductionV0_15::Type)? else {
             return self.issue_node(
-                SemanticRuleV0_14::Type5,
+                SemanticRuleV0_15::Type5,
                 node,
                 SemanticIssueKind::TypeMismatch,
             );
@@ -312,14 +312,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn integer_type(&self, node: NodeId) -> Result<Option<IntegerType>, CheckStop> {
         let fixed = [
-            (FixedTerminalV0_14::I8, IntegerType::I8),
-            (FixedTerminalV0_14::I16, IntegerType::I16),
-            (FixedTerminalV0_14::I32, IntegerType::I32),
-            (FixedTerminalV0_14::I64, IntegerType::I64),
-            (FixedTerminalV0_14::U8, IntegerType::U8),
-            (FixedTerminalV0_14::U16, IntegerType::U16),
-            (FixedTerminalV0_14::U32, IntegerType::U32),
-            (FixedTerminalV0_14::U64, IntegerType::U64),
+            (FixedTerminalV0_15::I8, IntegerType::I8),
+            (FixedTerminalV0_15::I16, IntegerType::I16),
+            (FixedTerminalV0_15::I32, IntegerType::I32),
+            (FixedTerminalV0_15::I64, IntegerType::I64),
+            (FixedTerminalV0_15::U8, IntegerType::U8),
+            (FixedTerminalV0_15::U16, IntegerType::U16),
+            (FixedTerminalV0_15::U32, IntegerType::U32),
+            (FixedTerminalV0_15::U64, IntegerType::U64),
         ];
         for (terminal, ty) in fixed {
             if self.has_fixed(node, terminal)? {
@@ -330,31 +330,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn parse_effects(&self, node: NodeId) -> Result<EffectSet, CheckStop> {
-        if self.has_fixed(node, FixedTerminalV0_14::Pure)? {
+        if self.has_fixed(node, FixedTerminalV0_15::Pure)? {
             return Ok(EffectSet::NONE);
         }
-        let effects = self.tree.children_with(node, ProductionV0_14::Effect)?;
+        let effects = self.tree.children_with(node, ProductionV0_15::Effect)?;
         let mut previous = None;
         let mut declared = EffectSet::NONE;
         for effect in effects {
-            let ordinal = if self.has_fixed(effect, FixedTerminalV0_14::Reads)? {
+            let ordinal = if self.has_fixed(effect, FixedTerminalV0_15::Reads)? {
                 for region in self.effect_regions(effect)? {
                     declared.add_read(region);
                 }
                 0
-            } else if self.has_fixed(effect, FixedTerminalV0_14::Writes)? {
+            } else if self.has_fixed(effect, FixedTerminalV0_15::Writes)? {
                 for region in self.effect_regions(effect)? {
                     declared.add_write(region);
                 }
                 1
-            } else if self.has_fixed(effect, FixedTerminalV0_14::Allocates)? {
+            } else if self.has_fixed(effect, FixedTerminalV0_15::Allocates)? {
                 let heap = self.tree.direct_spelling(effect)? == b"allocates(heap)";
                 declared.allocates_heap |= heap;
                 if !heap {
-                    return self.unsupported(UnsupportedSemanticFeatureV0_14::EffectFamily, effect);
+                    return self.unsupported(UnsupportedSemanticFeatureV0_15::EffectFamily, effect);
                 }
                 2
-            } else if self.has_fixed(effect, FixedTerminalV0_14::Traps)? {
+            } else if self.has_fixed(effect, FixedTerminalV0_15::Traps)? {
                 declared.traps = true;
                 3
             } else {
@@ -362,7 +362,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             if previous.is_some_and(|last| last >= ordinal) {
                 return self.issue_node(
-                    SemanticRuleV0_14::Eff1,
+                    SemanticRuleV0_15::Eff1,
                     node,
                     SemanticIssueKind::InvalidEffectRow,
                 );
@@ -401,7 +401,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedConst, CheckStop> {
         if let Some(digits) = self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::Digits)?
+            .direct_token_with(node, TerminalPredicateV0_15::Digits)?
         {
             return std::str::from_utf8(self.tree.token_bytes(digits)?)
                 .ok()
@@ -409,7 +409,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .map(CheckedConst::Value)
                 .ok_or_else(|| {
                     self.issue_value(
-                        SemanticRuleV0_14::Const1,
+                        SemanticRuleV0_15::Const1,
                         node,
                         SemanticIssueKind::InvalidConstValue,
                     )
@@ -417,7 +417,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::Identifier)?
+            .direct_token_with(node, TerminalPredicateV0_15::Identifier)?
             .is_some()
         {
             let usage = self.use_at(node, LexicalUseRole::Const)?;
@@ -432,7 +432,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } => (declaration, false),
                 _ => {
                     return self.issue_node(
-                        SemanticRuleV0_14::Const1,
+                        SemanticRuleV0_15::Const1,
                         node,
                         SemanticIssueKind::InvalidConstValue,
                     );
@@ -440,7 +440,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             if !named {
                 let Some(value) = substitution.const_argument(declaration) else {
-                    return self.unsupported(UnsupportedSemanticFeatureV0_14::Generics, node);
+                    return self.unsupported(UnsupportedSemanticFeatureV0_15::Generics, node);
                 };
                 return Ok(value);
             }
@@ -452,14 +452,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?;
             let CheckedValue::Integer { ty, bits } = &constant.value else {
                 return self.issue_node(
-                    SemanticRuleV0_14::Const1,
+                    SemanticRuleV0_15::Const1,
                     node,
                     SemanticIssueKind::InvalidConstValue,
                 );
             };
             if ty.signed() && bits & (1_u64 << (ty.width() - 1)) != 0 {
                 return self.issue_node(
-                    SemanticRuleV0_14::Const1,
+                    SemanticRuleV0_15::Const1,
                     node,
                     SemanticIssueKind::InvalidConstValue,
                 );
@@ -476,21 +476,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedValue, CheckStop> {
         if let Some(literal) = self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::Literal)?
+            .direct_token_with(node, TerminalPredicateV0_15::Literal)?
         {
             let value = self.parse_literal(node, self.tree.token_bytes(literal)?)?;
             if value.ty() == expected {
                 return Ok(value);
             }
             return self.issue_node(
-                SemanticRuleV0_14::Const2,
+                SemanticRuleV0_15::Const2,
                 node,
                 SemanticIssueKind::InvalidConstValue,
             );
         }
         if self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::Identifier)?
+            .direct_token_with(node, TerminalPredicateV0_15::Identifier)?
             .is_some()
         {
             let usage = self.use_at(node, LexicalUseRole::ConstValue)?;
@@ -510,28 +510,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(constant.value.clone());
             }
             return self.issue_node(
-                SemanticRuleV0_14::Const2,
+                SemanticRuleV0_15::Const2,
                 node,
                 SemanticIssueKind::InvalidConstValue,
             );
         }
         let CheckedType::Array { element, length } = expected else {
             return self.issue_node(
-                SemanticRuleV0_14::Const2,
+                SemanticRuleV0_15::Const2,
                 node,
                 SemanticIssueKind::InvalidConstValue,
             );
         };
-        if !self.has_fixed(node, FixedTerminalV0_14::LeftBracket)? {
+        if !self.has_fixed(node, FixedTerminalV0_15::LeftBracket)? {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        let entries = self.tree.children_with(node, ProductionV0_14::Cvalue)?;
+        let entries = self.tree.children_with(node, ProductionV0_15::Cvalue)?;
         let Some(length) = length.value() else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
         if u64::try_from(entries.len()).ok() != Some(length) {
             return self.issue_node(
-                SemanticRuleV0_14::Const2,
+                SemanticRuleV0_15::Const2,
                 node,
                 SemanticIssueKind::InvalidConstValue,
             );
@@ -556,15 +556,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
         let directly_ineligible = self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::TypeIdentifier)?
+            .direct_token_with(node, TerminalPredicateV0_15::TypeIdentifier)?
             .is_some()
-            || self.has_fixed(node, FixedTerminalV0_14::Slice)?
-            || self.has_fixed(node, FixedTerminalV0_14::Box)?
-            || self.has_fixed(node, FixedTerminalV0_14::Arena)?
-            || self.has_fixed(node, FixedTerminalV0_14::Buffer)?;
+            || self.has_fixed(node, FixedTerminalV0_15::Slice)?
+            || self.has_fixed(node, FixedTerminalV0_15::Box)?
+            || self.has_fixed(node, FixedTerminalV0_15::Arena)?
+            || self.has_fixed(node, FixedTerminalV0_15::Buffer)?;
         if directly_ineligible {
             return self.issue_node(
-                SemanticRuleV0_14::Const2,
+                SemanticRuleV0_15::Const2,
                 node,
                 SemanticIssueKind::InvalidConstValue,
             );
@@ -588,7 +588,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Ok(ty)
         } else {
             self.issue_node(
-                SemanticRuleV0_14::Const2,
+                SemanticRuleV0_15::Const2,
                 node,
                 SemanticIssueKind::InvalidConstValue,
             )
@@ -612,7 +612,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
             | CheckedType::Buffer { .. } => self.issue_node(
-                SemanticRuleV0_14::Type2,
+                SemanticRuleV0_15::Type2,
                 node,
                 SemanticIssueKind::TypeMismatch,
             ),
@@ -628,11 +628,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(CheckedValue::Unit);
         }
         if bytes.ends_with(b"_f32") || bytes.ends_with(b"_f64") {
-            return self.unsupported(UnsupportedSemanticFeatureV0_14::FloatingPoint, node);
+            return self.unsupported(UnsupportedSemanticFeatureV0_15::FloatingPoint, node);
         }
         parse_integer(bytes).ok_or_else(|| {
             self.issue_value(
-                SemanticRuleV0_14::Form7,
+                SemanticRuleV0_15::Form7,
                 node,
                 SemanticIssueKind::InvalidIntegerLiteral,
             )
@@ -642,7 +642,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn check_message(&self, node: NodeId) -> Result<String, CheckStop> {
         let terminal = self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_14::String)?
+            .direct_token_with(node, TerminalPredicateV0_15::String)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let bytes = self.tree.token_bytes(terminal)?;
         let interior = bytes

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
-use crate::{ByteOffset, CanonicalSyntaxUnit, ProductionV0_14, SourceId};
+use crate::{ByteOffset, CanonicalSyntaxUnit, ProductionV0_15, SourceId};
 
 use super::catalog::PRELUDE_DECLARATIONS;
 use super::scopes::ScopeBuild;
@@ -151,9 +151,9 @@ impl From<ResolutionCompilerFailure> for BuildStop {
     }
 }
 
-/// Resolves every exact-v0.14 declaration and lexical use in canonical syntax.
+/// Resolves every exact-v0.15 declaration and lexical use in canonical syntax.
 #[must_use]
-pub fn resolve_v0_14<'classified, 'lexed, 'source>(
+pub fn resolve_v0_15<'classified, 'lexed, 'source>(
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> ResolutionOutcome<'classified, 'lexed, 'source> {
     match build_tables(&syntax) {
@@ -278,11 +278,11 @@ fn owner_chain(
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
         if matches!(
             record.production,
-            ProductionV0_14::FnSig
-                | ProductionV0_14::FnDecl
-                | ProductionV0_14::StructDecl
-                | ProductionV0_14::EnumDecl
-                | ProductionV0_14::ContractDecl
+            ProductionV0_15::FnSig
+                | ProductionV0_15::FnDecl
+                | ProductionV0_15::StructDecl
+                | ProductionV0_15::EnumDecl
+                | ProductionV0_15::ContractDecl
         ) {
             owners.push(node);
         }
@@ -299,7 +299,7 @@ fn function_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<Node
         let record = topology.node(node)?;
         if matches!(
             record.production,
-            ProductionV0_14::FnDecl | ProductionV0_14::FnSig
+            ProductionV0_15::FnDecl | ProductionV0_15::FnSig
         ) {
             return Some(node);
         }
@@ -360,7 +360,7 @@ fn declaration_visibility(
         | DeclarationRole::Let => node_end(topology, role.owner)?.value(),
         DeclarationRole::MatchBinder => {
             let list =
-                ancestor_with_production(topology, role.owner, ProductionV0_14::FieldbindList)
+                ancestor_with_production(topology, role.owner, ProductionV0_15::FieldbindList)
                     .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
             node_end(topology, list)?.value()
         }
@@ -388,7 +388,7 @@ fn node_end(
 fn ancestor_with_production(
     topology: &FinalizedTopology,
     mut node: NodeId,
-    production: ProductionV0_14,
+    production: ProductionV0_15,
 ) -> Option<NodeId> {
     loop {
         let record = topology.node(node)?;

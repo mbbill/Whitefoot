@@ -4,8 +4,8 @@ mod outcome;
 mod shape;
 pub(crate) mod topology;
 
-pub use canonical::audit_canonical_v0_14;
-pub use engine::finalize_v0_14;
+pub use canonical::audit_canonical_v0_15;
+pub use engine::finalize_v0_15;
 pub use outcome::{
     BundleSourceExtent, CanonicalCompilerFailure, CanonicalIssue, CanonicalLimit, CanonicalLimits,
     CanonicalLocation, CanonicalOutcome, CanonicalResourceFailure, CanonicalStorage,

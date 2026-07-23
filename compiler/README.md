@@ -14,16 +14,17 @@ ordered source bundle
   -> strong-LL(2) parser
   -> finalized source-bound syntax tree
   -> exact FORM-2 validation
-  -> direct v0.14 lexical name resolution
+  -> direct v0.15 lexical name resolution
   -> semantic and ownership checking
   -> private checked program
   -> target-independent typed control-flow IR
+  -> selected-host layout and target-domain qualification
   -> conservative textual LLVM
   -> host executable
 ```
 
 The frontend targets the exact bytes of
-`../spec/kernel-spec-v0.14.md`. `cargo run --bin whitefoot-spec` checks that
+`../spec/kernel-spec-v0.15.md`. `cargo run --bin whitefoot-spec` checks that
 those bytes are the approved candidate and that the terminal and grammar data
 name the same specification identity. The committed grammar tables are
 ordinary compiler data. For a specification proposal, run the native verifier
@@ -41,7 +42,7 @@ closed when a proposal changes that contract; a structural change must first
 extend this same native path rather than reviving an independent grammar
 engine.
 
-The resolver covers every v0.14 declaration, lexical-use, and deferred
+The resolver covers every v0.15 declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
 visibility, reservations, collisions, and deterministic diagnostics.
 
@@ -81,7 +82,8 @@ immutable static const tables, `len`, checked index reads, and target-before-RHS
 checked indexed writes for direct local roots. The IR retains required checks,
 source trap sites, checked set paths, and cleanup. Runtime-length non-floating
 primitive buffers use a `{data pointer, u64 length}` value, checked OP-9
-byte-size multiplication before allocation, complete fill initialization,
+byte-size multiplication, a separate selected-target domain guard before
+allocation, complete fill initialization,
 OP-4 reads and target-before-RHS writes, cross-function affine transfer, and
 compiler-derived `free` on normal owner exits. Buffer fields retain exact
 projected roots through length, read, and write operations without
@@ -95,6 +97,18 @@ is cleaned up. Distinct struct fields can therefore be uniquely passed to a
 fill helper and then shared with a fold helper without transferring either
 allocation. The backend remains conservative LLVM without unearned overflow
 flags or check elision.
+
+Target qualification is one private stage immediately before LLVM emission.
+The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple and
+DataLayout, checks concrete representations, statics, source-call ABI objects,
+actual emitted stack slots, and complete frames with checked arithmetic, and
+reports unrepresentable materialization as a target failure without a source
+rule. The checked program and IR retain allocation and element-address
+obligations. Fixed-array bounds plus static layout discharge address
+representability; buffer bounds plus the successful allocation invariant do
+the same; buffer allocation retains an exact non-language guard before
+`malloc`. This is not a language array limit, stack-capacity prediction, hidden
+heap fallback, or optimizer fact.
 
 Concrete `requires` blocks are checked executable prologues. The semantic
 checker admits their restricted own-copy, pure-total ANF subset, retains the
@@ -113,18 +127,19 @@ A shared-borrow byte scanner returns `Option<u64>` through this path. A
 fallible byte transform exercises owned-buffer Result success, error, matching,
 and abandonment cleanup through the same representation.
 
-This first borrow family deliberately stops before scalar and nominal
-referents, returned borrows, statement-scoped child reborrows, borrow-producing
-branch joins, boxes, arenas, and slices. Those forms remain explicit
-unsupported compiler capabilities; they are not accepted with incomplete loan
-checking. Unimplemented v0.14 families stop the same way rather than becoming
-source-language rejections. Whole-unit ERR-2 variant-addition edit-list
-enumeration and the full conformance adapter remain future work.
+The implemented borrow family covers buffer owners, whole acyclic struct
+owners, copy-field projection, caller-visible read/write effects, and
+statement-scoped shared or mode-compatible unique child reborrows around one
+call. It deliberately stops before returned borrows, borrow-producing branch
+joins, boxes, arenas, slices, and storage roots not handled by those general
+paths. Those forms remain explicit unsupported compiler capabilities; they are
+not accepted with incomplete loan checking. Unimplemented v0.15 families stop
+the same way rather than becoming source-language rejections. Whole-unit ERR-2
+variant-addition edit-list enumeration and the full conformance adapter remain
+future work.
 Projected array roots, slices, and non-buffer borrow-backed SET-1 targets
 remain unsupported until their place families exist; none of these gaps is
-implied complete by the current gate. Projected fields of borrowed structs are
-the next selected slice because they unblock the structure-of-arrays
-binary-tree workload.
+implied complete by the current gate.
 
 Compile a source file through the normal path with:
 

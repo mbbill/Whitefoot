@@ -52,10 +52,10 @@ measurement does.
 
 ## Current state
 
-The active language authority is `spec/kernel-spec-v0.14.md`, SHA-256
-`31c09313363304f405c8db1191d1982e3625b86788bf953ec3bb169648466e9f`.
+The active language authority is `spec/kernel-spec-v0.15.md`, SHA-256
+`3c924095b2c21f123b7137556f72dbe87275838682c1965e6caf399dd24d13bd`.
 Those bytes are immutable and byte-identical to the owner-approved candidate.
-Exact v0.8 through v0.13 remain immutable historical evidence. v0.12 added the
+Exact v0.8 through v0.14 remain immutable historical evidence. v0.12 added the
 SET-1 copy-place assignment judgment, target-before-RHS ordering, post-RHS
 writability revalidation, and ultimate-storage-origin read/write effects.
 v0.13 makes a direct bare affine own-rooted `Result` place a consuming
@@ -63,7 +63,11 @@ v0.13 makes a direct bare affine own-rooted `Result` place a consuming
 explicit `move` as a valid spelling and leaving every other ownership rule
 unchanged. v0.14 closes the already-listed integer-negation rows: wrapping
 minimum remains minimum, trapping minimum emits OP-2's exact mandatory record,
-and checked minimum returns `Err(Overflow())`.
+and checked minimum returns `Err(Overflow())`. v0.15 removes the undefined
+array “frame limit” and defines the selected-target layout boundary: complete
+static objects must fit the selected target, while runtime allocation and
+element-address arithmetic must be proved exact or guarded before use. These
+target failures are not source-language rejections or language traps.
 
 The Rust compiler now has one ordinary path from ordered source transport
 through the lossless frontend and direct resolver into semantic checking, a
@@ -148,10 +152,10 @@ branch-dependent ownership/loan joins, projected array targets, and
 floating-point and remaining effect-table operations are explicit unsupported
 compiler capabilities rather than source-language rejections.
 Repeated exhaustive match arms also stop as
-unsupported because v0.14 defines neither duplicate-arm meaning nor a
+unsupported because v0.15 defines neither duplicate-arm meaning nor a
 duplicate-arm rejection rule.
 
-The exact approved v0.14 candidate is installed and every live identity names
+The exact approved v0.15 candidate is installed and every live identity names
 it. The resolver implementation completes Phase 6, the first executable scalar
 slice completes Phase 7, and nominal data, the current SET-1 place family,
 structured loops, and the first Result family advance Phase 8.
@@ -195,8 +199,10 @@ that path.
 
 Direct own-root runtime-length non-floating primitive buffers now run through
 the normal compiler path. `buffer_new` computes `n * sizeof(T)` with retained u64 overflow
-before allocation, aborts on allocator failure as a TCB edge, fills every
-element, and produces the specified `{data pointer, u64 length}` owner.
+before allocation, checks the selected target's allocator/address domain
+before the allocator call, aborts target-domain or allocator failure as
+non-language TCB/resource edges, fills every element, and produces the
+specified `{data pointer, u64 length}` owner.
 `len`, OP-4 reads, and target-before-RHS indexed SET-1 use the runtime length;
 buffers cross function boundaries as affine values; and every normal checked
 owner exit emits one `free`. The effect checker now tracks `allocates(heap)`
@@ -286,21 +292,20 @@ condition now expects its specification-selected OP-5 rejection. Their
 statuses and expectation kinds are unchanged, and the corrected runnable
 programs execute through the normal compiler path.
 
-The active v0.14 specification still names an undefined array “frame limit,”
-so the compiler does not invent one. Exact candidate
-`governance/spec-evolution/kernel-spec-v0.15-candidate.md`, SHA-256
-`3c924095b2c21f123b7137556f72dbe87275838682c1965e6caf399dd24d13bd`,
-is awaiting owner approval. It removes the ineffective language-level numeric
-cap and adds a general checked target-layout boundary over the ordinary
-facts-off materialization set and every complete compiler-generated target
-object. The checked program carries abstract runtime allocation and address
-obligations; target lowering must discharge each one or retain an exact
-non-continuing guard, without narrowing or optimizer dependence.
-Unrepresentable static target objects and failed dynamic target-domain guards
-remain non-language failures: they add no source rejection, language trap, or
-effect, while storage class and `array_new` purity remain unchanged. Until
-exact approval, v0.14 remains authoritative and no v0.15 compiler behavior is
-active.
+The exact v0.15 target-layout candidate above is owner-approved, installed, and
+implemented. The checked program records target-domain obligations for every
+implemented runtime-sized allocation and emitted element address, including
+array/buffer initialization, reads, and SET-1 writes. Before emitting
+target-dependent LLVM, the backend selects one exact executable-fixed host
+triple and DataLayout, computes concrete aggregate/enum/array layouts, static
+objects, source-call ABI objects, actual emitted stack slots and complete
+frames with checked arithmetic, and rejects an unrepresentable materialization
+as a target failure with no source rule. Runtime buffer lowering preserves
+OP-9's u64 overflow trap first, then checks the allocator/address domain before
+`malloc`; failure aborts without a DIAG-3 record. Bounds plus the established
+complete layout or successful allocation invariant discharge the corresponding
+address obligation. No numeric source-language cap, hidden heap fallback, new
+effect, optimizer fact, or alternate lowering path was added.
 
 ## Authority and specification changes
 
@@ -794,13 +799,16 @@ deterministic closure, and a generic call cycle that stops before instance
 enumeration. `generic_instances.wf` and `generic_nominals.wf` execute the
 ordinary checked-IR and LLVM path.
 
-Cyclic generic calls, region-bearing generic arguments, source
-contracts/conformances/laws, generic `requires`, and generic `cvt` remain
-explicit unsupported capabilities under the milestone boundary rather than
-source rejections. Phase 8 is not complete. The immediate governance gate is
-owner review of the exact v0.15 target-layout candidate above; it must be
-approved and activated before compiler implementation can claim its new
-STOR-6 behavior.
+The v0.15 STOR-6 target-layout slice now runs through the same checked-program
+and LLVM path. Phase 8 is not complete. The next coherent capability is source
+contracts, conformances, and law checking, continuing family 2 above after the
+generic instance core. It must use the existing resolved declarations,
+concrete instance tables, ordinary semantic rechecking, and direct-call path;
+it must not create a second dispatch IR, infer conformance, trust a written law,
+or specialize behavior to a conformance fixture. Cyclic generic calls,
+region-bearing generic arguments, generic `requires`, and generic `cvt` remain
+explicit unsupported capabilities rather than source rejections unless that
+slice needs and implements them generally.
 
 ## Phase 9: dogfood and language iteration
 

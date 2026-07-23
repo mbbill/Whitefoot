@@ -1,5 +1,5 @@
 use crate::lexer::{LexedBundle, Token, TokenId};
-use crate::syntax::terminal::TerminalSetV0_14;
+use crate::syntax::terminal::TerminalSetV0_15;
 use crate::{ByteOffset, SourceBundle, SourceId, SpecHash};
 
 /// Which explicit terminal-classification ceiling was exceeded.
@@ -121,11 +121,11 @@ impl<'source> TerminalIssue<'source> {
     }
 }
 
-/// One formed token and every approved v0.14 predicate it satisfies.
+/// One formed token and every approved v0.15 predicate it satisfies.
 #[derive(Clone, Copy, Debug)]
 pub struct ClassifiedToken<'source> {
     pub(crate) token: Token<'source>,
-    pub(crate) terminals: TerminalSetV0_14,
+    pub(crate) terminals: TerminalSetV0_15,
 }
 
 impl<'source> ClassifiedToken<'source> {
@@ -137,7 +137,7 @@ impl<'source> ClassifiedToken<'source> {
 
     /// Returns every matching terminal predicate without priority selection.
     #[must_use]
-    pub const fn terminals(self) -> TerminalSetV0_14 {
+    pub const fn terminals(self) -> TerminalSetV0_15 {
         self.terminals
     }
 }
@@ -190,7 +190,7 @@ impl<'lexed, 'source> ClassifiedBundle<'lexed, 'source> {
     }
 }
 
-/// Failure-atomic result of complete v0.14 terminal classification.
+/// Failure-atomic result of complete v0.15 terminal classification.
 #[derive(Debug)]
 pub enum TerminalOutcome<'lexed, 'source> {
     /// Every formed token retained at least one approved predicate.

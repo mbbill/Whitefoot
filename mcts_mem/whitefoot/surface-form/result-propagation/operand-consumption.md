@@ -1,5 +1,5 @@
-- A direct bare affine own-rooted Result place is a consuming `propagate` operand: the whole storage root dies exactly once.
-- Explicit `move` remains a valid operand spelling, so generated code that makes the transfer explicit stays canonical.
+- A direct bare affine own-rooted Result place used by `propagate` consumes its whole storage root exactly once.
+- Explicit `move` remains a valid operand spelling.
 - Copy Result operands, non-place Result expressions, borrow restrictions, same-E checking, cleanup, effects, and runtime Ok/Err behavior follow their existing rules.
 
 ## Facts

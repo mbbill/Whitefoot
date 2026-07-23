@@ -372,6 +372,35 @@ pub(crate) struct TrapSite {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedTargetDomainObligation {
+    RuntimeSizedAllocation,
+    ElementAddress,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRuntimeTargetObligations {
+    allocation: CheckedTargetDomainObligation,
+    element_address: CheckedTargetDomainObligation,
+}
+
+impl CheckedRuntimeTargetObligations {
+    pub(crate) const fn new() -> Self {
+        Self {
+            allocation: CheckedTargetDomainObligation::RuntimeSizedAllocation,
+            element_address: CheckedTargetDomainObligation::ElementAddress,
+        }
+    }
+
+    pub(crate) const fn allocation(self) -> CheckedTargetDomainObligation {
+        self.allocation
+    }
+
+    pub(crate) const fn element_address(self) -> CheckedTargetDomainObligation {
+        self.element_address
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedArrayRoot {
     Binding(BindingId),
     Constant(CheckedConstantId),
@@ -421,6 +450,7 @@ pub(crate) enum CheckedExpression {
     ArrayFill {
         ty: CheckedType,
         value: Box<CheckedExpression>,
+        target_domain: CheckedTargetDomainObligation,
     },
     ArrayLength {
         root: CheckedArrayRoot,
@@ -432,12 +462,14 @@ pub(crate) enum CheckedExpression {
         length: CheckedConst,
         offset: Box<CheckedExpression>,
         trap: TrapSite,
+        target_domain: CheckedTargetDomainObligation,
     },
     BufferFill {
         element: CheckedFlatElement,
         length: Box<CheckedExpression>,
         value: Box<CheckedExpression>,
         trap: TrapSite,
+        target_domains: CheckedRuntimeTargetObligations,
     },
     BufferLength {
         root: CheckedBufferRoot,
@@ -446,6 +478,7 @@ pub(crate) enum CheckedExpression {
         root: CheckedBufferRoot,
         offset: Box<CheckedExpression>,
         trap: TrapSite,
+        target_domain: CheckedTargetDomainObligation,
     },
     BorrowBuffer {
         root: CheckedBufferRoot,
@@ -556,6 +589,7 @@ pub(crate) struct CheckedArraySetTarget {
     pub(crate) length: CheckedConst,
     pub(crate) offset: CheckedExpression,
     pub(crate) trap: TrapSite,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -563,6 +597,7 @@ pub(crate) struct CheckedBufferSetTarget {
     pub(crate) root: CheckedBufferRoot,
     pub(crate) offset: CheckedExpression,
     pub(crate) trap: TrapSite,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

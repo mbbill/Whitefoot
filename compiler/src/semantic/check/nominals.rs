@@ -1,6 +1,6 @@
 use crate::syntax::NodeId;
 use crate::{
-    PreludeDeclarationId, ProductionV0_14, SemanticCompilerFailure, UnsupportedSemanticFeatureV0_14,
+    PreludeDeclarationId, ProductionV0_15, SemanticCompilerFailure, UnsupportedSemanticFeatureV0_15,
 };
 
 use super::super::model::{
@@ -41,7 +41,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .or_else(|| self.nominal_nodes.get(dependency).copied().flatten())
                             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                         return self.unsupported(
-                            UnsupportedSemanticFeatureV0_14::RecursiveNominalLayout,
+                            UnsupportedSemanticFeatureV0_15::RecursiveNominalLayout,
                             node,
                         );
                     }
@@ -121,7 +121,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(parent) = record.parent else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
-            if self.tree.production(parent)? == ProductionV0_14::FnDecl {
+            if self.tree.production(parent)? == ProductionV0_15::FnDecl {
                 return Ok(parent);
             }
             node = parent;

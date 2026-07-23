@@ -1,4 +1,4 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_14};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
 
 use super::super::model::{CheckedExpression, CheckedIntegerOperation, CheckedStatement};
 use super::{assert_rule, with_semantics};
@@ -56,12 +56,12 @@ fn retains_the_complete_nonfloating_integer_family() {
 
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own i8 = ibswap<i8>(1_i8);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Op1,
+        SemanticRuleV0_15::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own i8 = ishl.wrap<i8>(1_i8, 1_i8);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Type5,
+        SemanticRuleV0_15::Type5,
         SemanticIssueKind::TypeMismatch,
     );
 }

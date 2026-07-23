@@ -1,8 +1,8 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_14};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
 
 use super::super::model::{
     CheckedArrayRoot, CheckedConst, CheckedExpression, CheckedFlatElement, CheckedSetTarget,
-    CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
 };
 use super::{assert_rule, with_semantics};
 
@@ -49,6 +49,7 @@ fn main() -> own unit traps {
                         element: CheckedFlatElement::Integer(IntegerType::I32),
                         length: CheckedConst::Value(4),
                     },
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
@@ -71,6 +72,7 @@ fn main() -> own unit traps {
                     root: CheckedArrayRoot::Binding(_),
                     length: CheckedConst::Value(4),
                     trap,
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
@@ -83,6 +85,7 @@ fn main() -> own unit traps {
                     root: CheckedArrayRoot::Constant(_),
                     length: CheckedConst::Value(4),
                     trap,
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
                     ..
                 },
                 ..
@@ -95,32 +98,32 @@ fn main() -> own unit traps {
 fn const_expression_and_const_value_failures_keep_their_rule_owners() {
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/const1-neg-noninteger.wf"),
-        SemanticRuleV0_14::Const1,
+        SemanticRuleV0_15::Const1,
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
         b"const table: array<u8, 2> = [1_u8];\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        SemanticRuleV0_14::Const2,
+        SemanticRuleV0_15::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/const2-neg-noneligible.wf"),
-        SemanticRuleV0_14::Const2,
+        SemanticRuleV0_15::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
         b"struct Cell {\n  value: i32;\n}\n\nconst bad: Cell = unit;\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        SemanticRuleV0_14::Const2,
+        SemanticRuleV0_15::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
         include_bytes!("../../../../tests/conformance/cases/const2-neg-set.wf"),
-        SemanticRuleV0_14::Const2,
+        SemanticRuleV0_15::Const2,
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule(
         b"fn main() -> own unit traps {\n  let items: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  let value: own u8 = index<u8>(items, 0_u32);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Type5,
+        SemanticRuleV0_15::Type5,
         SemanticIssueKind::TypeMismatch,
     );
 }
@@ -164,7 +167,7 @@ fn main() -> own unit pure {
 
     assert_rule(
         b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        SemanticRuleV0_14::Type2,
+        SemanticRuleV0_15::Type2,
         SemanticIssueKind::TypeMismatch,
     );
 }
@@ -200,6 +203,10 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
         assert_eq!(target.length, CheckedConst::Value(2));
         assert_eq!(target.offset.ty(), CheckedType::Integer(IntegerType::U64));
         assert_eq!(target.trap.rule_id, "OP-4");
+        assert_eq!(
+            target.target_domain,
+            CheckedTargetDomainObligation::ElementAddress
+        );
     });
 }
 
@@ -207,17 +214,17 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
 fn indexed_set_rechecks_type_effect_and_root_liveness() {
     assert_rule(
         b"fn main() -> own unit pure {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set index<u8>(values, 0_u64) = 1_u8;\n  return unit;\n}\n",
-        SemanticRuleV0_14::Eff2,
+        SemanticRuleV0_15::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
         b"fn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set index<u8>(values, 0_u64) = 1_u16;\n  return unit;\n}\n",
-        SemanticRuleV0_14::Type5,
+        SemanticRuleV0_15::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
         b"fn consume(values: own array<u8, 2>) -> own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set index<u8>(values, 0_u64) = consume(values: move values);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Own1,
+        SemanticRuleV0_15::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
         },

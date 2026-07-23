@@ -1,5 +1,6 @@
 use crate::semantic::{
-    CheckedBufferRoot, CheckedBufferSetTarget, CheckedExpression, CheckedFlatElement, TrapSite,
+    CheckedBufferRoot, CheckedBufferSetTarget, CheckedExpression, CheckedFlatElement,
+    CheckedRuntimeTargetObligations, CheckedTargetDomainObligation, TrapSite,
 };
 
 use super::*;
@@ -18,6 +19,7 @@ impl IrBuilder<'_> {
         length: &CheckedExpression,
         value: &CheckedExpression,
         trap: &TrapSite,
+        target_domains: CheckedRuntimeTargetObligations,
     ) -> Result<IrValueId, LoweringFailure> {
         let element = lower_flat_element(element)?;
         let length = self.expression(length)?;
@@ -37,6 +39,7 @@ impl IrBuilder<'_> {
                 length,
                 value,
                 trap: trap.clone().into(),
+                target_domains: target_domains.into(),
             },
         )
     }
@@ -60,6 +63,7 @@ impl IrBuilder<'_> {
         root: &CheckedBufferRoot,
         offset: &CheckedExpression,
         trap: &TrapSite,
+        target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let buffer = self.buffer_root(root)?;
         let IrType::Buffer { element } = self.value_type(buffer)? else {
@@ -80,6 +84,7 @@ impl IrBuilder<'_> {
                 buffer,
                 offset,
                 trap: trap.clone().into(),
+                target_domain: target_domain.into(),
             },
         )
     }
@@ -107,6 +112,7 @@ impl IrBuilder<'_> {
                 buffer,
                 offset,
                 trap: target.trap.clone().into(),
+                target_domain: target.target_domain.into(),
             },
         )?;
         let value = self.expression(value)?;

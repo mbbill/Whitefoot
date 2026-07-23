@@ -1,4 +1,4 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_14};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
 
 use super::super::model::{CheckedExpression, CheckedIntegerOperation, CheckedStatement};
 use super::{assert_rule, with_semantics};
@@ -39,7 +39,7 @@ fn retains_each_mode_and_rejects_unsigned_types() {
 
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own u8 = iabs.wrap<u8>(1_u8);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Op1,
+        SemanticRuleV0_15::Op1,
         SemanticIssueKind::InvalidOperation,
     );
 }

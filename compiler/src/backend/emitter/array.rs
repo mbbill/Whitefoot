@@ -6,7 +6,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         result: IrValueId,
         ty: IrType,
         value: IrValueId,
+        target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
         let IrType::Array { element, length } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -47,7 +51,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         root: IrArrayRoot,
         offset: IrValueId,
         trap: &IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
         if self.function.value_type(offset)
             != Some(IrType::Integer {
                 width: 64,
@@ -119,7 +127,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         offset: IrValueId,
         trap: &IrTrapSite,
+        target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
         let IrType::GuardedArrayIndex { length } = ty else {
             return Err(BackendFailure::InvalidIr);
         };

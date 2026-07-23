@@ -1,8 +1,8 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_14};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
 
 use super::super::model::{
-    CheckedExpression, CheckedFlatElement, CheckedSetTarget, CheckedStatement, CheckedType,
-    IntegerType, NominalId,
+    CheckedExpression, CheckedFlatElement, CheckedSetTarget, CheckedStatement,
+    CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
 use super::{assert_rule, with_semantics};
 
@@ -35,10 +35,15 @@ fn main() -> own unit allocates(heap), traps {
                 value: CheckedExpression::BufferFill {
                     element: CheckedFlatElement::Integer(IntegerType::U16),
                     trap,
+                    target_domains,
                     ..
                 },
                 ..
             } if trap.rule_id == "OP-9"
+                && target_domains.allocation()
+                    == CheckedTargetDomainObligation::RuntimeSizedAllocation
+                && target_domains.element_address()
+                    == CheckedTargetDomainObligation::ElementAddress
         ));
 
         let main = &checked.data.functions[1];
@@ -53,6 +58,10 @@ fn main() -> own unit allocates(heap), traps {
             CheckedFlatElement::Integer(IntegerType::U16)
         );
         assert_eq!(target.trap.rule_id, "OP-4");
+        assert_eq!(
+            target.target_domain,
+            CheckedTargetDomainObligation::ElementAddress
+        );
         assert!(matches!(
             &main.body[2],
             CheckedStatement::Let {
@@ -63,7 +72,11 @@ fn main() -> own unit allocates(heap), traps {
         assert!(matches!(
             &main.body[3],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferIndex { trap, .. },
+                value: CheckedExpression::BufferIndex {
+                    trap,
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    ..
+                },
                 ..
             } if trap.rule_id == "OP-4"
         ));
@@ -84,17 +97,17 @@ fn main() -> own unit allocates(heap), traps {
 fn buffer_effect_rows_are_checked_both_ways() {
     assert_rule(
         b"fn main() -> own unit traps {\n  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Eff2,
+        SemanticRuleV0_15::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
         b"fn main() -> own unit allocates(heap) {\n  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Eff2,
+        SemanticRuleV0_15::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
         b"fn main() -> own unit allocates(heap), traps {\n  return unit;\n}\n",
-        SemanticRuleV0_14::Eff2,
+        SemanticRuleV0_15::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
 }
@@ -103,7 +116,7 @@ fn buffer_effect_rows_are_checked_both_ways() {
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
         b"fn main() -> own unit allocates(heap), traps {\n  let initial: own Bool = False();\n  let values: own buffer<Bool> = buffer_new<Bool>(2_u64, initial);\n  return unit;\n}\n",
-        SemanticRuleV0_14::Op1,
+        SemanticRuleV0_15::Op1,
         SemanticIssueKind::InvalidOperation,
     );
 }

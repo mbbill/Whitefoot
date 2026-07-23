@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use whitefoot::{CompilerLimits, SourceInput, compile_v0_14};
+use whitefoot::{CompilerLimits, SourceInput, compile_v0_15};
 
 fn main() {
     if let Err(message) = run() {
@@ -31,7 +31,7 @@ fn run() -> Result<(), String> {
         .map(|(path, bytes)| SourceInput::new(path, bytes))
         .collect();
     let module =
-        compile_v0_14(&inputs, CompilerLimits::default()).map_err(|failure| failure.to_string())?;
+        compile_v0_15(&inputs, CompilerLimits::default()).map_err(|failure| failure.to_string())?;
     if options.emit_llvm {
         if let Some(output) = options.output {
             std::fs::write(&output, &module)
