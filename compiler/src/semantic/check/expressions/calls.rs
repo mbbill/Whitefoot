@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, ProductionV0_15, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15, UnsupportedSemanticFeatureV0_15,
+    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
 use super::super::super::model::{
@@ -27,7 +27,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let callee = self
             .tree
-            .first_child_with(node, ProductionV0_15::Callee)?
+            .first_child_with(node, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let callee_path = self.tree.path(callee)?;
         let usage = self
@@ -62,7 +62,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        let spelling = crate::operation_family_spelling_v0_15(operation_id)
+        let spelling = crate::operation_family_spelling(operation_id)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if matches!(spelling, "band" | "bor" | "bxor" | "bnot") {
             return self.check_boolean_operation(node, spelling, function, bindings, loop_depth);
@@ -135,16 +135,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "igt" => CheckedIntegerOperation::Greater,
             "ige" => CheckedIntegerOperation::GreaterEqual,
             _ => {
-                return self.unsupported(UnsupportedSemanticFeatureV0_15::OperationFamily, node);
+                return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
             }
         };
         if self
             .tree
-            .first_child_with(node, ProductionV0_15::FieldinitList)?
+            .first_child_with(node, Production::FieldinitList)?
             .is_some()
         {
             return self.issue_node(
-                SemanticRuleV0_15::Gram11,
+                SemanticRule::Gram11,
                 node,
                 SemanticIssueKind::InvalidNamedArguments {
                     callee: spelling.to_owned(),
@@ -154,39 +154,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let targs = self
             .tree
-            .first_child_with(node, ProductionV0_15::Targs)?
+            .first_child_with(node, Production::Targs)?
             .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRuleV0_15::Fn2,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
+                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
             })?;
-        let targs = self.tree.children_with(targs, ProductionV0_15::Targ)?;
+        let targs = self.tree.children_with(targs, Production::Targ)?;
         if targs.len() != 1 {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let type_node = self
             .tree
-            .first_child_with(targs[0], ProductionV0_15::Type)?
+            .first_child_with(targs[0], Production::Type)?
             .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRuleV0_15::Op1,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
+                self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
             })?;
         let operand_type = self.parse_type_with(type_node, &function.substitution)?;
         if !operation.accepts_operand_type(operand_type) {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let operand_count = operation.operand_count();
         let atoms = self.operation_atoms(node, operand_count)?;
@@ -201,11 +185,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if Some(argument.expression.ty()) != operation.argument_type(operand_type, index)
                 || argument.mode != CheckedMode::Own
             {
-                return self.issue_node(
-                    SemanticRuleV0_15::Type5,
-                    atom,
-                    SemanticIssueKind::TypeMismatch,
-                );
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -286,11 +266,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         if self.operation_type_argument(node, spelling, function)? != CheckedType::Bool {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let expected = usize::from(operation != CheckedBooleanOperation::Not) + 1;
         let atoms = self.operation_atoms(node, expected)?;
@@ -299,11 +275,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for atom in atoms {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
             if argument.expression.ty() != CheckedType::Bool || argument.mode != CheckedMode::Own {
-                return self.issue_node(
-                    SemanticRuleV0_15::Type5,
-                    atom,
-                    SemanticIssueKind::TypeMismatch,
-                );
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -337,11 +309,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             _ => false,
         };
         if !tag_only {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let atoms = self.operation_atoms(node, 2)?;
         let mut arguments = Vec::with_capacity(2);
@@ -349,11 +317,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for atom in atoms {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
             if argument.expression.ty() != operand_type || argument.mode != CheckedMode::Own {
-                return self.issue_node(
-                    SemanticRuleV0_15::Type5,
-                    atom,
-                    SemanticIssueKind::TypeMismatch,
-                );
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -376,11 +340,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedType, CheckStop> {
         if self
             .tree
-            .first_child_with(node, ProductionV0_15::FieldinitList)?
+            .first_child_with(node, Production::FieldinitList)?
             .is_some()
         {
             return self.issue_node(
-                SemanticRuleV0_15::Gram11,
+                SemanticRule::Gram11,
                 node,
                 SemanticIssueKind::InvalidNamedArguments {
                     callee: spelling.to_owned(),
@@ -390,31 +354,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let targs = self
             .tree
-            .first_child_with(node, ProductionV0_15::Targs)?
+            .first_child_with(node, Production::Targs)?
             .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRuleV0_15::Fn2,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
+                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
             })?;
-        let targs = self.tree.children_with(targs, ProductionV0_15::Targ)?;
+        let targs = self.tree.children_with(targs, Production::Targ)?;
         if targs.len() != 1 {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let ty = self
             .tree
-            .first_child_with(targs[0], ProductionV0_15::Type)?
+            .first_child_with(targs[0], Production::Type)?
             .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRuleV0_15::Op1,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
+                self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
             })?;
         self.parse_type_with(ty, &function.substitution)
     }
@@ -435,27 +387,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         expected: usize,
     ) -> Result<Vec<NodeId>, CheckStop> {
-        let Some(list) = self
-            .tree
-            .first_child_with(node, ProductionV0_15::AtomList)?
-        else {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+        let Some(list) = self.tree.first_child_with(node, Production::AtomList)? else {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         };
-        let atoms = self.tree.children_with(list, ProductionV0_15::Atom)?;
+        let atoms = self.tree.children_with(list, Production::Atom)?;
         if atoms.len() < expected {
-            return self.issue_node(
-                SemanticRuleV0_15::Op1,
-                node,
-                SemanticIssueKind::InvalidOperation,
-            );
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         if atoms.len() > expected {
             return self.issue_node(
-                SemanticRuleV0_15::Op1,
+                SemanticRule::Op1,
                 atoms[expected],
                 SemanticIssueKind::InvalidOperation,
             );

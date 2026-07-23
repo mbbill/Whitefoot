@@ -33,21 +33,39 @@ impl fmt::Display for SpecHash {
     }
 }
 
-/// Exact identity of `spec/kernel-spec-v0.15.md`.
-pub const KERNEL_SPEC_V0_15_HASH: SpecHash = SpecHash::from_sha256([
-    0x3c, 0x92, 0x40, 0x95, 0xb2, 0xc2, 0x1f, 0x12, 0x3b, 0x71, 0x37, 0x55, 0x6f, 0x72, 0xdb, 0xe8,
-    0x72, 0x75, 0x83, 0x86, 0x82, 0xc1, 0x96, 0x5e, 0x6c, 0xaf, 0x39, 0x9d, 0xd2, 0x4d, 0x13, 0xbd,
+/// Version label of the active immutable kernel specification.
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.16";
+
+/// Repository-relative path of the active immutable kernel specification.
+pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.16.md";
+
+/// Exact UTF-8 text of the active immutable kernel specification.
+pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.16.md");
+
+/// Exact bytes of the active immutable kernel specification.
+pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
+
+/// SHA-256 identity of the active immutable kernel specification.
+pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
+    0xf9, 0x32, 0x64, 0xfb, 0x4d, 0xf6, 0x99, 0x4a, 0x40, 0x8e, 0x13, 0x27, 0xc6, 0xe8, 0x64, 0x3c,
+    0x34, 0xb4, 0xae, 0xa5, 0x5f, 0xba, 0x4b, 0x1a, 0x0b, 0x3d, 0xab, 0x35, 0x01, 0xce, 0xb9, 0x42,
 ]);
 
 #[cfg(test)]
 mod tests {
-    use super::KERNEL_SPEC_V0_15_HASH;
+    use super::{
+        ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH,
+        ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION,
+    };
 
     #[test]
-    fn v0_15_identity_is_the_approved_candidate_identity() {
+    fn active_spec_identity_is_the_approved_candidate_identity() {
+        assert_eq!(ACTIVE_KERNEL_SPEC_VERSION, "v0.16");
+        assert_eq!(ACTIVE_KERNEL_SPEC_PATH, "spec/kernel-spec-v0.16.md");
+        assert_eq!(ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_TEXT.as_bytes());
         assert_eq!(
-            KERNEL_SPEC_V0_15_HASH.to_string(),
-            "3c924095b2c21f123b7137556f72dbe87275838682c1965e6caf399dd24d13bd"
+            ACTIVE_KERNEL_SPEC_HASH.to_string(),
+            "f93264fb4df6994a408e1327c6e8643c34b4aea55fba4b1a0b3dab3501ceb942"
         );
     }
 }

@@ -4,6 +4,12 @@ use crate::{DeclarationId, NodePath, PreludeDeclarationId};
 pub(crate) struct FunctionId(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ContractId(pub(crate) u32);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ConformanceId(pub(crate) u32);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingId(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -717,10 +723,102 @@ pub(crate) struct CheckedFunction {
     pub(crate) body: Vec<CheckedStatement>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedEffectCapabilities {
+    pub(crate) reads: Vec<DeclarationId>,
+    pub(crate) writes: Vec<DeclarationId>,
+    pub(crate) allocates_heap: bool,
+    pub(crate) allocates_arenas: Vec<DeclarationId>,
+    pub(crate) traps: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedContractParameter {
+    pub(crate) mode: CheckedMode,
+    pub(crate) ty: CheckedType,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedContractMember {
+    pub(crate) name: String,
+    pub(crate) region_parameters: Vec<DeclarationId>,
+    pub(crate) parameters: Vec<CheckedContractParameter>,
+    pub(crate) result_mode: CheckedMode,
+    pub(crate) result: CheckedType,
+    pub(crate) effects: CheckedEffectCapabilities,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedContractLawKind {
+    Associative,
+    Commutative,
+    Identity,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedLawIdentity {
+    Literal(CheckedValue),
+    Constant(CheckedConstantId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedContractLaw {
+    pub(crate) node_path: NodePath,
+    pub(crate) kind: CheckedContractLawKind,
+    pub(crate) member: u32,
+    pub(crate) identity: Option<CheckedLawIdentity>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedContract {
+    pub(crate) id: ContractId,
+    pub(crate) declaration: DeclarationId,
+    pub(crate) name: String,
+    pub(crate) members: Vec<CheckedContractMember>,
+    pub(crate) laws: Vec<CheckedContractLaw>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedConformanceBinding {
+    pub(crate) member: u32,
+    pub(crate) function: FunctionId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedConformance {
+    pub(crate) id: ConformanceId,
+    pub(crate) node_path: NodePath,
+    pub(crate) subject: CheckedType,
+    pub(crate) contract: ContractId,
+    pub(crate) bindings: Vec<CheckedConformanceBinding>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedLawDerivation {
+    pub(crate) conformance: ConformanceId,
+    pub(crate) contract_law: u32,
+    pub(crate) function: FunctionId,
+    pub(crate) operation: CheckedIntegerOperation,
+    pub(crate) domain: IntegerType,
+    pub(crate) law: CheckedContractLawKind,
+    pub(crate) identity: Option<CheckedLawIdentity>,
+}
+
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
+    // Nominal instances discovered by the ordinary function path form this
+    // prefix. Later instances exist only to type-check static metadata.
+    pub(crate) executable_nominal_count: usize,
     pub(crate) constants: Vec<CheckedConstant>,
     pub(crate) functions: Vec<CheckedFunction>,
+    // Deliberately unread by ordinary lowering: FN-3/FN-4 metadata is
+    // source-acceptance evidence and grants no executable authority.
+    #[allow(dead_code)]
+    pub(crate) contracts: Vec<CheckedContract>,
+    #[allow(dead_code)]
+    pub(crate) conformances: Vec<CheckedConformance>,
+    #[allow(dead_code)]
+    pub(crate) law_derivations: Vec<CheckedLawDerivation>,
     pub(crate) main: FunctionId,
 }

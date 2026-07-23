@@ -1,0 +1,21 @@
+contract OrderedPair {
+  fn first() -> own i32 pure;
+  fn second() -> own i32 pure;
+}
+
+conform i32: OrderedPair {
+  second = make_second;
+  first = make_first;
+}
+
+fn make_first() -> own i32 pure {
+  return 1_i32;
+}
+
+fn make_second() -> own i32 pure {
+  return 2_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

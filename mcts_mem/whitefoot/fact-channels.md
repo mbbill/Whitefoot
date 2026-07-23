@@ -1,4 +1,4 @@
-- The active safe-Rust compiler has no optimizer fact channels, facts toggle, IR, or backend.
+- The active safe-Rust compiler has a checked IR and executable backend but no optimizer fact channels or facts toggle; source-law base derivations are acceptance evidence only.
 - The archived democ demonstrated scoped-alias, effect-attribute, and checked-law channels; their measurements are candidate evidence for later proposition-family experiments, not current compiler capability.
 - A future fact may improve an accepted program but may not affect source acceptance, select another lowerer, or remove a required check without a verified discharge.
 - Each future fact family must be independently attributable against correct facts-off compilation and must receive focused hostile negative-canary testing before it can authorize optimization.

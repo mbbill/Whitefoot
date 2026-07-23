@@ -2,7 +2,7 @@ use crate::{SourceId, SourceInput};
 
 use super::super::{
     CanonicalCompilerFailure, CanonicalLimit, CanonicalLimits, CanonicalLocation, CanonicalOutcome,
-    CanonicalResourceFailure, FinalizeOutcome, audit_canonical_v0_15, finalize_v0_15,
+    CanonicalResourceFailure, FinalizeOutcome, audit_canonical, finalize,
 };
 use super::support::{CANONICAL_LIMITS, FINALIZE_LIMITS, reaches_canonical_syntax, with_parsed};
 
@@ -12,10 +12,10 @@ fn audit_source(
 ) {
     let inputs = [SourceInput::new("format.wf", source)];
     with_parsed(&inputs, |parsed| {
-        let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("complete derivation must finalize");
         };
-        audit(audit_canonical_v0_15(finalized, CANONICAL_LIMITS));
+        audit(audit_canonical(finalized, CANONICAL_LIMITS));
     });
 }
 
@@ -44,11 +44,10 @@ fn ordered_canonical_sources_keep_independent_forests() {
         SourceInput::new("second.wf", b"fn second() -> own unit pure {\n}\n"),
     ];
     with_parsed(&inputs, |parsed| {
-        let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("ordered canonical bundle must finalize");
         };
-        let CanonicalOutcome::Complete(unit) = audit_canonical_v0_15(finalized, CANONICAL_LIMITS)
-        else {
+        let CanonicalOutcome::Complete(unit) = audit_canonical(finalized, CANONICAL_LIMITS) else {
             panic!("each ordered source forest must pass independently");
         };
         assert_eq!(unit.root_extent().len(), 3);
@@ -87,7 +86,7 @@ fn first_gap_mismatch_uses_exact_source_or_deepest_node_location() {
         let CanonicalOutcome::SourceIssue(issue) = outcome else {
             panic!("one-line block must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), crate::syntax::parser::SyntaxRuleV0_15::Form2);
+        assert_eq!(issue.rule(), crate::syntax::parser::SyntaxRule::Form2);
         let CanonicalLocation::SourceNode(path, coordinate) = issue.location() else {
             panic!("inside-item gap must use SourceNode");
         };
@@ -153,11 +152,10 @@ fn ordered_sources_stop_at_the_first_form2_mismatch() {
         SourceInput::new("third.wf", b"fn third() -> own unit pure {}"),
     ];
     with_parsed(&inputs, |parsed| {
-        let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("ordered bundle must finalize");
         };
-        let CanonicalOutcome::SourceIssue(issue) =
-            audit_canonical_v0_15(finalized, CANONICAL_LIMITS)
+        let CanonicalOutcome::SourceIssue(issue) = audit_canonical(finalized, CANONICAL_LIMITS)
         else {
             panic!("second source must provide first FORM-2 mismatch");
         };
@@ -174,33 +172,31 @@ fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
     let source = b"fn main() -> own unit pure {\n}\n";
     let inputs = [SourceInput::new("mutated.wf", source)];
     with_parsed(&inputs, |parsed| {
-        let FinalizeOutcome::Complete(mut finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS)
-        else {
+        let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("fixture must finalize before hostile mutation");
         };
         let Some(node) = finalized
             .topology
             .nodes
             .iter_mut()
-            .find(|node| node.production == crate::syntax::grammar::ProductionV0_15::FnDecl)
+            .find(|node| node.production == crate::syntax::grammar::Production::FnDecl)
         else {
             panic!("fixture must contain fn_decl");
         };
-        node.production = crate::syntax::grammar::ProductionV0_15::Item;
+        node.production = crate::syntax::grammar::Production::Item;
         assert!(matches!(
-            audit_canonical_v0_15(finalized, CANONICAL_LIMITS),
+            audit_canonical(finalized, CANONICAL_LIMITS),
             CanonicalOutcome::CompilerFailure(CanonicalCompilerFailure::InvalidFinalizedTree)
         ));
     });
 
     with_parsed(&inputs, |parsed| {
-        let FinalizeOutcome::Complete(mut finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS)
-        else {
+        let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("fixture must finalize before hostile mutation");
         };
         finalized.topology.terminals[0].local_ordinal = 1;
         assert!(matches!(
-            audit_canonical_v0_15(finalized, CANONICAL_LIMITS),
+            audit_canonical(finalized, CANONICAL_LIMITS),
             CanonicalOutcome::CompilerFailure(
                 CanonicalCompilerFailure::TerminalBindingDisagreement
             )
@@ -244,11 +240,10 @@ fn canonical_audit_resource_edges_are_explicit_and_deterministic() {
     for (expected, limits) in cases {
         let inputs = [SourceInput::new("resource.wf", source)];
         with_parsed(&inputs, |parsed| {
-            let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS)
-            else {
+            let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
                 panic!("resource fixture must finalize");
             };
-            let outcome = audit_canonical_v0_15(finalized, limits);
+            let outcome = audit_canonical(finalized, limits);
             assert!(
                 matches!(
                     outcome,
@@ -264,10 +259,10 @@ fn canonical_audit_resource_edges_are_explicit_and_deterministic() {
     let noncanonical = b"fn main() -> own unit pure {}";
     let inputs = [SourceInput::new("path.wf", noncanonical)];
     with_parsed(&inputs, |parsed| {
-        let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("path fixture must finalize");
         };
-        let outcome = audit_canonical_v0_15(
+        let outcome = audit_canonical(
             finalized,
             CanonicalLimits {
                 max_path_components: 0,

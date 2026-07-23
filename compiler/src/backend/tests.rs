@@ -18,13 +18,13 @@ mod resource_enums;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::lexer::{LexLimits, LexOutcome, lex_v0_15};
+use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
-    CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome, KERNEL_SPEC_V0_15_HASH,
+    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
-    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical_v0_15, check_semantics_v0_15,
-    classify_terminals_v0_15, compile_v0_15, emit_llvm_v0_15, finalize_v0_15, lower_checked_v0_15,
-    parse_v0_15, resolve_v0_15,
+    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked, parse,
+    resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -74,36 +74,35 @@ static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 fn emit(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
-    let LexOutcome::Complete(lexed) = lex_v0_15(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits {
             max_tokens: LEX_LIMITS.max_tokens,
         },
     ) else {
         panic!("backend test source must classify");
     };
-    let ParseOutcome::Complete(parsed) = parse_v0_15(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
         panic!("backend test source must parse");
     };
-    let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
         panic!("backend test source must finalize");
     };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical_v0_15(finalized, CANONICAL_LIMITS)
-    else {
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
         panic!("backend test source must be canonical");
     };
-    let ResolutionOutcome::Complete(resolved) = resolve_v0_15(canonical) else {
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics_v0_15(resolved) else {
+    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
         panic!("backend test source must check");
     };
-    let ir = lower_checked_v0_15(*checked).expect("checked program must lower");
-    emit_llvm_v0_15(&ir)
+    let ir = lower_checked(*checked).expect("checked program must lower");
+    emit_llvm(&ir)
         .expect("lowered program must emit")
         .into_string()
 }
@@ -117,14 +116,16 @@ fn compile_sources(sources: &[(&str, &[u8])]) -> String {
         .iter()
         .map(|(path, source)| SourceInput::new(path, source))
         .collect::<Vec<_>>();
-    compile_v0_15(&inputs, crate::CompilerLimits::default())
+    compile_program(&inputs, crate::CompilerLimits::default())
         .expect("normal compiler pipeline must emit")
 }
 
 fn compile_and_run(llvm: &str) -> Output {
     let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
-    let directory =
-        std::env::temp_dir().join(format!("whitefoot-v015-{}-{sequence}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!(
+        "whitefoot-backend-test-{}-{sequence}",
+        std::process::id()
+    ));
     std::fs::create_dir(&directory).expect("unique backend test directory");
     let module = directory.join("program.ll");
     let executable = directory.join("program");

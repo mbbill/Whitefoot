@@ -70,22 +70,32 @@ captures; Whitefoot's reborrow is bounded to one statement and cannot escape.
 ## P5. Env-struct behavior parameterization (FN-5)
 
 Problem: callbacks / strategy objects / closures.
-Pattern: behavior is a generic over a contract-conforming type; the
-environment is an explicit struct threaded by value or borrow; closed-set
-dispatch is `match`. No function pointers, no dynamic dispatch in the kernel.
-Fast because: every call is direct post-monomorphization — inlining and the
-channel-2 attributes survive; no vtable opacity.
-Replaces: closures capturing mutable environments, trait objects, fn pointers.
+Pattern status: DEFERRED in v0.16. The active specification defines static
+contract, complete-conformance, and checked-law validation, but it rejects
+source-contract generic bounds and defines no member-call operation that could
+select a conformance binding. Therefore contract-driven env-struct behavior is
+not currently a writable Whitefoot pattern. For a closed behavior set, use an
+enum and exhaustive `match`; otherwise use explicitly named direct functions
+and thread the environment struct by value or borrow.
+Candidate direction: an eventual approved form would keep the environment
+explicit and monomorphize a checked member call to a direct call, but v0.16
+does not claim that mechanism or its performance.
+Would replace: closures capturing mutable environments, trait objects, and
+function pointers.
 
 ## P6. Checked-law reduction (FN-4)
 
 Problem: custom folds/reductions that a compiler cannot legally reorder.
-Pattern: state the algebra (`law associative/commutative/identity`) in a
-contract; conform the op; write the OBVIOUS sequential fold. The compiler
-discharges the law and reassociates for you; a false law is refuted at
-compile time.
-Fast because: channel 3 — 3.3x measured over the serial shape; the transform
-is licensed by a checked fact, not writer folklore.
+Pattern status: validation-only in v0.16. State the admitted algebra
+(`law associative/commutative/identity`) in a contract and conform its
+ordinary top-level function. The compiler must discharge the law for source
+acceptance and refutes an invalid or unavailable law at compile time. The
+stored base derivation is not optimizer authority, so v0.16 does not
+reassociate the sequential fold from that record.
+Potential speed: the archived channel-3 experiment measured 3.3x over the
+serial shape. Shipping that transform requires a separately approved fact
+family that independently rederives the law and names its exact authorized
+consequence; until then facts-off lowering is unchanged.
 Replaces: hand-written multi-accumulator loops resting on unchecked human
 algebra (the signed-sat-add trap).
 

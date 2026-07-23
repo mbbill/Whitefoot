@@ -17,7 +17,7 @@ use super::*;
 use loops::LoopTarget;
 use storage::collect_addressed_bindings;
 
-pub fn lower_checked_v0_15<'classified, 'lexed, 'source>(
+pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let nominals = lower_nominals(&checked.data)?;
@@ -78,6 +78,8 @@ fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, L
 
 fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringFailure> {
     data.nominals
+        .get(..data.executable_nominal_count)
+        .ok_or(LoweringFailure::InvalidCheckedProgram)?
         .iter()
         .enumerate()
         .map(|(index, nominal)| {

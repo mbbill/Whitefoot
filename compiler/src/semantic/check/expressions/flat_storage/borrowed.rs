@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
-use crate::{DeclarationId, UnsupportedSemanticFeatureV0_15};
+use crate::{DeclarationId, UnsupportedSemanticFeature};
 
 use super::super::super::super::model::{CheckedBufferRoot, CheckedType};
 use super::super::super::{CheckStop, Checker, LocalBinding};
@@ -18,7 +18,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.resolve_dereference_holder(node, pbase, bindings)?;
         let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
         let CheckedType::Buffer { element } = ty else {
-            return self.unsupported(UnsupportedSemanticFeatureV0_15::RegionsAndBorrows, node);
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
         };
         let mut resolved = borrow.place.clone();
         resolved.fields.extend_from_slice(&fields);

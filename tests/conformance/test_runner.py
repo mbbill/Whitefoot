@@ -9,14 +9,14 @@ import runner
 
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SPEC = ROOT / "spec" / "kernel-spec-v0.15.md"
+SPEC = ROOT / runner.ACTIVE_SPEC
 
 
 class ActiveSpecificationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> None:
         spec = directory / "spec"
         spec.mkdir()
-        (spec / "kernel-spec-v0.15.md").write_bytes(SPEC.read_bytes())
+        (spec / runner.ACTIVE_SPEC.name).write_bytes(SPEC.read_bytes())
 
     def test_higher_version_lookalike_cannot_change_coverage_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -28,7 +28,7 @@ class ActiveSpecificationTests(unittest.TestCase):
 
             rules, name = runner.spec_rule_ids(directory)
 
-            self.assertEqual(name, "kernel-spec-v0.15.md")
+            self.assertEqual(name, runner.ACTIVE_SPEC.name)
             self.assertIn("PROG-2", rules)
             self.assertNotIn("FAKE-1", rules)
 
@@ -36,7 +36,7 @@ class ActiveSpecificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.make_repository(directory)
-            active = directory / "spec" / "kernel-spec-v0.15.md"
+            active = directory / runner.ACTIVE_SPEC
             active.write_bytes(active.read_bytes() + b"\n")
 
             with self.assertRaisesRegex(
@@ -49,7 +49,7 @@ class ManifestValidationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> Path:
         spec = directory / "spec"
         spec.mkdir()
-        (spec / "kernel-spec-v0.15.md").write_bytes(SPEC.read_bytes())
+        (spec / runner.ACTIVE_SPEC.name).write_bytes(SPEC.read_bytes())
         cases = directory / "cases"
         cases.mkdir()
         return cases

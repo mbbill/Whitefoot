@@ -1,6 +1,4 @@
-use crate::{
-    SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15, UnsupportedSemanticFeatureV0_15,
-};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType};
 use super::{assert_rule, assert_unsupported, with_semantics};
@@ -61,7 +59,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    assert_unsupported(source, UnsupportedSemanticFeatureV0_15::Generics);
+    assert_unsupported(source, UnsupportedSemanticFeature::Generics);
 }
 
 #[test]
@@ -76,11 +74,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRuleV0_15::Fn3,
-        SemanticIssueKind::TypeMismatch,
-    );
+    assert_rule(source, SemanticRule::Fn3, SemanticIssueKind::TypeMismatch);
 }
 
 #[test]
@@ -93,7 +87,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    assert_unsupported(source, UnsupportedSemanticFeatureV0_15::Generics);
+    assert_unsupported(source, UnsupportedSemanticFeature::Generics);
 }
 
 #[test]
@@ -106,11 +100,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRuleV0_15::Fn1,
-        SemanticIssueKind::ReturnMismatch,
-    );
+    assert_rule(source, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
 }
 
 #[test]
@@ -126,7 +116,7 @@ fn main() -> own unit pure {
 "#;
     assert_rule(
         source,
-        SemanticRuleV0_15::Own1,
+        SemanticRule::Own1,
         SemanticIssueKind::MoveOfCopy {
             mechanical_fix: "use the copy place without `move`",
         },
@@ -222,7 +212,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_15::Type5,
+        SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
@@ -235,7 +225,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_15::Type5,
+        SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
@@ -247,7 +237,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_15::Const1,
+        SemanticRule::Const1,
         SemanticIssueKind::InvalidConstValue,
     );
 }
@@ -399,7 +389,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_15::Type5,
+        SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
@@ -413,7 +403,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_15::Type5,
+        SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
 }
@@ -429,7 +419,7 @@ fn main() -> own unit pure {
   return Holder<u8>(value: 1_u8);
 }
 "#,
-        SemanticRuleV0_15::Fn1,
+        SemanticRule::Fn1,
         SemanticIssueKind::ReturnMismatch,
     );
 }
@@ -445,7 +435,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRuleV0_15::Type2,
+        SemanticRule::Type2,
         SemanticIssueKind::TypeMismatch,
     );
 }
@@ -461,7 +451,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        UnsupportedSemanticFeatureV0_15::RecursiveNominalLayout,
+        UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
 }
 

@@ -1,4 +1,4 @@
-//! Target-independent lowering from semantically checked Whitefoot v0.15.
+//! Target-independent lowering from the semantically checked active Whitefoot specification.
 //!
 //! The private IR records exact value types, nominal construction/projection,
 //! direct calls, retained checks, and explicit control-flow edges. It performs
@@ -722,4 +722,4 @@ pub enum LoweringFailure {
 
 mod builder;
 
-pub use builder::lower_checked_v0_15;
+pub use builder::lower_checked;

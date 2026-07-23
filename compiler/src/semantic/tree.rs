@@ -1,8 +1,6 @@
-use crate::syntax::terminal::TerminalPredicateV0_15;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
-use crate::{
-    NodePath, ProductionV0_15, ResolvedSyntaxUnit, SemanticCompilerFailure, SyntaxCoordinate,
-};
+use crate::{NodePath, Production, ResolvedSyntaxUnit, SemanticCompilerFailure, SyntaxCoordinate};
 
 pub(super) struct TreeView<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
@@ -64,10 +62,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         self.topology().root
     }
 
-    pub(super) fn production(
-        &self,
-        node: NodeId,
-    ) -> Result<ProductionV0_15, SemanticCompilerFailure> {
+    pub(super) fn production(&self, node: NodeId) -> Result<Production, SemanticCompilerFailure> {
         self.topology()
             .node(node)
             .map(|record| record.production)
@@ -83,7 +78,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
     pub(super) fn children_with(
         &self,
         node: NodeId,
-        production: ProductionV0_15,
+        production: Production,
     ) -> Result<Vec<NodeId>, SemanticCompilerFailure> {
         Ok(self
             .children(node)?
@@ -106,7 +101,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
     pub(super) fn first_child_with(
         &self,
         node: NodeId,
-        production: ProductionV0_15,
+        production: Production,
     ) -> Result<Option<NodeId>, SemanticCompilerFailure> {
         for child in self.children(node)? {
             if self.production(*child)? == production {
@@ -119,7 +114,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
     pub(super) fn descendants_with(
         &self,
         node: NodeId,
-        production: ProductionV0_15,
+        production: Production,
     ) -> Result<Vec<NodeId>, SemanticCompilerFailure> {
         let mut matches = Vec::new();
         let mut pending = self
@@ -231,7 +226,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
     pub(super) fn direct_token_with(
         &self,
         node: NodeId,
-        predicate: TerminalPredicateV0_15,
+        predicate: TerminalPredicate,
     ) -> Result<Option<usize>, SemanticCompilerFailure> {
         let classified = self.resolved.syntax().classified_bundle();
         let mut found = None;

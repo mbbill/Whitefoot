@@ -1,14 +1,12 @@
 #![allow(clippy::panic)]
 
-use crate::lexer::{LexLimits, LexOutcome, LexedBundle, lex_v0_15};
-use crate::syntax::terminal::{
-    ALL_FIXED_TERMINALS_V0_15, FixedTerminalV0_15, TerminalPredicateV0_15,
-};
-use crate::{KERNEL_SPEC_V0_15_HASH, SourceBundle, SourceId, SourceInput, SourceLimits, SpecHash};
+use crate::lexer::{LexLimits, LexOutcome, LexedBundle, lex};
+use crate::syntax::terminal::{ALL_FIXED_TERMINALS, FixedTerminal, TerminalPredicate};
+use crate::{ACTIVE_KERNEL_SPEC_HASH, SourceBundle, SourceId, SourceInput, SourceLimits, SpecHash};
 
 use crate::{
     TerminalInvocationFailure, TerminalIssueOwner, TerminalLimit, TerminalLimits, TerminalOutcome,
-    TerminalResourceFailure, classify_terminals_v0_15,
+    TerminalResourceFailure, classify_terminals,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -33,7 +31,7 @@ fn source_bundle(inputs: &[SourceInput<'_>]) -> Result<SourceBundle, String> {
 }
 
 fn lexed(bundle: &SourceBundle) -> Result<LexedBundle<'_>, String> {
-    match lex_v0_15(bundle, LEX_LIMITS) {
+    match lex(bundle, LEX_LIMITS) {
         LexOutcome::Complete(lexed) => Ok(lexed),
         other => Err(format!("{other:?}")),
     }
@@ -42,7 +40,7 @@ fn lexed(bundle: &SourceBundle) -> Result<LexedBundle<'_>, String> {
 #[test]
 fn every_fixed_predicate_is_retained_without_identifier_priority() {
     let mut source = Vec::new();
-    for (index, terminal) in ALL_FIXED_TERMINALS_V0_15.iter().enumerate() {
+    for (index, terminal) in ALL_FIXED_TERMINALS.iter().enumerate() {
         if index != 0 {
             source.push(b' ');
         }
@@ -55,27 +53,23 @@ fn every_fixed_predicate_is_retained_without_identifier_priority() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("fixed terminal inventory must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 64 },
     ) else {
         panic!("fixed terminal inventory must classify");
     };
 
-    assert_eq!(classified.tokens().len(), ALL_FIXED_TERMINALS_V0_15.len());
-    for (actual, expected) in classified.tokens().iter().zip(ALL_FIXED_TERMINALS_V0_15) {
+    assert_eq!(classified.tokens().len(), ALL_FIXED_TERMINALS.len());
+    for (actual, expected) in classified.tokens().iter().zip(ALL_FIXED_TERMINALS) {
         assert!(
             actual
                 .terminals()
-                .contains(TerminalPredicateV0_15::Fixed(expected))
+                .contains(TerminalPredicate::Fixed(expected))
         );
-        assert!(
-            !actual
-                .terminals()
-                .contains(TerminalPredicateV0_15::Identifier)
-        );
-        let expected_count = if expected == FixedTerminalV0_15::Unit {
+        assert!(!actual.terminals().contains(TerminalPredicate::Identifier));
+        let expected_count = if expected == FixedTerminal::Unit {
             2
         } else {
             1
@@ -94,24 +88,24 @@ fn every_external_shape_is_classified_context_free() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("external predicates must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 10 },
     ) else {
         panic!("external predicates must classify");
     };
     let expected = [
-        TerminalPredicateV0_15::Identifier,
-        TerminalPredicateV0_15::TypeIdentifier,
-        TerminalPredicateV0_15::RegionIdentifier,
-        TerminalPredicateV0_15::Label,
-        TerminalPredicateV0_15::OperationName,
-        TerminalPredicateV0_15::Digits,
-        TerminalPredicateV0_15::Literal,
-        TerminalPredicateV0_15::Literal,
-        TerminalPredicateV0_15::Literal,
-        TerminalPredicateV0_15::String,
+        TerminalPredicate::Identifier,
+        TerminalPredicate::TypeIdentifier,
+        TerminalPredicate::RegionIdentifier,
+        TerminalPredicate::Label,
+        TerminalPredicate::OperationName,
+        TerminalPredicate::Digits,
+        TerminalPredicate::Literal,
+        TerminalPredicate::Literal,
+        TerminalPredicate::Literal,
+        TerminalPredicate::String,
     ];
     assert_eq!(classified.tokens().len(), expected.len());
     for (token, predicate) in classified.tokens().iter().zip(expected) {
@@ -129,18 +123,18 @@ fn unit_retains_fixed_and_literal_memberships() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("unit must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 1 },
     ) else {
         panic!("unit must classify");
     };
     let set = classified.tokens()[0].terminals();
     assert_eq!(set.len(), 2);
-    assert!(set.contains(TerminalPredicateV0_15::Fixed(FixedTerminalV0_15::Unit)));
-    assert!(set.contains(TerminalPredicateV0_15::Literal));
-    assert!(!set.contains(TerminalPredicateV0_15::Identifier));
+    assert!(set.contains(TerminalPredicate::Fixed(FixedTerminal::Unit)));
+    assert!(set.contains(TerminalPredicate::Literal));
+    assert!(!set.contains(TerminalPredicate::Identifier));
 }
 
 #[test]
@@ -155,9 +149,9 @@ fn malformed_numeric_membership_stops_at_first_source_then_byte() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("broad numeric candidates must lex");
     };
-    let TerminalOutcome::SourceIssue(issue) = classify_terminals_v0_15(
+    let TerminalOutcome::SourceIssue(issue) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 4 },
     ) else {
         panic!("the first invalid numeric candidate must be rejected");
@@ -187,9 +181,9 @@ fn malformed_numeric_language_is_rejected_without_rescanning() {
         let Ok(lexed) = lexed(&bundle) else {
             panic!("broad numeric candidate must remain one formed token");
         };
-        let TerminalOutcome::SourceIssue(issue) = classify_terminals_v0_15(
+        let TerminalOutcome::SourceIssue(issue) = classify_terminals(
             &lexed,
-            KERNEL_SPEC_V0_15_HASH,
+            ACTIVE_KERNEL_SPEC_HASH,
             TerminalLimits { max_tokens: 1 },
         ) else {
             panic!("malformed numeric spelling must fail terminal membership");
@@ -213,9 +207,9 @@ fn form7_only_numeric_defects_remain_literal_members() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("FORM-7-only numeric cases must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 6 },
     ) else {
         panic!("FORM-7-only defects must survive terminal membership");
@@ -223,7 +217,7 @@ fn form7_only_numeric_defects_remain_literal_members() {
     assert_eq!(classified.tokens().len(), 6);
     for token in classified.tokens() {
         assert_eq!(token.terminals().len(), 1);
-        assert!(token.terminals().contains(TerminalPredicateV0_15::Literal));
+        assert!(token.terminals().contains(TerminalPredicate::Literal));
     }
 }
 
@@ -240,9 +234,9 @@ fn source_boundaries_and_empty_partitions_survive_classification() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("source partitions must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 3 },
     ) else {
         panic!("source partitions must classify");
@@ -286,11 +280,11 @@ fn specification_identity_fails_before_classification() {
     let TerminalOutcome::InvocationFailure(TerminalInvocationFailure::SpecificationMismatch {
         expected,
         actual,
-    }) = classify_terminals_v0_15(&lexed, wrong, TerminalLimits { max_tokens: 0 })
+    }) = classify_terminals(&lexed, wrong, TerminalLimits { max_tokens: 0 })
     else {
         panic!("specification mismatch must win");
     };
-    assert_eq!(expected, KERNEL_SPEC_V0_15_HASH);
+    assert_eq!(expected, ACTIVE_KERNEL_SPEC_HASH);
     assert_eq!(actual, wrong);
 }
 
@@ -307,9 +301,9 @@ fn token_limit_is_inclusive_and_precedes_membership_work() {
         limit,
         maximum,
         actual,
-    }) = classify_terminals_v0_15(
+    }) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 1 },
     )
     else {
@@ -329,14 +323,14 @@ fn repeated_classification_is_deterministic() {
     let Ok(lexed) = lexed(&bundle) else {
         panic!("test source must lex");
     };
-    let first = classify_terminals_v0_15(
+    let first = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 7 },
     );
-    let second = classify_terminals_v0_15(
+    let second = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 7 },
     );
     let (TerminalOutcome::Complete(first), TerminalOutcome::Complete(second)) = (first, second)

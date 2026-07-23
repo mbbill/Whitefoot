@@ -1,0 +1,17 @@
+contract BorrowedSum {
+  fn sum ['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left 'right);
+}
+
+conform buffer<u8>: BorrowedSum {
+  sum = add_borrowed;
+}
+
+fn add_borrowed ['a, 'b](x: &'a buffer<u8>, y: &'b buffer<u8>) -> own u64 reads('b 'a) {
+  let x_length: own u64 = len<u8>(deref(x));
+  let y_length: own u64 = len<u8>(deref(y));
+  return iadd.wrap<u64>(x_length, y_length);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

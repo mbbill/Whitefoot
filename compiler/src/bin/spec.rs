@@ -2,12 +2,14 @@
 
 use std::collections::BTreeSet;
 
-use whitefoot::{KERNEL_SPEC_V0_15_HASH, SYNTAX_DATA_SPEC_V0_15, TERMINAL_CONTRACT_SPEC_V0_15};
+use whitefoot::{
+    ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH,
+    ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, SYNTAX_DATA_SPEC_HASH,
+    TERMINAL_CONTRACT_SPEC_HASH,
+};
 
-const ACTIVE_SPEC: &[u8] = include_bytes!("../../../spec/kernel-spec-v0.15.md");
-const ACTIVE_SPEC_TEXT: &str = include_str!("../../../spec/kernel-spec-v0.15.md");
 const APPROVED_CANDIDATE: &[u8] =
-    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.15-candidate.md");
+    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.16-candidate.md");
 const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
 
 fn is_rule_id(text: &str) -> bool {
@@ -103,17 +105,17 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
 }
 
 fn main() {
-    if ACTIVE_SPEC != APPROVED_CANDIDATE {
-        eprintln!("spec/kernel-spec-v0.15.md differs from the approved candidate");
+    if ACTIVE_KERNEL_SPEC_BYTES != APPROVED_CANDIDATE {
+        eprintln!("{ACTIVE_KERNEL_SPEC_PATH} differs from the approved candidate");
         std::process::exit(1);
     }
-    if SYNTAX_DATA_SPEC_V0_15 != KERNEL_SPEC_V0_15_HASH
-        || TERMINAL_CONTRACT_SPEC_V0_15 != KERNEL_SPEC_V0_15_HASH
+    if SYNTAX_DATA_SPEC_HASH != ACTIVE_KERNEL_SPEC_HASH
+        || TERMINAL_CONTRACT_SPEC_HASH != ACTIVE_KERNEL_SPEC_HASH
     {
-        eprintln!("frontend data is not bound to the active v0.15 identity");
+        eprintln!("frontend data is not bound to the active specification identity");
         std::process::exit(1);
     }
-    let rule_count = match validate_spec_integrity(ACTIVE_SPEC_TEXT, DERIVATION_LEDGER) {
+    let rule_count = match validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER) {
         Ok(rule_count) => rule_count,
         Err(errors) => {
             for error in errors {
@@ -122,13 +124,13 @@ fn main() {
             std::process::exit(1);
         }
     };
-    println!("Whitefoot v0.15 frontend identity: {KERNEL_SPEC_V0_15_HASH}");
-    println!("Whitefoot v0.15 spec integrity: {rule_count} rules");
+    println!("Whitefoot {ACTIVE_KERNEL_SPEC_VERSION} frontend identity: {ACTIVE_KERNEL_SPEC_HASH}");
+    println!("Whitefoot {ACTIVE_KERNEL_SPEC_VERSION} spec integrity: {rule_count} rules");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ACTIVE_SPEC_TEXT, DERIVATION_LEDGER, is_rule_id, validate_spec_integrity};
+    use super::{ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER, is_rule_id, validate_spec_integrity};
 
     #[test]
     fn rule_id_shape_is_closed() {
@@ -142,7 +144,7 @@ mod tests {
     #[test]
     fn active_spec_has_complete_internal_integrity() {
         assert_eq!(
-            validate_spec_integrity(ACTIVE_SPEC_TEXT, DERIVATION_LEDGER),
+            validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER),
             Ok(94)
         );
     }

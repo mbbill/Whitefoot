@@ -1,4 +1,4 @@
-use crate::ProductionV0_15;
+use crate::Production;
 use crate::syntax::{FinalizedExtent, FinalizedTopology};
 
 use super::super::catalog::{PRELUDE_DECLARATIONS, reserved_name};
@@ -6,7 +6,7 @@ use super::super::scopes::ScopeBuild;
 use super::super::{
     DeclarationClass, DeclarationConflict, DeclarationOrigin, DeclarationRecord, DeclarationRole,
     DeferredUseRole, DependentDeclarationRole, ReservedDeclarationRole, ResolutionCompilerFailure,
-    ResolutionIssue, ResolutionIssueKind, ResolutionRuleV0_15,
+    ResolutionIssue, ResolutionIssueKind, ResolutionRule,
 };
 use super::{
     ClassifiedRole, DeclarationIndex, DeclarationMeta, EventKey, RawRoleKind,
@@ -48,7 +48,7 @@ pub(super) fn check_declaration_inventory(
             && let Some((class, inventory_ordinal)) = reserved_name(checked_spelling)
         {
             return Ok(Some(ResolutionIssue {
-                rule: ResolutionRuleV0_15::Form3,
+                rule: ResolutionRule::Form3,
                 origin: role.origin.clone(),
                 kind: ResolutionIssueKind::ReservedName {
                     spelling: checked_spelling.to_owned(),
@@ -85,7 +85,7 @@ pub(super) fn check_declaration_inventory(
             })
         {
             return Ok(Some(ResolutionIssue {
-                rule: ResolutionRuleV0_15::Own3,
+                rule: ResolutionRule::Own3,
                 origin: declaration.origin.clone(),
                 kind: ResolutionIssueKind::RepeatedRegion {
                     spelling: declaration.spelling.clone(),
@@ -150,7 +150,7 @@ fn match_binder_issue(
     declaration: &DeclarationRecord,
     tables: &InventoryTables<'_>,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
-    let arm = ancestor_with_production(topology, role.owner, ProductionV0_15::Arm)
+    let arm = ancestor_with_production(topology, role.owner, Production::Arm)
         .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
     let paired_field = tables
         .roles
@@ -177,7 +177,7 @@ fn match_binder_issue(
                 && ancestor_with_production(
                     topology,
                     tables.roles[candidate.role_index].owner,
-                    ProductionV0_15::Arm,
+                    Production::Arm,
                 ) == Some(arm))
             .then(|| earlier.origin.clone())
         });
@@ -225,7 +225,7 @@ fn match_binder_issue(
         || !arm_entry_conflicts.is_empty()
     {
         return Ok(Some(ResolutionIssue {
-            rule: ResolutionRuleV0_15::Gram10,
+            rule: ResolutionRule::Gram10,
             origin: declaration.origin.clone(),
             kind: ResolutionIssueKind::MatchBinderFreshness {
                 spelling: declaration.spelling.clone(),
@@ -267,7 +267,7 @@ fn collision_issue(
         return Ok(Some(collision(
             declaration,
             prelude_conflicts,
-            ResolutionRuleV0_15::Type6,
+            ResolutionRule::Type6,
         )));
     }
 
@@ -294,7 +294,7 @@ fn collision_issue(
         return Ok(Some(collision(
             declaration,
             same_scope,
-            ResolutionRuleV0_15::Type6,
+            ResolutionRule::Type6,
         )));
     }
 
@@ -327,7 +327,7 @@ fn collision_issue(
         );
     }
     sort_conflicts(&mut shadows, tables.declarations);
-    Ok((!shadows.is_empty()).then(|| collision(declaration, shadows, ResolutionRuleV0_15::Type6)))
+    Ok((!shadows.is_empty()).then(|| collision(declaration, shadows, ResolutionRule::Type6)))
 }
 
 fn meta_for_record(
@@ -369,7 +369,7 @@ fn collect_domain_conflicts(
 fn collision(
     declaration: &DeclarationRecord,
     conflicts: Vec<DeclarationConflict>,
-    rule: ResolutionRuleV0_15,
+    rule: ResolutionRule,
 ) -> ResolutionIssue {
     ResolutionIssue {
         rule,

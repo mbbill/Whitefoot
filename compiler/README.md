@@ -14,7 +14,7 @@ ordered source bundle
   -> strong-LL(2) parser
   -> finalized source-bound syntax tree
   -> exact FORM-2 validation
-  -> direct v0.15 lexical name resolution
+  -> direct active-specification lexical name resolution
   -> semantic and ownership checking
   -> private checked program
   -> target-independent typed control-flow IR
@@ -24,11 +24,13 @@ ordered source bundle
 ```
 
 The frontend targets the exact bytes of
-`../spec/kernel-spec-v0.15.md`. `cargo run --bin whitefoot-spec` checks that
+`../spec/kernel-spec-v0.16.md`. `cargo run --bin whitefoot-spec` checks that
 those bytes are the approved candidate and that the terminal and grammar data
 name the same specification identity. The committed grammar tables are
-ordinary compiler data. For a specification proposal, run the native verifier
-through this compiler:
+ordinary compiler data. The exact specification identity is versioned data;
+compiler stage, type, and API names remain stable across grammar-preserving
+specification bumps instead of acquiring a `V0_xx` suffix. For a specification
+proposal, run the native verifier through this compiler:
 
 ```sh
 cargo run --bin whitefoot-grammar -- \
@@ -42,7 +44,7 @@ closed when a proposal changes that contract; a structural change must first
 extend this same native path rather than reviving an independent grammar
 engine.
 
-The resolver covers every v0.15 declaration, lexical-use, and deferred
+The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
 visibility, reservations, collisions, and deterministic diagnostics.
 
@@ -119,6 +121,25 @@ before the body. Callers do not prove it, and it is never turned into
 program exercises this path through the ordinary loop, buffer, effect, and
 cleanup implementation.
 
+The v0.16 static contract family is checked before checked-program publication.
+A nongeneric source contract contributes its source-ordered unique member
+signatures and laws. Each source conformance has one exact concrete subject,
+one coherent source-contract key, and exactly one declared-order binding for
+every member. A binding names an ordinary nongeneric, `requires`-free top-level
+function; compatibility reuses the complete callable signature and compares
+normalized read, write, allocation, and trap capabilities after positional
+region alpha-renaming. Law-bearing conformances then pass the closed FN-4
+discharge before semantic success. The checked program retains the contract
+table, complete binding vectors, and base law derivations as semantic evidence.
+
+That evidence is deliberately non-executable. Lowering reads the same ordinary
+checked functions and operations as before, ignores the contract metadata, and
+creates no contract object, dictionary, vtable, indirect call, runtime check,
+ABI component, or optimizer fact. A bound function is emitted only through its
+normal direct function path. v0.16 has no contract-member call operation, and
+generic source contracts and source-contract generic bounds receive their
+specified FN-3 rejections rather than becoming unsupported compiler features.
+
 Concrete PRE-1 `Option<T>` instances reuse the same checked nominal, typed IR,
 and LLVM representation as source enums and `Result<T, E>` for every currently
 supported payload. `None` and `Some` cross ordinary function, return, and match
@@ -133,10 +154,9 @@ statement-scoped shared or mode-compatible unique child reborrows around one
 call. It deliberately stops before returned borrows, borrow-producing branch
 joins, boxes, arenas, slices, and storage roots not handled by those general
 paths. Those forms remain explicit unsupported compiler capabilities; they are
-not accepted with incomplete loan checking. Unimplemented v0.15 families stop
+not accepted with incomplete loan checking. Unimplemented active-specification families stop
 the same way rather than becoming source-language rejections. Whole-unit ERR-2
-variant-addition edit-list enumeration and the full conformance adapter remain
-future work.
+variant-addition edit-list enumeration remains future work.
 Projected array roots, slices, and non-buffer borrow-backed SET-1 targets
 remain unsupported until their place families exist; none of these gaps is
 implied complete by the current gate.

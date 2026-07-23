@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, ProductionV0_15, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15,
+    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
 use super::super::super::super::model::{CheckedExpression, CheckedMode};
@@ -29,20 +29,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let actual_regions = self.call_region_arguments(node, signature)?;
         let fields = if let Some(list) = self
             .tree
-            .first_child_with(node, ProductionV0_15::FieldinitList)?
+            .first_child_with(node, Production::FieldinitList)?
         {
-            self.tree.children_with(list, ProductionV0_15::Fieldinit)?
+            self.tree.children_with(list, Production::Fieldinit)?
         } else {
             Vec::new()
         };
         if self
             .tree
-            .first_child_with(node, ProductionV0_15::AtomList)?
+            .first_child_with(node, Production::AtomList)?
             .is_some()
             || fields.len() != signature.parameters.len()
         {
             return self.issue_node(
-                SemanticRuleV0_15::Gram11,
+                SemanticRule::Gram11,
                 node,
                 Self::invalid_named_arguments(signature),
             );
@@ -55,23 +55,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reads: Vec::new(),
             writes: Vec::new(),
             allocates_heap: signature.declared_effects.allocates_heap,
+            allocates_arenas: Vec::new(),
             traps: signature.declared_effects.traps,
         };
         for (field, parameter) in fields.into_iter().zip(&signature.parameters) {
             if self.identifier(field)? != parameter.name {
                 return self.issue_node(
-                    SemanticRuleV0_15::Gram11,
+                    SemanticRule::Gram11,
                     field,
                     Self::invalid_named_arguments(signature),
                 );
             }
             let atom = self
                 .tree
-                .first_child_with(field, ProductionV0_15::Atom)?
+                .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let explicit_borrow = self
                 .tree
-                .first_child_with(atom, ProductionV0_15::BorrowExpr)?
+                .first_child_with(atom, Production::BorrowExpr)?
                 .is_some();
             let argument = self.check_call_argument_atom(
                 function,
@@ -92,7 +93,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     {
                         return self.issue_node(
-                            SemanticRuleV0_15::Own12,
+                            SemanticRule::Own12,
                             atom,
                             SemanticIssueKind::BorrowConflict,
                         );
@@ -101,11 +102,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let expected_mode = self.substitute_mode(parameter.mode, signature, &actual_regions)?;
             if argument.expression.ty() != parameter.ty {
-                return self.issue_node(
-                    SemanticRuleV0_15::Type5,
-                    atom,
-                    SemanticIssueKind::TypeMismatch,
-                );
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
             if explicit_borrow && let Some(borrow) = &argument.borrow {
@@ -120,6 +117,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.project_call_effects(
             node,
             signature,
+            &actual_regions,
             &checked_borrows,
             &argument_holders,
             bindings,
@@ -144,27 +142,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
     ) -> Result<Vec<DeclarationId>, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, ProductionV0_15::Targs)? else {
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
             if signature.region_parameters.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(
-                SemanticRuleV0_15::Type5,
-                node,
-                SemanticIssueKind::TypeMismatch,
-            );
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         };
-        let arguments = self.tree.children_with(targs, ProductionV0_15::Targ)?;
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
         let generic_count = signature.substitution.len();
         let expected = generic_count
             .checked_add(signature.region_parameters.len())
             .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         if arguments.len() != expected {
-            return self.issue_node(
-                SemanticRuleV0_15::Type5,
-                node,
-                SemanticIssueKind::TypeMismatch,
-            );
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         }
         arguments
             .into_iter()
@@ -177,7 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         class: DeclarationClass::Region,
                     } => Ok(declaration),
                     _ => self.issue_node(
-                        SemanticRuleV0_15::Type5,
+                        SemanticRule::Type5,
                         argument,
                         SemanticIssueKind::TypeMismatch,
                     ),
@@ -225,7 +215,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     && (left.kind == BorrowKind::Unique || right.kind == BorrowKind::Unique)
                 {
                     return self.issue_node(
-                        SemanticRuleV0_15::Own12,
+                        SemanticRule::Own12,
                         node,
                         SemanticIssueKind::BorrowConflict,
                     );
@@ -240,11 +230,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         signature: &FunctionSignature,
+        actual_regions: &[DeclarationId],
         arguments: &[Option<BorrowInfo>],
         holders: &[Option<DeclarationId>],
         bindings: &HashMap<DeclarationId, LocalBinding>,
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
+        for formal_region in &signature.declared_effects.allocates_arenas {
+            let index = signature
+                .region_parameters
+                .iter()
+                .position(|region| region == formal_region)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            effects.add_arena_allocation(
+                *actual_regions
+                    .get(index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            );
+        }
         for (parameter, (argument, holder)) in signature
             .parameters
             .iter()

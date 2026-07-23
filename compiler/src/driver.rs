@@ -1,4 +1,4 @@
-//! One ordinary exact-v0.15 compilation pipeline.
+//! One ordinary active-specification compilation pipeline.
 //!
 //! The driver keeps source failures, unsupported compiler capabilities,
 //! resource failures, invariant failures, lowering failures, and backend
@@ -7,11 +7,11 @@
 use core::fmt;
 
 use crate::{
-    BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    KERNEL_SPEC_V0_15_HASH, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
+    ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, FinalizeLimits,
+    FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical_v0_15, check_semantics_v0_15, classify_terminals_v0_15,
-    emit_llvm_v0_15, finalize_v0_15, lex_v0_15, lower_checked_v0_15, parse_v0_15, resolve_v0_15,
+    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, emit_llvm, finalize,
+    lex, lower_checked, parse, resolve,
 };
 
 /// Explicit implementation ceilings for one compiler invocation.
@@ -200,7 +200,7 @@ impl fmt::Display for CompilationFailure {
 impl std::error::Error for CompilationFailure {}
 
 /// Compiles one ordered closed source bundle to conservative textual LLVM.
-pub fn compile_v0_15(
+pub fn compile(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<String, CompilationFailure> {
@@ -211,7 +211,7 @@ pub fn compile_v0_15(
             failure,
         )
     })?;
-    let lexed = match lex_v0_15(&bundle, limits.lexer) {
+    let lexed = match lex(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::new(
@@ -235,39 +235,38 @@ pub fn compile_v0_15(
             ));
         }
     };
-    let classified =
-        match classify_terminals_v0_15(&lexed, KERNEL_SPEC_V0_15_HASH, limits.terminals) {
-            TerminalOutcome::Complete(complete) => complete,
-            TerminalOutcome::SourceIssue(issue) => {
-                return Err(CompilationFailure::new(
-                    CompilationStage::TerminalClassification,
-                    CompilationFailureKind::Source,
-                    issue,
-                ));
-            }
-            TerminalOutcome::ResourceFailure(failure) => {
-                return Err(CompilationFailure::new(
-                    CompilationStage::TerminalClassification,
-                    CompilationFailureKind::Resource,
-                    failure,
-                ));
-            }
-            TerminalOutcome::InvocationFailure(failure) => {
-                return Err(CompilationFailure::new(
-                    CompilationStage::TerminalClassification,
-                    CompilationFailureKind::Invocation,
-                    failure,
-                ));
-            }
-            TerminalOutcome::CompilerFailure(failure) => {
-                return Err(CompilationFailure::new(
-                    CompilationStage::TerminalClassification,
-                    CompilationFailureKind::Compiler,
-                    failure,
-                ));
-            }
-        };
-    let parsed = match parse_v0_15(&classified, limits.parser) {
+    let classified = match classify_terminals(&lexed, ACTIVE_KERNEL_SPEC_HASH, limits.terminals) {
+        TerminalOutcome::Complete(complete) => complete,
+        TerminalOutcome::SourceIssue(issue) => {
+            return Err(CompilationFailure::new(
+                CompilationStage::TerminalClassification,
+                CompilationFailureKind::Source,
+                issue,
+            ));
+        }
+        TerminalOutcome::ResourceFailure(failure) => {
+            return Err(CompilationFailure::new(
+                CompilationStage::TerminalClassification,
+                CompilationFailureKind::Resource,
+                failure,
+            ));
+        }
+        TerminalOutcome::InvocationFailure(failure) => {
+            return Err(CompilationFailure::new(
+                CompilationStage::TerminalClassification,
+                CompilationFailureKind::Invocation,
+                failure,
+            ));
+        }
+        TerminalOutcome::CompilerFailure(failure) => {
+            return Err(CompilationFailure::new(
+                CompilationStage::TerminalClassification,
+                CompilationFailureKind::Compiler,
+                failure,
+            ));
+        }
+    };
+    let parsed = match parse(&classified, limits.parser) {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::new(
@@ -298,7 +297,7 @@ pub fn compile_v0_15(
             ));
         }
     };
-    let finalized = match finalize_v0_15(parsed, limits.finalizer) {
+    let finalized = match finalize(parsed, limits.finalizer) {
         FinalizeOutcome::Complete(complete) => complete,
         FinalizeOutcome::ResourceFailure(failure) => {
             return Err(CompilationFailure::new(
@@ -315,7 +314,7 @@ pub fn compile_v0_15(
             ));
         }
     };
-    let canonical = match audit_canonical_v0_15(finalized, limits.canonical) {
+    let canonical = match audit_canonical(finalized, limits.canonical) {
         CanonicalOutcome::Complete(complete) => complete,
         CanonicalOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::new(
@@ -339,7 +338,7 @@ pub fn compile_v0_15(
             ));
         }
     };
-    let resolved = match resolve_v0_15(canonical) {
+    let resolved = match resolve(canonical) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
             return Err(CompilationFailure::new(
@@ -356,7 +355,7 @@ pub fn compile_v0_15(
             ));
         }
     };
-    let checked = match check_semantics_v0_15(resolved) {
+    let checked = match check_semantics(resolved) {
         SemanticOutcome::Complete(complete) => *complete,
         SemanticOutcome::SourceIssue { issue, .. } => {
             return Err(CompilationFailure::semantic_source(issue));
@@ -376,14 +375,14 @@ pub fn compile_v0_15(
             ));
         }
     };
-    let ir = lower_checked_v0_15(checked).map_err(|failure: LoweringFailure| {
+    let ir = lower_checked(checked).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
             CompilationStage::Lowering,
             CompilationFailureKind::Lowering,
             failure,
         )
     })?;
-    emit_llvm_v0_15(&ir)
+    emit_llvm(&ir)
         .map(|module| module.into_string())
         .map_err(|failure: BackendFailure| {
             let (stage, kind) = match failure {
@@ -399,26 +398,25 @@ pub fn compile_v0_15(
 
 #[cfg(test)]
 mod tests {
-    use super::{CompilationFailureKind, CompilationStage, CompilerLimits, compile_v0_15};
+    use super::{CompilationFailureKind, CompilationStage, CompilerLimits, compile};
     use crate::SourceInput;
 
     #[test]
-    fn driver_preserves_semantic_unsupported_as_a_semantic_stop() {
-        let source = b"contract Empty {\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
-        let failure = compile_v0_15(
+    fn driver_lowers_static_contract_metadata_without_executable_artifacts() {
+        let source = b"contract Empty {\n}\n\nconform i32: Empty {\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+        let llvm = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
-        .expect_err("contract family is not implemented yet");
-        assert_eq!(failure.stage(), CompilationStage::Semantics);
-        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
-        assert!(failure.detail().contains("Unsupported"));
+        .expect("static contract metadata must use the ordinary lowering path");
+        assert!(llvm.contains("define i32 @main()"));
+        assert!(!llvm.contains("Empty"));
     }
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
         let source = b"fn main() -> own unit pure {\n  let values: own array<u8, 18446744073709551615> = array_new<u8, 18446744073709551615>(0_u8);\n  return unit;\n}\n";
-        let failure = compile_v0_15(
+        let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
@@ -432,7 +430,7 @@ mod tests {
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
         let source = b"fn main() -> own unit pure {\n  let left: own array<u8, 4611686018427387904> = array_new<u8, 4611686018427387904>(0_u8);\n  let right: own array<u8, 4611686018427387904> = array_new<u8, 4611686018427387904>(0_u8);\n  return unit;\n}\n";
-        let failure = compile_v0_15(
+        let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
@@ -544,9 +542,8 @@ mod tests {
                 "GIVE-1",
             ),
         ] {
-            let failure =
-                compile_v0_15(&[SourceInput::new(name, source)], CompilerLimits::default())
-                    .expect_err("negative conformance case must reject");
+            let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
+                .expect_err("negative conformance case must reject");
             assert_eq!(
                 failure.stage(),
                 CompilationStage::Semantics,

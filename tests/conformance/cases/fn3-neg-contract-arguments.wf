@@ -1,0 +1,9 @@
+contract Marker {
+}
+
+conform i32: Marker<i32> {
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

@@ -1,9 +1,9 @@
 use crate::syntax::NodeId;
-use crate::syntax::terminal::{FixedTerminalV0_15, TerminalPredicateV0_15};
+use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{
     DeclarationRole, DeferredUseRole, DependentDeclarationRole, LexicalUseRole,
-    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRuleV0_15,
-    SemanticUnsupported, UnsupportedSemanticFeatureV0_15,
+    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule,
+    SemanticUnsupported, UnsupportedSemanticFeature,
 };
 
 use super::{CheckStop, Checker};
@@ -12,18 +12,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn has_fixed(
         &self,
         node: NodeId,
-        terminal: FixedTerminalV0_15,
+        terminal: FixedTerminal,
     ) -> Result<bool, CheckStop> {
         Ok(self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_15::Fixed(terminal))?
+            .direct_token_with(node, TerminalPredicate::Fixed(terminal))?
             .is_some())
     }
 
     pub(super) fn identifier(&self, node: NodeId) -> Result<String, CheckStop> {
         let terminal = self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_15::Identifier)?
+            .direct_token_with(node, TerminalPredicate::Identifier)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         std::str::from_utf8(self.tree.token_bytes(terminal)?)
             .map(str::to_owned)
@@ -84,7 +84,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn issue_value(
         &self,
-        rule: SemanticRuleV0_15,
+        rule: SemanticRule,
         node: NodeId,
         kind: SemanticIssueKind,
     ) -> CheckStop {
@@ -100,16 +100,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     pub(super) fn issue_node<ResultValue>(
         &self,
-        rule: SemanticRuleV0_15,
+        rule: SemanticRule,
         node: NodeId,
         kind: SemanticIssueKind,
     ) -> Result<ResultValue, CheckStop> {
         Err(self.issue_value(rule, node, kind))
     }
 
+    pub(super) fn issue_at<ResultValue>(
+        &self,
+        rule: SemanticRule,
+        node: NodeId,
+        coordinate: crate::SyntaxCoordinate,
+        kind: SemanticIssueKind,
+    ) -> Result<ResultValue, CheckStop> {
+        let path = self.tree.path(node)?.clone();
+        Err(CheckStop::Issue(SemanticIssue {
+            rule,
+            location: SemanticLocation::SourceNode(path, coordinate),
+            kind,
+        }))
+    }
+
     pub(super) fn unsupported<ResultValue>(
         &self,
-        feature: UnsupportedSemanticFeatureV0_15,
+        feature: UnsupportedSemanticFeature,
         node: NodeId,
     ) -> Result<ResultValue, CheckStop> {
         let node = self.tree.path(node)?.clone();

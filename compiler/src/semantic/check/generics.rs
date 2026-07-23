@@ -1,8 +1,8 @@
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, FixedTerminalV0_15, LexicalUseRole,
-    PreludeDeclarationId, ProductionV0_15, ResolvedTarget, SemanticCompilerFailure,
-    SemanticIssueKind, SemanticRuleV0_15, UnsupportedSemanticFeatureV0_15,
+    DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal, LexicalUseRole,
+    PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
+    SemanticRule, UnsupportedSemanticFeature,
 };
 
 use super::super::model::{CheckedConst, CheckedType};
@@ -96,7 +96,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in items.iter().copied().filter(|node| {
             self.tree
                 .production(*node)
-                .is_ok_and(|production| production == ProductionV0_15::FnDecl)
+                .is_ok_and(|production| production == Production::FnDecl)
         }) {
             let declaration = self.declaration_at(node, DeclarationRole::Function)?;
             let template = FunctionTemplate {
@@ -106,17 +106,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 generic_parameters: self.parse_generic_parameters(node)?,
             };
             if !template.generic_parameters.is_empty() {
-                if let Some(regions) = self
-                    .tree
-                    .first_child_with(node, ProductionV0_15::RegionParams)?
-                {
-                    return self.unsupported(UnsupportedSemanticFeatureV0_15::Generics, regions);
+                if let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)? {
+                    return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
                 }
                 if let Some(requires) = self
                     .tree
-                    .first_child_with(node, ProductionV0_15::RequiresBlock)?
+                    .first_child_with(node, Production::RequiresBlock)?
                 {
-                    return self.unsupported(UnsupportedSemanticFeatureV0_15::Generics, requires);
+                    return self.unsupported(UnsupportedSemanticFeature::Generics, requires);
                 }
             }
             let index = self.function_templates.len();
@@ -158,7 +155,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let signature = self.signatures[cursor].clone();
             for call in self
                 .tree
-                .descendants_with(signature.node, ProductionV0_15::Call)?
+                .descendants_with(signature.node, Production::Call)?
             {
                 let Some((template_index, template)) = self.called_function_template(call)? else {
                     continue;
@@ -198,7 +195,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Option<(usize, FunctionTemplate)>, CheckStop> {
         let callee = self
             .tree
-            .first_child_with(call, ProductionV0_15::Callee)?
+            .first_child_with(call, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let path = self.tree.path(callee)?;
         let Some(usage) = self.resolved.lexical_uses().iter().find(|usage| {
@@ -288,15 +285,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
         let rtype = self
             .tree
-            .first_child_with(template.node, ProductionV0_15::Rtype)?
+            .first_child_with(template.node, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let (result_mode, result) = self.parse_rtype_with(rtype, &substitution)?;
         if result_mode != super::super::model::CheckedMode::Own {
-            return self.unsupported(UnsupportedSemanticFeatureV0_15::RegionsAndBorrows, rtype);
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
         }
         let effects = self
             .tree
-            .first_child_with(template.node, ProductionV0_15::Effects)?
+            .first_child_with(template.node, Production::Effects)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let declared_effects = self.parse_effects(effects)?;
         let symbol = if template.generic_parameters.is_empty() {
@@ -378,7 +375,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (caller, template) in self.function_templates.iter().enumerate() {
             for call in self
                 .tree
-                .descendants_with(template.node, ProductionV0_15::Call)?
+                .descendants_with(template.node, Production::Call)?
             {
                 let Some((callee, _)) = self.called_function_template(call)? else {
                     continue;
@@ -399,7 +396,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .is_empty()
                 });
                 if generic_component {
-                    return self.unsupported(UnsupportedSemanticFeatureV0_15::Generics, *call);
+                    return self.unsupported(UnsupportedSemanticFeature::Generics, *call);
                 }
             }
         }
@@ -428,23 +425,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Vec<GenericParameter>, CheckStop> {
         let Some(generics) = self
             .tree
-            .first_child_with(declaration, ProductionV0_15::Generics)?
+            .first_child_with(declaration, Production::Generics)?
         else {
             return Ok(Vec::new());
         };
         let mut parameters = Vec::new();
-        for node in self.tree.children_with(generics, ProductionV0_15::Gparam)? {
-            if self.has_fixed(node, FixedTerminalV0_15::Const)? {
+        for node in self.tree.children_with(generics, Production::Gparam)? {
+            if self.has_fixed(node, FixedTerminal::Const)? {
                 let declaration = self
                     .declaration_at(node, DeclarationRole::ConstGeneric)?
                     .id();
                 let ty = self
                     .tree
-                    .first_child_with(node, ProductionV0_15::Type)?
+                    .first_child_with(node, Production::Type)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
                 if self.integer_type(ty)?.is_none() {
                     return self.issue_node(
-                        SemanticRuleV0_15::Const1,
+                        SemanticRule::Const1,
                         ty,
                         SemanticIssueKind::InvalidConstValue,
                     );
@@ -463,22 +460,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .find(|usage| {
                     usage.role() == LexicalUseRole::GenericBound && usage.origin().node() == path
                 })
-                .map(|usage| usage.target())
+                .map(|usage| (usage.target(), usage.origin().coordinate()))
             {
                 None => GenericBound::Unbounded,
-                Some(ResolvedTarget::Prelude(id)) if id == PreludeDeclarationId::new(22) => {
+                Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(22) => {
                     GenericBound::Int
                 }
-                Some(ResolvedTarget::Prelude(id)) if id == PreludeDeclarationId::new(23) => {
-                    return self.unsupported(UnsupportedSemanticFeatureV0_15::FloatingPoint, node);
+                Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(23) => {
+                    return self.unsupported(UnsupportedSemanticFeature::FloatingPoint, node);
                 }
-                Some(ResolvedTarget::Source {
-                    class: DeclarationClass::Contract,
-                    ..
-                }) => {
-                    return self.unsupported(
-                        UnsupportedSemanticFeatureV0_15::ContractsAndConformances,
+                Some((
+                    ResolvedTarget::Source {
+                        class: DeclarationClass::Contract,
+                        ..
+                    },
+                    coordinate,
+                )) => {
+                    return self.issue_at(
+                        SemanticRule::Fn3,
                         node,
+                        coordinate,
+                        SemanticIssueKind::SourceContractGenericBound,
                     );
                 }
                 Some(_) => return Err(SemanticCompilerFailure::InvalidResolution.into()),
@@ -517,44 +519,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !allow_trailing_regions
                 && self
                     .tree
-                    .first_child_with(node, ProductionV0_15::Targs)?
+                    .first_child_with(node, Production::Targs)?
                     .is_some()
             {
-                return self.issue_node(
-                    SemanticRuleV0_15::Type5,
-                    node,
-                    SemanticIssueKind::TypeMismatch,
-                );
+                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
             }
             return Ok(GenericSubstitution::default());
         }
-        let Some(targs) = self.tree.first_child_with(node, ProductionV0_15::Targs)? else {
-            return self.issue_node(
-                SemanticRuleV0_15::Type5,
-                node,
-                SemanticIssueKind::TypeMismatch,
-            );
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         };
-        let arguments = self.tree.children_with(targs, ProductionV0_15::Targ)?;
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
         if (allow_trailing_regions && arguments.len() < parameters.len())
             || (!allow_trailing_regions && arguments.len() != parameters.len())
         {
-            return self.issue_node(
-                SemanticRuleV0_15::Type5,
-                node,
-                SemanticIssueKind::TypeMismatch,
-            );
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         }
         let mut bindings = Vec::with_capacity(parameters.len());
         for (parameter, argument) in parameters.iter().copied().zip(arguments) {
             let value = match parameter {
                 GenericParameter::Type { bound, .. } => {
-                    let Some(ty) = self
-                        .tree
-                        .first_child_with(argument, ProductionV0_15::Type)?
-                    else {
+                    let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
                         return self.issue_node(
-                            SemanticRuleV0_15::Type5,
+                            SemanticRule::Type5,
                             argument,
                             SemanticIssueKind::TypeMismatch,
                         );
@@ -564,7 +551,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         && !matches!(ty, CheckedType::Integer(_) | CheckedType::GenericInt(_))
                     {
                         return self.issue_node(
-                            SemanticRuleV0_15::Fn3,
+                            SemanticRule::Fn3,
                             argument,
                             SemanticIssueKind::TypeMismatch,
                         );
@@ -572,12 +559,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericArgument::Type(ty)
                 }
                 GenericParameter::Const { .. } => {
-                    let Some(value) = self
-                        .tree
-                        .first_child_with(argument, ProductionV0_15::Const)?
+                    let Some(value) = self.tree.first_child_with(argument, Production::Const)?
                     else {
                         return self.issue_node(
-                            SemanticRuleV0_15::Type5,
+                            SemanticRule::Type5,
                             argument,
                             SemanticIssueKind::TypeMismatch,
                         );

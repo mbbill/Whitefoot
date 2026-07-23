@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{CheckedExpression, CheckedStatement, CheckedType, IntegerType};
 use super::{assert_rule, with_semantics};
@@ -107,22 +107,22 @@ fn partial_conversion_result_is_available_without_an_explicit_type_annotation() 
 fn conversion_shape_and_operand_failures_keep_their_rule_owners() {
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own i32 = cvt<i32, i32>(1_i32);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Op6,
+        SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own i64 = cvt<i32, i64>(1_i16);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Type5,
+        SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
         b"fn main() -> own unit pure {\n  let value: own i64 = cvt<i32>(1_i32);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Op1,
+        SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
         b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let value: own i32 = cvt<Bool, i32>(flag);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Op1,
+        SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
 }

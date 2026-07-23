@@ -1,8 +1,8 @@
 use crate::syntax::grammar::{
-    DecisionKindV0_15, DecisionV0_15, GrammarNodeIdV0_15, GrammarNodeKindV0_15,
-    LookaheadPredicateV0_15, ProductionV0_15, grammar_node_v0_15,
+    Decision, DecisionKind, GrammarNodeId, GrammarNodeKind, LookaheadPredicate, Production,
+    grammar_node,
 };
-use crate::syntax::terminal::TerminalPredicateV0_15;
+use crate::syntax::terminal::TerminalPredicate;
 
 use crate::ClassifiedToken;
 
@@ -15,10 +15,10 @@ use super::topology::{FinalizedExtent, NodeId};
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CompletedKind {
     Terminal {
-        predicate: TerminalPredicateV0_15,
+        predicate: TerminalPredicate,
     },
     Production {
-        production: ProductionV0_15,
+        production: Production,
         node: NodeId,
     },
 }
@@ -67,10 +67,10 @@ impl FinalizeWork {
 
 #[derive(Clone, Copy)]
 pub(crate) enum ShapeTask {
-    Execute(GrammarNodeIdV0_15),
-    Continue(GrammarNodeIdV0_15),
-    Terminal(TerminalPredicateV0_15),
-    Production(ProductionV0_15),
+    Execute(GrammarNodeId),
+    Continue(GrammarNodeId),
+    Terminal(TerminalPredicate),
+    Production(Production),
 }
 
 fn requested_next(len: usize) -> Result<u64, FinalizeResourceFailure> {
@@ -107,7 +107,7 @@ fn push_task(
 }
 
 fn accepts(
-    predicate: LookaheadPredicateV0_15,
+    predicate: LookaheadPredicate,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     offset: usize,
@@ -116,16 +116,16 @@ fn accepts(
         .checked_add(offset)
         .ok_or(FinalizeCompilerFailure::CounterOverflow)?;
     Ok(match (tokens.get(index), predicate) {
-        (Some(token), LookaheadPredicateV0_15::Terminal(expected)) => {
+        (Some(token), LookaheadPredicate::Terminal(expected)) => {
             token.terminals().contains(expected)
         }
-        (None, LookaheadPredicateV0_15::SourceEnd) => true,
+        (None, LookaheadPredicate::SourceEnd) => true,
         _ => false,
     })
 }
 
 fn select_arm(
-    decision: DecisionV0_15,
+    decision: Decision,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
     work: &mut FinalizeWork,
@@ -156,30 +156,28 @@ fn select_arm(
 }
 
 fn selected_node(
-    node_id: GrammarNodeIdV0_15,
-    decision: DecisionV0_15,
+    node_id: GrammarNodeId,
+    decision: Decision,
     arm: u8,
-) -> Result<Option<GrammarNodeIdV0_15>, FinalizeCompilerFailure> {
-    let node = grammar_node_v0_15(node_id).ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
+) -> Result<Option<GrammarNodeId>, FinalizeCompilerFailure> {
+    let node = grammar_node(node_id).ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
     match decision.kind() {
-        DecisionKindV0_15::Choice => node
+        DecisionKind::Choice => node
             .children()
             .get(usize::from(arm))
             .copied()
             .map(Some)
             .ok_or(FinalizeCompilerFailure::InvalidGrammarData),
-        DecisionKindV0_15::Optional | DecisionKindV0_15::Repeat0 | DecisionKindV0_15::Repeat1 => {
-            match arm {
-                0 => node
-                    .children()
-                    .first()
-                    .copied()
-                    .map(Some)
-                    .ok_or(FinalizeCompilerFailure::InvalidGrammarData),
-                1 => Ok(None),
-                _ => Err(FinalizeCompilerFailure::InvalidGrammarData),
-            }
-        }
+        DecisionKind::Optional | DecisionKind::Repeat0 | DecisionKind::Repeat1 => match arm {
+            0 => node
+                .children()
+                .first()
+                .copied()
+                .map(Some)
+                .ok_or(FinalizeCompilerFailure::InvalidGrammarData),
+            1 => Ok(None),
+            _ => Err(FinalizeCompilerFailure::InvalidGrammarData),
+        },
     }
 }
 
@@ -207,7 +205,7 @@ pub(crate) enum ShapeResult {
 }
 
 fn verify(
-    production: ProductionV0_15,
+    production: Production,
     children: &[Completed],
     source_tokens: &[ClassifiedToken<'_>],
     tasks: &mut Vec<ShapeTask>,
@@ -271,26 +269,26 @@ fn verify(
                     .ok_or(FinalizeCompilerFailure::CounterOverflow)?;
             }
             ShapeTask::Execute(node_id) => {
-                let node = grammar_node_v0_15(node_id)
-                    .ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
+                let node =
+                    grammar_node(node_id).ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
                 match node.kind() {
-                    GrammarNodeKindV0_15::Production(nested) => {
+                    GrammarNodeKind::Production(nested) => {
                         push_task(tasks, ShapeTask::Production(nested), limits)?;
                     }
-                    GrammarNodeKindV0_15::TerminalSequence => {
+                    GrammarNodeKind::TerminalSequence => {
                         for terminal in node.terminals().iter().rev() {
-                            let LookaheadPredicateV0_15::Terminal(predicate) = terminal else {
+                            let LookaheadPredicate::Terminal(predicate) = terminal else {
                                 return Err(FinalizeCompilerFailure::InvalidGrammarData.into());
                             };
                             push_task(tasks, ShapeTask::Terminal(*predicate), limits)?;
                         }
                     }
-                    GrammarNodeKindV0_15::Sequence => {
+                    GrammarNodeKind::Sequence => {
                         for child in node.children().iter().rev() {
                             push_task(tasks, ShapeTask::Execute(*child), limits)?;
                         }
                     }
-                    GrammarNodeKindV0_15::Group => {
+                    GrammarNodeKind::Group => {
                         let child = node
                             .children()
                             .first()
@@ -298,7 +296,7 @@ fn verify(
                             .ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
                         push_task(tasks, ShapeTask::Execute(child), limits)?;
                     }
-                    GrammarNodeKindV0_15::RepeatOne => {
+                    GrammarNodeKind::RepeatOne => {
                         let child = node
                             .children()
                             .first()
@@ -307,9 +305,9 @@ fn verify(
                         push_task(tasks, ShapeTask::Continue(node_id), limits)?;
                         push_task(tasks, ShapeTask::Execute(child), limits)?;
                     }
-                    GrammarNodeKindV0_15::Choice
-                    | GrammarNodeKindV0_15::Optional
-                    | GrammarNodeKindV0_15::RepeatZero => {
+                    GrammarNodeKind::Choice
+                    | GrammarNodeKind::Optional
+                    | GrammarNodeKind::RepeatZero => {
                         let decision = node
                             .decision()
                             .copied()
@@ -317,7 +315,7 @@ fn verify(
                         let arm = select_arm(decision, source_tokens, token_cursor, work)?
                             .ok_or(FinalizeCompilerFailure::InvalidProductionShape)?;
                         if let Some(selected) = selected_node(node_id, decision, arm)? {
-                            if decision.kind() == DecisionKindV0_15::Repeat0 {
+                            if decision.kind() == DecisionKind::Repeat0 {
                                 push_task(tasks, ShapeTask::Continue(node_id), limits)?;
                             }
                             push_task(tasks, ShapeTask::Execute(selected), limits)?;
@@ -326,8 +324,8 @@ fn verify(
                 }
             }
             ShapeTask::Continue(node_id) => {
-                let node = grammar_node_v0_15(node_id)
-                    .ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
+                let node =
+                    grammar_node(node_id).ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
                 let decision = node
                     .decision()
                     .copied()
@@ -357,7 +355,7 @@ fn verify(
 }
 
 pub(crate) fn verify_production_shape(
-    production: ProductionV0_15,
+    production: Production,
     children: &[Completed],
     source_tokens: &[ClassifiedToken<'_>],
     tasks: &mut Vec<ShapeTask>,

@@ -1,0 +1,10 @@
+contract SourceBound {
+}
+
+fn identity<T: SourceBound>(value: own T) -> own T pure {
+  return value;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

@@ -1,5 +1,5 @@
-use crate::syntax::grammar::ProductionV0_15;
-use crate::syntax::terminal::{FixedTerminalV0_15, TerminalPredicateV0_15};
+use crate::syntax::grammar::Production;
+use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ByteOffset, SourceId, SourceInput};
 
 use crate::syntax::parser::tree::DerivationExtent;
@@ -7,7 +7,7 @@ use crate::syntax::parser::{DerivationElement, ParsedBundle};
 
 use super::super::{
     FinalizeCompilerFailure, FinalizeLimit, FinalizeLimits, FinalizeOutcome,
-    FinalizeResourceFailure, finalize_v0_15,
+    FinalizeResourceFailure, finalize,
 };
 use super::support::{FINALIZE_LIMITS, source_offsets, with_parsed};
 
@@ -22,7 +22,7 @@ fn one_finalizer_proves_bundle_root_counts_and_ordered_source_extents() {
     with_parsed(&inputs, |parsed| {
         let token_count = parsed.terminal_count();
         let production_count = parsed.production_count();
-        let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("complete derivation must finalize");
         };
         assert_eq!(finalized.terminal_count(), token_count as usize);
@@ -47,7 +47,7 @@ fn assert_mutant(
     let inputs = [SourceInput::new("mutant.wf", source)];
     with_parsed(&inputs, |mut parsed| {
         mutate(&mut parsed);
-        let outcome = finalize_v0_15(parsed, FINALIZE_LIMITS);
+        let outcome = finalize(parsed, FINALIZE_LIMITS);
         assert!(
             matches!(outcome, FinalizeOutcome::CompilerFailure(actual) if actual == expected),
             "unexpected mutant result: {outcome:?}"
@@ -66,7 +66,7 @@ fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
             else {
                 panic!("program root must be last");
             };
-            *production = ProductionV0_15::Item;
+            *production = Production::Item;
         },
         FinalizeCompilerFailure::InvalidSourceExtent,
     );
@@ -91,7 +91,7 @@ fn hostile_postorder_root_shape_and_extent_mutants_fail_closed() {
                     matches!(
                         element,
                         DerivationElement::Production {
-                            production: ProductionV0_15::FnDecl,
+                            production: Production::FnDecl,
                             ..
                         }
                     )
@@ -144,7 +144,7 @@ fn hostile_token_identity_and_predicate_mutants_fail_closed() {
                     matches!(
                         element,
                         DerivationElement::Terminal {
-                            predicate: TerminalPredicateV0_15::Fixed(FixedTerminalV0_15::Fn),
+                            predicate: TerminalPredicate::Fixed(FixedTerminal::Fn),
                             ..
                         }
                     )
@@ -152,7 +152,7 @@ fn hostile_token_identity_and_predicate_mutants_fail_closed() {
             else {
                 panic!("fixture must contain fn terminal");
             };
-            *predicate = TerminalPredicateV0_15::TypeIdentifier;
+            *predicate = TerminalPredicate::TypeIdentifier;
         },
         FinalizeCompilerFailure::InvalidTerminalPredicate,
     );
@@ -164,7 +164,7 @@ fn hostile_token_identity_and_predicate_mutants_fail_closed() {
                     matches!(
                         element,
                         DerivationElement::Terminal {
-                            predicate: TerminalPredicateV0_15::Fixed(FixedTerminalV0_15::Unit),
+                            predicate: TerminalPredicate::Fixed(FixedTerminal::Unit),
                             ..
                         }
                     )
@@ -172,7 +172,7 @@ fn hostile_token_identity_and_predicate_mutants_fail_closed() {
             else {
                 panic!("fixture must contain unit terminal");
             };
-            *predicate = TerminalPredicateV0_15::Literal;
+            *predicate = TerminalPredicate::Literal;
         },
         FinalizeCompilerFailure::InvalidProductionShape,
     );
@@ -235,7 +235,7 @@ fn exact_finalizer_resource_families_are_observable() {
     for (expected, limits) in cases {
         let inputs = [SourceInput::new("resource.wf", source)];
         with_parsed(&inputs, |parsed| {
-            let outcome = finalize_v0_15(parsed, limits);
+            let outcome = finalize(parsed, limits);
             assert!(
                 matches!(
                     outcome,
@@ -258,7 +258,7 @@ fn finalized_token_partitions_match_the_classified_source_offsets() {
     ];
     with_parsed(&inputs, |parsed| {
         let expected = source_offsets(parsed.classified_bundle());
-        let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
             panic!("ordered sources must finalize");
         };
         assert_eq!(expected.first(), Some(&0));

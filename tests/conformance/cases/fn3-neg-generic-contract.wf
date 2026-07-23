@@ -1,0 +1,6 @@
+contract GenericMarker<T> {
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

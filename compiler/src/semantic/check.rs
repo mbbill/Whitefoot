@@ -1,5 +1,6 @@
 mod borrows;
 mod cleanup;
+mod contracts;
 mod control;
 mod expressions;
 mod generics;
@@ -13,14 +14,14 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationId, DeclarationRole, ProductionV0_15, ResolvedSyntaxUnit, SemanticCompilerFailure,
-    SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRuleV0_15,
-    UnsupportedSemanticFeatureV0_15,
+    DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
+    SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
 };
 
 use super::model::{
-    BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMode,
-    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedType, FunctionId, NominalId,
+    BindingId, CheckedConstant, CheckedConstantId, CheckedContract, CheckedExpression,
+    CheckedFunction, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
+    CheckedType, FunctionId, NominalId,
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
@@ -51,6 +52,11 @@ struct FunctionSignature {
     effects_node: NodeId,
     declared_effects: EffectSet,
     substitution: GenericSubstitution,
+}
+
+struct ContractInfo {
+    checked: CheckedContract,
+    members: Vec<contracts::ContractMemberInfo>,
 }
 
 #[derive(Clone)]
@@ -148,6 +154,7 @@ struct EffectSet {
     reads: Vec<DeclarationId>,
     writes: Vec<DeclarationId>,
     allocates_heap: bool,
+    allocates_arenas: Vec<DeclarationId>,
     traps: bool,
 }
 
@@ -156,18 +163,21 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates_heap: false,
+        allocates_arenas: Vec::new(),
         traps: false,
     };
     const TRAPS: Self = Self {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates_heap: false,
+        allocates_arenas: Vec::new(),
         traps: true,
     };
     const ALLOCATES_HEAP_AND_TRAPS: Self = Self {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates_heap: true,
+        allocates_arenas: Vec::new(),
         traps: true,
     };
 
@@ -179,6 +189,9 @@ impl EffectSet {
             self.add_write(region);
         }
         self.allocates_heap |= other.allocates_heap;
+        for region in other.allocates_arenas {
+            self.add_arena_allocation(region);
+        }
         self.traps |= other.traps;
         self
     }
@@ -194,6 +207,13 @@ impl EffectSet {
         if !self.writes.contains(&region) {
             self.writes.push(region);
             self.writes.sort_unstable();
+        }
+    }
+
+    fn add_arena_allocation(&mut self, region: DeclarationId) {
+        if !self.allocates_arenas.contains(&region) {
+            self.allocates_arenas.push(region);
+            self.allocates_arenas.sort_unstable();
         }
     }
 }
@@ -226,14 +246,16 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
+    contracts: Vec<ContractInfo>,
+    contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
 
-/// Checks the currently implemented exact-v0.15 semantic family.
+/// Checks the currently implemented active-specification semantic family.
 ///
 /// Unsupported language families remain explicit compiler capability results;
 /// only a proved numbered-rule violation becomes [`SemanticOutcome::SourceIssue`].
 #[must_use]
-pub fn check_semantics_v0_15<'classified, 'lexed, 'source>(
+pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let result = Checker::new(&resolved).and_then(|mut checker| checker.check_program());
@@ -271,27 +293,44 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions_by_declaration: HashMap::new(),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
+            contracts: Vec::new(),
+            contracts_by_declaration: HashMap::new(),
         })
     }
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
         let items = self.item_declarations()?;
         self.check_main_header(&items)?;
-        self.reject_unimplemented_items(&items)?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
         self.collect_function_signatures(&items)?;
+        let executable_nominal_count = self.nominals.len();
+        self.collect_contracts(&items)?;
+        let nominal_count_before_function_checking = self.nominals.len();
         let main = self.main_id()?;
 
         let mut functions = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
             functions.push(self.check_function(index)?);
         }
+        if self.nominals.len() != nominal_count_before_function_checking {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let (conformances, law_derivations) =
+            self.check_conformances_and_laws(&items, &functions)?;
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
+            executable_nominal_count,
             constants: self.checked_constants.clone(),
             functions,
+            contracts: self
+                .contracts
+                .iter()
+                .map(|contract| contract.checked.clone())
+                .collect(),
+            conformances,
+            law_derivations,
             main,
         })
     }
@@ -299,29 +338,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn item_declarations(&self) -> Result<Vec<NodeId>, CheckStop> {
         let mut declarations = Vec::new();
         for item in self.tree.children(self.tree.root())? {
-            if self.tree.production(*item)? != ProductionV0_15::Item {
+            if self.tree.production(*item)? != Production::Item {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             }
             declarations.push(self.tree.only_child(*item)?);
         }
         Ok(declarations)
-    }
-
-    fn reject_unimplemented_items(&self, items: &[NodeId]) -> Result<(), CheckStop> {
-        for item in items {
-            let feature = match self.tree.production(*item)? {
-                ProductionV0_15::FnDecl
-                | ProductionV0_15::ConstDecl
-                | ProductionV0_15::StructDecl
-                | ProductionV0_15::EnumDecl => continue,
-                ProductionV0_15::ContractDecl | ProductionV0_15::ConformDecl => {
-                    UnsupportedSemanticFeatureV0_15::ContractsAndConformances
-                }
-                _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
-            };
-            return self.unsupported(feature, *item);
-        }
-        Ok(())
     }
 
     fn collect_function_signatures(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
@@ -333,19 +355,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in items.iter().copied().filter(|node| {
             self.tree
                 .production(*node)
-                .is_ok_and(|production| production == ProductionV0_15::ConstDecl)
+                .is_ok_and(|production| production == Production::ConstDecl)
         }) {
             let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?;
             let declaration_id = declaration.id();
             let name = declaration.spelling().to_owned();
             let ty_node = self
                 .tree
-                .first_child_with(node, ProductionV0_15::Type)?
+                .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_const_type(ty_node)?;
             let value_node = self
                 .tree
-                .first_child_with(node, ProductionV0_15::Cvalue)?
+                .first_child_with(node, Production::Cvalue)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let value = self.parse_const_value(value_node, ty)?;
             let id = CheckedConstantId(
@@ -368,7 +390,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in items.iter().copied().filter(|node| {
             self.tree
                 .production(*node)
-                .is_ok_and(|production| production == ProductionV0_15::FnDecl)
+                .is_ok_and(|production| production == Production::FnDecl)
         }) {
             if self
                 .declaration_at(node, DeclarationRole::Function)?
@@ -381,7 +403,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let Some(node) = main else {
             return Err(CheckStop::Issue(SemanticIssue {
-                rule: SemanticRuleV0_15::Fn7,
+                rule: SemanticRule::Fn7,
                 location: SemanticLocation::BundleRoot(
                     self.resolved.syntax().root_extent().to_vec(),
                 ),
@@ -389,48 +411,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }));
         };
 
-        let generics = self
-            .tree
-            .first_child_with(node, ProductionV0_15::Generics)?;
-        let regions = self
-            .tree
-            .first_child_with(node, ProductionV0_15::RegionParams)?;
-        let parameters = self
-            .tree
-            .first_child_with(node, ProductionV0_15::ParamList)?;
+        let generics = self.tree.first_child_with(node, Production::Generics)?;
+        let regions = self.tree.first_child_with(node, Production::RegionParams)?;
+        let parameters = self.tree.first_child_with(node, Production::ParamList)?;
         let rtype = self
             .tree
-            .first_child_with(node, ProductionV0_15::Rtype)?
+            .first_child_with(node, Production::Rtype)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let mode = self
             .tree
-            .first_child_with(rtype, ProductionV0_15::Mode)?
+            .first_child_with(rtype, Production::Mode)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let ty = self
             .tree
-            .first_child_with(rtype, ProductionV0_15::Type)?
+            .first_child_with(rtype, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let effects = self
             .tree
-            .first_child_with(node, ProductionV0_15::Effects)?
+            .first_child_with(node, Production::Effects)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if generics.is_some()
             || regions.is_some()
             || parameters.is_some()
-            || !self.has_fixed(mode, crate::FixedTerminalV0_15::Own)?
-            || !self.has_fixed(ty, crate::FixedTerminalV0_15::Unit)?
+            || !self.has_fixed(mode, crate::FixedTerminal::Own)?
+            || !self.has_fixed(ty, crate::FixedTerminal::Unit)?
             || !self.main_effects_allowed(effects)?
         {
-            return self.issue_node(SemanticRuleV0_15::Fn7, node, SemanticIssueKind::InvalidMain);
+            return self.issue_node(SemanticRule::Fn7, node, SemanticIssueKind::InvalidMain);
         }
         Ok(())
     }
 
     fn main_effects_allowed(&self, effects: NodeId) -> Result<bool, CheckStop> {
-        if self.has_fixed(effects, crate::FixedTerminalV0_15::Pure)? {
+        if self.has_fixed(effects, crate::FixedTerminal::Pure)? {
             return Ok(true);
         }
-        let effects = self.tree.children_with(effects, ProductionV0_15::Effect)?;
+        let effects = self.tree.children_with(effects, Production::Effect)?;
         let spellings = effects
             .iter()
             .map(|effect| self.tree.direct_spelling(*effect))
@@ -500,7 +516,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let parameter_bindings = bindings.clone();
         let requires = if let Some(node) = self
             .tree
-            .first_child_with(signature.node, ProductionV0_15::RequiresBlock)?
+            .first_child_with(signature.node, Production::RequiresBlock)?
         {
             let mut requires_bindings = parameter_bindings.clone();
             Some(self.check_requires(signature, node, &mut requires_bindings, &mut counters)?)
@@ -509,9 +525,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
 
         bindings = parameter_bindings;
-        let statements = self
-            .tree
-            .children_with(signature.node, ProductionV0_15::Stmt)?;
+        let statements = self.tree.children_with(signature.node, Production::Stmt)?;
         let checked = self.check_block(
             signature,
             &statements,
@@ -524,7 +538,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         if checked.can_continue {
             return Err(CheckStop::Issue(SemanticIssue {
-                rule: SemanticRuleV0_15::Fn1,
+                rule: SemanticRule::Fn1,
                 location: SemanticLocation::SourceNode(
                     self.tree.path(signature.node)?.clone(),
                     self.tree.closing_brace_coordinate(signature.node)?,
@@ -538,7 +552,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         );
         if effects != signature.declared_effects {
             return self.issue_node(
-                SemanticRuleV0_15::Eff2,
+                SemanticRule::Eff2,
                 signature.effects_node,
                 SemanticIssueKind::EffectMismatch,
             );

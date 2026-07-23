@@ -2,9 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationId, DeclarationRole, DeferredUseRole, LexicalUseRole, ProductionV0_15,
-    ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15,
-    UnsupportedSemanticFeatureV0_15,
+    DeclarationId, DeclarationRole, DeferredUseRole, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
 use super::super::super::model::{
@@ -50,7 +49,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<MatchResult, CheckStop> {
         let expression_node = self
             .tree
-            .first_child_with(node, ProductionV0_15::Expr)?
+            .first_child_with(node, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
@@ -58,7 +57,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
-        let value_match = self.tree.production(node)? == ProductionV0_15::ValueMatch;
+        let value_match = self.tree.production(node)? == Production::ValueMatch;
         if value_match != value_expected.is_some() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
@@ -71,7 +70,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             loops: scope.loops,
             give_context: local_give_context.as_ref().or(scope.give_context),
         };
-        let arm_nodes = self.tree.children_with(node, ProductionV0_15::Arm)?;
+        let arm_nodes = self.tree.children_with(node, Production::Arm)?;
         let mut seen = HashSet::new();
         let mut duplicate_arm = None;
         let mut resolved_variants = Vec::with_capacity(arm_nodes.len());
@@ -90,13 +89,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect::<Vec<_>>();
         if !missing_variants.is_empty() {
             return self.issue_node(
-                SemanticRuleV0_15::Err2,
+                SemanticRule::Err2,
                 node,
                 SemanticIssueKind::NonExhaustiveMatch { missing_variants },
             );
         }
         if let Some(arm) = duplicate_arm {
-            return self.unsupported(UnsupportedSemanticFeatureV0_15::DuplicateMatchArm, arm);
+            return self.unsupported(UnsupportedSemanticFeature::DuplicateMatchArm, arm);
         }
 
         let mut arms = Vec::with_capacity(arm_nodes.len());
@@ -114,7 +113,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 counters.next_binding,
                 scope.loops.len(),
             )?;
-            let statements = self.tree.children_with(arm_node, ProductionV0_15::Stmt)?;
+            let statements = self.tree.children_with(arm_node, Production::Stmt)?;
             let checked = self.check_block(
                 function,
                 &statements,
@@ -143,11 +142,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if value_match {
             if !all_paths_deliver {
-                return self.issue_node(
-                    SemanticRuleV0_15::Give1,
-                    node,
-                    SemanticIssueKind::InvalidGive,
-                );
+                return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
             self.join_states(&base_keys, &give_states, node, bindings)?;
         } else {
@@ -199,7 +194,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Nominal(id) => {
                 let CheckedNominalKind::Enum { variants } = &self.nominal(id)?.kind else {
                     return self.issue_node(
-                        SemanticRuleV0_15::Type5,
+                        SemanticRule::Type5,
                         node,
                         SemanticIssueKind::TypeMismatch,
                     );
@@ -218,11 +213,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     variants,
                 })
             }
-            _ => self.issue_node(
-                SemanticRuleV0_15::Type5,
-                node,
-                SemanticIssueKind::TypeMismatch,
-            ),
+            _ => self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch),
         }
     }
 
@@ -246,7 +237,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .ok_or_else(|| {
                 self.issue_value(
-                    SemanticRuleV0_15::Type6,
+                    SemanticRule::Type6,
                     arm,
                     SemanticIssueKind::ForeignMatchVariant,
                 )
@@ -261,14 +252,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         next_binding: &mut u32,
         loop_depth: usize,
     ) -> Result<Vec<CheckedMatchBinder>, CheckStop> {
-        let written = if let Some(list) = self
-            .tree
-            .first_child_with(arm, ProductionV0_15::FieldbindList)?
-        {
-            self.tree.children_with(list, ProductionV0_15::Fieldbind)?
-        } else {
-            Vec::new()
-        };
+        let written =
+            if let Some(list) = self.tree.first_child_with(arm, Production::FieldbindList)? {
+                self.tree.children_with(list, Production::Fieldbind)?
+            } else {
+                Vec::new()
+            };
         if written.len() != variant.fields.len() {
             return self.invalid_match_fields(variant, arm);
         }
@@ -316,7 +305,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
     ) -> Result<ResultValue, CheckStop> {
         self.issue_node(
-            SemanticRuleV0_15::Gram10,
+            SemanticRule::Gram10,
             node,
             SemanticIssueKind::InvalidMatchFields {
                 variant: variant.name.clone(),
@@ -348,7 +337,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .skip(1)
                 .any(|state| state.get(key) != Some(expected))
             {
-                return self.unsupported(UnsupportedSemanticFeatureV0_15::OwnershipJoin, node);
+                return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
             }
             *bindings
                 .get_mut(key)

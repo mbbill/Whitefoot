@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, ProductionV0_15,
-    ResolvedTarget, ScopeId, SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15,
-    UnsupportedSemanticFeatureV0_15,
+    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
+    ScopeId, SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
 use super::super::model::{
@@ -60,7 +59,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Vec<DeclarationId>, CheckStop> {
         let Some(node) = self
             .tree
-            .first_child_with(function, ProductionV0_15::RegionParams)?
+            .first_child_with(function, Production::RegionParams)?
         else {
             return Ok(Vec::new());
         };
@@ -82,7 +81,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn parse_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
-        if self.has_fixed(node, crate::FixedTerminalV0_15::Own)? {
+        if self.has_fixed(node, crate::FixedTerminal::Own)? {
             return Ok(CheckedMode::Own);
         }
         let usage = self.use_at(node, LexicalUseRole::ModeRegion)?;
@@ -93,7 +92,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        Ok(if self.has_fixed(node, crate::FixedTerminalV0_15::Uniq)? {
+        Ok(if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
             CheckedMode::Unique(declaration)
         } else {
             CheckedMode::Shared(declaration)
@@ -133,20 +132,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        let kind = if self.has_fixed(node, crate::FixedTerminalV0_15::Uniq)? {
+        let kind = if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
             BorrowKind::Unique
         } else {
             BorrowKind::Shared
         };
         let place_node = self
             .tree
-            .first_child_with(node, ProductionV0_15::Place)?
+            .first_child_with(node, Production::Place)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let pbase = self
             .tree
-            .first_child_with(place_node, ProductionV0_15::Pbase)?
+            .first_child_with(place_node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self.has_fixed(pbase, crate::FixedTerminalV0_15::Deref)? {
+        if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
             return self.check_child_reborrow(
                 node,
                 place_node,
@@ -160,7 +159,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
             return self.issue_node(
-                SemanticRuleV0_15::Own11,
+                SemanticRule::Own11,
                 node,
                 SemanticIssueKind::BorrowRegionOutsideLoop {
                     mechanical_fix: "introduce the borrow region inside the enclosing loop body",
@@ -168,7 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         if !self.tree.children(pbase)?.is_empty() {
-            return self.unsupported(UnsupportedSemanticFeatureV0_15::RegionsAndBorrows, pbase);
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, pbase);
         }
         let root_use = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
         let ResolvedTarget::Source {
@@ -176,23 +175,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             class: DeclarationClass::Value,
         } = root_use.target()
         else {
-            return self.unsupported(
-                UnsupportedSemanticFeatureV0_15::RegionsAndBorrows,
-                place_node,
-            );
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
         };
         let local = bindings
             .get(&declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if local.mode != CheckedMode::Own {
-            return self.unsupported(
-                UnsupportedSemanticFeatureV0_15::RegionsAndBorrows,
-                place_node,
-            );
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
         }
         if !local.live {
             return self.issue_node(
-                SemanticRuleV0_15::Own1,
+                SemanticRule::Own1,
                 place_node,
                 SemanticIssueKind::UseAfterMove {
                     mechanical_fix: "introduce a new `let` binding before reuse",
@@ -206,7 +199,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?
         {
             return self.issue_node(
-                SemanticRuleV0_15::Own10,
+                SemanticRule::Own10,
                 node,
                 SemanticIssueKind::InvalidBorrowLifetime,
             );
@@ -253,10 +246,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             _ => {
-                return self.unsupported(
-                    UnsupportedSemanticFeatureV0_15::RegionsAndBorrows,
-                    place_node,
-                );
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }
         };
         Ok(TypedExpression {
@@ -283,14 +273,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         if !child_reborrow_allowed {
             return self.issue_node(
-                SemanticRuleV0_15::Own6,
+                SemanticRule::Own6,
                 node,
                 SemanticIssueKind::InvalidChildReborrow,
             );
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
             return self.issue_node(
-                SemanticRuleV0_15::Own11,
+                SemanticRule::Own11,
                 node,
                 SemanticIssueKind::BorrowRegionOutsideLoop {
                     mechanical_fix: "introduce the child region inside the enclosing loop body",
@@ -302,7 +292,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             || !self.child_region_is_statement_scoped(region_declaration, node)?
         {
             return self.issue_node(
-                SemanticRuleV0_15::Own6,
+                SemanticRule::Own6,
                 node,
                 SemanticIssueKind::InvalidChildReborrow,
             );
@@ -316,7 +306,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             || !self.region_outlives(parent.region, region)?
         {
             return self.issue_node(
-                SemanticRuleV0_15::Own6,
+                SemanticRule::Own6,
                 node,
                 SemanticIssueKind::InvalidChildReborrow,
             );
@@ -355,10 +345,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             _ => {
-                return self.unsupported(
-                    UnsupportedSemanticFeatureV0_15::RegionsAndBorrows,
-                    place_node,
-                );
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }
         };
         let borrow = BorrowInfo {
@@ -385,18 +372,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(region_node) = self.tree.node_with_path(region.origin().node()) else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        if self.tree.production(region_node)? != ProductionV0_15::RegionStmt {
+        if self.tree.production(region_node)? != Production::RegionStmt {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        let region_statements = self
-            .tree
-            .children_with(region_node, ProductionV0_15::Stmt)?;
+        let region_statements = self.tree.children_with(region_node, Production::Stmt)?;
         let [region_statement] = region_statements.as_slice() else {
             return Ok(false);
         };
         let mut cursor = Some(child);
         while let Some(node) = cursor {
-            if self.tree.production(node)? == ProductionV0_15::Stmt {
+            if self.tree.production(node)? == Production::Stmt {
                 return Ok(node == *region_statement);
             }
             cursor = self.tree.parent(node)?;
@@ -428,7 +413,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut loops = Vec::new();
         let mut cursor = self.tree.parent(node)?;
         while let Some(node) = cursor {
-            if self.tree.production(node)? == ProductionV0_15::LoopStmt {
+            if self.tree.production(node)? == Production::LoopStmt {
                 loops.push(node);
             }
             cursor = self.tree.parent(node)?;
@@ -445,22 +430,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(DeclarationId, LocalBinding, BorrowInfo), CheckStop> {
         let holder_place = self
             .tree
-            .first_child_with(pbase, ProductionV0_15::Place)?
+            .first_child_with(pbase, Production::Place)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let holder_base = self
             .tree
-            .first_child_with(holder_place, ProductionV0_15::Pbase)?
+            .first_child_with(holder_place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if !self.tree.children(holder_base)?.is_empty()
             || !self
                 .tree
-                .children_with(holder_place, ProductionV0_15::Psuffix)?
+                .children_with(holder_place, Production::Psuffix)?
                 .is_empty()
         {
-            return self.unsupported(
-                UnsupportedSemanticFeatureV0_15::RegionsAndBorrows,
-                holder_place,
-            );
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, holder_place);
         }
         let usage = self.use_at(holder_base, LexicalUseRole::PlaceBase)?;
         let ResolvedTarget::Source {
@@ -476,7 +458,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if !local.live {
             return self.issue_node(
-                SemanticRuleV0_15::Own1,
+                SemanticRule::Own1,
                 holder_place,
                 SemanticIssueKind::UseAfterMove {
                     mechanical_fix: "introduce a new `let` binding before reuse",
@@ -485,7 +467,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let Some(borrow) = local.borrow.clone() else {
             return self.issue_node(
-                SemanticRuleV0_15::Type7,
+                SemanticRule::Type7,
                 node,
                 SemanticIssueKind::MissingDereference {
                     mechanical_fix: "deref requires a borrow holder",
@@ -506,7 +488,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(None);
             }
             return self.issue_node(
-                SemanticRuleV0_15::Type7,
+                SemanticRule::Type7,
                 node,
                 SemanticIssueKind::MissingDereference {
                     mechanical_fix: "write `deref(holder)`",
@@ -514,26 +496,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let Some(mut borrow) = value.borrow.clone() else {
-            return self.issue_node(
-                SemanticRuleV0_15::Type5,
-                node,
-                SemanticIssueKind::TypeMismatch,
-            );
+            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
         };
         let destination_region = match (destination, borrow.kind) {
             (CheckedMode::Shared(region), BorrowKind::Shared)
             | (CheckedMode::Unique(region), BorrowKind::Unique) => region,
             _ => {
-                return self.issue_node(
-                    SemanticRuleV0_15::Type5,
-                    node,
-                    SemanticIssueKind::TypeMismatch,
-                );
+                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
             }
         };
         if !self.region_outlives(borrow.region, destination_region)? {
             return self.issue_node(
-                SemanticRuleV0_15::Own4,
+                SemanticRule::Own4,
                 node,
                 SemanticIssueKind::InvalidBorrowLifetime,
             );
@@ -582,7 +556,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             if conflicts {
                 return self.issue_node(
-                    SemanticRuleV0_15::Own5,
+                    SemanticRule::Own5,
                     node,
                     SemanticIssueKind::BorrowConflict,
                 );

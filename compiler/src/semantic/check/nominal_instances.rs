@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
 use crate::syntax::NodeId;
-use crate::syntax::terminal::TerminalPredicateV0_15;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationClass, DeclarationRole, DependentDeclarationRole, LexicalUseRole,
-    PreludeDeclarationId, ProductionV0_15, ResolvedTarget, SemanticCompilerFailure,
-    SemanticIssueKind, SemanticRuleV0_15,
+    PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
+    SemanticRule,
 };
 
 use super::super::model::{
@@ -21,15 +21,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn declare_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         for node in items.iter().copied().filter(|node| {
             self.tree.production(*node).is_ok_and(|production| {
-                matches!(
-                    production,
-                    ProductionV0_15::StructDecl | ProductionV0_15::EnumDecl
-                )
+                matches!(production, Production::StructDecl | Production::EnumDecl)
             })
         }) {
             let role = match self.tree.production(node)? {
-                ProductionV0_15::StructDecl => DeclarationRole::Struct,
-                ProductionV0_15::EnumDecl => DeclarationRole::Enum,
+                Production::StructDecl => DeclarationRole::Struct,
+                Production::EnumDecl => DeclarationRole::Enum,
                 _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
             };
             let declaration = self.declaration_at(node, role)?;
@@ -63,7 +60,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if role == DeclarationRole::Enum {
                 for (variant, variant_node) in self
                     .tree
-                    .children_with(node, ProductionV0_15::Variant)?
+                    .children_with(node, Production::Variant)?
                     .into_iter()
                     .enumerate()
                 {
@@ -111,17 +108,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for ty in self.nominal_type_descendants(node)? {
             self.ensure_nominal_type_head(ty, substitution)?;
         }
-        for construct in self
-            .tree
-            .descendants_with(node, ProductionV0_15::Construct)?
-        {
+        for construct in self.tree.descendants_with(node, Production::Construct)? {
             self.ensure_source_constructor_instance(construct, substitution)?;
         }
         self.ensure_implicit_prelude_nominals(node, substitution)?;
         self.reject_recursive_nominal_layouts()
     }
 
-    fn ensure_nominal_type(
+    pub(super) fn ensure_nominal_type(
         &mut self,
         node: NodeId,
         substitution: &GenericSubstitution,
@@ -133,7 +127,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn nominal_type_descendants(&self, node: NodeId) -> Result<Vec<NodeId>, CheckStop> {
-        let mut nested = self.tree.descendants_with(node, ProductionV0_15::Type)?;
+        let mut nested = self.tree.descendants_with(node, Production::Type)?;
         nested.sort_by(|left, right| {
             let left_depth = self
                 .tree
@@ -159,7 +153,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         if self
             .tree
-            .direct_token_with(node, TerminalPredicateV0_15::TypeIdentifier)?
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
             .is_none()
         {
             return Ok(());
@@ -234,27 +228,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        for statement in self.tree.descendants_with(node, ProductionV0_15::LetStmt)? {
+        for statement in self.tree.descendants_with(node, Production::LetStmt)? {
             if self
                 .tree
-                .first_child_with(statement, ProductionV0_15::PropagateLetRhs)?
+                .first_child_with(statement, Production::PropagateLetRhs)?
                 .is_none()
             {
                 continue;
             }
             let ok_node = self
                 .tree
-                .first_child_with(statement, ProductionV0_15::Type)?
+                .first_child_with(statement, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ok = self.parse_type_with(ok_node, substitution)?;
             let function = self.enclosing_function(statement)?;
             let rtype = self
                 .tree
-                .first_child_with(function, ProductionV0_15::Rtype)?
+                .first_child_with(function, Production::Rtype)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let return_node = self
                 .tree
-                .first_child_with(rtype, ProductionV0_15::Type)?
+                .first_child_with(rtype, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let return_type = self.parse_type_with(return_node, substitution)?;
             if let CheckedType::Nominal(return_nominal) = return_type
@@ -264,10 +258,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
 
-        for call in self.tree.descendants_with(node, ProductionV0_15::Call)? {
+        for call in self.tree.descendants_with(node, Production::Call)? {
             let callee = self
                 .tree
-                .first_child_with(call, ProductionV0_15::Callee)?
+                .first_child_with(call, Production::Callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let spelling = self.tree.direct_spelling(callee)?;
             if spelling == b"cvt" {
@@ -291,17 +285,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(error) = error else {
                 continue;
             };
-            let Some(targs) = self.tree.first_child_with(call, ProductionV0_15::Targs)? else {
+            let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
                 continue;
             };
-            let arguments = self.tree.children_with(targs, ProductionV0_15::Targ)?;
+            let arguments = self.tree.children_with(targs, Production::Targ)?;
             let [argument] = arguments.as_slice() else {
                 continue;
             };
-            let Some(ty_node) = self
-                .tree
-                .first_child_with(*argument, ProductionV0_15::Type)?
-            else {
+            let Some(ty_node) = self.tree.first_child_with(*argument, Production::Type)? else {
                 continue;
             };
             let operand = self.parse_type_with(ty_node, substitution)?;
@@ -322,18 +313,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, ProductionV0_15::Targs)? else {
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
             return Ok(());
         };
-        let arguments = self.tree.children_with(targs, ProductionV0_15::Targ)?;
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
         let [source_argument, destination_argument] = arguments.as_slice() else {
             return Ok(());
         };
         let (Some(source_node), Some(destination_node)) = (
             self.tree
-                .first_child_with(*source_argument, ProductionV0_15::Type)?,
+                .first_child_with(*source_argument, Production::Type)?,
             self.tree
-                .first_child_with(*destination_argument, ProductionV0_15::Type)?,
+                .first_child_with(*destination_argument, Production::Type)?,
         ) else {
             return Ok(());
         };
@@ -492,7 +483,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<Vec<CheckedField>, CheckStop> {
-        let nodes = self.tree.children_with(node, ProductionV0_15::Field)?;
+        let nodes = self.tree.children_with(node, Production::Field)?;
         let mut seen = HashSet::with_capacity(nodes.len());
         let mut fields = Vec::with_capacity(nodes.len());
         for field in nodes {
@@ -501,14 +492,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let name = declaration.spelling().to_owned();
             if !seen.insert(name.clone()) {
                 return self.issue_node(
-                    SemanticRuleV0_15::Type6,
+                    SemanticRule::Type6,
                     field,
                     SemanticIssueKind::DuplicateFieldLabel { label: name },
                 );
             }
             let ty = self
                 .tree
-                .first_child_with(field, ProductionV0_15::Type)?
+                .first_child_with(field, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
@@ -522,7 +513,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<Vec<CheckedVariant>, CheckStop> {
-        let nodes = self.tree.children_with(node, ProductionV0_15::Variant)?;
+        let nodes = self.tree.children_with(node, Production::Variant)?;
         let mut variants = Vec::with_capacity(nodes.len());
         for variant_node in nodes {
             let declaration = self.declaration_at(variant_node, DeclarationRole::Variant)?;
@@ -534,22 +525,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let mut seen = HashSet::new();
             if let Some(list) = self
                 .tree
-                .first_child_with(variant_node, ProductionV0_15::VfieldList)?
+                .first_child_with(variant_node, Production::VfieldList)?
             {
-                for field in self.tree.children_with(list, ProductionV0_15::Vfield)? {
+                for field in self.tree.children_with(list, Production::Vfield)? {
                     let declaration = self
                         .dependent_declaration_at(field, DependentDeclarationRole::VariantField)?;
                     let field_name = declaration.spelling().to_owned();
                     if !seen.insert(field_name.clone()) {
                         return self.issue_node(
-                            SemanticRuleV0_15::Type6,
+                            SemanticRule::Type6,
                             field,
                             SemanticIssueKind::DuplicateFieldLabel { label: field_name },
                         );
                     }
                     let ty = self
                         .tree
-                        .first_child_with(field, ProductionV0_15::Type)?
+                        .first_child_with(field, Production::Type)?
                         .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;

@@ -1,17 +1,17 @@
 #![allow(clippy::panic)]
 
-use crate::lexer::{LexLimits, LexOutcome, lex_v0_15};
+use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
-    CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome, KERNEL_SPEC_V0_15_HASH,
+    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
     ParseLimits, ParseOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, audit_canonical_v0_15, classify_terminals_v0_15, finalize_v0_15, parse_v0_15,
+    TerminalOutcome, audit_canonical, classify_terminals, finalize, parse,
 };
 
 use super::catalog::OPERATION_FAMILIES;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationOrigin, DeclarationRole, DeferredUseRole,
     DependentDeclarationRole, LexicalUseRole, ResolutionIssue, ResolutionIssueKind,
-    ResolutionOutcome, ResolutionRuleV0_15, ResolvedTarget, resolve_v0_15,
+    ResolutionOutcome, ResolutionRule, ResolvedTarget, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -65,29 +65,29 @@ fn with_resolution<ResultValue>(
     let Ok(bundle) = SourceBundle::with_limits(inputs, SOURCE_LIMITS) else {
         panic!("resolver test bundle must be valid");
     };
-    let LexOutcome::Complete(lexed) = lex_v0_15(&bundle, LEX_LIMITS) else {
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("resolver test source must lex");
     };
-    let TerminalOutcome::Complete(classified) = classify_terminals_v0_15(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits {
             max_tokens: LEX_LIMITS.max_tokens,
         },
     ) else {
         panic!("resolver test source must classify");
     };
-    let ParseOutcome::Complete(parsed) = parse_v0_15(&classified, PARSE_LIMITS) else {
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
         panic!("resolver test source must parse");
     };
-    let FinalizeOutcome::Complete(finalized) = finalize_v0_15(parsed, FINALIZE_LIMITS) else {
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
         panic!("resolver test derivation must finalize");
     };
-    let canonical = audit_canonical_v0_15(finalized, CANONICAL_LIMITS);
+    let canonical = audit_canonical(finalized, CANONICAL_LIMITS);
     let CanonicalOutcome::Complete(syntax) = canonical else {
         panic!("resolver test source must use exact FORM-2 formatting: {canonical:?}");
     };
-    run(resolve_v0_15(syntax))
+    run(resolve(syntax))
 }
 
 fn with_one_resolution<ResultValue>(
@@ -154,7 +154,7 @@ fn named_constants_remain_lexically_declaration_before_use() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("later named constant must not be visible: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Const2);
+        assert_eq!(issue.rule(), ResolutionRule::Const2);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "second"
@@ -194,7 +194,7 @@ struct Later {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("later nominal must not be visible: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type5);
+        assert_eq!(issue.rule(), ResolutionRule::Type5);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "Later"
@@ -214,7 +214,7 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("invalid requires block must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Fn8);
+        assert_eq!(issue.rule(), ResolutionRule::Fn8);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::RequiresShape(_)
@@ -235,7 +235,7 @@ fn requires_locals_do_not_escape_into_the_function_body() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("requires local must not reach the body: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type5);
+        assert_eq!(issue.rule(), ResolutionRule::Type5);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "condition"
@@ -254,7 +254,7 @@ const value: i32 = 1_i32;
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("function and const must share the lexical namespace: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "value"
@@ -268,7 +268,7 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("operation name declaration must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Form3);
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::ReservedName {
@@ -295,7 +295,7 @@ fn region_names_are_unique_across_the_complete_function() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("repeated function region must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Own3);
+        assert_eq!(issue.rule(), ResolutionRule::Own3);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::RepeatedRegion { spelling, .. } if spelling == "'r"
@@ -316,7 +316,7 @@ fn a_break_label_must_lexically_enclose_the_break() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("out-of-scope label must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::NonEnclosingLabel { spelling, .. } if spelling == "@done"
@@ -361,7 +361,7 @@ fn match_binder_cannot_equal_its_paired_field_name() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("non-fresh match binder must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Gram10);
+        assert_eq!(issue.rule(), ResolutionRule::Gram10);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::MatchBinderFreshness { spelling, .. } if spelling == "value"
@@ -386,7 +386,7 @@ fn main() -> own unit pure {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("arm must require an enum variant: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::UnresolvedUse { spelling, available, .. }
@@ -603,7 +603,7 @@ fn existing_requires_scope_conformance_case_reaches_type5_resolution() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("requires-scope conformance case must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type5);
+        assert_eq!(issue.rule(), ResolutionRule::Type5);
     });
 }
 
@@ -616,7 +616,7 @@ fn prelude_collision_payload_keeps_both_ordered_struct_domains() {
         let ResolutionIssueKind::DeclarationCollision { conflicts, .. } = issue.kind() else {
             panic!("expected a declaration collision: {issue:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert_eq!(conflicts.len(), 2);
         assert_eq!(conflicts[0].domain(), DeclarationDomain::NominalType);
         assert_eq!(conflicts[1].domain(), DeclarationDomain::Constructor);
@@ -636,7 +636,7 @@ fn approved_duplicate_main_conformance_case_is_type6() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the later main declaration must be rejected: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::DeclarationCollision { spelling, conflicts }
@@ -659,7 +659,7 @@ fn future() -> own unit pure {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("whole-unit function visibility must prevent shadowing: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "future"
@@ -678,7 +678,7 @@ fn sibling_contract_signatures_do_not_share_region_parameters() {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("sibling member region must not participate: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Own3);
+        assert_eq!(issue.rule(), ResolutionRule::Own3);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "'r"
@@ -699,7 +699,7 @@ fn ieq() -> own unit pure {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("inventory must reject before lookup: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Form3);
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
 
     let later_fn8_error = br#"fn ieq() -> own unit pure {
@@ -715,7 +715,7 @@ fn guarded() -> own unit traps requires {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("FN-8 must reject before inventory: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Fn8);
+        assert_eq!(issue.rule(), ResolutionRule::Fn8);
     });
 
     let earlier_lower_rank = br#"fn value() -> own unit pure {
@@ -730,7 +730,7 @@ fn ieq() -> own unit pure {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("minimum declaration event must win before rank: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "value"
@@ -801,7 +801,7 @@ fn main() -> own unit pure {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("mutated call must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Op1);
+        assert_eq!(issue.rule(), ResolutionRule::Op1);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "missing"
@@ -832,7 +832,7 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("later-source const must be invisible: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Const2);
+        assert_eq!(issue.rule(), ResolutionRule::Const2);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "second"
@@ -852,7 +852,7 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("logical paths must not create function namespaces: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRuleV0_15::Type6);
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
     });
 }
 

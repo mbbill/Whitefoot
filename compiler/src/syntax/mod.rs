@@ -1,4 +1,4 @@
-//! Resource-bounded canonical syntax construction for Whitefoot v0.15.
+//! Resource-bounded canonical syntax construction for the active Whitefoot specification.
 //!
 //! The implementation classifies every formed token against the complete
 //! context-free terminal set, constructs one private iterative LL(2)
@@ -14,7 +14,7 @@ mod parser;
 /// The active specification's context-free terminal partition.
 pub mod terminal;
 
-pub use classifier::classify_terminals_v0_15;
+pub use classifier::classify_terminals;
 pub use outcome::{
     ClassifiedBundle, ClassifiedToken, TerminalCompilerFailure, TerminalInvocationFailure,
     TerminalIssue, TerminalIssueOwner, TerminalLimit, TerminalLimits, TerminalOutcome,
@@ -23,11 +23,11 @@ pub use outcome::{
 pub use parser::{
     BundleSourceExtent, CanonicalCompilerFailure, CanonicalIssue, CanonicalLimit, CanonicalLimits,
     CanonicalLocation, CanonicalOutcome, CanonicalResourceFailure, CanonicalStorage,
-    CanonicalSyntaxUnit, ExpectedTerminalsV0_15, FinalizeCompilerFailure, FinalizeLimit,
-    FinalizeLimits, FinalizeOutcome, FinalizeResourceFailure, FinalizeStorage, FinalizedBundle,
-    NodePath, ParseCompilerFailure, ParseInvocationFailure, ParseLimit, ParseLimits, ParseOutcome,
-    ParseResourceFailure, ParseStorage, ParsedBundle, SyntaxCoordinate, SyntaxIssue,
-    SyntaxRuleV0_15, audit_canonical_v0_15, finalize_v0_15, parse_v0_15,
+    CanonicalSyntaxUnit, ExpectedTerminals, FinalizeCompilerFailure, FinalizeLimit, FinalizeLimits,
+    FinalizeOutcome, FinalizeResourceFailure, FinalizeStorage, FinalizedBundle, NodePath,
+    ParseCompilerFailure, ParseInvocationFailure, ParseLimit, ParseLimits, ParseOutcome,
+    ParseResourceFailure, ParseStorage, ParsedBundle, SyntaxCoordinate, SyntaxIssue, SyntaxRule,
+    audit_canonical, finalize, parse,
 };
 
 pub(crate) use parser::{FinalizedExtent, FinalizedTopology, NodeId};

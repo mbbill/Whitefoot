@@ -276,12 +276,12 @@ impl<'bytes> Scanner<'bytes> {
     }
 }
 
-/// Produces a failure-atomic, lossless lexical partition for v0.15 source.
+/// Produces a failure-atomic, lossless lexical partition for the active specification source.
 ///
 /// This entry point does not decide terminal classification, canonical
 /// spacing, parseability, semantic acceptance, or normative diagnostics.
 #[must_use]
-pub fn lex_v0_15<'source>(source: &'source SourceBundle, limits: LexLimits) -> LexOutcome<'source> {
+pub fn lex<'source>(source: &'source SourceBundle, limits: LexLimits) -> LexOutcome<'source> {
     lex_shapes(source, limits)
 }
 

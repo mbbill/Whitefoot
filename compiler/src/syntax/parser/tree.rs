@@ -1,6 +1,6 @@
 use crate::lexer::Token;
-use crate::syntax::grammar::ProductionV0_15;
-use crate::syntax::terminal::TerminalPredicateV0_15;
+use crate::syntax::grammar::Production;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::{ByteOffset, SourceId};
 
 /// One private typed postorder element.
@@ -8,10 +8,10 @@ use crate::{ByteOffset, SourceId};
 pub(crate) enum DerivationElement<'source> {
     Terminal {
         token: Token<'source>,
-        predicate: TerminalPredicateV0_15,
+        predicate: TerminalPredicate,
     },
     Production {
-        production: ProductionV0_15,
+        production: Production,
         child_count: u32,
         subtree_elements: u64,
         extent: DerivationExtent,
@@ -37,7 +37,7 @@ pub(crate) struct DerivationTree<'source> {
 
 #[derive(Debug)]
 pub(crate) struct Frame {
-    pub(crate) production: ProductionV0_15,
+    pub(crate) production: Production,
     pub(crate) element_start: usize,
     pub(crate) child_count: u32,
     pub(crate) extent: Option<(SourceId, ByteOffset, ByteOffset)>,

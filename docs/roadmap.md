@@ -1,6 +1,6 @@
 # THE PLAN
 
-Status: CANONICAL ROADMAP, corrected 2026-07-22.
+Status: CANONICAL ROADMAP, corrected 2026-07-23.
 
 ## Goal
 
@@ -52,10 +52,10 @@ measurement does.
 
 ## Current state
 
-The active language authority is `spec/kernel-spec-v0.15.md`, SHA-256
-`3c924095b2c21f123b7137556f72dbe87275838682c1965e6caf399dd24d13bd`.
+The active language authority is `spec/kernel-spec-v0.16.md`, SHA-256
+`f93264fb4df6994a408e1327c6e8643c34b4aea55fba4b1a0b3dab3501ceb942`.
 Those bytes are immutable and byte-identical to the owner-approved candidate.
-Exact v0.8 through v0.14 remain immutable historical evidence. v0.12 added the
+Exact v0.8 through v0.15 remain immutable historical evidence. v0.12 added the
 SET-1 copy-place assignment judgment, target-before-RHS ordering, post-RHS
 writability revalidation, and ultimate-storage-origin read/write effects.
 v0.13 makes a direct bare affine own-rooted `Result` place a consuming
@@ -68,6 +68,19 @@ array “frame limit” and defines the selected-target layout boundary: complet
 static objects must fit the selected target, while runtime allocation and
 element-address arithmetic must be proved exact or guarded before use. These
 target failures are not source-language rejections or language traps.
+v0.16 closes the static source-contract family: contracts are nongeneric,
+conformances bind one exact concrete subject to one source contract with a
+complete declared-order binding vector, callable signatures require exact
+mode, type, region, and normalized effect-capability equality, and every
+applicable law receives FN-4's mandatory closed discharge. This metadata has
+no runtime or lowering representation and its base law evidence grants no
+optimizer authority. Source-contract generic bounds receive an explicit FN-3
+rejection, and contract member calls remain absent from v0.16.
+The compiler keeps that exact version, path, byte content, and digest at one
+active-specification identity boundary. Its stage, syntax, rule, and pipeline
+symbols are stable implementation names rather than `V0_xx` APIs, so a
+grammar-preserving specification bump changes identity data and real semantics
+without mechanically renaming the compiler.
 
 The Rust compiler now has one ordinary path from ordered source transport
 through the lossless frontend and direct resolver into semantic checking, a
@@ -145,17 +158,19 @@ detection. Executable tests cover every signed width, including the minimum
 edge and exact trap record.
 
 This is not a completeness claim. Cyclic and region-bearing generic forms,
-generic contracts/conformances/laws and `requires`, borrow referents outside
-buffers and acyclic structs, returned borrows, bound/result-carrying/grandchild
-reborrows, floats, boxes, arenas, slices, recursive nominal layouts,
-branch-dependent ownership/loan joins, projected array targets, and
-floating-point and remaining effect-table operations are explicit unsupported
-compiler capabilities rather than source-language rejections.
+generic `requires`, borrow referents outside buffers and acyclic structs,
+returned borrows, bound/result-carrying/grandchild reborrows, floats, boxes,
+arenas, slices, recursive nominal layouts, branch-dependent ownership/loan
+joins, projected array targets, and floating-point and remaining effect-table
+operations are explicit unsupported compiler capabilities rather than
+source-language rejections. Generic source contracts and source-contract
+bounds instead receive v0.16's specified FN-3 rejection; contract-member calls
+have no v0.16 grammar or semantic operation.
 Repeated exhaustive match arms also stop as
-unsupported because v0.15 defines neither duplicate-arm meaning nor a
+unsupported because v0.16 defines neither duplicate-arm meaning nor a
 duplicate-arm rejection rule.
 
-The exact approved v0.15 candidate is installed and every live identity names
+The exact approved v0.16 candidate is installed and every live identity names
 it. The resolver implementation completes Phase 6, the first executable scalar
 slice completes Phase 7, and nominal data, the current SET-1 place family,
 structured loops, and the first Result family advance Phase 8.
@@ -799,26 +814,26 @@ deterministic closure, and a generic call cycle that stops before instance
 enumeration. `generic_instances.wf` and `generic_nominals.wf` execute the
 ordinary checked-IR and LLVM path.
 
-The v0.15 STOR-6 target-layout slice now runs through the same checked-program
-and LLVM path. Phase 8 is not complete. The next coherent capability is source
-contracts, conformances, and law checking, continuing family 2 above after the
-generic instance core. It must use the existing resolved declarations,
-concrete instance tables, ordinary semantic rechecking, and direct-call path;
-it must not create a second dispatch IR, infer conformance, trust a written law,
-or specialize behavior to a conformance fixture. Cyclic generic calls,
-region-bearing generic arguments, generic `requires`, and generic `cvt` remain
-explicit unsupported capabilities rather than source rejections unless that
-slice needs and implements them generally.
+The v0.15 STOR-6 target-layout slice runs through the same checked-program and
+LLVM path. The exact v0.16 static-conformance closure now runs as one normal
+semantic pass over the resolved contract table. It checks FN-3 whole-
+conformance identity, complete declared-order bindings, exact callable
+signatures with normalized effects, and mandatory FN-4 discharge before
+checked-program publication. The resulting contract, conformance, binding, and
+base-law records are semantic metadata only: lowering ignores them, bound
+functions remain on the ordinary direct-function path, and no second dispatch
+IR, runtime object, inferred conformance, trusted law, check elimination, or
+optimizer fact exists. Generic source contracts and source-contract bounds
+receive their specified FN-3 rejections; contract member calls remain absent.
+This closes the selected Phase 8 static-conformance milestone.
 
-The owner has approved the static-conformance direction, but exact-byte
-activation still awaits approval of
-`governance/spec-evolution/kernel-spec-v0.16-candidate.md`, SHA-256
-`f93264fb4df6994a408e1327c6e8643c34b4aea55fba4b1a0b3dab3501ceb942`.
-The candidate closes complete source-ordered conformance and the existing
-checked-law family without member calls, dispatch objects, source-contract
-generic bounds, or optimizer authority. Normal compilation remains bound to
-v0.15 and no v0.16 implementation is authorized until that exact candidate is
-approved under `WORKFLOW.md`.
+The exact next work is Phase 9: run or extend one production-shaped dogfood
+target, observe the first real missing language or compiler capability, and
+select the smallest general implementation that removes that blocker. Do not
+preselect a speculative family merely because it remains in the specification.
+Cyclic generic calls, region-bearing generic arguments, generic `requires`,
+and generic `cvt` remain explicit unsupported capabilities unless that
+dogfood work selects and implements one of them generally.
 
 ## Phase 9: dogfood and language iteration
 

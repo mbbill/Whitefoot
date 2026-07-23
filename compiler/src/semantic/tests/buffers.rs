@@ -1,4 +1,4 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRuleV0_15};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{
     CheckedExpression, CheckedFlatElement, CheckedSetTarget, CheckedStatement,
@@ -97,17 +97,17 @@ fn main() -> own unit allocates(heap), traps {
 fn buffer_effect_rows_are_checked_both_ways() {
     assert_rule(
         b"fn main() -> own unit traps {\n  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Eff2,
+        SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
         b"fn main() -> own unit allocates(heap) {\n  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Eff2,
+        SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
         b"fn main() -> own unit allocates(heap), traps {\n  return unit;\n}\n",
-        SemanticRuleV0_15::Eff2,
+        SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
 }
@@ -116,7 +116,7 @@ fn buffer_effect_rows_are_checked_both_ways() {
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
         b"fn main() -> own unit allocates(heap), traps {\n  let initial: own Bool = False();\n  let values: own buffer<Bool> = buffer_new<Bool>(2_u64, initial);\n  return unit;\n}\n",
-        SemanticRuleV0_15::Op1,
+        SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
 }

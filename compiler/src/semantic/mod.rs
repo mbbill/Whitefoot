@@ -1,4 +1,4 @@
-//! Target-independent semantic checking for exact Whitefoot v0.15.
+//! Target-independent semantic checking for the active Whitefoot specification.
 //!
 //! This stage consumes complete lexical resolution and is the sole producer of
 //! the private checked-program value that may later authorize lowering. A
@@ -14,7 +14,7 @@ mod tests;
 
 use crate::{BundleSourceExtent, NodePath, ResolvedSyntaxUnit, SyntaxCoordinate};
 
-pub use check::check_semantics_v0_15;
+pub use check::check_semantics;
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedBufferRoot,
@@ -28,7 +28,7 @@ pub(crate) use model::{
 
 /// Numbered rule owning one post-resolution semantic rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SemanticRuleV0_15 {
+pub enum SemanticRule {
     /// Numeric literal range or canonicality.
     Form7,
     /// Composite-type formation and element eligibility.
@@ -71,6 +71,8 @@ pub enum SemanticRuleV0_15 {
     Fn2,
     /// Generic bounds and source-contract conformance.
     Fn3,
+    /// Closed source-law declaration and discharge.
+    Fn4,
     /// Closed-program `main` contract.
     Fn7,
     /// Restricted executable function-entry requirement prologue.
@@ -95,8 +97,8 @@ pub enum SemanticRuleV0_15 {
     Eff2,
 }
 
-impl SemanticRuleV0_15 {
-    /// Returns the exact numbered rule spelling from kernel specification v0.15.
+impl SemanticRule {
+    /// Returns the exact numbered rule spelling from the active kernel specification.
     #[must_use]
     pub const fn id(self) -> &'static str {
         match self {
@@ -121,6 +123,7 @@ impl SemanticRuleV0_15 {
             Self::Fn1 => "FN-1",
             Self::Fn2 => "FN-2",
             Self::Fn3 => "FN-3",
+            Self::Fn4 => "FN-4",
             Self::Fn7 => "FN-7",
             Self::Fn8 => "FN-8",
             Self::Gram11 => "GRAM-11",
@@ -263,12 +266,45 @@ pub enum SemanticIssueKind {
     InvalidEffectRow,
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch,
+    /// A source contract carried the syntactically admitted generic list.
+    GenericContract,
+    /// Two members of one source contract have the same name.
+    DuplicateContractMember {
+        /// Repeated member name.
+        member: String,
+    },
+    /// A conformance subject is not one concrete type.
+    NonConcreteConformanceSubject,
+    /// A conformance named a prelude marker instead of a source contract.
+    InvalidConformanceContract,
+    /// A conformance supplied contract arguments.
+    ConformanceContractArguments,
+    /// A later conformance repeated an exact `(type, contract)` key.
+    DuplicateConformance,
+    /// A conformance binding did not exactly match the next contract member.
+    InvalidConformanceBinding {
+        /// Member required at this source position, if one remains.
+        expected_member: Option<String>,
+    },
+    /// A conformance ended before binding every contract member.
+    MissingConformanceBinding {
+        /// First member with no binding.
+        member: String,
+    },
+    /// A bound function was generic, had requirements, or had a different signature.
+    IncompatibleConformanceFunction,
+    /// A generic type parameter named a source contract as its bound.
+    SourceContractGenericBound,
+    /// A law declaration does not match FN-4's closed declaration table.
+    InvalidContractLaw,
+    /// A valid law declaration cannot be discharged for one conformance.
+    UndischargedContractLaw,
 }
 
 /// One deterministic post-resolution source-language rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticIssue {
-    rule: SemanticRuleV0_15,
+    rule: SemanticRule,
     location: SemanticLocation,
     kind: SemanticIssueKind,
 }
@@ -283,7 +319,7 @@ impl SemanticIssue {
     /// Returns the exact numbered rule established by this issue.
     #[must_use]
     #[cfg(test)]
-    pub const fn rule(&self) -> SemanticRuleV0_15 {
+    pub const fn rule(&self) -> SemanticRule {
         self.rule
     }
 
@@ -304,9 +340,7 @@ impl SemanticIssue {
 
 /// A language family that the current compiler has not implemented yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnsupportedSemanticFeatureV0_15 {
-    /// Contracts or conformances.
-    ContractsAndConformances,
+pub enum UnsupportedSemanticFeature {
     /// Type, const, or region polymorphism.
     Generics,
     /// Nongeneric PRE-1 enum types and constructors outside Bool.
@@ -323,18 +357,16 @@ pub enum UnsupportedSemanticFeatureV0_15 {
     RecursiveNominalLayout,
     /// An ownership-state join not yet covered by the selected finite rule.
     OwnershipJoin,
-    /// Repeated match arms, whose dispatch meaning v0.15 does not select.
+    /// Repeated match arms, whose meaning the active specification does not select.
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
-    /// An effect outside implemented region reads/writes and heap allocation.
-    EffectFamily,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticUnsupported {
-    feature: UnsupportedSemanticFeatureV0_15,
+    feature: UnsupportedSemanticFeature,
     node: NodePath,
 }
 
@@ -342,7 +374,7 @@ impl SemanticUnsupported {
     /// Returns the unimplemented semantic family.
     #[must_use]
     #[cfg(test)]
-    pub const fn feature(&self) -> UnsupportedSemanticFeatureV0_15 {
+    pub const fn feature(&self) -> UnsupportedSemanticFeature {
         self.feature
     }
 }

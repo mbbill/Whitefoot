@@ -169,10 +169,8 @@ mod tests {
         reserved_name,
     };
 
-    const EXACT_SPEC: &str = include_str!("../../../spec/kernel-spec-v0.15.md");
-
     #[test]
-    fn exact_v0_15_catalogs_are_closed_and_unique_where_required() {
+    fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
         assert_eq!(OPERATION_FAMILIES.len(), 83);
         assert_eq!(
@@ -203,8 +201,8 @@ mod tests {
     }
 
     #[test]
-    fn catalogs_match_independent_extraction_from_exact_v0_15() {
-        let extracted_prelude = extract_prelude_records(EXACT_SPEC);
+    fn catalogs_match_independent_extraction_from_exact() {
+        let extracted_prelude = extract_prelude_records(crate::ACTIVE_KERNEL_SPEC_TEXT);
         let catalog_prelude: Vec<_> = PRELUDE_DECLARATIONS
             .iter()
             .map(|record| (record.spelling.to_owned(), record.class))
@@ -213,7 +211,7 @@ mod tests {
 
         assert_eq!(
             OPERATION_FAMILIES.as_slice(),
-            extract_operation_families(EXACT_SPEC)
+            extract_operation_families(crate::ACTIVE_KERNEL_SPEC_TEXT)
         );
     }
 

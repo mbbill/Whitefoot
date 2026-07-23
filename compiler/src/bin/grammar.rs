@@ -4,14 +4,13 @@ use std::fmt;
 use std::path::Path;
 
 use whitefoot::{
-    ALL_FIXED_TERMINALS_V0_15, ALL_TERMINAL_PREDICATES_V0_15, GrammarNodeKindV0_15,
-    KERNEL_SPEC_V0_15_HASH, LexLimits, LexOutcome, LookaheadPredicateV0_15, ParseLimits,
-    ParseOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
-    TerminalPredicateV0_15, classify_terminals_v0_15, diagnostic_terminal_order_v0_15,
-    grammar_node_v0_15, lex_v0_15, parse_v0_15, productions_v0_15,
+    ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ALL_FIXED_TERMINALS,
+    ALL_TERMINAL_PREDICATES, GrammarNodeKind, LexLimits, LexOutcome, LookaheadPredicate,
+    ParseLimits, ParseOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
+    TerminalOutcome, TerminalPredicate, classify_terminals, diagnostic_terminal_order,
+    grammar_node, lex, parse, productions,
 };
 
-const ACTIVE_SPEC: &[u8] = include_bytes!("../../../spec/kernel-spec-v0.15.md");
 const PARSER_PROBE: &[u8] = b"fn main() -> own unit pure {\n  return unit;\n}\n";
 
 const FRONTEND_SECTIONS: [(&str, &str); 3] = [
@@ -90,7 +89,7 @@ struct VerifyReport {
 }
 
 fn verify_candidate(candidate: &[u8]) -> Result<VerifyReport, VerifyError> {
-    if frontend_contract(candidate)? != frontend_contract(ACTIVE_SPEC)? {
+    if frontend_contract(candidate)? != frontend_contract(ACTIVE_KERNEL_SPEC_BYTES)? {
         return Err(VerifyError::ChangedFrontendContract);
     }
     let report = verify_compiler_grammar()?;
@@ -128,8 +127,8 @@ fn line_start(text: &str, marker: &str) -> Option<usize> {
 }
 
 fn verify_compiler_grammar() -> Result<VerifyReport, VerifyError> {
-    for (left_index, left) in ALL_FIXED_TERMINALS_V0_15.iter().enumerate() {
-        for right in &ALL_FIXED_TERMINALS_V0_15[left_index + 1..] {
+    for (left_index, left) in ALL_FIXED_TERMINALS.iter().enumerate() {
+        for right in &ALL_FIXED_TERMINALS[left_index + 1..] {
             if left.spelling() == right.spelling() {
                 return Err(VerifyError::InvalidCompilerGrammar(
                     "two fixed terminals have the same spelling",
@@ -138,16 +137,16 @@ fn verify_compiler_grammar() -> Result<VerifyReport, VerifyError> {
         }
     }
 
-    let order = diagnostic_terminal_order_v0_15();
-    if order.len() != ALL_TERMINAL_PREDICATES_V0_15.len() {
+    let order = diagnostic_terminal_order();
+    if order.len() != ALL_TERMINAL_PREDICATES.len() {
         return Err(VerifyError::InvalidCompilerGrammar(
             "terminal inventory and diagnostic order differ",
         ));
     }
-    for predicate in ALL_TERMINAL_PREDICATES_V0_15 {
+    for predicate in ALL_TERMINAL_PREDICATES {
         if order
             .iter()
-            .filter(|candidate| **candidate == LookaheadPredicateV0_15::Terminal(predicate))
+            .filter(|candidate| **candidate == LookaheadPredicate::Terminal(predicate))
             .count()
             != 1
         {
@@ -158,10 +157,10 @@ fn verify_compiler_grammar() -> Result<VerifyReport, VerifyError> {
     }
 
     let mut decisions = 0_usize;
-    for production in productions_v0_15() {
+    for production in productions() {
         let mut stack = vec![production.root()];
         while let Some(node_id) = stack.pop() {
-            let node = grammar_node_v0_15(node_id).ok_or(VerifyError::InvalidCompilerGrammar(
+            let node = grammar_node(node_id).ok_or(VerifyError::InvalidCompilerGrammar(
                 "a production references a missing node",
             ))?;
             if let Some(decision) = node.decision() {
@@ -191,25 +190,25 @@ fn verify_compiler_grammar() -> Result<VerifyReport, VerifyError> {
             }
             if matches!(
                 node.kind(),
-                GrammarNodeKindV0_15::Sequence
-                    | GrammarNodeKindV0_15::Choice
-                    | GrammarNodeKindV0_15::Group
-                    | GrammarNodeKindV0_15::Optional
-                    | GrammarNodeKindV0_15::RepeatZero
-                    | GrammarNodeKindV0_15::RepeatOne
+                GrammarNodeKind::Sequence
+                    | GrammarNodeKind::Choice
+                    | GrammarNodeKind::Group
+                    | GrammarNodeKind::Optional
+                    | GrammarNodeKind::RepeatZero
+                    | GrammarNodeKind::RepeatOne
             ) {
                 stack.extend_from_slice(node.children());
             }
         }
     }
     Ok(VerifyReport {
-        productions: productions_v0_15().len(),
+        productions: productions().len(),
         decisions,
         terminals: order.len(),
     })
 }
 
-fn verify_disjoint_rows(rows: &[whitefoot::SelectRowV0_15]) -> Result<(), VerifyError> {
+fn verify_disjoint_rows(rows: &[whitefoot::SelectRow]) -> Result<(), VerifyError> {
     for (left_index, left) in rows.iter().enumerate() {
         for right in &rows[left_index + 1..] {
             if left.arm() == right.arm() {
@@ -251,22 +250,18 @@ fn verify_disjoint_rows(rows: &[whitefoot::SelectRowV0_15]) -> Result<(), Verify
     Ok(())
 }
 
-fn predicates_overlap(left: LookaheadPredicateV0_15, right: LookaheadPredicateV0_15) -> bool {
+fn predicates_overlap(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
     if left == right {
         return true;
     }
     matches!(
         (left, right),
         (
-            LookaheadPredicateV0_15::Terminal(TerminalPredicateV0_15::Fixed(
-                whitefoot::FixedTerminalV0_15::Unit
-            )),
-            LookaheadPredicateV0_15::Terminal(TerminalPredicateV0_15::Literal)
+            LookaheadPredicate::Terminal(TerminalPredicate::Fixed(whitefoot::FixedTerminal::Unit)),
+            LookaheadPredicate::Terminal(TerminalPredicate::Literal)
         ) | (
-            LookaheadPredicateV0_15::Terminal(TerminalPredicateV0_15::Literal),
-            LookaheadPredicateV0_15::Terminal(TerminalPredicateV0_15::Fixed(
-                whitefoot::FixedTerminalV0_15::Unit
-            ))
+            LookaheadPredicate::Terminal(TerminalPredicate::Literal),
+            LookaheadPredicate::Terminal(TerminalPredicate::Fixed(whitefoot::FixedTerminal::Unit))
         )
     )
 }
@@ -283,7 +278,7 @@ fn run_parser_probe() -> Result<(), VerifyError> {
         },
     )
     .map_err(|error| VerifyError::ParserProbe(format!("source bundle: {error}")))?;
-    let lexed = match lex_v0_15(
+    let lexed = match lex(
         &bundle,
         LexLimits {
             max_sources: 1,
@@ -297,9 +292,9 @@ fn run_parser_probe() -> Result<(), VerifyError> {
         LexOutcome::Complete(lexed) => lexed,
         outcome => return Err(VerifyError::ParserProbe(format!("lexing: {outcome:?}"))),
     };
-    let classified = match classify_terminals_v0_15(
+    let classified = match classify_terminals(
         &lexed,
-        KERNEL_SPEC_V0_15_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 256 },
     ) {
         TerminalOutcome::Complete(classified) => classified,
@@ -309,7 +304,7 @@ fn run_parser_probe() -> Result<(), VerifyError> {
             )));
         }
     };
-    match parse_v0_15(
+    match parse(
         &classified,
         ParseLimits {
             max_work: 100_000,
@@ -327,11 +322,12 @@ fn run_parser_probe() -> Result<(), VerifyError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ACTIVE_SPEC, VerifyError, verify_candidate};
+    use super::{ACTIVE_KERNEL_SPEC_BYTES, VerifyError, verify_candidate};
 
     #[test]
     fn exact_active_frontend_contract_verifies() {
-        let report = verify_candidate(ACTIVE_SPEC).expect("active grammar must verify");
+        let report =
+            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES).expect("active grammar must verify");
         assert_eq!(report.productions, 62);
         assert_eq!(report.decisions, 72);
         assert_eq!(report.terminals, 72);
@@ -339,14 +335,14 @@ mod tests {
 
     #[test]
     fn prose_outside_the_frontend_contract_may_change() {
-        let mut proposal = ACTIVE_SPEC.to_vec();
+        let mut proposal = ACTIVE_KERNEL_SPEC_BYTES.to_vec();
         proposal.extend_from_slice(b"\nSemantic-only proposal text.\n");
         verify_candidate(&proposal).expect("semantic-only text must preserve the grammar");
     }
 
     #[test]
     fn changed_source_grammar_fails_closed() {
-        let active = std::str::from_utf8(ACTIVE_SPEC).expect("active spec is UTF-8");
+        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
             "return_stmt := \"return\" expr \";\"",
             "return_stmt := \"return\" atom \";\"",
@@ -360,7 +356,7 @@ mod tests {
 
     #[test]
     fn changed_comment_lexing_fails_closed() {
-        let active = std::str::from_utf8(ACTIVE_SPEC).expect("active spec is UTF-8");
+        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
             "[FORM-4] There are no comments.",
             "[FORM-4] Line comments begin with two slash bytes.",
@@ -374,7 +370,7 @@ mod tests {
 
     #[test]
     fn changed_unit_lexing_fails_closed() {
-        let active = std::str::from_utf8(ACTIVE_SPEC).expect("active spec is UTF-8");
+        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
             "[FORM-6] The token `unit` names the unit type in type position and the unit value in expression position",
             "[FORM-6] The tokens `unit` and `void` name unit values in expression position",

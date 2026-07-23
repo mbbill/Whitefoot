@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
-use crate::syntax::terminal::FixedTerminalV0_15;
+use crate::syntax::terminal::FixedTerminal;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, ProductionV0_15, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_15,
+    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
 use super::super::model::{CheckedMode, CheckedStatement};
@@ -25,14 +25,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         counters: &mut ControlCounters<'_>,
     ) -> Result<CheckedRequires, CheckStop> {
-        let entries = self
-            .tree
-            .children_with(node, ProductionV0_15::RequiresEntry)?;
+        let entries = self.tree.children_with(node, Production::RequiresEntry)?;
         let mut statements = Vec::with_capacity(entries.len());
         let mut effects = EffectSet::NONE;
         for entry in entries {
             let wrapper = self.tree.only_child(entry)?;
-            if self.tree.production(wrapper)? != ProductionV0_15::Stmt {
+            if self.tree.production(wrapper)? != Production::Stmt {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             }
             let statement = self.tree.only_child(wrapper)?;
@@ -65,11 +63,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         statement: NodeId,
     ) -> Result<(), CheckStop> {
         match self.tree.production(statement)? {
-            ProductionV0_15::LetStmt => self.validate_requires_let(entry, statement),
-            ProductionV0_15::CheckStmt => {
+            Production::LetStmt => self.validate_requires_let(entry, statement),
+            Production::CheckStmt => {
                 let expression = self
                     .tree
-                    .first_child_with(statement, ProductionV0_15::Expr)?
+                    .first_child_with(statement, Production::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
                 self.validate_requires_condition(entry, expression)
             }
@@ -80,30 +78,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn validate_requires_let(&self, entry: NodeId, node: NodeId) -> Result<(), CheckStop> {
         let mode = self
             .tree
-            .first_child_with(node, ProductionV0_15::Mode)?
+            .first_child_with(node, Production::Mode)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.parse_mode(mode)? != CheckedMode::Own {
             return self.invalid_requires(entry);
         }
         let ty = self
             .tree
-            .first_child_with(node, ProductionV0_15::Type)?
+            .first_child_with(node, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if !self.is_copy_type(self.parse_type(ty)?)? {
             return self.invalid_requires(entry);
         }
         let rhs = self
             .tree
-            .first_child_with(node, ProductionV0_15::OrdinaryLetRhs)?
+            .first_child_with(node, Production::OrdinaryLetRhs)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let expression = self
             .tree
-            .first_child_with(rhs, ProductionV0_15::Expr)?
+            .first_child_with(rhs, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let Some(call) = self
-            .tree
-            .first_child_with(expression, ProductionV0_15::Call)?
-        else {
+        let Some(call) = self.tree.first_child_with(expression, Production::Call)? else {
             return self.invalid_requires(entry);
         };
         self.validate_requires_operation(entry, call)
@@ -114,16 +109,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         entry: NodeId,
         expression: NodeId,
     ) -> Result<(), CheckStop> {
-        if let Some(call) = self
-            .tree
-            .first_child_with(expression, ProductionV0_15::Call)?
-        {
+        if let Some(call) = self.tree.first_child_with(expression, Production::Call)? {
             return self.validate_requires_operation(entry, call);
         }
-        let Some(atom) = self
-            .tree
-            .first_child_with(expression, ProductionV0_15::Atom)?
-        else {
+        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
             return self.invalid_requires(entry);
         };
         self.validate_requires_atom(entry, atom)
@@ -132,7 +121,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn validate_requires_operation(&self, entry: NodeId, call: NodeId) -> Result<(), CheckStop> {
         let callee = self
             .tree
-            .first_child_with(call, ProductionV0_15::Callee)?
+            .first_child_with(call, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let callee_path = self.tree.path(callee)?;
         let usage = self
@@ -159,17 +148,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        let spelling = crate::operation_family_spelling_v0_15(operation)
+        let spelling = crate::operation_family_spelling(operation)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if spelling.ends_with(".trap") || matches!(spelling, "buffer_new" | "box_new" | "arena_new")
         {
             return self.invalid_requires(entry);
         }
-        if let Some(arguments) = self
-            .tree
-            .first_child_with(call, ProductionV0_15::AtomList)?
-        {
-            for atom in self.tree.children_with(arguments, ProductionV0_15::Atom)? {
+        if let Some(arguments) = self.tree.first_child_with(call, Production::AtomList)? {
+            for atom in self.tree.children_with(arguments, Production::Atom)? {
                 self.validate_requires_atom(entry, atom)?;
             }
         }
@@ -177,20 +163,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn validate_requires_atom(&self, entry: NodeId, atom: NodeId) -> Result<(), CheckStop> {
-        if self.has_fixed(atom, FixedTerminalV0_15::Move)?
+        if self.has_fixed(atom, FixedTerminal::Move)?
             || self
                 .tree
-                .first_child_with(atom, ProductionV0_15::BorrowExpr)?
+                .first_child_with(atom, Production::BorrowExpr)?
                 .is_some()
         {
             return self.invalid_requires(entry);
         }
-        if let Some(place) = self.tree.first_child_with(atom, ProductionV0_15::Place)? {
+        if let Some(place) = self.tree.first_child_with(atom, Production::Place)? {
             return self.validate_requires_place(entry, place);
         }
         if self
             .tree
-            .direct_token_with(atom, crate::TerminalPredicateV0_15::Literal)?
+            .direct_token_with(atom, crate::TerminalPredicate::Literal)?
             .is_some()
         {
             return Ok(());
@@ -201,15 +187,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn validate_requires_place(&self, entry: NodeId, place: NodeId) -> Result<(), CheckStop> {
         let pbase = self
             .tree
-            .first_child_with(place, ProductionV0_15::Pbase)?
+            .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self.has_fixed(pbase, FixedTerminalV0_15::Index)? {
+        if self.has_fixed(pbase, FixedTerminal::Index)? {
             return self.invalid_requires(entry);
         }
-        if self.has_fixed(pbase, FixedTerminalV0_15::Deref)? {
+        if self.has_fixed(pbase, FixedTerminal::Deref)? {
             let nested = self
                 .tree
-                .first_child_with(pbase, ProductionV0_15::Place)?
+                .first_child_with(pbase, Production::Place)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.validate_requires_place(entry, nested)?;
         }
@@ -217,10 +203,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn invalid_requires<T>(&self, node: NodeId) -> Result<T, CheckStop> {
-        self.issue_node(
-            SemanticRuleV0_15::Fn8,
-            node,
-            SemanticIssueKind::InvalidRequires,
-        )
+        self.issue_node(SemanticRule::Fn8, node, SemanticIssueKind::InvalidRequires)
     }
 }

@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, ProductionV0_15,
-    ResolvedTarget, SemanticCompilerFailure, UnsupportedSemanticFeatureV0_15,
+    DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, UnsupportedSemanticFeature,
 };
 
 use super::super::super::model::{CheckedLoopId, CheckedStatement};
@@ -44,7 +44,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         });
 
         let mut body_bindings = base_bindings.clone();
-        let statements = self.tree.children_with(node, ProductionV0_15::Stmt)?;
+        let statements = self.tree.children_with(node, Production::Stmt)?;
         let checked = self.check_block(
             function,
             &statements,
@@ -60,7 +60,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .any(|key| body_bindings.get(key) != base_bindings.get(key))
         {
-            return self.unsupported(UnsupportedSemanticFeatureV0_15::OwnershipJoin, node);
+            return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }
 
         let mut own_break_states = Vec::new();
@@ -73,7 +73,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         if own_break_states.is_empty() {
-            return self.unsupported(UnsupportedSemanticFeatureV0_15::StructuredControlFlow, node);
+            return self.unsupported(UnsupportedSemanticFeature::StructuredControlFlow, node);
         }
         self.join_states(&base_keys, &own_break_states, node, bindings)?;
         let backedge_drops = if checked.can_continue {

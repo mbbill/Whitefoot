@@ -5,19 +5,7 @@ use crate::{LexOutcome, Lexeme, SourceIssueKind, TokenKind};
 
 fn issue(source: &[u8]) -> (SourceIssueKind, u64, u64) {
     let source = bundle(&[("bad.wf", source)]);
-    match crate::lex_v0_15(&source, generous_limits()) {
-        LexOutcome::SourceIssue(issue) => (
-            issue.kind(),
-            issue.span().start().value(),
-            issue.span().end().value(),
-        ),
-        outcome => panic!("expected source issue, got {outcome:?}"),
-    }
-}
-
-fn issue_v0_15(source: &[u8]) -> (SourceIssueKind, u64, u64) {
-    let source = bundle(&[("bad.wf", source)]);
-    match crate::lex_v0_15(&source, generous_limits()) {
+    match crate::lex(&source, generous_limits()) {
         LexOutcome::SourceIssue(issue) => (
             issue.kind(),
             issue.span().start().value(),
@@ -41,24 +29,12 @@ fn invalid_bytes_and_comment_markers_fail_without_a_partial_tape() {
 }
 
 #[test]
-fn v0_15_pre_tree_defects_use_the_exact_specified_spans() {
-    assert_eq!(
-        issue_v0_15(b"// comment"),
-        (SourceIssueKind::CommentPrefix, 0, 2)
-    );
-    assert_eq!(
-        issue_v0_15(b"/* comment"),
-        (SourceIssueKind::CommentPrefix, 0, 2)
-    );
-    assert_eq!(issue_v0_15(b"/"), (SourceIssueKind::UnexpectedByte, 0, 1));
-    assert_eq!(
-        issue_v0_15(b"\0"),
-        (SourceIssueKind::InvalidSourceByte, 0, 1)
-    );
-    assert_eq!(
-        issue_v0_15(b"\x7f"),
-        (SourceIssueKind::InvalidSourceByte, 0, 1)
-    );
+fn active_spec_pre_tree_defects_use_the_exact_specified_spans() {
+    assert_eq!(issue(b"// comment"), (SourceIssueKind::CommentPrefix, 0, 2));
+    assert_eq!(issue(b"/* comment"), (SourceIssueKind::CommentPrefix, 0, 2));
+    assert_eq!(issue(b"/"), (SourceIssueKind::UnexpectedByte, 0, 1));
+    assert_eq!(issue(b"\0"), (SourceIssueKind::InvalidSourceByte, 0, 1));
+    assert_eq!(issue(b"\x7f"), (SourceIssueKind::InvalidSourceByte, 0, 1));
 
     for (source, expected) in [
         (
@@ -82,14 +58,14 @@ fn v0_15_pre_tree_defects_use_the_exact_specified_spans() {
             (SourceIssueKind::InvalidUtf8, 2, 3),
         ),
     ] {
-        assert_eq!(issue_v0_15(source), expected, "source={source:?}");
+        assert_eq!(issue(source), expected, "source={source:?}");
     }
     assert_eq!(
-        issue_v0_15(b"\xe2\x98\x83"),
+        issue(b"\xe2\x98\x83"),
         (SourceIssueKind::UnexpectedByte, 0, 3)
     );
     assert_eq!(
-        issue_v0_15(b"\"\xe2\x98\x83\""),
+        issue(b"\"\xe2\x98\x83\""),
         (SourceIssueKind::InvalidStringByte, 1, 4)
     );
 }
@@ -128,7 +104,7 @@ fn noncanonical_spacing_and_terminal_lfs_remain_complete_lexical_inputs() {
     ] {
         let source = bundle(&[("layout.wf", source)]);
         assert!(matches!(
-            crate::lex_v0_15(&source, generous_limits()),
+            crate::lex(&source, generous_limits()),
             LexOutcome::Complete(_)
         ));
     }
@@ -227,10 +203,7 @@ fn every_single_top_level_byte_has_a_controlled_lossless_outcome() {
                     | b'='
                     | b'&'
             );
-        match (
-            expected_complete,
-            crate::lex_v0_15(&source, generous_limits()),
-        ) {
+        match (expected_complete, crate::lex(&source, generous_limits())) {
             (true, LexOutcome::Complete(lexed)) => {
                 let rebuilt: Vec<_> = lexed
                     .lexemes()
@@ -253,10 +226,7 @@ fn every_single_string_interior_byte_has_a_controlled_outcome() {
         let bytes = [b'"', byte, b'"'];
         let source = bundle(&[("string-byte.wf", &bytes)]);
         let expected_complete = matches!(byte, 0x20..=0x7e) && !matches!(byte, b'"' | b'\\');
-        match (
-            expected_complete,
-            crate::lex_v0_15(&source, generous_limits()),
-        ) {
+        match (expected_complete, crate::lex(&source, generous_limits())) {
             (true, LexOutcome::Complete(lexed)) => {
                 let rebuilt: Vec<_> = lexed
                     .lexemes()
@@ -334,7 +304,7 @@ fn failures_and_tokens_never_continue_across_source_boundaries() {
         ],
     ] {
         let source = bundle(&inputs);
-        match crate::lex_v0_15(&source, generous_limits()) {
+        match crate::lex(&source, generous_limits()) {
             LexOutcome::SourceIssue(issue) => {
                 assert_eq!(issue.span().source(), SourceId::from_ordinal(0));
             }
@@ -350,7 +320,7 @@ fn failures_and_tokens_never_continue_across_source_boundaries() {
 #[test]
 fn source_issue_selection_follows_bundle_then_byte_order() {
     let source = bundle(&[("first.wf", b"ok $ \xff"), ("second.wf", b"\xff")]);
-    match crate::lex_v0_15(&source, generous_limits()) {
+    match crate::lex(&source, generous_limits()) {
         LexOutcome::SourceIssue(issue) => {
             assert_eq!(issue.span().source(), SourceId::from_ordinal(0));
             assert_eq!(issue.span().start().value(), 3);

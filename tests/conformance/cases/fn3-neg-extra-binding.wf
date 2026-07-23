@@ -1,0 +1,20 @@
+contract Single {
+  fn value() -> own i32 pure;
+}
+
+conform i32: Single {
+  value = make_value;
+  extra = make_extra;
+}
+
+fn make_value() -> own i32 pure {
+  return 1_i32;
+}
+
+fn make_extra() -> own i32 pure {
+  return 2_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

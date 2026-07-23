@@ -3,7 +3,7 @@
 
 //! The Whitefoot research compiler.
 //!
-//! The crate contains one exact-v0.15 path from ordered sources through the
+//! The crate contains one path for the active specification, from ordered sources through the
 //! frontend and direct resolver into semantic and ownership checking, a
 //! target-independent typed control-flow IR, conservative textual LLVM, and a
 //! host compiler executable. These stages remain evolvable implementation

@@ -1,4 +1,4 @@
-//! Conservative textual LLVM emission for exact Whitefoot v0.15.
+//! Conservative textual LLVM emission for the active Whitefoot specification.
 //!
 //! Emission consumes only target-independent IR. It preserves every retained
 //! check, emits no overflow or alias promises, initializes complete aggregate
@@ -44,7 +44,7 @@ impl LlvmModule {
     }
 }
 
-pub fn emit_llvm_v0_15(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     validate_program(target, program).map_err(BackendFailure::TargetLayout)?;
     let main = program
@@ -74,7 +74,7 @@ pub fn emit_llvm_v0_15(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
         !drop_helpers.is_empty() || program.functions().iter().any(IrFunction::contains_buffer);
 
     let mut text = format!(
-        "; Whitefoot v0.15 conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
+        "; Whitefoot conservative module\nsource_filename = \"whitefoot\"\ntarget datalayout = \"{}\"\ntarget triple = \"{}\"\n\n",
         target.data_layout(),
         target.triple(),
     );
