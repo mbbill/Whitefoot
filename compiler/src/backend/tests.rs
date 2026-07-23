@@ -1,6 +1,7 @@
 #![allow(clippy::panic)]
 
 mod arrays;
+mod base64;
 mod buffers;
 mod checked_division;
 mod integer_absolute;

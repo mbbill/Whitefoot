@@ -658,12 +658,25 @@ preserve lines, words, bytes, boundary state, caller-visible writes, retained
 bounds checks, and exactly-once input cleanup. It exposed no additional
 compiler capability gap.
 
-The next work is to reconcile and execute the preserved base64 encoder against
-small RFC 4648 vectors through the current const-array, owned-input-buffer,
-unique-output-borrow, checked-capacity, and integer-conversion paths. Implement
-only the first general compiler capability that experiment actually exposes.
-This does not authorize CLI infrastructure, SIMD, benchmark reconstruction, or
-proof-based check removal.
+The compiler-independent `x-base64-rfc-vectors-run` program now executes the
+complete scalar encoder shape against `Man`, `M`, and `Ma`. One ordinary
+function handles the full three-byte group, one-byte `==` tail, and two-byte
+`=` tail through the immutable 64-byte alphabet; its checked prologue relates
+caller-visible output capacity to the owned input length; exact widening feeds
+the bit operations; every input, table, and output index keeps its OP-4 check;
+and the transferred input and caller-owned output are each released by their
+actual owner. The experiment exposed no additional compiler capability gap.
+
+The next sustained target is a complete one-shot raw RFC 1951 decoder with
+caller-provided input and output storage. Correctness work proceeds through
+stored, fixed-Huffman, and dynamic-Huffman streams, but those are milestones
+inside one decoder rather than three unrelated fixtures. The experiment should
+exercise state carried through borrowed structs, ordinary data-failure
+results, checked bit and table access, overlapping history copies, and exact
+resource cleanup. Implement only the first general compiler capability that
+the complete decoder actually exposes. This selection does not authorize CLI
+or streaming-wrapper infrastructure, benchmark reconstruction, the archived
+target-specific optimizer prototypes, or proof-based check removal.
 
 ## Phase 9: dogfood and language iteration
 

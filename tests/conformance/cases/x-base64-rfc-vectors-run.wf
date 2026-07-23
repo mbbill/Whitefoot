@@ -1,0 +1,172 @@
+const b64: array<u8, 64> = [65_u8, 66_u8, 67_u8, 68_u8, 69_u8, 70_u8, 71_u8, 72_u8, 73_u8, 74_u8, 75_u8, 76_u8, 77_u8, 78_u8, 79_u8, 80_u8, 81_u8, 82_u8, 83_u8, 84_u8, 85_u8, 86_u8, 87_u8, 88_u8, 89_u8, 90_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8, 103_u8, 104_u8, 105_u8, 106_u8, 107_u8, 108_u8, 109_u8, 110_u8, 111_u8, 112_u8, 113_u8, 114_u8, 115_u8, 116_u8, 117_u8, 118_u8, 119_u8, 120_u8, 121_u8, 122_u8, 48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 43_u8, 47_u8];
+
+fn encode ['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
+  let required_out_length: own u64 = len<u8>(deref(out));
+  let required_input_length: own u64 = len<u8>(input);
+  let required_out_groups: own u64 = ishr.wrap<u64>(required_out_length, 2_u32);
+  let required_covered_input: own u64 = imul.wrap<u64>(required_out_groups, 3_u64);
+  check ile<u64>(required_input_length, required_covered_input) else trap "base64 output capacity";
+} {
+  let input_length: own u64 = len<u8>(input);
+  let input_offset: own u64 = 0_u64;
+  let output_offset: own u64 = 0_u64;
+  loop @full_groups {
+    let remaining: own u64 = isub.wrap<u64>(input_length, input_offset);
+    let short_group: own Bool = ilt<u64>(remaining, 3_u64);
+    match short_group {
+      True() => {
+        break @full_groups;
+      }
+      False() => {
+        let input_one: own u64 = iadd.wrap<u64>(input_offset, 1_u64);
+        let input_two: own u64 = iadd.wrap<u64>(input_offset, 2_u64);
+        let byte_zero: own u8 = index<u8>(input, input_offset);
+        let byte_one: own u8 = index<u8>(input, input_one);
+        let byte_two: own u8 = index<u8>(input, input_two);
+        let word_zero: own u32 = cvt<u8, u32>(byte_zero);
+        let word_one: own u32 = cvt<u8, u32>(byte_one);
+        let word_two: own u32 = cvt<u8, u32>(byte_two);
+        let shifted_zero: own u32 = ishl.wrap<u32>(word_zero, 16_u32);
+        let shifted_one: own u32 = ishl.wrap<u32>(word_one, 8_u32);
+        let combined_prefix: own u32 = ior<u32>(shifted_zero, shifted_one);
+        let combined: own u32 = ior<u32>(combined_prefix, word_two);
+        let sextet_zero_shifted: own u32 = ishr.wrap<u32>(combined, 18_u32);
+        let sextet_zero: own u32 = iand<u32>(sextet_zero_shifted, 63_u32);
+        let alphabet_zero: own u64 = cvt<u32, u64>(sextet_zero);
+        let sextet_one_shifted: own u32 = ishr.wrap<u32>(combined, 12_u32);
+        let sextet_one: own u32 = iand<u32>(sextet_one_shifted, 63_u32);
+        let alphabet_one: own u64 = cvt<u32, u64>(sextet_one);
+        let sextet_two_shifted: own u32 = ishr.wrap<u32>(combined, 6_u32);
+        let sextet_two: own u32 = iand<u32>(sextet_two_shifted, 63_u32);
+        let alphabet_two: own u64 = cvt<u32, u64>(sextet_two);
+        let sextet_three: own u32 = iand<u32>(combined, 63_u32);
+        let alphabet_three: own u64 = cvt<u32, u64>(sextet_three);
+        let encoded_zero: own u8 = index<u8>(b64, alphabet_zero);
+        let encoded_one: own u8 = index<u8>(b64, alphabet_one);
+        let encoded_two: own u8 = index<u8>(b64, alphabet_two);
+        let encoded_three: own u8 = index<u8>(b64, alphabet_three);
+        let output_one: own u64 = iadd.wrap<u64>(output_offset, 1_u64);
+        let output_two: own u64 = iadd.wrap<u64>(output_offset, 2_u64);
+        let output_three: own u64 = iadd.wrap<u64>(output_offset, 3_u64);
+        set index<u8>(deref(out), output_offset) = encoded_zero;
+        set index<u8>(deref(out), output_one) = encoded_one;
+        set index<u8>(deref(out), output_two) = encoded_two;
+        set index<u8>(deref(out), output_three) = encoded_three;
+        set input_offset = iadd.wrap<u64>(input_offset, 3_u64);
+        set output_offset = iadd.wrap<u64>(output_offset, 4_u64);
+      }
+    }
+  }
+  let tail_length: own u64 = isub.wrap<u64>(input_length, input_offset);
+  let one_byte_tail: own Bool = ieq<u64>(tail_length, 1_u64);
+  match one_byte_tail {
+    True() => {
+      let tail_one_byte: own u8 = index<u8>(input, input_offset);
+      let tail_one_word: own u32 = cvt<u8, u32>(tail_one_byte);
+      let tail_one_first_shifted: own u32 = ishr.wrap<u32>(tail_one_word, 2_u32);
+      let tail_one_first_sextet: own u32 = iand<u32>(tail_one_first_shifted, 63_u32);
+      let tail_one_first_index: own u64 = cvt<u32, u64>(tail_one_first_sextet);
+      let tail_one_second_shifted: own u32 = ishl.wrap<u32>(tail_one_word, 4_u32);
+      let tail_one_second_sextet: own u32 = iand<u32>(tail_one_second_shifted, 63_u32);
+      let tail_one_second_index: own u64 = cvt<u32, u64>(tail_one_second_sextet);
+      let tail_one_first: own u8 = index<u8>(b64, tail_one_first_index);
+      let tail_one_second: own u8 = index<u8>(b64, tail_one_second_index);
+      let tail_one_output_one: own u64 = iadd.wrap<u64>(output_offset, 1_u64);
+      let tail_one_output_two: own u64 = iadd.wrap<u64>(output_offset, 2_u64);
+      let tail_one_output_three: own u64 = iadd.wrap<u64>(output_offset, 3_u64);
+      set index<u8>(deref(out), output_offset) = tail_one_first;
+      set index<u8>(deref(out), tail_one_output_one) = tail_one_second;
+      set index<u8>(deref(out), tail_one_output_two) = 61_u8;
+      set index<u8>(deref(out), tail_one_output_three) = 61_u8;
+      set output_offset = iadd.wrap<u64>(output_offset, 4_u64);
+    }
+    False() => {
+    }
+  }
+  let two_byte_tail: own Bool = ieq<u64>(tail_length, 2_u64);
+  match two_byte_tail {
+    True() => {
+      let tail_two_input_one: own u64 = iadd.wrap<u64>(input_offset, 1_u64);
+      let tail_two_byte_zero: own u8 = index<u8>(input, input_offset);
+      let tail_two_byte_one: own u8 = index<u8>(input, tail_two_input_one);
+      let tail_two_word_zero: own u32 = cvt<u8, u32>(tail_two_byte_zero);
+      let tail_two_word_one: own u32 = cvt<u8, u32>(tail_two_byte_one);
+      let tail_two_shifted_zero: own u32 = ishl.wrap<u32>(tail_two_word_zero, 8_u32);
+      let tail_two_combined: own u32 = ior<u32>(tail_two_shifted_zero, tail_two_word_one);
+      let tail_two_first_shifted: own u32 = ishr.wrap<u32>(tail_two_combined, 10_u32);
+      let tail_two_first_sextet: own u32 = iand<u32>(tail_two_first_shifted, 63_u32);
+      let tail_two_first_index: own u64 = cvt<u32, u64>(tail_two_first_sextet);
+      let tail_two_second_shifted: own u32 = ishr.wrap<u32>(tail_two_combined, 4_u32);
+      let tail_two_second_sextet: own u32 = iand<u32>(tail_two_second_shifted, 63_u32);
+      let tail_two_second_index: own u64 = cvt<u32, u64>(tail_two_second_sextet);
+      let tail_two_third_shifted: own u32 = ishl.wrap<u32>(tail_two_combined, 2_u32);
+      let tail_two_third_sextet: own u32 = iand<u32>(tail_two_third_shifted, 63_u32);
+      let tail_two_third_index: own u64 = cvt<u32, u64>(tail_two_third_sextet);
+      let tail_two_first: own u8 = index<u8>(b64, tail_two_first_index);
+      let tail_two_second: own u8 = index<u8>(b64, tail_two_second_index);
+      let tail_two_third: own u8 = index<u8>(b64, tail_two_third_index);
+      let tail_two_output_one: own u64 = iadd.wrap<u64>(output_offset, 1_u64);
+      let tail_two_output_two: own u64 = iadd.wrap<u64>(output_offset, 2_u64);
+      let tail_two_output_three: own u64 = iadd.wrap<u64>(output_offset, 3_u64);
+      set index<u8>(deref(out), output_offset) = tail_two_first;
+      set index<u8>(deref(out), tail_two_output_one) = tail_two_second;
+      set index<u8>(deref(out), tail_two_output_two) = tail_two_third;
+      set index<u8>(deref(out), tail_two_output_three) = 61_u8;
+      set output_offset = iadd.wrap<u64>(output_offset, 4_u64);
+    }
+    False() => {
+    }
+  }
+  return output_offset;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let man_input: own buffer<u8> = buffer_new<u8>(3_u64, 0_u8);
+  set index<u8>(man_input, 0_u64) = 77_u8;
+  set index<u8>(man_input, 1_u64) = 97_u8;
+  set index<u8>(man_input, 2_u64) = 110_u8;
+  let man_output: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
+  region 'man_region {
+    let man_length: own u64 = encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input);
+    check ieq<u64>(man_length, 4_u64) else trap "Man length drift";
+  }
+  let man_zero: own u8 = index<u8>(man_output, 0_u64);
+  let man_one: own u8 = index<u8>(man_output, 1_u64);
+  let man_two: own u8 = index<u8>(man_output, 2_u64);
+  let man_three: own u8 = index<u8>(man_output, 3_u64);
+  check ieq<u8>(man_zero, 84_u8) else trap "Man[0] drift";
+  check ieq<u8>(man_one, 87_u8) else trap "Man[1] drift";
+  check ieq<u8>(man_two, 70_u8) else trap "Man[2] drift";
+  check ieq<u8>(man_three, 117_u8) else trap "Man[3] drift";
+  let m_input: own buffer<u8> = buffer_new<u8>(1_u64, 77_u8);
+  let m_output: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
+  region 'm_region {
+    let m_length: own u64 = encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input);
+    check ieq<u64>(m_length, 4_u64) else trap "M length drift";
+  }
+  let m_zero: own u8 = index<u8>(m_output, 0_u64);
+  let m_one: own u8 = index<u8>(m_output, 1_u64);
+  let m_two: own u8 = index<u8>(m_output, 2_u64);
+  let m_three: own u8 = index<u8>(m_output, 3_u64);
+  check ieq<u8>(m_zero, 84_u8) else trap "M[0] drift";
+  check ieq<u8>(m_one, 81_u8) else trap "M[1] drift";
+  check ieq<u8>(m_two, 61_u8) else trap "M[2] drift";
+  check ieq<u8>(m_three, 61_u8) else trap "M[3] drift";
+  let ma_input: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+  set index<u8>(ma_input, 0_u64) = 77_u8;
+  set index<u8>(ma_input, 1_u64) = 97_u8;
+  let ma_output: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
+  region 'ma_region {
+    let ma_length: own u64 = encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input);
+    check ieq<u64>(ma_length, 4_u64) else trap "Ma length drift";
+  }
+  let ma_zero: own u8 = index<u8>(ma_output, 0_u64);
+  let ma_one: own u8 = index<u8>(ma_output, 1_u64);
+  let ma_two: own u8 = index<u8>(ma_output, 2_u64);
+  let ma_three: own u8 = index<u8>(ma_output, 3_u64);
+  check ieq<u8>(ma_zero, 84_u8) else trap "Ma[0] drift";
+  check ieq<u8>(ma_one, 87_u8) else trap "Ma[1] drift";
+  check ieq<u8>(ma_two, 69_u8) else trap "Ma[2] drift";
+  check ieq<u8>(ma_three, 61_u8) else trap "Ma[3] drift";
+  return unit;
+}
