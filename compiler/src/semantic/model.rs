@@ -406,6 +406,10 @@ pub(crate) enum CheckedExpression {
         binding: BindingId,
         nominal: NominalId,
     },
+    ReborrowStruct {
+        binding: BindingId,
+        nominal: NominalId,
+    },
     ConstructStruct {
         nominal: NominalId,
         fields: Vec<CheckedExpression>,
@@ -442,7 +446,9 @@ impl CheckedExpression {
             Self::BorrowBuffer { root } => CheckedType::Buffer {
                 element: root.element,
             },
-            Self::BorrowStruct { nominal, .. } => CheckedType::Nominal(*nominal),
+            Self::BorrowStruct { nominal, .. } | Self::ReborrowStruct { nominal, .. } => {
+                CheckedType::Nominal(*nominal)
+            }
             Self::ConstructStruct { nominal, .. } | Self::ConstructEnum { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }

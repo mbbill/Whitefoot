@@ -268,9 +268,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let child = self.tree.only_child(node)?;
         match self.tree.production(child)? {
-            ProductionV0_14::Atom => {
-                self.check_atom_in_context(function, child, bindings, loop_depth, place_context)
-            }
+            ProductionV0_14::Atom => self.check_atom_in_context(
+                function,
+                child,
+                bindings,
+                loop_depth,
+                place_context,
+                false,
+            ),
             ProductionV0_14::Call => self.check_call(function, child, bindings, loop_depth),
             ProductionV0_14::Construct => {
                 self.check_construct(function, child, bindings, loop_depth, expected)
@@ -292,6 +297,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
+            false,
+        )
+    }
+
+    pub(super) fn check_call_argument_atom(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        child_reborrow_allowed: bool,
+    ) -> Result<TypedExpression, CheckStop> {
+        self.check_atom_in_context(
+            function,
+            node,
+            bindings,
+            loop_depth,
+            PlaceUseContext::Ordinary,
+            child_reborrow_allowed,
         )
     }
 
@@ -302,6 +326,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         place_context: PlaceUseContext,
+        child_reborrow_allowed: bool,
     ) -> Result<TypedExpression, CheckStop> {
         if let Some(literal) = self
             .tree
@@ -332,7 +357,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, ProductionV0_14::BorrowExpr)?
         {
-            return self.check_borrow(borrow, function, bindings, loop_depth);
+            return self.check_borrow(
+                borrow,
+                function,
+                bindings,
+                loop_depth,
+                child_reborrow_allowed,
+            );
         }
         let _ = function;
         Err(SemanticCompilerFailure::InvalidCanonicalTree.into())

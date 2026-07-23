@@ -46,6 +46,8 @@ pub enum SemanticRuleV0_14 {
     Own4,
     /// Live-loan access and exclusivity.
     Own5,
+    /// Statement-scoped child-reborrow formation and suspension.
+    Own6,
     /// Borrow storage duration.
     Own10,
     /// Loop-local region and move restrictions.
@@ -104,6 +106,7 @@ impl SemanticRuleV0_14 {
             Self::Own1 => "OWN-1",
             Self::Own4 => "OWN-4",
             Self::Own5 => "OWN-5",
+            Self::Own6 => "OWN-6",
             Self::Own10 => "OWN-10",
             Self::Own11 => "OWN-11",
             Self::Own12 => "OWN-12",
@@ -182,6 +185,8 @@ pub enum SemanticIssueKind {
     InvalidBorrowLifetime,
     /// A read, write, move, or new borrow conflicts with a live loan.
     BorrowConflict,
+    /// A written child reborrow does not satisfy OWN-6's closed form.
+    InvalidChildReborrow,
     /// A borrow holder was used without the required explicit dereference.
     MissingDereference {
         /// Exact mechanical repair selected by TYPE-7.
@@ -189,6 +194,11 @@ pub enum SemanticIssueKind {
     },
     /// A loop attempted to consume an affine binding declared outside it.
     MoveOuterBindingInLoop {
+        /// Exact restructuring required by OWN-11.
+        mechanical_fix: &'static str,
+    },
+    /// A borrow created in a loop names a region introduced outside that loop.
+    BorrowRegionOutsideLoop {
         /// Exact restructuring required by OWN-11.
         mechanical_fix: &'static str,
     },

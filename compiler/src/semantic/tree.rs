@@ -122,6 +122,20 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)
     }
 
+    pub(super) fn node_with_path(&self, path: &NodePath) -> Option<NodeId> {
+        self.paths
+            .iter()
+            .position(|candidate| candidate == path)
+            .and_then(NodeId::from_index)
+    }
+
+    pub(super) fn parent(&self, node: NodeId) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        self.topology()
+            .node(node)
+            .map(|record| record.parent)
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)
+    }
+
     pub(super) fn coordinate(
         &self,
         node: NodeId,

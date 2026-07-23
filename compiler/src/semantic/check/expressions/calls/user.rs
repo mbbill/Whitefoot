@@ -72,7 +72,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, ProductionV0_14::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let argument = self.check_atom(function, atom, bindings, loop_depth)?;
+            let explicit_borrow = self
+                .tree
+                .first_child_with(atom, ProductionV0_14::BorrowExpr)?
+                .is_some();
+            let argument = self.check_call_argument_atom(
+                function,
+                atom,
+                bindings,
+                loop_depth,
+                signature.result_mode == CheckedMode::Own,
+            )?;
             for access in &argument.accesses {
                 for borrow in &call_scoped_borrows {
                     if places_overlap(&access.place, &borrow.place)
@@ -101,9 +111,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
-            if argument.holder.is_none()
-                && let Some(borrow) = &argument.borrow
-            {
+            if explicit_borrow && let Some(borrow) = &argument.borrow {
                 call_scoped_borrows.push(borrow.clone());
             }
             checked_borrows.push(passed_borrow);

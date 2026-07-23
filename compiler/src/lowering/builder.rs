@@ -781,6 +781,9 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::BorrowStruct { binding, nominal } => {
                 self.lower_struct_borrow(*binding, IrNominalId(nominal.0))
             }
+            CheckedExpression::ReborrowStruct { binding, nominal } => {
+                self.lower_struct_borrow(*binding, IrNominalId(nominal.0))
+            }
             CheckedExpression::ConstructStruct { nominal, fields } => {
                 let fields = fields
                     .iter()

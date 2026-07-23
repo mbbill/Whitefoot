@@ -9,6 +9,8 @@ mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
 mod options;
+mod raw_deflate;
+mod reborrows;
 mod requires;
 mod resource_enums;
 

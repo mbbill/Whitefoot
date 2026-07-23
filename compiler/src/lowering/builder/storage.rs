@@ -95,6 +95,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArrayLength { .. }
         | CheckedExpression::BufferLength { .. }
         | CheckedExpression::BorrowBuffer { .. }
+        | CheckedExpression::ReborrowStruct { .. }
         | CheckedExpression::Project { .. } => {}
     }
 }

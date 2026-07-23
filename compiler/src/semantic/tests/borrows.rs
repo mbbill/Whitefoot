@@ -358,3 +358,142 @@ fn main() -> own unit pure {
         },
     );
 }
+
+#[test]
+fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
+    let positive = include_bytes!("../../../../tests/conformance/cases/x-child-reborrow-run.wf");
+    with_semantics(positive, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("statement-scoped child reborrows must check: {outcome:?}");
+        };
+    });
+
+    with_semantics(
+        br#"fn observe ['r](out: &'r buffer<u8>) -> own unit pure {
+  return unit;
+}
+
+fn proxy ['r](out: &'r buffer<u8>) -> own unit pure {
+  region 'child {
+    observe<'child>(out: &'child deref(out));
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a shared child of a shared holder must check: {outcome:?}");
+            };
+        },
+    );
+
+    assert_rule(
+        br#"fn take ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+  return unit;
+}
+
+fn invalid ['r](out: &'r buffer<u8>) -> own unit pure {
+  region 'child {
+    take<'child>(out: &uniq 'child deref(out));
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRuleV0_14::Own6,
+        SemanticIssueKind::InvalidChildReborrow,
+    );
+
+    assert_rule(
+        br#"fn take ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+  return unit;
+}
+
+fn invalid ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+  region 'child {
+    take<'child>(out: &uniq 'child deref(out));
+    take<'child>(out: &uniq 'child deref(out));
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRuleV0_14::Own6,
+        SemanticIssueKind::InvalidChildReborrow,
+    );
+
+    assert_rule(
+        br#"fn take_two ['r](first: &uniq 'r buffer<u8>, second: &uniq 'r buffer<u8>) -> own unit pure {
+  return unit;
+}
+
+fn invalid ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+  region 'child {
+    take_two<'child>(first: &uniq 'child deref(out), second: &uniq 'child deref(out));
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRuleV0_14::Own12,
+        SemanticIssueKind::BorrowConflict,
+    );
+
+    with_semantics(
+        br#"fn observe ['r](out: &'r buffer<u8>) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let out: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  loop @once {
+    region 'inside {
+      observe<'inside>(out: &'inside out);
+    }
+    break @once;
+  }
+  return unit;
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a loop-local borrow region must check: {outcome:?}");
+            };
+        },
+    );
+
+    assert_rule(
+        br#"fn observe ['r](out: &'r buffer<u8>) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let out: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  region 'outside {
+    loop @once {
+      observe<'outside>(out: &'outside out);
+      break @once;
+    }
+  }
+  return unit;
+}
+"#,
+        SemanticRuleV0_14::Own11,
+        SemanticIssueKind::BorrowRegionOutsideLoop {
+            mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+        },
+    );
+}

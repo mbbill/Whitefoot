@@ -123,10 +123,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         function: &FunctionSignature,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
+        child_reborrow_allowed: bool,
     ) -> Result<TypedExpression, CheckStop> {
-        if loop_depth != 0 {
-            return self.unsupported(UnsupportedSemanticFeatureV0_14::RegionsAndBorrows, node);
-        }
         let usage = self.use_at(node, LexicalUseRole::BorrowRegion)?;
         let ResolvedTarget::Source {
             declaration: region,
@@ -148,6 +146,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place_node, ProductionV0_14::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if self.has_fixed(pbase, crate::FixedTerminalV0_14::Deref)? {
+            return self.check_child_reborrow(
+                node,
+                place_node,
+                pbase,
+                region,
+                kind,
+                bindings,
+                loop_depth,
+                child_reborrow_allowed,
+            );
+        }
+        if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
+            return self.issue_node(
+                SemanticRuleV0_14::Own11,
+                node,
+                SemanticIssueKind::BorrowRegionOutsideLoop {
+                    mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+                },
+            );
+        }
         if !self.tree.children(pbase)?.is_empty() {
             return self.unsupported(UnsupportedSemanticFeatureV0_14::RegionsAndBorrows, pbase);
         }
@@ -248,6 +267,174 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects: EffectSet::NONE,
             accesses: Vec::new(),
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_child_reborrow(
+        &self,
+        node: NodeId,
+        place_node: NodeId,
+        pbase: NodeId,
+        region: DeclarationId,
+        kind: BorrowKind,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        child_reborrow_allowed: bool,
+    ) -> Result<TypedExpression, CheckStop> {
+        if !child_reborrow_allowed {
+            return self.issue_node(
+                SemanticRuleV0_14::Own6,
+                node,
+                SemanticIssueKind::InvalidChildReborrow,
+            );
+        }
+        if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
+            return self.issue_node(
+                SemanticRuleV0_14::Own11,
+                node,
+                SemanticIssueKind::BorrowRegionOutsideLoop {
+                    mechanical_fix: "introduce the child region inside the enclosing loop body",
+                },
+            );
+        }
+        let region_declaration = self.region_declaration(region)?;
+        if region_declaration.role() != DeclarationRole::LocalRegion
+            || !self.child_region_is_statement_scoped(region_declaration, node)?
+        {
+            return self.issue_node(
+                SemanticRuleV0_14::Own6,
+                node,
+                SemanticIssueKind::InvalidChildReborrow,
+            );
+        }
+        let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
+        let holder_role = self.declaration_record(holder)?.role();
+        if !matches!(
+            holder_role,
+            DeclarationRole::Parameter | DeclarationRole::Let
+        ) || (kind == BorrowKind::Unique && parent.kind != BorrowKind::Unique)
+            || !self.region_outlives(parent.region, region)?
+        {
+            return self.issue_node(
+                SemanticRuleV0_14::Own6,
+                node,
+                SemanticIssueKind::InvalidChildReborrow,
+            );
+        }
+        let (fields, ty) = self.resolve_struct_path(place_node, local.ty)?;
+        let mut place = parent.place.clone();
+        place.fields.extend_from_slice(&fields);
+        self.check_loan_access(
+            bindings,
+            Some(holder),
+            &place,
+            match kind {
+                BorrowKind::Shared => AccessKind::SharedBorrow,
+                BorrowKind::Unique => AccessKind::UniqueBorrow,
+            },
+            node,
+        )?;
+        let expression = match ty {
+            CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
+                root: CheckedBufferRoot {
+                    binding: local.binding,
+                    fields,
+                    element,
+                },
+            },
+            CheckedType::Nominal(nominal)
+                if fields.is_empty()
+                    && matches!(
+                        self.nominal(nominal)?.kind,
+                        CheckedNominalKind::Struct { .. }
+                    ) =>
+            {
+                CheckedExpression::ReborrowStruct {
+                    binding: local.binding,
+                    nominal,
+                }
+            }
+            _ => {
+                return self.unsupported(
+                    UnsupportedSemanticFeatureV0_14::RegionsAndBorrows,
+                    place_node,
+                );
+            }
+        };
+        let borrow = BorrowInfo {
+            kind,
+            region,
+            place,
+            origin_region: parent.origin_region,
+        };
+        Ok(TypedExpression {
+            expression,
+            mode: borrow.mode(),
+            borrow: Some(borrow),
+            holder: Some(holder),
+            effects: EffectSet::NONE,
+            accesses: Vec::new(),
+        })
+    }
+
+    fn child_region_is_statement_scoped(
+        &self,
+        region: &crate::DeclarationRecord,
+        child: NodeId,
+    ) -> Result<bool, CheckStop> {
+        let Some(region_node) = self.tree.node_with_path(region.origin().node()) else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        if self.tree.production(region_node)? != ProductionV0_14::RegionStmt {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let region_statements = self
+            .tree
+            .children_with(region_node, ProductionV0_14::Stmt)?;
+        let [region_statement] = region_statements.as_slice() else {
+            return Ok(false);
+        };
+        let mut cursor = Some(child);
+        while let Some(node) = cursor {
+            if self.tree.production(node)? == ProductionV0_14::Stmt {
+                return Ok(node == *region_statement);
+            }
+            cursor = self.tree.parent(node)?;
+        }
+        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+    }
+
+    fn borrow_region_is_inside_current_loops(
+        &self,
+        region: DeclarationId,
+        borrow: NodeId,
+        loop_depth: usize,
+    ) -> Result<bool, CheckStop> {
+        if loop_depth == 0 {
+            return Ok(true);
+        }
+        let declaration = self.region_declaration(region)?;
+        let Some(region_node) = self.tree.node_with_path(declaration.origin().node()) else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let borrow_loops = self.enclosing_loops(borrow)?;
+        if borrow_loops.len() != loop_depth {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        }
+        Ok(self.enclosing_loops(region_node)? == borrow_loops)
+    }
+
+    fn enclosing_loops(&self, node: NodeId) -> Result<Vec<NodeId>, CheckStop> {
+        let mut loops = Vec::new();
+        let mut cursor = self.tree.parent(node)?;
+        while let Some(node) = cursor {
+            if self.tree.production(node)? == ProductionV0_14::LoopStmt {
+                loops.push(node);
+            }
+            cursor = self.tree.parent(node)?;
+        }
+        loops.reverse();
+        Ok(loops)
     }
 
     pub(super) fn resolve_dereference_holder(
@@ -405,6 +592,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn region_declaration(
+        &self,
+        id: DeclarationId,
+    ) -> Result<&crate::DeclarationRecord, CheckStop> {
+        self.declaration_record(id)
+    }
+
+    fn declaration_record(
         &self,
         id: DeclarationId,
     ) -> Result<&crate::DeclarationRecord, CheckStop> {

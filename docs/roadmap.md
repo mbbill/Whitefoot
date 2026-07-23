@@ -141,11 +141,11 @@ detection. Executable tests cover every signed width, including the minimum
 edge and exact trap record.
 
 This is not a completeness claim. Generics and contracts, borrow referents
-outside buffers and acyclic structs, returned borrows, child reborrows, floats,
-boxes, arenas, slices, recursive nominal layouts, branch-dependent
-ownership/loan joins, projected array targets, and floating-point and remaining
-effect-table operations are explicit unsupported compiler capabilities rather
-than source-language rejections.
+outside buffers and acyclic structs, returned borrows, bound/result-carrying/
+grandchild reborrows, floats, boxes, arenas, slices, recursive nominal layouts,
+branch-dependent ownership/loan joins, projected array targets, and
+floating-point and remaining effect-table operations are explicit unsupported
+compiler capabilities rather than source-language rejections.
 Repeated exhaustive match arms also stop as
 unsupported because v0.14 defines neither duplicate-arm meaning nor a
 duplicate-arm rejection rule.
@@ -221,8 +221,9 @@ SET-1 only through explicit `deref`. The backend passes the existing buffer
 descriptor by value and never frees a borrow. A compiler-independent
 structure-of-arrays program uniquely fills two distinct borrowed columns, then
 shared-borrows and folds them, while the sole owner frees both columns. Forms
-that need returned-reference provenance, child reborrows, or branch-dependent
-loan joins remain explicit unsupported capability stops.
+that need returned-reference provenance, bound/result-carrying/grandchild
+reborrows, or branch-dependent loan joins remain explicit unsupported
+capability stops.
 
 Concrete FN-8 `requires` prologues are complete. Resolution performs the
 specified unit-wide structural admission before name classification. Semantic
@@ -271,8 +272,8 @@ read and index projected buffer fields such as `deref(pool).left`, and update
 copy state such as `deref(pool).count` through a usable unique holder. One
 resolved place path retains the borrowed root, field prefix, ultimate caller
 origin, loan checks, and exact EFF-2 reads/writes. The implementation does not
-move affine fields out of a borrow, return references, generalize child
-reborrows, or add slices, boxes, or arenas.
+move affine fields out of a borrow, return references, admit bound or
+result-carrying child reborrows, or add slices, boxes, or arenas.
 
 Five inherited runnable conformance entries need protected-evidence correction
 before the compiler adapter can promote their current families. `pending-op9-buffer-new`
@@ -670,11 +671,29 @@ actual owner. The experiment exposed no additional compiler capability gap.
 The next sustained target is a complete one-shot raw RFC 1951 decoder with
 caller-provided input and output storage. Correctness work proceeds through
 stored, fixed-Huffman, and dynamic-Huffman streams, but those are milestones
-inside one decoder rather than three unrelated fixtures. The experiment should
-exercise state carried through borrowed structs, ordinary data-failure
-results, checked bit and table access, overlapping history copies, and exact
-resource cleanup. Implement only the first general compiler capability that
-the complete decoder actually exposes. This selection does not authorize CLI
+inside one decoder rather than three unrelated fixtures. The evolving
+`tests/programs/raw_deflate.wf` now executes multi-block stored streams, checks
+LEN/NLEN before copying, reports truncation, invalid length, and output
+shortage as ordinary `Result` failures, leaves output untouched on every
+pre-copy failure, and releases the transferred input on every return edge.
+
+That first decoder milestone exposed and now uses the general v0.14 OWN-6
+statement-scoped child-reborrow path. Buffer and whole acyclic-struct holders
+can form an unbound shared or mode-compatible unique child only in a
+single-statement local region around an own- or unit-result call. The checked child
+retains its resolved parent place and ultimate effect origin; overlapping
+unique siblings reject under OWN-12; the parent is excluded while the child is
+the call claim and resumes immediately afterward. The same rule works in a
+loop only when the child region is introduced inside the current loop body, as
+OWN-11 requires. Checked IR distinguishes a struct reborrow from borrowing a
+new owner, so lowering reuses the holder's existing address; buffer children
+reuse the descriptor path. No alias metadata or check elision follows.
+
+The next decoder milestone is fixed-Huffman decoding through one borrowed
+state object, a retained bit accumulator, canonical literal/length and distance
+tables, ordinary malformed/truncated/output-shortage results, and overlapping
+history copies. Implement only the first general compiler capability that this
+complete-decoder path actually exposes. The selection does not authorize CLI
 or streaming-wrapper infrastructure, benchmark reconstruction, the archived
 target-specific optimizer prototypes, or proof-based check removal.
 

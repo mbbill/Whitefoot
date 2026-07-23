@@ -1,0 +1,269 @@
+enum InflateError {
+  Truncated();
+  InvalidStoredLength();
+  OutputFull();
+  UnsupportedBlockType();
+}
+
+fn write_output_byte ['r](out: &uniq 'r buffer<u8>, offset: own u64, value: own u8) -> own unit writes('r), traps {
+  set index<u8>(deref(out), offset) = value;
+  return unit;
+}
+
+fn inflate ['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u64, InflateError> reads('r), writes('r), traps {
+  let input_length: own u64 = len<u8>(input);
+  let output_length: own u64 = len<u8>(deref(out));
+  let input_offset: own u64 = 0_u64;
+  let output_offset: own u64 = 0_u64;
+  loop @blocks {
+    let header_missing: own Bool = ige<u64>(input_offset, input_length);
+    match header_missing {
+      True() => {
+        let header_error: own InflateError = Truncated();
+        return Err(error: header_error);
+      }
+      False() => {
+      }
+    }
+    let header: own u8 = index<u8>(input, input_offset);
+    set input_offset = iadd.wrap<u64>(input_offset, 1_u64);
+    let final_masked: own u8 = iand<u8>(header, 1_u8);
+    let final_block: own Bool = ieq<u8>(final_masked, 1_u8);
+    let type_masked: own u8 = iand<u8>(header, 6_u8);
+    let block_type: own u8 = ishr.wrap<u8>(type_masked, 1_u32);
+    let stored_block: own Bool = ieq<u8>(block_type, 0_u8);
+    match stored_block {
+      True() => {
+      }
+      False() => {
+        let type_error: own InflateError = UnsupportedBlockType();
+        return Err(error: type_error);
+      }
+    }
+    let length_bytes_remaining: own u64 = isub.wrap<u64>(input_length, input_offset);
+    let length_truncated: own Bool = ilt<u64>(length_bytes_remaining, 4_u64);
+    match length_truncated {
+      True() => {
+        let length_error: own InflateError = Truncated();
+        return Err(error: length_error);
+      }
+      False() => {
+      }
+    }
+    let len_high_offset: own u64 = iadd.wrap<u64>(input_offset, 1_u64);
+    let nlen_low_offset: own u64 = iadd.wrap<u64>(input_offset, 2_u64);
+    let nlen_high_offset: own u64 = iadd.wrap<u64>(input_offset, 3_u64);
+    let len_low_byte: own u8 = index<u8>(input, input_offset);
+    let len_high_byte: own u8 = index<u8>(input, len_high_offset);
+    let nlen_low_byte: own u8 = index<u8>(input, nlen_low_offset);
+    let nlen_high_byte: own u8 = index<u8>(input, nlen_high_offset);
+    set input_offset = iadd.wrap<u64>(input_offset, 4_u64);
+    let len_low: own u16 = cvt<u8, u16>(len_low_byte);
+    let len_high_word: own u16 = cvt<u8, u16>(len_high_byte);
+    let len_high: own u16 = ishl.wrap<u16>(len_high_word, 8_u32);
+    let stored_length: own u16 = ior<u16>(len_low, len_high);
+    let nlen_low: own u16 = cvt<u8, u16>(nlen_low_byte);
+    let nlen_high_word: own u16 = cvt<u8, u16>(nlen_high_byte);
+    let nlen_high: own u16 = ishl.wrap<u16>(nlen_high_word, 8_u32);
+    let stored_complement: own u16 = ior<u16>(nlen_low, nlen_high);
+    let expected_complement: own u16 = inot<u16>(stored_length);
+    let complement_valid: own Bool = ieq<u16>(stored_complement, expected_complement);
+    match complement_valid {
+      True() => {
+      }
+      False() => {
+        let complement_error: own InflateError = InvalidStoredLength();
+        return Err(error: complement_error);
+      }
+    }
+    let copy_length: own u64 = cvt<u16, u64>(stored_length);
+    let input_remaining: own u64 = isub.wrap<u64>(input_length, input_offset);
+    let input_short: own Bool = ilt<u64>(input_remaining, copy_length);
+    match input_short {
+      True() => {
+        let data_error: own InflateError = Truncated();
+        return Err(error: data_error);
+      }
+      False() => {
+      }
+    }
+    let output_remaining: own u64 = isub.wrap<u64>(output_length, output_offset);
+    let output_short: own Bool = ilt<u64>(output_remaining, copy_length);
+    match output_short {
+      True() => {
+        let output_error: own InflateError = OutputFull();
+        return Err(error: output_error);
+      }
+      False() => {
+      }
+    }
+    let copied: own u64 = 0_u64;
+    loop @copy_stored {
+      let copy_done: own Bool = ieq<u64>(copied, copy_length);
+      match copy_done {
+        True() => {
+          break @copy_stored;
+        }
+        False() => {
+          let source_index: own u64 = iadd.wrap<u64>(input_offset, copied);
+          let destination_index: own u64 = iadd.wrap<u64>(output_offset, copied);
+          let byte: own u8 = index<u8>(input, source_index);
+          region 'stored_write {
+            write_output_byte<'stored_write>(out: &uniq 'stored_write deref(out), offset: destination_index, value: byte);
+          }
+          set copied = iadd.wrap<u64>(copied, 1_u64);
+        }
+      }
+    }
+    set input_offset = iadd.wrap<u64>(input_offset, copy_length);
+    set output_offset = iadd.wrap<u64>(output_offset, copy_length);
+    match final_block {
+      True() => {
+        break @blocks;
+      }
+      False() => {
+      }
+    }
+  }
+  return Ok(value: output_offset);
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let valid_input: own buffer<u8> = buffer_new<u8>(15_u64, 0_u8);
+  set index<u8>(valid_input, 0_u64) = 0_u8;
+  set index<u8>(valid_input, 1_u64) = 2_u8;
+  set index<u8>(valid_input, 2_u64) = 0_u8;
+  set index<u8>(valid_input, 3_u64) = 253_u8;
+  set index<u8>(valid_input, 4_u64) = 255_u8;
+  set index<u8>(valid_input, 5_u64) = 104_u8;
+  set index<u8>(valid_input, 6_u64) = 101_u8;
+  set index<u8>(valid_input, 7_u64) = 1_u8;
+  set index<u8>(valid_input, 8_u64) = 3_u8;
+  set index<u8>(valid_input, 9_u64) = 0_u8;
+  set index<u8>(valid_input, 10_u64) = 252_u8;
+  set index<u8>(valid_input, 11_u64) = 255_u8;
+  set index<u8>(valid_input, 12_u64) = 108_u8;
+  set index<u8>(valid_input, 13_u64) = 108_u8;
+  set index<u8>(valid_input, 14_u64) = 111_u8;
+  let valid_output: own buffer<u8> = buffer_new<u8>(5_u64, 0_u8);
+  region 'valid_region {
+    let valid_result: own Result<u64, InflateError> = inflate<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
+    match move valid_result {
+      Ok(value: valid_length) => {
+        check ieq<u64>(valid_length, 5_u64) else trap "stored output length";
+      }
+      Err(error: valid_error) => {
+        check False() else trap "stored stream rejected";
+      }
+    }
+  }
+  let valid_zero: own u8 = index<u8>(valid_output, 0_u64);
+  let valid_one: own u8 = index<u8>(valid_output, 1_u64);
+  let valid_two: own u8 = index<u8>(valid_output, 2_u64);
+  let valid_three: own u8 = index<u8>(valid_output, 3_u64);
+  let valid_four: own u8 = index<u8>(valid_output, 4_u64);
+  check ieq<u8>(valid_zero, 104_u8) else trap "stored byte zero";
+  check ieq<u8>(valid_one, 101_u8) else trap "stored byte one";
+  check ieq<u8>(valid_two, 108_u8) else trap "stored byte two";
+  check ieq<u8>(valid_three, 108_u8) else trap "stored byte three";
+  check ieq<u8>(valid_four, 111_u8) else trap "stored byte four";
+  let invalid_length_input: own buffer<u8> = buffer_new<u8>(6_u64, 0_u8);
+  set index<u8>(invalid_length_input, 0_u64) = 1_u8;
+  set index<u8>(invalid_length_input, 1_u64) = 1_u8;
+  set index<u8>(invalid_length_input, 2_u64) = 0_u8;
+  set index<u8>(invalid_length_input, 3_u64) = 255_u8;
+  set index<u8>(invalid_length_input, 4_u64) = 255_u8;
+  set index<u8>(invalid_length_input, 5_u64) = 65_u8;
+  let invalid_length_output: own buffer<u8> = buffer_new<u8>(1_u64, 9_u8);
+  region 'invalid_length_region {
+    let invalid_length_result: own Result<u64, InflateError> = inflate<'invalid_length_region>(out: &uniq 'invalid_length_region invalid_length_output, input: move invalid_length_input);
+    match move invalid_length_result {
+      Ok(value: invalid_length_value) => {
+        check False() else trap "invalid stored length accepted";
+      }
+      Err(error: invalid_length_error) => {
+        match invalid_length_error {
+          InvalidStoredLength() => {
+          }
+          Truncated() => {
+            check False() else trap "invalid length became truncation";
+          }
+          OutputFull() => {
+            check False() else trap "invalid length became output full";
+          }
+          UnsupportedBlockType() => {
+            check False() else trap "invalid length became block type";
+          }
+        }
+      }
+    }
+  }
+  let invalid_length_sentinel: own u8 = index<u8>(invalid_length_output, 0_u64);
+  check ieq<u8>(invalid_length_sentinel, 9_u8) else trap "invalid length wrote output";
+  let truncated_input: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
+  set index<u8>(truncated_input, 0_u64) = 1_u8;
+  set index<u8>(truncated_input, 1_u64) = 2_u8;
+  set index<u8>(truncated_input, 2_u64) = 0_u8;
+  set index<u8>(truncated_input, 3_u64) = 253_u8;
+  let truncated_output: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
+  region 'truncated_region {
+    let truncated_result: own Result<u64, InflateError> = inflate<'truncated_region>(out: &uniq 'truncated_region truncated_output, input: move truncated_input);
+    match move truncated_result {
+      Ok(value: truncated_value) => {
+        check False() else trap "truncated stream accepted";
+      }
+      Err(error: truncated_error) => {
+        match truncated_error {
+          Truncated() => {
+          }
+          InvalidStoredLength() => {
+            check False() else trap "truncation became invalid length";
+          }
+          OutputFull() => {
+            check False() else trap "truncation became output full";
+          }
+          UnsupportedBlockType() => {
+            check False() else trap "truncation became block type";
+          }
+        }
+      }
+    }
+  }
+  let truncated_sentinel: own u8 = index<u8>(truncated_output, 0_u64);
+  check ieq<u8>(truncated_sentinel, 7_u8) else trap "truncation wrote output";
+  let full_input: own buffer<u8> = buffer_new<u8>(7_u64, 0_u8);
+  set index<u8>(full_input, 0_u64) = 1_u8;
+  set index<u8>(full_input, 1_u64) = 2_u8;
+  set index<u8>(full_input, 2_u64) = 0_u8;
+  set index<u8>(full_input, 3_u64) = 253_u8;
+  set index<u8>(full_input, 4_u64) = 255_u8;
+  set index<u8>(full_input, 5_u64) = 65_u8;
+  set index<u8>(full_input, 6_u64) = 66_u8;
+  let full_output: own buffer<u8> = buffer_new<u8>(1_u64, 11_u8);
+  region 'full_region {
+    let full_result: own Result<u64, InflateError> = inflate<'full_region>(out: &uniq 'full_region full_output, input: move full_input);
+    match move full_result {
+      Ok(value: full_value) => {
+        check False() else trap "undersized output accepted";
+      }
+      Err(error: full_error) => {
+        match full_error {
+          OutputFull() => {
+          }
+          Truncated() => {
+            check False() else trap "output full became truncation";
+          }
+          InvalidStoredLength() => {
+            check False() else trap "output full became invalid length";
+          }
+          UnsupportedBlockType() => {
+            check False() else trap "output full became block type";
+          }
+        }
+      }
+    }
+  }
+  let full_sentinel: own u8 = index<u8>(full_output, 0_u64);
+  check ieq<u8>(full_sentinel, 11_u8) else trap "output full wrote prefix";
+  return unit;
+}

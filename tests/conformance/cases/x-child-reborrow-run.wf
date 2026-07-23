@@ -1,0 +1,45 @@
+struct Counter {
+  value: u64;
+}
+
+fn write_byte ['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+  set index<u8>(deref(out), 0_u64) = 7_u8;
+  return unit;
+}
+
+fn proxy_byte ['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+  region 'byte_child {
+    write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
+  }
+  set index<u8>(deref(out), 1_u64) = 9_u8;
+  return unit;
+}
+
+fn bump_counter ['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r) {
+  let next: own u64 = iadd.wrap<u64>(deref(counter).value, 1_u64);
+  set deref(counter).value = next;
+  return unit;
+}
+
+fn proxy_counter ['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r) {
+  region 'counter_child {
+    bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
+  }
+  set deref(counter).value = iadd.wrap<u64>(deref(counter).value, 1_u64);
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let output: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+  let counter: own Counter = Counter(value: 40_u64);
+  region 'owners {
+    proxy_byte<'owners>(out: &uniq 'owners output);
+    proxy_counter<'owners>(counter: &uniq 'owners counter);
+  }
+  let first: own u8 = index<u8>(output, 0_u64);
+  let second: own u8 = index<u8>(output, 1_u64);
+  check ieq<u8>(first, 7_u8) else trap "child buffer write";
+  check ieq<u8>(second, 9_u8) else trap "resumed buffer parent";
+  check ieq<u64>(counter.value, 42_u64) else trap "resumed struct parent";
+  return unit;
+}
