@@ -120,12 +120,34 @@ pub(crate) enum CheckedIntegerOperation {
     MultiplyChecked,
     DivideChecked,
     RemainderChecked,
+    DivideTrap,
+    RemainderTrap,
     AbsoluteWrap,
     AbsoluteTrap,
     AbsoluteChecked,
     NegateWrap,
     NegateTrap,
     NegateChecked,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitNot,
+    ShiftLeftWrap,
+    ShiftRightWrap,
+    ShiftLeftTrap,
+    ShiftRightTrap,
+    RotateLeft,
+    RotateRight,
+    PopulationCount,
+    LeadingZeros,
+    TrailingZeros,
+    ByteSwap,
+    MultiplyHigh,
+    AddSaturating,
+    SubtractSaturating,
+    MultiplySaturating,
+    Minimum,
+    Maximum,
     Equal,
     NotEqual,
     Less,
@@ -151,6 +173,10 @@ impl CheckedIntegerOperation {
                 | Self::MultiplyTrap
                 | Self::AbsoluteTrap
                 | Self::NegateTrap
+                | Self::DivideTrap
+                | Self::RemainderTrap
+                | Self::ShiftLeftTrap
+                | Self::ShiftRightTrap
         )
     }
 
@@ -161,21 +187,52 @@ impl CheckedIntegerOperation {
             | Self::AbsoluteChecked
             | Self::NegateWrap
             | Self::NegateTrap
-            | Self::NegateChecked => 1,
+            | Self::NegateChecked
+            | Self::BitNot
+            | Self::PopulationCount
+            | Self::LeadingZeros
+            | Self::TrailingZeros
+            | Self::ByteSwap => 1,
             _ => 2,
         }
     }
 
-    pub(crate) const fn signed_only(self) -> bool {
-        matches!(
-            self,
+    pub(crate) const fn accepts_operand_type(self, operand: IntegerType) -> bool {
+        match self {
             Self::AbsoluteWrap
-                | Self::AbsoluteTrap
-                | Self::AbsoluteChecked
-                | Self::NegateWrap
-                | Self::NegateTrap
-                | Self::NegateChecked
-        )
+            | Self::AbsoluteTrap
+            | Self::AbsoluteChecked
+            | Self::NegateWrap
+            | Self::NegateTrap
+            | Self::NegateChecked => operand.signed(),
+            Self::ByteSwap => operand.width() >= 16,
+            _ => true,
+        }
+    }
+
+    pub(crate) const fn argument_type(
+        self,
+        operand: IntegerType,
+        index: usize,
+    ) -> Option<CheckedType> {
+        if index >= self.operand_count() {
+            return None;
+        }
+        if index == 1
+            && matches!(
+                self,
+                Self::ShiftLeftWrap
+                    | Self::ShiftRightWrap
+                    | Self::ShiftLeftTrap
+                    | Self::ShiftRightTrap
+                    | Self::RotateLeft
+                    | Self::RotateRight
+            )
+        {
+            Some(CheckedType::Integer(IntegerType::U32))
+        } else {
+            Some(CheckedType::Integer(operand))
+        }
     }
 
     pub(crate) const fn scalar_result_type(self, operand: IntegerType) -> Option<CheckedType> {
@@ -187,6 +244,9 @@ impl CheckedIntegerOperation {
             | Self::RemainderChecked
             | Self::AbsoluteChecked
             | Self::NegateChecked => None,
+            Self::PopulationCount | Self::LeadingZeros | Self::TrailingZeros => {
+                Some(CheckedType::Integer(IntegerType::U32))
+            }
             Self::Equal
             | Self::NotEqual
             | Self::Less

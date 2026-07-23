@@ -50,7 +50,10 @@ The implemented semantic families support exact scalar integers, unit,
 direct calls, returns, pure/traps effects, wrapping and trapping
 add/subtract/multiply, checked add/subtract/multiply/divide/remainder, integer
 absolute value and negation in all three modes, integer comparisons, Boolean
-operations, and nominal tag equality. Checked division and remainder guard
+operations, the remaining OP-8 integer family, and nominal tag equality.
+That integer family includes trapping division/remainder, bitwise operations,
+shifts, rotates, bit counts, byte swap, high multiply, saturating arithmetic,
+and min/max. Checked division and remainder guard
 divisor zero and signed minimum/-1 before the partial LLVM instruction and
 produce the exact `Result<T, DivError>` variant. Absolute value uses
 defined-edge `llvm.abs` for every signed width: wrapping retains the minimum

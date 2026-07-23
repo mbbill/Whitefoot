@@ -2,6 +2,7 @@
 
 mod checked_division;
 mod integer_absolute;
+mod integer_extended;
 mod integer_negation;
 
 use crate::lexer::{LexLimits, LexOutcome, lex_v0_14};

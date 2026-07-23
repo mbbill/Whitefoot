@@ -4,6 +4,7 @@
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
+mod integer;
 mod operations;
 
 use std::collections::BTreeSet;
@@ -91,8 +92,20 @@ pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
                 writeln!(text, "declare {{ {ty}, i1 }} @{name}({ty}, {ty})")
                     .map_err(|_| BackendFailure::TextEmission)?;
             }
-            IntrinsicDeclaration::Absolute { name, ty } => {
+            IntrinsicDeclaration::UnaryWithFlag { name, ty } => {
                 writeln!(text, "declare {ty} @{name}({ty}, i1)")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            IntrinsicDeclaration::Unary { name, ty } => {
+                writeln!(text, "declare {ty} @{name}({ty})")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            IntrinsicDeclaration::Binary { name, ty } => {
+                writeln!(text, "declare {ty} @{name}({ty}, {ty})")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            IntrinsicDeclaration::Ternary { name, ty } => {
+                writeln!(text, "declare {ty} @{name}({ty}, {ty}, {ty})")
                     .map_err(|_| BackendFailure::TextEmission)?;
             }
         }
@@ -158,7 +171,10 @@ struct Incoming {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum IntrinsicDeclaration {
     Overflow { name: String, ty: String },
-    Absolute { name: String, ty: String },
+    UnaryWithFlag { name: String, ty: String },
+    Unary { name: String, ty: String },
+    Binary { name: String, ty: String },
+    Ternary { name: String, ty: String },
 }
 
 struct FunctionEmitter<'program, 'state> {

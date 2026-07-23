@@ -72,7 +72,9 @@ conservative textual LLVM, and a runnable host executable. The scalar family
 supports exact integer and unit values, `Bool`, integer and unit constants,
 nongeneric own-mode functions, locals, direct named calls, explicit returns,
 pure/traps effects, wrapping and trapping add/subtract/multiply, integer
-comparisons, Boolean operations, and nominal tag equality.
+division/remainder, negation, bitwise operations, shifts, rotates, bit counts,
+byte swap, high multiply, saturating arithmetic, min/max, integer comparisons,
+Boolean operations, and nominal tag equality.
 
 The first Phase 8 slice adds nongeneric own-mode acyclic structs and enums,
 construction, nested struct projection, statement and value matches, exact
@@ -134,8 +136,9 @@ edge and exact trap record.
 This is not a completeness claim. Generics and contracts, regions and borrows,
 floats, `Option`, allocations and containers, recursive nominal layouts,
 branch-dependent ownership joins, index and borrow-backed SET-1 targets,
-and the remaining operation/effect table are explicit unsupported compiler
-capabilities rather than source-language rejections.
+and floating-point, conversion, allocation, storage-backed, and remaining
+effect-table operations are explicit unsupported compiler capabilities rather
+than source-language rejections.
 Repeated exhaustive match arms also stop as
 unsupported because v0.14 defines neither duplicate-arm meaning nor a
 duplicate-arm rejection rule.
@@ -155,14 +158,21 @@ effect rows, complete programs, and fresh match binders. Checked
 division/remainder, all three `iabs` modes, and all three `ineg` modes are
 complete.
 
-The next implementation slice is the remaining non-floating integer operation
-family already defined by OP-1 and OP-8. It is one coherent capability, not a
-queue of spellings: complete its shared semantic shape and lowering for
-trapping division/remainder, bitwise operations, shifts, rotates, bit counts,
-byte swap, high multiply, saturating arithmetic, and min/max across their exact
-domains. This unlocks a binary-data/checksum dogfood program and tests the
-language's performance-oriented scalar design. Operations with separate
-representation or storage dependencies remain in their own later families.
+The remaining non-floating integer operation family defined by OP-1 and OP-8
+is complete through one shared semantic and lowering path: trapping
+division/remainder, bitwise operations, shifts, rotates, bit counts, byte swap,
+high multiply, saturating arithmetic, and min/max cover their exact domains.
+The backend preserves every trap edge, uses defined LLVM operations, emits no
+unearned overflow flags, and widens saturating multiplication rather than
+using the rejected partial intrinsic. A compiler-independent checksum-style
+mix and focused host regressions exercise the family.
+
+The next implementation slice is concrete fixed arrays and immutable const
+tables with `array_new`, `len`, and checked `index`. This is the smallest
+storage/value family that turns the scalar mix into a real block/checksum
+experiment and directly exercises CONST-1/CONST-2, TYPE-2, OP-4, retained
+bounds checks, aggregate layout, and normal cleanup without prematurely
+requiring heap allocation or the complete borrow system.
 
 ## Authority and specification changes
 

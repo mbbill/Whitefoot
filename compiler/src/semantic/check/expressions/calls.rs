@@ -159,12 +159,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "imul.checked" => CheckedIntegerOperation::MultiplyChecked,
             "idiv.checked" => CheckedIntegerOperation::DivideChecked,
             "irem.checked" => CheckedIntegerOperation::RemainderChecked,
+            "idiv.trap" => CheckedIntegerOperation::DivideTrap,
+            "irem.trap" => CheckedIntegerOperation::RemainderTrap,
             "iabs.wrap" => CheckedIntegerOperation::AbsoluteWrap,
             "iabs.trap" => CheckedIntegerOperation::AbsoluteTrap,
             "iabs.checked" => CheckedIntegerOperation::AbsoluteChecked,
             "ineg.wrap" => CheckedIntegerOperation::NegateWrap,
             "ineg.trap" => CheckedIntegerOperation::NegateTrap,
             "ineg.checked" => CheckedIntegerOperation::NegateChecked,
+            "iand" => CheckedIntegerOperation::BitAnd,
+            "ior" => CheckedIntegerOperation::BitOr,
+            "ixor" => CheckedIntegerOperation::BitXor,
+            "inot" => CheckedIntegerOperation::BitNot,
+            "ishl.wrap" => CheckedIntegerOperation::ShiftLeftWrap,
+            "ishr.wrap" => CheckedIntegerOperation::ShiftRightWrap,
+            "ishl.trap" => CheckedIntegerOperation::ShiftLeftTrap,
+            "ishr.trap" => CheckedIntegerOperation::ShiftRightTrap,
+            "irotl" => CheckedIntegerOperation::RotateLeft,
+            "irotr" => CheckedIntegerOperation::RotateRight,
+            "ipopcount" => CheckedIntegerOperation::PopulationCount,
+            "iclz" => CheckedIntegerOperation::LeadingZeros,
+            "ictz" => CheckedIntegerOperation::TrailingZeros,
+            "ibswap" => CheckedIntegerOperation::ByteSwap,
+            "imulhi" => CheckedIntegerOperation::MultiplyHigh,
+            "iadd.sat" => CheckedIntegerOperation::AddSaturating,
+            "isub.sat" => CheckedIntegerOperation::SubtractSaturating,
+            "imul.sat" => CheckedIntegerOperation::MultiplySaturating,
+            "imin" => CheckedIntegerOperation::Minimum,
+            "imax" => CheckedIntegerOperation::Maximum,
             "ieq" => CheckedIntegerOperation::Equal,
             "ine" => CheckedIntegerOperation::NotEqual,
             "ilt" => CheckedIntegerOperation::Less,
@@ -224,7 +246,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidOperation,
             );
         };
-        if operation.signed_only() && !operand_type.signed() {
+        if !operation.accepts_operand_type(operand_type) {
             return self.issue_node(
                 SemanticRuleV0_14::Op1,
                 node,
@@ -235,9 +257,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let atoms = self.operation_atoms(node, operand_count)?;
         let mut arguments = Vec::with_capacity(operand_count);
         let mut exhibits_traps = operation.traps();
-        for atom in atoms {
+        for (index, atom) in atoms.into_iter().enumerate() {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
-            if argument.expression.ty() != CheckedType::Integer(operand_type) {
+            if Some(argument.expression.ty()) != operation.argument_type(operand_type, index) {
                 return self.issue_node(
                     SemanticRuleV0_14::Type5,
                     atom,
@@ -249,12 +271,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let trap = if operation.traps() {
             Some(TrapSite {
-                rule_id: "OP-2",
-                message: match operation {
-                    CheckedIntegerOperation::AbsoluteTrap | CheckedIntegerOperation::NegateTrap => {
-                        String::new()
-                    }
-                    _ => "integer overflow".to_owned(),
+                rule_id: if matches!(
+                    operation,
+                    CheckedIntegerOperation::ShiftLeftTrap
+                        | CheckedIntegerOperation::ShiftRightTrap
+                ) {
+                    "OP-8"
+                } else {
+                    "OP-2"
+                },
+                message: if matches!(
+                    operation,
+                    CheckedIntegerOperation::AddTrap
+                        | CheckedIntegerOperation::SubtractTrap
+                        | CheckedIntegerOperation::MultiplyTrap
+                ) {
+                    "integer overflow".to_owned()
+                } else {
+                    String::new()
                 },
                 function: function.name.clone(),
                 node_path: self.tree.path(node)?.clone(),

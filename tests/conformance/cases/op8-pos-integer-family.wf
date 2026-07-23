@@ -1,0 +1,16 @@
+fn mix(word: own u32) -> own u32 pure {
+  doc "OP-8: a checksum-style scalar mix uses the general bitwise, rotate, and wrapping paths.";
+  let rotated: own u32 = irotl<u32>(word, 5_u32);
+  let mixed: own u32 = ixor<u32>(rotated, word);
+  let biased: own u32 = iadd.wrap<u32>(mixed, 2654435769_u32);
+  return biased;
+}
+
+fn main() -> own unit traps {
+  doc "OP-8: the extended integer family supports binary-data kernels through the normal compiler path.";
+  let mixed: own u32 = mix(word: 305419896_u32);
+  let bits: own u32 = ipopcount<u32>(mixed);
+  let bounded: own u32 = imin<u32>(bits, 32_u32);
+  check ile<u32>(bounded, 32_u32) else trap "integer family drift";
+  return unit;
+}
