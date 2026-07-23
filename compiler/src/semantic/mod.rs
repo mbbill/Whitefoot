@@ -353,8 +353,6 @@ pub enum UnsupportedSemanticFeature {
     CompositeValues,
     /// A generic parameter bound by the prelude `Float` contract.
     GenericFloatingPoint,
-    /// A non-total OP-6 conversion with at least one floating-point endpoint.
-    FloatingPointConversion,
     /// A loop with no structurally reachable break exit for current SSA lowering.
     StructuredControlFlow,
     /// A recursive nominal layout whose finite representation is not selected.

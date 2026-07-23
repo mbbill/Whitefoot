@@ -77,16 +77,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let result = if source.converts_totally_to(*destination) {
             destination.ty()
-        } else if let (CheckedNumericType::Integer(_), CheckedNumericType::Integer(destination)) =
-            (*source, *destination)
-        {
-            let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
-            CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(
-                CheckedType::Integer(destination),
-                error,
-            ))?)
         } else {
-            return self.unsupported(UnsupportedSemanticFeature::FloatingPointConversion, node);
+            let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
+            CheckedType::Nominal(
+                self.prelude_nominal(PreludeType::Result(destination.ty(), error))?,
+            )
         };
         let atom = self
             .operation_atoms(node, 1)?

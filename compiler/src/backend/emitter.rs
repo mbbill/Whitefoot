@@ -135,6 +135,12 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
                 writeln!(text, "declare {ty} @{name}({ty}, {ty}, {ty})")
                     .map_err(|_| BackendFailure::TextEmission)?;
             }
+            IntrinsicDeclaration::UnaryCast {
+                name,
+                result_ty,
+                argument_ty,
+            } => writeln!(text, "declare {result_ty} @{name}({argument_ty})")
+                .map_err(|_| BackendFailure::TextEmission)?,
         }
     }
     if !functions.is_empty() {
@@ -252,11 +258,31 @@ struct Incoming {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum IntrinsicDeclaration {
-    Overflow { name: String, ty: String },
-    UnaryWithFlag { name: String, ty: String },
-    Unary { name: String, ty: String },
-    Binary { name: String, ty: String },
-    Ternary { name: String, ty: String },
+    Overflow {
+        name: String,
+        ty: String,
+    },
+    UnaryWithFlag {
+        name: String,
+        ty: String,
+    },
+    Unary {
+        name: String,
+        ty: String,
+    },
+    Binary {
+        name: String,
+        ty: String,
+    },
+    Ternary {
+        name: String,
+        ty: String,
+    },
+    UnaryCast {
+        name: String,
+        result_ty: String,
+        argument_ty: String,
+    },
 }
 
 struct FunctionEmitter<'program, 'state> {

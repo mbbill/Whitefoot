@@ -4,6 +4,7 @@ mod arrays;
 mod base64;
 mod buffers;
 mod checked_division;
+mod float_conversion;
 mod floating;
 mod integer_absolute;
 mod integer_conversion;

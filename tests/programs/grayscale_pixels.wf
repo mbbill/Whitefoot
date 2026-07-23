@@ -1,0 +1,72 @@
+fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> own Result<u8, NarrowError> pure {
+  let red_float: own f32 = cvt<u8, f32>(red);
+  let green_float: own f32 = cvt<u8, f32>(green);
+  let blue_float: own f32 = cvt<u8, f32>(blue);
+  let red_green: own f32 = fadd.strict<f32>(red_float, green_float);
+  let total: own f32 = fadd.strict<f32>(red_green, blue_float);
+  let average: own f32 = fdiv.strict<f32>(total, 3.0_f32);
+  let rounded: own f32 = froundeven<f32>(average);
+  return cvt<f32, u8>(rounded);
+}
+
+fn grayscale ['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> own Result<unit, NarrowError> reads('i), writes('o), traps {
+  let pixel: own u64 = 0_u64;
+  loop @pixels {
+    let done: own Bool = ieq<u64>(pixel, 8_u64);
+    match done {
+      True() => {
+        break @pixels;
+      }
+      False() => {
+      }
+    }
+    let base: own u64 = imul.wrap<u64>(pixel, 3_u64);
+    let green_offset: own u64 = iadd.wrap<u64>(base, 1_u64);
+    let blue_offset: own u64 = iadd.wrap<u64>(base, 2_u64);
+    let red: own u8 = index<u8>(deref(input), base);
+    let green: own u8 = index<u8>(deref(input), green_offset);
+    let blue: own u8 = index<u8>(deref(input), blue_offset);
+    let value: own u8 = propagate grayscale_value(red: red, green: green, blue: blue);
+    set index<u8>(deref(output), pixel) = value;
+    set pixel = iadd.wrap<u64>(pixel, 1_u64);
+  }
+  return Ok(value: unit);
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let input: own buffer<u8> = buffer_new<u8>(24_u64, 0_u8);
+  set index<u8>(input, 3_u64) = 255_u8;
+  set index<u8>(input, 4_u64) = 255_u8;
+  set index<u8>(input, 5_u64) = 255_u8;
+  set index<u8>(input, 6_u64) = 255_u8;
+  set index<u8>(input, 10_u64) = 255_u8;
+  set index<u8>(input, 14_u64) = 255_u8;
+  set index<u8>(input, 15_u64) = 255_u8;
+  set index<u8>(input, 16_u64) = 255_u8;
+  set index<u8>(input, 18_u64) = 1_u8;
+  set index<u8>(input, 19_u64) = 2_u8;
+  set index<u8>(input, 20_u64) = 3_u8;
+  set index<u8>(input, 21_u64) = 254_u8;
+  set index<u8>(input, 22_u64) = 253_u8;
+  set index<u8>(input, 23_u64) = 252_u8;
+  let output: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
+  region 'image {
+    let result: own Result<unit, NarrowError> = grayscale<'image, 'image>(input: &'image input, output: &uniq 'image output);
+    match move result {
+      Ok(value: success) => {
+      }
+      Err(error: failure) => {
+        check False() else trap "grayscale conversion failed";
+      }
+    }
+  }
+  check ieq<u8>(index<u8>(output, 0_u64), 0_u8) else trap "black";
+  check ieq<u8>(index<u8>(output, 1_u64), 255_u8) else trap "white";
+  check ieq<u8>(index<u8>(output, 2_u64), 85_u8) else trap "red";
+  check ieq<u8>(index<u8>(output, 3_u64), 85_u8) else trap "green";
+  check ieq<u8>(index<u8>(output, 4_u64), 85_u8) else trap "blue";
+  check ieq<u8>(index<u8>(output, 5_u64), 170_u8) else trap "yellow";
+  check ieq<u8>(index<u8>(output, 6_u64), 2_u8) else trap "low";
+  check ieq<u8>(index<u8>(output, 7_u64), 253_u8) else trap "high";
+  return unit;
+}

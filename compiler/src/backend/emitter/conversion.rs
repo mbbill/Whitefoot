@@ -1,3 +1,5 @@
+mod float_endpoint;
+
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -20,39 +22,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 destination_type,
                 value,
             ),
-            (
-                IrType::Integer { width, signed },
-                IrType::Float {
-                    width: destination_width,
-                },
-            ) if (destination_width == 32 && width <= 16)
-                || (destination_width == 64 && width <= 32) =>
-            {
-                if result_type != destination_type {
-                    return Err(BackendFailure::InvalidIr);
-                }
-                let opcode = if signed { "sitofp" } else { "uitofp" };
-                writeln!(
-                    self.output,
-                    "  {} = {opcode} i{width} {} to {}",
-                    value_name(result),
-                    value_name(value),
-                    llvm_type(self.program, destination_type)?
-                )
-                .map_err(|_| BackendFailure::TextEmission)
-            }
-            (IrType::Float { width: 32 }, IrType::Float { width: 64 }) => {
-                if result_type != destination_type {
-                    return Err(BackendFailure::InvalidIr);
-                }
-                writeln!(
-                    self.output,
-                    "  {} = fpext float {} to double",
-                    value_name(result),
-                    value_name(value)
-                )
-                .map_err(|_| BackendFailure::TextEmission)
-            }
+            (IrType::Integer { .. }, IrType::Float { .. })
+            | (IrType::Float { .. }, IrType::Integer { .. })
+            | (IrType::Float { .. }, IrType::Float { .. }) => self.emit_float_endpoint_conversion(
+                result,
+                result_type,
+                source_type,
+                destination_type,
+                value,
+            ),
             _ => Err(BackendFailure::InvalidIr),
         }
     }
@@ -100,7 +78,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Ok(());
         }
 
-        let error_type = self.checked_result_error_type(result_type, destination_type, &[0])?;
         let valid = self.emit_integer_conversion_validity(
             value,
             source_width,
@@ -108,6 +85,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             destination_width,
             destination_signed,
         )?;
+        self.emit_narrow_result(
+            result,
+            result_type,
+            destination_type,
+            &converted,
+            &format!("%{valid}"),
+        )
+    }
+
+    fn emit_narrow_result(
+        &mut self,
+        result: IrValueId,
+        result_type: IrType,
+        destination_type: IrType,
+        converted: &str,
+        valid: &str,
+    ) -> Result<(), BackendFailure> {
+        let error_type = self.checked_result_error_type(result_type, destination_type, &[0])?;
         let result_ty = llvm_type(self.program, result_type)?;
         let destination_ty = llvm_type(self.program, destination_type)?;
         let error_ty = llvm_type(self.program, error_type)?;
@@ -117,7 +112,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let error_value = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{ok_tag} = insertvalue {result_ty} zeroinitializer, i32 0, 0\n  %{ok_value} = insertvalue {result_ty} %{ok_tag}, {destination_ty} {converted}, 1\n  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} 0, 2\n  {} = select i1 %{valid}, {result_ty} %{ok_value}, {result_ty} %{error_value}",
+            "  %{ok_tag} = insertvalue {result_ty} zeroinitializer, i32 0, 0\n  %{ok_value} = insertvalue {result_ty} %{ok_tag}, {destination_ty} {converted}, 1\n  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} 0, 2\n  {} = select i1 {valid}, {result_ty} %{ok_value}, {result_ty} %{error_value}",
             value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)

@@ -160,11 +160,11 @@ edge and exact trap record.
 This is not a completeness claim. Cyclic and region-bearing generic forms,
 generic `requires`, general borrow referents and borrowed affine match
 payloads, returned borrows, bound/result-carrying/grandchild reborrows, generic
-`Float`, partial OP-6 conversions with a floating-point endpoint, `reinterpret`,
-affine moves out through owning indirection, arenas, slices, inline recursive
-nominal layouts, branch-dependent ownership/loan joins, projected array
-targets, and remaining effect-table operations are explicit unsupported
-compiler capabilities rather than source-language rejections.
+`Float`, `reinterpret`, affine moves out through owning indirection, arenas,
+slices, inline recursive nominal layouts, branch-dependent ownership/loan
+joins, projected array targets, and remaining effect-table operations are
+explicit unsupported compiler capabilities rather than source-language
+rejections.
 Generic source contracts and source-contract bounds instead receive v0.16's
 specified FN-3 rejection; contract-member calls have no v0.16 grammar or
 semantic operation.
@@ -879,8 +879,8 @@ OP-8 intrinsics, ordered comparisons except unordered `fne`, canonical quiet
 NaNs, and signed-zero-preserving minimum and maximum. Floats compose through
 calls, loop-carried mutation, structs, const arrays, buffers, checked indexing,
 and SET-1. Executable edge tests cover both widths, NaN propagation, infinities,
-and signed zero. Generic `Float`, partial OP-6 conversions with a float
-endpoint, and `reinterpret` remain separate explicit unsupported capabilities.
+and signed zero. Generic `Float` and `reinterpret` remain separate explicit
+unsupported capabilities.
 
 A 64-by-48 Mandelbrot grid then selected OP-6's complete total-conversion
 family with a floating-point endpoint. One numeric-conversion judgment now
@@ -890,9 +890,23 @@ and the typed IR carries that judgment unchanged. LLVM uses signed or unsigned
 integer-to-float conversion only for the exact-width rows and `fpext` for
 `f32` to `f64`. The grid executes nested loops, calls, mutation, integer
 control, strict float arithmetic, and `u32`-to-`f64` conversion through the
-public compiler boundary. Partial float conversions remain explicit
-unsupported capability stops rather than being rounded or misreported as
-invalid source.
+public compiler boundary.
+
+An RGB-to-grayscale image kernel then selected OP-6's partial conversions with
+a floating-point endpoint. The same numeric-conversion judgment now covers all
+90 ordered pairs of distinct concrete numeric primitives: 29 total pairs
+return the destination directly, and the other 61 return
+`Result<Dst, NarrowError>`. For integer-to-float conversion, LLVM's ordinary
+cast produces the candidate and a defined saturating reverse cast plus an
+integer-maximum collision guard proves exactness. Float-to-integer conversion
+uses the saturating cast before testing an exact round trip, so NaN, infinity,
+fractions, and out-of-range values never reach a poisoning LLVM conversion.
+Float narrowing uses `fptrunc` plus an exact widening check; infinity succeeds,
+and either direction maps NaN to the destination's canonical quiet NaN.
+Executable tests cover every float-endpoint pair and the range boundaries.
+The image program converts RGB bytes to strict `f32`, rounds an eight-pixel
+grayscale result, converts it exactly back to `u8`, and writes it through a
+uniquely borrowed output buffer.
 
 The exact next work remains Phase 9: select another production-shaped dogfood
 target in a real-world domain not exercised by the current programs, observe

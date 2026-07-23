@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
-    CheckedVariant, NominalId,
+    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedNumericType,
+    CheckedType, CheckedVariant, NominalId,
 };
 use super::generics::GenericSubstitution;
 use super::{
@@ -341,19 +341,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.parse_type_with(source_node, substitution)?,
             self.parse_type_with(destination_node, substitution)?,
         );
-        let (CheckedType::Integer(source), CheckedType::Integer(destination)) =
-            (source, destination)
-        else {
-            return Ok(());
+        let source = match source {
+            CheckedType::Integer(ty) => CheckedNumericType::Integer(ty),
+            CheckedType::Float(ty) => CheckedNumericType::Float(ty),
+            _ => return Ok(()),
+        };
+        let destination = match destination {
+            CheckedType::Integer(ty) => CheckedNumericType::Integer(ty),
+            CheckedType::Float(ty) => CheckedNumericType::Float(ty),
+            _ => return Ok(()),
         };
         if source == destination || source.converts_totally_to(destination) {
             return Ok(());
         }
         let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
-        self.intern_prelude_nominal(PreludeType::Result(
-            CheckedType::Integer(destination),
-            error,
-        ))?;
+        self.intern_prelude_nominal(PreludeType::Result(destination.ty(), error))?;
         Ok(())
     }
 

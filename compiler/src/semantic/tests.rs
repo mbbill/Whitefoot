@@ -6,6 +6,7 @@ mod boxes;
 mod buffers;
 mod checked_division;
 mod contracts;
+mod float_conversion;
 mod floating;
 mod generics;
 mod integer_absolute;
