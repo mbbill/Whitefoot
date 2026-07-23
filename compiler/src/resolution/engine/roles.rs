@@ -398,7 +398,7 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        ProductionV0_14::Const => add_single(
+        ProductionV0_14::Const if !names.is_empty() => add_single(
             classified,
             owner,
             &names,

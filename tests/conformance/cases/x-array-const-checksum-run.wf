@@ -1,0 +1,26 @@
+const input: array<u64, 8> = [3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
+
+fn checksum() -> own u64 traps {
+  let cursor: own u64 = 0_u64;
+  let total: own u64 = 0_u64;
+  loop @scan {
+    match ieq<u64>(cursor, 8_u64) {
+      True() => {
+        break @scan;
+      }
+      False() => {
+      }
+    }
+    let value: own u64 = index<u64>(input, cursor);
+    set total = iadd.wrap<u64>(total, value);
+    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+  }
+  return total;
+}
+
+fn main() -> own unit traps {
+  doc "A static fixed array feeds a loop-carried checksum through retained checked indexing.";
+  let result: own u64 = checksum();
+  check ieq<u64>(result, 228_u64) else trap "array checksum drift";
+  return unit;
+}

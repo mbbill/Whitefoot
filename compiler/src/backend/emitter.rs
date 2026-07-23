@@ -4,6 +4,7 @@
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
+mod array;
 mod integer;
 mod operations;
 
@@ -11,9 +12,9 @@ use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use crate::{
-    IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEnumType, IrFunction,
-    IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrProgram, IrTerminator, IrTrapSite, IrType, IrValueId,
+    IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEnumType,
+    IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation, IrNominal, IrNominalId,
+    IrNominalKind, IrOperation, IrProgram, IrTerminator, IrTrapSite, IrType, IrValueId,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +64,7 @@ pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
         "; Whitefoot v0.14 conservative nominal-data module\nsource_filename = \"whitefoot\"\n\n",
     );
     emit_nominal_declarations(&mut text, program)?;
+    emit_global_constants(&mut text, program)?;
     for (index, bytes) in traps.iter().enumerate() {
         writeln!(
             text,
@@ -121,6 +123,60 @@ pub fn emit_llvm_v0_14(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, Ba
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     Ok(LlvmModule { text })
+}
+
+fn emit_global_constants(
+    output: &mut String,
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<(), BackendFailure> {
+    for constant in program.constants() {
+        writeln!(output, "; const {}", constant.name())
+            .map_err(|_| BackendFailure::TextEmission)?;
+        write!(
+            output,
+            "{} = private unnamed_addr constant {} ",
+            constant_symbol(constant.id()),
+            llvm_type(program, constant.ty())?
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        match (constant.value(), constant.ty()) {
+            (IrGlobalValue::Scalar(value), ty) => {
+                output.push_str(&constant_operand(*value, ty)?);
+            }
+            (IrGlobalValue::Array(elements), IrType::Array { element, length }) => {
+                if u64::try_from(elements.len()).map_err(|_| BackendFailure::CounterOverflow)?
+                    != length
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                if elements.is_empty() {
+                    output.push_str("zeroinitializer");
+                } else {
+                    output.push('[');
+                    let element_type = element.ty();
+                    let llvm_element_type = llvm_type(program, element_type)?;
+                    for (index, value) in elements.iter().enumerate() {
+                        if index != 0 {
+                            output.push_str(", ");
+                        }
+                        write!(
+                            output,
+                            "{llvm_element_type} {}",
+                            constant_operand(*value, element_type)?
+                        )
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                    }
+                    output.push(']');
+                }
+            }
+            _ => return Err(BackendFailure::InvalidIr),
+        }
+        output.push('\n');
+    }
+    if !program.constants().is_empty() {
+        output.push('\n');
+    }
+    Ok(())
 }
 
 fn emit_nominal_declarations(
@@ -388,6 +444,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 operand_type,
                 arguments,
             } => self.emit_enum_equality(result, ty, *equal, *operand_type, *arguments),
+            IrOperation::ArrayFill { value } => self.emit_array_fill(result, ty, *value),
+            IrOperation::ArrayIndex { root, offset, trap } => {
+                self.emit_array_index(result, ty, *root, *offset, trap)
+            }
             IrOperation::ConstructStruct { nominal, fields } => {
                 self.emit_struct(result, ty, *nominal, fields)
             }
@@ -552,11 +612,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if self.function.value_type(drop.value()) != Some(drop.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
-        let IrType::Nominal(nominal) = drop.ty() else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        if self.nominal(nominal)?.is_tag_only_enum() {
-            return Err(BackendFailure::InvalidIr);
+        match drop.ty() {
+            IrType::Array { .. } => {}
+            IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {}
+            _ => return Err(BackendFailure::InvalidIr),
         }
         writeln!(self.output, "  ; drop {}", value_name(drop.value()))
             .map_err(|_| BackendFailure::TextEmission)
@@ -588,6 +647,10 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         IrType::Integer { width: 32, .. } => Ok("i32".to_owned()),
         IrType::Integer { width: 64, .. } => Ok("i64".to_owned()),
         IrType::Integer { .. } => Err(BackendFailure::InvalidIr),
+        IrType::Array { element, length } => Ok(format!(
+            "[{length} x {}]",
+            llvm_type(program, element.ty())?
+        )),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
             if nominal.is_tag_only_enum() {
@@ -682,6 +745,16 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
                 operation: IrOperation::Integer { trap: Some(_), .. },
                 ..
             } => label = overflow_continue_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::ArrayFill { .. },
+                ..
+            } => label = array_fill_done_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::ArrayIndex { .. },
+                ..
+            } => label = array_index_continue_label(*result),
             _ => {}
         }
     }
@@ -702,6 +775,10 @@ fn value_name(value: IrValueId) -> String {
 
 fn nominal_symbol(nominal: IrNominalId) -> String {
     format!("%wf.t{}", nominal.ordinal())
+}
+
+fn constant_symbol(constant: crate::IrConstantId) -> String {
+    format!("@.wf_const.{}", constant.ordinal())
 }
 
 fn check_continue_label(block: IrBlockId, index: usize) -> String {
@@ -730,6 +807,26 @@ fn integer_error_label(value: IrValueId) -> String {
 
 fn integer_continue_label(value: IrValueId) -> String {
     format!("integer.cont.v{}", value.ordinal())
+}
+
+fn array_fill_head_label(value: IrValueId) -> String {
+    format!("array.fill.head.v{}", value.ordinal())
+}
+
+fn array_fill_body_label(value: IrValueId) -> String {
+    format!("array.fill.body.v{}", value.ordinal())
+}
+
+fn array_fill_done_label(value: IrValueId) -> String {
+    format!("array.fill.done.v{}", value.ordinal())
+}
+
+fn array_index_trap_label(value: IrValueId) -> String {
+    format!("array.index.trap.v{}", value.ordinal())
+}
+
+fn array_index_continue_label(value: IrValueId) -> String {
+    format!("array.index.cont.v{}", value.ordinal())
 }
 
 fn invalid_tag_label(block: IrBlockId) -> String {

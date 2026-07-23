@@ -17,10 +17,10 @@ use crate::{BundleSourceExtent, NodePath, ResolvedSyntaxUnit, SyntaxCoordinate};
 pub use check::check_semantics_v0_14;
 
 pub(crate) use model::{
-    BindingId, CheckedBooleanOperation, CheckedDrop, CheckedEnumType, CheckedExpression,
-    CheckedFunction, CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedNominalKind,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedType, CheckedValue,
-    NominalId, PropagationContext, TrapSite,
+    BindingId, CheckedArrayElement, CheckedArrayRoot, CheckedBooleanOperation, CheckedDrop,
+    CheckedEnumType, CheckedExpression, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
+    CheckedMatchArm, CheckedNominalKind, CheckedProgramData, CheckedProjectedDrop,
+    CheckedStatement, CheckedType, CheckedValue, NominalId, PropagationContext, TrapSite,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -28,6 +28,10 @@ pub(crate) use model::{
 pub enum SemanticRuleV0_14 {
     /// Numeric literal range or canonicality.
     Form7,
+    /// Composite-type formation and element eligibility.
+    Type2,
+    /// Constant-expression formation and evaluation.
+    Const1,
     /// Named-constant type and value formation.
     Const2,
     /// Exact mode/type agreement.
@@ -76,6 +80,8 @@ impl SemanticRuleV0_14 {
     pub const fn id(self) -> &'static str {
         match self {
             Self::Form7 => "FORM-7",
+            Self::Type2 => "TYPE-2",
+            Self::Const1 => "CONST-1",
             Self::Const2 => "CONST-2",
             Self::Type5 => "TYPE-5",
             Self::Set1 => "SET-1",

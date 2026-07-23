@@ -147,6 +147,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_depth,
             );
         }
+        if spelling == "array_new" {
+            return self.check_array_new(node, function, bindings, loop_depth);
+        }
+        if spelling == "len" {
+            return self.check_array_length(node, function, bindings, loop_depth);
+        }
         let operation = match spelling {
             "iadd.wrap" => CheckedIntegerOperation::AddWrap,
             "isub.wrap" => CheckedIntegerOperation::SubtractWrap,
@@ -426,7 +432,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn operation_type_argument(
+    pub(in crate::semantic::check) fn operation_type_argument(
         &self,
         node: NodeId,
         spelling: &str,
@@ -487,7 +493,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    fn operation_atoms(&self, node: NodeId, expected: usize) -> Result<Vec<NodeId>, CheckStop> {
+    pub(in crate::semantic::check) fn operation_atoms(
+        &self,
+        node: NodeId,
+        expected: usize,
+    ) -> Result<Vec<NodeId>, CheckStop> {
         let Some(list) = self
             .tree
             .first_child_with(node, ProductionV0_14::AtomList)?

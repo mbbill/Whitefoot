@@ -134,8 +134,8 @@ detection. Executable tests cover every signed width, including the minimum
 edge and exact trap record.
 
 This is not a completeness claim. Generics and contracts, regions and borrows,
-floats, `Option`, allocations and containers, recursive nominal layouts,
-branch-dependent ownership joins, index and borrow-backed SET-1 targets,
+floats, `Option`, allocations and heap containers, recursive nominal layouts,
+branch-dependent ownership joins, index- and borrow-backed SET-1 targets,
 and floating-point, conversion, allocation, storage-backed, and remaining
 effect-table operations are explicit unsupported compiler capabilities rather
 than source-language rejections.
@@ -167,12 +167,25 @@ unearned overflow flags, and widens saturating multiplication rather than
 using the rejected partial intrinsic. A compiler-independent checksum-style
 mix and focused host regressions exercise the family.
 
-The next implementation slice is concrete fixed arrays and immutable const
-tables with `array_new`, `len`, and checked `index`. This is the smallest
-storage/value family that turns the scalar mix into a real block/checksum
-experiment and directly exercises CONST-1/CONST-2, TYPE-2, OP-4, retained
-bounds checks, aggregate layout, and normal cleanup without prematurely
-requiring heap allocation or the complete borrow system.
+Concrete fixed arrays and immutable const tables now run through the normal
+compiler path. Decimal and explicitly earlier integer constants determine
+exact array lengths; primitive const arrays become immutable LLVM globals;
+`array_new` initializes every element; `len` retains the static length; and
+every direct local or const-table `index` read branches through its retained
+OP-4 bounds check before the backend forms an inbounds element address.
+Arrays remain affine and use the ordinary cleanup and cross-function aggregate
+paths. A compiler-independent loop checksum reads a static table through a
+runtime cursor and executes through host LLVM.
+
+The next implementation slice is indexed SET-1 for direct local fixed-array
+roots. This reuses the completed array layout and OP-4 read machinery while
+adding the target-before-RHS check/store ordering and rebuilt array value
+needed by mutable block experiments. It is smaller and more immediately useful
+than introducing heap allocation at the same time. Projected array roots,
+buffers, slices, and borrow-backed targets remain explicit later capabilities.
+The specification's array frame-limit value is still not defined; the compiler
+does not invent one, and full all-N completeness remains blocked on that owner
+rule rather than on ordinary representable arrays.
 
 ## Authority and specification changes
 
@@ -492,8 +505,10 @@ division/remainder now produces `Result<T, DivError>` through this path and
 guards both LLVM hazards before the partial instruction. All three `iabs`
 modes use one defined-edge unary path. All three `ineg` modes reuse the
 ordinary wrapping and overflow-detecting subtraction path.
-Buffers, index places, and loan-aware SET-1 targets follow when their storage
-and borrow families become the experiment being unlocked.
+Direct fixed-array index reads and immutable const-table reads are implemented.
+Indexed fixed-array SET-1 is next; buffers, slices, projected index roots, and
+loan-aware SET-1 targets follow when their storage and borrow families become
+the experiment being unlocked.
 
 ## Phase 9: dogfood and language iteration
 

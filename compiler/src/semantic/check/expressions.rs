@@ -1,3 +1,4 @@
+mod arrays;
 mod calls;
 
 use std::collections::HashMap;
@@ -11,8 +12,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedExpression, CheckedNominalKind, CheckedProjectedDrop, CheckedType, CheckedValue,
-    CheckedWritablePlace, IntegerType,
+    CheckedArrayRoot, CheckedExpression, CheckedNominalKind, CheckedProjectedDrop, CheckedType,
+    CheckedValue, CheckedWritablePlace, IntegerType,
 };
 use super::{CheckStop, Checker, Constructor, FunctionSignature, LocalBinding, TypedExpression};
 
@@ -20,6 +21,13 @@ use super::{CheckStop, Checker, Constructor, FunctionSignature, LocalBinding, Ty
 enum PlaceUseContext {
     Ordinary,
     Consuming,
+}
+
+#[derive(Clone, Copy)]
+struct PlaceUseOptions {
+    explicit_move: bool,
+    context: PlaceUseContext,
+    loop_depth: usize,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -36,6 +44,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.unsupported(UnsupportedSemanticFeatureV0_14::RegionsAndBorrows, pbase);
         }
         if self.has_fixed(pbase, FixedTerminalV0_14::Index)? {
+            let base = self
+                .tree
+                .first_child_with(pbase, ProductionV0_14::Place)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            if matches!(
+                self.check_array_place(base, bindings)?.root,
+                CheckedArrayRoot::Constant(_)
+            ) {
+                return self.issue_node(
+                    SemanticRuleV0_14::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
+            }
             return self.unsupported(UnsupportedSemanticFeatureV0_14::CompositeValues, pbase);
         }
         if !self.tree.children(pbase)?.is_empty() {
@@ -154,6 +176,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             .to_owned(),
             CheckedType::Nominal(id) => self.nominal(id)?.name.clone(),
+            CheckedType::Array { element, length } => {
+                format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
+            }
         })
     }
 
@@ -262,17 +287,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if let Some(place) = self.tree.first_child_with(node, ProductionV0_14::Place)? {
             let value = self.check_place_use(
+                function,
                 node,
                 place,
                 bindings,
-                self.has_fixed(node, FixedTerminalV0_14::Move)?,
-                place_context,
-                loop_depth,
+                PlaceUseOptions {
+                    explicit_move: self.has_fixed(node, FixedTerminalV0_14::Move)?,
+                    context: place_context,
+                    loop_depth,
+                },
             )?;
-            return Ok(TypedExpression {
-                expression: value,
-                exhibits_traps: false,
-            });
+            return Ok(value);
         }
         if let Some(borrow) = self
             .tree
@@ -286,19 +311,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn check_place_use(
         &self,
+        function: &FunctionSignature,
         use_node: NodeId,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        explicit_move: bool,
-        context: PlaceUseContext,
-        loop_depth: usize,
-    ) -> Result<CheckedExpression, CheckStop> {
+        options: PlaceUseOptions,
+    ) -> Result<TypedExpression, CheckStop> {
         let pbase = self
             .tree
             .first_child_with(node, ProductionV0_14::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if self.has_fixed(pbase, FixedTerminalV0_14::Deref)? {
+            return self.unsupported(UnsupportedSemanticFeatureV0_14::RegionsAndBorrows, pbase);
+        }
+        if self.has_fixed(pbase, FixedTerminalV0_14::Index)? {
+            return self.check_index_use(function, use_node, node, pbase, bindings, options);
+        }
         if !self.tree.children(pbase)?.is_empty() {
-            return self.unsupported(UnsupportedSemanticFeatureV0_14::CompositeValues, pbase);
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
         let ResolvedTarget::Source { declaration, class } = usage.target() else {
@@ -373,7 +403,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ty = field.ty;
                 }
                 let copy = self.is_copy_type(ty)?;
-                if explicit_move && copy {
+                if options.explicit_move && copy {
                     return self.issue_node(
                         SemanticRuleV0_14::Own1,
                         use_node,
@@ -382,7 +412,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !copy && !explicit_move && matches!(context, PlaceUseContext::Ordinary) {
+                if !copy
+                    && !options.explicit_move
+                    && matches!(options.context, PlaceUseContext::Ordinary)
+                {
                     return self.issue_node(
                         SemanticRuleV0_14::Own1,
                         use_node,
@@ -391,7 +424,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !copy && local.loop_depth < loop_depth {
+                if !copy && local.loop_depth < options.loop_depth {
                     return self.issue_node(
                         SemanticRuleV0_14::Own11,
                         use_node,
@@ -407,22 +440,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .live = false;
                 }
                 if fields.is_empty() {
-                    Ok(CheckedExpression::Binding {
-                        binding: local.binding,
-                        ty,
+                    Ok(TypedExpression {
+                        expression: CheckedExpression::Binding {
+                            binding: local.binding,
+                            ty,
+                        },
+                        exhibits_traps: false,
                     })
                 } else {
-                    Ok(CheckedExpression::Project {
-                        binding: local.binding,
-                        fields,
-                        ty,
-                        consume_root: !copy,
-                        residual_drops: if copy { Vec::new() } else { residual_drops },
+                    Ok(TypedExpression {
+                        expression: CheckedExpression::Project {
+                            binding: local.binding,
+                            fields,
+                            ty,
+                            consume_root: !copy,
+                            residual_drops: if copy { Vec::new() } else { residual_drops },
+                        },
+                        exhibits_traps: false,
                     })
                 }
             }
             DeclarationClass::NamedConst => {
-                if explicit_move {
+                if options.explicit_move {
                     return self.issue_node(
                         SemanticRuleV0_14::Own1,
                         use_node,
@@ -439,11 +478,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self
                         .unsupported(UnsupportedSemanticFeatureV0_14::CompositeValues, node);
                 }
-                self.constants
+                let constant = self
+                    .constants
                     .get(&declaration)
                     .copied()
-                    .map(CheckedExpression::Constant)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let constant = self.constant(constant)?;
+                if matches!(constant.ty, CheckedType::Array { .. }) {
+                    return self.issue_node(
+                        SemanticRuleV0_14::Own1,
+                        use_node,
+                        SemanticIssueKind::BareAffineUse {
+                            mechanical_fix: "read a const array through `index` or `len`",
+                        },
+                    );
+                }
+                Ok(TypedExpression {
+                    expression: CheckedExpression::Constant(constant.value.clone()),
+                    exhibits_traps: false,
+                })
             }
             _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
         }

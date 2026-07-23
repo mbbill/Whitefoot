@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::model::{
-    BindingId, CheckedExpression, CheckedFunction, CheckedNominal, CheckedParameter,
-    CheckedProgramData, CheckedType, CheckedValue, FunctionId, NominalId,
+    BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
+    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedType, FunctionId, NominalId,
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
@@ -78,7 +78,8 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     constructors_by_declaration: HashMap<DeclarationId, Constructor>,
     signatures: Vec<FunctionSignature>,
     functions_by_declaration: HashMap<DeclarationId, FunctionId>,
-    constants: HashMap<DeclarationId, CheckedValue>,
+    constants: HashMap<DeclarationId, CheckedConstantId>,
+    checked_constants: Vec<CheckedConstant>,
 }
 
 /// Checks the currently implemented exact-v0.14 semantic family.
@@ -117,6 +118,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             signatures: Vec::new(),
             functions_by_declaration: HashMap::new(),
             constants: HashMap::new(),
+            checked_constants: Vec::new(),
         })
     }
 
@@ -124,9 +126,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let items = self.item_declarations()?;
         self.check_main_header(&items)?;
         self.reject_unimplemented_items(&items)?;
-        self.collect_nominals(&items)?;
-        self.collect_function_signatures(&items)?;
+        self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
+        self.complete_nominals()?;
+        self.collect_function_signatures(&items)?;
         let main = self.main_id()?;
 
         let mut functions = Vec::with_capacity(self.signatures.len());
@@ -135,6 +138,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
+            constants: self.checked_constants.clone(),
             functions,
             main,
         })
@@ -234,24 +238,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .is_ok_and(|production| production == ProductionV0_14::ConstDecl)
         }) {
             let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?;
+            let declaration_id = declaration.id();
+            let name = declaration.spelling().to_owned();
             let ty_node = self
                 .tree
                 .first_child_with(node, ProductionV0_14::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let ty = self.parse_type(ty_node)?;
+            let ty = self.parse_const_type(ty_node)?;
             let value_node = self
                 .tree
                 .first_child_with(node, ProductionV0_14::Cvalue)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let value = self.parse_const_value(value_node)?;
-            if value.ty() != ty {
-                return self.issue_node(
-                    SemanticRuleV0_14::Const2,
-                    value_node,
-                    SemanticIssueKind::InvalidConstValue,
-                );
-            }
-            self.constants.insert(declaration.id(), value);
+            let value = self.parse_const_value(value_node, ty)?;
+            let id = CheckedConstantId(
+                u32::try_from(self.checked_constants.len())
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            );
+            self.checked_constants.push(CheckedConstant {
+                id,
+                name,
+                ty,
+                value,
+            });
+            self.constants.insert(declaration_id, id);
         }
         Ok(())
     }

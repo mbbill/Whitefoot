@@ -6,7 +6,9 @@ use crate::{
     UnsupportedSemanticFeatureV0_14,
 };
 
-use super::super::model::{CheckedType, CheckedValue, IntegerType};
+use super::super::model::{
+    CheckedArrayElement, CheckedConstant, CheckedConstantId, CheckedType, CheckedValue, IntegerType,
+};
 use super::{CheckStop, Checker, ParameterSignature, PreludeType};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -88,6 +90,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             || self.has_fixed(node, FixedTerminalV0_14::F64)?
         {
             return self.unsupported(UnsupportedSemanticFeatureV0_14::FloatingPoint, node);
+        }
+        if self.has_fixed(node, FixedTerminalV0_14::Array)? {
+            let element_node = self
+                .tree
+                .first_child_with(node, ProductionV0_14::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let length_node = self
+                .tree
+                .first_child_with(node, ProductionV0_14::Const)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let element_type = self.parse_type(element_node)?;
+            let element = self.checked_array_element(element_type, element_node)?;
+            return Ok(CheckedType::Array {
+                element,
+                length: self.parse_const_expression(length_node)?,
+            });
         }
         if self
             .tree
@@ -268,12 +286,82 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(has_traps)
     }
 
-    pub(super) fn parse_const_value(&self, node: NodeId) -> Result<CheckedValue, CheckStop> {
+    pub(super) fn parse_const_expression(&self, node: NodeId) -> Result<u64, CheckStop> {
+        if let Some(digits) = self
+            .tree
+            .direct_token_with(node, TerminalPredicateV0_14::Digits)?
+        {
+            return std::str::from_utf8(self.tree.token_bytes(digits)?)
+                .ok()
+                .and_then(|digits| digits.parse::<u64>().ok())
+                .ok_or_else(|| {
+                    self.issue_value(
+                        SemanticRuleV0_14::Const1,
+                        node,
+                        SemanticIssueKind::InvalidConstValue,
+                    )
+                });
+        }
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicateV0_14::Identifier)?
+            .is_some()
+        {
+            let usage = self.use_at(node, LexicalUseRole::Const)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::NamedConst,
+            } = usage.target()
+            else {
+                return self.issue_node(
+                    SemanticRuleV0_14::Const1,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            };
+            let constant = self.constant(
+                *self
+                    .constants
+                    .get(&declaration)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            )?;
+            let CheckedValue::Integer { ty, bits } = &constant.value else {
+                return self.issue_node(
+                    SemanticRuleV0_14::Const1,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            };
+            if ty.signed() && bits & (1_u64 << (ty.width() - 1)) != 0 {
+                return self.issue_node(
+                    SemanticRuleV0_14::Const1,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
+            return Ok(*bits);
+        }
+        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+    }
+
+    pub(super) fn parse_const_value(
+        &self,
+        node: NodeId,
+        expected: CheckedType,
+    ) -> Result<CheckedValue, CheckStop> {
         if let Some(literal) = self
             .tree
             .direct_token_with(node, TerminalPredicateV0_14::Literal)?
         {
-            return self.parse_literal(node, self.tree.token_bytes(literal)?);
+            let value = self.parse_literal(node, self.tree.token_bytes(literal)?)?;
+            if value.ty() == expected {
+                return Ok(value);
+            }
+            return self.issue_node(
+                SemanticRuleV0_14::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
         }
         if self
             .tree
@@ -288,13 +376,111 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
-            return self
+            let id = *self
                 .constants
                 .get(&declaration)
-                .copied()
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let constant = self.constant(id)?;
+            if constant.ty == expected {
+                return Ok(constant.value.clone());
+            }
+            return self.issue_node(
+                SemanticRuleV0_14::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
         }
-        self.unsupported(UnsupportedSemanticFeatureV0_14::CompositeValues, node)
+        let CheckedType::Array { element, length } = expected else {
+            return self.issue_node(
+                SemanticRuleV0_14::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        };
+        if !self.has_fixed(node, FixedTerminalV0_14::LeftBracket)? {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        }
+        let entries = self.tree.children_with(node, ProductionV0_14::Cvalue)?;
+        if u64::try_from(entries.len()).ok() != Some(length) {
+            return self.issue_node(
+                SemanticRuleV0_14::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
+        let element_type = element.ty();
+        let mut elements = Vec::with_capacity(entries.len());
+        for entry in entries {
+            elements.push(self.parse_const_value(entry, element_type)?);
+        }
+        Ok(CheckedValue::Array {
+            ty: expected,
+            elements,
+        })
+    }
+
+    pub(super) fn constant(&self, id: CheckedConstantId) -> Result<&CheckedConstant, CheckStop> {
+        self.checked_constants
+            .get(id.0 as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
+        let directly_ineligible = self
+            .tree
+            .direct_token_with(node, TerminalPredicateV0_14::TypeIdentifier)?
+            .is_some()
+            || self.has_fixed(node, FixedTerminalV0_14::Slice)?
+            || self.has_fixed(node, FixedTerminalV0_14::Box)?
+            || self.has_fixed(node, FixedTerminalV0_14::Arena)?
+            || self.has_fixed(node, FixedTerminalV0_14::Buffer)?;
+        if directly_ineligible {
+            return self.issue_node(
+                SemanticRuleV0_14::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
+        let ty = self.parse_type(node)?;
+        let eligible = match ty {
+            CheckedType::Unit | CheckedType::Integer(_) => true,
+            CheckedType::Array { element, .. } => {
+                matches!(
+                    element,
+                    CheckedArrayElement::Unit | CheckedArrayElement::Integer(_)
+                )
+            }
+            CheckedType::Bool | CheckedType::Nominal(_) => false,
+        };
+        if eligible {
+            Ok(ty)
+        } else {
+            self.issue_node(
+                SemanticRuleV0_14::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            )
+        }
+    }
+
+    fn checked_array_element(
+        &self,
+        ty: CheckedType,
+        node: NodeId,
+    ) -> Result<CheckedArrayElement, CheckStop> {
+        match ty {
+            CheckedType::Unit => Ok(CheckedArrayElement::Unit),
+            CheckedType::Bool => Ok(CheckedArrayElement::Bool),
+            CheckedType::Integer(ty) => Ok(CheckedArrayElement::Integer(ty)),
+            CheckedType::Nominal(id) if self.nominal(id)?.is_copy() => {
+                Ok(CheckedArrayElement::TagOnlyNominal(id))
+            }
+            CheckedType::Nominal(_) | CheckedType::Array { .. } => self.issue_node(
+                SemanticRuleV0_14::Type2,
+                node,
+                SemanticIssueKind::TypeMismatch,
+            ),
+        }
     }
 
     pub(super) fn parse_literal(

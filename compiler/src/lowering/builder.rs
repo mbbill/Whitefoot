@@ -5,8 +5,8 @@ mod results;
 
 use crate::CheckedProgram;
 use crate::semantic::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedMatchArm, CheckedNominalKind,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue,
+    BindingId, CheckedArrayRoot, CheckedDrop, CheckedExpression, CheckedMatchArm,
+    CheckedNominalKind, CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue,
 };
 
 use super::*;
@@ -16,18 +16,59 @@ pub fn lower_checked_v0_14<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let nominals = lower_nominals(&checked.data)?;
+    let constants = lower_constants(&checked.data)?;
     let functions = checked
         .data
         .functions
         .iter()
-        .map(|function| lower_function(function, &nominals))
+        .map(|function| lower_function(function, &nominals, &constants))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(IrProgram {
         main: checked.data.main.0,
         _checked: checked,
         nominals,
+        constants,
         functions,
     })
+}
+
+fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFailure> {
+    match value {
+        CheckedValue::Unit => Ok(IrConstant::Unit),
+        CheckedValue::Bool(value) => Ok(IrConstant::Bool(*value)),
+        CheckedValue::Integer { ty, bits } => Ok(IrConstant::Integer {
+            ty: lower_type(crate::semantic::CheckedType::Integer(*ty)),
+            bits: *bits,
+        }),
+        CheckedValue::Array { .. } => Err(LoweringFailure::InvalidCheckedProgram),
+    }
+}
+
+fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
+    data.constants
+        .iter()
+        .enumerate()
+        .map(|(index, constant)| {
+            if constant.id.0 as usize != index || constant.value.ty() != constant.ty {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            let value = match &constant.value {
+                CheckedValue::Array { elements, .. } => IrGlobalValue::Array(
+                    elements
+                        .iter()
+                        .map(lower_scalar_constant)
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+                scalar => IrGlobalValue::Scalar(lower_scalar_constant(scalar)?),
+            };
+            Ok(IrGlobalConstant {
+                id: IrConstantId(constant.id.0),
+                name: constant.name.clone(),
+                ty: lower_type(constant.ty),
+                value,
+            })
+        })
+        .collect()
 }
 
 fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringFailure> {
@@ -76,8 +117,9 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
 fn lower_function(
     function: &crate::semantic::CheckedFunction,
     nominals: &[IrNominal],
+    constants: &[IrGlobalConstant],
 ) -> Result<IrFunction, LoweringFailure> {
-    let mut builder = IrBuilder::new(nominals, lower_type(function.result))?;
+    let mut builder = IrBuilder::new(nominals, constants, lower_type(function.result))?;
     for parameter in &function.parameters {
         let ty = lower_type(parameter.ty);
         let value = builder.new_value(ty)?;
@@ -122,8 +164,9 @@ struct BuildingBlock {
     terminator: Option<IrTerminator>,
 }
 
-struct IrBuilder<'nominals> {
-    nominals: &'nominals [IrNominal],
+struct IrBuilder<'program> {
+    nominals: &'program [IrNominal],
+    constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
     parameters: Vec<(IrValueId, IrType)>,
     values: Vec<IrType>,
@@ -140,10 +183,15 @@ struct GiveTarget {
     carried_bindings: Vec<BindingId>,
 }
 
-impl<'nominals> IrBuilder<'nominals> {
-    fn new(nominals: &'nominals [IrNominal], result: IrType) -> Result<Self, LoweringFailure> {
+impl<'program> IrBuilder<'program> {
+    fn new(
+        nominals: &'program [IrNominal],
+        constants: &'program [IrGlobalConstant],
+        result: IrType,
+    ) -> Result<Self, LoweringFailure> {
         let mut builder = Self {
             nominals,
+            constants,
             bindings: HashMap::new(),
             parameters: Vec::new(),
             values: Vec::new(),
@@ -508,14 +556,7 @@ impl<'nominals> IrBuilder<'nominals> {
             }
             CheckedExpression::Constant(value) => {
                 let ty = lower_type(value.ty());
-                let constant = match value {
-                    CheckedValue::Unit => IrConstant::Unit,
-                    CheckedValue::Bool(value) => IrConstant::Bool(*value),
-                    CheckedValue::Integer { ty, bits } => IrConstant::Integer {
-                        ty: lower_type(CheckedType::Integer(*ty)),
-                        bits: *bits,
-                    },
-                };
+                let constant = lower_scalar_constant(value)?;
                 self.define(ty, IrOperation::Constant(constant))
             }
             CheckedExpression::UserCall {
@@ -591,6 +632,74 @@ impl<'nominals> IrBuilder<'nominals> {
                     },
                 )
             }
+            CheckedExpression::ArrayFill { ty, value } => {
+                let IrType::Array { element, .. } = lower_type(*ty) else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                let value = self.expression(value)?;
+                if self.value_type(value)? != element.ty() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.define(lower_type(*ty), IrOperation::ArrayFill { value })
+            }
+            CheckedExpression::ArrayLength { root, length } => {
+                let (_, ty) = self.array_root(*root)?;
+                let IrType::Array { length: actual, .. } = ty else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                if actual != *length {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.define(
+                    IrType::Integer {
+                        width: 64,
+                        signed: false,
+                    },
+                    IrOperation::Constant(IrConstant::Integer {
+                        ty: IrType::Integer {
+                            width: 64,
+                            signed: false,
+                        },
+                        bits: *length,
+                    }),
+                )
+            }
+            CheckedExpression::ArrayIndex {
+                root,
+                element_type,
+                length,
+                offset,
+                trap,
+            } => {
+                let (root, ty) = self.array_root(*root)?;
+                let IrType::Array {
+                    element,
+                    length: actual,
+                } = ty
+                else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                if element.ty() != lower_type(*element_type) || actual != *length {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let offset = self.expression(offset)?;
+                if self.value_type(offset)?
+                    != (IrType::Integer {
+                        width: 64,
+                        signed: false,
+                    })
+                {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.define(
+                    element.ty(),
+                    IrOperation::ArrayIndex {
+                        root,
+                        offset,
+                        trap: trap.clone().into(),
+                    },
+                )
+            }
             CheckedExpression::ConstructStruct { nominal, fields } => {
                 let fields = fields
                     .iter()
@@ -647,6 +756,29 @@ impl<'nominals> IrBuilder<'nominals> {
                         .push(IrInstruction::Drop(drop));
                 }
                 Ok(value)
+            }
+        }
+    }
+
+    fn array_root(&self, root: CheckedArrayRoot) -> Result<(IrArrayRoot, IrType), LoweringFailure> {
+        match root {
+            CheckedArrayRoot::Binding(binding) => {
+                let value = self
+                    .bindings
+                    .get(&binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                Ok((IrArrayRoot::Value(value), self.value_type(value)?))
+            }
+            CheckedArrayRoot::Constant(constant) => {
+                let constant = self
+                    .constants
+                    .get(constant.0 as usize)
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                Ok((
+                    IrArrayRoot::Constant(IrConstantId(constant.id().0)),
+                    constant.ty(),
+                ))
             }
         }
     }

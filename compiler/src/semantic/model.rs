@@ -13,6 +13,9 @@ pub(crate) struct CheckedLoopId(pub(crate) u32);
 pub(crate) struct NominalId(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct CheckedConstantId(pub(crate) u32);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum IntegerType {
     I8,
     I16,
@@ -40,28 +43,67 @@ impl IntegerType {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CheckedArrayElement {
+    Unit,
+    Bool,
+    Integer(IntegerType),
+    TagOnlyNominal(NominalId),
+}
+
+impl CheckedArrayElement {
+    pub(crate) const fn ty(self) -> CheckedType {
+        match self {
+            Self::Unit => CheckedType::Unit,
+            Self::Bool => CheckedType::Bool,
+            Self::Integer(ty) => CheckedType::Integer(ty),
+            Self::TagOnlyNominal(id) => CheckedType::Nominal(id),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedType {
     Unit,
     Bool,
     Integer(IntegerType),
     Nominal(NominalId),
+    Array {
+        element: CheckedArrayElement,
+        length: u64,
+    },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedValue {
     Unit,
     Bool(bool),
-    Integer { ty: IntegerType, bits: u64 },
+    Integer {
+        ty: IntegerType,
+        bits: u64,
+    },
+    Array {
+        ty: CheckedType,
+        elements: Vec<CheckedValue>,
+    },
 }
 
 impl CheckedValue {
-    pub(crate) const fn ty(self) -> CheckedType {
+    pub(crate) const fn ty(&self) -> CheckedType {
         match self {
             Self::Unit => CheckedType::Unit,
             Self::Bool(_) => CheckedType::Bool,
-            Self::Integer { ty, .. } => CheckedType::Integer(ty),
+            Self::Integer { ty, .. } => CheckedType::Integer(*ty),
+            Self::Array { ty, .. } => *ty,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedConstant {
+    pub(crate) id: CheckedConstantId,
+    pub(crate) name: String,
+    pub(crate) ty: CheckedType,
+    pub(crate) value: CheckedValue,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -266,6 +308,12 @@ pub(crate) struct TrapSite {
     pub(crate) node_path: NodePath,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedArrayRoot {
+    Binding(BindingId),
+    Constant(CheckedConstantId),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedExpression {
     Constant(CheckedValue),
@@ -294,6 +342,21 @@ pub(crate) enum CheckedExpression {
         operand_type: CheckedType,
         arguments: Vec<CheckedExpression>,
     },
+    ArrayFill {
+        ty: CheckedType,
+        value: Box<CheckedExpression>,
+    },
+    ArrayLength {
+        root: CheckedArrayRoot,
+        length: u64,
+    },
+    ArrayIndex {
+        root: CheckedArrayRoot,
+        element_type: CheckedType,
+        length: u64,
+        offset: Box<CheckedExpression>,
+        trap: TrapSite,
+    },
     ConstructStruct {
         nominal: NominalId,
         fields: Vec<CheckedExpression>,
@@ -319,6 +382,9 @@ impl CheckedExpression {
             Self::Binding { ty, .. } | Self::UserCall { result: ty, .. } => *ty,
             Self::IntegerOperation { result, .. } => *result,
             Self::BooleanOperation { .. } | Self::EnumEquality { .. } => CheckedType::Bool,
+            Self::ArrayFill { ty, .. } => *ty,
+            Self::ArrayLength { .. } => CheckedType::Integer(IntegerType::U64),
+            Self::ArrayIndex { element_type, .. } => *element_type,
             Self::ConstructStruct { nominal, .. } | Self::ConstructEnum { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
@@ -455,6 +521,7 @@ pub(crate) struct CheckedFunction {
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
+    pub(crate) constants: Vec<CheckedConstant>,
     pub(crate) functions: Vec<CheckedFunction>,
     pub(crate) main: FunctionId,
 }

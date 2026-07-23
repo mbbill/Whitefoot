@@ -13,7 +13,7 @@ use super::super::model::{
 use super::{CheckStop, Checker, Constructor, PreludeType};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    pub(super) fn collect_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
+    pub(super) fn declare_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         for node in items.iter().copied().filter(|node| {
             self.tree.production(*node).is_ok_and(|production| {
                 matches!(
@@ -69,7 +69,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             });
         }
+        Ok(())
+    }
 
+    pub(super) fn complete_nominals(&mut self) -> Result<(), CheckStop> {
         let source_nominal_count = self.nominals.len();
         self.register_prelude_nominals()?;
 
@@ -260,6 +263,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(match ty {
             CheckedType::Nominal(id) => self.nominal(id)?.is_copy(),
             CheckedType::Unit | CheckedType::Bool | CheckedType::Integer(_) => true,
+            CheckedType::Array { .. } => false,
         })
     }
 

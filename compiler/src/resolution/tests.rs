@@ -163,6 +163,26 @@ fn named_constants_remain_lexically_declaration_before_use() {
 }
 
 #[test]
+fn decimal_array_sizes_need_no_lexical_target() {
+    let source = br#"fn main() -> own unit pure {
+  let values: own array<i32, 4> = array_new<i32, 4>(0_i32);
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("a decimal const expression must resolve without a name role: {outcome:?}");
+        };
+        assert!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .all(|usage| usage.role() != LexicalUseRole::Const)
+        );
+    });
+}
+
+#[test]
 fn source_nominals_are_not_visible_before_their_declaration() {
     let source = br#"fn consume(value: own Later) -> own unit pure {
 }

@@ -6,8 +6,8 @@
 //! judgment.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedEnumType, CheckedIntegerOperation, CheckedProgram, CheckedType,
-    TrapSite,
+    CheckedArrayElement, CheckedBooleanOperation, CheckedEnumType, CheckedIntegerOperation,
+    CheckedProgram, CheckedType, TrapSite,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -59,11 +59,65 @@ impl IrNominalId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IrType {
+pub struct IrConstantId(u32);
+
+impl IrConstantId {
+    #[must_use]
+    pub const fn ordinal(self) -> u32 {
+        self.0
+    }
+
+    const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrArrayElement {
     Unit,
     Bool,
     Integer { width: u8, signed: bool },
+    TagOnlyNominal(IrNominalId),
+}
+
+impl IrArrayElement {
+    pub const fn ty(self) -> IrType {
+        match self {
+            Self::Unit => IrType::Unit,
+            Self::Bool => IrType::Bool,
+            Self::Integer { width, signed } => IrType::Integer { width, signed },
+            Self::TagOnlyNominal(id) => IrType::Nominal(id),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrType {
+    Unit,
+    Bool,
+    Integer {
+        width: u8,
+        signed: bool,
+    },
     Nominal(IrNominalId),
+    Array {
+        element: IrArrayElement,
+        length: u64,
+    },
+}
+
+const fn lower_array_element(value: CheckedArrayElement) -> IrArrayElement {
+    match value {
+        CheckedArrayElement::Unit => IrArrayElement::Unit,
+        CheckedArrayElement::Bool => IrArrayElement::Bool,
+        CheckedArrayElement::Integer(integer) => IrArrayElement::Integer {
+            width: integer.width(),
+            signed: integer.signed(),
+        },
+        CheckedArrayElement::TagOnlyNominal(id) => {
+            IrArrayElement::TagOnlyNominal(IrNominalId(id.0))
+        }
+    }
 }
 
 fn lower_type(value: CheckedType) -> IrType {
@@ -75,6 +129,10 @@ fn lower_type(value: CheckedType) -> IrType {
             signed: integer.signed(),
         },
         CheckedType::Nominal(id) => IrType::Nominal(IrNominalId(id.0)),
+        CheckedType::Array { element, length } => IrType::Array {
+            element: lower_array_element(element),
+            length,
+        },
     }
 }
 
@@ -297,6 +355,44 @@ impl From<TrapSite> for IrTrapSite {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IrGlobalValue {
+    Scalar(IrConstant),
+    Array(Vec<IrConstant>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrGlobalConstant {
+    id: IrConstantId,
+    name: String,
+    ty: IrType,
+    value: IrGlobalValue,
+}
+
+impl IrGlobalConstant {
+    pub const fn id(&self) -> IrConstantId {
+        self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> IrType {
+        self.ty
+    }
+
+    pub const fn value(&self) -> &IrGlobalValue {
+        &self.value
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrArrayRoot {
+    Value(IrValueId),
+    Constant(IrConstantId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
     Call {
@@ -317,6 +413,14 @@ pub enum IrOperation {
         equal: bool,
         operand_type: IrType,
         arguments: [IrValueId; 2],
+    },
+    ArrayFill {
+        value: IrValueId,
+    },
+    ArrayIndex {
+        root: IrArrayRoot,
+        offset: IrValueId,
+        trap: IrTrapSite,
     },
     ConstructStruct {
         nominal: IrNominalId,
@@ -467,6 +571,7 @@ impl IrFunction {
 pub struct IrProgram<'classified, 'lexed, 'source> {
     _checked: CheckedProgram<'classified, 'lexed, 'source>,
     nominals: Vec<IrNominal>,
+    constants: Vec<IrGlobalConstant>,
     functions: Vec<IrFunction>,
     main: u32,
 }
@@ -478,6 +583,14 @@ impl IrProgram<'_, '_, '_> {
 
     pub fn nominal(&self, id: IrNominalId) -> Option<&IrNominal> {
         self.nominals.get(id.index())
+    }
+
+    pub fn constants(&self) -> &[IrGlobalConstant] {
+        &self.constants
+    }
+
+    pub fn constant(&self, id: IrConstantId) -> Option<&IrGlobalConstant> {
+        self.constants.get(id.index())
     }
 
     pub fn functions(&self) -> &[IrFunction] {

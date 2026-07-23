@@ -1,5 +1,6 @@
 #![allow(clippy::panic)]
 
+mod arrays;
 mod checked_division;
 mod integer_absolute;
 mod integer_extended;
