@@ -1,0 +1,123 @@
+enum Expression {
+  Literal(value: u64);
+  Add(left: box<Expression>, right: box<Expression>);
+}
+
+enum ParseError {
+  Truncated();
+  InvalidToken();
+}
+
+struct ParseOutput {
+  node: box<Expression>;
+  next: u64;
+}
+
+fn parse_expression ['r](input: &'r buffer<u8>, offset: own u64) -> own Result<ParseOutput, ParseError> reads('r), allocates(heap), traps {
+  let size: own u64 = len<u8>(deref(input));
+  let available: own Bool = ilt<u64>(offset, size);
+  match available {
+    True() => {
+    }
+    False() => {
+      let truncated_error: own ParseError = Truncated();
+      return Err(error: truncated_error);
+    }
+  }
+  let token: own u8 = index<u8>(deref(input), offset);
+  let next: own u64 = iadd.trap<u64>(offset, 1_u64);
+  let is_add: own Bool = ieq<u8>(token, 43_u8);
+  match is_add {
+    True() => {
+      let left_output: own ParseOutput = propagate parse_expression<'r>(input: input, offset: next);
+      let right_offset: own u64 = left_output.next;
+      let right_output: own ParseOutput = propagate parse_expression<'r>(input: input, offset: right_offset);
+      let final_offset: own u64 = right_output.next;
+      let left_node: own box<Expression> = move left_output.node;
+      let right_node: own box<Expression> = move right_output.node;
+      let expression: own Expression = Add(left: move left_node, right: move right_node);
+      let node: own box<Expression> = box_new<Expression>(move expression);
+      let output: own ParseOutput = ParseOutput(node: move node, next: final_offset);
+      return Ok(value: move output);
+    }
+    False() => {
+      let below_digit: own Bool = ilt<u8>(token, 48_u8);
+      match below_digit {
+        True() => {
+          let low_error: own ParseError = InvalidToken();
+          return Err(error: low_error);
+        }
+        False() => {
+        }
+      }
+      let above_digit: own Bool = igt<u8>(token, 57_u8);
+      match above_digit {
+        True() => {
+          let high_error: own ParseError = InvalidToken();
+          return Err(error: high_error);
+        }
+        False() => {
+        }
+      }
+      let digit_byte: own u8 = isub.wrap<u8>(token, 48_u8);
+      let digit: own u64 = cvt<u8, u64>(digit_byte);
+      let expression: own Expression = Literal(value: digit);
+      let node: own box<Expression> = box_new<Expression>(move expression);
+      let output: own ParseOutput = ParseOutput(node: move node, next: next);
+      return Ok(value: move output);
+    }
+  }
+}
+
+fn evaluate ['r](expression: &'r box<Expression>) -> own u64 reads('r), traps {
+  match deref(deref(expression)) {
+    Literal(value: literal_value) => {
+      return deref(literal_value);
+    }
+    Add(left: node_left, right: node_right) => {
+      let left_value: own u64 = evaluate<'r>(expression: node_left);
+      let right_value: own u64 = evaluate<'r>(expression: node_right);
+      return iadd.trap<u64>(left_value, right_value);
+    }
+  }
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let input: own buffer<u8> = buffer_new<u8>(5_u64, 0_u8);
+  set index<u8>(input, 0_u64) = 43_u8;
+  set index<u8>(input, 1_u64) = 50_u8;
+  set index<u8>(input, 2_u64) = 43_u8;
+  set index<u8>(input, 3_u64) = 51_u8;
+  set index<u8>(input, 4_u64) = 52_u8;
+  region 'input {
+    let parsed: own Result<ParseOutput, ParseError> = parse_expression<'input>(input: &'input input, offset: 0_u64);
+    match parsed {
+      Ok(value: output) => {
+        let consumed: own u64 = output.next;
+        check ieq<u64>(consumed, 5_u64) else trap "prefix parser left trailing input";
+        let root: own box<Expression> = move output.node;
+        region 'tree {
+          let value: own u64 = evaluate<'tree>(expression: &'tree root);
+          check ieq<u64>(value, 9_u64) else trap "prefix expression result";
+        }
+      }
+      Err(error: parse_error) => {
+        check False() else trap "valid prefix expression rejected";
+      }
+    }
+  }
+  let incomplete: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+  set index<u8>(incomplete, 0_u64) = 43_u8;
+  set index<u8>(incomplete, 1_u64) = 50_u8;
+  region 'incomplete {
+    let incomplete_result: own Result<ParseOutput, ParseError> = parse_expression<'incomplete>(input: &'incomplete incomplete, offset: 0_u64);
+    match incomplete_result {
+      Ok(value: unexpected_output) => {
+        check False() else trap "truncated prefix expression accepted";
+      }
+      Err(error: expected_error) => {
+      }
+    }
+  }
+  return unit;
+}

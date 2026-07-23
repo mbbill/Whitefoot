@@ -967,6 +967,16 @@ float widths and executes both bodies. Type-dependent generic `cvt` and
 `reinterpret` remain explicit unsupported capabilities rather than selecting a
 result from an expected type.
 
+A recursive prefix-expression parser then exercised compiler construction as a
+dogfood domain. It reads a runtime byte buffer through a shared region, builds
+a naturally recursive boxed AST, returns resource-bearing parse results,
+propagates truncation after partially building the tree, evaluates the accepted
+tree recursively through shared box borrows, and releases both successful and
+abandoned ownership paths through compiler-derived cleanup. Valid and
+truncated inputs execute through the public compiler boundary. This probe
+exposed no new semantic capability gap; it provides composition evidence for
+the existing buffer, Result, box, recursion, borrow, effect, and cleanup paths.
+
 The exact next work remains Phase 9: select another production-shaped dogfood
 target in a real-world domain not exercised by the current programs, observe
 its first real missing language or compiler capability, and implement the

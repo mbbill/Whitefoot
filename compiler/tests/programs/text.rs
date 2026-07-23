@@ -25,3 +25,18 @@ fn utf8_parser_executes_through_the_ordinary_pipeline() {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+#[test]
+fn recursive_prefix_parser_builds_evaluates_and_drops_its_ast() {
+    let llvm = compile_program("prefix_expression.wf");
+    let parser = emitted_function(&llvm, "parse_expression");
+    assert!(parser.contains("call"));
+    assert!(parser.contains("@wf_parse_expression"));
+    assert!(llvm.contains("call ptr @malloc"));
+    assert!(llvm.contains("call void @free"));
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
