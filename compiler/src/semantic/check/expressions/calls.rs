@@ -10,7 +10,9 @@ use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerOperation, CheckedNominalKind,
     CheckedType, TrapSite,
 };
-use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, TypedExpression};
+use super::super::{
+    CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType, TypedExpression,
+};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(in crate::semantic::check) fn check_call(
@@ -152,6 +154,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "iadd.trap" => CheckedIntegerOperation::AddTrap,
             "isub.trap" => CheckedIntegerOperation::SubtractTrap,
             "imul.trap" => CheckedIntegerOperation::MultiplyTrap,
+            "iadd.checked" => CheckedIntegerOperation::AddChecked,
+            "isub.checked" => CheckedIntegerOperation::SubtractChecked,
+            "imul.checked" => CheckedIntegerOperation::MultiplyChecked,
             "ieq" => CheckedIntegerOperation::Equal,
             "ine" => CheckedIntegerOperation::NotEqual,
             "ilt" => CheckedIntegerOperation::Less,
@@ -236,11 +241,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         } else {
             None
         };
+        let result = if matches!(
+            operation,
+            CheckedIntegerOperation::AddChecked
+                | CheckedIntegerOperation::SubtractChecked
+                | CheckedIntegerOperation::MultiplyChecked
+        ) {
+            CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(
+                CheckedType::Integer(operand_type),
+                CheckedType::Nominal(self.prelude_nominal(PreludeType::Overflow)?),
+            ))?)
+        } else {
+            operation
+                .scalar_result_type(operand_type)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+        };
         Ok(TypedExpression {
             expression: CheckedExpression::IntegerOperation {
                 operation,
                 operand_type,
                 arguments,
+                result,
                 trap,
             },
             exhibits_traps,

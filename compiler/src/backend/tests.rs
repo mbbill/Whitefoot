@@ -400,6 +400,121 @@ fn compiler_independent_loop_accumulator_executes_through_host_llvm() {
 }
 
 #[test]
+fn result_values_checked_arithmetic_and_propagation_execute_through_host_llvm() {
+    let source = br#"enum StepError {
+  Failed();
+}
+
+struct Pair {
+  left: i32;
+  right: i32;
+}
+
+fn step(value: own i32) -> own Result<i32, StepError> pure {
+  match ilt<i32>(value, 0_i32) {
+    True() => {
+      let error: own StepError = Failed();
+      return Err(error: error);
+    }
+    False() => {
+      return Ok(value: value);
+    }
+  }
+}
+
+fn forward(value: own i32) -> own Result<i64, StepError> pure {
+  let accepted: own i32 = propagate step(value: value);
+  return Ok(value: 42_i64);
+}
+
+fn make_pair() -> own Result<Pair, StepError> pure {
+  let pair: own Pair = Pair(left: 20_i32, right: 22_i32);
+  return Ok(value: move pair);
+}
+
+fn main() -> own unit traps {
+  let arithmetic_result: own Result<i32, Overflow> = iadd.checked<i32>(2147483647_i32, 1_i32);
+  match move arithmetic_result {
+    Ok(value: sum) => {
+      check False() else trap "checked overflow took Ok";
+    }
+    Err(error: overflow) => {
+    }
+  }
+  let subtract_result: own Result<u8, Overflow> = isub.checked<u8>(0_u8, 1_u8);
+  match move subtract_result {
+    Ok(value: difference) => {
+      check False() else trap "checked underflow took Ok";
+    }
+    Err(error: underflow) => {
+    }
+  }
+  let multiply_result: own Result<i16, Overflow> = imul.checked<i16>(6_i16, 7_i16);
+  match move multiply_result {
+    Ok(value: product) => {
+      check ieq<i16>(product, 42_i16) else trap "checked product drift";
+    }
+    Err(error: product_error) => {
+      check False() else trap "checked product took Err";
+    }
+  }
+  let success: own Result<i64, StepError> = forward(value: 7_i32);
+  match move success {
+    Ok(value: answer) => {
+      check ieq<i64>(answer, 42_i64) else trap "propagated Ok payload drift";
+    }
+    Err(error: failure_error) => {
+      check False() else trap "unexpected propagated Err";
+    }
+  }
+  let failure: own Result<i64, StepError> = forward(value: -1_i32);
+  match move failure {
+    Ok(value: unexpected) => {
+      check False() else trap "propagated Err became Ok";
+    }
+    Err(error: forwarded_error) => {
+    }
+  }
+  let pair_result: own Result<Pair, StepError> = make_pair();
+  match move pair_result {
+    Ok(value: pair) => {
+      let total: own i32 = iadd.wrap<i32>(pair.left, pair.right);
+      check ieq<i32>(total, 42_i32) else trap "aggregate Result payload drift";
+    }
+    Err(error: pair_error) => {
+      check False() else trap "unexpected aggregate Result error";
+    }
+  }
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    assert!(llvm.contains("@llvm.sadd.with.overflow.i32"));
+    assert!(llvm.contains("@llvm.usub.with.overflow.i8"));
+    assert!(llvm.contains("@llvm.smul.with.overflow.i16"));
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+
+    for independent in [
+        include_bytes!("../../../tests/conformance/cases/err1-pos-result-value-match.wf")
+            .as_slice(),
+        include_bytes!("../../../tests/conformance/cases/pre1-pos-prelude-enums.wf").as_slice(),
+        include_bytes!(
+            "../../../tests/conformance/cases/x-arith-iadd-checked-overflow-err-arm-runs.wf"
+        )
+        .as_slice(),
+        include_bytes!("../../../tests/conformance/cases/run-ex2-loop-trap-folds.wf").as_slice(),
+    ] {
+        let output = compile_and_run(&compile(independent));
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
 fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
     let source = br#"fn main() -> own unit traps {
   let outer: own i32 = 0_i32;

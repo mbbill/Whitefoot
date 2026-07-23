@@ -20,7 +20,7 @@ pub(crate) use model::{
     BindingId, CheckedBooleanOperation, CheckedDrop, CheckedEnumType, CheckedExpression,
     CheckedFunction, CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedNominalKind,
     CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedType, CheckedValue,
-    TrapSite,
+    NominalId, PropagationContext, TrapSite,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -60,6 +60,8 @@ pub enum SemanticRuleV0_12 {
     Type6,
     /// Exhaustive enum matching.
     Err2,
+    /// Exact Result propagation and same-error forwarding.
+    Err3,
     /// Value-match delivery.
     Give1,
     /// Effect-row canonicality.
@@ -90,6 +92,7 @@ impl SemanticRuleV0_12 {
             Self::Gram10 => "GRAM-10",
             Self::Type6 => "TYPE-6",
             Self::Err2 => "ERR-2",
+            Self::Err3 => "ERR-3",
             Self::Give1 => "GIVE-1",
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
@@ -198,6 +201,8 @@ pub enum SemanticIssueKind {
         /// Declared variants with no arm, in declaration order.
         missing_variants: Vec<String>,
     },
+    /// A propagation operand or enclosing result has the wrong Result shape.
+    InvalidPropagation,
     /// `give` is absent, misplaced, duplicated, or followed by a statement.
     InvalidGive,
     /// The effect row is not a valid exact EFF-1 row.
@@ -268,8 +273,6 @@ pub enum UnsupportedSemanticFeatureV0_12 {
     OwnershipJoin,
     /// Repeated match arms, whose dispatch meaning v0.12 does not select.
     DuplicateMatchArm,
-    /// Result propagation.
-    ResultPropagation,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
     /// An effect other than `pure` or `traps`.

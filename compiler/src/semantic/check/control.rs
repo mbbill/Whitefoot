@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 mod loops;
 mod matches;
+mod results;
 
 use crate::syntax::NodeId;
 use crate::{
@@ -134,8 +135,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, ProductionV0_12::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let value =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+                let value = self.check_expression_with_expected(
+                    function,
+                    expression_node,
+                    bindings,
+                    scope.loops.len(),
+                    Some(function.result),
+                )?;
                 if value.expression.ty() != function.result {
                     return Err(CheckStop::Issue(SemanticIssue {
                         rule: SemanticRuleV0_12::Fn1,
@@ -218,8 +224,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, ProductionV0_12::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let value =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+                let value = self.check_expression_with_expected(
+                    function,
+                    expression_node,
+                    bindings,
+                    scope.loops.len(),
+                    Some(context.expected),
+                )?;
                 if value.expression.ty() != context.expected {
                     return self.issue_node(
                         SemanticRuleV0_12::Type5,
@@ -253,8 +264,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // SET-1 fixes this order: form and check the target first, then
                 // evaluate the RHS, then re-establish target writability.
                 let (declaration, target) = self.check_set_target(target_node, bindings)?;
-                let value =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+                let value = self.check_expression_with_expected(
+                    function,
+                    expression_node,
+                    bindings,
+                    scope.loops.len(),
+                    Some(target.ty),
+                )?;
                 if value.expression.ty() != target.ty {
                     return self.issue_node(
                         SemanticRuleV0_12::Type5,
@@ -369,9 +385,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, ProductionV0_12::PropagateLetRhs)?
         {
-            return self.unsupported(
-                UnsupportedSemanticFeatureV0_12::ResultPropagation,
+            return self.check_propagate_let(
+                function,
                 propagate,
+                expected,
+                declaration_id,
+                binding,
+                bindings,
+                scope,
             );
         }
         let rhs = self
@@ -382,8 +403,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(rhs, ProductionV0_12::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let value =
-            self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+        let value = self.check_expression_with_expected(
+            function,
+            expression_node,
+            bindings,
+            scope.loops.len(),
+            Some(expected),
+        )?;
         if value.expression.ty() != expected {
             return self.issue_node(
                 SemanticRuleV0_12::Type5,

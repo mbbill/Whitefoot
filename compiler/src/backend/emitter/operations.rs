@@ -129,6 +129,73 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
+            IrIntegerOperation::AddChecked
+            | IrIntegerOperation::SubtractChecked
+            | IrIntegerOperation::MultiplyChecked => {
+                let IrType::Nominal(result_nominal) = result_type else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if trap.is_some() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let error_type = {
+                    let IrNominalKind::Enum { variants } = self.nominal(result_nominal)?.kind()
+                    else {
+                        return Err(BackendFailure::InvalidIr);
+                    };
+                    let [ok, error] = variants.as_slice() else {
+                        return Err(BackendFailure::InvalidIr);
+                    };
+                    if ok.tag() != 0
+                        || error.tag() != 1
+                        || ok.fields().len() != 1
+                        || error.fields().len() != 1
+                        || ok.fields()[0].ty() != operand_type
+                    {
+                        return Err(BackendFailure::InvalidIr);
+                    }
+                    error.fields()[0].ty()
+                };
+                let IrType::Nominal(error_nominal) = error_type else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let IrNominalKind::Enum {
+                    variants: error_variants,
+                } = self.nominal(error_nominal)?.kind()
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if !self.nominal(error_nominal)?.is_tag_only_enum()
+                    || !matches!(error_variants.as_slice(), [variant] if variant.tag() == 0)
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+
+                let stem = match operation {
+                    IrIntegerOperation::AddChecked => "add",
+                    IrIntegerOperation::SubtractChecked => "sub",
+                    IrIntegerOperation::MultiplyChecked => "mul",
+                    _ => return Err(BackendFailure::InvalidIr),
+                };
+                let sign = if signed { 's' } else { 'u' };
+                let intrinsic = format!("llvm.{sign}{stem}.with.overflow.i{width}");
+                self.intrinsics.insert(format!("{intrinsic}|{ty}"));
+                let pair = self.next_temporary()?;
+                let value = self.next_temporary()?;
+                let overflow = self.next_temporary()?;
+                let ok_tag = self.next_temporary()?;
+                let ok_value = self.next_temporary()?;
+                let error_tag = self.next_temporary()?;
+                let error_value = self.next_temporary()?;
+                let result_ty = llvm_type(self.program, result_type)?;
+                let error_ty = llvm_type(self.program, error_type)?;
+                writeln!(
+                    self.output,
+                    "  %{pair} = call {{ {ty}, i1 }} @{intrinsic}({ty} {left}, {ty} {right})\n  %{value} = extractvalue {{ {ty}, i1 }} %{pair}, 0\n  %{overflow} = extractvalue {{ {ty}, i1 }} %{pair}, 1\n  %{ok_tag} = insertvalue {result_ty} zeroinitializer, i32 0, 0\n  %{ok_value} = insertvalue {result_ty} %{ok_tag}, {ty} %{value}, 1\n  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} 0, 2\n  {} = select i1 %{overflow}, {result_ty} %{error_value}, {result_ty} %{ok_value}",
+                    value_name(result)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
             IrIntegerOperation::Equal
             | IrIntegerOperation::NotEqual
             | IrIntegerOperation::Less

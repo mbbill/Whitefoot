@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm, CheckedMatchBinder,
-    CheckedNominalKind, CheckedType,
+    CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm,
+    CheckedMatchBinder, CheckedNominalKind, CheckedType,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding};
 use super::{BreakState, ControlCounters, ControlScope, GiveContext};
@@ -19,8 +19,7 @@ struct VariantDescriptor {
     name: String,
     tag: u32,
     fields: Vec<CheckedField>,
-    source_constructor: Option<DeclarationId>,
-    prelude_ordinal: Option<u8>,
+    constructor: CheckedConstructor,
 }
 
 struct MatchDescriptor {
@@ -183,15 +182,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         name: "True".to_owned(),
                         tag: 1,
                         fields: Vec::new(),
-                        source_constructor: None,
-                        prelude_ordinal: Some(1),
+                        constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(
+                            1,
+                        )),
                     },
                     VariantDescriptor {
                         name: "False".to_owned(),
                         tag: 0,
                         fields: Vec::new(),
-                        source_constructor: None,
-                        prelude_ordinal: Some(2),
+                        constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(
+                            2,
+                        )),
                     },
                 ],
             }),
@@ -209,8 +210,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         name: variant.name.clone(),
                         tag: variant.tag,
                         fields: variant.fields.clone(),
-                        source_constructor: Some(variant.constructor),
-                        prelude_ordinal: None,
+                        constructor: variant.constructor,
                     })
                     .collect();
                 Ok(MatchDescriptor {
@@ -237,9 +237,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .find(|variant| match usage.target() {
                 ResolvedTarget::Source { declaration, .. } => {
-                    variant.source_constructor == Some(declaration)
+                    variant.constructor == CheckedConstructor::Source(declaration)
                 }
-                ResolvedTarget::Prelude(id) => variant.prelude_ordinal == Some(id.ordinal()),
+                ResolvedTarget::Prelude(id) => {
+                    variant.constructor == CheckedConstructor::Prelude(id)
+                }
                 _ => false,
             })
             .ok_or_else(|| {

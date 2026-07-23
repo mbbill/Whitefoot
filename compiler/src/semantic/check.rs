@@ -59,11 +59,21 @@ struct TypedExpression {
     exhibits_traps: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum PreludeType {
+    Result(CheckedType, CheckedType),
+    Overflow,
+    DivError,
+    NarrowError,
+}
+
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
-    nominal_nodes: Vec<NodeId>,
+    nominal_nodes: Vec<Option<NodeId>>,
+    prelude_nominals: HashMap<PreludeType, NominalId>,
+    prelude_types: Vec<Option<PreludeType>>,
     nominals_by_declaration: HashMap<DeclarationId, NominalId>,
     constructors_by_declaration: HashMap<DeclarationId, Constructor>,
     signatures: Vec<FunctionSignature>,
@@ -100,6 +110,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
+            prelude_nominals: HashMap::new(),
+            prelude_types: Vec::new(),
             nominals_by_declaration: HashMap::new(),
             constructors_by_declaration: HashMap::new(),
             signatures: Vec::new(),

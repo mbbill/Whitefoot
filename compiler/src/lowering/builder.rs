@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 mod loops;
+mod results;
 
 use crate::CheckedProgram;
 use crate::semantic::{
@@ -76,7 +77,7 @@ fn lower_function(
     function: &crate::semantic::CheckedFunction,
     nominals: &[IrNominal],
 ) -> Result<IrFunction, LoweringFailure> {
-    let mut builder = IrBuilder::new(nominals)?;
+    let mut builder = IrBuilder::new(nominals, lower_type(function.result))?;
     for parameter in &function.parameters {
         let ty = lower_type(parameter.ty);
         let value = builder.new_value(ty)?;
@@ -129,6 +130,7 @@ struct IrBuilder<'nominals> {
     blocks: Vec<BuildingBlock>,
     current: Option<IrBlockId>,
     loops: Vec<LoopTarget>,
+    result: IrType,
 }
 
 #[derive(Clone)]
@@ -139,7 +141,7 @@ struct GiveTarget {
 }
 
 impl<'nominals> IrBuilder<'nominals> {
-    fn new(nominals: &'nominals [IrNominal]) -> Result<Self, LoweringFailure> {
+    fn new(nominals: &'nominals [IrNominal], result: IrType) -> Result<Self, LoweringFailure> {
         let mut builder = Self {
             nominals,
             bindings: HashMap::new(),
@@ -148,6 +150,7 @@ impl<'nominals> IrBuilder<'nominals> {
             blocks: Vec::new(),
             current: None,
             loops: Vec::new(),
+            result,
         };
         let (entry, parameters) = builder.new_block(&[])?;
         if !parameters.is_empty() {
@@ -231,6 +234,25 @@ impl<'nominals> IrBuilder<'nominals> {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
                 }
+                CheckedStatement::PropagateLet {
+                    binding,
+                    scrutinee,
+                    result_nominal,
+                    return_nominal,
+                    ok_type,
+                    error_type,
+                    error_drops,
+                    context,
+                } => self.lower_propagate(
+                    *binding,
+                    scrutinee,
+                    *result_nominal,
+                    *return_nominal,
+                    *ok_type,
+                    *error_type,
+                    error_drops,
+                    context,
+                )?,
                 CheckedStatement::Set { target, value } => {
                     let root = self
                         .bindings
@@ -518,6 +540,7 @@ impl<'nominals> IrBuilder<'nominals> {
                 operand_type,
                 arguments,
                 trap,
+                ..
             } => {
                 let [left, right] = arguments.as_slice() else {
                     return Err(LoweringFailure::InvalidCheckedProgram);

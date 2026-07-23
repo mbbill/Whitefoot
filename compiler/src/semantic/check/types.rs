@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::super::model::{CheckedType, CheckedValue, IntegerType};
-use super::{CheckStop, Checker, ParameterSignature};
+use super::{CheckStop, Checker, ParameterSignature, PreludeType};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn parse_parameters(
@@ -63,13 +63,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn parse_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
-        if let Some(targs) = self.tree.first_child_with(node, ProductionV0_12::Targs)? {
-            return self.unsupported(UnsupportedSemanticFeatureV0_12::Generics, targs);
-        }
+        let targs = self.tree.first_child_with(node, ProductionV0_12::Targs)?;
         if let Some(ty) = self.integer_type(node)? {
+            if targs.is_some() {
+                return self.issue_node(
+                    SemanticRuleV0_12::Type5,
+                    node,
+                    SemanticIssueKind::TypeMismatch,
+                );
+            }
             return Ok(CheckedType::Integer(ty));
         }
         if self.has_fixed(node, FixedTerminalV0_12::Unit)? {
+            if targs.is_some() {
+                return self.issue_node(
+                    SemanticRuleV0_12::Type5,
+                    node,
+                    SemanticIssueKind::TypeMismatch,
+                );
+            }
             return Ok(CheckedType::Unit);
         }
         if self.has_fixed(node, FixedTerminalV0_12::F32)?
@@ -85,7 +97,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let usage = self.use_at(node, LexicalUseRole::Type)?;
             match usage.target() {
                 ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(0) => {
+                    if targs.is_some() {
+                        return self.issue_node(
+                            SemanticRuleV0_12::Type5,
+                            node,
+                            SemanticIssueKind::TypeMismatch,
+                        );
+                    }
                     return Ok(CheckedType::Bool);
+                }
+                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
+                    let (ok, error) = self.result_type_arguments(node)?;
+                    return self
+                        .prelude_nominals
+                        .get(&PreludeType::Result(ok, error))
+                        .copied()
+                        .map(CheckedType::Nominal)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                ResolvedTarget::Prelude(id) if matches!(id.ordinal(), 15 | 17 | 20) => {
+                    if targs.is_some() {
+                        return self.issue_node(
+                            SemanticRuleV0_12::Type5,
+                            node,
+                            SemanticIssueKind::TypeMismatch,
+                        );
+                    }
+                    let ty = match id.ordinal() {
+                        15 => PreludeType::Overflow,
+                        17 => PreludeType::DivError,
+                        20 => PreludeType::NarrowError,
+                        _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                    };
+                    return Ok(CheckedType::Nominal(self.prelude_nominal(ty)?));
                 }
                 ResolvedTarget::Prelude(_) => {
                     return self
@@ -100,12 +144,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(&declaration)
                         .copied()
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+                        .and_then(|ty| {
+                            if let Some(targs) = targs {
+                                self.unsupported(UnsupportedSemanticFeatureV0_12::Generics, targs)
+                            } else {
+                                Ok(ty)
+                            }
+                        });
                 }
                 _ => {}
             }
         }
         self.unsupported(UnsupportedSemanticFeatureV0_12::CompositeValues, node)
+    }
+
+    pub(super) fn prelude_type_ordinal(&self, node: NodeId) -> Result<Option<u8>, CheckStop> {
+        if self
+            .tree
+            .direct_token_with(node, TerminalPredicateV0_12::TypeIdentifier)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let usage = self.use_at(node, LexicalUseRole::Type)?;
+        Ok(match usage.target() {
+            ResolvedTarget::Prelude(id) => Some(id.ordinal()),
+            _ => None,
+        })
+    }
+
+    pub(super) fn result_type_arguments(
+        &self,
+        node: NodeId,
+    ) -> Result<(CheckedType, CheckedType), CheckStop> {
+        let Some(targs) = self.tree.first_child_with(node, ProductionV0_12::Targs)? else {
+            return self.issue_node(
+                SemanticRuleV0_12::Type5,
+                node,
+                SemanticIssueKind::TypeMismatch,
+            );
+        };
+        let arguments = self.tree.children_with(targs, ProductionV0_12::Targ)?;
+        let [ok, error] = arguments.as_slice() else {
+            return self.issue_node(
+                SemanticRuleV0_12::Type5,
+                node,
+                SemanticIssueKind::TypeMismatch,
+            );
+        };
+        let Some(ok) = self.tree.first_child_with(*ok, ProductionV0_12::Type)? else {
+            return self.issue_node(
+                SemanticRuleV0_12::Type5,
+                node,
+                SemanticIssueKind::TypeMismatch,
+            );
+        };
+        let Some(error) = self.tree.first_child_with(*error, ProductionV0_12::Type)? else {
+            return self.issue_node(
+                SemanticRuleV0_12::Type5,
+                node,
+                SemanticIssueKind::TypeMismatch,
+            );
+        };
+        Ok((self.parse_type(ok)?, self.parse_type(error)?))
     }
 
     pub(super) fn integer_type(&self, node: NodeId) -> Result<Option<IntegerType>, CheckStop> {

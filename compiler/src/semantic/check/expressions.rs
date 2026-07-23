@@ -132,7 +132,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
-    fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
+    pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
         Ok(match ty {
             CheckedType::Unit => "unit".to_owned(),
             CheckedType::Bool => "Bool".to_owned(),
@@ -158,12 +158,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
+        self.check_expression_with_expected(function, node, bindings, loop_depth, None)
+    }
+
+    pub(super) fn check_expression_with_expected(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        expected: Option<CheckedType>,
+    ) -> Result<TypedExpression, CheckStop> {
         let child = self.tree.only_child(node)?;
         match self.tree.production(child)? {
             ProductionV0_12::Atom => self.check_atom(function, child, bindings, loop_depth),
             ProductionV0_12::Call => self.check_call(function, child, bindings, loop_depth),
             ProductionV0_12::Construct => {
-                self.check_construct(function, child, bindings, loop_depth)
+                self.check_construct(function, child, bindings, loop_depth, expected)
             }
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
@@ -408,20 +419,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
+        expected: Option<CheckedType>,
     ) -> Result<TypedExpression, CheckStop> {
         if let Some(targs) = self.tree.first_child_with(node, ProductionV0_12::Targs)? {
             return self.unsupported(UnsupportedSemanticFeatureV0_12::Generics, targs);
         }
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let constructor_name = usage.spelling().to_owned();
-        if let ResolvedTarget::Prelude(id) = usage.target() {
+        if let ResolvedTarget::Prelude(id) = usage.target()
+            && matches!(id.ordinal(), 1 | 2)
+        {
             let value = match id.ordinal() {
                 1 => CheckedValue::Bool(true),
                 2 => CheckedValue::Bool(false),
-                _ => {
-                    return self
-                        .unsupported(UnsupportedSemanticFeatureV0_12::PreludeNominalValues, node);
-                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
             if self
                 .tree
@@ -442,13 +453,54 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 exhibits_traps: false,
             });
         }
-        let ResolvedTarget::Source { declaration, .. } = usage.target() else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        let constructor = match usage.target() {
+            ResolvedTarget::Source { declaration, .. } => *self
+                .constructors_by_declaration
+                .get(&declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            ResolvedTarget::Prelude(id) => match id.ordinal() {
+                11 | 13 => {
+                    let Some(CheckedType::Nominal(nominal)) = expected else {
+                        return self.issue_node(
+                            SemanticRuleV0_12::Type5,
+                            node,
+                            SemanticIssueKind::TypeMismatch,
+                        );
+                    };
+                    if !matches!(
+                        self.prelude_type(nominal),
+                        Some(super::PreludeType::Result(_, _))
+                    ) {
+                        return self.issue_node(
+                            SemanticRuleV0_12::Type5,
+                            node,
+                            SemanticIssueKind::TypeMismatch,
+                        );
+                    }
+                    Constructor::Enum {
+                        nominal,
+                        variant: u32::from(id.ordinal() == 13),
+                    }
+                }
+                16 => Constructor::Enum {
+                    nominal: self.prelude_nominal(super::PreludeType::Overflow)?,
+                    variant: 0,
+                },
+                18 | 19 => Constructor::Enum {
+                    nominal: self.prelude_nominal(super::PreludeType::DivError)?,
+                    variant: u32::from(id.ordinal() == 19),
+                },
+                21 => Constructor::Enum {
+                    nominal: self.prelude_nominal(super::PreludeType::NarrowError)?,
+                    variant: 0,
+                },
+                _ => {
+                    return self
+                        .unsupported(UnsupportedSemanticFeatureV0_12::PreludeNominalValues, node);
+                }
+            },
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
-        let constructor = *self
-            .constructors_by_declaration
-            .get(&declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let declared_fields = match constructor {
             Constructor::Struct(nominal) => match &self.nominal(nominal)?.kind {
                 CheckedNominalKind::Struct { fields } => fields.clone(),

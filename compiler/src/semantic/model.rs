@@ -1,4 +1,4 @@
-use crate::{DeclarationId, NodePath};
+use crate::{DeclarationId, NodePath, PreludeDeclarationId};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct FunctionId(pub(crate) u32);
@@ -12,7 +12,7 @@ pub(crate) struct CheckedLoopId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct NominalId(pub(crate) u32);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum IntegerType {
     I8,
     I16,
@@ -39,7 +39,7 @@ impl IntegerType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedType {
     Unit,
     Bool,
@@ -73,9 +73,15 @@ pub(crate) struct CheckedField {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedVariant {
     pub(crate) name: String,
-    pub(crate) constructor: DeclarationId,
+    pub(crate) constructor: CheckedConstructor,
     pub(crate) tag: u32,
     pub(crate) fields: Vec<CheckedField>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedConstructor {
+    Source(DeclarationId),
+    Prelude(PreludeDeclarationId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -109,6 +115,9 @@ pub(crate) enum CheckedIntegerOperation {
     AddTrap,
     SubtractTrap,
     MultiplyTrap,
+    AddChecked,
+    SubtractChecked,
+    MultiplyChecked,
     Equal,
     NotEqual,
     Less,
@@ -133,15 +142,16 @@ impl CheckedIntegerOperation {
         )
     }
 
-    pub(crate) const fn result_type(self, operand: IntegerType) -> CheckedType {
+    pub(crate) const fn scalar_result_type(self, operand: IntegerType) -> Option<CheckedType> {
         match self {
+            Self::AddChecked | Self::SubtractChecked | Self::MultiplyChecked => None,
             Self::Equal
             | Self::NotEqual
             | Self::Less
             | Self::LessEqual
             | Self::Greater
-            | Self::GreaterEqual => CheckedType::Bool,
-            _ => CheckedType::Integer(operand),
+            | Self::GreaterEqual => Some(CheckedType::Bool),
+            _ => Some(CheckedType::Integer(operand)),
         }
     }
 }
@@ -170,6 +180,7 @@ pub(crate) enum CheckedExpression {
         operation: CheckedIntegerOperation,
         operand_type: IntegerType,
         arguments: Vec<CheckedExpression>,
+        result: CheckedType,
         trap: Option<TrapSite>,
     },
     BooleanOperation {
@@ -204,11 +215,7 @@ impl CheckedExpression {
         match self {
             Self::Constant(value) => value.ty(),
             Self::Binding { ty, .. } | Self::UserCall { result: ty, .. } => *ty,
-            Self::IntegerOperation {
-                operation,
-                operand_type,
-                ..
-            } => operation.result_type(*operand_type),
+            Self::IntegerOperation { result, .. } => *result,
             Self::BooleanOperation { .. } | Self::EnumEquality { .. } => CheckedType::Bool,
             Self::ConstructStruct { nominal, .. } | Self::ConstructEnum { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
@@ -261,10 +268,26 @@ pub(crate) struct CheckedWritablePlace {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PropagationContext {
+    pub(crate) function: String,
+    pub(crate) node_path: NodePath,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedStatement {
     Let {
         binding: BindingId,
         value: CheckedExpression,
+    },
+    PropagateLet {
+        binding: BindingId,
+        scrutinee: CheckedExpression,
+        result_nominal: NominalId,
+        return_nominal: NominalId,
+        ok_type: CheckedType,
+        error_type: CheckedType,
+        error_drops: Vec<CheckedDrop>,
+        context: PropagationContext,
     },
     Set {
         target: CheckedWritablePlace,

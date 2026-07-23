@@ -429,6 +429,87 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 }
 
 #[test]
+fn result_construction_and_propagation_keep_context_and_rule_owners() {
+    let source = br#"enum StepError {
+  Failed();
+}
+
+struct Pair {
+  value: i32;
+}
+
+fn step(value: own i32) -> own Result<i32, StepError> pure {
+  return Ok(value: value);
+}
+
+fn forward(value: own i32) -> own Result<Pair, StepError> pure {
+  let accepted: own i32 = propagate step(value: value);
+  let pair: own Pair = Pair(value: accepted);
+  return Ok(value: move pair);
+}
+
+fn direct(error: own StepError) -> own Result<Pair, StepError> pure {
+  let accepted: own i32 = propagate Err(error: error);
+  let pair: own Pair = Pair(value: accepted);
+  return Ok(value: move pair);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("Result family must check: {outcome:?}");
+        };
+        let forward = &checked.data.functions[1];
+        let CheckedStatement::PropagateLet {
+            ok_type, context, ..
+        } = &forward.body[0]
+        else {
+            panic!("forward must retain its checked propagation edge");
+        };
+        assert_eq!(
+            *ok_type,
+            super::model::CheckedType::Integer(super::model::IntegerType::I32)
+        );
+        assert_eq!(context.function, "forward");
+        assert!(!context.node_path.components().is_empty());
+    });
+
+    assert_rule(
+        include_bytes!("../../../tests/conformance/cases/err3-neg-error-type-mismatch.wf"),
+        SemanticRuleV0_12::Err3,
+        SemanticIssueKind::InvalidPropagation,
+    );
+    assert_rule(
+        br#"enum Flag {
+  First();
+  Second();
+}
+
+fn main() -> own unit pure {
+  let flag: own Flag = First();
+  match Err(error: flag) {
+    Ok(value: ok_value) => {
+    }
+    Err(error: err_value) => {
+    }
+  }
+  return unit;
+}
+"#,
+        SemanticRuleV0_12::Type5,
+        SemanticIssueKind::TypeMismatch,
+    );
+    assert_rule(
+        include_bytes!("../../../tests/conformance/cases/x-enum-result-payload-type-mismatch.wf"),
+        SemanticRuleV0_12::Type5,
+        SemanticIssueKind::TypeMismatch,
+    );
+}
+
+#[test]
 fn set_retains_checked_copy_places_for_root_and_nested_field_updates() {
     let source = br#"struct Inner {
   value: i32;

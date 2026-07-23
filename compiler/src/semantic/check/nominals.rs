@@ -2,14 +2,15 @@ use std::collections::HashSet;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationRole, DependentDeclarationRole, ProductionV0_12, SemanticCompilerFailure,
-    SemanticIssueKind, SemanticRuleV0_12, UnsupportedSemanticFeatureV0_12,
+    DeclarationRole, DependentDeclarationRole, PreludeDeclarationId, ProductionV0_12,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRuleV0_12, UnsupportedSemanticFeatureV0_12,
 };
 
 use super::super::model::{
-    CheckedField, CheckedNominal, CheckedNominalKind, CheckedType, CheckedVariant, NominalId,
+    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
+    CheckedVariant, NominalId,
 };
-use super::{CheckStop, Checker, Constructor};
+use super::{CheckStop, Checker, Constructor, PreludeType};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn collect_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
@@ -54,7 +55,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            self.nominal_nodes.push(node);
+            self.nominal_nodes.push(Some(node));
+            self.prelude_types.push(None);
             self.nominals.push(CheckedNominal {
                 id,
                 name,
@@ -68,10 +70,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
 
-        for id in 0..self.nominals.len() {
+        let source_nominal_count = self.nominals.len();
+        self.register_prelude_nominals()?;
+
+        for id in 0..source_nominal_count {
             let node = *self
                 .nominal_nodes
                 .get(id)
+                .and_then(Option::as_ref)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let kind = match self.tree.production(node)? {
                 ProductionV0_12::StructDecl => CheckedNominalKind::Struct {
@@ -172,7 +178,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             variants.push(CheckedVariant {
                 name,
-                constructor: declaration_id,
+                constructor: CheckedConstructor::Source(declaration_id),
                 tag,
                 fields,
             });
@@ -202,9 +208,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         stack.push((dependency, 0, self.nominal_dependencies(dependency)?));
                     }
                     Some(1) => {
-                        let node = *self
-                            .nominal_nodes
-                            .get(root)
+                        let node = stack
+                            .iter()
+                            .filter_map(|(index, _, _)| {
+                                self.nominal_nodes.get(*index).copied().flatten()
+                            })
+                            .next()
+                            .or_else(|| self.nominal_nodes.get(dependency).copied().flatten())
                             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                         return self.unsupported(
                             UnsupportedSemanticFeatureV0_12::RecursiveNominalLayout,
@@ -251,5 +261,237 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Nominal(id) => self.nominal(id)?.is_copy(),
             CheckedType::Unit | CheckedType::Bool | CheckedType::Integer(_) => true,
         })
+    }
+
+    pub(super) fn prelude_type(&self, id: NominalId) -> Option<PreludeType> {
+        self.prelude_types.get(id.0 as usize).copied().flatten()
+    }
+
+    pub(super) fn prelude_nominal(&self, ty: PreludeType) -> Result<NominalId, CheckStop> {
+        self.prelude_nominals
+            .get(&ty)
+            .copied()
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    fn register_prelude_nominals(&mut self) -> Result<(), CheckStop> {
+        self.intern_prelude_nominal(PreludeType::Overflow)?;
+        self.intern_prelude_nominal(PreludeType::DivError)?;
+        self.intern_prelude_nominal(PreludeType::NarrowError)?;
+
+        let mut type_nodes = self
+            .tree
+            .topology()
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| {
+                (record.production == ProductionV0_12::Type)
+                    .then(|| NodeId::from_index(index).map(|node| (record.tree_depth, node)))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        type_nodes.sort_by(|left, right| {
+            right
+                .0
+                .cmp(&left.0)
+                .then(left.1.index().cmp(&right.1.index()))
+        });
+        for (_, node) in type_nodes {
+            if self.prelude_type_ordinal(node)? == Some(8) {
+                let (ok, error) = self.result_type_arguments(node)?;
+                self.intern_prelude_nominal(PreludeType::Result(ok, error))?;
+            }
+        }
+
+        let propagate_lets = self
+            .tree
+            .topology()
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| {
+                (record.production == ProductionV0_12::LetStmt)
+                    .then(|| NodeId::from_index(index))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        for node in propagate_lets {
+            if self
+                .tree
+                .first_child_with(node, ProductionV0_12::PropagateLetRhs)?
+                .is_none()
+            {
+                continue;
+            }
+            let ok_node = self
+                .tree
+                .first_child_with(node, ProductionV0_12::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let ok = self.parse_type(ok_node)?;
+            let function = self.enclosing_function(node)?;
+            let rtype = self
+                .tree
+                .first_child_with(function, ProductionV0_12::Rtype)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let return_type = self
+                .tree
+                .first_child_with(rtype, ProductionV0_12::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let return_type = self.parse_type(return_type)?;
+            if let CheckedType::Nominal(return_nominal) = return_type
+                && let Some(PreludeType::Result(_, error)) = self.prelude_type(return_nominal)
+            {
+                self.intern_prelude_nominal(PreludeType::Result(ok, error))?;
+            }
+        }
+
+        let call_nodes = self
+            .tree
+            .topology()
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| {
+                (record.production == ProductionV0_12::Call)
+                    .then(|| NodeId::from_index(index))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        for node in call_nodes {
+            let Some(callee) = self.tree.first_child_with(node, ProductionV0_12::Callee)? else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            let spelling = self.tree.direct_spelling(callee)?;
+            if !matches!(
+                spelling.as_slice(),
+                b"iadd.checked" | b"isub.checked" | b"imul.checked"
+            ) {
+                continue;
+            }
+            let Some(targs) = self.tree.first_child_with(node, ProductionV0_12::Targs)? else {
+                continue;
+            };
+            let arguments = self.tree.children_with(targs, ProductionV0_12::Targ)?;
+            let [argument] = arguments.as_slice() else {
+                continue;
+            };
+            let Some(ty_node) = self
+                .tree
+                .first_child_with(*argument, ProductionV0_12::Type)?
+            else {
+                continue;
+            };
+            let Some(integer) = self.integer_type(ty_node)? else {
+                continue;
+            };
+            self.intern_prelude_nominal(PreludeType::Result(
+                CheckedType::Integer(integer),
+                CheckedType::Nominal(self.prelude_nominal(PreludeType::Overflow)?),
+            ))?;
+        }
+        Ok(())
+    }
+
+    fn enclosing_function(&self, mut node: NodeId) -> Result<NodeId, CheckStop> {
+        loop {
+            let record = self
+                .tree
+                .topology()
+                .node(node)
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let Some(parent) = record.parent else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            if self.tree.production(parent)? == ProductionV0_12::FnDecl {
+                return Ok(parent);
+            }
+            node = parent;
+        }
+    }
+
+    fn intern_prelude_nominal(&mut self, ty: PreludeType) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.prelude_nominals.get(&ty) {
+            return Ok(*id);
+        }
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let (name, variants) = match ty {
+            PreludeType::Result(ok, error) => (
+                format!(
+                    "Result<{}, {}>",
+                    self.checked_type_name(ok)?,
+                    self.checked_type_name(error)?
+                ),
+                vec![
+                    CheckedVariant {
+                        name: "Ok".to_owned(),
+                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(11)),
+                        tag: 0,
+                        fields: vec![CheckedField {
+                            name: "value".to_owned(),
+                            ty: ok,
+                        }],
+                    },
+                    CheckedVariant {
+                        name: "Err".to_owned(),
+                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(13)),
+                        tag: 1,
+                        fields: vec![CheckedField {
+                            name: "error".to_owned(),
+                            ty: error,
+                        }],
+                    },
+                ],
+            ),
+            PreludeType::Overflow => (
+                "Overflow".to_owned(),
+                vec![CheckedVariant {
+                    name: "Overflow".to_owned(),
+                    constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(16)),
+                    tag: 0,
+                    fields: Vec::new(),
+                }],
+            ),
+            PreludeType::DivError => (
+                "DivError".to_owned(),
+                vec![
+                    CheckedVariant {
+                        name: "DivideByZero".to_owned(),
+                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(18)),
+                        tag: 0,
+                        fields: Vec::new(),
+                    },
+                    CheckedVariant {
+                        name: "DivOverflow".to_owned(),
+                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(19)),
+                        tag: 1,
+                        fields: Vec::new(),
+                    },
+                ],
+            ),
+            PreludeType::NarrowError => (
+                "NarrowError".to_owned(),
+                vec![CheckedVariant {
+                    name: "NarrowError".to_owned(),
+                    constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(21)),
+                    tag: 0,
+                    fields: Vec::new(),
+                }],
+            ),
+        };
+        self.nominals.push(CheckedNominal {
+            id,
+            name,
+            kind: CheckedNominalKind::Enum { variants },
+        });
+        self.nominal_nodes.push(None);
+        self.prelude_types.push(Some(ty));
+        if self.prelude_nominals.insert(ty, id).is_some() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
     }
 }

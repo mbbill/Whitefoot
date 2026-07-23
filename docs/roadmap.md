@@ -97,23 +97,44 @@ an affine binding declared outside the loop; and checked break/backedge edges
 retain their derived cleanup. Existing compiler-independent accumulator and
 loop-carried-enum programs execute through the host backend.
 
+Concrete PRE-1 `Result<T, E>` values now reuse the same nominal enum,
+construction, matching, call, return, and aggregate-lowering path for arbitrary
+currently supported T and E. `Ok` and `Err` still resolve by their unique
+context-free constructor identities; only their concrete generic instance is
+recovered from a written consuming type in a let, return, give, or propagation
+site, and a context-free uninstantiated Result constructor remains a TYPE-5
+error. Checked add, subtract, and multiply construct `Result<T, Overflow>` from
+LLVM's defined overflow intrinsics without trapping. ERR-3 propagation records
+its `(function, node_path)` context and lowers to an explicit Ok continuation
+and Err return edge with exact same-E checking and derived cleanup. Independent
+Result value-match, checked-overflow, loop, and custom propagation programs run
+through the host backend, including a Result whose Ok payload is a struct.
+
 This is not a completeness claim. Generics and contracts, regions and borrows,
-floats, Result values and propagation, allocations and containers,
-recursive nominal layouts, branch-dependent ownership joins, index and
-borrow-backed SET-1 targets, and the remaining operation/effect table are
-explicit unsupported compiler capabilities rather than source-language
-rejections. Repeated exhaustive match arms also stop as unsupported because
-v0.12 defines neither duplicate-arm meaning nor a duplicate-arm rejection
-rule.
+floats, `Option`, allocations and containers, recursive nominal layouts,
+branch-dependent ownership joins, index and borrow-backed SET-1 targets,
+checked division/remainder and unary integer operations, and the remaining
+operation/effect table are explicit unsupported compiler capabilities rather
+than source-language rejections. Repeated exhaustive match arms also stop as
+unsupported because v0.12 defines neither duplicate-arm meaning nor a
+duplicate-arm rejection rule.
 
 The exact approved v0.12 candidate is installed and every live identity names
 it. The resolver implementation completes Phase 6, the first executable scalar
-slice completes Phase 7, and nominal data plus the current SET-1 place family
-advance Phase 8. The next work is the closed PRE-1 `Result` path used by checked
-integer arithmetic and `propagate`: contextual Result instantiation,
-construction/matching across calls and returns, checked-operation lowering,
-and exact Err forwarding. That is the smallest family that unlocks the next
-existing nontrivial executable program and a real recoverable-error path.
+slice completes Phase 7, and nominal data, the current SET-1 place family,
+structured loops, and the first Result family advance Phase 8.
+
+Before full ERR-3 corpus synchronization, one owner decision is required. OWN-1
+says every affine place expression requires `move`; ERR-3 does not state an
+exception, so the compiler currently applies that rule to a Result place used
+as a propagation operand. Existing conformance cases assume instead that
+`propagate result_binding` consumes the binding implicitly like an OWN-13 match.
+Other Result cases also contain pre-existing GRAM-10 binder-freshness and exact
+EFF-2 mismatches. No numbered specification, conformance verdict, or fixture was
+changed to hide these discrepancies. Resolve the propagation rule through the
+numbered-spec process, then repair the affected cases with owner approval and a
+decision record. After that synchronization, checked division/remainder is the
+next closed Result-producing operation family.
 
 ## Authority and specification changes
 
@@ -423,12 +444,14 @@ loop identities, OWN-11 blocks outer affine consumption, and normal backedges
 and breaks retain explicit cleanup. A loop with no structurally reachable break
 remains an explicit lowering limitation rather than a source rejection.
 
-Next implement the closed PRE-1 `Result` family required by checked integer
-operations and `propagate`. It must work for arbitrary supported payload types,
-functions, names, nesting, and source order through the one nominal/control-flow
-path; it may not special-case the existing `run-ex2` source. Buffers, index
-places, and loan-aware SET-1 targets follow when their storage and borrow
-families become the experiment being unlocked.
+The first closed PRE-1 `Result` slice is implemented through one
+nominal/control-flow path: contextual construction, arbitrary currently
+supported payload types, calls and returns, exhaustive matching, checked
+add/subtract/multiply, and explicit ERR-3 forwarding. It does not special-case
+`run-ex2` or another corpus source. Full ERR-3 corpus synchronization waits on
+the owner resolution above; checked division/remainder follows that resolution.
+Buffers, index places, and loan-aware SET-1 targets follow when their storage
+and borrow families become the experiment being unlocked.
 
 ## Phase 9: dogfood and language iteration
 
