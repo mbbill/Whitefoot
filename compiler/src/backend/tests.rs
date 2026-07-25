@@ -4,6 +4,7 @@ mod arrays;
 mod base64;
 mod buffers;
 mod checked_division;
+mod effect_attributes;
 mod float_conversion;
 mod floating;
 mod integer_absolute;
@@ -17,16 +18,17 @@ mod requires;
 mod resource_enums;
 mod slices;
 
-use std::process::{Command, Output};
+use std::io::Write;
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
-    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked, parse,
-    resolve,
+    HOST_OPTIMIZATION_ARGUMENTS, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome,
+    SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical,
+    check_semantics, classify_terminals, compile as compile_program, emit_llvm, finalize,
+    lower_checked, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -136,6 +138,7 @@ fn compile_and_run(llvm: &str) -> Output {
         .arg("-x")
         .arg("ir")
         .arg(&module)
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)
         .output()
@@ -154,6 +157,58 @@ fn compile_and_run(llvm: &str) -> Output {
     std::fs::remove_file(&module).expect("remove backend test module");
     std::fs::remove_dir(&directory).expect("remove backend test directory");
     output
+}
+
+/// Returns the module as the host optimizer leaves it at the shipped level.
+fn host_optimized_module(llvm: &str) -> String {
+    let mut child = Command::new("/usr/bin/clang")
+        .arg("-x")
+        .arg("ir")
+        .arg("-")
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .arg("-S")
+        .arg("-emit-llvm")
+        .arg("-o")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("invoke host clang");
+    child
+        .stdin
+        .take()
+        .expect("clang stdin must be available")
+        .write_all(llvm.as_bytes())
+        .expect("send module to host clang");
+    let output = child.wait_with_output().expect("wait for host clang");
+    if !output.status.success() {
+        panic!(
+            "clang rejected emitted LLVM:\n{}\n{llvm}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    String::from_utf8(output.stdout).expect("optimized module is UTF-8")
+}
+
+/// Returns the definition of `main` inside one optimized module.
+fn optimized_main(module: &str) -> &str {
+    let start = module
+        .match_indices(" @main(")
+        .find_map(|(symbol_start, _)| {
+            let line_start = module[..symbol_start]
+                .rfind('\n')
+                .map_or(0, |newline| newline + 1);
+            module[line_start..symbol_start]
+                .starts_with("define")
+                .then_some(line_start)
+        })
+        .expect("optimized module must still define main");
+    let end = module[start..]
+        .find("\n}\n")
+        .map(|offset| start + offset + 2)
+        .expect("main definition must close");
+    &module[start..end]
 }
 
 fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
@@ -722,4 +777,64 @@ fn integer_overflow_reports_op2_before_abort() {
         "{\"rule_id\":\"OP-2\",\"message\":\"integer overflow\",\"function\":\"main\",\"node_path\":["
     ));
     assert!(stderr.ends_with("]}\n"));
+}
+
+#[test]
+fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
+    // The loop multiplies by an odd constant and mixes in the counter, so no
+    // closed form exists for the host optimizer to fold, and the iteration
+    // count is far past any full-unroll budget. The failing condition
+    // therefore cannot be decided before execution: whatever the optimizer
+    // does, the check has to run.
+    let source = br#"fn main() -> own unit traps {
+  doc "A mixing chain the host optimizer cannot fold feeds one required check.";
+  let step: own u64 = 0_u64;
+  let state: own u64 = 14695981039346656037_u64;
+  loop @mix {
+    match ige<u64>(step, 4096_u64) {
+      True() => {
+        break @mix;
+      }
+      False() => {
+      }
+    }
+    let mixed: own u64 = ixor<u64>(state, step);
+    set state = imul.wrap<u64>(mixed, 1099511628211_u64);
+    set step = iadd.trap<u64>(step, 1_u64);
+  }
+  check ieq<u64>(state, 1_u64) else trap "mixing chain drift";
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    let optimized = host_optimized_module(&llvm);
+    // Unoptimized `main` is a bare wrapper around `wf_main`, so finding the
+    // loop and its trap edge inside `main` also witnesses that the shared
+    // optimization arguments really reached the host compiler.
+    let main = optimized_main(&optimized);
+    assert!(
+        main.contains("1099511628211"),
+        "the host optimizer folded the mixing chain, so the check is decidable:\n{main}"
+    );
+    assert!(
+        main.contains("br i1"),
+        "the check became unconditional under host optimization:\n{main}"
+    );
+    assert!(
+        main.contains("@wf_trap"),
+        "host optimization dropped the trap edge of a required check:\n{main}"
+    );
+
+    let output = compile_and_run(&llvm);
+    assert!(!output.status.success());
+    assert_eq!(
+        output.status.code(),
+        None,
+        "a trap aborts instead of exiting normally"
+    );
+    assert_eq!(
+        output.stderr,
+        b"{\"rule_id\":\"OP-5\",\"message\":\"mixing chain drift\",\"function\":\"main\",\"node_path\":[0,0,6,0]}\n"
+    );
+    assert!(output.stdout.is_empty());
 }

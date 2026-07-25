@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use whitefoot::{CompilerLimits, SourceInput, compile};
+use whitefoot::{CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
@@ -45,6 +45,7 @@ pub fn compile_and_run(llvm: &str) -> Output {
         .arg("-x")
         .arg("ir")
         .arg(&module)
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)
         .output()

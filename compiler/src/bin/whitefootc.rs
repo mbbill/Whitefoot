@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use whitefoot::{CompilerLimits, SourceInput, compile};
+use whitefoot::{CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile};
 
 fn main() {
     if let Err(message) = run() {
@@ -53,6 +53,7 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
         .arg("ir")
         .arg("-")
         .arg("-Wno-override-module")
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(output)
         .stdin(Stdio::piped())
