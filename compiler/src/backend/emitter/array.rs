@@ -21,8 +21,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         let array_type = llvm_type(self.program, ty)?;
         let llvm_element_type = llvm_type(self.program, element_type)?;
-        let array_slot = self.next_temporary()?;
-        let index_slot = self.next_temporary()?;
+        let array_slot = self.entry_slot(&array_type)?;
+        let index_slot = self.entry_slot("i64")?;
         let index = self.next_temporary()?;
         let in_range = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
@@ -30,7 +30,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         writeln!(
             self.output,
-            "  %{array_slot} = alloca {array_type}\n  %{index_slot} = alloca i64\n  store i64 0, ptr %{index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr %{index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr %{array_slot}, i64 0, i64 %{index}\n  store {llvm_element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  store i64 %{next_index}, ptr %{index_slot}\n  br label %{}\n{}:\n  {} = load {array_type}, ptr %{array_slot}",
+            "  store i64 0, ptr {index_slot}\n  br label %{}\n{}:\n  %{index} = load i64, ptr {index_slot}\n  %{in_range} = icmp ult i64 %{index}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 %{index}\n  store {llvm_element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  store i64 %{next_index}, ptr {index_slot}\n  br label %{}\n{}:\n  {} = load {array_type}, ptr {array_slot}",
             array_fill_head_label(result),
             array_fill_head_label(result),
             array_fill_body_label(result),
@@ -100,14 +100,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         let root_pointer = match root {
             IrArrayRoot::Value(value) => {
-                let slot = self.next_temporary()?;
+                let slot = self.entry_slot(&array_type)?;
                 writeln!(
                     self.output,
-                    "  %{slot} = alloca {array_type}\n  store {array_type} {}, ptr %{slot}",
+                    "  store {array_type} {}, ptr {slot}",
                     value_name(value)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
-                format!("%{slot}")
+                slot
             }
             IrArrayRoot::Constant(id) => constant_symbol(id),
         };
@@ -180,11 +180,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let array_type = llvm_type(self.program, ty)?;
         let llvm_element_type = llvm_type(self.program, element_type)?;
-        let array_slot = self.next_temporary()?;
+        let array_slot = self.entry_slot(&array_type)?;
         let element_pointer = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{array_slot} = alloca {array_type}\n  store {array_type} {}, ptr %{array_slot}\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr %{array_slot}, i64 0, i64 {}\n  store {llvm_element_type} {}, ptr %{element_pointer}\n  {} = load {array_type}, ptr %{array_slot}",
+            "  store {array_type} {}, ptr {array_slot}\n  %{element_pointer} = getelementptr inbounds {array_type}, ptr {array_slot}, i64 0, i64 {}\n  store {llvm_element_type} {}, ptr %{element_pointer}\n  {} = load {array_type}, ptr {array_slot}",
             value_name(aggregate),
             value_name(index),
             value_name(value),

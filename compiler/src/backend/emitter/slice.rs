@@ -34,16 +34,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         let pointer = match array {
             IrArrayRoot::Value(value) => {
-                let slot = self.next_temporary()?;
+                let llvm_array_type = llvm_type(self.program, array_type)?;
+                let slot = self.entry_slot(&llvm_array_type)?;
                 writeln!(
                     self.output,
-                    "  %{slot} = alloca {}\n  store {} {}, ptr %{slot}",
-                    llvm_type(self.program, array_type)?,
-                    llvm_type(self.program, array_type)?,
+                    "  store {llvm_array_type} {}, ptr {slot}",
                     value_name(value),
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
-                format!("%{slot}")
+                slot
             }
             IrArrayRoot::Constant(id) => constant_symbol(id),
         };

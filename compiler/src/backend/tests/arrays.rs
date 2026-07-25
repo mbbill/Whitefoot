@@ -1,5 +1,33 @@
 use super::{compile, compile_and_run, emitted_function};
 
+/// Counts the stack slots one emitted function declares, and how many of those
+/// declarations sit outside its entry block.
+///
+/// A slot declared anywhere else is reached once per execution of its block, so
+/// a slot inside a loop grows the frame once per iteration. The emitter must
+/// therefore keep every declaration in the entry block, which runs exactly once
+/// per call, and leave only the store at the use site.
+fn slot_declarations(function: &str) -> (usize, usize) {
+    let mut in_entry = false;
+    let mut total = 0;
+    let mut outside_entry = 0;
+    for line in function.lines() {
+        if let Some(label) = line.strip_suffix(':')
+            && !label.starts_with(' ')
+        {
+            in_entry = label == "entry";
+            continue;
+        }
+        if line.contains(" = alloca ") {
+            total += 1;
+            if !in_entry {
+                outside_entry += 1;
+            }
+        }
+    }
+    (total, outside_entry)
+}
+
 #[test]
 fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
     let llvm = compile(include_bytes!(
@@ -149,6 +177,70 @@ fn main() -> own unit traps {
     ));
     assert!(!stderr.contains("RHS evaluated"));
     assert_eq!(stderr.lines().count(), 1);
+}
+
+#[test]
+fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
+    // Both the read and the indexed set need a stack slot for the array value,
+    // and the index is not a compile-time constant, so neither slot can be
+    // promoted away. The trip count is far past the point where one slot per
+    // iteration would exhaust the process stack: 200000 iterations of two
+    // 64-byte slots is about 25 MB, against a default 8 MB limit.
+    let source = br#"fn main() -> own unit traps {
+  doc "A long loop reads and writes one fixed array through a rotating index.";
+  let window: own array<u64, 8> = array_new<u64, 8>(1_u64);
+  let step: own u64 = 0_u64;
+  let cursor: own u64 = 0_u64;
+  let total: own u64 = 0_u64;
+  loop @stream {
+    match ige<u64>(step, 200000_u64) {
+      True() => {
+        break @stream;
+      }
+      False() => {
+      }
+    }
+    let previous: own u64 = index<u64>(window, cursor);
+    let mixed: own u64 = ixor<u64>(previous, step);
+    set index<u64>(window, cursor) = imul.wrap<u64>(mixed, 1099511628211_u64);
+    set total = iadd.wrap<u64>(total, previous);
+    let at_end: own Bool = ieq<u64>(cursor, 7_u64);
+    let next_cursor: own u64 = match at_end {
+      True() => {
+        give 0_u64;
+      }
+      False() => {
+        give iadd.wrap<u64>(cursor, 1_u64);
+      }
+    }
+    set cursor = next_cursor;
+    set step = iadd.trap<u64>(step, 1_u64);
+  }
+  check ieq<u64>(step, 200000_u64) else trap "stream length drift";
+  check ieq<u64>(cursor, 0_u64) else trap "stream cursor drift";
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    let main = emitted_function(&llvm, "main");
+    let (total, outside_entry) = slot_declarations(main);
+    assert!(
+        total > 0,
+        "the kernel must still need stack slots for this test to mean anything:\n{main}"
+    );
+    assert_eq!(
+        outside_entry, 0,
+        "{outside_entry} of {total} stack slots are declared outside the entry block, so the frame grows once per iteration:\n{main}"
+    );
+
+    let output = compile_and_run(&llvm);
+    assert!(
+        output.status.success(),
+        "the loop must run to completion instead of exhausting the stack: {:?}",
+        output.status
+    );
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
 }
 
 #[test]

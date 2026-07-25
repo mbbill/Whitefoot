@@ -14,12 +14,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             return Err(BackendFailure::InvalidIr);
         }
+        let nominal_type = llvm_type(self.program, IrType::Nominal(nominal))?;
+        self.declare_entry_slot(&value_name(result), &nominal_type)?;
         writeln!(
             self.output,
-            "  {} = alloca {}\n  store {} {}, ptr {}",
-            value_name(result),
-            llvm_type(self.program, IrType::Nominal(nominal))?,
-            llvm_type(self.program, IrType::Nominal(nominal))?,
+            "  store {nominal_type} {}, ptr {}",
             value_name(value),
             value_name(result)
         )

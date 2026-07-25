@@ -296,6 +296,14 @@ struct FunctionEmitter<'program, 'state> {
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
     output: String,
+    /// Stack slot declarations hoisted to the top of the function's entry block.
+    ///
+    /// A slot is requested where it is used, but a repeated `alloca` grows the
+    /// frame once per execution, so a slot inside a loop would grow the frame
+    /// without bound. Declaring every slot in the entry block, which runs
+    /// exactly once per call, keeps frame size a property of the function
+    /// rather than of the iteration count. Stores stay at the use site.
+    entry_prelude: String,
     temporary: u32,
 }
 
@@ -315,6 +323,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             intrinsics,
             incoming: Vec::new(),
             output: String::new(),
+            entry_prelude: String::new(),
             temporary: 0,
         }
     }
@@ -341,11 +350,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .map_err(|_| BackendFailure::TextEmission)?;
         }
         self.output.push_str(") {\n");
+        let mut prelude_anchor = None;
         for (index, block) in self.function.blocks().iter().enumerate() {
             let block_id =
                 IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(block_id))
                 .map_err(|_| BackendFailure::TextEmission)?;
+            if index == 0 {
+                prelude_anchor = Some(self.output.len());
+            }
             self.emit_block_parameters(block_id, block)?;
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
@@ -353,6 +366,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.emit_terminator(block_id, block.terminator())?;
         }
         self.output.push_str("}\n\n");
+        if !self.entry_prelude.is_empty() {
+            let anchor = prelude_anchor.ok_or(BackendFailure::InvalidIr)?;
+            self.output.insert_str(anchor, &self.entry_prelude);
+        }
         Ok(self.output)
     }
 
@@ -791,6 +808,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.emit_drop(*drop)?;
         }
         Ok(())
+    }
+
+    /// Declares a stack slot under a caller-chosen name in the entry block.
+    ///
+    /// The name must be an otherwise undefined value name, because the slot
+    /// declaration becomes that name's single definition.
+    fn declare_entry_slot(&mut self, name: &str, ty: &str) -> Result<(), BackendFailure> {
+        writeln!(self.entry_prelude, "  {name} = alloca {ty}")
+            .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// Reserves a fresh stack slot in the entry block and returns its name.
+    ///
+    /// Each call reserves a distinct slot, so two slots never alias even when
+    /// they hold values of the same type and live at the same time.
+    fn entry_slot(&mut self, ty: &str) -> Result<String, BackendFailure> {
+        let name = format!("%{}", self.next_temporary()?);
+        self.declare_entry_slot(&name, ty)?;
+        Ok(name)
     }
 
     fn next_temporary(&mut self) -> Result<String, BackendFailure> {
