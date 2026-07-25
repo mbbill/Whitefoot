@@ -1,7 +1,15 @@
-# Language-change workflow
+# Operational workflows
 
-This is the sole operational guide for changing the Whitefoot language. A
-specification update is one coordinated state transition across governance,
+This is the sole operational guide for advancing Whitefoot. It holds two loops.
+
+The **experiment loop** is the trunk: P0 is why the project exists, so work
+starts from a falsifiable question about machine code. The **language-change
+loop** is a branch entered only from the experiment loop's routing stage, when a
+measured result names a specification gap as its concrete blocker. That ordering
+is the 2026-07-24 roadmap reorientation made self-enforcing: an amendment cannot
+start without the experiment that needs it.
+
+A specification update is one coordinated state transition across governance,
 the numbered specification, compiler-independent evidence, the compiler, and
 live documentation. None of those parts has an independent update lifecycle.
 
@@ -35,7 +43,8 @@ parent; participating directories do not carry their own workflow README.
 | `tests/conformance/` | Holds compiler-independent source-to-verdict evidence for the active specification |
 | `compiler/` | Implements the active specification through the normal compiler path |
 | `docs/patterns.md` and other live docs | Teach and describe the active language |
-| `mcts_mem/` | Preserves why a durable design won over real alternatives |
+| `mcts_mem/` | Preserves why a durable design won over real alternatives, and why a rejected one lost |
+| `research/experiments/` | Holds one directory per experiment: sources, run script, and RESULTS.md |
 | Root `Makefile` and `governance/hooks/` | Run the repository gate and protect released specification bytes |
 
 `governance/` itself contains only the approval record, exact successor
@@ -43,10 +52,54 @@ candidates, and the tracked hook. Historical transition logs and superseded
 review material live under `archive/governance/` and cannot authorize current
 work.
 
+## The experiment loop
+
+One hypothesis per loop. No bundling: the v0.18 candidate moved thirty-one rules
+at once and became unreviewable.
+
+| # | Stage | Produces | Fails when |
+|---|---|---|---|
+| 0 | Select | the chosen channel, taken from the roadmap's ranked list | the choice is interest-led rather than ranked |
+| 1 | Pre-register | the hypothesis, written before any intervention | it is edited after the intervention starts — that is a new loop |
+| 2 | Instrument | baseline codegen and remarks; a canary shown *failing*; a workload where the transform applies | the instrument cannot observe the predicted effect yet |
+| 3 | Probe | cheapest decisive check, e.g. a hand-patched `.ll` plus a codegen diff | treated as evidence for the claim instead of for the decision to build |
+| 4 | Route | compiler-only work, a Phase 8 prerequisite, or entry to the language-change loop | a specification change is reached for before a blocker is named |
+| 5 | Implement | the change on the one normal path, facts-off identity intact | a second lowering path or a writer-facing toggle appears |
+| 6 | Verify | correctness, attribution, and magnitude, separately | a magnitude is claimed without attribution |
+| 7 | Judge | keeper, parity, negative, or inconclusive | the result is read against hope rather than the pre-registration |
+| 8 | Record | `mcts_mem/`, RESULTS.md, roadmap, and a standing canary, in one change | a parity or negative outcome goes unrecorded |
+| 9 | Re-rank | the updated channel ranking that selects the next loop | the loop ends without choosing what follows |
+
+**Stage 1 — the hypothesis** states the verified fact; the mechanism, meaning
+which pass consumes it; the predicted observable, meaning which missed-transform
+remark flips or which assembly shape appears; a magnitude band or an explicit
+"directional only"; the R0 clause, naming the delta over Rust or C and whether
+it lands on P0, W1, or W3; and the kill condition that retires it.
+
+**Stage 6 — the three parts are not interchangeable.** *Correctness*: the gate
+is green, required checks are retained, trap records are byte-identical.
+*Attribution*: the facts-on/facts-off codegen diff is non-empty, the predicted
+remarks flipped, the canary now passes. *Magnitude*: the number, with protocol,
+machine, and caveats. The instrument is guilty until proven innocent, and no
+magnitude may be cited without attribution.
+
+**Stage 7 — the four outcomes.** A *keeper* needs attribution proven, a delta
+outside the noise band on a named kernel, no acceptance change, no required
+check removed without proof, and complexity proportionate to the win. *Parity*
+means the fact was consumed and paid nothing; it is a real result, and it forces
+one explicit sub-decision — keep the emission because it is free and correct, or
+revert it because it carries complexity. *Negative* means consumed and worse:
+revert and record. *Inconclusive* means the instrument broke; it is not a result
+and is never filed as parity.
+
+**Stage 8 — negative results are recorded as durably as wins.** That is what
+`mcts_mem/`'s rejected alternatives exist for. An unrecorded dead channel gets
+retried weeks later; sunk cost is not evidence, and neither is forgetting.
+
 ## First classify the problem
 
-Start from the active numbered specification, not from compiler behavior or a
-test expectation.
+Reached from stage 4, or directly for a reported defect. Start from the active
+numbered specification, not from compiler behavior or a test expectation.
 
 - If the active specification already determines the behavior and the compiler
   disagrees, this is a compiler defect. Keep the specification and existing
@@ -56,7 +109,9 @@ test expectation.
   this is protected-evidence correction. Stop and obtain owner approval before
   changing or removing it. Do not change the language to preserve a bad test.
 - If the specification is ambiguous, incomplete, or intentionally needs new
-  behavior, enter the complete language-change loop below.
+  behavior, enter the complete language-change loop below. Its stage 1 requires
+  the naming of current roadmap work, which for a performance-driven amendment
+  is the experiment-loop hypothesis and probe that identified the blocker.
 - If the compiler cannot yet implement valid specified behavior, report the
   capability as unsupported. An internal error, timeout, crash, or missing
   feature is never a source-language rejection and never changes an expected
@@ -242,6 +297,15 @@ script, or tool that selects a different active version.
 skill owns traversal, admission, formatting, provenance, paired moves, and
 linting or its documented manual fallback. Do not read or edit the tree as
 ordinary repository Markdown, and do not invent a local replacement procedure.
+
+### Experiment resources
+
+`research/experiments/` holds one self-contained directory per experiment:
+sources, a run script, and a RESULTS.md carrying the pre-registered hypothesis,
+protocol, machine, measured numbers, attribution evidence, and honest caveats. A
+parity or negative RESULTS.md is as durable as a winning one. Democ-era bundles
+remain historical evidence and regression targets; they are not active gates,
+and a script inside one may name a retired compiler.
 
 ### Conformance resources
 

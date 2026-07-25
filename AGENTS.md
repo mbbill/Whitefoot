@@ -123,7 +123,9 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
 
 ## Specification and test integrity
 
-- Root `WORKFLOW.md` is the sole operational language-change workflow.
+- Root `WORKFLOW.md` is the sole operational workflow guide. It holds the
+  experiment loop as the trunk and the language-change loop as a branch entered
+  only when a measured result names a specification gap as its blocker.
   `governance/`, `spec/`, and `tests/conformance/` provide its records,
   resources, and tools; none defines an independent update lifecycle.
 - The numbered kernel specification is append-only, enforced by a pre-commit
