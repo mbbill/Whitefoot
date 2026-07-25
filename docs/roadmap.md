@@ -1,6 +1,7 @@
 # THE PLAN
 
-Status: CANONICAL ROADMAP, corrected 2026-07-23.
+Status: CANONICAL ROADMAP, reoriented to Phase 10 performance evidence
+2026-07-24.
 
 ## Goal
 
@@ -592,7 +593,12 @@ retention, and the absence of `nsw`, `nuw`, or `llvm.assume` claims.
 
 ## Phase 8: expand semantic capability
 
-Status: in progress.
+Status: in progress, and subordinate to Phase 10 since the 2026-07-24
+reorientation. Freezing active behavior at v0.17 stops this phase's exit
+criterion from receding, so the remaining work is a finite list rather than a
+treadmill. Phase 8 no longer selects its own next family: a remaining gap is
+worked when a Phase 10 slice or a dogfood port names it as the concrete
+blocker, and otherwise waits.
 
 Add coherent language families in dependency and experimental-value order,
 each end to end through execution. The likely families are:
@@ -1000,28 +1006,48 @@ truncated inputs execute through the public compiler boundary. This probe
 exposed no new semantic capability gap; it provides composition evidence for
 the existing buffer, Result, box, recursion, borrow, effect, and cleanup paths.
 
-The exact next language work is the loan-lifetime and scope amendment as a
-separate v0.18 candidate. Its package must inventory every ownership, cleanup,
-effect, provenance, conformance, and compiler impact and survive multiple
-exact-byte hostile-review rounds, with additional research or tests wherever a
-reviewer exposes a missing premise, before owner review. No lifetime
-implementation begins before exact approval. Do not pull arena cleanup, stored
-slice leaves, borrow-producing branch joins, or another unrelated capability
-into that amendment.
+The owner reoriented this roadmap on 2026-07-24. The constitution's P0 states
+that machine performance is the reason this project exists, yet every recorded
+fact-channel measurement predates the current compiler, the active compiler
+links its executables without optimization, and Phase 10 had no starts. The
+v0.17 language is broad enough to compile the performance workloads Phase 10
+needs, so language amendment now yields to performance evidence: no further
+specification amendment starts without naming the measured experiment it
+unblocks. The exact next work is the first Phase 10 slice defined below.
 
-After the owner-directed closures finish, Phase 9 returns to selecting another
-production-shaped dogfood target in a real-world domain not exercised by the
-current programs. Cyclic generic calls, generic `requires`, and type-dependent
-generic `cvt`/`reinterpret` remain explicit unsupported compiler capabilities.
-Region-bearing function and nominal generic arguments are now v0.17 FN-2
-source rejections, not members of that unsupported set.
+The v0.18 loan-lifetime and scope candidate is parked, not abandoned. Its
+exact bytes remain in `governance/spec-evolution/kernel-spec-v0.18-candidate.md`
+as a non-authoritative design record; active behavior stays v0.17. It re-enters
+review only when a measured experiment or dogfood port names the loan-lifetime
+wall as its concrete blocker, the way v0.7's bounded reborrow was driven by
+measured blocked sites. When it re-enters, the previously stated package bar is
+unchanged: complete impact inventory, validation evidence comparable to the
+reborrow investigation, and multiple exact-byte hostile-review rounds before
+owner review, without pulling arena cleanup, stored slice leaves, or
+borrow-producing branch joins into the amendment.
+
+Phase 9 dogfood selection now serves channel pressure: recorded evidence says
+facts are neutral on single-buffer byte kernels, so the next targets are chosen
+for aliasing, effect, or law pressure. Cyclic generic calls, generic
+`requires`, and type-dependent generic `cvt`/`reinterpret` remain explicit
+unsupported compiler capabilities. Region-bearing function and nominal generic
+arguments are v0.17 FN-2 source rejections, not members of that unsupported
+set.
 
 ## Phase 9: dogfood and language iteration
 
 Continuously use production-shaped but manageable projects to reveal missing
-features and bad design. Cover at least binary data/compression, text and
-command-line processing, collections or graph-shaped work, and one sustained
-workload. zlib remains a useful example, not a privileged target.
+features and bad design. zlib remains a useful example, not a privileged
+target.
+
+Selection is by channel pressure since the 2026-07-24 reorientation, not by
+domain coverage. Recorded evidence puts facts at neutral on single-accumulator
+byte kernels, because those are latency-bound and out-of-order execution hides
+the eliminated loads, so a new target earns its place by exercising aliasing,
+effect, or law pressure. The earlier coverage list — binary data/compression,
+text and command-line processing, collections or graph-shaped work, and one
+sustained workload — is satisfied by the current corpus and is now a breadth
+check on that corpus rather than the criterion for the next target.
 
 When dogfood reveals a language problem, change the specification through the
 numbered process and update the compiler. When it reveals a compiler problem,
@@ -1032,6 +1058,282 @@ The compiler is successful when it can support these experiments reliably and
 can be changed without repeatedly rebuilding unrelated infrastructure.
 
 ## Phase 10: optimizer experiments
+
+Status: in progress; opened 2026-07-24 by the owner reorientation above.
+
+The first slice is an honest facts-off baseline. It changes no language
+behavior and needs no specification work:
+
+1. Repair conservative array lowering first. Dynamic indexing of an
+   `array<T,N>` value emits a fresh `alloca` plus a whole-array store at the
+   point of use, inside loop bodies, so stack use grows per iteration and a
+   long loop dies with no DIAG record: `fir_filter` exits 0 at 5,000 frames
+   and 139 at 10,000, at both no-flag and `-O2`. That is a compiler defect,
+   not a language gap, and it is a prerequisite for the workload drivers
+   rather than an optimization. Hoisting the slot to the entry block was
+   validated by IR surgery: the crash is gone at 100,000 frames and `sha256`
+   loses 18% of its `-O2` instructions.
+2. Make optimized compilation the driver's single behavior over the same
+   emitted LLVM. There is no writer-facing optimization level: the default
+   shape must be the optimal shape, and where semantics are identical no
+   writer decision exists, so offering an unoptimized alternative would only
+   offer a worse one. Facts-off semantics, every retained check, and the exact
+   DIAG-3 trap record stay intact, and the level itself must be one shared
+   definition consumed by all three sites that invoke `clang`: the driver at
+   `compiler/src/bin/whitefootc.rs:51` and the two test helpers that duplicate
+   the invocation with no `-O` flag, `compiler/src/backend/tests.rs:135` and
+   `compiler/tests/programs/support.rs:44`. Editing only the driver leaves
+   every test compiling at `-O0`, so the existing assertions hold unchanged
+   trivially and prove nothing. The proof must also be stated honestly: at
+   `-O2` all 12 DIAG-3 record kernels constant-fold to the same
+   28-instruction `write(2, <constant>, len); abort()` with every check and
+   both `malloc` and `free` deleted, so they prove that the record plumbing
+   survives optimization and nothing about check survival. The step therefore
+   additionally requires at least one regression that traps out of a
+   non-foldable optimized loop. Four settings are excluded, not merely
+   unchosen: fast-math, because v0.17 makes floats IEEE-754 with no
+   reassociation or contraction and states that a relaxed float op would
+   arrive as a distinct OPNAME, so a build flag would settle an open
+   source-language question and would also displace FN-4's proof-licensed
+   reassociation; `-march=native`, because R6 forbids marrying one ISA, v0.15
+   already fixes one exact target triple and DataLayout, and machine-dependent
+   output destroys cross-machine comparability; and profile-guided
+   optimization, because the founding static-versus-profile decision makes
+   verified facts the thesis and sampled profiles its alternative. Link-time
+   optimization is deferred rather than excluded: it is moot while every user
+   function is `internal` in one module, and it is the recorded adversary for
+   the effect-attribute channel, whose claim is LTO-class results without LTO,
+   so enabling it by default would erase the comparison it must win.
+   `-O2` versus `-O3` has no runtime evidence yet: every measured difference
+   is a size change — `fir_filter` 120 to 209 instructions,
+   `prefix_expression` 221 to 248, `raw_deflate` 2452 to 2672, `sha256` 1234
+   to 1232 — plus `ipv4_checksum` folding to 2 instructions at `-O3`. `-O2` is
+   provisionally selected, and the choice is revisited when the workload
+   drivers land.
+3. Give each measured kernel a scaled workload driver — input size and
+   repetition count stated in its experiment directory — so wall-clock exceeds
+   process-startup noise. This is a prerequisite for the attribution harness,
+   not a peer task. The current `tests/programs/` corpus is correctness tests
+   over fixed tiny inputs and every member finishes inside startup, so no
+   member is timeable as it stands. A driver adds no language surface and must
+   not weaken the correctness assertion it wraps. Each driver is gated on one
+   thing only: a two-size scaling check at the measured optimization level,
+   timed interleaved as a minimum of repeated runs, because this machine drifts
+   by around 60 percent across non-interleaved runs. The presence of the
+   kernel's own call in the optimized assembly is explicitly *not* a valid
+   gate: a measured counter-example keeps `bl _wf_*` and 891 instructions of
+   kernel in the binary while `licm` hoists the loop-invariant call out and
+   loop deletion removes the loop, so it executes once and both workload sizes
+   report 0.00s. A driver that fails the scaling gate yields a void number, and
+   the attribution harness cannot catch it, because a deleted kernel looks
+   exactly like an inert fact.
+   The SHA-256 repetition driver already fails that way: it is deleted
+   outright at `-O2`, user time flat at 0.00s across 65536, 262144 and 1048576
+   repetitions while `-O0` scales 0.67s, 2.58s and 10.26s. SHA-256 is
+   therefore reclassified as a port — a message-length parameter and the full
+   8-word state, roughly 80 to 120 lines — and not a driver. `raw-deflate`
+   cannot grow its input inside Whitefoot at all, because the repo has only a
+   decoder, so a larger stream is generated out of band and embedded as a
+   `const array<u8, N>`; that route is verified at 214,011 bytes. CRC32,
+   base64 and FIR scale fine, at roughly 19 to 63 driver lines each. Timing
+   uses user time or discards a warm-up run, because a freshly linked binary
+   costs about 0.2s real on its first execution, and there is no clock in the
+   language, so every measurement is taken by the harness.
+4. Build the attribution harness, because a fact channel that reports no gain
+   must be distinguishable from a fact the backend never consumed, and the
+   second must fail loudly instead of reading as a negative result. It has
+   four parts, and every invocation in it pins `/usr/bin/clang` by absolute
+   path, because a bare `clang` here resolves to a wasi-sdk build that
+   silently retargets the module. A codegen diff between facts-on and
+   facts-off output at one optimization level is the gate, taken on IR rather
+   than on assembly: identical optimized IR proves the fact was inert, and no
+   timing number from that pair may then be cited for or against the channel;
+   differing IR proves consumption and localizes it per function. An assembly
+   gate is weak in both directions, scoring scheduler and register-allocation
+   noise over identical optimized IR as a regression, and a bare store reorder
+   as consumption. Captured LLVM optimization remarks
+   (`-Rpass`, `-Rpass-missed`, `-fsave-optimization-record`) supply the
+   diagnosis, turning a null into a named pass and reason; debug-info emission
+   is a prerequisite for any remark-based prediction, because the compiler
+   emits none and every remark therefore lands at `<unknown>:0:0`, which makes
+   a remark prediction unattributable in principle. A positive canary per
+   channel — a kernel where the fact is the only thing that can unlock one
+   named transform, asserted on the resulting assembly — guards the instrument
+   itself, so a canary that stops flipping indicts the harness rather than the
+   thesis; the recorded `accumulate` reduction, which collapses to one `madd`
+   under `noalias` and stays an alias-guarded loop without it, is the model.
+   Pipeline confirmation that the consuming pass runs at the selected level at
+   all is the cheap precondition for the other three, and is also how the
+   provisional `-O2` choice is revisited per kernel instead of by judgment.
+5. Measure the kernel set against C or Rust equivalents at matched
+   optimization and at both `-O2` and `-O3`, since the recorded Rust adversary
+   ran `opt-level=3` and a weaker baseline flatters our own facts; report both
+   arms so the numbers stay comparable with the recorded democ `-O2` results.
+   Use the `research/experiments/` discipline: one directory
+   per experiment with sources, a run script, and a RESULTS.md carrying
+   measured numbers and honest caveats, now bound to the Rust compiler. The
+   set is at minimum the raw-deflate decoder, SHA-256, and the FIR filter,
+   which are already `tests/programs/` members, plus base64 and CRC32, which
+   are not: they exist only as `tests/conformance/cases/`
+   `x-base64-rfc-vectors-run.wf` and `x-crc32-standard-vector-run.wf` and as
+   democ-era sources under `research/experiments/port-study/base64/` and
+   `research/experiments/crc32-swap-in/`. Porting those two into
+   `tests/programs/` is part of this slice.
+6. Record, per kernel and per level, the retained-check tax and the
+   conservative-lowering tax, and rank the candidate channels by measured
+   opportunity. The measured ranking is already in hand. Conservative array
+   lowering leads it and is not a channel at all: 472 of 1015 signal remarks
+   (`sha256` 264, `utf8parse` 140, `percent_decode` 48, `fir_filter` 20) and
+   60% of `sha256`'s `-O2` instruction stream, with no aliasing, effect, law or
+   bounds fact touching any of it, which is why it is step 1. The step-1 entry
+   slot hoist is only the shallow half of that repair; the whole-aggregate
+   copy-modify-reload remains. The first measurement this slice owes is
+   therefore a re-run of the fold-resistant SHA-256 feedback pattern on the
+   post-hoist compiler. Its one recorded reading — Whitefoot 1.16s against C
+   0.07s and Rust 0.08s at 500,000 blocks, beside exact parity at 0.14s on a
+   register-only recurrence — was taken while the hoist was landing and is
+   therefore unattributable to either compiler. If any large multiple survives
+   re-measurement, array lowering is the dominant P0 gap and outranks every
+   fact channel by an order of magnitude; until it is re-run, that reading is
+   cited nowhere. Bounds-proof
+   elision is next: LLVM already discharges 89% unaided, 313 emitted safety
+   checks down to 34 surviving at `-O2` (`raw_deflate` 16, `utf8parse` 10,
+   `percent_decode` 3, `fir_filter` 2, `recursive_tree` 2,
+   `prefix_expression` 1), so the channel is judged on the residual 34 and
+   never on 313; it needs no LLVM attribute and no ABI change, and it carries
+   the R0 argument. Effect attributes come third: they are consumable
+   in-module — 0.54s to 0.00s measured with `nounwind memory(argmem: read)` on
+   a real corpus function, which refutes the separate-compilation
+   hypothesis — but they are soundness-gated, as the second slice below
+   records. Scoped alias comes fourth: cheap via per-access metadata, but with
+   zero sites in the corpus, because LLVM inlines every internal kernel into
+   `main`, where buffers come from `noalias` `malloc` and it already has the
+   fact; corpus-wide there are zero vectorized loops and zero surviving user
+   functions with two or more buffer parameters. Checked law is dropped from
+   this slice: zero measured opportunity, with no reassociation-refusal remark
+   anywhere.
+
+**Exit:** RESULTS.md numbers for the kernel set at both levels, a named
+delta-or-gap versus Rust/C for each under the constitution's R0 test, a ranked
+channel list that selects the second slice, and — per candidate channel — the
+specific missed-transform remarks from the baseline log that the channel is
+predicted to flip. Those predictions are registered before the channel is
+built, so its result is falsifiable in advance rather than interpreted
+afterwards. The strongest available pre-registration is bounds-proof elision:
+it must flip the `loop-vectorize` `MissedDetails` remarks `Cannot vectorize
+potentially faulting early exit loop` — 6 of them in `raw_deflate` `main` — and
+`cannot identify array bounds` — 6 remaining, `raw_deflate` 5 and `utf8parse`
+1 — and must drop surviving safety-check trap sites below 34, while
+changing neither `gvn`/`LoadClobbered` nor the 106 surviving user `check`
+assertions. That bounds baseline is measured after the array-lowering repair in
+step 1: before it the count was 10, of which `sha256` carried 3, and the repair
+took `sha256` to zero, so `sha256` can no longer be named a carrier. Any
+pre-registration measured before a lowering change is void for the compiler that
+then exists. Any check counter must classify the 148 user-written `check`
+assertions separately from buffer, array, slice and overflow safety checks,
+because the two are indistinguishable to a naive `wf_trap` counter and would
+produce a false win. The earlier `grayscale` alias pre-registration is
+withdrawn: its number was wrong (21 `gvn` remarks at `-O2`, not seven, and 42
+under the wasi clang), its shape was wrong (clearing all 21 leaves the assembly
+byte-identical, which this slice's own gate defines as proof the fact was
+inert), and it is unattributable in principle while no debug info is emitted.
+`grayscale` compiles at `-O2` to `mov w0, #0; ret`.
+
+The expected second slice is the first fact channel on the active compiler, and
+the baseline reranks which one that is: proof-based OP-4 bounds elision goes
+first on measured opportunity, carrying the facts toggle, facts-off identity,
+independent attribution, and hostile negative canaries that the design memory
+already requires of any fact family. The frequency study's recorded conclusion
+makes relational bounds proofs in a real workload the next bounded bet, so the
+proof lane and the first channel are now one slice rather than two. It also
+carries the largest share of the R0 question: rustc already emits alias and
+read-only attributes from its own type system, so attribute channels chase
+parity plus boundary cases, while a checked entry contract that discharges
+downstream bounds checks has no Rust-source equivalent at all.
+
+Effect attributes move to third, and their entry work is a design decision
+rather than an emission, for three measured reasons. First, a soundness hazard:
+`nounwind willreturn memory(argmem: read)` on a trapping function deletes its
+required trap — exit 0 and empty stderr — while every other attribute
+combination correctly aborts, and v0.17 EFF-3 already forbids that outcome, so
+the emission rule is that v0.17 never emits `willreturn` on any row. Second,
+`memory(argmem: ...)` is unsound on the `{ptr,i64}` buffer and slice ABI: a
+store through a pointer extracted from a by-value struct argument is deleted,
+so `writes` rows need that ABI split into separate `ptr` and `i64` parameters
+before anything can be emitted, while `reads`-only rows can use `memory(read)`
+today. Third, no non-degenerate magnitude has been demonstrated. Scoped alias
+is deferred until a non-inlinable or opaque-input kernel exists.
+
+One Phase 8 gap is already known to sit under the alias channel. Borrows of
+scalar referents are unimplemented: `&'r i32` and `&uniq 'r i32` report
+unsupported `RegionsAndBorrows`. Compiling every conformance case through the
+public driver reports that gap for 35 cases, and 39 report some unsupported
+capability. Those are compiler-behavior counts, not manifest statuses: the
+manifest records only 14 `pending`, so it understates the gap by 21 cases
+because `make conformance-run` has no adapter and nothing reconciles the two.
+Borrows of aggregate referents work, including unbound `&uniq`
+argument temporaries and two sequential temporaries over one source. The
+recorded 22x reduction result used scalar `&uniq i64` and `&'r i64`, so
+reproducing that kernel verbatim needs scalar-referent borrows first. The alias
+channel may instead be opened over aggregate referents, as the recorded
+scoped-alias experiment did; whichever route is taken must be stated in the
+slice, because only the first requires a named Phase 8 prerequisite. The route
+is now constrained from a second direction, independently of scalar referents:
+LLVM parameter attributes — `noalias`, `readonly`, `nocapture`, `readnone`,
+`align`, `dereferenceable`, `nonnull` — are verifier errors on a `{ptr,i64}`
+by-value struct parameter, so the alias channel is a choice between per-access
+metadata and an ABI split whichever referent kind it opens over.
+
+The deepest question open under both slices is whether a fold-resistant channel
+workload can exist at all without an opaque input. The language has no input
+facility — no stdin, no argv, no getenv, no clock, and FN-7 forbids parameters
+on `main` — so every input is a compile-time constant, `-O2` already folds 4 to
+5 of the 15 corpus groups to 2 instructions, and a purpose-built driven kernel
+folded as well. Every number in the first and second slices depends on the
+answer. That question is now settled affirmatively by measurement, so no input
+path and no harness escape is required to open the slice, and the routing
+decision it would otherwise have forced does not arise.
+
+Fold resistance is achievable by construction, and needs two independent
+ingredients. The driver's loop-carried recurrence must have no SCEV closed
+form: LLVM's exit-value folding rests on add-recurrences, so a bitwise
+xor-shift or an integer multiply-add recurrence resists it structurally while
+an affine accumulator such as `total += i` always folds. The kernel's own
+result must then re-enter its input through a non-convergent mixer — feeding a
+raw checksum back reached a fixed point in one step — and the final value must
+be observed through the only observable channel the language has, a `check`
+trap record, so the chain cannot be discharged without running it. The expected
+value comes from an independent reference implementation, which doubles as a
+cross-implementation correctness check. Separately, the kernel must be
+non-specializable: its inner trip count must exceed the full-unroll budget and
+its input buffer must be large enough that constant-propagating it is
+unprofitable. Measured boundary: SHA-256's 48-iteration schedule and 64-round
+loops are safe, and a 2048-iteration checksum over 4096 bytes is safe, while a
+10-iteration checksum over 20 bytes was fully unrolled with its 18 constant
+bytes folded into five immediate adds and its allocation removed entirely.
+Verified patterns scale at 2.00x for 2x work at the measured level.
+
+Two honest limits on that result. The feedback wire itself costs nothing
+measurable on a real kernel — the same SHA-256 kernel with 15 of 16 input words
+constant versus all 16 opaque timed 0.61s against 0.60s — but feedback does not
+prevent input specialization on a small kernel, which is a constant-input
+problem rather than a constant-trip-count one and is the one thing a real input
+path would still fix. And the residual case measured instruction-for-instruction
+identical to what the host C compiler produces from the same source, so the
+distortion is shared by the comparison rather than unique to Whitefoot.
+
+Phase 10 states its falsifiable branch in advance.
+`research/notes/regions-effects-vs-safe-rust-2026-07-08.md` already records
+three of four probes at parity-with-effort against safe Rust, with one 1.1-1.5x
+structural residual on a niche kernel, and `docs/why-whitefoot.md` concedes
+the frequency question as the biggest honest unknown. If the channels and the
+proof lane land and the kernel set still sits at Rust parity on machine
+performance, that is an experimental result, not an execution failure: the
+constitution's affirmed R0 reading names the surviving deltas — W3
+cheat-proofness and W1 weak-writer robustness — and the project's thesis
+narrows to them. A parity or negative result enters RESULTS.md under the same
+discipline as a win. This branch is recorded before the measurements so a
+parity outcome remains a measured conclusion rather than a rationalization.
 
 Keep facts-off compilation correct. Add proof-based check removal and other
 optimizations one proposition family at a time, with focused independent
@@ -1063,6 +1365,20 @@ Run `make -C compiler check` before and after compiler changes and `make check`
 for each completed repository slice. A green gate states only what it tests;
 it is not a claim that the language or compiler is complete.
 
+Phase 10 work carries three further obligations, none of them machine-enforced
+by the existing gate. An optimized build must preserve facts-off semantics,
+every retained check, and the exact DIAG-3 trap record, proved by focused
+regressions that trap from an optimized binary with byte-identical records.
+Every fact family ships with its facts toggle, a facts-off identity check, and
+attribution evidence that the backend consumed the fact. The facts toggle is
+compiler-development surface, like `--emit-llvm`, and never a writer-facing
+option: optimization level and fact emission are not writer decisions, so
+neither becomes a documented flag or a build mode that changes what a source
+program means. Every measurement lands as a `research/experiments/` RESULTS.md
+with its protocol, machine, and caveats, and a parity or negative result lands
+under the same discipline as a win — but a result whose fact was never consumed
+is not a parity result, it is a broken instrument, and it is reported as one.
+
 Every reproducible defect receives the smallest practical regression before
 its fix. Each cohesive completed step gets one commit. Update current phase
 status in this file, durable design choices in `mcts_mem/`, and protected owner
@@ -1086,7 +1402,9 @@ content uses English. `AGENTS.md` and `CLAUDE.md` remain byte-identical.
 - No placeholder artifact, schema, proof record, backend abstraction, or
   generalized framework before its real producer and consumer.
 - No later-phase infrastructure used as filler while the next real compiler
-  capability is blocked.
+  capability is blocked. Phase 10 is current work by the 2026-07-24
+  reorientation, not filler: it is the phase that measures P0, and it is
+  blocked by nothing.
 - No silent specification reinterpretation, protected-test weakening, or
   baseline regeneration merely to make a gate green.
 - No optional optimizer fact changing acceptance or removing an unproved
