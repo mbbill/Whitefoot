@@ -1,7 +1,8 @@
 # THE PLAN
 
 Status: CANONICAL ROADMAP, reoriented to Phase 10 performance evidence
-2026-07-24.
+2026-07-24; Phase 10 completion set fixed and Phase 11 (declared parallelism)
+added by the owner 2026-07-27.
 
 ## Goal
 
@@ -1015,6 +1016,44 @@ needs, so language amendment now yields to performance evidence: no further
 specification amendment starts without naming the measured experiment it
 unblocks. The exact next work is the first Phase 10 slice defined below.
 
+The owner extended that reorientation on 2026-07-27 with three decisions.
+
+First, Phase 10's remaining work is now a finite completion set, enumerated in
+the Phase 10 section below. Its green state plus an explicit owner go decision
+is the sole entry gate for Phase 11. Phase 10 no longer accretes new slices
+beyond that set.
+
+Second, declared parallelism is the next major direction after Phase 10 and is
+defined as Phase 11 below. The strong automatic claim stays dead; the pursued
+claim is writer-declared, compiler-verified parallelism. Parallelism research
+and implementation are one program, not two stages: its experiments need the
+Phase 10 instruments and leave durable language and compiler changes behind, so
+a research-only side track is a fiction. The sequencing consequence is this
+roadmap's shape — finish the work parallelism is unlikely to affect, then enter
+Phase 11 wholly instead of context-switching.
+
+Third, the W1 reading is reframed. The durable property is the floor stated as
+language behavior — default shape is optimal shape: an accepted program has
+been forced onto a fast shape, and the writer's only alternative is a program
+that does not compile. Measured model capability is no longer a gate anywhere
+in this roadmap, because model behavior is unpredictable and improves
+independently of this project. Models appear below only as generators of
+realistic mistakes, in the floor audit. The constitution's W1 wording and R0
+three-leg reading still carry the old weak-model framing; amending them is
+protected owner-authored work and is pending. Until that amendment lands, R0
+deltas cited in this roadmap use the floor property in place of measured
+weak-model success.
+
+Deferred until the Phase 11 result is in, or until the owner reorders, each
+keeping its existing re-entry bar of a measured experiment or port naming it as
+the concrete blocker: the headline artifact ladder (crc32 preload, LZ4 decode,
+zlib inflate) and with it the take/replace-versus-sealed-kernel storage
+decision it would force; contract member calls (P5); and the constant-time
+`secret` effect, which stays carded in
+`research/notes/headline-artifact-brainstorm.md` with its honest blocker — a
+backend constant-time-preservation contract, since optimized LLVM lowering may
+legally reintroduce secret-dependent branches.
+
 The v0.18 loan-lifetime and scope candidate is parked, not abandoned. Its
 exact bytes remain in `governance/spec-evolution/kernel-spec-v0.18-candidate.md`
 as a non-authoritative design record; active behavior stays v0.17. It re-enters
@@ -1352,7 +1391,156 @@ requirements.
 An optimizer fact may improve an accepted program but may not change source
 acceptance or remove a required check without proof.
 
-## Phase 11: optional hardening
+### The Phase 10 completion set
+
+Fixed by the owner 2026-07-27. Phase 10's remaining work is exactly this list;
+its green state plus an explicit owner go decision recorded in this file is the
+sole entry gate for Phase 11. The slice definitions above remain authoritative
+for every item they cover; nothing here relaxes them. Items 9 and 10 may be
+explicitly waived by the owner at the gate; the others may not.
+
+1. The array-lowering repair's second half — the whole-aggregate
+   copy-modify-reload on indexed writes — plus the SHA-256 feedback
+   re-measurement the first slice already owes.
+2. Steps 3 through 6 of the first slice as specified above: scaled workload
+   drivers behind the two-size scaling gate, the attribution harness, the
+   C/Rust kernel table at both levels, and the recorded check-tax and
+   lowering-tax ranking.
+3. Two deciding measurements for Phase 11, landed now as ordinary
+   `research/experiments/` entries: single-core STREAM bandwidth on the
+   development machine, and at least one corpus kernel above roughly 4 ops per
+   byte — matrix work, compression encoding, or parsing with validation. Both
+   are days of work, and the new kernel doubles as a fold-resistant
+   channel-pressure workload.
+4. The buffer/slice ABI split from one `{ptr, i64}` by-value struct parameter
+   into separate pointer and length parameters, already recorded above as the
+   precondition for any attribute channel.
+5. Tier-0 fact emission: per-access alias-scope metadata derived from borrow
+   modes, `memory(...)` attributes from effect rows only where sound, access
+   groups on loops the existing analysis proves independent, and never
+   `willreturn` — the tripwire regression at
+   `compiler/src/backend/tests/effect_attributes.rs` stands. This improves
+   serial code and is independent of any later threading decision.
+6. The bounds-elision channel — the second slice above, unchanged: the facts
+   toggle, facts-off identity, attribution evidence, hostile negative canaries,
+   and the pre-registered remark flips.
+7. A differential trust instrument built alongside item 6: generated legal
+   programs executed facts-on and facts-off, with identical outputs and
+   byte-identical trap records required. A fact family that elides checks does
+   not ship without it. The same instrument is Phase 11's determinism tester.
+8. Vectorization repairs: bounds checks hoisted into loop preconditions,
+   overflow checks sunk out of loop bodies through OR-reduced failure bits with
+   the trap after the loop, and countable single-exit loop canonicalization.
+   The soundness ground is that traps abort and no global mutable state exists,
+   so nothing observable can occur between a faulting operation and its abort.
+   This item contains the set's one language amendment — DIAG-3
+   first-failing-site attribution under check motion — which follows the
+   complete language-change loop in `WORKFLOW.md` and is written as deliberate
+   precedent for Phase 11's trap-selection question (owner ruling 2026-07-27).
+9. Floor-audit round 1, bounded to the kernels measured in item 2. For each
+   task: the measured expert shape is the reference; an AI writes the same task
+   from the teaching pack; the result is diffed against the reference; every
+   divergence is triaged as checker-rejected, measured-equal, or
+   slower-and-ungated. Each slower-and-ungated divergence is recorded as a
+   named defect — a rejection-rule candidate, a `docs/patterns.md` card, or a
+   lowering repair. The AI is a generator of realistic mistakes; the finish
+   line is the checker, never a model score.
+10. Conformance adapter wiring: fill the empty adapter slot in
+    `tests/conformance/runner.py` so the corpus executes against the compiler,
+    and present the manifest reconciliation list to the owner — the recorded
+    understatement is roughly 21 cases. Changing any existing expectation or
+    status remains protected work under `WORKFLOW.md` and is never applied
+    unilaterally.
+
+**Exit:** every non-waived item green, results recorded per the
+`research/experiments/` discipline, and the owner's Phase 11 go decision
+appended to this file.
+
+## Phase 11: declared parallelism
+
+Status: not opened. Entry requires the Phase 10 completion set above plus an
+explicit owner go decision. This section supersedes and replaces the
+non-authoritative investigation note `docs/parallelism.md` (2026-07-25), which
+is deleted per its own disposition clause; the underlying survey evidence
+remains in `research/experiments/auto-parallelism-feasibility/`.
+
+The pursued claim: the writer marks a parallel construct, and the compiler
+proves non-interference from the checked effect rows, resolved places, and
+slice origin sets it already computes. No `Send`/`Sync`-class bound at any call
+site, no runtime uniqueness check, and the irregular-write cases that push Rust
+into `unsafe` or dynamic checks are rejected at compile time. The R0 delta is
+primarily W3 and the floor, with P0 upside on suitable kernels: across 14
+C++-to-Rust benchmark ports, 29% of parallel memory accesses were irregular and
+forced `unsafe` or dynamic checks costing up to 2.8x (Abdi et al., SPAA 2024).
+The owner's judgment of record: potentially the largest delta the language can
+own, and the current language happens to fit it without having been designed
+for it, so this phase shapes the language deliberately rather than by
+accident.
+
+Findings that bind this phase, from the recorded survey and its 2026-07-25
+corrections:
+
+- The strong claim — the compiler discovers parallelism the writer never
+  expressed, profitably — is dead and stays dead. Whitefoot removes the
+  soundness half of automatic parallelization more completely than any shipped
+  language and removes none of the decision half; the soundness half was never
+  the binding constraint. Four serious ownership- or effect-driven systems
+  across 26 years (Jade, Æminium, Commutativity Analysis, FX-87) extracted
+  parallelism correctly and lost to granularity; every surviving system makes
+  the writer request and the compiler verify. SISAL's own authors state a human
+  chose the parallel algorithm and the compiler recovered the schedule.
+- On the current corpus and machine, four of the six Phase 10 kernels are
+  capped near 1.5-2x by memory bandwidth and the other two do not parallelize.
+  Every ceiling rests on an inferred single-core bandwidth number; completion
+  set item 3 replaces the inference with a measurement, and the go decision
+  weighs the result.
+- PARSYNT (PLDI 2017) is the one machine-checked precedent for turning
+  sequential loops parallel, and it works only over exact algebraic domains —
+  precisely FN-4's boundary. It supports the reduction-law direction and
+  nothing more general.
+- Heartbeat scheduling (PLDI 2018) proves a runtime with no static cost model
+  and a machine-checked overhead bound exists, but its unconditional tax fails
+  P0 on this corpus; it is a fallback design, not the default route.
+
+The phase closes these questions through the experiment loop, one hypothesis
+per loop; research and implementation interleave by design:
+
+1. Construct semantics and the non-interference judgment: which effect-row,
+   loan, and origin-set facts license which parallel form, and what is
+   rejected with which rule.
+2. Intra-object partition — the `split_uniq` gap: symbolic index disjointness,
+   sub-range identity, and persistence across calls and recursion. Sequentially
+   valuable regardless; a divide-and-conquer port such as merge sort names it.
+3. The reduction story: exact-domain integer reductions gated on a discharged
+   FN-4 law, with trapping mode excluded because the trap point moves; float
+   reductions only as named source forms — a pinned tree, and possibly a
+   reproducible accumulator as a distinct operation — never a silent change to
+   the meaning of an existing operation.
+4. Trap selection among concurrently eligible iterations, inheriting the
+   check-motion precedent from completion set item 8.
+5. Allocation: `allocates(heap)` is a hidden serializer and an arena bump
+   pointer is a genuine loop-carried dependence; a per-task allocation
+   position is language design, not runtime detail.
+6. The determinism posture and its measured bill — a determinate language
+   pays on early-exit search (SISAL Loop 16 ran 60% behind Fortran) — accepted
+   deliberately or bounded explicitly, not discovered.
+7. Runtime architecture: child stealing rather than continuation stealing,
+   worker QoS pinning on asymmetric cores, and the TCB policy question the
+   owner decides at entry — a Chase-Lev deque cannot be written in safe Rust,
+   so the runtime is either a C linked artifact or a scoped, owner-approved
+   exception, decided before implementation rather than during it.
+
+Measurement discipline: absolute wall-clock against the sequential build,
+never a scaling curve alone — a work-inflating transform can show excellent
+speedup while the program got slower. Attribution before magnitude, as
+everywhere in Phase 10. A parity or negative result is recorded as durably as
+a win.
+
+Non-goals: no automatic discovery of parallelism; no Tapir fork dependency; no
+heartbeat-by-default; no writer-facing toggles, build modes, or thread-count
+knobs that change what a source program means.
+
+## Phase 12: optional hardening
 
 Only if later use justifies it, consider stable artifacts, caching, broader
 targets, stronger resource controls, transactional publication, distribution,

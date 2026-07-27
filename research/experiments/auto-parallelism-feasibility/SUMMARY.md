@@ -1,5 +1,19 @@
 # Can XL effect+region give "write sequential, get safe automatic parallelism" that beats Rust? (2026-07-08)
 
+> **PARTIALLY SUPERSEDED 2026-07-25.** The superseding record now lives in
+> `docs/roadmap.md` under "Phase 11: declared parallelism" (the interim
+> `docs/parallelism.md` investigation note was folded into that section and
+> deleted on 2026-07-27, per its own disposition clause). The verdict below
+> stands, but two supporting arguments do not. The Campanoni/HELIX citation is
+> misattributed — cbench/MiBench, not SPEC — and states a narrower claim than
+> quoted here. The Trap 2 assertion that granularity kills the strong claim
+> "outright" because no type system supplies a cost model is wrong as stated:
+> heartbeat scheduling (PLDI 2018) bounds overhead with a Coq-checked proof and no
+> static cost model. What survives is that the type system contributes nothing to
+> that solution. The decisive falsifier proposed at the end of this file has now
+> been run against the real corpus. The prior-art surveys in `RESULTS.md` remain
+> valid evidence.
+
 **Research + adversarial feasibility (4 prior-art survey clusters → verdict). Verdict: NO on the
 strong claim; narrow PARTIAL yes on a scoped feature; do NOT bet the project on auto-parallelism.**
 
