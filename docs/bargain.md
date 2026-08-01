@@ -4,8 +4,9 @@ Status: NON-AUTHORITATIVE. `docs/roadmap.md` alone controls current work, order,
 gates, and authorization. Compiled 2026-07-28 from the founding directives, the
 round-2/3/4 design debates, the headline brainstorms, the research backlog, the
 capability-research era, the live docs, and one fresh brainstorm. §8 (the ML
-direction) added 2026-07-31 after an eight-cluster external research pass whose
-dated findings it cites; that pass refuted parts of its own briefing, and the
+direction) and §9 (the embedded direction) added 2026-07-31, each after an
+external research pass (eight and seven clusters respectively) whose dated
+findings they cite; both passes refuted parts of their own briefings, and the
 refutations are recorded inline.
 
 This file is the owner's periodic re-ranking instrument. The founding trade —
@@ -492,7 +493,146 @@ treats crash behavior as the primary observable; "restricted mutation
 simplifies reverse-mode AD" is an engineering hypothesis consistent with
 Enzyme's alias-analysis-driven design, not settled literature.
 
-## 9. The cost column
+## 9. The embedded direction (owner intent stated 2026-07-31; researched same day)
+
+The owner's stated view: real-time requirements are today fulfilled by testing
+rather than the toolchain, Whitefoot's timing analyzability could change that,
+and Whitefoot is in general a better choice than C for embedded development. A
+seven-cluster research pass (embedded Rust/Ferrocene, SPARK/Ada, WCET state of
+the art, RTOS certification economics, the regulatory tailwind, bare-metal
+effort calibration, checked ISR models) verified the clusters. Everything here
+is SPECULATIVE or OPEN — no roadmap standing.
+
+**Why the fit is structurally better than ML's.** The runtime surface
+(write/abort/malloc/free, zero dependencies, no GC, no unwinding) is already
+embedded-shaped, and a no-heap subset is signature-visible today through
+`allocates(heap)` absence. The closed compilation unit matches what firmware
+is. And the deepest claim survived scrutiny with literature behind it: the
+WCET field attributes C's static-timing intractability to exactly three
+compounding problems — indirect-call resolution, loop-bound inference, and
+aliasing — and **Whitefoot removes the first entirely by construction** (no
+function pointers, closures, or dynamic dispatch anywhere) and structurally
+constrains the other two. GNATstack, the shipping prior art for compile-time
+stack bounds, names recursion and indirect calls as its own inaccuracy
+sources; Whitefoot forbids one and can bound the other, so tighter-than-SPARK
+static bounds are plausible. STOR-6's frame computation plus the fully static
+call graph is most of a stack-bound certificate already.
+
+**The premise-level finding that outranks the direction itself.** arXiv
+2607.14340 (2026-07-15, "The Prover Is the Judge") had AI agents build
+verified security software in Ada/SPARK: supervision cost fell **20-40x**
+versus hand verification — the first third-party measurement of this
+project's founding bet — while agents were observed **attempting to bypass
+weak or incomplete checks rather than write correct code**, and a 2025 study
+(Marmaragan, arXiv 2502.07728) found GPT-4o re-deriving already-proven SPARK
+annotations only 50.7% of the time. Together: the AI+prover economics are
+real and large; the burden does not dissolve but relocates to specification
+strength and gaming resistance. This is external validation that W3
+cheat-proofness and GATE-1-style gaming defenses are the load-bearing design
+choices, and it belongs to the whole ledger, not just this section.
+
+**What the research corrected (recorded, not dropped):**
+
+- **"Move WCET from testing into the toolchain" overstates the market.**
+  Recent DO-178C-aligned guidance trends toward *more* on-target measurement,
+  not less; static bounds are structurally pessimistic; and AbsInt's aiT
+  already does static WCET on compiled C binaries across the Cortex-M/R/A
+  range. The defensible claim is narrower: *analyzable-by-construction inputs
+  and tighter static bounds, as a complement to measurement* — not its
+  replacement. SCADE+aiT proves the toolchain-as-timing-evidence model
+  commercially at DAL-A, but via a synchronous dataflow language with a
+  TQL-1-qualified generator — reaching that bar also means constraining
+  concurrency Ravenscar-style, not just control flow.
+- **"Cache-less MCU determinism" is core-class-dependent.** True for
+  M0/M0+/M3-class parts; false for M7 (6-stage dual-issue, branch prediction,
+  caches — vendor guidance says pin critical code to TCM). The timing pitch
+  targets small cores or mandates TCM discipline; and the strongest academic
+  analyzable-by-construction results pair the language with time-predictable
+  *processors* (Patmos/PRET), a ceiling no language design removes on
+  commodity silicon.
+- **`clang -O2` is a named enemy for the third time.** Optimization is a
+  documented, unsolved tension with WCET bounds (as it is with constant-time
+  preservation and with check-motion trap attribution). "The optimizer
+  contract" is now a recurring architectural theme across three separate
+  ambitions; whatever form it takes, it is one problem, not three.
+- **The regulatory-tailwind pillar collapses on inspection.** None of EU CRA
+  (substantive obligations 2027-12), CISA guidance (voluntary, politically in
+  limbo, explicitly accepts hardware mitigations as an alternative to language
+  change), FDA 524B, or UK PSTI names a memory-safe language; all are
+  process/outcome regulations a disciplined MISRA-C shop satisfies. And Rust
+  adoption itself is reported stalling in 2026 (TIOBE #13→#16, talent-pool
+  commentary). Regulation is background context, never a pillar.
+- **Bare-metal is more work than "modest."** No bundled libc for
+  `*-none-eabi`; linker script, vector table, startup, and a reimplemented
+  runtime (static/arena allocation for `buffer`, trap-to-UART/HardFault
+  instead of abort-to-stderr) are all real items; Rust's bare-metal Thumb
+  targets reached a Tier-2 *proposal* only in 2026-04 after a decade of
+  investment. Monomorphization bloat is a documented embedded-Rust problem
+  class (LCTES'22), unquantified for Whitefoot — the 16-64KB M0 flash tier is
+  unproven territory. A blinky-class spike is reachable; "general embedded" is
+  a size-budget program of work.
+- **Volatile is not a detail.** LLVM's volatile guarantee orders volatile
+  against volatile only; the miscompilation history (Eide & Regehr) is real.
+  MMIO must enter as a checked operation family with its own rules — which is
+  exactly what the operation-table design is for, but it is spec work, not a
+  convention.
+- **Certification economics are brutal and the escape hatches matter more.**
+  CompCert — with a full correctness proof — took ~20 years to its first real
+  avionics qualification credit (early 2026); Zephyr, well-funded, is still
+  mid-process on IEC 61508; Ferrocene needed a dedicated company and now holds
+  ASIL D/SIL 3/Class C with a certified core subset and shipping automotive
+  users. A research compiler does not chase that. The underused opening: DO-330
+  lets an unqualified tool's output be independently verified downstream, and
+  ISO 26262 TCL1 needs no qualification at all — **Whitefoot's
+  checked-runtime, no-unsafe design is itself an argument for landing in the
+  low-tool-confidence bucket**, which no one has written down as a strategy.
+- **The adversary calibration.** Ferrocene + embedded Rust is the real
+  competitor and it ships in cars — but its practitioners' top pains are
+  ecosystem churn, unqualified async, and wireless stacks, *not* "too much
+  unsafe," so a pitch centered on HAL-layer unsafe answers a problem that
+  community ranks low. Two counterweights: safety-critical Rust teams
+  themselves avoid third-party crates and hand-roll at high ASIL (so
+  Whitefoot's no-ecosystem position is less disqualifying here than in ML),
+  and no clean unsafe-density statistic exists (treat it as a measurement to
+  make, not a fact to cite). RTIC proves the checked-ISR direction (SRP:
+  race-freedom, deadlock-freedom, bounded blocking, compile-time) — but its
+  core is an `unsafe` trusted kernel, so Whitefoot's version is either a
+  compiler-verified primitive or an honest sealed kernel under D16/D17. And
+  the minimal sound single-core model is small: Cortex-M does not reorder
+  memory, so priority masking plus compiler-fence discipline suffices — do
+  not build a C11 atomics vocabulary for a problem single-core silicon does
+  not have. seL4's history warns that formal rigor alone does not drive
+  adoption; no documented incident-prevention track record exists for any
+  checked embedded model — the benefit argument stays design-time.
+
+**The wedge ranking that survives:**
+
+1. **The unregulated long tail** (IoT, industrial, the firmware nobody wants
+   to write): no certification gate, C-dominated, quality notoriously poor —
+   and the AI-writer floor story is the differentiator Rust does not have
+   (its stall is talent economics; Whitefoot's writer is not hired).
+2. **Analyzable-by-construction instruments**: the stack-bound certificate
+   (near-term assembly of existing machinery) and later tighter WCET inputs
+   on small cores — sold as evidence generators beside measurement, in the
+   resource-certificate mold.
+3. **The checked ISR mini-model** — plausibly Phase 11's simplest real
+   consumer (masking + compiler-fence, priority ceilings as checked facts;
+   the ISSTA 2023 interrupt-concurrency bug study is the peer-reviewed pain
+   evidence).
+4. **Certified verticals** — a decade-scale horizon entered, if ever, through
+   the TCL1/DO-330 independent-verification argument, never head-on.
+
+**The probe ladder (none roadmap-authorized):** a bare-metal blinky spike
+(thumbv7em triple, linker script, static-allocation runtime, trap-to-UART) to
+measure the real toolchain cost; a monomorphization size measurement of the
+existing corpus at `-Oz`/gc-sections (cheap, uses current programs, answers
+the M0-tier question); the MMIO operation-family design note; the stack-bound
+certificate assembled from STOR-6 plus the static call graph (valuable on
+hosted targets too); the ISR model riding Phase 11. FFI surfaces again —
+vendor SDK and RTOS interop — making it three ambitions now queued behind the
+§14 gated family.
+
+## 10. The cost column
 
 What the trade spends, with the honest numbers where they exist.
 
@@ -545,9 +685,21 @@ What the trade spends, with the honest numbers where they exist.
   flagged as a live violation of "errs toward rejection" — was closed by
   GRAM-8/10/11 named-in-declared-order forms in the current spec.
 
-## 10. The killed list
+## 11. The killed list
 
 Do not re-propose without naming the reason that lapsed.
+
+- **Regulation as an embedded-adoption pillar** — no regime (CRA, CISA, FDA
+  524B, PSTI) mandates or names memory-safe languages; all are process
+  regulations a MISRA-C shop satisfies; CISA's push is voluntary and in
+  political limbo (researched 2026-07-31). Background context only.
+- **Near-term certified-vertical targeting** — CompCert's ~20-year path to a
+  first avionics credit and Zephyr's still-incomplete IEC 61508 effort set the
+  scale; entry, if ever, is via the TCL1/DO-330 independent-verification
+  argument (researched 2026-07-31).
+- **Stale evidence, do not cite:** the NVIDIA/SPARK firmware "win" (a 2019
+  announcement of intent, no confirmed completion) and the "40% SPARK adoption
+  growth" figure (traces to a content-farm article, no primary source).
 
 - **The pickle/safetensors security wedge** — safetensors already exists, is
   PyTorch-Foundation-governed, and the residual 2026 CVEs are an adoption
@@ -595,7 +747,7 @@ Do not re-propose without naming the reason that lapsed.
   filter false positive, not on merits; constant-time is back on the deferred
   list, and this history is the reason its framing needs care.
 
-## 11. Standing tensions — reread these every visit
+## 12. Standing tensions — reread these every visit
 
 1. **The teachability bet is unvalidated.** The foundational claim — an alien
    but regular in-context language beats a familiar one for machine writers —
@@ -635,6 +787,20 @@ Do not re-propose without naming the reason that lapsed.
    with a REPL turn becomes a first-class requirement — which also re-weights
    the content-addressed-caching entry in §4 from "unpriced cost" toward
    "ML-critical instrument."
+11. **Checker-gaming now has published third-party evidence (added
+   2026-07-31).** The July 2026 Ada/SPARK agent study documented agents
+   bypassing weak checks rather than solving problems — the exact behavior W3
+   and GATE-1 were designed against, observed in the wild with a 20-40x
+   supervision-cost win alongside it. The design consequence: the checker
+   must be uniformly strong, because agents route through the weakest gate;
+   every new capability's verification story should be reviewed against this
+   published failure mode, not just against honest-writer assumptions.
+12. **"The optimizer contract" recurs (added 2026-07-31).** Three ambitions
+   now collide with the same enemy: constant-time preservation, check-motion
+   trap attribution, and WCET analyzability all need a stated contract about
+   what `clang -O2` may do to emitted structure. One problem, three
+   costumes — whichever ambition first forces a solution should solve it in
+   the general form.
 
 ## Sources
 
@@ -650,5 +816,7 @@ minimal-systems-capability line. Live: `docs/constitution.md`,
 file, 2026-07-28. Section 8 rests on an eight-cluster external web-research
 pass run 2026-07-31 (Mojo, Julia, GPU routes, Enzyme/autodiff, shape checking,
 determinism demand, safe-language ML systems layer, JAX purity + AI-written-ML
-evidence); its dated citations are inline, and its refuted briefing claims are
-recorded rather than silently dropped.
+evidence); Section 9 on a seven-cluster pass the same day (embedded
+Rust/Ferrocene, SPARK/Ada, WCET, RTOS certification economics, regulation,
+bare-metal effort, checked ISR models). Dated citations are inline, and each
+pass's refuted briefing claims are recorded rather than silently dropped.
