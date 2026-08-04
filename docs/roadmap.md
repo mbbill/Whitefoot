@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 1
+Revision: 2
 
 The active language authority is
 [`spec/kernel-spec-v0.17.md`](../spec/kernel-spec-v0.17.md), SHA-256
@@ -545,16 +545,21 @@ an authenticity boundary, an oracle, and a stop condition.
 
 ### CAND-1 — Select the first external validation project
 
-`[next: research proposal]`
+`[current: N1 shortlist]` `[next: owner-approved N2 recommendation]`
 
 - **Goal:** choose a project whose first milestone is achievable, externally
   legible, and capable of validating one or two important Whitefoot ideas.
-- **Current:** the compiler has several repository-owned program witnesses and
-  historical port studies, but no owner-selected external flagship milestone.
-- **Missing / next:** compare a small shortlist on public-interest claim,
-  pinned upstream/license, correctness oracle, honest comparator, smallest
-  current-compiler path, required outline items, and stop condition.
-- **Facts:** [historical headline brainstorm](../research/notes/headline-artifact-shortlist.md) ·
+- **Current:** N1 compared five pinned external candidates with public
+  recognition as an entry condition. yyjson and LZ4 survive into the N2
+  comparison. QOI fails the attention-plus-negative-oracle gate; BLAKE3 and
+  CMSIS-DSP are parked because their attention-worthy milestones require absent
+  parallel or target/boundary capability. No project is selected.
+- **Missing / next:** after owner authorization, N2 may recommend one bounded
+  milestone or none. It must choose explicitly between immediate public
+  attention, breadth of language pressure, and first-result risk, then state
+  the authentic boundary, oracle, first zero-change port, strict dependencies,
+  exclusions, and stop condition.
+- **Facts:** [N1 external candidate shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [current executable programs](../compiler/README.md).
 
 Candidate classes are a comparison surface, not work authorization. `later`
@@ -562,11 +567,11 @@ means the known prerequisites may dominate a first milestone.
 
 | Candidate | Primary outline items | Current evidence | Main selection blocker |
 |---|---|---|---|
-| `CAND-2` Compression / binary format | PERF-1, PROOF-1, PROOF-7, VERIFY-1, BOUND-1 | [raw-DEFLATE compiler witness](../compiler/tests/programs/raw_deflate.rs); [historical zlib kernels](../research/experiments/zlib-core-kernels/RESULTS.md) | Pick an external artifact, authentic boundary, and claim more compelling than “another faster zlib.” |
-| `CAND-3` Parser / text validation | FLOOR-1, FLOOR-3, FLOOR-4, VERIFY-1, BOUND-1 | [current text witnesses](../compiler/tests/programs/text.rs); [historical floor results](../research/experiments/default-floor/RESULTS.md) | Find a recognizable maintained medium project with a strong differential oracle. |
+| `CAND-2` Compression / binary format | PERF-1, PROOF-1, PROOF-7, VERIFY-1, BOUND-1 | N1 advances full LZ4 frame decompression and rejects QOI as the first flagship; [raw-DEFLATE compiler witness](../compiler/tests/programs/raw_deflate.rs) and [historical zlib kernels](../research/experiments/zlib-core-kernels/RESULTS.md) remain bounded evidence | N2 must test whether a closed LZ4 frame harness is an authentic enough first result before external `BOUND-1` consumption exists. |
+| `CAND-3` Parser / text validation | FLOOR-1, FLOOR-3, FLOOR-4, VERIFY-1, BOUND-1 | N1 advances yyjson's complete strict reader and immutable DOM; [current text witnesses](../compiler/tests/programs/text.rs) and [historical floor results](../research/experiments/default-floor/RESULTS.md) establish only the starting surface | Determine whether variable recursive storage and exact number conversion leave one bounded first blocker rather than several prerequisite projects. |
 | `CAND-4` Storage-intensive component | STORE-1, STORE-2, PROOF-6, FLOOR-2 | [live SoA pattern witness](patterns.md#p2-struct-of-arrays-pool-append-only-index-linked); [historical binary trees](../research/experiments/port-study/binary-trees/RESULTS.md) | Choose a real operation set whose first blocker isolates one storage dimension rather than another toy tree. |
-| `CAND-5` Embedded / signal processing | TARGET-2, TARGET-3, PROOF-5, BOUND-1 | [signal](../compiler/tests/programs/signal.rs) and [image](../compiler/tests/programs/image.rs) compiler witnesses; [direction synthesis](bargain.md#9-the-embedded-direction-owner-intent-stated-2026-07-31-researched-same-day) | Show a feasible first target/runtime slice that is not mostly platform plumbing. |
-| `CAND-6` Declared parallelism (`later`) | PAR-1 through PAR-4 | [feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) | No source construct or runtime exists; find a tiny authentic milestone with absolute benefit. |
+| `CAND-5` Embedded / signal processing | TARGET-2, TARGET-3, PROOF-5, BOUND-1 | N1 parks the CMSIS-DSP Q31 biquad until an authentic Cortex boundary exists; [signal](../compiler/tests/programs/signal.rs) and [image](../compiler/tests/programs/image.rs) compiler witnesses remain internal evidence | Select a feasible target/runtime slice before borrowing an embedded project's name for a host-only scalar kernel. |
+| `CAND-6` Declared parallelism (`later`) | PAR-1 through PAR-4 | N1 parks BLAKE3 as a recognizable future anchor; [feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) still rejects automatic profitable discovery | No source construct or runtime exists; reopen BLAKE3 only for explicit parallel tree hashing with an absolute benefit. |
 | `CAND-7` ML systems component (`later`) | APP-1, BOUND-1, TARGET-1 | [direction synthesis](bargain.md#8-the-ml-direction-owner-intent-stated-2026-07-27-researched-2026-07-31) | Find value that survives absent Python, tensor, and accelerator integration. |
 
 ## Settled exclusions and history
