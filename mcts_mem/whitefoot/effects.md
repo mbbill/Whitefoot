@@ -2,7 +2,7 @@
 - Rows are checked in both directions against a syntactic exhibits relation: undeclared-but-exhibited and declared-but-unexhibited are both errors; the relation counts proof-elided checks as still exhibited, and rows are stable under optimization.
 - There is no global mutable state and no static region; parameter-reachable memory is the only memory a function can observe, and the row's named regions cover all of it.
 - Region reads and writes are attributed to their ultimate storage origin across calls, borrows, reborrows, slices, and region-carrying actual types; local region spellings never need to escape into an enclosing signature.
-- The active safe-Rust compiler checks the implemented `pure`/`traps` subset but has not implemented region effects or LLVM effect-attribute lowering; the archived democ's attributes are historical optimization evidence.
+- The active safe-Rust compiler checks exact source effect rows across the implemented paths, including reads and writes projected to ultimate storage origins, allocations, and traps; these facts stop at semantic and static-contract checking, and the backend emits no effect-derived LLVM attributes, alias metadata, or `willreturn`.
 - Effect-derived optimization must remain downstream of successful semantic checking and cannot change the active specification's source acceptance or facts-off behavior.
 
 ## Facts
@@ -13,3 +13,4 @@
 - 2026-07-20 specification gap: EFF-1 requires canonical rows, but its repetition grammar admits duplicate effect categories and does not define ordering or duplication within a category's region list; the protected duplicate-`reads` case requires an EFF-1 rejection. A checker cannot invent a canonicality rule for these forms. (code)
 - 2026-07-20 specification inconsistency: EFF-2 requires a complete body and `requires` block to exhibit exact region effects in both directions, but the signature grammar cannot name a region introduced only inside the body. FN-7's entry-point ceiling and the protected arena-confinement example expose the same unrepresentable local-region effect. (code)
 - 2026-07-22 owner-approved resolution: v0.12 projects each read/write through borrow and view transformations to the ultimate caller-visible storage origin. This closes the local-region signature gap without erasing effects or inventing body-local names in the function header. (sourced)
+- 2026-08-03 implementation audit: the compiler checks exact source effect rows for the implemented language, including storage-origin projection, but does not yet lower those facts into LLVM effect attributes, alias metadata, check elision, or `willreturn`. (code)
