@@ -116,12 +116,13 @@ best-supported differentiator to date.
 - **Closed pattern catalog (D6).** Slow architectures are unrepresentable, not
   discouraged: no `Rc<RefCell>` graphs, no scattered mutation, no
   pointer-chasing defaults. *Delta:* binary-trees showed a 13.5x Rust
-  shape-effect that Whitefoot cannot express. *Status:* ADOPTED doctrine.
+  shape-effect that Whitefoot cannot express. *Status:* SEEDED in
+  `docs/patterns.md`; not yet ratified as normative doctrine.
 - **SoA pools + copy handles + generations.** Contiguous columns for cache and
   vectorization; stale handles trap deterministically instead of silently
   reading the new occupant (Rust's index-arena footgun closed; Vale's
-  generational references are the prior art). *Status:* ADOPTED doctrine;
-  generational pool is a selected catalog kernel.
+  generational references are the prior art). *Status:* the append-only SoA
+  pattern is seeded; generational reuse and the catalog mechanism are deferred.
 - **Boolean i1 dataflow (P7).** Keeping scanner state in `Bool` vectorizes at
   width 16 instead of 2. *Delta:* closed a measured 1.6–1.8x loss to parity;
   drove the OWN-1 Bool-copy amendment. *Status:* MEASURED, taught.
@@ -163,8 +164,10 @@ best-supported differentiator to date.
   concentrated in ~10 audited kernels instead of distributed `unsafe`;
   admission only for capabilities users cannot reach at par performance; a
   machine-proved invariant buys the same privilege permanently ("trust is a
-  loan, proof buys permanent privilege"). *Status:* selected architecture,
-  production-gated; honest caveat on the trusted-LOC size stands (§8).
+  loan, proof buys permanent privilege"). *Status:* the Constitution now records
+  D17's long-term proof lane; the roadmap defers the exact catalog/storage
+  mechanism and production work; the honest caveat on the trusted-LOC size
+  stands (§8).
 - **The law refuter.** A false algebraic claim is a compile error with a cited
   rule — the transform every performance engineer does on faith becomes
   checked. *Status:* ADOPTED (validation-only in v0.17).
@@ -344,8 +347,9 @@ Each is SPECULATIVE until an experiment card exists.
   verified against the conformance corpus — or simply with regeneration —
   making language evolution a tooling operation rather than an ecosystem
   event.
-- **Fix-once security response.** A sealed-kernel defect is fixed in one
-  audited artifact and the world recompiles; no ecosystem-wide unsafe audit.
+- **Fix-once security response.** If the deferred sealed catalog is adopted, a
+  kernel defect is fixed in one audited project artifact and the world
+  recompiles; no ecosystem-wide unsafe audit.
 - **Documentation-free library consumption.** `doc` fields + complete
   signatures are the entire interface contract; a consumer model needs no
   prose, no examples, no tribal knowledge — library ecosystems sized to
@@ -597,7 +601,9 @@ choices, and it belongs to the whole ledger, not just this section.
   make, not a fact to cite). RTIC proves the checked-ISR direction (SRP:
   race-freedom, deadlock-freedom, bounded blocking, compile-time) — but its
   core is an `unsafe` trusted kernel, so Whitefoot's version is either a
-  compiler-verified primitive or an honest sealed kernel under D16/D17. And
+  compiler-verified primitive or, if D16's deferred boundary is adopted, an
+  explicit trusted project kernel; D17 is the long-term proof path out of that
+  boundary. And
   the minimal sound single-core model is small: Cortex-M does not reorder
   memory, so priority masking plus compiler-fence discipline suffices — do
   not build a C11 atomics vocabulary for a problem single-core silicon does
@@ -716,7 +722,9 @@ Do not re-propose without naming the reason that lapsed.
   data-habit assertions; measured beats asserted (R1).
 - **Mandatory SPARK-grade proof-carrying source** — non-canonicalizable proof
   surface breaks one-spelling; economics falsified by the spec-mass budget.
-  Survives only as the optional per-fact-class proof lane (D17).
+  What survives is narrowly scoped proof evidence for a named authority; D17
+  commits specifically to the long-term representation-invariant lane, not to
+  a mandatory general-purpose proof language.
 - **Lazy/citation-database teaching** — removes the cost pressure that keeps
   the spec small; is itself uncounted spec mass.
 - **Rust-shaped grammar as default** — D3 guard; familiarity may live in the
@@ -770,9 +778,10 @@ Do not re-propose without naming the reason that lapsed.
    compiler-derived; unrevisited.
 6. **The redundancy-checksum independence problem** (§8) touches every
    mechanism that cross-checks writer statements against derivations.
-7. **Sealed-kernel trust vs the no-trust brand.** Ten audited kernels at
-   15–24k LOC is a real trusted base; D17's proof lane is the announced exit,
-   and its feasibility is unproven.
+7. **Sealed-kernel trust vs the no-trust brand.** The archived estimate of ten
+   kernels at 15–24k LOC would be a real trusted base if that catalog is
+   adopted; D17's proof lane is the announced exit, and its feasibility is
+   unproven.
 8. **The spec-mass budget governs everything.** Every new fact vocabulary
    (laws, refinements, secrecy, parallelism, budgets) pays teaching tokens;
    the 40k ceiling is the quiet veto over most of §7.

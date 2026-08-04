@@ -26,9 +26,9 @@ priority rule and structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.12](spec/kernel-spec-v0.12.md), SHA-256
-`e2d5566379891454c090e037bd45c5f1a8df90ba23506a0f83ce9aaa03b41463`,
-is the immutable active specification. Exact v0.8 through v0.11 remain
+[Kernel specification v0.17](spec/kernel-spec-v0.17.md), SHA-256
+`19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93`,
+is the immutable active specification. Exact v0.8 through v0.16 remain
 immutable history.
 
 The safe-Rust compiler currently implements one ordinary path:
@@ -41,7 +41,7 @@ ordered source bundle
   -> one finalized source-bound syntax tree
   -> exact FORM-2 source validation
   -> CanonicalSyntaxUnit
-  -> direct v0.12 lexical name resolution
+  -> direct lexical name resolution
   -> ResolvedSyntaxUnit
   -> semantic and ownership checking
   -> private checked program
@@ -50,16 +50,11 @@ ordered source bundle
   -> host executable
 ```
 
-The executable slice covers scalar integer/unit values, `Bool`, integer and unit
-constants, nongeneric own-mode functions, locals, direct named calls, returns,
-pure/traps effects, integer wrap/trap arithmetic and comparisons, Boolean
-operations, nominal tag equality, and nongeneric acyclic structs and enums.
-Nominal values use the same path for construction, nested projection,
-statement/value matching, `give`, whole-binding affine moves, explicit cleanup,
-and cross-function aggregate values. SET-1 copy-place assignment is implemented
-for live own-mode locals and nested struct fields through the same checked and
-LLVM path. Other valid v0.12 families stop as explicit unsupported compiler
-capabilities; they are not reported as invalid Whitefoot.
+The compiler's implemented language surface changes as roadmap phases land, so
+the detailed capability list is maintained only in the
+[roadmap's current state](docs/roadmap.md#current-state). Valid language that a
+growing compiler does not yet implement stops as an explicit unsupported
+capability; it is not reported as invalid Whitefoot.
 
 ## Repository layout
 
@@ -75,7 +70,7 @@ live next to what they check.
 | [governance/](governance/) | The protected approval ledger, exact successor candidates, and the tracked spec-append-only hook |
 | [research/](research/) | Active language and compiler experiments |
 | [mcts_mem/](mcts_mem/) | The live design tree, consulted and maintained only through the `mcts-mem-use` skill |
-| [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md), Python reference model, and democ-era codegen harness; inert — no active source, build, test, or tool depends on it |
+| [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md), Python reference model, and democ-era codegen harness; inert — no active source, build, test, or tool depends on it. Its live disposition map is the [archive promotion audit](research/archive-promotion-audit.md) |
 
 ## Verification
 

@@ -430,6 +430,9 @@ The verbosity price is real, and Part VI states it. The purchase is zero irregul
 
 ## 9. A closed, taught catalog of architectures; data-oriented layout by default
 
+*Current status: this is the seeded D6 design doctrine in `docs/patterns.md`;
+it is not yet ratified as normative writer doctrine.*
+
 At statement level, Whitefoot forces one loop form and one conditional. It applies the same policy at architecture level: the set of blessed program-scale patterns is closed and taught up front, and the catalog meets two tests. It stays complete, so every task is modelable inside it and a gap is a documentation defect to fix rather than a writer error; and it stays efficient, so each pattern names the machine property or fact channel that makes it fast.
 
 A human language could not do this. Designers must let users carry their familiar architectures in, or the language gets rejected. An AI writer has no architectural nostalgia, so the catalog can hold exactly the shapes the fact channels light up.
@@ -488,25 +491,63 @@ The through-line: in most toolchains, formatting, diffing, caching, and diagnost
 
 # Part V: The trust story
 
-## 12. Ten sealed building blocks, and a proof lane in
+## 12. The proposed ten sealed building blocks, and a proof lane in
+
+*Current status: the Constitution records D17's representation-invariant proof
+lane as a long-term rule. The roadmap defers the exact sealed catalog, proof
+mechanism, and storage mechanism; none is a current language feature.*
 
 An expert asks the right question next: *"Some structures cannot be written in checked code in any language. A production hash table's reality, one thousand slots, thirty-seven live, liveness tracked in side-band control bytes, is not expressible in your type system. Where's the escape hatch?"*
 
-There isn't one. There is a short list and a proof lane, and the distinction is the point.
+There is no writer-accessible escape hatch. The selected long-term answer is a
+proof lane; the short list considered beside it is a deferred candidate, and
+the distinction is the point.
 
-**The short list.** A small, fixed catalog, currently ten kernels (the growable sequence, the hash table, the object pool, the arena, the single-producer/single-consumer queue, file I/O, and peers), ships with trusted internals written by the toolchain itself. Inexpressibility is the admission criterion, and it is strict: a kernel enters the catalog only when ordinary users cannot implement its capability at par performance from the language and the existing checked libraries. Everything user-writable ships as taught, checked source instead. The catalog is the language's whole trust surface.
+**The short list.** The archived capability pass proposed a small, fixed catalog of ten kernels (the growable sequence, the hash table, the object pool, the arena, the single-producer/single-consumer queue, file I/O, and peers), with trusted internals written by the toolchain itself. Inexpressibility was the admission criterion: a kernel entered the candidate catalog only when ordinary users could not implement its capability at par performance from the language and the existing checked libraries. Everything user-writable would ship as taught, checked source instead. This remains a deferred architecture, not the current language's trust surface.
 
-Contrast the shape of the risk. Rust's `unsafe` is the same admission, that some invariants live outside the type system, distributed as a keyword to every writer, in every crate, forever, so the ecosystem's soundness is the sum of every author's care. Whitefoot concentrates the identical risk into ten artifacts it owns, audits, and can fix once so the world recompiles. No writer-reachable syntax escalates into the privileged layer, so there is nothing to ban, lint, or review for.
+Contrast the proposed shape of the risk. Rust's `unsafe` is the same admission,
+that some invariants live outside the type system, distributed as a keyword to
+every writer, in every crate, forever, so the ecosystem's soundness is the sum
+of every author's care. If Whitefoot adopts a sealed catalog, it will
+concentrate that risk into explicitly trusted project artifacts it owns, audits,
+and can fix once so the world recompiles. No writer-reachable syntax escalates
+into the privileged layer, so there is nothing to ban, lint, or review for.
 
-**What "trusted" costs before shipping.** Each kernel passes a five-part acceptance battery (differential testing against the reference implementation it replaces, exhaustive small-bound model checking, sanitizer and fuzz soak, hostile pre-ship review, and a CI-pinned performance and assembly shape), plus complete failure semantics and teardown protocols with fault-injection evidence. Not a claim of care: a ledger, green, or the kernel does not ship.
+**What "trusted" would cost before shipping.** The archived catalog proposal
+required each candidate kernel to pass a five-part acceptance battery
+(differential testing against the reference implementation it replaces,
+exhaustive small-bound model checking, sanitizer and fuzz soak, hostile
+pre-ship review, and a CI-pinned performance and assembly shape), plus complete
+failure semantics and teardown protocols with fault-injection evidence. This
+is a historical admission proposal, not a current gate or catalog.
 
-The queue kernel shows the standard concretely. The model check ran over all reachable states, and it also catches every mutant: weaken any one of the four acquire/release orderings and the checker exhibits a concrete violation, a read of an unpublished slot or an overwrite of an unconsumed one. The implementation's steady-state hot path carries zero read-modify-write atomics, verified in the committed disassembly, a plain load, a cached compare, and one release store per operation. It beats a mature Rust SPSC crate on round-trip latency on the same machine, and that crate leads on batched throughput; both numbers are in Part VI.
+The archived queue dry run shows what that proposed standard meant. Its model
+check covered the recorded bounded state space and caught the planted ordering
+mutants: weakening an acquire/release edge produced a read of an unpublished
+slot or an overwrite of an unconsumed one. The historical implementation's
+steady-state hot path used zero read-modify-write atomics in the recorded
+disassembly. It beat a mature Rust SPSC crate on round-trip latency on the same
+machine, while that crate led on batched throughput; both numbers are in Part
+VI. None of this establishes a current Whitefoot kernel or production gate.
 
 **The proof lane.** This is the project's long-term answer to extensibility. Trust is a temporary loan, and proof buys permanent privilege.
 
-Any kernel whose representation invariants are later machine-proved leaves the trusted list and becomes checked code with the same privileged representation. The trusted list only ever holds kernels not yet proved. The same lane is open, long-term, to users. Performance never requires proof, since the default path composes the sealed catalog, but a user structure that machine-proves its invariants earns the same privileged representation rights, uninitialized storage and elided internal checks, as checked code, through deterministic proof checking rather than human review of the code.
+Under D17, a future project kernel whose exact representation invariants are
+machine-proved leaves any explicitly trusted boundary and becomes checked code
+with only the privileges justified by that proof. The same lane is open,
+long-term, to users. Proof is not intended to become a prerequisite for
+ordinary performance: if a sealed catalog is later admitted, ordinary code may
+compose its project-provided operations. A user implementation receives such
+privileges only through deterministic machine verification of its exact
+obligations, never through human review or a writer assertion. The active
+specification defines no such proof or privilege today.
 
-One doctrine runs at every scale. A bounds check comes out by a proof (§ 3) or it stays. A reassociation happens under a checked law (§ 6) or it does not. A privileged representation is earned by a proved invariant or it stays inside ten audited walls. Nowhere in the language does "I promise" compile.
+One doctrine runs at every scale. A bounds check comes out by a proof (§ 3) or
+it stays. A reassociation happens under separately authorized checked evidence
+(§ 6) or it does not. Under the long-term D17 lane, a privileged representation
+enters checked code only through verified invariants; an unproved project
+kernel, if a future specification admits one, remains an explicit trusted
+boundary. Nowhere in the language does "I promise" compile.
 
 ---
 
@@ -520,7 +561,7 @@ Claims earn belief by naming their edges. The current honest ledger:
 - **The frequency question is open.** The fact channels win on kernels that exercise them. How often those patterns dominate real medium-to-large codebases is not established yet, and an early survey attempt was directional at best. This is the biggest honest unknown in the performance story.
 - **The sealed-kernel numbers are shape validations, not shipped-product benchmarks.** The catalog dry runs were C implementations of the specified kernel shapes against mature Rust baselines on one Apple development machine: sequence push-then-sum about 1.5x over `Vec`, table iteration about 1.4x over hashbrown, steady-state insert modestly behind, 4 of 5 workloads inside the preregistered band; the queue beats `rtrb` by about 20% on round-trip latency while `rtrb` leads by about 25% on batched-32 throughput, both far above the band's floor. None of this is whitefoot-emitted code yet, and magnitudes will be re-established on the deploy target.
 - **Single-shot writability is not solved.** The current clean baseline for one research kernel is roughly a quarter of programs correct on the first attempt, with the failure modes catalogued and fixes staged. The design answer has always been the diagnostic feedback loop (§ 11), and the loop's measured effect is the next experiment, not a completed one.
-- **Several announced mechanisms are selected designs under validation, not shipped features**, the ten-kernel catalog and the user proof lane among them. This document describes the design and the evidence gathered so far; the project's own gates block production claims until each validation closes.
+- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog is a historical candidate whose exact storage mechanism is deferred; D17's user representation-proof lane is recorded as long-term project law but has no current proof language or production path. This document describes the design and the evidence gathered so far; the roadmap and language-change gates block production claims.
 
 ---
 

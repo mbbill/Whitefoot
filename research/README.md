@@ -4,6 +4,9 @@ This directory started as the research corpus and is now the project's
 living record. The research-era material (debates, sources, matrices,
 synthesis) moved to `../archive/research/`.
 
+- `archive-promotion-audit.md` — live, non-authoritative crosswalk of useful
+  archived conclusions, their current successors, and the few items that need
+  an owner decision before promotion. The archived originals remain provenance.
 - `../archive/governance/decision-log.md` — archived transition log and index
   of the versioned decision record. Historical entries may cite pre-rewrite
   commit hashes and pre-archive paths; those are labels, not links.

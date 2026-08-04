@@ -1054,6 +1054,31 @@ decision it would force; contract member calls (P5); and the constant-time
 backend constant-time-preservation contract, since optimized LLVM lowering may
 legally reintroduce secret-dependent branches.
 
+When that storage decision reopens, it must account separately for growable
+dense storage and replacement of an affine backing allocation; move-out,
+failure, cleanup, and destruction ordering; partial initialization and sparse
+occupancy; stable append-only identity versus recyclable identity; invalidation,
+stale-handle detection, and check-elision authority; and multi-place access,
+iteration, and relocation under active loans. These are required problem
+dimensions, not selected mechanisms. The
+[archive-promotion audit](../research/archive-promotion-audit.md#4-storage-checklist-linked-as-a-roadmap-reopening-input)
+records their historical provenance but does not own or revise this gate.
+
+D17's representation-invariant proof lane is a selected long-term project-law
+direction, independent of D16's deferred sealed-catalog and storage mechanism.
+This placement authorizes no v0.17 language feature, proof checker, compiler
+work, or privileged operation. v0.17 contains no representation-invariant
+proof language, and STOR-1 provides no temporary partially initialized storage
+path. The exact invariant and certificate language, deterministic checker,
+concrete operations and semantics within the selected privilege classes, any
+proposal to add another privilege class, admission workflow, D16 mechanism,
+and production schedule remain deferred. They may re-enter only when a measured
+experiment or port names the absence of proof-gated representation authority
+as its concrete blocker, or when the owner explicitly reorders the roadmap,
+and must then follow the normal `WORKFLOW.md` proposal and approval path.
+Concurrent lock-free representation proofs remain D17's explicitly
+higher-difficulty research class, not current work.
+
 The v0.18 loan-lifetime and scope candidate is parked, not abandoned. Its
 exact bytes remain in `governance/spec-evolution/kernel-spec-v0.18-candidate.md`
 as a non-authoritative design record; active behavior stays v0.17. It re-enters
@@ -1284,7 +1309,8 @@ first on measured opportunity, carrying the facts toggle, facts-off identity,
 independent attribution, and hostile negative canaries that the design memory
 already requires of any fact family. The frequency study's recorded conclusion
 makes relational bounds proofs in a real workload the next bounded bet, so the
-proof lane and the first channel are now one slice rather than two. It also
+OP-4/FN-8 relational-bounds proof work and the first channel are now one slice
+rather than two. It also
 carries the largest share of the R0 question: rustc already emits alias and
 read-only attributes from its own type system, so attribute channels chase
 parity plus boundary cases, while a checked entry contract that discharges
@@ -1366,7 +1392,8 @@ Phase 10 states its falsifiable branch in advance.
 three of four probes at parity-with-effort against safe Rust, with one 1.1-1.5x
 structural residual on a niche kernel, and `docs/why-whitefoot.md` concedes
 the frequency question as the biggest honest unknown. If the channels and the
-proof lane land and the kernel set still sits at Rust parity on machine
+OP-4/FN-8 relational-bounds proof slice land and the kernel set still sits at
+Rust parity on machine
 performance, that is an experimental result, not an execution failure: the
 constitution's affirmed R0 reading names the surviving deltas — W3
 cheat-proofness and W1 weak-writer robustness — and the project's thesis
@@ -1507,7 +1534,13 @@ per loop; research and implementation interleave by design:
 
 1. Construct semantics and the non-interference judgment: which effect-row,
    loan, and origin-set facts license which parallel form, and what is
-   rejected with which rule.
+   rejected with which rule. The required
+   [dynamic fan-out witness](../research/archive-promotion-audit.md#3-dynamic-fan-out-placed-as-a-required-phase-11-witness)
+   is a runtime-count worker set whose workers share-read outer state. The
+   selected form must either express that case soundly under OWN-11 or record a
+   deliberate rejection. The archived fixed-spawn plus `par.for_chunks` answer
+   carries no design preference, and any OWN-11 carve-out requires its own
+   hostile soundness review.
 2. Intra-object partition — the `split_uniq` gap: symbolic index disjointness,
    sub-range identity, and persistence across calls and recursion. Sequentially
    valuable regardless; a divide-and-conquer port such as merge sort names it.

@@ -30,9 +30,10 @@ in-place writes. Those are unrepresentable here BY DESIGN.
 
 Problem: many homogeneous-ish nodes with cross-references (AST, graph, ECS).
 Pattern: one struct of parallel `buffer<T>` columns plus a count; a node is a
-`u64` index; construction appends (`push` through `&uniq`); indices never
-recycle; the whole pool drops at once. Reference:
-`archive/m3/submissions/reference/whitefoot/arena_ast_builder.wf`.
+`u64` index; construction appends through `&uniq`; indices never recycle; the
+whole pool drops at once. Current v0.17 executable reference for the
+fixed-capacity append-only shape:
+`tests/conformance/cases/x-borrowed-pool-tree-run.wf`.
 Fast because: contiguous per-field columns (cache, vectorization), and the
 borrowed-SoA shape is exactly what channel 1's scoped-alias facts optimize;
 no per-node allocation, headers, or refcounts.

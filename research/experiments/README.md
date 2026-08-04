@@ -1,10 +1,14 @@
 # Experiments Index
 
-Every directory is self-contained (sources + Makefile/run script + RESULTS.md
-with measured numbers and honest caveats). Binaries/corpora are regenerable
-and gitignored. Historical chronology and decisions are indexed by
-`../../archive/governance/decision-log.md`; current design authority lives in
-`../../mcts_mem/` and current implementation status in `../../docs/roadmap.md`.
+Current experiment bundles are self-contained: sources, a Makefile or run
+script, and a RESULTS.md with measured numbers and honest caveats.
+Binaries/corpora are regenerable and gitignored. Some retained historical
+bundles below still name the retired democ toolchain; their RESULTS and source
+evidence remain useful, but their old runner is not replayable from HEAD and is
+not a current compiler gate. Historical chronology and decisions are indexed
+by `../../archive/governance/decision-log.md`; current design authority lives
+in `../../mcts_mem/` and current implementation status in
+`../../docs/roadmap.md`.
 
 ## Historical fact-channel benchmarks
 
@@ -34,7 +38,7 @@ real-project evidence.
   current SoA as the zero-tax baseline, and forbids feature-flagged dual
   semantics.
 
-## Port studies (real programs; D9 confidence-gate evidence)
+## Port studies (real programs; historical D9-era evidence)
 - `zlib-core-kernels/` — deferred RFC 1951 kernel handoff. Ordinary scalar
   lowering is not competitive for short-period match overlap and trails the
   pinned all-literal Huffman projection; bounds-check elision alone does not
@@ -44,12 +48,13 @@ real-project evidence.
   ARM64 snapshots, candidate writer patterns, proof obligations, and production
   pickup gates. These are feasibility results, not complete proofs or a
   whole-inflate claim.
-- `default-floor/` — D9a protocol: a fixed low-tier model's first
+- `default-floor/` — historical D9a protocol: a fixed low-tier model's first
   correctness-green Whitefoot artifact versus an exact unmodified shipped Rust
   library. Two separately preregistered results are complete: Terra Whitefoot beats
   `percent-encoding` 2.3.2 `percent_decode` by 1.653x [1.631, 1.667] and
   one-shot `utf8parse` 0.2.2 by 1.098x [1.085, 1.145]. Neither result is a
-  proof-elision win; see the aggregate claim boundary in
+  proof-elision win, and current W1 does not use a model score as a gate; see
+  the aggregate claim boundary in
   `default-floor/RESULTS.md` and the two target-specific reports beneath it.
 - `port-study/binary-trees/` — floor-raising result: the slow shape is
   unrepresentable; ~11% checked-semantics tax vs identical-shape Rust.
@@ -70,6 +75,7 @@ real-project evidence.
   adapter before it can regain gate authority.
 
 ## Earlier corpus-era studies
-Moved to `../archive/experiments/` (scatter residual, guarded-plan
-measurements); conclusions absorbed into the corpus notes and THE-PLAN's
-evidence ledger.
+Moved to `../../archive/experiments/` (scatter residual, guarded-plan
+measurements). Their durable conclusions and current dispositions are
+summarized in `../archive-promotion-audit.md`; the old protocols grant no
+current roadmap status.
