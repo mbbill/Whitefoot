@@ -1,7 +1,8 @@
 # Current Plan
 
-Status: PROPOSED — awaiting owner selection; no compiler or specification work
-is authorized by this file.
+Status: ACTIVE — owner selected step `N1` on 2026-08-03. This plan authorizes
+candidate research only; it authorizes no port, compiler, or specification
+work.
 
 Derived from: [Direction Outline revision 1](roadmap.md), item `CAND-1`
 
@@ -20,7 +21,7 @@ would implement features before a real project demonstrates their value.
 The first decision is therefore project selection, not a compiler feature or a
 new specification version.
 
-## Proposed work
+## Current step
 
 ### [ ] N1 — Build a small candidate shortlist
 
@@ -32,14 +33,22 @@ new specification version.
   the smallest authentic milestone; map it to one or two primary outline items
   and every strict dependency; and list prerequisites that the current compiler
   does not supply.
+- **Evidence home:** replace the dated brainstorm in
+  [`research/notes/headline-artifact-shortlist.md`](../research/notes/headline-artifact-shortlist.md)
+  in place with the current comparison; Git retains the historical version.
 - **Verify:** use primary project sources for scope and interfaces, current
   compiler evidence for implemented capability, and canonical RESULTS records
   for historical measurements. Mark every inference and do not promote a
   historical compiler result into a current claim.
 - **Accept:** each candidate can be selected, parked, or rejected from one
   compact comparison without additional repository archaeology.
+- **Stop:** stop after one reviewable comparison of three to five candidates,
+  or earlier if fewer than three survive the pin, license, boundary, oracle,
+  and achievable-first-milestone tests. Do not begin a port or benchmark.
 
-### [ ] N2 — Recommend one next-stage proposal
+## Next proposal — not authorized
+
+### N2 — Recommend one next-stage proposal
 
 - **Why:** a shortlist is useful only if it produces a falsifiable next move.
 - **Do:** recommend one bounded milestone, or recommend that none is ready.
@@ -52,27 +61,28 @@ new specification version.
 - **Accept:** the owner can approve, revise, park, or reject the proposal. Only
   owner approval changes this file to an active execution plan.
 
-## Not authorized now
+Completing `N1` does not authorize `N2`. After the shortlist and its hostile
+review are complete, replace this file with a `PROPOSED` N2 decision packet.
+
+## Not authorized
 
 - No candidate project is selected.
 - No language or specification change is open.
+- No candidate source port, benchmark, dependency installation, or external
+  integration work is authorized.
 - No optimizer fact family, proof checker, parallel runtime, storage mechanism,
-  FFI, backend, or deployment artifact may be implemented from this proposal.
+  FFI, backend, or deployment artifact may be implemented from this plan.
 - Existing repository program witnesses and historical experiments may be read
   as evidence; they are not project authority.
 
 ## Parallel research
 
-Independent bounded investigations may be proposed for unresolved outline
-items. Each must name one question, the evidence that would change the outline,
-and a stop condition. A probe runs only after this file is `ACTIVE` and lists
-it, or after separate owner approval. Research may update facts and next gates
-after review; it does not silently authorize implementation or a specification
-change.
+None. Candidate comparison is the active step itself, not a parallel lane.
 
 ## Completion
 
-When the owner decides the proposal, update the affected direction items in
-`docs/roadmap.md` and increment its revision. If approved, replace this file in
-place with the `ACTIVE` rolling plan; if parked or rejected, record `NO ACTIVE
-PLAN`. Git retains this proposal; do not create a second plan or dated copy.
+When `N1` passes review, update `CAND-1` and any candidate disposition supported
+by the evidence, increment the Direction Outline revision, and replace this
+file in place with a `PROPOSED` N2 packet. A shortlist recommendation is not
+project selection; only a later owner decision may activate a project
+milestone.
