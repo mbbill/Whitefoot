@@ -572,7 +572,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .then_some((*declaration, local.clone()))
             })
             .collect::<Vec<_>>();
-        live.sort_by(|left, right| right.1.binding.0.cmp(&left.1.binding.0));
+        live.sort_by_key(|entry| std::cmp::Reverse(entry.1.binding.0));
         let mut drops = Vec::new();
         for (_, local) in live {
             if !self.is_copy_type(local.ty)? {

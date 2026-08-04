@@ -291,7 +291,7 @@ pub(super) fn gap_matches(
                 length,
             )
         }
-        GapStyle::Blank => (bytes_match(actual, [b'\n', b'\n'].into_iter(), 2, work)?, 2),
+        GapStyle::Blank => (bytes_match(actual, (*b"\n\n").into_iter(), 2, work)?, 2),
     };
     let expected_len =
         u64::try_from(expected_len).map_err(|_| CanonicalCompilerFailure::CounterOverflow)?;
