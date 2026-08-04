@@ -2,7 +2,7 @@
 - Keep one rolling Current Plan as the only status-bearing repository proposal or execution plan. `PROPOSED` authorizes nothing; `ACTIVE` names one owner-selected milestone, its smallest end-to-end slice, validation, acceptance conditions, and stop conditions.
 - Let candidate projects decide when outline directions matter. Derive each proposed milestone backward from a concrete project pressure and cite the exact outline items and dependencies it consumes.
 - Permit bounded parallel research only when an `ACTIVE` plan or separate owner approval names its question, the decision it can change, required evidence, and stop condition.
-- When measured project work exposes a language gap, enter the guarded specification-change branch in `WORKFLOW.md`; preserve exact owner approval, append-only specification versions, native grammar verification, synchronized derived artifacts, and atomic activation.
+- Keep ordinary project delivery and language change distinct: already-specified implementation, defect repair, project adaptation, and approved research stay on the main path, while only a measured language gap enters the guarded specification-change branch in `docs/WORKFLOW.md`.
 
 ## Facts
 

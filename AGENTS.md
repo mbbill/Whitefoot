@@ -129,12 +129,13 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
 
 ## Specification and test integrity
 
-- Root `WORKFLOW.md` is the sole operational workflow guide. It holds the
-  project-driven loop from Direction Outline through proposal, Current Plan,
-  execution, evidence, and outline update; it also defines bounded parallel
-  research and the guarded language-change branch. `governance/`, `spec/`, and
-  `tests/conformance/` provide records, resources, and tools; none defines an
-  independent update lifecycle.
+- `docs/WORKFLOW.md` is the sole operational workflow guide. It keeps ordinary
+  project delivery as the main workflow and defines a separate, conditional
+  specification-change workflow for genuine language gaps; implementing
+  already-specified behavior and fixing compiler defects do not enter that
+  branch. It also defines bounded parallel research. `governance/`, `spec/`,
+  and `tests/conformance/` provide records, resources, and tools; none defines
+  an independent update lifecycle.
 - The numbered kernel specification is append-only, enforced by a pre-commit
   hook (`make install-hooks`): a released `spec/kernel-spec-v*.md` is never
   edited, renamed, or deleted. Amending the language is allowed, with care — a
@@ -144,7 +145,7 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
 - Before proposing a spec change, verify the new grammar with the native
   grammar verifier that reuses the compiler's own lexer and parser. Follow the
   complete proposal, approval, activation, and closure loop in
-  `WORKFLOW.md`.
+  `docs/WORKFLOW.md`.
 - When the spec changes, bring everything derived from it to the newest version
   in the same work: conformance cases and verdicts, the lexer/parser and
   generated syntax data, tests, and docs. This consistency is your

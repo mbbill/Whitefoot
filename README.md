@@ -23,7 +23,7 @@ not current goals.
 map of capabilities, open directions, evidence, and candidate projects.
 [docs/current-plan.md](docs/current-plan.md) is the single rolling execution
 proposal or approved plan derived from that outline; only its `ACTIVE` status
-authorizes execution. [WORKFLOW.md](WORKFLOW.md)
+authorizes execution. [docs/WORKFLOW.md](docs/WORKFLOW.md)
 defines the project-driven process, parallel research lane, and guarded
 language-change branch. [AGENTS.md](AGENTS.md) records the priority rule and
 structure discipline future agents must apply.

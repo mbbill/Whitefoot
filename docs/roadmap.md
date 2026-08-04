@@ -9,7 +9,7 @@ The active language authority is
 Released numbered specifications are immutable. The current execution proposal
 is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
-[`WORKFLOW.md`](../WORKFLOW.md).
+[`WORKFLOW.md`](WORKFLOW.md).
 
 ## How to read this outline
 
@@ -223,7 +223,7 @@ facts-off evidence rather than trust in the compiler or writer.
 - **Missing / next:** distinguish correct execution, valid-but-unsupported,
   wrong rejection, crash, and trap mismatch. Any existing expectation or
   status weakening remains owner-protected.
-- **Facts:** [conformance corpus](../tests/conformance) · [workflow](../WORKFLOW.md).
+- **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
 
 ### VERIFY-3 — Facts-on/facts-off differential trust
 
