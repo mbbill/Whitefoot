@@ -2,8 +2,8 @@
 
 Status: **deferred research record**. This directory contains reproducible
 isolated-kernel evidence and disposable stage-0 compiler prototypes. It does
-not change the language specification, `PATTERNS.md`, production `wfc`, or the
-active roadmap.
+not change the language specification, `docs/patterns.md`, production compiler,
+Direction Outline, or Current Plan.
 
 The study asks a narrower question than “can Whitefoot implement zlib?”:
 

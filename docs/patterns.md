@@ -1,16 +1,22 @@
 # Whitefoot Pattern Doctrine (D6)
 
-Status: seeded 2026-07-09; normative once ratified. The language forces a
-closed pattern vocabulary at the architecture level, exactly as the kernel
-forces one loop form and one conditional at the statement level. The catalog
-must stay COMPLETE (every task modelable — a gap is a finding) and EFFICIENT
-(each pattern names the fact channel or machine property that makes it fast).
-Writers are TAUGHT this catalog up front (teaching pack / writer's excerpt);
-hitting a wall because a familiar architecture is unrepresentable is a
-documentation defect, not a writer error.
+Status: seeded, non-normative writer guidance since 2026-07-09. Only the active
+specification defines accepted source. The selected D6 direction is to test
+whether a closed architecture-level vocabulary can stay COMPLETE (every task
+modelable — a gap is a finding) and EFFICIENT (each pattern names the fact
+channel or machine property that makes it fast) before any owner ratification.
+Writers may be taught this catalog during validation; hitting a wall is a
+catalog finding, not authority to invent a language rule.
 
-Each entry: problem shape -> blessed pattern -> why it is fast here -> what it
-replaces from mainstream languages.
+Capability boundary: the current backend emits no effect-derived attributes or
+alias metadata, performs no proof-driven check elision, has no termination
+checker or `willreturn` derivation, and does not implement arenas. The speed
+rationales in P1–P4 and P7–P9 therefore include historical measurements or
+future hypotheses; each entry labels the current boundary. P6 and P10 already
+state their exact v0.17 status.
+
+Each entry: problem shape -> candidate or validated pattern -> current or
+historical speed rationale -> what it would replace in mainstream languages.
 
 ## P1. Command buffer (write intents)
 
@@ -20,9 +26,11 @@ Pattern: deep functions are `pure` or `reads('p)`; they compute and RETURN
 write intents as plain values. Exactly one shallow function holds the single
 `&uniq` and applies the intents. Effect rows make the architecture checkable:
 grep the signatures — one `writes('p)` in the system.
-Fast because: deep code carries `memory(read)`/`memory(none)` attributes
-(channel 2: hoisting, CSE, reordering across calls), and read-only deep code
-is the precondition for the parallel fan-out story (D1).
+Current value: exact effect rows make scattered writes visible and reject a
+false architectural summary. Potential speed: the retired channel-2 experiment
+mapped read-only/pure code to memory attributes for hoisting, CSE, and call
+reordering; the current backend does not emit those attributes. Read-only deep
+code is also a prerequisite for a future verified parallel fan-out.
 Replaces: `Rc<RefCell>` interior mutability, observer mutation, scattered
 in-place writes. Those are unrepresentable here BY DESIGN.
 
@@ -34,9 +42,10 @@ Pattern: one struct of parallel `buffer<T>` columns plus a count; a node is a
 whole pool drops at once. Current v0.17 executable reference for the
 fixed-capacity append-only shape:
 `tests/conformance/cases/x-borrowed-pool-tree-run.wf`.
-Fast because: contiguous per-field columns (cache, vectorization), and the
-borrowed-SoA shape is exactly what channel 1's scoped-alias facts optimize;
-no per-node allocation, headers, or refcounts.
+Current value: contiguous per-field columns improve locality and avoid
+per-node allocation, headers, and refcounts. Potential speed: the retired
+channel-1 experiment also emitted scoped-alias facts for this borrowed SoA
+shape; the current backend does not.
 Replaces: `Rc<RefCell<Node>>` graphs, pointer-linked heap nodes, and Rust's
 Vec-index arena WITH free-lists (STOR-1 rejects recycling: stale indices are
 well-typed UAF).
@@ -45,6 +54,8 @@ well-typed UAF).
 
 Problem: interleaved lifetimes vs bulk free — arenas leak if everything lives
 in one region.
+Pattern status: DEFERRED for current compiler use. v0.17 defines arena-related
+language vocabulary, but the compiler reports arena operations as unsupported.
 Pattern: nest regions by phase (request -> pass -> sub-pass); allocate into
 the innermost region; anything that survives a phase is EXPLICITLY moved out
 (`move`) to the outer owner — escape is visible and checker-verified; truly
@@ -62,14 +73,13 @@ state) out — possession flows like a token. v0 admits only bounded
 statement-scoped reborrowing (OWN-6): a child borrow of a holder is a transient,
 non-escaping call argument that suspends its parent for one statement, so the
 token never silently forks or escapes.
-Fast because: borrow-holder singleton provenance keeps the checker simple; the
-noalias facts
-hold for usable borrow holders (a suspended parent yields no usable alias).
+Current value: borrow-holder singleton provenance keeps the checker simple; a
+suspended parent yields no usable alias under the checked relation.
 Direct slices are the separate v0.17 case: they carry a finite static origin
 set, and every alias and effect judgment checks the whole set even though one
-runtime descriptor points to one root. Channel 1's soundness therefore rests
-on T-A's holder-singleton theorem plus the finite-origin coverage proof and
-statement-scoped suspension.
+runtime descriptor points to one root. A future alias-metadata consumer would
+also need the holder-singleton and finite-origin coverage proofs; none ships in
+the current backend.
 Replaces: Rust's unbounded implicit `&mut` reborrow chains and aliased mutable
 captures; Whitefoot's reborrow is bounded to one statement and cannot escape.
 
@@ -114,25 +124,26 @@ comparisons, combination via `band`/`bor`/`bnot`, transitions via
 `set state = predicate;`, counters bumped through a give-match select
 (`match p { True() => { give 1_u64; } False() => { give 0_u64; } }`).
 NEVER route state through integer flags or match-arm control flow.
-Fast because: the state stays an i1 recurrence, which the vectorizer widens
-to full-width byte vectors (measured: width 16 vs width 2x4 for the integer
-form — the difference between C parity and a 1.6-1.8x loss on wc-class
-kernels). 2-variant tag-only user enums lower identically to Bool, so a
-domain-named state enum costs nothing.
+Historical speed evidence: in the retired wc-class experiment, the `i1`
+recurrence vectorized at width 16 while the integer form used width 2x4, a
+1.6–1.8x gap. The current compiler supports Boolean and two-variant tag-only
+forms, but this floor result has not been revalidated on a selected project.
 Replaces: integer state flags, branchy per-byte match chains.
 
 ## P8. Traps to the boundary
 
-Problem: one trapping op in a hot leaf strips derived totality (willreturn)
-from the whole call tower and blocks vectorization of reductions.
-Pattern: validate at the edge (check/trap where cold), keep hot interiors
-trap-free — bounded counters use `.wrap` ONLY where the bound is structural
-(counter <= buffer length); everything else keeps `.trap`/`.checked` and
-waits for proof-elision (OP-4 tier) rather than weakening semantics. Use
-`--totality` to see exactly which trap poisons which tower.
-Fast because: trap-freedom is what admits willreturn (hoisting/CSE of calls)
-and single-exit loops (vectorization). Measured: one trap-per-increment
-counter = zero vector ops; the wrap form = full SIMD, 2x on wc -l.
+Potential problem for a future totality consumer: one trapping op in a hot leaf
+may block a `willreturn` proof for the call tower and inhibit transformations.
+Pattern status: DEFERRED as a totality/optimization pattern. v0.17 has no
+termination checker, `pure` does not promise return, the compiler never emits
+`willreturn`, and no `--totality` report exists. It remains valid ordinary
+design advice to validate at a boundary and use `.wrap` only where modular
+behavior is the intended semantics; it is not current optimizer authority and
+must never weaken a required trap.
+Historical speed evidence: the retired wc line-count experiment found that a
+trap-per-increment form produced no vector operations while the semantically
+valid wrapping-counter form reached full SIMD and roughly 2x throughput. A
+future totality consumer needs its own selected project and proof boundary.
 Replaces: sprinkling checks uniformly and paying for them in the one loop
 that matters.
 
@@ -150,11 +161,11 @@ of its effects and return a value such as `NeedMoreOutput`; do not turn that
 outcome into a contract trap.  A preflight/exact-allocation API is appropriate
 only when its validated size remains bound to the input it describes.  Never
 put a merely common-case size or a rare worst-case allocation in `requires`.
-Fast because: a checked exact relation can discharge repeated implicit bounds
-checks, while the body-derived obligation report names a missing or mismatched
-fact.  Recoverable boundary control preserves the useful small-buffer domain
-and provides the explicit slow path needed by future guarded fast-region
-proofs without weakening OP-4 safety.
+Current value: `requires` executes the exact API restriction at callee entry,
+and recoverable boundary control preserves the useful small-buffer domain. The
+current compiler does not discharge repeated bounds checks or produce a proof
+obligation report. Historical proof evidence measured that consumer; any future
+guarded fast region must re-establish it without weakening OP-4 safety.
 Replaces: per-store bounds checks in fixed-ratio kernels, unconditional
 maximum-size caller allocation, retry-after-partial-token mutation, and using
 `requires` as an optimizer hint.

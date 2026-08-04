@@ -6,17 +6,18 @@ Binaries/corpora are regenerable and gitignored. Some retained historical
 bundles below still name the retired democ toolchain; their RESULTS and source
 evidence remain useful, but their old runner is not replayable from HEAD and is
 not a current compiler gate. Historical chronology and decisions are indexed
-by `../../archive/governance/decision-log.md`; current design authority lives
-in `../../mcts_mem/` and current implementation status in
-`../../docs/roadmap.md`.
+by `../../archive/governance/decision-log.md`; current design decisions live in
+`../../mcts_mem/`, current direction status in `../../docs/roadmap.md`, current
+execution proposal and status in `../../docs/current-plan.md`, and
+implementation detail in `../../compiler/README.md`. Only an `ACTIVE` plan
+sequences work.
 
 ## Historical fact-channel benchmarks
 
 These results used the now-archived democ implementation. They remain measured
-evidence and regression requirements for the Rust compiler, but their harnesses
-are not active compiler gates in the current foundation. They return only
-through the later roadmap tranche that owns the relevant backend or
-real-project evidence.
+evidence and may become current-compiler regression requirements only when an
+`ACTIVE` plan selects the fact family. Their harnesses are not active compiler
+gates in the current foundation.
 
 - `effect-attrs-channel/` — channel 2: effect rows -> LLVM fn attributes.
   O(n)->O(1) at opaque boundaries; ties fat LTO at per-file build cost.
@@ -70,12 +71,12 @@ real-project evidence.
 ## Preserved code-generation fixtures
 
 - `codegen-vs-rust-c/` — the splitmix scalar-backend-parity evidence. Its old
-  democ runner is dormant. Phase 2 does not execute it; a later,
-  entrance-gated backend tranche must bind the fixture to a Rust harness
-  adapter before it can regain gate authority.
+  democ runner is dormant. Before it can regain gate authority, a selected
+  project must need the comparison and a Rust harness adapter must bind the
+  fixture to the current compiler.
 
 ## Earlier corpus-era studies
 Moved to `../../archive/experiments/` (scatter residual, guarded-plan
 measurements). Their durable conclusions and current dispositions are
 summarized in `../archive-promotion-audit.md`; the old protocols grant no
-current roadmap status.
+current Direction Outline or Current Plan authority.

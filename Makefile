@@ -9,10 +9,10 @@ PY := python3 -B
 check: repository-invariants spec-append-only conformance compiler
 	@echo "== WHITEFOOT GATE GREEN (active compiler + independent evidence) =="
 
-# repository invariants: identical agent instructions and the canonical roadmap marker
+# repository invariants: identical agent instructions and the canonical outline marker
 repository-invariants:
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
-	@grep -q '^Status: CANONICAL ROADMAP' docs/roadmap.md || { echo "docs/roadmap.md is not marked canonical" >&2; exit 1; }
+	@grep -q '^Status: CANONICAL DIRECTION OUTLINE' docs/roadmap.md || { echo "docs/roadmap.md is not marked canonical" >&2; exit 1; }
 
 # the one spec protection: released kernel specs are never edited (new version only)
 spec-append-only:

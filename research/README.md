@@ -4,6 +4,11 @@ This directory started as the research corpus and is now the project's
 living record. The research-era material (debates, sources, matrices,
 synthesis) moved to `../archive/research/`.
 
+Research supplies facts to the living [`Direction Outline`](../docs/roadmap.md).
+Only an `ACTIVE` [`docs/current-plan.md`](../docs/current-plan.md) sequences
+current work; no research note or experiment authorizes implementation or a
+language change.
+
 - `archive-promotion-audit.md` — live, non-authoritative crosswalk of useful
   archived conclusions, their current successors, and the few items that need
   an owner decision before promotion. The archived originals remain provenance.

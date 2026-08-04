@@ -48,10 +48,13 @@ The resolver covers every active-specification declaration, lexical-use, and def
 owner/member role through one grammar-driven path, including exact scopes,
 visibility, reservations, collisions, and deterministic diagnostics.
 
-The implemented semantic families support exact scalar integers, unit,
-`Bool`, integer and unit constants, nongeneric own-mode functions, locals,
-direct calls, returns, `pure`, `traps`, and heap-allocation effects, wrapping and trapping
-add/subtract/multiply, checked add/subtract/multiply/divide/remainder, integer
+The implemented scalar families support exact fixed-width integers, strict
+`f32` and `f64`, `unit`, `Bool`, and unit, integer, and finite floating-point
+constants. The function path supports nongeneric functions and the bounded
+explicit source-generic subset described below, with locals, direct calls,
+returns, and exact source effect-row checking. The integer operation family
+includes wrapping and trapping add/subtract/multiply, checked
+add/subtract/multiply/divide/remainder, integer
 absolute value and negation in all three modes, integer comparisons, Boolean
 operations, the remaining OP-8 integer family, and nominal tag equality.
 That integer family includes trapping division/remainder, bitwise operations,
@@ -65,9 +68,23 @@ produce the exact `Result<T, DivError>` variant. Absolute value uses
 defined-edge `llvm.abs` for every signed width: wrapping retains the minimum
 value, trapping emits OP-2, and checked returns `Err(Overflow())`. Negation uses
 modular `sub 0, x` for wrapping and signed-subtraction overflow detection for
-trapping and checked modes, with no `nsw`/`nuw` promises. Nongeneric acyclic
-structs and enums flow through the same path,
-including construction, nested projection, statement/value matching, `give`,
+trapping and checked modes, with no `nsw`/`nuw` promises.
+
+Scalar `f32` and `f64` run end to end through semantic checking, typed IR,
+LLVM emission, and host execution. Source literals use the unique canonical
+finite spelling and retain their exact IEEE bits. All 24 direct floating-point
+operations execute for both widths without emitted fast-math flags, including
+the specified NaN and signed-zero cases. With the integer rows above, `cvt`
+covers all 90 ordered pairs of distinct concrete numeric primitives: 29 are
+total and return the destination directly; 61 return
+`Result<Dst, NarrowError>` under OP-6's exact-conversion rules. The 16 specified
+equal-width numeric `reinterpret` pairs preserve source bits. Floats compose
+with calls, loop-carried locals, structs, constants, fixed arrays, primitive
+runtime buffers, checked indexing, and SET-1.
+
+Acyclic source structs and enums, including reachable concrete generic nominal
+instances, flow through the same path with construction, nested projection,
+statement/value matching, `give`,
 per-site exhaustiveness checking, whole-binding affine moves, and explicit
 reverse-order cleanup edges. Struct fields may own buffers; whole and partial
 owner cleanup expands to exact projected buffer frees, and consuming field
@@ -77,19 +94,35 @@ backend switches on the active tag and recursively cleans only that variant's
 resource fields. A consuming match transfers the payload without also dropping
 the enum root. SET-1 supports live own-mode copy locals and nested copy
 fields, rejects affine replacement under STOR-1, and rechecks target liveness
-after the right-hand side. Semantic
-success produces the only lowering authority. Concrete fixed arrays support
+after the right-hand side. Semantic success produces the only lowering
+authority. Concrete fixed arrays support
 decimal or earlier-integer lengths, complete `array_new` initialization,
 immutable static const tables, `len`, checked index reads, and target-before-RHS
 checked indexed writes for direct local roots. The IR retains required checks,
-source trap sites, checked set paths, and cleanup. Runtime-length non-floating
-primitive buffers use a `{data pointer, u64 length}` value, checked OP-9
-byte-size multiplication, a separate selected-target domain guard before
-allocation, complete fill initialization,
-OP-4 reads and target-before-RHS writes, cross-function affine transfer, and
+source trap sites, checked set paths, and cleanup. Runtime-length primitive
+buffers use a `{data pointer, u64 length}` value, checked OP-9 byte-size
+multiplication, a separate selected-target domain guard before allocation,
+complete fill initialization, OP-4 reads and target-before-RHS writes,
+cross-function affine transfer, and
 compiler-derived `free` on normal owner exits. Buffer fields retain exact
 projected roots through length, read, and write operations without
 re-evaluating source paths.
+
+The source-generic path is a finite monomorphizing subset, not complete generic
+support. Functions, structs, and enums support unbounded type parameters, the
+built-in `Int` and `Float` bounds, and integer-typed const parameters; every
+type and const argument is explicit. Templates are checked symbolically, then
+each reachable kind-correct concrete instance is rechecked through the
+ordinary semantic path and receives a concrete nominal identity or
+collision-free internal function symbol before normal lowering. Acyclic nested
+calls and nominal discovery, forwarded const parameters, generic arrays and
+primitive buffers, and symbolic and concrete `Option` and `Result` instances
+use that same path. There is no argument inference, backend-level generic IR,
+or cross-instance body sharing. Generic call cycles, generic functions with
+region parameters or `requires`, and type-dependent generic `cvt` or
+`reinterpret` are explicit unsupported capabilities. Generic source contracts,
+source-contract bounds, and region-bearing generic arguments instead receive
+their v0.17-specified source rejections.
 
 The first lexical borrow family adds caller region parameters, local region
 blocks, shared and unique buffer holders, explicit `deref`, resolved
@@ -99,6 +132,18 @@ is cleaned up. Distinct struct fields can therefore be uniquely passed to a
 fill helper and then shared with a fold helper without transferring either
 allocation. The backend remains conservative LLVM without unearned overflow
 flags or check elision.
+
+Effect rows are checked as exact source-level summaries for every admitted
+function. `pure` is the empty effect row, not a termination claim. The
+implemented executable paths otherwise track `reads('r)`, `writes('r)`,
+`allocates(heap)`, and `traps`, union local expression effects, propagate callee
+heap and trap effects, and substitute formal read and write regions onto actual
+borrowed-storage and slice origins. The computed row must equal the declared
+row, so both missing and superfluous capabilities reject under EFF-2. These
+facts currently stop at semantic checking and static-contract compatibility.
+The backend emits no effect-derived LLVM function attributes or alias metadata,
+licenses no check elision from an effect row, and never emits `willreturn`;
+v0.17 has no termination checker.
 
 Target qualification is one private stage immediately before LLVM emission.
 The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple and
@@ -169,6 +214,13 @@ results, and slice-valued value matches instead receive the specified FN-2,
 STOR-5, FN-1, and OWN-5 source rejections. Unimplemented active-specification
 families stop as unsupported rather than becoming source-language rejections.
 Whole-unit ERR-2 variant-addition edit-list enumeration remains future work.
+
+The ordinary compiler path also executes repository-owned program witnesses for
+numeric and generic composition, text and binary transforms, hashing, heap and
+borrowed storage, image and signal kernels, network formats, and stored, fixed,
+and dynamic raw-DEFLATE blocks under `tests/programs/`. These are regression
+evidence for the implemented surface, not external-project validation or
+performance claims.
 
 Compile a source file through the normal path with:
 

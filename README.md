@@ -19,10 +19,14 @@ compiler must eventually emit and run real programs. Product-scale resource
 controls, stable artifact protocols, distribution, and release engineering are
 not current goals.
 
-[docs/roadmap.md](docs/roadmap.md) is the sole source for current execution
-order and authorization. [WORKFLOW.md](WORKFLOW.md) defines the complete
-cross-directory language-change process. [AGENTS.md](AGENTS.md) records the
-priority rule and structure discipline future agents must apply.
+[docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
+map of capabilities, open directions, evidence, and candidate projects.
+[docs/current-plan.md](docs/current-plan.md) is the single rolling execution
+proposal or approved plan derived from that outline; only its `ACTIVE` status
+authorizes execution. [WORKFLOW.md](WORKFLOW.md)
+defines the project-driven process, parallel research lane, and guarded
+language-change branch. [AGENTS.md](AGENTS.md) records the priority rule and
+structure discipline future agents must apply.
 
 ## Current state
 
@@ -50,9 +54,9 @@ ordered source bundle
   -> host executable
 ```
 
-The compiler's implemented language surface changes as roadmap phases land, so
-the detailed capability list is maintained only in the
-[roadmap's current state](docs/roadmap.md#current-state). Valid language that a
+The detailed implemented surface is maintained in the
+[compiler README](compiler/README.md); the Direction Outline summarizes it only
+at the level needed to choose projects and research. Valid language that a
 growing compiler does not yet implement stops as an explicit unsupported
 capability; it is not reported as invalid Whitefoot.
 
@@ -63,7 +67,7 @@ live next to what they check.
 
 | Directory | What it is |
 |---|---|
-| [docs/](docs/) | The plan of record ([roadmap](docs/roadmap.md)), project law ([constitution](docs/constitution.md)), writer forms ([patterns](docs/patterns.md)), and the design rationale ([why-whitefoot](docs/why-whitefoot.md)) |
+| [docs/](docs/) | The living [Direction Outline](docs/roadmap.md), rolling [Current Plan](docs/current-plan.md), project law ([constitution](docs/constitution.md)), seeded writer forms ([patterns](docs/patterns.md)), supporting direction notes ([ideas](docs/ideas.md)), and dated design synthesis ([why-whitefoot](docs/why-whitefoot.md)) |
 | [spec/](spec/) | The language: numbered kernel specifications (append-only) and the rule-derivation ledger under `spec/derivation/` |
 | [compiler/](compiler/README.md) | The safe-Rust compiler: frontend, resolver, first semantic/IR slice, LLVM backend, and `whitefootc` |
 | [tests/](tests/) | Test evidence: the active compiler-independent `conformance/` behavior corpus, plus preserved `codegen/` source cases awaiting production-compiler integration |
@@ -83,8 +87,9 @@ The gate is deliberately small: the compiler builds and passes its tests; the
 conformance corpus has valid active-spec identity, structure, rule coverage,
 and expectations; and numbered specifications remain append-only. The complete
 conformance corpus is not yet executed against the compiler because its
-adapter is still Phase 8 work. A green result states only what the gate
-exercises and is not a completeness claim.
+adapter is not wired. Direction Outline item VERIFY-2 records the gap; an
+owner-selected Current Plan decides when it matters. A green result states only
+what the gate exercises and is not a completeness claim.
 
 ## License
 

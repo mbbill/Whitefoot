@@ -1,21 +1,25 @@
 # The bargain ledger
 
-Status: NON-AUTHORITATIVE. `docs/roadmap.md` alone controls current work, order,
-gates, and authorization. Compiled 2026-07-28 from the founding directives, the
-round-2/3/4 design debates, the headline brainstorms, the research backlog, the
-capability-research era, the live docs, and one fresh brainstorm. §8 (the ML
-direction) and §9 (the embedded direction) added 2026-07-31, each after an
+Status: DATED, NON-AUTHORITATIVE SYNTHESIS. The living
+[`Direction Outline`](roadmap.md) owns current status and candidate placement;
+an `ACTIVE` [`current-plan.md`](current-plan.md) owns execution sequencing.
+Status words and
+phase references below describe the ledger when compiled and must not be used
+as current authorization. Compiled 2026-07-28 from the founding directives,
+the round-2/3/4 design debates, the headline brainstorms, the research backlog,
+the capability-research era, the live docs, and one fresh brainstorm. §8 (the
+ML direction) and §9 (the embedded direction) added 2026-07-31, each after an
 external research pass (eight and seven clusters respectively) whose dated
 findings they cite; both passes refuted parts of their own briefings, and the
 refutations are recorded inline.
 
-This file is the owner's periodic re-ranking instrument. The founding trade —
-D0, 2026-07-01 — gives away human ergonomics entirely and designs for an AI
-writer with a human approver. Every entry below answers one question: **what
-does that trade buy here, what does it cost, and what is its evidential
-status?** Reread this file when priorities are being rethought; correct
-statuses when experiments close; delete entries only by superseding them in
-place.
+This file explains the founding trade and preserves cross-direction rationale;
+it is no longer a work queue or periodic re-ranking owner. D0, 2026-07-01,
+gives away human ergonomics entirely and designs for an AI writer with a human
+approver. Every entry below answers one question: **what does that trade buy
+here, what does it cost, and what was its evidential status?** Promote a live
+status, gap, or next gate to the Direction Outline and leave measurements and
+long explanations in their canonical evidence owners.
 
 Status vocabulary: **LAW** (constitution/spec/tree invariant) · **MEASURED**
 (a RESULTS record exists) · **ADOPTED** (in the language or doctrine, not

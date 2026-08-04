@@ -1,11 +1,14 @@
-# Whitefoot idea bank
+# Supporting direction notes
 
-Status: NON-AUTHORITATIVE.
+Status: NON-AUTHORITATIVE DETAIL.
 
-`docs/roadmap.md` alone controls current work, order, gates, and authorization.
-This file preserves ideas that may deserve a bounded experiment after an owner
-promotes one. An entry here does not open a project phase or change a language,
-compiler, runtime, or deployment contract.
+The living [`Direction Outline`](roadmap.md) owns each idea's current state,
+next evidence gate, and candidate-project links. This file preserves longer
+mechanism sketches and possible first experiments; it does not order work.
+Only an `ACTIVE` [`current-plan.md`](current-plan.md) sequences an owner-selected
+milestone.
+An entry here does not change the language, compiler, runtime, or deployment
+contract.
 
 Whitefoot keeps facts in source that other languages discard. LLVM optimization
 is one consumer of those facts. The ideas below ask whether the same checked
@@ -229,7 +232,7 @@ Before an owner promotes one of these ideas, its experiment should answer:
   experiment?
 - Which result stops the work instead of expanding its scope?
 
-Most entries depend on the stable proposition, provenance, consumer, and
-invalidator ledger described by phase 4 of `docs/roadmap.md`. Until that ledger and
-its hostile reviews exist, these entries remain design prompts rather than
-compiler work.
+Before one of these notes enters an execution proposal, its Direction Outline
+item must name the current producer, consumer, invalidators, safe fallback,
+hostile mutation, decision observation, and stop condition that actually apply.
+Until then it remains supporting detail rather than compiler work.

@@ -4,10 +4,13 @@ Status: **live, non-authoritative inventory**. Audited 2026-08-01.
 
 This document preserves the useful conclusions of the archive audit outside
 `archive/`. It is not a work queue and it grants no implementation or language
-authority. Current status and authorization remain solely in
-[`docs/roadmap.md`](../docs/roadmap.md); the active numbered specification
-defines the language; [`docs/constitution.md`](../docs/constitution.md) defines
-project law.
+authority. Current direction status lives in the
+[`Direction Outline`](../docs/roadmap.md), while the status line in
+[`docs/current-plan.md`](../docs/current-plan.md) distinguishes a proposal from
+approved execution sequencing. Neither this evidence nor the outline alone
+authorizes implementation. The active numbered specification defines the
+language and [`docs/constitution.md`](../docs/constitution.md) defines project
+law.
 
 The archived originals remain in place as provenance. Promotion means moving a
 still-valid conclusion, question, or measured result into a live owner, not
@@ -33,11 +36,11 @@ The result is deliberately small:
 1. No archive subtree should be moved wholesale into the live repository.
 2. The one clear authority-placement gap is now closed: the Constitution
    records D17's selected long-term representation-invariant proof lane, while
-   the roadmap separates it from D16's deferred sealed-catalog mechanism and
-   denies it current implementation authority.
-3. The M1 loan/freeze candidate remains parked. The roadmap now carries dynamic
-   fan-out under OWN-11 as a required Phase 11 witness and the operation-level
-   storage checklist as required input when that deferred decision reopens.
+   the Direction Outline separates it from D16's deferred sealed-catalog
+   mechanism and denies it current implementation authority.
+3. The M1 loan/freeze candidate remains parked. Direction Outline items PAR-4
+   and STORE-2 retain dynamic fan-out as a construct witness and the
+   operation-level storage checklist as reopening input.
 4. Five historical measurements remain useful enough to register here, with
    their limitations. Their harnesses and raw evidence stay archived.
 5. Retired compilers, gates, reference models, schemas, old work queues, and
@@ -50,7 +53,7 @@ The result is deliberately small:
 |---|---|
 | **Absorbed** | A current live authority or successor already carries the conclusion. Keep only provenance in the archive. |
 | **Live evidence** | The durable finding is summarized here; the exact protocol and raw evidence remain archived. It is not a current compiler-capability claim. |
-| **Owner decision** | The idea may still be durable, but promotion would change project law, roadmap status, writer doctrine, or future language direction. This audit does not make that decision. |
+| **Owner decision** | The idea may still be durable, but promotion would change project law, Direction Outline status, writer doctrine, or future language direction. This audit does not make that decision. |
 | **Archive only** | The material is superseded, rejected, raw, or implementation-specific. Consult it historically; do not revive it. |
 
 ## Authority crosswalk
@@ -60,14 +63,14 @@ The result is deliberately small:
 | D0-D3 and D2a founding constraints | **Absorbed** | The priority structure, AI-writer premise, safety floor, compact/regular specification, and no writer trust are in the [Constitution](../docs/constitution.md) and active specification. |
 | D4 rewrite-first, FFI-narrow policy | **Owner decision** | The active specification has a gated boundary skeleton, but no live authority currently commits to the old rule that source-available foreign code must normally be rewritten or that rich/inbound interop stays out. |
 | D6 closed, taught pattern doctrine | **Seeded; not ratified** | [`docs/patterns.md`](../docs/patterns.md) is the live writer-form owner and states the current status. This audit corrects explanatory overclaims; promotion to normative doctrine would require owner ratification. |
-| D7-family artifact and `secret` directions | **Absorbed as deferred** | The roadmap retains the headline artifact ladder and constant-time `secret` effect behind explicit re-entry bars. Their old targets and protocols remain historical; the directions are not abandoned. |
+| D7-family artifact and `secret` directions | **Absorbed as deferred** | Direction Outline items VERIFY-4 and TARGET-4 retain reproducibility and constant-time questions without reviving the old artifact ladder or `secret` protocol. Their old targets and protocols remain historical. |
 | D9a fixed-model/model-score gate | **Archive only** | The Constitution now says model runs generate realistic mistakes but model scores never gate W1. Measured results may survive independently of that protocol. |
 | D10 English-only repository content | **Absorbed** | The live repository instructions carry the rule. |
 | D11-D15 capability-floor and B-Strata programs | **Archive only**, with selected questions retained below | D15 explicitly restarted the derivation; the successor systems-performance pass superseded the earlier candidate machinery without establishing a production winner. |
-| D16 sealed-catalog mechanism and acceptance ledger | **Deferred** | The current roadmap defers the take/replace-versus-sealed-kernel storage decision. The old ten-member catalog and its exact admission machinery are not current design authority. |
-| D17 proof-gated privileged admission | **Absorbed as deferred** | The [Constitution](../docs/constitution.md) records the selected long-term representation-invariant proof lane. The [roadmap](../docs/roadmap.md) grants no current feature or implementation authority and defers the proof mechanism, concrete operations and semantics, any additional privilege class, and schedule behind an explicit re-entry bar. See below. |
-| D18-D19 pool and concurrency choices | **Mixed** | Process-abort trap semantics are absorbed. Generational pools, CONC-0, fixed spawn plus `par.for_chunks`, endpoint clone modes, and the old runtime shape remain research choices that Phase 11 must reconsider rather than inherit. |
-| D20-D27 execution plans, compiler architecture, and v0.9-v0.11 transitions | **Absorbed or archive only** | [`WORKFLOW.md`](../WORKFLOW.md), the current roadmap, the active specification, and the safe-Rust compiler replace their operational roles. Same-kernel replay, product resource profiles, the retired toolchains, and old proposal machinery must not return. |
+| D16 sealed-catalog mechanism and acceptance ledger | **Deferred** | Direction Outline item STORE-2 retains the underlying storage questions. The old ten-member catalog and its exact admission machinery are not current design authority. |
+| D17 proof-gated privileged admission | **Absorbed as deferred** | The [Constitution](../docs/constitution.md) records the selected long-term representation-invariant proof lane. Direction Outline item PROOF-6 grants no current feature or implementation authority and leaves the proof mechanism, concrete operations and semantics, any additional privilege class, and schedule unselected. See below. |
+| D18-D19 pool and concurrency choices | **Mixed** | Process-abort trap semantics are absorbed. Generational pools, CONC-0, fixed spawn plus `par.for_chunks`, endpoint clone modes, and the old runtime shape remain research choices that any selected parallel design must reconsider rather than inherit. |
+| D20-D27 execution plans, compiler architecture, and v0.9-v0.11 transitions | **Absorbed or archive only** | [`WORKFLOW.md`](../WORKFLOW.md), the Direction Outline, Current Plan, active specification, and safe-Rust compiler replace their operational roles. Same-kernel replay, product resource profiles, the retired toolchains, and old proposal machinery must not return. |
 
 The original rulings remain available in
 [`archive/governance/directives.md`](../archive/governance/directives.md), and
@@ -85,10 +88,10 @@ measurement and the current compiler milestone.
 
 | Channel | Live evidence | Current boundary |
 |---|---|---|
-| Effect rows to LLVM attributes | [`effect-attrs-channel/RESULTS.md`](experiments/effect-attrs-channel/RESULTS.md) | The measurement used democ and showed the value of exact interprocedural effects. Current Phase 10 rederives only sound `memory(...)` attributes and explicitly never emits `willreturn`. |
-| Borrow-derived alias metadata | [`scoped-alias-channel/RESULTS.md`](experiments/scoped-alias-channel/RESULTS.md) | Short trips improved and long trips approached Rust parity, with a large code-size difference. Current backend use remains a separately verified Phase 10 fact family, not an inherited capability. |
+| Effect rows to LLVM attributes | [`effect-attrs-channel/RESULTS.md`](experiments/effect-attrs-channel/RESULTS.md) | The measurement used democ and showed the value of exact interprocedural effects. Direction Outline item PROOF-2 requires a fresh sound mapping and explicitly records that `willreturn` needs separate totality evidence. |
+| Borrow-derived alias metadata | [`scoped-alias-channel/RESULTS.md`](experiments/scoped-alias-channel/RESULTS.md) | Short trips improved and long trips approached Rust parity, with a large code-size difference. Current backend use remains a separately verified PROOF-3 fact family, not an inherited capability. |
 | Checked-law reassociation | [`checked-law-channel/RESULTS.md`](experiments/checked-law-channel/RESULTS.md) | The historical transform measured 3.3x over the serial fold and rejected a false signed-saturating law. v0.17 law discharge is source-acceptance evidence only; an optimizer consumer needs separate approved authority. |
-| Entry contracts and bounds proof | [`port-study/base64/RESULTS.md`](experiments/port-study/base64/RESULTS.md) | The historical proof build discharged its recorded sites with facts-off safety retained. FN-8 semantics are current, but the production proof consumer and check-elision channel remain Phase 10 work. |
+| Entry contracts and bounds proof | [`port-study/base64/RESULTS.md`](experiments/port-study/base64/RESULTS.md) | The historical proof build discharged its recorded sites with facts-off safety retained. FN-8 semantics are current, but PROOF-1 still lacks a production proof consumer and check-elision channel. |
 
 ## Promotion results and retained candidates
 
@@ -112,7 +115,7 @@ generalization. D16/D17 also described a ten-kernel sealed catalog and a
 particular admission endgame. Those mechanisms are neither current v0.17
 language nor authorized implementation work. In particular,
 [STOR-1](../spec/kernel-spec-v0.17.md) defines no temporary uninitialized hole,
-and the roadmap defers the storage decision that could require one.
+and Direction Outline item STORE-2 leaves the storage decision unselected.
 
 The current live material is split:
 
@@ -129,17 +132,17 @@ The current live material is split:
 - [`docs/why-whitefoot.md`](../docs/why-whitefoot.md) and
   [`docs/bargain.md`](../docs/bargain.md) explain the full D17 direction while
   also admitting that its feasibility is unproved.
-- The roadmap explicitly defers take/replace versus sealed storage until a
-  measured port needs it or the owner reorders the work.
+- Direction Outline item STORE-2 retains the unresolved storage dimensions;
+  only a selected project or owner decision can place one in the Current Plan.
 
 **Placement completed 2026-08-01:** the Constitution records the
 representation-invariant proof lane as the selected long-term rule. The
-roadmap grants no current language or implementation authority and defers the
-proof language, privileged operations, sealed catalog, schedule, and production
-claims until a measured blocker or explicit owner reorder reopens them through
-the normal workflow. Concurrent lock-free proofs retain D17's explicit
-higher-difficulty status rather than becoming current work. The full provenance
-is D17 in the
+Direction Outline grants no current language or implementation authority and
+leaves the proof language, privileged operations, sealed catalog, schedule, and
+production claims until a measured blocker or explicit owner reorder reopens
+them through the normal workflow. Concurrent lock-free proofs retain D17's
+explicit higher-difficulty status rather than becoming current work. The full
+provenance is D17 in the
 [`original directive record`](../archive/governance/directives.md) and the
 [`systems-performance design dossier`](../archive/research/systems-performance-coverage/DESIGN-DOSSIER.md).
 
@@ -153,15 +156,16 @@ it predates the current v0.17 ownership surface and includes old concurrency
 assumptions.
 
 Its durable value is a reopening boundary: if persistent captured loans,
-interior views, or a Phase 11 construct cannot be expressed by the current
-borrow rules, compare the concrete blocker against the parked state machine.
+interior views, or a selected parallel construct cannot be expressed by the
+current borrow rules, compare the concrete blocker against the parked state
+machine.
 Do not import its rules or checker. Re-derive the smallest current rule against
 v0.17 and the real program first. Sources:
 [`RULES-RATIFIED.md`](../archive/research/systems-performance-coverage/m1-loan-judgment/RULES-RATIFIED.md)
 and
 [`M1-PAPER-RESULT.md`](../archive/research/systems-performance-coverage/m1-loan-judgment/M1-PAPER-RESULT.md).
 
-### 3. Dynamic fan-out placed as a required Phase 11 witness
+### 3. Dynamic fan-out retained as a parallel-design witness
 
 Active OWN-11 forbids a borrow inside a loop from naming an outer region. The
 old concurrency design therefore could not express a runtime-count spawn loop
@@ -169,16 +173,15 @@ whose workers all read shared outer state; its answer was fixed straight-line
 spawn plus a sealed `par.for_chunks`, with a later carve-out explicitly marked
 “must not be lost.”
 
-The problem is still relevant, but the old answer is not. Phase 11 has a new
-declared-parallelism boundary and has not selected complete construct semantics
-or the runtime TCB and implementation. The roadmap now requires this case as a
-construct-design witness: the chosen form must either cover it soundly or
-record a deliberate rejection. Any OWN-11 carve-out requires its own hostile
-soundness review.
+The problem is still relevant, but the old answer is not. Direction Outline
+item PAR-4 retains this case as a construct-design witness: any selected form
+must either cover it soundly or record a deliberate rejection. Complete source
+semantics, runtime TCB, and implementation remain unselected. Any OWN-11
+carve-out requires its own hostile soundness review.
 Source:
 [`systems-performance follow-ups`](../archive/research/systems-performance-coverage-FOLLOW-UPS-2026-07-17.md).
 
-### 4. Storage checklist linked as a roadmap reopening input
+### 4. Storage checklist retained as Direction Outline reopening input
 
 The capability-floor work correctly exposed that “add a vector” or “add a hash
 map” is too coarse a storage decision. A real proposal must separately account
@@ -192,12 +195,12 @@ for at least:
 - multi-place access, iteration, and relocation under active loans.
 
 This preserves problem dimensions, not the old report's v0.6 gap verdicts. The
-roadmap now names this checklist as required reopening input. Every item must
-still be re-audited against the active specification and current compiler when
-a measured port triggers the take/replace-versus-sealed-kernel decision. The
-old G0-Core, Family Lock, B-Strata, and candidate validators must not be
-restored; they selected no current winner and are much larger than the next
-concrete compiler experiment.
+Direction Outline item STORE-2 names this checklist as required reopening
+input. Every item must still be re-audited against the active specification and
+current compiler when a measured port triggers the
+take/replace-versus-sealed-kernel decision. The old G0-Core, Family Lock,
+B-Strata, and candidate validators must not be restored; they selected no
+current winner and are much larger than the next concrete compiler experiment.
 Source:
 [`general-purpose data-structure capability research`](../archive/research/capability-floor/general-purpose-data-structure-capability-RESEARCH.md).
 
@@ -251,7 +254,8 @@ experiment index now distinguishes current self-contained bundles from
 historical result bundles whose runners still name the retired democ toolchain.
 
 The live entry points are this audit, [`research/README.md`](README.md), the
-current roadmap, the active specification, the Constitution, and the workflow.
+Direction Outline, Current Plan, active specification, Constitution, and
+workflow.
 If a future audit finds another valuable archived conclusion, add the smallest
 status-bearing summary to its actual live owner and update this file; do not
 grow a second archive index or restore an old subtree.

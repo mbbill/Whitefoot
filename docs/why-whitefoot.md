@@ -2,6 +2,14 @@
 
 *For people who already write Rust, C, and C++, and for people who only prompt.*
 
+Status: **DATED, NON-AUTHORITATIVE DESIGN SYNTHESIS.** This article combines
+current language ideas with measurements from the retired democ compiler and
+proposed mechanisms that have not shipped. Present-tense claims in the
+performance-channel and architecture sections must not be read as current
+compiler capability. The [Direction Outline](roadmap.md) owns live status, the
+[compiler README](../compiler/README.md) owns implementation detail, and the
+active numbered specification owns language semantics.
+
 ---
 
 ## The premise: languages are shaped by who writes them
@@ -86,6 +94,12 @@ One honest boundary. This argument claims safety and speed share machinery. It d
 
 # Part II: Where the speed comes from
 
+**Claim boundary:** sections 3–6 explain historical fact-channel experiments.
+The current compiler checks `requires`, effect rows, borrows, and FN-4 laws, but
+does not use them to remove downstream checks, emit effect/alias attributes, or
+reassociate reductions. The measurements remain evidence for future
+project-selected consumers, not current production claims.
+
 Each section below covers one mechanism: what the writer states, what the checker verifies, what the backend receives, and what the machine code looks like on both sides of the comparison. Every listing is an excerpt from a committed file, trimmed where marked, with full paths in the appendix. Times are medians on an Apple M4, under the exact protocol in each experiment's RESULTS file.
 
 ## 3. Everything is checked, so where does the speed come from?
@@ -94,7 +108,12 @@ Take the objection the last sentence invites. In Whitefoot every risky operation
 
 That sounds like a tax. The deal that removes it: a check comes out only by machine proof, and then it costs nothing, because it is gone rather than promised away.
 
-The mechanism is a checked entry contract. A function may carry one `requires` block, a predicate on its parameters that runs on every call, including calls entering from foreign C code, and traps before the first body effect if it fails. It is not an assumption, not an optimizer hint, and not a caller obligation. Only its success edge becomes a fact, and a deterministic prover uses that fact to discharge the checks it dominates inside the body.
+The mechanism is a checked entry contract. A function may carry one `requires`
+block, a predicate on its parameters that runs on every call and traps before
+the first body effect if it fails. It is not an assumption, optimizer hint, or
+caller obligation. In the retired experiment, only its success edge became a
+fact and a deterministic prover used that fact to discharge dominated checks.
+The current compiler executes the prologue but performs no such check elision.
 
 Worked example: a base64 encoder, the two-buffer shape every codec has, one shared input, one exclusive output, and a capacity relation between them. The committed source:
 
@@ -140,7 +159,10 @@ LBB0_9:                          ; hot loop, pre-proof build
 	...                           ; (each of the 4 stores guarded the same way)
 ```
 
-After the proof tier (compiled from the committed `b64.ll`, the shipping proof build), the prover connects the passed capacity fact to the loop induction `i = 3k, o = 4k` and discharges all 27 bounds sites. The entry check compiles to one comparison, and the hot loop carries zero check branches:
+In the historical proof build (compiled from the committed `b64.ll`), the
+prover connected the passed capacity fact to the loop induction `i = 3k, o =
+4k` and discharged all 27 bounds sites. The entry check compiled to one
+comparison, and the hot loop carried zero check branches:
 
 ```
 _encode:                         ; proof build, from committed b64.ll
@@ -188,7 +210,12 @@ The floor claim lands in one experiment. In Whitefoot the obvious shape plus one
 
 ## 4. Effect rows the optimizer can trust across an opaque boundary
 
-Every Whitefoot signature declares its effects: `pure`, or a row of `reads('r)`, `writes('r)`, `allocates(...)`, `traps`. The checker verifies the row in both directions. A function that exhibits an effect it did not declare is rejected, and a function that declares an effect it does not exhibit is rejected too. So a row is a verified fact, never an aspiration. The compiler lowers it to guaranteed attributes on the function declaration (`memory(none)`, `nounwind`, `willreturn` where termination is derived), so every call site optimizes against it without seeing the body.
+Every Whitefoot signature declares its effects: `pure`, or a row of
+`reads('r)`, `writes('r)`, `allocates(...)`, `traps`. The checker verifies the
+row in both directions, so it is a checked fact rather than an aspiration. The
+retired experiment lowered suitable rows to function attributes. The current
+compiler emits no effect-derived attributes, and v0.17 has no termination
+checker from which to derive `willreturn`.
 
 Rust has no channel for this. An optimizer facing a Rust call inlines it or proves its purity from the body; across a crate boundary or an `extern fn` it has nothing to prove from and assumes the worst.
 
@@ -234,7 +261,9 @@ The checked rows also pay off in architecture, developed in § 9: you can grep t
 
 ## 5. Ownership is the aliasing fact-base: guard-free vectorization
 
-Two experiments, one mechanism: the borrow mode on a signature becomes `noalias`-grade facts in the IR, by construction and non-defeasible.
+Two historical experiments tested one mechanism: turning a checked borrow mode
+into `noalias`-grade IR facts. The current compiler checks the borrow relation
+but does not emit that alias metadata.
 
 **First, the C-facing half.** Take the classic reduction `accumulate(acc, addend, n)`, whose body folds `*addend` into `*acc`, compiled from Whitefoot borrows against plain C pointers. Naive C reloads and re-stores through both pointers every iteration, because `acc` and `addend` might alias:
 
@@ -288,7 +317,12 @@ fn kernel ['r] (s: &uniq 'r Cols) -> own unit reads('r), writes('r), traps {
 }
 ```
 
-Because `buffer` values are single-owner and `&uniq` loans are exclusive with singleton provenance, the checker knows all eight columns are pairwise-disjoint memory, so the compiler emits per-column alias scopes on the loaded pointers themselves. The identical program in Rust (committed alongside, same semantics, three shapes) vectorizes too, but only through loop versioning: LLVM emits a cascade of runtime pointer-overlap guards and a speculative fast path. From the committed Rust assembly of the obvious shape:
+Because `buffer` values are single-owner and `&uniq` loans are exclusive with
+singleton provenance, the retired experiment emitted per-column alias scopes on
+the loaded pointers. The identical program in Rust (committed alongside, same
+semantics, three shapes) vectorized through loop versioning: LLVM emitted a
+cascade of runtime pointer-overlap guards and a speculative fast path. From the
+committed Rust assembly of the obvious shape:
 
 ```
 	cmp	x8, x7                ; column pair overlap test
@@ -315,7 +349,12 @@ The timing story has three parts, and all three matter.
 - **Long trips tie.** At trip counts of 32 and up, Rust's guards amortize and the times converge.
 - **Code size is the durable win.** 121 lines against 2,132 for the same large-n speed, a factor of 17. Versioned-loop bloat is invisible in a microbenchmark and shows up as instruction-cache pressure in a real program. At 16 columns the Rust guards grow to 111 and the code to 2,836 lines, while the Whitefoot kernel stays at 183 lines with zero guards. The fact is static and O(1); the recovery is a runtime mechanism that scales with pointer count.
 
-The safe-Rust escape (the committed `inner-fn` shape) is instructive. Pass all eight columns as separate slice arguments to an inner function, because parameter-level `noalias` is Rust's only aliasing channel. It works, at the cost of being an idiom you must already know, applied at every such loop. In Whitefoot the obvious shape is the fast shape at every trip count, which is the property that matters when the writer is not hand-tuning every loop.
+The safe-Rust escape (the committed `inner-fn` shape) is instructive. Pass all
+eight columns as separate slice arguments to an inner function, because
+parameter-level `noalias` is Rust's only aliasing channel. It works, at the cost
+of being an idiom you must already know, applied at every such loop. In the
+historical Whitefoot experiment the obvious shape was the fast shape at every
+trip count; reproducing that property in the current compiler remains open.
 
 One more consequence. `RefCell`, `Cell`, and every other interior-mutability device do not exist here. That is a performance decision: one shared-mutable hole anywhere in the type system makes every aliasing fact conditional. Because shared-xor-exclusive is absolute, the facts hold universally. An architecture pattern replaces those idioms, in § 9.
 
@@ -325,7 +364,9 @@ A compiler may not reassociate your reduction. Floating-point and saturating ope
 
 Rust experts know the workaround, a hand-written multi-accumulator loop. That workaround hides an assertion. The human claims the operation is associative, and nothing checks the claim.
 
-Whitefoot makes the law a checked, declared fact. The committed kernel:
+Current Whitefoot makes the law a checked, declared fact for source acceptance.
+The retired optimizer experiment additionally consumed it for reassociation.
+The committed historical kernel:
 
 ```
 contract SatMonoid {
@@ -400,13 +441,22 @@ The committed word-count kernel keeps every predicate in `Bool`:
 
 The committed assembly shows the result: full 16-byte vector lanes (`movi.16b`, `cmeq.16b`, `and.16b`, and peers) where the integer-flag version of the same logic capped at width 2 by interleave 4.
 
-Measured on the whole kernel, the integer-recurrence form ran 1.6-1.8x behind C and Rust; the `i1` form reaches parity with both, and the full before/after tables live in the experiment record. Safe Rust can express the same wide shape, so this workload gives it no fact advantage, which is why the result is filed under floor rather than ceiling. In Whitefoot the boolean-dataflow form is the taught pattern for scanner state, so the writer lands on the 16-wide shape by default instead of discovering the 1.6x cliff in production.
+Measured on the whole historical kernel, the integer-recurrence form ran
+1.6–1.8x behind C and Rust; the `i1` form reached parity with both. Safe Rust can
+express the same wide shape, so this workload gives it no fact advantage. The
+seeded Whitefoot catalog teaches Boolean dataflow for scanner state; project
+validation still has to show that this reliably prevents the slower shape.
 
 ---
 
 # Part III: Making the fast shape the only shape
 
-The sections above are fact channels: things the writer states and the optimizer uses. This part is the complementary bet, to remove the shapes that waste the facts. The framing for an expert reader is not that you write bad code. Nobody hand-tunes the average line under a deadline, and in a million-line codebase the average line is where the time goes. Whitefoot makes the slow shapes unrepresentable or unreachable, so the floor rises for every line, not only the profiled ones.
+The sections above are historical evidence for fact channels: things the writer
+states and a future verified consumer may use. This part is the complementary
+bet, to remove the shapes that waste the facts. Nobody hand-tunes the average
+line under a deadline, and in a million-line codebase the average line is where
+the time goes. Whitefoot aims to make recurring slow shapes unrepresentable or
+unreachable; the current seeded catalog has not yet established that claim.
 
 ## 8. One spelling, to the byte; overflow chosen in the name
 
@@ -451,6 +501,11 @@ The one line that justifies the whole part: whatever is representable eventually
 
 ## 10. Handles and copies instead of references
 
+*Current status: append-only index-linked SoA has a seeded pattern and current
+witness. Recyclable generational pools, stale-handle checks, and check-elision
+schemes below are proposed or historical, not current language/compiler
+capability.*
+
 The last floor mechanism governs where long-lived data lives. The center of gravity moves off borrows. Big structures live in pools, and ordinary code holds either the value itself for small copyable data, or ownership moved in and out, or a handle, an index of plain copyable data, a claim ticket rather than the coat.
 
 Node links in a tree or graph are handles into the pool, not pointers or references. Two consequences matter here.
@@ -459,7 +514,12 @@ Node links in a tree or graph are handles into the pool, not pointers or referen
 - **The writer's burden:** most code holds no loans at all, so the borrow rules bite only at the few sites that point into something. The self-referential-struct wall that pushes real Rust projects through `Pin`, `unsafe`, or index-arena workarounds does not exist, because structs store values, not borrows. The problematic program is not painful to write; it is impossible to state.
 - **Safety of stale handles:** pool slots recycle with generation counters, so a stale ticket presented after its slot was reused becomes a deterministic trap, never a silent read of the new occupant. The per-access generation check costs something; check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) are an active research track under the standing rule that a check comes out by proof or not at all.
 
-A Rust engineer will recognize this as "just use indices into a `Vec`," the arena idiom Rust folklore already recommends for escaping its own borrow checker at these exact sites. The difference is status. In Rust it is a workaround with a footgun, since any stale index silently reads whatever occupies the slot now, a well-typed use-after-free. In Whitefoot it is the taught pattern, with the staleness hole closed by construction.
+A Rust engineer will recognize this as "just use indices into a `Vec`," the arena
+idiom Rust folklore already recommends for escaping its own borrow checker at
+these exact sites. In Rust a stale unchecked index may silently select a reused
+slot. The proposed Whitefoot generational form would close that hole; the
+current append-only pattern avoids reuse instead and makes no generational-pool
+claim.
 
 ---
 
@@ -478,9 +538,9 @@ What that buys, labeled by evidence status:
   toolchain. The retired compiler prototypes exercised deterministic parsing
   and selected IR fixtures, but Whitefoot does not yet have a complete
   self-hosted compiler or a production-object reproducibility result. The Rust
-  compiler roadmap therefore treats deterministic source, artifacts,
-  diagnostics, and target-qualified output as release gates rather than as an
-  already earned claim.
+  Direction Outline therefore keeps complete artifact reproducibility open
+  until a real build, distribution, caching, or audit consumer needs it rather
+  than treating it as an already earned claim.
 - **Semantic diff and merge (by construction).** No formatting variance exists, so every diff is a semantic diff. There is no "reformatted, 2,000 lines changed" commit, no style debate, and nowhere for an unintended edit to hide in noise. For AI-written code this is the review story: what changed is what the diff says changed.
 - **Caching and build speed (projected, labeled).** Source-to-tree is a bijection, the canonical artifact is deterministic, and effect rows already decouple optimization from body visibility (§ 4, the measured half of this claim). Those are the preconditions content-addressed build caching wants, designed in on purpose. The honest status: the design removes the classical obstacles to very fast incremental compilation, and no build-speed number is measured yet.
 - **The repair loop (by construction, exercised daily).** Deterministic, rule-citing, byte-stable diagnostics are an API, not prose. The writer that consumes them is a machine: same mistake, same message, same fix, every time. This is what "the AI can act on failure" means in practice.
@@ -494,8 +554,9 @@ The through-line: in most toolchains, formatting, diffing, caching, and diagnost
 ## 12. The proposed ten sealed building blocks, and a proof lane in
 
 *Current status: the Constitution records D17's representation-invariant proof
-lane as a long-term rule. The roadmap defers the exact sealed catalog, proof
-mechanism, and storage mechanism; none is a current language feature.*
+lane as a long-term rule. The Direction Outline defers the exact sealed
+catalog, proof mechanism, and storage mechanism; none is a current language
+feature.*
 
 An expert asks the right question next: *"Some structures cannot be written in checked code in any language. A production hash table's reality, one thousand slots, thirty-seven live, liveness tracked in side-band control bytes, is not expressible in your type system. Where's the escape hatch?"*
 
@@ -561,7 +622,7 @@ Claims earn belief by naming their edges. The current honest ledger:
 - **The frequency question is open.** The fact channels win on kernels that exercise them. How often those patterns dominate real medium-to-large codebases is not established yet, and an early survey attempt was directional at best. This is the biggest honest unknown in the performance story.
 - **The sealed-kernel numbers are shape validations, not shipped-product benchmarks.** The catalog dry runs were C implementations of the specified kernel shapes against mature Rust baselines on one Apple development machine: sequence push-then-sum about 1.5x over `Vec`, table iteration about 1.4x over hashbrown, steady-state insert modestly behind, 4 of 5 workloads inside the preregistered band; the queue beats `rtrb` by about 20% on round-trip latency while `rtrb` leads by about 25% on batched-32 throughput, both far above the band's floor. None of this is whitefoot-emitted code yet, and magnitudes will be re-established on the deploy target.
 - **Single-shot writability is not solved.** The current clean baseline for one research kernel is roughly a quarter of programs correct on the first attempt, with the failure modes catalogued and fixes staged. The design answer has always been the diagnostic feedback loop (§ 11), and the loop's measured effect is the next experiment, not a completed one.
-- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog is a historical candidate whose exact storage mechanism is deferred; D17's user representation-proof lane is recorded as long-term project law but has no current proof language or production path. This document describes the design and the evidence gathered so far; the roadmap and language-change gates block production claims.
+- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog is a historical candidate whose exact storage mechanism is deferred; D17's user representation-proof lane is recorded as long-term project law but has no current proof language or production path. This document describes the design and the evidence gathered so far; the Direction Outline and language-change gates block production claims.
 
 ---
 
@@ -595,7 +656,7 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Shipped-library floor: 1.653x [1.631, 1.667] vs `percent-encoding` 2.3.2; 1.098x [1.085, 1.145] vs `utf8parse` 0.2.2; bounds retained | `research/experiments/default-floor/RESULTS.md` |
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
-| Reproducibility: whole-compiler object SHA-256-pinned | `docs/roadmap.md` (build-track record) |
+| Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
 | Language rules cited (one spelling; reject-not-reformat; two-way effect checking; `requires` semantics; overflow op names; trap = abort) | `spec/kernel-spec-v0.9.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1 |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, traps-to-boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

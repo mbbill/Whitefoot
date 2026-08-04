@@ -2,11 +2,11 @@
 
 Status: **DEFERRED RESEARCH RECORD — evidence and proposed pickup gates only**.
 
-This document is not a roadmap, implementation authorization, specification
-change, production fact channel, proof artifact, or ratified addition to
-`PATTERNS.md`. It preserves the result of the zlib core-kernel investigation so
-the work can be resumed after production `wfc` has the required language,
-proof-reporting, and lowering infrastructure.
+This document is not the Direction Outline, Current Plan, implementation
+authorization, specification change, production fact channel, proof artifact,
+or ratified addition to `docs/patterns.md`. It preserves the result of the zlib
+core-kernel investigation so the work can be reconsidered if a selected project
+needs the relevant proof and lowering capabilities.
 
 ## 1. The question this experiment answered
 
@@ -439,8 +439,9 @@ It does not require a general affine, Presburger, or loop theorem prover.
 
 ## 9. Production `wfc` readiness
 
-Production implementation is premature at the time of this archive. The active
-roadmap remains authoritative; this experiment does not move its cursor.
+Production implementation is premature in this record. The Direction Outline
+owns current status and an `ACTIVE` Current Plan owns execution sequencing;
+this experiment changes neither.
 
 Before these consumers can exist, production `wfc` needs:
 
@@ -476,8 +477,10 @@ is an estimate, not a schedule or authorization.
 
 ## 10. Pickup gates
 
-Resume only when the current roadmap authorizes the work and the following
-technical gates hold.
+Reopen only when an owner-selected milestone in `docs/current-plan.md` cites
+this evidence. Re-audit the following historical technical gates against the
+current compiler and active specification; they do not themselves create work
+or prerequisites.
 
 ### Shared entry gates
 

@@ -32,8 +32,13 @@ probably not the next work.
 
 ## Authority and reading
 
-- `docs/roadmap.md` is the sole source for current roadmap, status,
-  authorization, and next work.
+- `docs/roadmap.md` is the living Direction Outline and sole source for the
+  project's current landscape: active specification, direction status, gaps,
+  evidence links, and candidate projects. It does not sequence current work.
+- `docs/current-plan.md` is the sole current execution proposal or approved
+  plan. It must be derived from one outline revision and cannot authorize a
+  direction the outline has not selected. `PROPOSED` authorizes no execution;
+  only `ACTIVE` or separate owner approval does.
 - The active numbered specification named by `docs/roadmap.md` defines the
   language. Compiler behavior, tests, archived code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
@@ -44,7 +49,7 @@ probably not the next work.
   its formatting, provenance, paired-move, and lint rules are mandatory.
 - Architecture dossiers and `archive/governance/decision-log.md` are historical design and
   decision records. They can explain why something exists, but they cannot add
-  current work or override `docs/roadmap.md`.
+  current work or override the outline and current plan.
 
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
@@ -54,7 +59,8 @@ research into an implied implementation requirement.
 Before starting or expanding work, answer:
 
 1. What concrete compiler capability or experiment will this unlock?
-2. Why is it the next work in `docs/roadmap.md`?
+2. Why is it authorized by an `ACTIVE` `docs/current-plan.md` (or separate
+   owner-approved bounded research), and which outline item does it advance?
 3. What is the smallest correct implementation?
 4. Is it exercising a real compiler path or inventing machinery for a
    hypothetical one?
@@ -124,10 +130,11 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
 ## Specification and test integrity
 
 - Root `WORKFLOW.md` is the sole operational workflow guide. It holds the
-  experiment loop as the trunk and the language-change loop as a branch entered
-  only when a measured result names a specification gap as its blocker.
-  `governance/`, `spec/`, and `tests/conformance/` provide its records,
-  resources, and tools; none defines an independent update lifecycle.
+  project-driven loop from Direction Outline through proposal, Current Plan,
+  execution, evidence, and outline update; it also defines bounded parallel
+  research and the guarded language-change branch. `governance/`, `spec/`, and
+  `tests/conformance/` provide records, resources, and tools; none defines an
+  independent update lifecycle.
 - The numbered kernel specification is append-only, enforced by a pre-commit
   hook (`make install-hooks`): a released `spec/kernel-spec-v*.md` is never
   edited, renamed, or deleted. Amending the language is allowed, with care — a
@@ -179,9 +186,10 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
 - Run `make check` before committing a completed repository slice.
 - A green gate states only the capabilities it exercises; it is not a
   completeness claim.
-- Keep commits cohesive. Record current status in `docs/roadmap.md`, durable
-  design choices and rejected alternatives through the `mcts-mem-use` skill,
-  and protected owner approvals in `governance/APPROVALS.md`; do not use agent
-  instruction files as a status log.
+- Keep commits cohesive. Record the current landscape in `docs/roadmap.md`,
+  current sequencing in `docs/current-plan.md`, durable design choices and
+  rejected alternatives through the `mcts-mem-use` skill, and protected owner
+  approvals in `governance/APPROVALS.md`; do not use agent instruction files as
+  a status log.
 - Delegate only concrete, independent work. Integrate and review delegated
   results against the same goal and relevance rules.
