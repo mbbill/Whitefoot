@@ -1,10 +1,14 @@
 # First External Validation Candidate Shortlist
 
-Status: N1 RESULT — evidence review completed 2026-08-03; no project selected
+Status: SUPERSEDED N1 RESULT — evidence review completed 2026-08-03; SQLite was
+briefly selected later that day, then ripgrep replaced it on 2026-08-04 before
+execution
 
 Authorization: N1 was activated on 2026-08-03 in commit `9dfe193`. The rolling
-[`docs/current-plan.md`](../../docs/current-plan.md) now contains the
-non-authorizing N2 proposal produced at N1 closure.
+[`docs/current-plan.md`](../../docs/current-plan.md) has since replaced the N2
+proposal. This note remains the historical evidence for the narrower N1 screen;
+the owner-selected target and current boundary are recorded in the
+[ripgrep flagship frame](ripgrep-flagship-frame.md).
 
 This note replaces the 2026-07-10 brainstorm in place. Git retains the old
 version. The authorized question was narrow: which three to five external

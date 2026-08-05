@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 2
+Revision: 4
 
 The active language authority is
 [`spec/kernel-spec-v0.17.md`](../spec/kernel-spec-v0.17.md), SHA-256
@@ -69,15 +69,17 @@ Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
 
-- CAND-1 selects the external milestone; its mapped direction items supply the
-  plan, but none authorizes work by itself.
+- CAND-1 records the completed flagship selection. CAND-8 supplies the current
+  ripgrep project pressure; its mapped direction items inform the plan, but
+  none authorizes work by itself.
 - PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in PROOF-1 through PROOF-4 and PROOF-7 depends
   on VERIFY-3. PROOF-2 depends on PROOF-5 only for a `willreturn`-class claim,
   not for memory-effect attributes.
-- PAR-1 selects the source construct and project before PAR-2 through PAR-4 can
-  choose proof rules, reductions, or a runtime.
+- PAR-1 selects a source construct only after CAND-8 profiling exposes concrete
+  parallel work; PAR-2 through PAR-4 cannot preselect proof rules, reductions,
+  or a runtime before that evidence.
 - STORE-2 must expose a concrete unsolved representation privilege before
   PROOF-6 can enter a plan.
 - TARGET-2 through TARGET-4 and APP-1 depend on BOUND-1 whenever their authentic
@@ -260,7 +262,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### PERF-1 — Ordinary lowering and baseline code quality
 
-`[current: conservative LLVM]` `[historical: measured]` `[next: selected project]`
+`[current: conservative LLVM]` `[historical: measured]` `[next: RG-BASE review]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
@@ -268,11 +270,13 @@ and every slower-but-accepted divergence becomes a measured finding.
   program witnesses, but no current medium-project comparison of scalar code
   shape, retained checks, vectorization, and target output. Historical DEFLATE
   work found large ordinary-lowering gaps in two hot kernels.
-- **Missing / next:** establish the selected project's zero-change baseline and
-  attribute each material loss to algorithm, required check, source shape,
-  compiler lowering, LLVM recovery, or target before opening another direction.
+- **Missing / next:** freeze and measure the pinned ripgrep comparator before
+  Whitefoot implementation, then attribute each later material loss to
+  algorithm, required check, source shape, compiler lowering, LLVM recovery,
+  runtime, I/O, output, or target before opening another direction.
 - **Facts:** [compiler backend boundary](../compiler/README.md) ·
-  [historical DEFLATE result](../research/experiments/zlib-core-kernels/RESULTS.md).
+  [historical DEFLATE result](../research/experiments/zlib-core-kernels/RESULTS.md) ·
+  [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md).
 
 ### FLOOR-1 — Canonical source and constrained control shape
 
@@ -538,41 +542,76 @@ language authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-t
 
 ## Candidate validation projects
 
-No candidate below is selected. The current proposal in `current-plan.md` is to
-compare candidates before authorizing implementation. A candidate becomes a
-project only after the owner accepts a bounded milestone, a compelling claim,
-an authenticity boundary, an oracle, and a stop condition.
+Ripgrep is the owner-selected umbrella project. Selection fixes the external
+pressure source and the headline objective, **2x ripgrep**; it does not
+authorize a favorable subset, a monolithic rewrite, or any particular
+language, compiler, proof, runtime, or optimizer change. The rolling
+`current-plan.md` still proposes one bounded evidence-producing step at a time,
+and every step must state how it returns to the unchanged product comparison.
 
 ### CAND-1 — Select the first external validation project
 
-`[current: N1 shortlist]` `[next: owner-approved N2 recommendation]`
+`[current: completed — ripgrep selected]`
 
-- **Goal:** choose a project whose first milestone is achievable, externally
-  legible, and capable of validating one or two important Whitefoot ideas.
-- **Current:** N1 compared five pinned external candidates with public
-  recognition as an entry condition. yyjson and LZ4 survive into the N2
-  comparison. QOI fails the attention-plus-negative-oracle gate; BLAKE3 and
-  CMSIS-DSP are parked because their attention-worthy milestones require absent
-  parallel or target/boundary capability. No project is selected.
-- **Missing / next:** after owner authorization, N2 may recommend one bounded
-  milestone or none. It must choose explicitly between immediate public
-  attention, breadth of language pressure, and first-result risk, then state
-  the authentic boundary, oracle, first zero-change port, strict dependencies,
-  exclusions, and stop condition.
-- **Facts:** [N1 external candidate shortlist](../research/notes/headline-artifact-shortlist.md) ·
+- **Goal:** choose a project with an immediately legible public result, low
+  user trial cost, a strong oracle, and enough end-to-end pressure to expose
+  general language, compiler, runtime, and machine-code needs.
+- **Current:** the initial N1 screen advanced yyjson and LZ4 under a
+  near-term-reachability gate. The owner subsequently made comparative
+  performance and immediate tool adoption the primary public test and selected
+  pinned ripgrep 15.2.0.
+- **Missing / next:** review the `RG-BASE` comparator and baseline proposal.
+  Project selection itself authorizes no corpus download, benchmark, port, or
+  compiler work.
+- **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
+  [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
 
-Candidate classes are a comparison surface, not work authorization. `later`
-means the known prerequisites may dominate a first milestone.
+### CAND-8 — Ripgrep-compatible command-line search
 
-| Candidate | Primary outline items | Current evidence | Main selection blocker |
+`[selected flagship]` `[current: pinned source and project frame]`
+`[next: RG-BASE proposal review]`
+
+- **Goal:** build a Whitefoot-written command-line search tool credible for
+  ripgrep's primary line-oriented recursive regex use and reach at least
+  2.00x pinned ripgrep 15.2.0 on a preregistered representative end-to-end
+  suite.
+- **Current:** ripgrep 15.2.0 at commit
+  `e89fff89ac9af12e8d4ce9d5fd07beb408ca730f` is pinned. Its source path has
+  been audited from CLI and ignore-aware traversal through regex/byte search,
+  result construction, parallel publication, and exit status. No corpus,
+  Whitefoot implementation, compiler change, or comparative benchmark has
+  begun.
+- **Claim boundary:** the suite must cover real source trees and large text;
+  one and many files; several matcher families; ignore/filter work; and normal
+  result production. A win on one file, `--sort`, fixed strings, a discarded
+  output path, or a microbenchmark neither renames nor completes the flagship.
+- **Missing / next:** approve or revise `RG-BASE`, which freezes correctness,
+  corpora, commands, target, stronger upstream comparator, resource envelope,
+  aggregate rule, and attribution before Whitefoot results exist. Subsequent
+  plans discover opportunities from evidence and retain the 2x objective even
+  when an attempted optimization fails.
+- **Directions tested:** PERF-1 owns the baseline and attribution; BOUND-1 and
+  VERIFY-1 enter with the real CLI/filesystem path; PAR-1 through PAR-4 enter
+  only for measured parallel work and its proof/runtime contract; FLOOR-1
+  through FLOOR-4 audit accepted source shape; STORE-1 and STORE-2 answer
+  concrete matcher, queue, buffer, or result-representation blockers; PROOF-1,
+  PROOF-2, PROOF-3, PROOF-7, and VERIFY-3 enter only for an observed fact
+  consumer.
+- **Facts:** [project frame, source audit, and comparison rules](../research/notes/ripgrep-flagship-frame.md) ·
+  [pinned upstream release](https://github.com/BurntSushi/ripgrep/releases/tag/15.2.0) ·
+  [pinned upstream repository](https://github.com/BurntSushi/ripgrep/tree/15.2.0).
+
+The other candidate classes remain comparison evidence or optional separately
+approved probes. They are not phases or prerequisites in front of ripgrep.
+
+| Candidate | Primary outline items | Current disposition | Reopening condition |
 |---|---|---|---|
-| `CAND-2` Compression / binary format | PERF-1, PROOF-1, PROOF-7, VERIFY-1, BOUND-1 | N1 advances full LZ4 frame decompression and rejects QOI as the first flagship; [raw-DEFLATE compiler witness](../compiler/tests/programs/raw_deflate.rs) and [historical zlib kernels](../research/experiments/zlib-core-kernels/RESULTS.md) remain bounded evidence | N2 must test whether a closed LZ4 frame harness is an authentic enough first result before external `BOUND-1` consumption exists. |
-| `CAND-3` Parser / text validation | FLOOR-1, FLOOR-3, FLOOR-4, VERIFY-1, BOUND-1 | N1 advances yyjson's complete strict reader and immutable DOM; [current text witnesses](../compiler/tests/programs/text.rs) and [historical floor results](../research/experiments/default-floor/RESULTS.md) establish only the starting surface | Determine whether variable recursive storage and exact number conversion leave one bounded first blocker rather than several prerequisite projects. |
-| `CAND-4` Storage-intensive component | STORE-1, STORE-2, PROOF-6, FLOOR-2 | [live SoA pattern witness](patterns.md#p2-struct-of-arrays-pool-append-only-index-linked); [historical binary trees](../research/experiments/port-study/binary-trees/RESULTS.md) | Choose a real operation set whose first blocker isolates one storage dimension rather than another toy tree. |
-| `CAND-5` Embedded / signal processing | TARGET-2, TARGET-3, PROOF-5, BOUND-1 | N1 parks the CMSIS-DSP Q31 biquad until an authentic Cortex boundary exists; [signal](../compiler/tests/programs/signal.rs) and [image](../compiler/tests/programs/image.rs) compiler witnesses remain internal evidence | Select a feasible target/runtime slice before borrowing an embedded project's name for a host-only scalar kernel. |
-| `CAND-6` Declared parallelism (`later`) | PAR-1 through PAR-4 | N1 parks BLAKE3 as a recognizable future anchor; [feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) still rejects automatic profitable discovery | No source construct or runtime exists; reopen BLAKE3 only for explicit parallel tree hashing with an absolute benefit. |
-| `CAND-7` ML systems component (`later`) | APP-1, BOUND-1, TARGET-1 | [direction synthesis](bargain.md#8-the-ml-direction-owner-intent-stated-2026-07-27-researched-2026-07-31) | Find value that survives absent Python, tensor, and accelerator integration. |
+| `CAND-2` Compression / binary format | PERF-1, PROOF-1, PROOF-7, VERIFY-1, BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately approved binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
+| `CAND-3` Parser / text validation | FLOOR-1, FLOOR-3, FLOOR-4, VERIFY-1, BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately approved parser or storage question has independent decision value that the current plan does not answer. |
+| `CAND-5` Embedded / signal processing | TARGET-2, TARGET-3, PROOF-5, BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately approved target/runtime question has an authentic Cortex boundary. |
+| `CAND-6` Declared parallelism (`later`) | PAR-1 through PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately approved explicit-parallel question has independent value beyond the ripgrep plan. |
+| `CAND-7` ML systems component (`later`) | APP-1, BOUND-1, TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
 
 ## Settled exclusions and history
 
