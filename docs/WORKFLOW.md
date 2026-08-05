@@ -23,9 +23,11 @@ the project that exposed the language gap.
 - `docs/roadmap.md` is the living Direction Outline: the canonical map of
   directions, current facts, gaps, and candidate projects. It does not sequence
   current work.
-- `docs/current-plan.md` is the only current execution proposal or approved
-  plan. It is derived from one outline revision and cannot add an unselected
-  direction.
+- `docs/current-plan.md` is the sole current execution proposal or approved
+  plan and the sole source of plan-derived authority and sequencing. It is
+  derived from one outline revision and cannot add an unselected direction.
+- `docs/ongoing/` contains temporary, non-authorizing records of how each
+  substantial in-flight task is executing approved work.
 - `docs/WORKFLOW.md` defines process but selects no work.
 - Bare `WORKFLOW.md` references in immutable or protected artifacts name this
   sole guide by basename; they do not imply a second copy at the repository
@@ -125,6 +127,63 @@ and any preregistered comparator envelope. Project source may change to use an
 approved general capability; the slice may not be replaced with an easier
 project, input class, behavior, boundary, oracle, or comparator to escape a
 blocker.
+
+## Ongoing task coordination
+
+`docs/ongoing/` makes concurrent execution visible without creating another
+planning authority. Create one Markdown file for each substantial independently
+integrable task, or task with a distinct integration or handoff boundary. A
+task may be one independently executable part of an active plan's written `Do`,
+or work covered by a separate owner approval. Agents contributing to one
+deliverable share its record; read-only reviewers do not create another. Make
+the record the task's first small integration commit so other workspaces can
+see it before substantial work begins. It cannot broaden or resequence the
+authority it cites.
+
+Keep each record short and operational. It contains:
+
+- `Status`: `IN PROGRESS`, `BLOCKED`, or `WAITING`; `DONE` is only a transient
+  state before deletion, and `ACTIVE` is reserved for the Current Plan;
+- `Authority`, `Owner`, `Base revision`, and the workspace or branch;
+- `Goal`, `Direction and invariants`, and `Method`;
+- `Progress` as completed, current, and next meaningful outcomes;
+- `Scope and expected touch set`, covering semantic areas and likely paths;
+- `Dependencies and integration order`, linking other ongoing records when
+  relevant; and
+- `Validation`, `Stop condition`, and `Closure`.
+
+The touch set is a rebase warning, not exclusive ownership. Agents in separate
+workspaces may edit the same files. Ordinary textual overlap is settled during
+rebase. Semantic overlap—two tasks changing the same language rule, ABI, proof
+contract, resource or effect model, durable design decision, correctness
+oracle, premise, Current Plan, outline status, approval, or workflow authority—
+requires both records to cross-link the dependency and state one integration
+order before both changes land. One task provides the premise; the dependent
+task refreshes its base, rereads the changed authority and design records,
+rebases, and reruns its gates. Incompatible decisions return to the owner
+rather than resolving by last-writer-wins.
+
+Before starting or resuming work, refresh the integration branch and fully read
+every relevant record there. Before rebasing or integrating, refresh and read
+them again, rebase, rescan the rebased directory, and update the record's base
+revision and any changed dependency or validation obligation. Update a record
+when direction, scope, meaningful progress, blockers, or handoff state changes—
+not after every command. Discovery outside its cited authority is a blocker or
+candidate for the next plan, not permission to expand the task.
+
+Delete the record in the change that integrates, parks, replaces, or abandons
+the task, after moving durable facts, measurements, decisions, and status to
+their canonical owners. If a record has live dependents, the same change
+replaces their task link with the landed commit or canonical result and records
+the refresh and gates they now owe.
+
+Replacing the Current Plan is a coordination barrier. A plan-derived task loses
+execution authority when its `ACTIVE` plan is replaced unless the new `ACTIVE`
+plan explicitly carries that record and exact scope; a `PROPOSED` plan cannot
+carry execution authority. Separately approved work survives only through its
+recorded stop condition. Several agents executing one approved `Do` are
+ordinary project delivery; only independently authorized decision-changing
+investigation uses the parallel-research lane below.
 
 ## Project gates
 

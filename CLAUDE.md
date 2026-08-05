@@ -36,9 +36,14 @@ probably not the next work.
   project's current landscape: active specification, direction status, gaps,
   evidence links, and candidate projects. It does not sequence current work.
 - `docs/current-plan.md` is the sole current execution proposal or approved
-  plan. It must be derived from one outline revision and cannot authorize a
-  direction the outline has not selected. `PROPOSED` authorizes no execution;
-  only `ACTIVE` or separate owner approval does.
+  plan and the sole source of plan-derived authority and sequencing. It must be
+  derived from one outline revision and cannot authorize a direction the
+  outline has not selected. `PROPOSED` authorizes no execution; only `ACTIVE`
+  or separate owner approval does.
+- `docs/ongoing/` contains one temporary coordination record per substantial
+  in-flight task or distinct handoff boundary. These records report how
+  authorized work is being carried out; they never select, expand, or
+  resequence work by themselves.
 - The active numbered specification named by `docs/roadmap.md` defines the
   language. Compiler behavior, tests, archived code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
@@ -47,9 +52,10 @@ probably not the next work.
   `mcts_mem/` node and its rejected alternatives before a nontrivial design
   change. Never edit the tree without first loading and following that skill;
   its formatting, provenance, paired-move, and lint rules are mandatory.
-- Architecture dossiers and `archive/governance/decision-log.md` are historical design and
-  decision records. They can explain why something exists, but they cannot add
-  current work or override the outline and current plan.
+- Architecture dossiers are current or historical design evidence, and
+  `archive/governance/decision-log.md` is a historical decision record. They
+  can explain why something exists, but they cannot add current work or
+  override the outline and current plan.
 
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
@@ -78,6 +84,22 @@ and private interfaces that can evolve.
 
 Review must challenge relevance, proportionality, and sequencing as well as
 technical soundness.
+
+## Parallel task coordination
+
+Every substantial independently integrable task, or task with a distinct
+integration or handoff boundary, has one short file under `docs/ongoing/`.
+Agents contributing to one deliverable share its record; read-only reviewers do
+not create another. Publish the record to the integration branch before
+substantial work so other workspaces can see it.
+
+Before starting, resuming, rebasing, or integrating a task, refresh the
+integration branch and read relevant ongoing records. Their scope is advisory,
+not a file lock. Textual overlap is allowed, but semantic or authority overlap
+requires cross-linked dependencies and an explicit integration order; it never
+resolves by last-writer-wins. An ongoing record cannot authorize or expand
+work. Follow the complete schema, refresh, rebase, and lifecycle rules in
+`docs/WORKFLOW.md`.
 
 ## Repository structure and hygiene
 

@@ -1,7 +1,8 @@
 # Current Plan
 
-Status: ACTIVE — the owner selected complete `BOUND-1` system-capability
-architecture design on 2026-08-04
+Status: ACTIVE — the owner authorized the complete `BOUND-1`
+architecture-selection investigation on 2026-08-04; no architecture is
+selected yet
 
 Derived from: [Direction Outline revision 6](roadmap.md), items `CAND-8`,
 `BOUND-1`, `PAR-4`, and `VERIFY-1`
@@ -106,10 +107,10 @@ remaining gate.
 4. Inventory the exact v0.17 specification and compiler deltas. Build a small
    executable semantic model only if paper traces cannot settle a resource,
    cancellation, or buffer-lifetime question; do not build a general framework.
-5. Present the selected architecture, rejected alternatives, open questions,
-   and the exact first implementation slice for owner review. Specification and
-   compiler work require the subsequent approved plan and, where applicable,
-   the specification-change workflow.
+5. Present the recommended candidate architecture, rejected alternatives, open
+   questions, and the exact first implementation slice for owner review.
+   Specification and compiler work require the subsequent approved plan and,
+   where applicable, the specification-change workflow.
 
 ## Verification
 
