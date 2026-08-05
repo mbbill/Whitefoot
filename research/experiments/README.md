@@ -20,6 +20,15 @@ sequences work.
   end-to-end cases, correctness oracles, statistics, and the future 2x rule
   before comparative timing.
 
+## Completed current-compiler bounded research
+
+- `wfgrep-scan-floor/` — the active v0.17 language and ordinary compiler match
+  same-Clang C on two safe single-buffer scanner shapes. The width-16
+  Boolean-dataflow full pass measures 0.9993x C [0.9969, 1.0023], and four
+  scalar early exits measure 1.0008x C [0.9981, 1.0088]. LLVM removes the
+  guard-dominated bounds traps in both. This validates a narrow language floor,
+  not an algorithmic, end-to-end, or 2x-ripgrep claim.
+
 ## Historical fact-channel benchmarks
 
 These results used the now-archived democ implementation. They remain measured

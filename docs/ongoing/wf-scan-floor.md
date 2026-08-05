@@ -3,7 +3,7 @@
 This is a temporary coordination record, not execution authority. Delete it
 when the task is integrated, parked, replaced, or abandoned.
 
-Status: ACTIVE — preregistration and current-compiler baseline
+Status: READY FOR INTEGRATION — frozen run complete, evidence reviewed
 
 Authority: separate owner-approved bounded parallel research on 2026-08-05.
 The owner approved `WF-SCAN-FLOOR` after reviewing its boundary: measure pure
@@ -67,10 +67,19 @@ Completed:
 - passed all six small-case correctness checks; and
 - inspected pre-timing IR and assembly: required raw bounds traps are removed
   by LLVM, the full Whitefoot/C loops share the same width-16 vector structure,
-  and the early Whitefoot/C loops share the same scalar structure.
+  and the early Whitefoot/C loops share the same scalar structure;
+- committed the frozen bundle as `a965cb4`, then completed the only create-once
+  run on AC power with all 180 scheduled samples and unchanged work identity;
+- classified both same-Clang comparisons as practical parity: full 0.999258x C
+  [0.996948, 1.002261], early 1.000848x C [0.998128, 1.008784]; and
+- retained and reviewed the raw evidence, position/order strata, visible
+  outliers, executable identities, and claim limits;
+- admitted two narrow dated facts to MCTS-Mem and passed its 53-node lint; and
+- passed the experiment-local correctness gate and the complete repository
+  `make check` gate.
 
-Current: freeze the complete protocol and sources in Git before observing any
-comparative current-compiler timing.
+Current: the reviewed closure slice is ready for integration. Delete this
+record when the slice is integrated into the authoritative branch.
 
 ## Scope and expected touch set
 
