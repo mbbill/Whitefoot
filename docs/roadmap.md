@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 6
+Revision: 7
 
 The active language authority is
 [`spec/kernel-spec-v0.17.md`](../spec/kernel-spec-v0.17.md), SHA-256
@@ -358,11 +358,13 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   borrows, branch-produced loans, holder-derived slices, and some projected
   writes remain absent or unsupported.
 - **Missing / next:** choose the smallest missing rule only after a real
-  project cannot express its required access pattern. The 31-rule v0.18 review
-  candidate and older M1 loan/freeze model are parked evidence, not language
-  authority or a ready implementation package.
+  project cannot express its required access pattern. The 31-rule loan/freeze
+  review candidate and older M1 model are parked evidence, not language
+  authority or a ready implementation package; it vacated the v0.18 candidate
+  slot for the BOUND-1 system-interface batch on 2026-08-05 (predates the
+  wfgrep goal framing and would need re-derivation from a real blocker).
 - **Facts:** [compiler borrow boundary](../compiler/README.md) ·
-  [parked v0.18 candidate](../governance/spec-evolution/kernel-spec-v0.18-candidate.md) ·
+  [parked loan/freeze candidate](../governance/spec-evolution/parked-loan-freeze-candidate.md) ·
   [M1 placement](../research/archive-promotion-audit.md#2-keep-the-m1-loanfreeze-work-as-a-parked-candidate-not-a-rule-set).
 
 ### STORE-2 — Growth, replacement, occupancy, and identity
@@ -462,34 +464,36 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### BOUND-1 — System capabilities and host integration
 
-`[current: spec skeleton; compiler absent]`
-`[next: complete architecture selection]`
+`[current: architecture selected; compiler absent]`
+`[next: v0.18 candidate and first command slice]`
 
 - **Goal:** give command, service, and embedded program instances a
   coherent capability-based host boundary covering process context,
   filesystems, data streams, clocks, randomness, networking, waiting and
   cancellation, and future threads or tasks without ambient mutable authority
   or writer-defined trust.
-- **Current:** v0.17 is a closed compilation unit with a gated boundary skeleton,
-  a fixed no-argument `main`, memory-only effect rows, and reserved
-  `Sendable`/`Shareable` vocabulary. The compiler has no resource-handle,
-  external-effect, provider, stdin/argv, filesystem, network, async, or thread
-  path. Its only ordinary external-I/O call is a private trap diagnostic;
-  allocation, release, and abort also cross the current trusted runtime
-  boundary.
-- **Missing / next:** the owner rejected selecting an argv/file/stdout-only API
-  before the larger architecture is understood. Select the relationship among
-  lifecycle profiles and exact static grants, unforgeable runtime resources,
-  rights and delegation,
-  cleanup and recoverable completion, external effects and ordering,
-  sync/async/cancellation, thread transfer, path representation, buffer and
-  zero-copy semantics, errors, provider identity, ABI, target qualification,
-  versioning, and conformance. Validate one model against sequential `wfgrep`,
-  parallel file search, and a cancellable network-service witness. Later
-  implementation may be incremental only as true subsets of that model.
+- **Current:** the owner selected the dossier architecture on 2026-08-05 after
+  a 31-issue adversarial review: exact typed entry inputs under a declared
+  program kind, immutable values / shared capabilities / unique stateful
+  resources over ordinary `own`/`&`/`&uniq`, exact `external` and `blocks`
+  effects with conservative source ordering, operation-specific one-attempt
+  I/O with portable error classes, lossless target paths, compiler-owned
+  resource contracts with three completion policies, a Route C
+  system-declaration domain (with the recorded fallback to a prelude
+  extension if the syntactic conditional-visibility mechanism is declined),
+  and static target qualification. v0.17 itself still has a fixed no-argument
+  `main`, memory-only effect rows, and no compiler system path; the only
+  ordinary external-I/O call is a private trap diagnostic.
+- **Missing / next:** draft and activate one v0.18 specification batch
+  containing exactly the dossier's §11/§11.1 first-command-slice deltas
+  through the specification-change workflow, implement that slice on the
+  normal compiler path for macOS/Linux, and return to the frozen sequential
+  `wfgrep` checkpoint. Later families (clocks, network, async/wait, threads,
+  child processes) remain additive true subsets of the selected model and
+  wait for their own project pressure.
 - **Facts:** v0.17 `FN-7`, `EFF-1/2`, `PROG-1/2`, `CAP-1`, `GATE-1`, and
-  `LEDGER-1` · [active architecture plan](current-plan.md) ·
-  [system-capability architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
+  `LEDGER-1` · [architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
+  [review decision record](../research/investigations/system-capability-architecture/decisions.json) ·
   [WASI capability model](https://github.com/WebAssembly/WASI/blob/main/docs/Capabilities.md) ·
   [WASI 0.1–0.3 release lessons](https://wasi.dev/releases).
 
@@ -595,6 +599,17 @@ language, compiler, proof, runtime, or optimizer change. The rolling
 `current-plan.md` still proposes one bounded evidence-producing step at a time,
 and every step must state how it returns to the unchanged product comparison.
 
+Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
+about the language's functional and performance ceiling — resolved general
+capabilities, attributed wins, and honest negative results. The 2x claim
+remains the pressure source and honesty anchor; shipping a finished tool is
+not the completion condition. Every specification amendment on this path is
+sourced from a need the frozen `wfgrep` slice actually exposed, then designed
+as a complete capability rather than a wfgrep-minimal one. A language gap
+exposed by a frozen slice is therefore a finding first; the owner-override
+loop in `WORKFLOW.md` is its expected path, and the gap-accumulation rule
+remains as the owner check-in, not as a presumption against the goal.
+
 ### CAND-1 — Select the first external validation project
 
 `[current: completed — ripgrep selected]`
@@ -631,11 +646,11 @@ and every step must state how it returns to the unchanged product comparison.
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** complete the owner-selected BOUND-1 architecture gate
-  before choosing the process API exposed by `wfgrep`. The subsequent first
-  implementation slice may contain only argv, status, bounded file input, and
-  ordered output, but each operation must be a true subset of the selected
-  resource, effect, provider, and performance model. Once that slice passes its
+- **Missing / next:** the BOUND-1 architecture gate closed on 2026-08-05 with
+  the dossier selection. Next: activate the v0.18 first-command-slice batch
+  and implement it, containing only argv, status, bounded file input, and
+  ordered output, with each operation a true subset of the selected resource,
+  effect, provider, and performance model. Once that slice passes its
   project-independent controls and same-slice correctness and cost gate, return
   to that exact `wfgrep` checkpoint. Each later slice stops on either the next
   semantic blocker or the first attributed material performance blocker; the

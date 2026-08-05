@@ -26,9 +26,10 @@ the project that exposed the language gap.
 - `docs/current-plan.md` is the sole current execution proposal or approved
   plan and the sole source of plan-derived authority and sequencing. It is
   derived from one outline revision and cannot add an unselected direction.
-- `docs/ongoing/` contains numbered, temporary, non-authorizing records of how
-  each substantial in-flight task is executing approved work; `docs/done/`
-  retains the same numbered records as concise terminal history.
+- `docs/planned/` contains numbered, non-authorizing task decompositions of
+  the `ACTIVE` plan awaiting claim; `docs/ongoing/` contains the same class of
+  record for each substantial in-flight task; `docs/done/` retains the same
+  numbered records as concise terminal history.
 - `docs/WORKFLOW.md` defines process but selects no work.
 - Bare `WORKFLOW.md` references in immutable or protected artifacts name this
   sole guide by basename; they do not imply a second copy at the repository
@@ -141,9 +142,41 @@ the record the task's first small integration commit so other workspaces can
 see it before substantial work begins. It cannot broaden or resequence the
 authority it cites.
 
+A task record moves through at most three stages: `docs/planned/` holds tasks
+decomposed from an `ACTIVE` plan's written `Do` but not yet claimed,
+`docs/ongoing/` holds claimed in-flight tasks, and `docs/done/` holds terminal
+history. The planned stage is optional; work that starts immediately registers
+directly in `docs/ongoing/`.
+
+`docs/planned/` is the claimable decomposition of an `ACTIVE` plan, not a
+second roadmap or a self-growing backlog. Each planned file carries the
+ongoing schema minus live state: `Authority` naming the exact `ACTIVE` plan
+item it implements, `Goal`, `Direction and invariants`, `Method`, `Scope and
+expected touch set`, `Dependencies and integration order` linking the `NNNN`
+records it waits on, `Validation`, and `Done-when`. A planned task must be
+independently integrable, small enough for one executor context, and free of
+unwritten decisions; a task that still needs a design choice is not plannable.
+Registering a batch of planned tasks is one integration commit by the planning
+agent, and that commit allocates their numbers.
+
+Claiming is one commit that moves the file from `docs/planned/` to
+`docs/ongoing/` with its number unchanged and fills in `Status`, `Owner`,
+workspace, and `Base revision`. The first claim to land on the integration
+branch wins; a losing workspace rebases and claims another task. Only a task
+whose listed dependencies are all terminal, or whose cross-linked integration
+order explicitly permits the overlap, may be claimed.
+
+Planned files authorize nothing and are pruned like any superseded material:
+when the plan they cite is replaced, unclaimed planned tasks are deleted in
+the same change unless the new `ACTIVE` plan explicitly carries them. A
+deleted number is burned, never reused. A planned task that will never start
+is deleted rather than moved to `docs/done/`; done history records only
+executed work.
+
 Every task record is named `NNNN-short-slug.md`. The four-digit number comes
-from one monotonically increasing sequence shared across `docs/ongoing/` and
-`docs/done/`. After refreshing the integration branch, a new task proposes
+from one monotonically increasing sequence shared across `docs/planned/`,
+`docs/ongoing/`, and `docs/done/`. After refreshing the integration branch, a
+new task proposes
 `max(existing numbers) + 1` in its first registration commit. That integration
 commit assigns the number permanently: moving the task never changes it and a
 closed number is never reused. Concurrent branches may propose the same next
@@ -204,6 +237,36 @@ carry execution authority. Separately approved work survives only through its
 recorded stop condition. Several agents executing one approved `Do` are
 ordinary project delivery; only independently authorized decision-changing
 investigation uses the parallel-research lane below.
+
+## Execution agents
+
+Fan-out execution separates judgment from throughput. The owner and the lead
+agent do the top-down work — direction, plans, decomposition, review, and
+integration — and executor agents maximize output inside that frame. An
+executor implements; it does not research, explore, redesign, or plan.
+
+An executor's loop is fixed:
+
+1. **Orient.** Refresh the integration branch, then read this workflow, the
+   task record being claimed, and every authority and design record it cites.
+2. **Claim.** Land the claim commit, then work in an isolated workspace or
+   worktree branched from the recorded base revision.
+3. **Execute exactly the written scope.** The task's cited plan item is the
+   whole authority. An executor does not expand scope, substitute an easier
+   interpretation, or improve adjacent code beyond the task.
+4. **Escalate instead of forcing.** A blocker, plan defect, specification or
+   compiler discrepancy, or discovery outside the cited authority stops the
+   task and is reported honestly through the blocker routing below, with exact
+   reproduction and classification evidence, so the owner and lead can repair
+   the plan. Hacking around a blocker, weakening a check, test, or verdict, or
+   quietly narrowing the deliverable is a governance breach; a material
+   workaround remains a bounded diagnostic that cannot close a slice. An
+   honest blocked report is a successful executor outcome — it converts a plan
+   defect into the owner's and lead's next decision at the cheapest moment.
+5. **Integrate through review.** Run the task's validation gates, update the
+   record, and submit the change for lead review before it lands on the
+   integration branch. Review challenges relevance, proportionality, and
+   sequencing as well as technical soundness.
 
 ## Project gates
 

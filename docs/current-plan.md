@@ -1,153 +1,105 @@
 # Current Plan
 
-Status: ACTIVE — the owner authorized the complete `BOUND-1`
-architecture-selection investigation on 2026-08-04; no architecture is
-selected yet
+Status: ACTIVE — the owner approved this plan on 2026-08-05; specification
+bytes still require exact approval under the specification-change workflow
 
-Derived from: [Direction Outline revision 6](roadmap.md), items `CAND-8`,
-`BOUND-1`, `PAR-4`, and `VERIFY-1`
+Derived from: [Direction Outline revision 7](roadmap.md), items `CAND-8`,
+`BOUND-1`, `PERF-1`, `VERIFY-1`, and `VERIFY-2`
 
 ## Goal
 
-Select one coherent Whitefoot system interface before changing the language or
-compiler. It must cover the architectural needs of command-line programs,
-filesystems, clocks, randomness, networking, waiting and cancellation, and
-future threads or tasks. The first implementation will still unblock `wfgrep`,
-but it may not introduce an argv/file/stdout-only API that later capabilities
-must replace.
+Turn the selected system-capability architecture into language and compiler
+reality: activate one v0.18 specification batch containing exactly the
+dossier's first-command-slice deltas, implement that slice on the normal
+compiler path for macOS/Linux, and return to the frozen sequential `wfgrep`
+checkpoint with its correctness oracle and cost gates.
 
-Completeness in this stage means a complete semantic and performance envelope,
-not implementing every system operation now. Later implementation slices must
-be true subsets of the selected model, use the same resource and effect rules,
-and leave no temporary public surface behind.
+Per the owner's 2026-08-05 framing, the deliverable is what this slice proves
+about the language: every dossier §9.1 cost gate observed, every blocker
+classified and honestly reported, negative results retained. Completing
+`wfgrep` is the pressure source, not the completion condition.
 
-Working design evidence: [system-capability architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md).
+## Authority and evidence
 
-Progress: the candidate architecture and exact first command slice are drafted,
-and the final spec-consistency, OS-semantics, and future-evolution hostile
-reviews report no remaining blocker. Owner architecture selection is the
-remaining gate.
-
-## Features to design in this stage
-
-- [x] **Entry profile and exact authority imports** — define how a command,
-  service, or embedded instance statically declares and receives exactly its
-  host-granted capabilities without ambient mutable globals or a runtime bag of
-  optional authority. General library/foreign entry remains BOUND-2.
-- [x] **Typed resources and rights** — define unforgeable resource identity,
-  ownership and borrowing, capability narrowing and delegation, explicit
-  completion policy, compiler-derived cleanup, whole-process abort behavior,
-  future containment obligations, and the `Sendable` / `Shareable` boundary.
-  Every family must provide a protocol descriptor with state, aliases, owner
-  disposition, concurrency, cancellation, ordering, and cross-platform
-  guarantees.
-- [x] **External effects** — keep authority, observable effects, and trusted
-  provider identity separate. Define resource-local ordering, cross-resource
-  ordering where promised, nondeterministic observations, blocking, independent
-  operation progress, language suspension, spawning, cancellation, and cleanup
-  effects without using provider metadata as source-semantic proof.
-- [x] **Data transport** — select common semantics for stdin/stdout, files,
-  pipes, and sockets: partial transfers, EOF, backpressure, errors, caller-owned
-  buffers, vectored and positioned I/O, streaming, and an honest route to
-  mmap/splice or other zero-copy strategies.
-- [x] **System families** — map the coherent interface surface for process
-  arguments/environment/status and stdio; filesystem roots, paths,
-  directories, files, metadata and durability; clocks/timers and randomness;
-  TCP/UDP/DNS and local endpoints; waits, cancellation, threads/tasks and join;
-  and the disposition of child processes, signals, memory mapping, local IPC,
-  and target/device capabilities.
-- [x] **Provider and ABI** — define compiler-gated primitive identities, native
-  host providers, target qualification, versioning, deterministic test
-  providers, and a direct static lowering path that does not require a dynamic
-  component runtime or per-call dispatch tax.
-- [x] **Errors and conformance** — define portable outcomes, target-specific
-  detail, partial progress, cleanup after recoverable failure, behavior at
-  process-aborting traps and any future containment boundary, and the
-  independent tests that every provider must pass.
-
-## Binding constraints
-
-- No raw integer fd, syscall number, pointer contract, writer-defined primitive,
-  writer-visible `unsafe`, or function-name special case is a source-language
-  authority.
-- No ambient process API or single permanently unique `Process` handle may hide
-  dependencies or serialize otherwise independent files, sockets, output
-  streams, or workers.
-- No mandatory whole-input materialization, per-byte boundary call, avoidable
-  complete copy, centralized provider lock, or runtime-wide I/O serialization
-  fence may be
-  designed into the ordinary fast path.
-- Paths must preserve the filename domain needed for a credible ripgrep
-  replacement; a Unicode-only abstraction is not silently treated as full
-  native-filesystem fidelity.
-- Synchronous convenience may not make composable async, cancellation, or
-  borrowed-buffer safety impossible. Async machinery is not selected merely
-  because WASI uses it; Whitefoot must state its own ownership and cost model.
-- The system interface and general foreign-code FFI are separate problems.
-  `BOUND-1` may use a compiler-owned runtime/provider boundary but does not open
-  a general import, callback, or dynamic-loading mechanism.
+- Selected architecture (owner, 2026-08-05, including Route C for the
+  declaration home with the recorded fallback to a prelude extension):
+  [dossier](../research/investigations/system-capability-architecture/DOSSIER.md)
+  and its
+  [31-issue review record](../research/investigations/system-capability-architecture/decisions.json).
+- The specification-change workflow in [WORKFLOW.md](WORKFLOW.md) governs Work
+  item 1; the owner's exact byte approval of the candidate is still required
+  there and is not granted by activating this plan.
+- The loan/freeze candidate vacated the v0.18 slot on 2026-08-05 and remains
+  parked evidence under `STORE-1`.
 
 ## Work
 
-1. Audit official WASI 0.1, 0.2, and 0.3 plus the relevant native-host cost
-   shapes. Preserve the useful lessons—preopened authority, typed resources,
-   modular interfaces—and record the failures—flat fd ABI, Unicode-only paths,
-   non-composable pollables, missing caller buffers/zero-copy guarantees, and
-   unsettled threads/process support.
-2. Compare at least raw fd/syscall, ambient process functions, one affine
-   `Process` capability, and typed entry interfaces plus runtime resources.
-   Reject alternatives by safety, effect precision, concurrency, path fidelity,
-   ABI portability, code shape, and implementation cost rather than style.
-3. Draft one candidate architecture; instantiate ReadFile, possibly aliased
-   stdout/stderr, TCP split plus pending cancellation, and Child protocol
-   descriptors; and trace three hostile witnesses through it: the first
-   `wfgrep PATTERN FILE...` command path, parallel file search with independent
-   workers and ordered publication, and a network service with timeout,
-   backpressure, cancellation, and teardown.
-4. Inventory the exact v0.17 specification and compiler deltas. Build a small
-   executable semantic model only if paper traces cannot settle a resource,
-   cancellation, or buffer-lifetime question; do not build a general framework.
-5. Present the recommended candidate architecture, rejected alternatives, open
-   questions, and the exact first implementation slice for owner review.
-   Specification and compiler work require the subsequent approved plan and,
-   where applicable, the specification-change workflow.
+1. **v0.18 specification batch (sequential; specification-change workflow).**
+   Draft `governance/spec-evolution/kernel-spec-v0.18-candidate.md` from v0.17
+   with exactly the dossier §11/§11.1 inventory: the command entry form with
+   exact standard input labels (the unlabelled `fn main` entry remains
+   admissible); the seven fixed opaque types, the operation set including the
+   raw-byte pair, and the complete outcome inventory (`Result` instantiations
+   plus `ReadOutcome`); `external` and `blocks` effect categories with the
+   EFF-1 row-grammar, EFF-2 attribution, FN-3 normalization, and STOR-3
+   release extensions scoped to the new resource families; the Route C
+   system-declaration domain (TYPE-6 three-row extension, OP-1, PROG-1, the
+   new DIAG-1 rank and origin kind, and the syntactic program-kind visibility
+   trigger); portable `IoError` classes; path and host-string rules with the
+   command-lifetime backing guarantee in target qualification; and first-slice
+   conformance expectations. Verify grammar with the native verifier, obtain
+   exact owner approval, and activate atomically with every derived artifact.
+2. **Decompose implementation into `docs/planned/` upon activation**, one
+   independently integrable numbered task each with explicit dependencies:
+   compiler front-end (system-declaration domain, opaque types, entry form),
+   effect checking extensions and release attribution, checked-IR resource
+   identities and cleanup, target-qualification table plus the static native
+   macOS/Linux lowering, the deterministic test implementation, first-slice
+   conformance execution, the sequential `wfgrep` program, and the §9.1 cost
+   and §12.2 hostile test gates.
+3. **Fan-out execution under the executor lane in WORKFLOW.md.** Executor
+   agents claim planned tasks, implement in isolated worktrees, and land only
+   through lead review. Blockers and plan defects stop the task and are
+   reported as findings; no workaround closes a slice.
+4. **Return to the `wfgrep` checkpoint.** Run the frozen sequential slice's
+   correctness oracle and its scoped cost-shape gates; attribute any material
+   loss per `PERF-1` before widening the project.
 
 ## Verification
 
-- Every operation family states authority, states and transitions, alias and
-  cursor relations, input/output ownership on every outcome, partial progress,
-  error and cleanup behavior, effects and ordering, permitted concurrent
-  operations, blocking or suspension, cancellation and quiescence,
-  thread-transfer rules, ABI mapping, and cost shape.
-- The three witnesses use the same core rules; none needs a project-shaped
-  primitive, hidden global, central serialization token, or replacement API.
-- The design admits initialized caller-owned read buffers, chunked/vectored I/O,
-  and a future zero-copy route without exposing uninitialized bytes or extending
-  a borrow across an untracked suspension.
-- A static native provider can lower ordinary hot operations without allocation
-  or dynamic dispatch that the operation itself does not require.
-- Hostile review attacks capability forgery, path escape, wrong-resource effect
-  reordering, partial I/O, close/error races, cancellation races, cross-thread
-  use, provider lies, and portability mismatches.
+- The candidate's semantic delta equals the dossier inventory — no additional
+  capability rides along, and no listed delta is silently dropped.
+- `make -C compiler check` and `make check` green before and after each landed
+  task; first-slice conformance cases pass through the normal command path.
+- The dossier §12.2 first-slice test list is implemented, including non-text
+  arguments, invalid ranges, short reads/writes, broken pipes, redirection to
+  one sink, close-error behavior, and the effect-attribution canonical case.
+- The §9.1 native cost shape is inspected on emitted code: no allocation,
+  copy, dispatch, handle lookup, or lock on the hot paths; the buffer gates
+  use their two distinct controls.
+- Executor escalations are reviewed against the blocker routing; any language
+  gap found here enters the outline rather than being absorbed.
 
 ## Done when
 
-- the owner can choose one architecture from an explicit alternative table;
-- the chosen model has a complete capability-family map with deliberate v1,
-  later, and unsupported dispositions;
-- the v0.17 semantic gaps and provider TCB are explicit;
-- the three witnesses pass the paper/model and performance-shape review; and
-- the next Current Plan can name one exact implementation slice without making
-  another architectural decision.
+- v0.18 is active with every derived artifact updated in the same change;
+- the compiler compiles and runs the sequential `wfgrep` slice on macOS/Linux
+  through the normal path, passing its correctness oracle;
+- the §9.1/§12.2 gates are observed with evidence recorded in their canonical
+  homes; and
+- the outline and this plan are replaced to name the next slice or blocker.
 
 ## Not in this stage
 
-- No numbered-specification, compiler, runtime, or `wfgrep` implementation.
-- No promise to implement every mapped system family in the first release.
-- No general FFI, dynamic loading, plugin system, artifact replay, or provider
-  marketplace.
-- No matcher, directory walker, parallel runtime, or ripgrep timing work.
+- No directory traversal, ignore stack, parallel search, networking, clocks,
+  randomness, async/wait, threads, child processes, buffered output
+  publisher, or general FFI.
+- No optimizer fact consumers; `PROOF-*` items enter only on an observed,
+  attributed hotspot after the slice is correctness-green.
+- No ripgrep timing claims; the 2x comparison waits for a preregistered suite
+  on a wider slice.
 
 ## Parallel research
 
-None. System-capability architecture is the current work.
+None proposed. The scan-floor and literal-line research results remain
+standing evidence for the later performance gates.

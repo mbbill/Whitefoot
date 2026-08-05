@@ -95,12 +95,32 @@ integration or handoff boundary, has one short numbered file under
 its record; read-only reviewers do not create another. Publish the record to
 the integration branch before substantial work so other workspaces can see it.
 
+Task records move through at most three stages: `docs/planned/` holds tasks
+decomposed from an `ACTIVE` plan but not yet claimed, `docs/ongoing/` holds
+claimed in-flight tasks, and `docs/done/` holds terminal history. Claiming is
+one commit that moves the file from `docs/planned/` to `docs/ongoing/`
+unchanged in number and fills in owner, workspace, and base revision; the
+first claim to land on the integration branch wins. A planned task may be
+claimed only when its listed dependencies are terminal. Planned files
+authorize nothing; when their plan is replaced, unclaimed tasks are deleted in
+the same change unless the new plan carries them.
+
 Names use `NNNN-short-slug.md`, with one zero-padded monotonically increasing
-sequence shared by `docs/ongoing/` and `docs/done/`. After refreshing the
-integration branch, allocate `max(existing numbers) + 1` in the task's first
-registration commit. The number never changes or returns to the pool. If two
-concurrent registrations choose the same number, the later integration
-renumbers before landing.
+sequence shared by `docs/planned/`, `docs/ongoing/`, and `docs/done/`. After
+refreshing the integration branch, allocate `max(existing numbers) + 1` in the
+task's first registration commit. The number never changes or returns to the
+pool. If two concurrent registrations choose the same number, the later
+integration renumbers before landing.
+
+Executor agents implement; they do not research, explore, redesign, or plan.
+An executor reads `docs/WORKFLOW.md` and the claimed task's cited authorities,
+works in an isolated worktree, executes exactly the written scope, and lands
+changes only through lead review. A blocker, plan defect, or discovery outside
+the cited authority stops the task and is reported honestly with reproduction
+evidence — never hacked around, absorbed by weakening a check or test, or
+quietly narrowed. An honest blocked report is a successful executor outcome.
+The owner and the lead agent own direction, decomposition, review, and
+integration; see the Execution agents section of `docs/WORKFLOW.md`.
 
 At terminal disposition, move the same numbered file to `docs/done/` in the
 integration change. Use final status `DONE`, `PARKED`, `REPLACED`, or

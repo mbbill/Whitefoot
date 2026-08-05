@@ -1,0 +1,488 @@
+{
+  "decisions": [
+    {
+      "id": 1,
+      "title": "First slice restores lossless raw-byte access to arguments",
+      "issue_summary": "The nine-operation first slice could only read HostString content through UTF-8 conversion (host_utf8_len/host_copy_utf8), silently restricting process arguments to Unicode in violation of the dossier's own §3.3 requirement, and making §12.2's mandated 'non-text argument/path values' test inexecutable. Unix targets already preserve arbitrary non-NUL bytes (§6.8), so only the operation set withheld them.",
+      "alternatives_considered": [
+        "Keep the UTF-8-only operation set (rejected: contradicts §3.3 and makes a mandated §12.2 test inexecutable)",
+        "Also treat the pattern's UTF-8 copy as a §12.2 copy-gate violation (withdrawn by critic: the gate targets the searched-data path; a pattern-sized bounded copy is not 'a full input copy')"
+      ],
+      "decision": "Add two operations to §9: host_bytes_len (shared-borrowed HostString -> u64, total, no failure, no allocation/copy/external effect) and host_copy_bytes (shared-borrowed HostString + unique initialized buffer + range -> bytes(exact length) | TooSmall(required); invalid range traps before any read/write per §7.1's ordering; no InvalidText outcome). Demote the UTF-8 pair to text-facing use (diagnostics, Windows 16-bit path). Rewrite §10.1 step 2 to copy the pattern as raw bytes with no validation. Add a §9.1 cost row for the raw path. Note in §9 that this makes §12.2's non-text-argument test executable. Final constructor spellings for the copy outcomes follow issue 3's resolution.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md:200",
+        "research/investigations/system-capability-architecture/DOSSIER.md:585-586",
+        "research/investigations/system-capability-architecture/DOSSIER.md:913-924",
+        "research/investigations/system-capability-architecture/DOSSIER.md:1108"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 4,
+      "title": "EFF-2 derivation change is named explicitly and scope-limited to new resource families",
+      "issue_summary": "§6.5 makes compiler-derived release contribute external/blocks to the function's effect row, but v0.17 EFF-2 is a purely syntactic-occurrence judgment (spec:438) and derived drops live on control-flow edges after checking (STOR-3, spec:274; compiler/src/semantic/check/cleanup.rs never touches effects). §6.6's 'just like the current memory, allocation, and trap effects' denied the change, and §11 omitted the delta.",
+      "alternatives_considered": [
+        "Leave §6.6's sentence as-is (rejected: it denies the dossier's own change)",
+        "Retrofit all existing buffer/box/arena releases into effect rows (rejected: under EFF-2 row equality this invalidates the declared row of every existing program and conformance case owning a buffer — a breaking edit far outside BOUND-1)"
+      ],
+      "decision": "§6.6: state that the row's shape is unchanged (exact union, no subtyping) while its derivation is extended with compiler-derived release on normal control-flow edges. §6.5: state the legality rule — a declared row is legal iff it equals the union of syntactic body effects and the effects of every release that may run on any normal edge, explicitly covering owners moved on one match arm and released on another, and conditional release. §11: add the EFF-2-extension delta. §12.2: add the canonical test that an empty-bodied consume(f: own ReadFile) must declare external, blocks. Scope limit: existing buffer/box/arena releases are NOT retrofitted; only new resource families attribute release effects.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:438",
+        "spec/kernel-spec-v0.17.md:274",
+        "compiler/src/semantic/check/cleanup.rs:1-162",
+        "research/investigations/system-capability-architecture/DOSSIER.md:414-418",
+        "research/investigations/system-capability-architecture/DOSSIER.md:450-451"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 6,
+      "title": "§2 and §11 inventory the v0.17 rules the design collides with; §5 gains the in-language alternative",
+      "issue_summary": "The dossier's current-state inventory and delta list never mentioned TYPE-6 (constructor uniqueness), STOR-5 (borrow-free/region-free storage), slice<'r,T> finite-origin machinery, STOR-3 (derived edge drops), or ERR-2 (no wildcard arms) — the rules issues 2, 3, and 4 turn on. §5's alternatives table compared four external architectures and zero in-language mechanisms, so the specification proposal would have had to make the STOR-5/lease and TYPE-6 decisions itself, defeating current-plan Work item 4's Done-when gate.",
+      "alternatives_considered": [
+        "Inventory only, without the §5 row (raised as sufficient by critic; refiner went further and critic accepted)"
+      ],
+      "decision": "§2: add a second list 'v0.17 rules this design must negotiate with' covering TYPE-6, STOR-5 plus slice<'r,T> finite origin sets, STOR-3, and ERR-2, each with one line and a pointer to its disposition. §5: add a row for 'Reuse slice<'r,T> region-carrying views for host strings and paths' — useful: existing checked origin/overlap/lifetime machinery; problem: regions become source-visible on every argument-derived value and STOR-5 then forbids storing any such value; disposition: reject for the first slice in favour of the opaque lease, with the backing-lifetime obligation recorded as an open decision (issue 2). §11: mirror the four rules with named dispositions. Recording the slice<'r,T> rejection makes the storability-vs-safety trade a knowing decision rather than an omission.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md:132-153",
+        "research/investigations/system-capability-architecture/DOSSIER.md:254-260",
+        "spec/kernel-spec-v0.17.md:210",
+        "spec/kernel-spec-v0.17.md:246",
+        "spec/kernel-spec-v0.17.md:270-278",
+        "docs/current-plan.md:108-109",
+        "docs/current-plan.md:140-141"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 7,
+      "title": "§7.3 stdout/stderr ordering is attributed to the blanket rule; the may-alias record is kept with its deferred consumer named",
+      "issue_summary": "§7.3 claimed sequential writes preserve order across stdout/stderr because checked IR records they may be the same sink, but §6.6's blanket rule already orders all sequential external calls unconditionally — the 'so' attributed the guarantee to machinery that does not supply it. The critic initially argued the record had no consumer and mirrored a §12.2 violation; both framings were withdrawn (auditing is a present consumer; recording may-alias is the mandated conservative direction, not a disjointness proof).",
+      "alternatives_considered": [
+        "Drop the may-alias record from §7.3 (rejected: a later verified cross-resource reordering fact would be unsound on the one first-slice pair where separate owners can share a sink, or would have to rediscover the relation)"
+      ],
+      "decision": "Reword §7.3's first bullet: order is preserved under §6.6's blanket external-call ordering rule, not through aliasing analysis; checked IR additionally records the conservative may-alias fact, which has no first-slice consumer and is retained so a later verified cross-resource reordering fact fails closed on this pair. Add one sentence to §6.6's checked-IR paragraph citing stdout/stderr as the named example of a retained fact whose consumer is deliberately deferred.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md:471-483",
+        "research/investigations/system-capability-architecture/DOSSIER.md:794-796",
+        "research/investigations/system-capability-architecture/DOSSIER.md:1102"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 8,
+      "title": "Type split selected: exactly one argv-backed HostString in the first slice; owned-backing producers get a distinct resource type",
+      "issue_summary": "The dossier fixed a single opaque HostString whose release action depended on which producer created it (§7.1, §6.8), but STOR-1 makes storage class a function of type stated once, and the only runtime alternative — a discriminator branch on the release path — is forbidden by §6.10's no-tag rule and §9.1's logical-consume-only gate. One type cannot carry two release actions.",
+      "alternatives_considered": [
+        "Runtime discriminator carried by the value (rejected: a target tag/handle-table branch on the compiler-derived release path, forbidden by §6.10 and §9.1)",
+        "Leave the tension unstated for the specification proposal to resolve (rejected: exactly what current-plan's Done-when gate exists to prevent)"
+      ],
+      "decision": "§7.1: the first slice fixes exactly one HostString, backed by the command-lifetime argv snapshot, released by logical consume with no target call. A producer with separately owned backing introduces a distinct owned-backing string resource with its own release action and family contract; any conversion between the two is a later slice's explicit operation, never an implicit retype (guarding TYPE-4's no-implicit-conversions rule). §6.8: delete the sentence claiming the private representation may differ by producer without changing source semantics. §11: record that one string type is fixed and no cross-producer type unification is committed. §9.1: the logical-consume gate stands as a property of the first-slice type.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:270",
+        "spec/kernel-spec-v0.17.md:195",
+        "research/investigations/system-capability-architecture/DOSSIER.md:635-636",
+        "research/investigations/system-capability-architecture/DOSSIER.md:713-714",
+        "research/investigations/system-capability-architecture/DOSSIER.md:763-767"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 10,
+      "title": "Output's release-complete policy restated at the strength the mechanism delivers, with the close/writeback failure mode named",
+      "issue_summary": "§7.3 justified Output being release-complete with 'every material failure is reported by the write that sees it', which is false for failures a host surfaces only at descriptor close or writeback (delayed allocation, NFS, late ENOSPC): release does not close or flush, process teardown owns the close, so a redirected wfgrep can exit 0 after a failed writeback. The policy is right for a first command slice; the contract overstated it, which §6.4 item 8 classifies as a silently weakened guarantee unless written down.",
+      "alternatives_considered": [
+        "Make Output completion-required with explicit flush/finish in the first slice (not selected: that is the named strengthening path for a later buffered Output, not needed by wfgrep)"
+      ],
+      "decision": "§7.3: replace the overstated sentence — no hidden userspace buffering means every failure the host write itself reports reaches write_once; Output release reports nothing; failures surfaced only at close/writeback are outside the first slice's error model and can be lost (a redirected wfgrep may exit 0 after a failed writeback); this is a stated §6.4-item-8 limitation. §9.1: record the limitation in the Output-release row. §12.2: add 'an output sink that fails only at close or writeback' to the first-slice test list. Keep the forward pointer that a later buffered/durable Output is completion-required with explicit flush/finish as the named strengthening path.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md:390-391",
+        "research/investigations/system-capability-architecture/DOSSIER.md:800-805",
+        "research/investigations/system-capability-architecture/DOSSIER.md:952",
+        "research/investigations/system-capability-architecture/DOSSIER.md:1106-1114"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 11,
+      "title": "ExitStatus gets a total constructor and joins the fixed opaque types",
+      "issue_summary": "The 'exact' first slice never defined how source constructs an ExitStatus. Under TYPE-4 (no implicit conversions) and TYPE-5 (exact stated types), a u8 cannot become an ExitStatus under any reading, so the entry's return value was unwritable and §10.1 step 6 described something no program can do.",
+      "alternatives_considered": [
+        "Treat ExitStatus as a bare u8 alias (rejected: loses the distinction between a command status and an arbitrary integer, and diverges from how every other first-slice type is fixed)"
+      ],
+      "decision": "§9: add operation row exit_status(u8) -> own ExitStatus — total and pure, every u8 is a valid code 0-255, no failure outcome, no allocation/host call/external effect. §11: add ExitStatus to the fixed opaque type list. §9 release table: ExitStatus release is a logical consume with no host call or external effect. §9 states the opaque-plus-total-constructor choice and its reason so the specification proposal need not make it.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:195",
+        "spec/kernel-spec-v0.17.md:197",
+        "research/investigations/system-capability-architecture/DOSSIER.md:924",
+        "research/investigations/system-capability-architecture/DOSSIER.md:980",
+        "research/investigations/system-capability-architecture/DOSSIER.md:1034-1035"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 2,
+      "title": "Lease backing lifetime: first-slice guarantee is target-side and qualification-enforced; the general rule is a named open decision",
+      "issue_summary": "§6.8 promised that every HostString/RelativePath producer keeps its backing alive until the last derived value is consumed, but no rule enforces it: an opaque nominal lease is neither a borrow nor region-bearing, so STOR-5's storage ban does not see it, and a stored dangling lease would be representable for any non-argv producer — against the project's memory-corruption-unrepresentable law. Checked IR cannot carry the rule either: under §6.1's layering it sits below the acceptance contract and can only audit, lower, or feed deferred optimization, never refuse a program.",
+      "alternatives_considered": [
+        "Enforce via checked-IR lease tracking (rejected: layer 2 cannot reject; §11's lease-preservation delta is for auditing and lowering only)",
+        "State command-lifetime backing as a checked precondition (rejected: argv lifetime is a target property with nothing in a program to check)",
+        "Make the lease region-bearing to reuse slice<'r,T> finite-origin machinery (retained as open candidate (a))",
+        "Give the lease owned/refcounted backing and a real release (retained as open candidate (b), which under issue 8 is a distinct type)"
+      ],
+      "decision": "§6.8: scope the guarantee to what the first slice can enforce — every first-slice lease is backed by the command-lifetime argv snapshot, stated as an explicit premise. Replace the general every-producer promise with a named open decision between candidates (a) region-bearing lease and (b) owned-backing resource type. §6.10: add command-lifetime argument backing to the required target guarantees for the command entry and arg_get, so a target that can supply neither stable argv backing nor the pre-entry snapshot fails qualification (build failure, not silent invalidation). §11: record this as a target-qualification obligation, state plainly that no source-level rule enforces backing lifetime in the first slice, and add the STOR-5 disposition plus a clause that lease preservation in checked IR is retained for auditing and lowering and is not the rule that refuses a dangling lease. §2: STOR-5 and slice<'r,T> enter the inventory (shared with decision 6).",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:278",
+        "spec/kernel-spec-v0.17.md:246",
+        "research/investigations/system-capability-architecture/DOSSIER.md:266-280",
+        "research/investigations/system-capability-architecture/DOSSIER.md:616-636",
+        "research/investigations/system-capability-architecture/DOSSIER.md:693-707"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 3,
+      "title": "TYPE-6 disposition: distinct per-operation outcome spellings, PRE-1 Result for two-outcome operations, one bespoke enum for read_once",
+      "issue_summary": "v0.17 TYPE-6 makes constructor uniqueness whole-unit and context-free, and the dossier declared colliding constructors three times: InvalidPath (IoError class vs relative_path outcome), Bytes (read_once vs write_once success), InvalidText (host_utf8_len vs host_copy_utf8). §11 listed no TYPE-6 disposition. A shared Transfer enum was rejected because ERR-2 is exhaustive over declared variants with no wildcard arms (dead hand-written arms at every I/O site) and its variant-addition edit lists would turn each later operation into a whole-corpus edit.",
+      "alternatives_considered": [
+        "Amend TYPE-6 with namespaced/qualified constructors (rejected: an amendment the first slice does not need)",
+        "One shared Transfer enum across read/write/copy operations (rejected on ERR-2: forced dead arms on the hot path, whole-corpus edits per added operation)",
+        "All-bespoke enums with distinct spellings for every operation (superseded: deviates from ERR-1's specified Result idiom for fallible operations and consumes constructor names needlessly)"
+      ],
+      "decision": "Two-outcome operations use PRE-1 Result<T, E> instantiations — the ERR-1 specified idiom, already implemented for resource-bearing instances (compiler/README.md:92-94, 189-195), costing zero new constructor names since FN-2 monomorphization declares Ok/Err once. Inventory: arg_get -> Result<HostString, ArgError{InvalidIndex}>, host_utf8_len -> Result<u64, Utf8Error{Utf8Invalid}>, host_bytes_len -> own u64 (total), host_copy_bytes -> Result<u64, CopyError{CopyTooSmall(required)}>, host_copy_utf8 -> Result<u64, Utf8CopyError{Utf8CopyTooSmall(required), Utf8CopyInvalid}>, relative_path -> Result<RelativePath, PathError{PathInvalid}>, open_read -> Result<ReadFile, IoError>, write_once -> Result<u64, IoError>. read_once -> own ReadOutcome{ReadBytes(count), ReadEnd, ReadFailed(error: IoError)}. Verified: 49 constructor names (30 IoError + PRE-1's 10 + 9 new) with no pairwise collision; nominal-type domain clean. Edits: §1/§6.7 sketches restated in this form replacing A|B unions; §9 rows get exact outcome types; §11 records the TYPE-6 disposition (fits the flat namespace, no amendment); §6.7 keeps the single io_status(IoError) -> u8 helper note (ERR-2 arms appear once) and one sentence on why the shared union was rejected. Caveat: any propagate/ERR-3 benefit must be scoped to same-E chains (the IoError operations open_read/write_once) since distinct error types deliberately do not convert (TYPE-4).",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:210",
+        "spec/kernel-spec-v0.17.md:452",
+        "spec/kernel-spec-v0.17.md:454",
+        "spec/kernel-spec-v0.17.md:456",
+        "spec/kernel-spec-v0.17.md:393",
+        "compiler/README.md:92-94",
+        "compiler/README.md:189-195"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 5,
+      "title": "blocks stays, justified by decidability: fix the category you can already decide, defer the ones you cannot",
+      "issue_summary": "No first-slice rule reads blocks — within the slice it is exactly coextensive with external — while §6.6 rejects parameterized effects on precisely that no-consumer test, and defers suspend/spawn categories in the same paragraph. Deferring blocks was rejected because EFF-2 row equality makes a later category addition rewrite every declared row transitively reaching blocking operations; but that migration-cost argument alone proves too much (suspend/spawn face the identical migration), and its original FN-3 citation was wrong (FN-3 governs contract-conformance binding, not general rows).",
+      "alternatives_considered": [
+        "Defer blocks to the async design (rejected: EFF-2 row equality makes the later addition a breaking whole-corpus row edit, and unlike suspend/spawn its membership is already decidable)",
+        "Justify keeping it by migration cost citing FN-3 (rejected: wrong rule — the row-equality mechanism is EFF-2 — and the cost argument does not discriminate from the deferred categories)"
+      ],
+      "decision": "Keep blocks. §6.6 gains a justification paragraph in this order: (1) the discriminating reason — blocks earns a category because external-without-blocks expresses something no other row can (vDSO clock read, nonblocking WouldBlock socket call), stated honestly as reserved on a named successor since §8 puts clocks at none-yet; (2) the plain statement that no first-slice rule reads blocks and it is coextensive with external in the slice; (3) the re-grounded fixing argument — under EFF-2 a later category addition is a mechanical whole-corpus row edit, and blocks is fixed now specifically because its membership is already determinable for every first-slice operation, whereas suspend/spawn membership is not determinable until those designs exist. Also drop the definition's second clause ('stack and call-scoped borrows remain live only until that call returns'), true of every call and distinguishing nothing.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:395-401",
+        "spec/kernel-spec-v0.17.md:438",
+        "compiler/README.md:141-142",
+        "research/investigations/system-capability-architecture/DOSSIER.md:453-455",
+        "research/investigations/system-capability-architecture/DOSSIER.md:485-488"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 9,
+      "title": "First-slice Sendable/Shareable predicates stated literally, with the lease types' judgment conditioned on command-lifetime backing",
+      "issue_summary": "§6.9's first-slice paragraph split the type groups by 'permit shared reads or factory calls', a criterion that does not distinguish them (shared borrows are legal on every first-slice type, including ReadFile, which §6.9 itself calls not implicitly shareable), so DirectoryRead — the one type the §10.2 parallel witness must share — never actually received a Shareable judgment. The witness also relied on a scoped shared-capability borrow that §13 item 7's mechanism list omitted. Unconditionally fixing HostString/RelativePath predicates was rejected because §6.9 requires the contract to prove a representation satisfies the predicates, and issues 2 and 8 leave the non-argv backing model open/split.",
+      "alternatives_considered": [
+        "State all four value/capability types as unconditionally Sendable and Shareable (rejected: declares predicates before the representation that must prove them, inverting §6.9's own order)",
+        "Give each worker an owned DirectoryRead via a family operation instead of sharing (not needed: scoped sharing of a Shareable capability is sound under join-before-scope-exit accounting)"
+      ],
+      "decision": "§6.9: replace the predicate paragraph with the literal judgments — Args and DirectoryRead are Sendable and Shareable; the command-lifetime argv-backed HostString and RelativePath are Sendable and Shareable because their backing is immutable and outlives the invocation, and a later owned-backing string type re-derives both predicates from its own representation without inheriting them; ReadFile and Output are Sendable and not Shareable. Delete 'permit shared reads or factory calls' as the distinguishing criterion. §10.2 step 1: state the two dependencies explicitly — DirectoryRead: Shareable and a scoped parallel construct whose join precedes the shared borrow's scope exit (no suspension involved; the relevant gate is scope/join accounting, not §12.2's suspension gate) — and add the scoped shared-capability borrow to the PAR-4 deferred-work list. §13 item 7: extend to three sharing mechanisms — family-defined split, controller/port construction, and a shared borrow of a Shareable capability inside a scoped parallel region — keeping the prohibition on implicitly sharing a cursor or Output.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md:645-651",
+        "research/investigations/system-capability-architecture/DOSSIER.md:662-667",
+        "research/investigations/system-capability-architecture/DOSSIER.md:987-998",
+        "research/investigations/system-capability-architecture/DOSSIER.md:1137-1139",
+        "spec/kernel-spec-v0.17.md:252"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 12,
+      "title": "FN-3 normalization and EFF-1 row grammar enter the delta lists; without them a pure contract member could bind an external function",
+      "issue_summary": "The effect delta named only EFF-2's attribution change, but FN-3's contract-conformance row equality normalizes to a closed four-capability tuple (implemented as the five-field NormalizedEffects in compiler/src/semantic/check/contracts.rs:39-46, 621-631), so two rows differing only in external/blocks would compare equal and a pure fn_sig member could bind an externally effectful function — exactly the hidden-external-effect condition §12.2 lists as architecture-rejecting. EFF-1's row grammar and mandatory canonical order also never gained positions for the new categories. Calibration: not exploitable in v0.17 today because no contract-member call operation exists (compiler/README.md:185); the hole goes live the moment one does.",
+      "alternatives_considered": [
+        "Leave FN-3 untouched since member calls do not exist yet (rejected: the dossier cannot list hidden-external-in-pure as a rejection gate while omitting the rule that would enforce it)",
+        "Forbid fn_sig members from carrying the new categories (retained as one of the two dispositions the specification proposal may select)"
+      ],
+      "decision": "§11: add two deltas — an FN-3 normalization extension (compare external/blocks by presence like traps, or forbid them on fn_sig members) and an EFF-1 row-grammar extension (the categories join the grammar with a defined canonical-order position). §2: add FN-3 and EFF-1 to the negotiation inventory. §11 disposition paragraph: five rules become seven, each with a named disposition. §6.6: the EFF-2 attribution paragraph names FN-3 in the same breath so readers do not conclude nothing else reads a row.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:401",
+        "spec/kernel-spec-v0.17.md:436",
+        "spec/kernel-spec-v0.17.md:446",
+        "compiler/src/semantic/check/contracts.rs:39-46",
+        "compiler/src/semantic/check/contracts.rs:621-631",
+        "compiler/README.md:185"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 13,
+      "title": "The WASI-target claim is scoped to qualification: WASI does not currently qualify for the lossless host-string and path operations",
+      "issue_summary": "§6.10 closed with an unqualified 'A WASI target can later implement this model' while §4.2 records that WASI paths are strings that cannot represent every native Unix filename, and decision 1 made lossless host_bytes_len/host_copy_bytes mandatory first-slice operations. §6.8 defines exactly two code-unit families (Unix bytes, Windows 16-bit units), so what a HostString even is on a WASI target is undefined; an all-UTF-8 target cannot supply the byte domain without changing source semantics, which §3.3 forbids.",
+      "alternatives_considered": [
+        "Add a third WASI code-unit family to §6.8 and state what it loses (offered; not selected — no current experiment needs it)"
+      ],
+      "decision": "§6.10: the closing sentence is scoped — a WASI target can implement the resource/effect/ownership/lowering rules and qualify for operations whose semantics it can supply; under §6.8's code-unit families it does not currently qualify for the lossless host-string and path operations, and that is a qualification failure for those operations, not a licence to narrow them. §5: the WASI row's disposition is qualified the same way (partial target, not a complete first-slice target). §6.8: one sentence makes the two-family closure explicit — a target outside both families defines its own lossless family or fails qualification for the host-string operations.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md:264-265",
+        "research/investigations/system-capability-architecture/DOSSIER.md:704-706",
+        "research/investigations/system-capability-architecture/DOSSIER.md:736-738",
+        "research/investigations/system-capability-architecture/DOSSIER.md:845-846"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 15,
+      "title": "The parallel witness names the backing-lifetime open decision as an independent third dependency, distinct from PAR-4 work",
+      "issue_summary": "§10.2's dependency list named DirectoryRead: Shareable and the scoped parallel construct but omitted §6.8's open backing-lifetime decision, even though §6.8 itself names directory enumeration as exactly the non-command-lifetime producer the first-slice premise excludes. Under candidate (a) the owned path-job records become region-bearing and STOR-5 forbids storing them — an independent blocker that affine-element storage work cannot resolve; under candidate (b) the names become resources with release actions, changing the traversal's rows.",
+      "alternatives_considered": [
+        "Treat the backing-lifetime rule as part of PAR-4's deferred work (rejected: it is a BOUND-1 source-language decision PAR-4 cannot absorb)"
+      ],
+      "decision": "§10.2 step 1: the dependency statement becomes three items, adding the open backing-lifetime decision. The storage sentence covers both obstacles (affine-element storage for representability; candidate (a)'s region-bearing consequence vs candidate (b)'s resource-with-release consequence). §10.2 closing: PAR-4 blockers and the BOUND-1 backing-lifetime decision are separated into distinct sentences, the latter gating the witness independently.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:278",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§6.8 open decision, §10.2 dependencies)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 16,
+      "title": "IoError's target detail is bounded to fixed-size inline copy data; the richer-payload alternative is priced explicitly",
+      "issue_summary": "§6.7's 'may carry opaque target detail for diagnostics' had no representation, ownership, release, or allocation disposition, while §9's operation and release tables are declared exact. An unbounded payload would allocate on every failing call and invalidate the allocation-free rows under §6.5's row-equality rule. Also noted: any payload-carrying enum is affine under OWN-1 — ReadOutcome is affine regardless via ReadBytes(count) — which is a source-form consequence, not a cleanup obligation.",
+      "alternatives_considered": [
+        "A richer heap-backed diagnostic payload (stated as the explicit alternative: it would need a §9 release row, allocates(heap) on all three failing operations, and a §6.9 Sendable/Shareable judgment — priced so the owner chooses knowingly)"
+      ],
+      "decision": "§6.7: replace the sentence with an explicit bound — a class may carry fixed-size inline target detail (errno-sized code plus small target discriminator), copy data that allocates nothing, owns nothing, and has no release action, so IoError takes no release row and the operation rows stay allocation-free; heap-backed payloads are excluded; a target that cannot fit its detail maps to Other. Add the affinity clarification for payload-carrying variants (moved or matched, never a release row). State the priced richer-payload alternative explicitly.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§6.7 IoError detail, §6.5 row equality)",
+        "spec/kernel-spec-v0.17.md (OWN-1 affinity)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 18,
+      "title": "ExitStatus completes the seventh-type sweep: §6.9 predicate and §9.1 gate row",
+      "issue_summary": "Decision 11 added ExitStatus to §11's fixed opaque type list and §9's release table but not to §6.9's literal Sendable/Shareable sentence or §9.1's logical-consume gate row, leaving the seventh fixed type without a stated predicate or cost gate.",
+      "alternatives_considered": [],
+      "decision": "§6.9: ExitStatus is Sendable and Shareable (immutable command code, no interior state), placed alongside Args and DirectoryRead so all seven fixed types carry a stated judgment. §9.1: the gate row becomes 'Args/HostString/RelativePath/ExitStatus release | logical consume only' so the gate names every type whose release is claimed free.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§6.9 predicates, §9.1 release gate)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 19,
+      "title": "The initialized-buffer cost gate is split so its stop condition can actually fire",
+      "issue_summary": "§9.1's single initialized-buffer row measured 'against a raw initialized-buffer control' — a control that performs the same initialization and therefore cancels the exact cost the row exists to detect, making §11's stop condition ('if initialized-buffer cost is material, stop for a proof-gated initialization design') undecidable. The row conflated re-initialization discipline (needs an initialized control) with initialization cost itself (needs an uninitialized control).",
+      "alternatives_considered": [],
+      "decision": "Replace with two rows: (1) buffer initialization reuse — structural check against an equivalent Whitefoot loop, rejecting per-read re-initialization or post-flush reallocation; (2) initialization cost — steady-state throughput with buffer reuse compared against an equivalent native read loop over uninitialized storage, counting the one-time fill; stop for a separately proved initialization model only on a material loss. §11's stop condition names that control so the trigger is determinate. A pointer notes the remaining 'material' judgments in §9.1/§6.10 are structural inspections carrying no threshold by design.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§9.1 buffer rows, §11 stop condition)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 20,
+      "title": "Cleanup/status ordering disambiguated to the target reading",
+      "issue_summary": "§9's entry row and §10.1 step 6 said cleanup precedes status mapping, which on the source reading contradicts STOR-3's edge-carried release (cleanup runs on the return edge, after the program computes its status). The intended target reading — cleanup precedes the target's mapping of the returned ExitStatus to the process status — was not what the text said.",
+      "alternatives_considered": [],
+      "decision": "§9 entry row: 'language cleanup runs on the return edge; the target then maps the returned ExitStatus to the process status'. §10.1 step 6: same disambiguation. Both keep the true claim (cleanup precedes the process-status mapping) while dropping the false implication (that it precedes the program's own choice of status).",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:274",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§9 entry row, §10.1 step 6)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 14,
+      "title": "The §1 witness is rewritten with real dispatches and explicit modes; the region elision is stated once for sketches and block alike",
+      "issue_summary": "The §1 witness block could not be written as printed: arg_get's Result went straight into an own HostString binding (TYPE-4/TYPE-5), the loop lacked GRAM-2's mandatory label, and §6.7's claim that ERR-3 propagation 'composes' held only for helpers returning own Result<U, IoError>, never at the entry (which returns own ExitStatus). The first replacement attempt repeated the same defect class: GRAM-5 requires a region identifier in every borrow (no elision exists — OWN-2), and OWN-10/OWN-11/OWN-3 force region statements inside the labelled loop and the ReadFailed arm with distinct spellings.",
+      "alternatives_considered": [
+        "Write the block in full EX-1-shape accepted form with four region statements (rejected: buries the three ERR-2 dispatches — the thing the rewrite exists to show — under detail every signature above already elides; trades one inconsistency for another)"
+      ],
+      "decision": "Remedy (a): keep the rewritten block structure (three Result/ReadOutcome dispatches, labelled loop @scan/break @scan, explicit let modes and types) and replace §1's elision note with one statement covering both sketches and block: both elide region identifiers, which the language always writes; accepted source additionally writes a region into every borrow and opens a region statement to introduce it; the three structural rules (OWN-10 own-binding scope, OWN-11 loop-local regions, OWN-3 function-wide uniqueness) mean the loop body and the ReadFailed arm each open a distinctly named region. Two deictic corrections on application: the note precedes the block, so 'the block below' (not 'above'); the checked-signatures sentence keeps its sketch-specific subject ('The sketches' full checked signatures...'). Knock-ons: io_status returns own ExitStatus (GRAM-9 forbids the nested call a u8 would need); §6.7's propagation sentence is qualified to helpers returning own Result<U, IoError> with no propagation at the entry.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:143-144",
+        "spec/kernel-spec-v0.17.md:165",
+        "spec/kernel-spec-v0.17.md:181",
+        "spec/kernel-spec-v0.17.md:238-262",
+        "spec/kernel-spec-v0.17.md:680-689"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 17,
+      "title": "reunite takes Result<Connected, ReuniteError> with both owners returned live on mismatch; 'checked link' becomes a runtime-compared connection identity",
+      "issue_summary": "§7.4's reunite stated no disposition for its two consumed owners on mismatch — under §6.4 item 3 every owner needs a disposition on every outcome — and 'checked link' claimed enforcement at a layer decision 2 established cannot reject. The first fix proposed a bespoke two-variant enum, miscounting §6.7's outcome rule: two owners in one failure payload is one outcome, so reunite is a two-outcome operation and takes a prelude Result.",
+      "alternatives_considered": [
+        "Bespoke ReuniteOutcome{Reunited, ReuniteMismatch} enum (rejected: reunite has exactly two outcomes under §6.7's own counting rule; the bespoke enum burns two constructor names where one suffices and bends the rule in the exemplar meant to demonstrate it)"
+      ],
+      "decision": "reunite(move rx, move tx) -> Result<Connected, ReuniteError> with ReuniteError { ReuniteMismatch(rx: RxHalf, tx: TxHalf) } — one new constructor following the CopyError/PathError single-variant precedent, both halves returned unchanged and live on mismatch (affine payload fields verified representable: STOR-5 restricts borrow/region-bearing payloads, not affine ones). 'Checked link' is replaced by a compiler-owned connection identity compared at runtime by reunite. The exemplar type does not enter §6.7's first-slice inventory; it demonstrates the inventory's rules extending to a multi-owner failure case.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:210",
+        "spec/kernel-spec-v0.17.md:278",
+        "research/investigations/system-capability-architecture/DOSSIER.md:571-584"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 22,
+      "title": "The witness block's success arms use give move v; — OWN-1 admits no bare affine place in give",
+      "issue_summary": "The §1 block's three Ok arms read give v; on affine payloads (HostString, RelativePath, ReadFile). OWN-1 closes the consuming forms to three (move place, own-place scrutinee, propagate operand) and hard-errors every other bare affine place; GIVE-1 defers to OWN-1 rather than adding a fourth form. The scrutinees are legal precisely because own-place scrutinees are blessed — the blessing covers the scrutinee, not the give. The block even used a correct move one line later.",
+      "alternatives_considered": [],
+      "decision": "Change the three success arms to give move v; (HostString, RelativePath, ReadFile arms). Nothing else changes; regions remain the only stated deviation from accepted form.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md (OWN-1, OWN-13, GIVE-1)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 23,
+      "title": "DirectoryRead gets a short §7.1 contract: states, aliases, release-complete policy, concurrent open_read pair, cross-platform rule",
+      "issue_summary": "DirectoryRead entered the first slice with no §6.4 contract and no completion policy, while ReadFile, Output, PendingOp, and Child all carried one; §7.1's 'follows its resource contract' dangled. §6.4 item 5 requires each family's contract to state its concurrent pairs, and the concurrent open_read pair is exactly what §10.2's parallel witness depends on.",
+      "alternatives_considered": [],
+      "decision": "Add a five-bullet contract to §7.1 before the release bullet: (1) states — live from entry binding until release, no other transition, no attenuation/duplicate/split yet; (2) aliases — opening creates an independent ReadFile, two DirectoryRead values may denote one directory object, nothing infers separateness from a native handle; (3) completion policy — release-complete on ReadFile's ground; (4) concurrent pairs — any number of open_read calls may progress concurrently through shared borrows exposing no mutual ordering; (5) cross-platform — a target that cannot open relative to a directory capability fails qualification rather than emulating via ambient cwd. Mention the release-complete assignment where §6.5 illustrates the policies.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§6.4 items, §7.1, §10.2 step 1)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 24,
+      "title": "Child exemplar gains the spawn-failure disposition and the wait/pipe hazard clause; §8 stops crediting it with closing substrate decisions",
+      "issue_summary": "§7.5 stated no disposition for transferred stdio owners on spawn failure (§6.4 item 3) and no concurrent-pair statement (§6.4 item 5) although wait-versus-undrained-pipe is the family's defining deadlock — while §8's Child row claimed the exemplar 'closes substrate decisions'. Designing the full Child family now would be supporting work outgrowing the capability (no current experiment spawns a child).",
+      "alternatives_considered": [
+        "Expand §7.5 into a real §6.4 contract with state machine and wait/pipe protocol (rejected on proportionality: no current experiment needs a child process)"
+      ],
+      "decision": "Two clauses plus one softening: (1) spawn either returns a stable Child or fails returning every transferred stdio owner unchanged; (2) wait and pipe drainage are not independent — a blocking wait may not progress concurrently with an undrained output pipe owned by the same program, so a real contract must provide non-blocking/multiplexed wait or require drainage/release first, and the first slice implements none of them; (3) §8's Child row becomes 'exercises owner accounting and names the wait/pipe hazard, does not close the family's substrate decisions'.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§7.5, §8 Child row, §6.4 items 3 and 5)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 25,
+      "title": "STOR-3's extension is characterized: release becomes per-type table data, one admitted action may carry a host call; no-finalizers is scoped, not removed",
+      "issue_summary": "§2 listed STOR-3 as a rule the design extends while §11's disposition paragraph read as though STOR-3 needed nothing — a direct §2/§11 contradiction. The actual change: STOR-3 fixes an enumeration of memory-reclamation actions, and the slice makes release per-type table data with one action performing a host call. The EFF-2 extension is parasitic on this — there is no release effect to attribute until STOR-3 admits an action that has one.",
+      "alternatives_considered": [
+        "Read STOR-3's 'No finalizers' clause as forbidding the design outright (rejected: the clause forbids writer-registered destructors, which §6.5 preserves; scoping it is still a delta the list must state)"
+      ],
+      "decision": "§11: add a STOR-3 delta bullet beside EFF-1/EFF-2/FN-3 — compiler-derived release becomes per-type table data rather than the fixed enumeration, one admitted action may perform a host call with an external effect, this is the premise the EFF-2 extension attributes, and the no-finalizers clause is scoped to keep forbidding writer-registered destructors while permitting a compiler-owned release action fixed by a family contract. §11's disposition paragraph moves STOR-3 from the satisfied side to a pointer at that bullet. §2 stands unchanged (it was the correct side). Application deferred to land together with issue 21's §11 edits, which touch the same sentences (rule count moves with it).",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:274",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§2 inventory, §11 disposition paragraph)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 26,
+      "title": "The canonical effect-attribution test uses a body of exactly return unit; — FN-1 rejects an empty body",
+      "issue_summary": "§12.2's mandated test named an empty-bodied function consuming an owned ReadFile, but FN-1 requires the body's normal exit to be unreachable-from-fallthrough (a body must end in a return or trap), so the canonical test for the EFF-2 extension named a program the language rejects.",
+      "alternatives_considered": [],
+      "decision": "Replace with: a function consuming an owned ReadFile whose body is exactly return unit;, which must declare external, blocks because its only effect is the derived release on the return edge — the added clause states why the case is canonical so a conformance author does not simplify it back into an unwritable shape.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md (FN-1)",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§12.2 test list)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 21,
+      "title": "Declaration home selected: Route C (distinct compiler-owned system-declaration domain) with a named owner fork to Route A",
+      "issue_summary": "The new types and operations had no declaration home: OP-1 admits only table operations (positional operands per GRAM-11) or top-level source fn_decls, PRE-1 is closed ('The prelude is exactly:'), and TYPE-6's domains admit only source declarations and PRE-1 members — so under active rules the whole first slice is an OP-1 rejection, and neither §2's inventory nor §11's deltas named the obligation. GRAM-11 proved decisive: every system call in the dossier uses named fieldinit arguments, committing to a signature-shaped home and excluding the operation table by spelling. The gated/LEDGER-1 route fails on LEDGER-1 alone (one family, one ledger with FFI extern frames — against §3.3's separation and current-plan.md:86-88); the claimed SCOPE-1/SCOPE-3(b) costs were withdrawn on the spec's own text. DIAG-1 is a Route C cost, not Route A (C needs a new collision rank and origin kind; A's rank 4 absorbs collisions). Reservation cost measured: none of the 53 reserved spellings occurs in any of the 466 active .wf sources, so Route A's cost is prospective, landing on future writers and the growing conformance corpus.",
+      "alternatives_considered": [
+        "Route A — extend PRE-1: smaller rule surface (one TYPE-6 lexical-IDENT row + PRE-1 contents + count/preorder + OP-1; DIAG-1 rank 4 absorbs collisions), but reserves ~39 constructors and ~14 nominals (Other, NotFound, Interrupted, ReadOnly, WriteZero...) unconditionally in every program, and puts function signatures in the prelude for the first time. The named fallback if the owner declines conditional visibility.",
+        "Route B — LEDGER-1 gated boundary family: rejected. Fails on LEDGER-1's one-family-one-ledger placing system operations with FFI extern frames, against §3.3 and current-plan.md:86-88; PROG-1's name-definition sentence also touched. SCOPE-1/SCOPE-3(b) objections withdrawn as too strong.",
+        "Defer the selection as an open decision (rejected: unlike decision 2's deferral, nothing in the first slice resolves without a declaration home)"
+      ],
+      "decision": "Route C: a distinct compiler-owned system-declaration domain, signature-shaped (GRAM-11 named arguments), neither PRE-1 nor LEDGER-1's boundary family. Complete amendment surface: TYPE-6 third admitted source in THREE rows (nominal, constructor, and the lexical-IDENT callee/fn_bind row — the row both earlier surfaces missed), OP-1 third callee source, PROG-1 name-definition third source, a new DIAG-1 collision rank and origin kind, and a conditional-visibility mechanism whose trigger is SYNTACTIC (the program-kind declaration alone, knowable before resolution — keying on entry input types would be circular under DIAG-1's admission-before-resolution order). The non-discriminating 'keeps FFI separation structural' ground is removed (Route A preserves it equally). The dossier records the owner fork explicitly: if the owner accepts the syntactic conditional-visibility mechanism, Route C stands; if the owner declines it, the selection falls back to Route A (not unconditional C), which is then strictly cheaper. §2 and §11 rule counts go seven to nine (OP-1, PRE-1 join), landing together with decision 25's §11 edits.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:185",
+        "spec/kernel-spec-v0.17.md:203-212",
+        "spec/kernel-spec-v0.17.md:343",
+        "spec/kernel-spec-v0.17.md:462",
+        "spec/kernel-spec-v0.17.md:508-525",
+        "spec/kernel-spec-v0.17.md:605",
+        "docs/current-plan.md:86-88"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 27,
+      "title": "Route C's population premise is stated: a unit requesting no standard inputs keeps the unlabelled entry, so kindless units exist by construction",
+      "issue_summary": "§11.1 rested the Route C selection on conditional visibility, whose value is exactly the population of accepted units declaring no program kind — but the comparison's two sides ranged over different populations ('perform no I/O' vs 'declare none') and nothing established that a kindless unit exists; a strict FN-7 replacement would make the trigger never-false and fire §11.1's own fallback to Route A. Corpus evidence (corrected): of 466 active .wf sources, 317 contain an entry and 149 none; every entry that exists is unlabelled. The claim lands as 'every entry in the active corpus is unlabelled' — not 'every source uses the unlabelled form' — and rejection fixtures (e.g. fn7-neg-two-mains.wf) bar a blanket 'none is invalidated' clause.",
+      "alternatives_considered": [
+        "Replace FN-7's unlabelled form outright with kind-carrying entries (rejected: would reject every entry in the existing corpus and make Route C's trigger never false, flipping the selection to Route A on §11.1's own fallback)"
+      ],
+      "decision": "The entry delta in §11 states the premise where the delta lives: the unlabelled fn main() -> own unit entry remains admissible, and a unit that requests no standard inputs keeps it and therefore declares no kind — so the kindless population is non-empty by construction, with the corpus illustrating rather than proving it (both sides of §11.1's comparison now read at prospective strength, mirroring the reservation-cost standard at §11.1's existing sentence). §11.1's comparison ranges both sides over that one population; §6.2's enumeration and §13 item 1 gain the pointer to the item 5 fork. Decision 21's settled trigger and fork are untouched.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md (FN-7, PROG-1)",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§11.1 comparison, §11 entry delta, §13 items 1 and 5)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 28,
+      "title": "The elision note states the structural region rule without any count",
+      "issue_summary": "The §1 elision note enumerated two structural region sites, but the block has more: both IoError arms borrow own-mode binders, and OWN-10's own-mode clause also forces locally opened regions for &args (own parameter) and &path (own local declared mid-body, needing a region opened after its let) — the accepted-form minimum is five region statements. Any stated count invites falsification by the next block revision, which is exactly the failure mode a site list already exhibited.",
+      "alternatives_considered": [
+        "Extend the enumerated list to all sites (rejected: a longer list breaks again the moment the block changes)"
+      ],
+      "decision": "The note states the rule and stops: every borrow needs a region introduced in the right scope per OWN-10/OWN-11/OWN-3, each structurally forced site opens another region with a distinct spelling, with the two io_status arms named as the instance — and no total stated anywhere.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md (OWN-3, OWN-10, OWN-11)",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§1 elision note and witness block)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 29,
+      "title": "§11's disposition paragraph moves TYPE-6 to the amended side, mirroring the OP-1 treatment",
+      "issue_summary": "The disposition paragraph still gave TYPE-6 a no-amendment disposition ('for the outcome types') while §11.1's selected Route C amends TYPE-6 in three declaration-domain rows — the same satisfied-side/amended-side contradiction decision 25 fixed for STOR-3, in the same paragraph.",
+      "alternatives_considered": [],
+      "decision": "The TYPE-6 sentence is scoped like OP-1's one sentence earlier: satisfied for the outcome types (the first slice fits the flat constructor namespace), amended in three declaration-domain rows by the §11.1 declaration-home selection.",
+      "evidence": [
+        "spec/kernel-spec-v0.17.md:199-206",
+        "research/investigations/system-capability-architecture/DOSSIER.md (§11 disposition paragraph, §11.1)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 30,
+      "title": "§10.2's closing rescopes its PAR-4 storage item so it no longer contradicts step 1's granted judgments",
+      "issue_summary": "§10.2's closing still listed Sendable/Shareable judgments wholesale as remaining PAR-4 work, while its own step 1 (decision 9) relies on §6.9's already-fixed first-slice judgments — the leftover of an earlier edit that added the scoped-borrow item without rescoping its neighbour.",
+      "alternatives_considered": [],
+      "decision": "The closing scopes the item to the judgments §10.2 actually introduces beyond the seven fixed types — path-job records, per-worker SPSC ports and output batches, the workers themselves — and points back at §6.9 for the seven first-slice types, removing the reading that step 1's dependency is still open.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§10.2 step 1 and closing, §6.9 predicates)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 31,
+      "title": "The reservation count covers all 64 spellings including the 11 operation names, with the lowercase-verb asymmetry named",
+      "issue_summary": "§11.1's measured reservation cost counted the 53 type-and-constructor spellings but omitted the 11 operation names Route A also reserves — and those (open_read, read_once, write_once, relative_path...) are ordinary lowercase verbs a future wrapper or conformance case would reach for, unlike prefixed constructor spellings, so the omission understated exactly the side of the trade the owner fork asks about.",
+      "alternatives_considered": [],
+      "decision": "The count becomes 64 (53 + 11 operation names); the collision check re-run over all 64 across the 466 active sources found zero hits (independently reproduced on the highest-risk subset); the qualitative asymmetry between lowercase operation verbs and prefixed constructor spellings is stated so the prospective cost is read at its true shape.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md (§11.1 reservation evidence)"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 0,
+      "title": "ENGAGEMENT SUMMARY — adversarial design review of the system-capability architecture dossier, 2026-08-05",
+      "issue_summary": "Structured adversarial review (refiner + rotating fresh critics) of research/investigations/system-capability-architecture/DOSSIER.md, the hostile-review step named by the dossier's own §14 stop condition. Four critic passes raised 31 issues (11, 9, 6, 5 — converging; final pass zero correctness): 8 correctness, 17 design, 6 minor. All 31 resolved by evidence-based agreement and applied to the dossier; 0 escalated as stalemates. Every current-state claim about v0.17 and the compiler was verified against spec/kernel-spec-v0.17.md and compiler/ sources; the witness block was made derivable under the actual grammar; the delta inventory grew from an incomplete list to nine named spec rules plus the declaration-home selection (§11.1).",
+      "alternatives_considered": [],
+      "decision": "Review closed at lead's discretion after the fourth blind pass verified clean with severity collapsed (no correctness findings, four of five final issues being edit leftovers) rather than running a strict zero-finding fifth rotation. Remaining owner decisions, deliberately NOT made by this review: (1) the dossier's §13 acceptance decision itself; (2) the §11.1/§13-item-5 fork — accept the syntactic conditional-visibility mechanism and Route C stands, decline it and the declaration home falls back to Route A (prelude extension), which is then strictly cheaper; (3) the §16 richer-diagnostic alternative if ever wanted (priced in §6.7). This record is the permanent review evidence; discussion.json was working state and is deleted.",
+      "evidence": [
+        "research/investigations/system-capability-architecture/DOSSIER.md",
+        "spec/kernel-spec-v0.17.md",
+        "compiler/README.md",
+        "docs/current-plan.md"
+      ],
+      "resolved_at_round": 0
+    }
+  ]
+}
