@@ -69,6 +69,21 @@ Direction Outline + candidate evidence
                  -> update Outline and replace Current Plan
 ```
 
+Inside one selected project, that governance loop advances the product this
+way:
+
+```text
+freeze the next real slice + correctness oracle + cost obligation
+  -> attempt it with the current language and compiler
+  -> semantic or implementation blocker: resolve one general capability
+  -> correctness-green but materially slow: attribute and resolve one cause
+  -> rerun the same frozen slice
+  -> widen the project only after correctness and performance gates pass
+```
+
+Performance is not a cleanup phase after a broad port. A known structurally
+slow path is not a foundation on which to accumulate more project code.
+
 A selected umbrella project supplies the long-lived external pressure source
 and honest end-state claim until the owner explicitly reevaluates it. It does
 not authorize a monolithic implementation or make every capability on the way a
@@ -84,7 +99,8 @@ for an owner decision, it may replace `docs/current-plan.md` with the sole
 2. the outline items it tests and why they matter now;
 3. the authentic Whitefoot boundary, correctness oracle, and any honest
    comparator;
-4. the smallest next slice, its verification, acceptance, and stop condition;
+4. the smallest next slice, its credible fast shape or explicit performance
+   viability question, verification, acceptance, and stop condition;
 5. expected blockers and explicitly excluded work; and
 6. optional bounded research that could proceed independently if approved.
 
@@ -95,11 +111,13 @@ project law, trust boundaries, and exact specification bytes still require
 their existing explicit approval records.
 
 An active plan names one milestone, one current step, and normally at most one
-direct blocker. Each step says `Why`, `Do`, `Verify`, and `Accept`. Do not
-predict a long feature sequence before the first real port exposes its blockers.
-Approval covers that written `Do`, not every next action exposed by it. When a
-completed step reveals another slice outside that boundary, replace the plan
-with a proposal for owner selection before expanding execution.
+direct blocker. A step either attempts one project slice or resolves one
+semantic, implementation, or attributed performance blocker; it does not hide
+both a broad port and an open-ended feature sequence. Each step says `Why`,
+`Do`, `Verify`, and `Accept`. Approval covers that written `Do`, not every next
+action exposed by it. When a completed step reveals another slice outside that
+boundary, replace the plan with a proposal for owner selection before expanding
+execution.
 
 The step freezes one consumer-visible slice: pinned upstream identity and input
 class, the exact Whitefoot/host ownership boundary, observable behavior, oracle,
@@ -115,18 +133,23 @@ Every selected project milestone passes four gates:
 1. **Frame.** Pin the project/version/license, claim, included and excluded
    scope, authenticity boundary, oracle, optional comparator, canonical
    evidence home, and stop condition.
-2. **First faithful attempt.** Express the smallest real path with current
-   Whitefoot before changing the language or compiler. Produce an execution
-   result or one reproducible blocker; getting to green through a materially
-   distorted workaround is not required.
+2. **First faithful attempt and floor check.** Express only enough of the
+   smallest real path to establish its correctness oracle and first
+   performance-bearing shape. Use the fastest credible current-language shape
+   supported by project-independent evidence. If every legal shape preserves
+   behavior but violates the frozen asymptotic, resource, code-shape, or
+   material performance obligation, stop with one reproducible performance
+   blocker. A known structurally slow workaround is a diagnostic control, not a
+   foundation for more project code.
 3. **Resolve one blocker.** Classify it, make the smallest general change, add
    project-independent evidence, and immediately rerun the same frozen slice.
    Before a nontrivial compiler-design change, consult the relevant live MCTS
    node and rejected alternatives. Repeat only along the milestone's critical
    path.
-4. **Validate and close.** Run the real integration and oracle; measure only
-   claims the project makes; record limitations. Success, a useful negative
-   result, or a triggered stop condition are all honest closures.
+4. **Validate and close.** Run the same real integration and oracle, then its
+   scoped performance or cost-shape gate. Widen the project only when both pass.
+   Measure only claims the slice makes and record limitations. Success, a useful
+   negative result, or a triggered stop condition are all honest closures.
 
 A project selects pressure, not semantics. A project-local inconvenience is
 fixed in the project. Compiler changes may not dispatch on project, function,
@@ -140,6 +163,14 @@ differs from upstream. A material workaround may be used as a bounded diagnostic
 control, but it cannot close the slice. Record the intended shape, the runnable
 workaround, and the exact semantic or cost delta instead of hiding it behind a
 green result.
+
+Before a correctness-green product path exists, a performance risk stops work
+only when a structural cost argument identifies an unavoidable bad scaling unit
+or architecture: for example an extra complete pass or copy, per-byte boundary
+calls, whole-input materialization where bounded streaming is required, or
+forced serialization that defeats the frozen slice. Otherwise record the risk
+and reach the earliest comparable measurement point; intuition alone does not
+authorize a language or optimizer feature.
 
 A reproducible blocker names the exact source identity, invocation, compiler
 outcome, controlling active-spec rule, and a control that distinguishes the
@@ -188,10 +219,12 @@ regression evidence, then return to the selected project.
 A correct accepted program outside its performance band remains a research or
 performance blocker until the loss is attributed among algorithm and work,
 representation, required checks, writer pattern, compiler lowering, LLVM
-recovery, target code, allocation/cache/I/O, and measurement noise. Slowness
-alone is not a language gap. If another independent blocker lies outside the
-active step's `Do`, stop and replace the Current Plan instead of ratcheting the
-project through an unreviewed sequence of language changes.
+recovery, target code, allocation/cache/I/O, and measurement noise. Once that
+loss is material and attributed, stop widening the project, resolve the owning
+layer generally, and rerun the same frozen slice. Slowness alone is not a
+language gap. If another independent blocker lies outside the active step's
+`Do`, stop and replace the Current Plan instead of ratcheting the project
+through an unreviewed sequence of language changes.
 
 Language and specification gaps accumulate across every Current Plan for one
 project milestone until that milestone completes or is parked. A second
@@ -201,16 +234,21 @@ Current Plan or completing a smaller slice never resets the blocker list.
 
 ## Performance and attribution
 
-Correctness and comparable work precede timing. A performance-bearing plan
+Correctness and comparable work precede timing and performance claims, but not
+performance-aware sequencing. Before widening a runnable slice, inspect its
+cost shape; an unavoidable structural violation may stop it before full-product
+timing. A performance-bearing plan
 freezes revisions; all source and dependencies inside the timed boundary; input
 and corpus digests; observable result consumption; target, build, resource,
 durability, and initial-state settings; timed phases; and the statistic,
 uncertainty, and materiality rules. Compare equivalent work or report unequal
 phases separately. Describe a subset only as that subset.
 
-The first correctness-green source on the ordinary compiler path is the
-zero-change baseline. Profile it before selecting an optimizer direction. Trace
-only the first material divergence, at the layers needed by the hypothesis:
+At each newly runnable slice, the first correctness-green implementation of its
+first material critical-path shape on the ordinary compiler path is the
+zero-change baseline. Profile and classify it before widening the slice or
+selecting an optimizer direction. Trace only the first material divergence, at
+the layers needed by the hypothesis:
 
 ```text
 algorithm and work performed

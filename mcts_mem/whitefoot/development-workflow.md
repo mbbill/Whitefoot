@@ -2,6 +2,7 @@
 - Keep one rolling Current Plan as the only status-bearing repository proposal or execution plan. `PROPOSED` authorizes nothing; `ACTIVE` names one owner-selected milestone, its smallest end-to-end slice, validation, acceptance conditions, and stop conditions.
 - Let candidate projects decide when outline directions matter. Derive each proposed milestone backward from a concrete project pressure and cite the exact outline items and dependencies it consumes.
 - Treat the first project attempt as a diagnostic of the current language and compiler; a workaround that violates the frozen behavior, boundary, resource or asymptotic contract, or measured performance band remains a blocker even when it runs.
+- Stop widening a project when the current slice has a structurally unavoidable or measured-and-attributed material performance blocker; resolve its owning layer generally and rerun the same frozen slice before adding downstream behavior.
 - Close a blocker only when project-independent evidence and the same frozen project slice both pass.
 - Attribute a performance gap through comparable work and the relevant generated-code layers before an optimizer mechanism enters a plan.
 - Keep language and specification blockers cumulative across every Current Plan for one project milestone; a second independent gap defaults to reframe or park unless the owner explicitly overrides it.
@@ -15,6 +16,7 @@
 - 2026-08-03 (36273e48) implementation: `docs/roadmap.md` became Direction Outline revision 1, `docs/current-plan.md` became the sole status-bearing plan and remains `PROPOSED`, and root `WORKFLOW.md` now defines project gates plus the guarded specification branch. (code)
 - 2026-08-03 owner ruling: SQLite is selected to expose general language defects and quantify proof or lowering advantages; making a port run by violating its frozen behavior, boundary, or cost contract is not milestone success, and a performance advantage needs generated-binary attribution rather than timing alone. (sourced)
 - 2026-08-04 owner ruling: ripgrep 15.2.0 replaces SQLite as the umbrella target; the product objective is a fair 2x end-to-end ripgrep result, bounded milestones may expose smaller blockers without shrinking that objective, and optimization opportunities are discovered and attributed iteratively rather than preselected. (sourced)
+- 2026-08-04 owner ruling: performance is first in the project-driven loop; do not force-write downstream `wfgrep` code on top of a missing performance capability. Each runnable slice pairs its correctness oracle with a cost-shape or measured performance gate, and an attributed material blocker stops expansion until its owning layer is resolved and the same slice passes again. (sourced)
 
 ## Moves
 

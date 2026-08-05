@@ -1,11 +1,21 @@
 - Every unproved D1-critical checkable fact carries a runtime check in every build mode; there is no debug/release semantic divergence.
 - A check is removed only by a deterministic machine-verified proof; a solver may promote performance facts but never licenses elision; nothing writer-stated is trusted unchecked.
 - No writer-accessible syntax removes, weakens, or silences a check; explicit `check` statements are never elided, even when tautological.
-- The active safe-Rust compiler currently ends at name resolution; it has no semantic check insertion, checked IR, backend, or proof-elision implementation.
+- The active safe-Rust compiler now reaches semantic and ownership checking,
+  exact memory-effect checking, a private checked program, target-independent
+  typed control-flow IR, target qualification, conservative LLVM, and host
+  execution. It retains required runtime checks and implements no proof-driven
+  check elision or effect-derived LLVM attributes.
 - The archived democ PROOF-1 implementation and accounting reports are historical evidence for a later optimizer experiment, not live compiler capability or acceptance authority.
 
 ## Facts
 
+- 2026-08-04 code correction: the former live summary saying the compiler ended
+  at name resolution had become stale. `compiler/README.md` and the active
+  safe-Rust implementation now establish the semantic-checking, checked-IR,
+  LLVM, and executable path summarized above; proof-driven check elision remains
+  absent. This correction changes compiler status, not the proof doctrine.
+  (code)
 - 2026-07-10 measurement: the elision ceiling on base64 encode — removing every bounds check took the kernel from 2.44 to 4.2 GB/s (1.7x), branches 41 to 9, byte-identical outputs, and still zero SIMD (the shuffle algorithm is not vectorizer-discoverable); the ceiling justified building the proof tier, and its value is scalar. (sourced)
 - 2026-07-10 statement: provably-in-range trapping reductions stay scalar and the base64 hot loop retained ~18 bounds branches blocking vectorization — recorded as the evidence that earned the tier before any code was written; the doctrine answer is that writers keep `.trap` and the compiler earns the speed via proof, never by pushing writers to `.wrap`. (sourced)
 - 2026-07-10 statement: the `rem = len - i` derived-range proof is sound only because the induction variable provably starts at zero and its sole mutation is the exact stride increment; the guard alone is unsound under unsigned wrap. (code)

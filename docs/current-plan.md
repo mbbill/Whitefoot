@@ -1,191 +1,152 @@
 # Current Plan
 
-Status: ACTIVE — ripgrep 15.2.0 is the owner-selected umbrella target;
-`RG-BASE` approved by the owner on 2026-08-04
+Status: ACTIVE — the owner selected complete `BOUND-1` system-capability
+architecture design on 2026-08-04
 
-Derived from: [Direction Outline revision 4](roadmap.md), items `CAND-8` and
-`PERF-1`
+Derived from: [Direction Outline revision 6](roadmap.md), items `CAND-8`,
+`BOUND-1`, `PAR-4`, and `VERIFY-1`
 
-This approval covers only the written `RG-BASE` `Do`, verification, acceptance,
-and stop boundary. Selecting ripgrep and the 2x objective does not itself
-authorize a Whitefoot port, compiler or specification changes, or
-parallel-runtime work.
+## Goal
 
-## Umbrella target
+Select one coherent Whitefoot system interface before changing the language or
+compiler. It must cover the architectural needs of command-line programs,
+filesystems, clocks, randomness, networking, waiting and cancellation, and
+future threads or tasks. The first implementation will still unblock `wfgrep`,
+but it may not introduce an argv/file/stdout-only API that later capabilities
+must replace.
 
-Build a Whitefoot-written command-line search tool that is credible as a
-replacement for ripgrep's primary line-oriented recursive regex-search use and
-reaches at least **2.00x** end-to-end speedup over pinned ripgrep 15.2.0 on a
-preregistered representative suite.
+Completeness in this stage means a complete semantic and performance envelope,
+not implementing every system operation now. Later implementation slices must
+be true subsets of the selected model, use the same resource and effect rules,
+and leave no temporary public surface behind.
 
-The objective is the broad product comparison, not one currently suspected
-opportunity. A milestone may implement or investigate a smaller vertical slice,
-but success on one pattern, file shape, output mode, or microkernel does not
-rename or complete the target. The persistent upstream pin, claim boundary,
-source-architecture findings, open opportunity map, and attribution rules live
-in the [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md).
+Working design evidence: [system-capability architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md).
 
-## Milestone
+Progress: the candidate architecture and exact first command slice are drafted,
+and the final spec-consistency, OS-semantics, and future-evolution hostile
+reviews report no remaining blocker. Owner architecture selection is the
+remaining gate.
 
-### RG — 2x ripgrep
+## Features to design in this stage
 
-Reach a correctness-green, directly runnable Whitefoot search executable whose
-frozen primary command surface and representative benchmark suite satisfy the
-flagship frame's 2x product rule. The suite must exercise real source trees and
-large text, one and many files, representative matcher families, traversal and
-ignore work, result production, and controlled cache states. It compares the
-same selected inputs, matches, relevant ordering, rendered or canonical output,
-diagnostics, exit status, hardware, thread and memory envelope.
+- [x] **Entry profile and exact authority imports** — define how a command,
+  service, or embedded instance statically declares and receives exactly its
+  host-granted capabilities without ambient mutable globals or a runtime bag of
+  optional authority. General library/foreign entry remains BOUND-2.
+- [x] **Typed resources and rights** — define unforgeable resource identity,
+  ownership and borrowing, capability narrowing and delegation, explicit
+  completion policy, compiler-derived cleanup, whole-process abort behavior,
+  future containment obligations, and the `Sendable` / `Shareable` boundary.
+  Every family must provide a protocol descriptor with state, aliases, owner
+  disposition, concurrency, cancellation, ordering, and cross-platform
+  guarantees.
+- [x] **External effects** — keep authority, observable effects, and trusted
+  provider identity separate. Define resource-local ordering, cross-resource
+  ordering where promised, nondeterministic observations, blocking, independent
+  operation progress, language suspension, spawning, cancellation, and cleanup
+  effects without using provider metadata as source-semantic proof.
+- [x] **Data transport** — select common semantics for stdin/stdout, files,
+  pipes, and sockets: partial transfers, EOF, backpressure, errors, caller-owned
+  buffers, vectored and positioned I/O, streaming, and an honest route to
+  mmap/splice or other zero-copy strategies.
+- [x] **System families** — map the coherent interface surface for process
+  arguments/environment/status and stdio; filesystem roots, paths,
+  directories, files, metadata and durability; clocks/timers and randomness;
+  TCP/UDP/DNS and local endpoints; waits, cancellation, threads/tasks and join;
+  and the disposition of child processes, signals, memory mapping, local IPC,
+  and target/device capabilities.
+- [x] **Provider and ABI** — define compiler-gated primitive identities, native
+  host providers, target qualification, versioning, deterministic test
+  providers, and a direct static lowering path that does not require a dynamic
+  component runtime or per-call dispatch tax.
+- [x] **Errors and conformance** — define portable outcomes, target-specific
+  detail, partial progress, cleanup after recoverable failure, behavior at
+  process-aborting traps and any future containment boundary, and the
+  independent tests that every provider must pass.
 
-No complete implementation route is predicted in advance. Each later Current
-Plan will either establish one real product path, resolve one blocker, or test
-one attributed performance opportunity, then return to the unchanged umbrella
-comparison.
+## Binding constraints
 
-## Why this is the selected pressure
+- No raw integer fd, syscall number, pointer contract, writer-defined primitive,
+  writer-visible `unsafe`, or function-name special case is a source-language
+  authority.
+- No ambient process API or single permanently unique `Process` handle may hide
+  dependencies or serialize otherwise independent files, sockets, output
+  streams, or workers.
+- No mandatory whole-input materialization, per-byte boundary call, avoidable
+  complete copy, centralized provider lock, or runtime-wide I/O serialization
+  fence may be
+  designed into the ordinary fast path.
+- Paths must preserve the filename domain needed for a credible ripgrep
+  replacement; a Unicode-only abstraction is not silently treated as full
+  native-filesystem fidelity.
+- Synchronous convenience may not make composable async, cancellation, or
+  borrowed-buffer safety impossible. Async machinery is not selected merely
+  because WASI uses it; Whitefoot must state its own ownership and cost model.
+- The system interface and general foreign-code FFI are separate problems.
+  `BOUND-1` may use a compiler-owned runtime/provider boundary but does not open
+  a general import, callback, or dynamic-loading mechanism.
 
-Ripgrep is already known as a fast Rust tool. A reproducible 2x replacement is
-an immediately understandable result with low user trial cost: install one CLI
-and run the same search. Its end-to-end path also combines several Whitefoot
-directions that otherwise remain disconnected:
+## Work
 
-```text
-CLI and filesystem boundary
-  -> ignore-aware traversal
-  -> regex and byte matching
-  -> checked buffers and result construction
-  -> declared parallel work and deterministic failure
-  -> target code and observed wall time
-```
+1. Audit official WASI 0.1, 0.2, and 0.3 plus the relevant native-host cost
+   shapes. Preserve the useful lessons—preopened authority, typed resources,
+   modular interfaces—and record the failures—flat fd ABI, Unicode-only paths,
+   non-composable pollables, missing caller buffers/zero-copy guarantees, and
+   unsettled threads/process support.
+2. Compare at least raw fd/syscall, ambient process functions, one affine
+   `Process` capability, and typed entry interfaces plus runtime resources.
+   Reject alternatives by safety, effect precision, concurrency, path fidelity,
+   ABI portability, code shape, and implementation cost rather than style.
+3. Draft one candidate architecture; instantiate ReadFile, possibly aliased
+   stdout/stderr, TCP split plus pending cancellation, and Child protocol
+   descriptors; and trace three hostile witnesses through it: the first
+   `wfgrep PATTERN FILE...` command path, parallel file search with independent
+   workers and ordered publication, and a network service with timeout,
+   backpressure, cancellation, and teardown.
+4. Inventory the exact v0.17 specification and compiler deltas. Build a small
+   executable semantic model only if paper traces cannot settle a resource,
+   cancellation, or buffer-lifetime question; do not build a general framework.
+5. Present the selected architecture, rejected alternatives, open questions,
+   and the exact first implementation slice for owner review. Specification and
+   compiler work require the subsequent approved plan and, where applicable,
+   the specification-change workflow.
 
-The pinned source is not an easy baseline. It already uses work-stealing
-parallel traversal, `regex-automata`, literal extraction, SIMD-capable byte
-search, buffered and whole-input strategies, per-worker printers, and recent
-directory-walk improvements. The project therefore supplies real evidence
-about whether Whitefoot's proof, floor, runtime, and backend ideas can beat a
-mature safe-systems implementation.
+## Verification
 
-## Proposed current step
+- Every operation family states authority, states and transitions, alias and
+  cursor relations, input/output ownership on every outcome, partial progress,
+  error and cleanup behavior, effects and ordering, permitted concurrent
+  operations, blocking or suspension, cancellation and quiescence,
+  thread-transfer rules, ABI mapping, and cost shape.
+- The three witnesses use the same core rules; none needs a project-shaped
+  primitive, hidden global, central serialization token, or replacement API.
+- The design admits initialized caller-owned read buffers, chunked/vectored I/O,
+  and a future zero-copy route without exposing uninitialized bytes or extending
+  a borrow across an untracked suspension.
+- A static native provider can lower ordinary hot operations without allocation
+  or dynamic dispatch that the operation itself does not require.
+- Hostile review attacks capability forgery, path escape, wrong-resource effect
+  reordering, partial I/O, close/error races, cancellation races, cross-thread
+  use, provider lies, and portability mismatches.
 
-### [ ] RG-BASE — Freeze the fair comparator and baseline opportunity map
+## Done when
 
-- **Why:** the 2x target is meaningless until its representative work,
-  correctness oracle, stronger upstream comparator, target and aggregate rule
-  are fixed before any Whitefoot performance result can influence them. A
-  source audit has identified the layers but has not measured their importance
-  on the available target.
-- **Pinned upstream:** ripgrep 15.2.0, commit
-  `e89fff89ac9af12e8d4ce9d5fd07beb408ca730f`, Unlicense or MIT. Use its
-  committed dependency lock. Build the default regex surface with the exact
-  recorded Rust toolchain in `release-lto`, once for the distributable target
-  baseline and once with the strongest reproducible native target settings.
-  Keep the official release executable as the user baseline. Optional PCRE2
-  linkage must not change default-engine work.
-- **Target:** begin with the available Apple M4 macOS aarch64 machine because
-  it is a current supported Whitefoot host and can run the experiment now.
-  Record exact model class, core count, memory, OS, power state, compiler,
-  target features and executable identities without publishing device serials
-  or other unique host identifiers. The resulting claim is target-specific;
-  another target requires a later frozen replication, not an extrapolation.
-- **Suite-selection rule:** before timing, derive a compact suite from pinned
-  upstream benchmark families plus real repository-search behavior. It must
-  include at least two independently sourced real code trees and one large-text
-  corpus; single- and many-file cases; literal, required-literal regex,
-  no-required-literal regex, case-insensitive and Unicode matching; low and
-  material match counts; default ignore/file filtering; and normal result
-  production. No one case or family may dominate the aggregate. Record why
-  every case represents user work and freeze corpus and command bytes before
-  reading comparative timing.
-- **Correctness:** compare selected paths, matches, offsets or line/column
-  records as applicable, context, relevant ordering, diagnostics and exit
-  status with pinned ripgrep. Force stable non-color output. For intentionally
-  unordered parallel output, compare a canonical record multiset while timing
-  each executable's ordinary output path; deterministic modes compare exact
-  bytes. Reject a case whose results cannot be compared independently of
-  timing.
-- **Measurement:** time complete process invocation, pattern construction,
-  traversal, open/read, matching, formatting and consumed output. Separate
-  controlled warm and cold cases; do not claim cold-cache results when macOS
-  cache state cannot be restored symmetrically. Hold thread cap and a stated
-  memory envelope equal. Interleave executions, use enough repetitions for a
-  stable confidence interval, preregister timeout and outlier handling, and
-  choose the faster upstream executable per case before any Whitefoot result.
-- **Profile:** for every material family, divide elapsed work only as far as
-  supported evidence permits among startup/pattern compilation, traversal and
-  ignore handling, file I/O, matching, line/context accounting, output, worker
-  scheduling and waiting, allocation, and kernel time. Record CPU utilization,
-  bytes searched, result volume and peak memory; use target-available sampling
-  or counters without inventing unavailable PMU precision.
-- **Do:** create one self-contained `research/experiments/ripgrep/` baseline
-  bundle containing the authorization packet, exact upstream and corpus
-  identities, runner, correctness comparison, raw measurements, profile
-  evidence and `RESULTS.md`. Bulk corpora, cloned upstream source and build
-  products stay under `/Users/bytedance/do_not_scan`. The runner must be wired
-  to one documented gate command and must not become general benchmark
-  infrastructure.
-- **Verify:** rerun the frozen suite from a clean experiment checkout; verify
-  every output comparison before accepting timings; inspect that the faster of
-  official and native-LTO ripgrep is used per case; and hostile-review the
-  suite for a hidden favorable mode, omitted result work, mismatched regex or
-  ignore semantics, asymmetric cache state, thread or memory advantage,
-  corpus leakage, and an aggregate dominated by one case.
-- **Accept:** the exact comparator, suite, target envelope, aggregate 2x rule,
-  per-case regression guard, baseline timings and evidence-backed opportunity
-  map are frozen and independently reviewable. The result may show little
-  apparent headroom; that redirects later work but does not lower the umbrella
-  goal. Completion authorizes no Whitefoot search implementation.
-- **Stop:** stop after the upstream-only baseline and review. Do not write
-  Whitefoot search source, prototype an alternative matcher or walker, change
-  the compiler or specification, or design the parallel language/runtime in
-  this step. If fair correctness or timing cannot be frozen, record the exact
-  blocker and return for owner review instead of substituting an easier claim.
+- the owner can choose one architecture from an explicit alternative table;
+- the chosen model has a complete capability-family map with deliberate v1,
+  later, and unsupported dispositions;
+- the v0.17 semantic gaps and provider TCB are explicit;
+- the three witnesses pass the paper/model and performance-shape review; and
+- the next Current Plan can name one exact implementation slice without making
+  another architectural decision.
 
-## Expected reverse pressure, not predetermined answers
+## Not in this stage
 
-The baseline may prioritize any combination of matcher strategy, pattern
-specialization, I/O and traversal, file- or range-level work decomposition,
-result construction, allocation, target code, or measurement noise. It may
-also show that a suspected direction has no useful share of end-to-end time.
-
-Later proposals must follow the evidence:
-
-- a real CLI first makes `BOUND-1` concrete;
-- a correctness-green accepted path first invokes `PERF-1` and the floor audit;
-- measured parallel pressure may propose `PAR-1` and `PAR-4` together with the
-  exact task, non-interference, determinism, failure and cost boundary;
-- `PAR-2` or `PAR-3` enters only for a demonstrated subrange or reduction need;
-- a proof or strategy consumer enters only after its exact retained-check,
-  alias, effect or structural pressure is observed; and
-- dynamic matcher, queue, result or buffer storage routes through the relevant
-  storage item rather than an rg-specific compiler form.
-
-The project is not a line-by-line translation obligation. A Whitefoot-native
-algorithm is welcome when it preserves the frozen consumer behavior and
-resource envelope. A compiler path keyed to ripgrep, a pattern, function,
-corpus, source shape or benchmark identity is always disallowed.
-
-## Not authorized
-
-- No corpus download, benchmark execution, or experiment bundle before
-  `RG-BASE` approval.
-- No Whitefoot search implementation, regex engine, directory walker, CLI,
-  filesystem boundary, threading runtime, parallel construct, or optimizer
-  fact.
-- No compiler, specification, conformance, project-law, or protected-evidence
-  change.
-- No reduction of the flagship to `--sort`, one large file, fixed-string
-  search, a private agent trace, or another favorable subset.
-- No unrelated project as a prerequisite.
+- No numbered-specification, compiler, runtime, or `wfgrep` implementation.
+- No promise to implement every mapped system family in the first release.
+- No general FFI, dynamic loading, plugin system, artifact replay, or provider
+  marketplace.
+- No matcher, directory walker, parallel runtime, or ripgrep timing work.
 
 ## Parallel research
 
-None. `RG-BASE` is the one proposed bounded research step.
-
-## Completion
-
-After independent review of the baseline bundle, update the Direction Outline
-with only established measurements and replace this file with the next
-`PROPOSED` ripgrep-derived step. That proposal may attempt the first faithful
-current-language product path or investigate the single highest-decision-value
-blocker exposed by the baseline. Only a later owner decision changes it to
-`ACTIVE`.
+None. System-capability architecture is the current work.

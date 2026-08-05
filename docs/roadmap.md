@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 4
+Revision: 6
 
 The active language authority is
 [`spec/kernel-spec-v0.17.md`](../spec/kernel-spec-v0.17.md), SHA-256
@@ -82,8 +82,11 @@ Which gap matters next is selected by a project, never by checklist length.
   or a runtime before that evidence.
 - STORE-2 must expose a concrete unsolved representation privilege before
   PROOF-6 can enter a plan.
-- TARGET-2 through TARGET-4 and APP-1 depend on BOUND-1 whenever their authentic
-  milestone crosses the closed compilation-unit boundary.
+- TARGET-2 through TARGET-4 depend on BOUND-1 whenever their authentic milestone
+  crosses the closed compilation-unit boundary. PAR-4 and BOUND-1 must agree on
+  resource transfer, waiting, cancellation, and runtime thread authority.
+- APP-1 depends on BOUND-2 when its selected component requires opaque foreign
+  code rather than a Whitefoot or compiler-owned system provider.
 
 ## Proof and optimizer facts
 
@@ -262,18 +265,25 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### PERF-1 — Ordinary lowering and baseline code quality
 
-`[current: conservative LLVM]` `[historical: measured]` `[next: RG-BASE review]`
+`[current: conservative LLVM]` `[current: upstream development table]`
+`[next: wfgrep slice floor gates]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
 - **Current:** the compiler has one conservative LLVM path and executable
   program witnesses, but no current medium-project comparison of scalar code
-  shape, retained checks, vectorization, and target output. Historical DEFLATE
-  work found large ordinary-lowering gaps in two hot kernels.
-- **Missing / next:** freeze and measure the pinned ripgrep comparator before
-  Whitefoot implementation, then attribute each later material loss to
-  algorithm, required check, source shape, compiler lowering, LLVM recovery,
-  runtime, I/O, output, or target before opening another direction.
+  shape, retained checks, vectorization, and target output. `RG-BASE` completed
+  one correctness-green upstream selection attempt; host cache-position noise
+  defeated its precision gate, so it selected no comparator and made no
+  performance claim. Its medians remain a development-cost table, not a
+  baseline.
+- **Missing / next:** require every newly runnable `wfgrep` slice to pass its
+  correctness oracle and scoped cost-shape or performance gate before adding
+  downstream behavior. Attribute each material loss to algorithm, required
+  check, source shape, compiler lowering, LLVM recovery, runtime, I/O, output,
+  or target, resolve its owning layer generally, and rerun the same slice. The
+  full paired suite is reserved for a later public-claim candidate rather than
+  the edit loop.
 - **Facts:** [compiler backend boundary](../compiler/README.md) ·
   [historical DEFLATE result](../research/experiments/zlib-core-kernels/RESULTS.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md).
@@ -450,23 +460,59 @@ and failure semantics survive the runtime implementation.
 Serves P0, W3, T1, T2, and R6: external usefulness and target reach may not
 become alternate unchecked semantics or prematurely bind the whole toolchain.
 
-### BOUND-1 — FFI and external integration
+### BOUND-1 — System capabilities and host integration
 
-`[current: spec]` `[next: candidate requirement]`
+`[current: spec skeleton; compiler absent]`
+`[next: complete architecture selection]`
 
-- **Goal:** let a Whitefoot component receive and produce real data without
-  letting foreign assumptions bypass ownership, bounds, effects, or cleanup.
-- **Current:** v0.17 is a closed compilation unit with a gated boundary
-  skeleton. The compiler has no general imports, library ABI, inbound FFI,
-  stdin/argv, or dynamic loading; repository programs use host harnesses.
-- **Missing / next:** a selected consumer must fix the actual caller, input,
-  output, ABI, ownership transfer, failure model, and trust boundary before a
-  mechanism is designed.
-- **Facts:** v0.17 `PROG-1/2`, `GATE-1`, and `LEDGER-1` ·
+- **Goal:** give command, service, and embedded program instances a
+  coherent capability-based host boundary covering process context,
+  filesystems, data streams, clocks, randomness, networking, waiting and
+  cancellation, and future threads or tasks without ambient mutable authority
+  or writer-defined trust.
+- **Current:** v0.17 is a closed compilation unit with a gated boundary skeleton,
+  a fixed no-argument `main`, memory-only effect rows, and reserved
+  `Sendable`/`Shareable` vocabulary. The compiler has no resource-handle,
+  external-effect, provider, stdin/argv, filesystem, network, async, or thread
+  path. Its only ordinary external-I/O call is a private trap diagnostic;
+  allocation, release, and abort also cross the current trusted runtime
+  boundary.
+- **Missing / next:** the owner rejected selecting an argv/file/stdout-only API
+  before the larger architecture is understood. Select the relationship among
+  lifecycle profiles and exact static grants, unforgeable runtime resources,
+  rights and delegation,
+  cleanup and recoverable completion, external effects and ordering,
+  sync/async/cancellation, thread transfer, path representation, buffer and
+  zero-copy semantics, errors, provider identity, ABI, target qualification,
+  versioning, and conformance. Validate one model against sequential `wfgrep`,
+  parallel file search, and a cancellable network-service witness. Later
+  implementation may be incremental only as true subsets of that model.
+- **Facts:** v0.17 `FN-7`, `EFF-1/2`, `PROG-1/2`, `CAP-1`, `GATE-1`, and
+  `LEDGER-1` · [active architecture plan](current-plan.md) ·
+  [system-capability architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
+  [WASI capability model](https://github.com/WebAssembly/WASI/blob/main/docs/Capabilities.md) ·
+  [WASI 0.1–0.3 release lessons](https://wasi.dev/releases).
+
+### BOUND-2 — Foreign ABI and opaque binaries
+
+`[current: spec skeleton; compiler absent]` `[parked]`
+
+- **Goal:** call an opaque foreign binary only through a gated signature whose
+  ownership, layout, lifetime, effects, callbacks, failure, and trust
+  obligations are complete, without making FFI an alternate unchecked
+  language.
+- **Current:** `GATE-1` and `LEDGER-1` reserve an opaque approved boundary, but
+  no public ABI, import, callback, foreign-thread entry, loader, or compiler
+  implementation exists. Project law prefers rewriting source-available code in
+  Whitefoot.
+- **Missing / next:** reopen only for an opaque binary that a selected project
+  cannot credibly replace. Keep this distinct from BOUND-1's compiler-owned
+  system provider; system calls do not by themselves justify general FFI.
+- **Facts:** v0.17 `GATE-1` and `LEDGER-1` ·
   [safe capsule idea](ideas.md#safe-c-abi-capsules).
 
-Migration tooling is supporting work under this item, not an independent
-language authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefoot-assumption-extractor).
+Migration tooling is supporting work under BOUND-2, not an independent language
+authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefoot-assumption-extractor).
 
 ### TARGET-1 — Portable and mutually checking backends
 
@@ -560,17 +606,15 @@ and every step must state how it returns to the unchanged product comparison.
   near-term-reachability gate. The owner subsequently made comparative
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
-- **Missing / next:** review the `RG-BASE` comparator and baseline proposal.
-  Project selection itself authorizes no corpus download, benchmark, port, or
-  compiler work.
+- **Missing / next:** none; `CAND-8` owns the live project sequence.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
 
 ### CAND-8 — Ripgrep-compatible command-line search
 
-`[selected flagship]` `[current: pinned source and project frame]`
-`[next: RG-BASE proposal review]`
+`[selected flagship]` `[current: frame plus inconclusive upstream attempt]`
+`[next: BOUND-1 system-capability architecture]`
 
 - **Goal:** build a Whitefoot-written command-line search tool credible for
   ripgrep's primary line-oriented recursive regex use and reach at least
@@ -579,18 +623,23 @@ and every step must state how it returns to the unchanged product comparison.
 - **Current:** ripgrep 15.2.0 at commit
   `e89fff89ac9af12e8d4ce9d5fd07beb408ca730f` is pinned. Its source path has
   been audited from CLI and ignore-aware traversal through regex/byte search,
-  result construction, parallel publication, and exit status. No corpus,
-  Whitefoot implementation, compiler change, or comparative benchmark has
-  begun.
+  result construction, parallel publication, and exit status. The frozen
+  nine-case suite completed one correctness-green official/native selection
+  attempt, but all cases failed the 3% precision gate; no comparator, selected
+  baseline, profile, Whitefoot result, or performance claim exists.
 - **Claim boundary:** the suite must cover real source trees and large text;
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** approve or revise `RG-BASE`, which freezes correctness,
-  corpora, commands, target, stronger upstream comparator, resource envelope,
-  aggregate rule, and attribution before Whitefoot results exist. Subsequent
-  plans discover opportunities from evidence and retain the 2x objective even
-  when an attempted optimization fails.
+- **Missing / next:** complete the owner-selected BOUND-1 architecture gate
+  before choosing the process API exposed by `wfgrep`. The subsequent first
+  implementation slice may contain only argv, status, bounded file input, and
+  ordered output, but each operation must be a true subset of the selected
+  resource, effect, provider, and performance model. Once that slice passes its
+  project-independent controls and same-slice correctness and cost gate, return
+  to that exact `wfgrep` checkpoint. Each later slice stops on either the next
+  semantic blocker or the first attributed material performance blocker; the
+  full 2x objective remains unchanged.
 - **Directions tested:** PERF-1 owns the baseline and attribution; BOUND-1 and
   VERIFY-1 enter with the real CLI/filesystem path; PAR-1 through PAR-4 enter
   only for measured parallel work and its proof/runtime contract; FLOOR-1
@@ -599,6 +648,7 @@ and every step must state how it returns to the unchanged product comparison.
   PROOF-2, PROOF-3, PROOF-7, and VERIFY-3 enter only for an observed fact
   consumer.
 - **Facts:** [project frame, source audit, and comparison rules](../research/notes/ripgrep-flagship-frame.md) ·
+  [inconclusive RG-BASE attempt](../research/experiments/ripgrep/RESULTS.md) ·
   [pinned upstream release](https://github.com/BurntSushi/ripgrep/releases/tag/15.2.0) ·
   [pinned upstream repository](https://github.com/BurntSushi/ripgrep/tree/15.2.0).
 
@@ -611,7 +661,7 @@ approved probes. They are not phases or prerequisites in front of ripgrep.
 | `CAND-3` Parser / text validation | FLOOR-1, FLOOR-3, FLOOR-4, VERIFY-1, BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately approved parser or storage question has independent decision value that the current plan does not answer. |
 | `CAND-5` Embedded / signal processing | TARGET-2, TARGET-3, PROOF-5, BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately approved target/runtime question has an authentic Cortex boundary. |
 | `CAND-6` Declared parallelism (`later`) | PAR-1 through PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately approved explicit-parallel question has independent value beyond the ripgrep plan. |
-| `CAND-7` ML systems component (`later`) | APP-1, BOUND-1, TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
+| `CAND-7` ML systems component (`later`) | APP-1, BOUND-2, TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
 
 ## Settled exclusions and history
 
