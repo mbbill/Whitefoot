@@ -1,7 +1,7 @@
 # System-capability architecture
 
-This is a temporary coordination record, not execution authority. Delete it
-when the task is integrated, parked, replaced, or abandoned.
+This is a temporary live coordination record, not execution authority. Move
+this same numbered record to `docs/done/` at terminal disposition.
 
 - **Status:** `WAITING` — owner architecture selection
 - **Authority:** active [`docs/current-plan.md`](../current-plan.md), `BOUND-1`
@@ -76,5 +76,6 @@ likely rebase pressure; it does not reserve files.
 - **Stop:** do not expand if the owner requests another alternative or review
   exposes a semantic question outside the active plan.
 - **Close:** record the decision in its canonical homes, update the Outline,
-  replace the Current Plan, and delete this file in the same integration
-  change. A parked or superseded task records that disposition and is deleted.
+  replace the Current Plan, and move this file without renumbering to
+  `docs/done/` in the same integration change. A parked or superseded task
+  records that final disposition in the moved file.

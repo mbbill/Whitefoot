@@ -40,10 +40,12 @@ probably not the next work.
   derived from one outline revision and cannot authorize a direction the
   outline has not selected. `PROPOSED` authorizes no execution; only `ACTIVE`
   or separate owner approval does.
-- `docs/ongoing/` contains one temporary coordination record per substantial
-  in-flight task or distinct handoff boundary. These records report how
-  authorized work is being carried out; they never select, expand, or
-  resequence work by themselves.
+- `docs/ongoing/` contains one numbered temporary coordination record per
+  substantial in-flight task or distinct handoff boundary. `docs/done/`
+  retains the same numbered record after terminal disposition. Both report how
+  authorized work was carried out; neither selects, expands, or resequences
+  work by itself, and neither replaces the canonical homes for facts,
+  measurements, decisions, or status.
 - The active numbered specification named by `docs/roadmap.md` defines the
   language. Compiler behavior, tests, archived code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
@@ -88,17 +90,31 @@ technical soundness.
 ## Parallel task coordination
 
 Every substantial independently integrable task, or task with a distinct
-integration or handoff boundary, has one short file under `docs/ongoing/`.
-Agents contributing to one deliverable share its record; read-only reviewers do
-not create another. Publish the record to the integration branch before
-substantial work so other workspaces can see it.
+integration or handoff boundary, has one short numbered file under
+`docs/ongoing/` while it is live. Agents contributing to one deliverable share
+its record; read-only reviewers do not create another. Publish the record to
+the integration branch before substantial work so other workspaces can see it.
+
+Names use `NNNN-short-slug.md`, with one zero-padded monotonically increasing
+sequence shared by `docs/ongoing/` and `docs/done/`. After refreshing the
+integration branch, allocate `max(existing numbers) + 1` in the task's first
+registration commit. The number never changes or returns to the pool. If two
+concurrent registrations choose the same number, the later integration
+renumbers before landing.
+
+At terminal disposition, move the same numbered file to `docs/done/` in the
+integration change. Use final status `DONE`, `PARKED`, `REPLACED`, or
+`ABANDONED`, and replace live current/next detail with a concise outcome,
+landed commits, canonical evidence, validation, and remaining dependency or
+follow-up links. A done record is frozen coordination history, not a second
+roadmap, results report, decision tree, approval ledger, or source of authority.
 
 Before starting, resuming, rebasing, or integrating a task, refresh the
 integration branch and read relevant ongoing records. Their scope is advisory,
 not a file lock. Textual overlap is allowed, but semantic or authority overlap
 requires cross-linked dependencies and an explicit integration order; it never
-resolves by last-writer-wins. An ongoing record cannot authorize or expand
-work. Follow the complete schema, refresh, rebase, and lifecycle rules in
+resolves by last-writer-wins. A task record cannot authorize or expand work.
+Follow the complete schema, refresh, rebase, numbering, and lifecycle rules in
 `docs/WORKFLOW.md`.
 
 ## Repository structure and hygiene

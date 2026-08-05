@@ -26,8 +26,9 @@ the project that exposed the language gap.
 - `docs/current-plan.md` is the sole current execution proposal or approved
   plan and the sole source of plan-derived authority and sequencing. It is
   derived from one outline revision and cannot add an unselected direction.
-- `docs/ongoing/` contains temporary, non-authorizing records of how each
-  substantial in-flight task is executing approved work.
+- `docs/ongoing/` contains numbered, temporary, non-authorizing records of how
+  each substantial in-flight task is executing approved work; `docs/done/`
+  retains the same numbered records as concise terminal history.
 - `docs/WORKFLOW.md` defines process but selects no work.
 - Bare `WORKFLOW.md` references in immutable or protected artifacts name this
   sole guide by basename; they do not imply a second copy at the repository
@@ -128,7 +129,7 @@ approved general capability; the slice may not be replaced with an easier
 project, input class, behavior, boundary, oracle, or comparator to escape a
 blocker.
 
-## Ongoing task coordination
+## Task coordination and closure history
 
 `docs/ongoing/` makes concurrent execution visible without creating another
 planning authority. Create one Markdown file for each substantial independently
@@ -140,10 +141,19 @@ the record the task's first small integration commit so other workspaces can
 see it before substantial work begins. It cannot broaden or resequence the
 authority it cites.
 
+Every task record is named `NNNN-short-slug.md`. The four-digit number comes
+from one monotonically increasing sequence shared across `docs/ongoing/` and
+`docs/done/`. After refreshing the integration branch, a new task proposes
+`max(existing numbers) + 1` in its first registration commit. That integration
+commit assigns the number permanently: moving the task never changes it and a
+closed number is never reused. Concurrent branches may propose the same next
+number, but the later one must renumber before integration. This intentionally
+uses ordinary Git conflict and review rather than a separate allocator.
+
 Keep each record short and operational. It contains:
 
-- `Status`: `IN PROGRESS`, `BLOCKED`, or `WAITING`; `DONE` is only a transient
-  state before deletion, and `ACTIVE` is reserved for the Current Plan;
+- `Status`: `IN PROGRESS`, `BLOCKED`, or `WAITING`; `ACTIVE` is reserved for
+  the Current Plan;
 - `Authority`, `Owner`, `Base revision`, and the workspace or branch;
 - `Goal`, `Direction and invariants`, and `Method`;
 - `Progress` as completed, current, and next meaningful outcomes;
@@ -171,11 +181,21 @@ when direction, scope, meaningful progress, blockers, or handoff state changesâ€
 not after every command. Discovery outside its cited authority is a blocker or
 candidate for the next plan, not permission to expand the task.
 
-Delete the record in the change that integrates, parks, replaces, or abandons
-the task, after moving durable facts, measurements, decisions, and status to
-their canonical owners. If a record has live dependents, the same change
-replaces their task link with the landed commit or canonical result and records
-the refresh and gates they now owe.
+At terminal disposition, first move durable facts, measurements, decisions, and
+status to their canonical owners. Then, in the same integration change, move
+the task record without renumbering from `docs/ongoing/` to `docs/done/` and set
+its final status to `DONE`, `PARKED`, `REPLACED`, or `ABANDONED`. Replace
+operational current/next and advisory touch-set detail with a concise outcome,
+landed commits, canonical evidence, validation, and any remaining dependency or
+follow-up links. If a record has live dependents, the same change replaces
+their task link with the landed commit or canonical result and records the
+refresh and gates they now owe.
+
+Files in `docs/done/` are frozen coordination history. Do not keep updating
+them as the project evolves and do not treat them as authority or as a second
+copy of the Direction Outline, Current Plan, RESULTS, MCTS-Mem, approval
+ledger, compiler status, or specification. Repair a broken closure link when
+necessary, but put new facts and re-decisions in their canonical homes.
 
 Replacing the Current Plan is a coordination barrier. A plan-derived task loses
 execution authority when its `ACTIVE` plan is replaced unless the new `ACTIVE`
