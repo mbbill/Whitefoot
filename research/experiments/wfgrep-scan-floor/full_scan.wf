@@ -1,0 +1,44 @@
+fn scan ['r](input: &'r buffer<u8>) -> own u64 reads('r), traps {
+  let length: own u64 = len<u8>(deref(input));
+  let offset: own u64 = 0_u64;
+  let lines: own u64 = 0_u64;
+  let candidates: own u64 = 0_u64;
+  loop @scan {
+    let done: own Bool = ige<u64>(offset, length);
+    match done {
+      True() => {
+        break @scan;
+      }
+      False() => {
+      }
+    }
+    let byte: own u8 = index<u8>(deref(input), offset);
+    let is_line: own Bool = ieq<u8>(byte, 10_u8);
+    let line_increment: own u64 = match is_line {
+      True() => {
+        give 1_u64;
+      }
+      False() => {
+        give 0_u64;
+      }
+    }
+    set lines = iadd.wrap<u64>(lines, line_increment);
+    let is_candidate: own Bool = ieq<u8>(byte, 80_u8);
+    let candidate_increment: own u64 = match is_candidate {
+      True() => {
+        give 1_u64;
+      }
+      False() => {
+        give 0_u64;
+      }
+    }
+    set candidates = iadd.wrap<u64>(candidates, candidate_increment);
+    set offset = iadd.wrap<u64>(offset, 1_u64);
+  }
+  let weighted: own u64 = imul.wrap<u64>(candidates, 1000000007_u64);
+  return iadd.wrap<u64>(lines, weighted);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

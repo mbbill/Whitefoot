@@ -1,0 +1,39 @@
+fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own u64 reads('r), traps {
+  let length: own u64 = len<u8>(deref(input));
+  let offset: own u64 = 0_u64;
+  loop @scan {
+    let done: own Bool = ige<u64>(offset, length);
+    match done {
+      True() => {
+        break @scan;
+      }
+      False() => {
+      }
+    }
+    let byte: own u8 = index<u8>(deref(input), offset);
+    let found: own Bool = ieq<u8>(byte, needle);
+    match found {
+      True() => {
+        return offset;
+      }
+      False() => {
+      }
+    }
+    set offset = iadd.wrap<u64>(offset, 1_u64);
+  }
+  return length;
+}
+
+fn scan ['r](input: &'r buffer<u8>) -> own u64 reads('r), traps {
+  let quarter: own u64 = find_byte<'r>(input: input, needle: 251_u8);
+  let half: own u64 = find_byte<'r>(input: input, needle: 252_u8);
+  let end: own u64 = find_byte<'r>(input: input, needle: 253_u8);
+  let missing: own u64 = find_byte<'r>(input: input, needle: 254_u8);
+  let first: own u64 = iadd.wrap<u64>(quarter, half);
+  let second: own u64 = iadd.wrap<u64>(end, missing);
+  return iadd.wrap<u64>(first, second);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
