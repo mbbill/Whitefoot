@@ -26,7 +26,10 @@ or 2x-wfgrep evidence.
 
 - `7adb0faa55678997fdad3ddef15a311579c9d80a` — frozen preregistration,
   apparatus, and pre-timing code-shape inspection; and
-- the commit containing this record — result and retained raw evidence.
+- `10a7a23f05766ab34ce375271011fc2104fe19e9` — result and retained raw
+  evidence; and
+- the commit containing this final record — admitted MCTS facts and validation
+  closure.
 
 ## Canonical evidence
 
@@ -43,7 +46,7 @@ The create-once AC-powered run retained all 128 scheduled samples. Each
 variant occupied each process position eight times; every work identity and
 hash matched; order-class and time-block sensitivity checks preserved the
 directions. The experiment-local gate, MCTS-Mem lint after tree edits, and
-complete repository `make check` gate must pass before integration.
+complete repository `make check` gate passed before integration.
 
 ## Follow-up boundary
 
