@@ -1,14 +1,15 @@
 # Current Plan
 
-Status: PROPOSED — ripgrep 15.2.0 is the owner-selected umbrella target;
-`RG-BASE` execution requires owner approval
+Status: ACTIVE — ripgrep 15.2.0 is the owner-selected umbrella target;
+`RG-BASE` approved by the owner on 2026-08-04
 
 Derived from: [Direction Outline revision 4](roadmap.md), items `CAND-8` and
 `PERF-1`
 
-This proposal authorizes nothing until the owner accepts it. Selecting ripgrep
-and the 2x objective does not itself authorize corpus downloads, benchmarks, a
-Whitefoot port, compiler or specification changes, or parallel-runtime work.
+This approval covers only the written `RG-BASE` `Do`, verification, acceptance,
+and stop boundary. Selecting ripgrep and the 2x objective does not itself
+authorize a Whitefoot port, compiler or specification changes, or
+parallel-runtime work.
 
 ## Umbrella target
 
