@@ -1,0 +1,826 @@
+{
+  "schema_version": 1,
+  "experiment": "RG-BASE",
+  "phase": "frozen-before-selection",
+  "apparatus_files": [
+    "research/experiments/ripgrep/PROTOCOL.md",
+    "research/experiments/ripgrep/Makefile",
+    "research/experiments/ripgrep/runner.py",
+    "research/experiments/ripgrep/test_runner.py"
+  ],
+  "authorization": {
+    "direction_outline_revision": 4,
+    "outline_items": [
+      "CAND-8",
+      "PERF-1"
+    ],
+    "plan_activation_commit": "544f918"
+  },
+  "target": {
+    "identity": {
+      "machine": "arm64",
+      "model": "Mac16,12",
+      "physical_cores": 10,
+      "logical_cores": 10,
+      "performance_cores": 4,
+      "efficiency_cores": 6,
+      "memory_bytes": 17179869184,
+      "page_bytes": 16384,
+      "cache_line_bytes": 128,
+      "macos": "26.5.2",
+      "macos_build": "25F84",
+      "darwin": "25.5.0"
+    },
+    "thread_cap": 10,
+    "power": {
+      "source": "AC",
+      "low_power_mode": false
+    },
+    "work_root_storage": {
+      "bus_protocol": "Apple Fabric",
+      "filesystem_name": "APFS",
+      "filesystem_type": "apfs",
+      "internal": true,
+      "solid_state": true,
+      "device_block_bytes": 4096,
+      "allocation_block_bytes": 4096
+    },
+    "native_cpu": "apple-m4",
+    "native_target_features": [
+      "aes",
+      "bf16",
+      "bti",
+      "crc",
+      "dit",
+      "dotprod",
+      "dpb",
+      "dpb2",
+      "fcma",
+      "fhm",
+      "flagm",
+      "fp16",
+      "frintts",
+      "i8mm",
+      "jsconv",
+      "lor",
+      "lse",
+      "neon",
+      "paca",
+      "pacg",
+      "pan",
+      "pmuv3",
+      "ras",
+      "rcpc",
+      "rcpc2",
+      "rdm",
+      "sb",
+      "sha2",
+      "sha3",
+      "ssbs",
+      "vh"
+    ]
+  },
+  "toolchain": {
+    "rustc": {
+      "release": "1.97.1",
+      "commit": "8bab26f4f68e0e26f0bb7960be334d5b520ea452",
+      "llvm": "22.1.6"
+    },
+    "cargo": {
+      "release": "1.97.1",
+      "commit": "c980f4866141969fab6254a680546a277789d6f0"
+    }
+  },
+  "runner": {
+    "python_library_path": "/opt/homebrew/Cellar/python@3.14/3.14.4_1/Frameworks/Python.framework/Versions/3.14/Python",
+    "identity": {
+      "implementation": "cpython",
+      "version": "3.14.4",
+      "executable_path": "/opt/homebrew/Cellar/python@3.14/3.14.4_1/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+      "executable": {
+        "size": 52448,
+        "sha256": "02a8df1726463faedb3adef289b3d1bdeabb7785c837fd8c174023aeeeb4d312"
+      },
+      "library_path": "/opt/homebrew/Cellar/python@3.14/3.14.4_1/Frameworks/Python.framework/Versions/3.14/Python",
+      "library": {
+        "size": 5438672,
+        "sha256": "a38058fdc44c447741ad02653fe083e317d1ce8215d0fb52c2b208c6d4ddbbbd"
+      }
+    }
+  },
+  "upstream_source": {
+    "url": "https://github.com/BurntSushi/ripgrep.git",
+    "version": "15.2.0",
+    "commit": "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f",
+    "tree": "c743701524f65f036cf174d6551918be7dfc0d40",
+    "cargo_lock_sha256": "7a7d39cda8a03930e578f1dbb724e055771901842eca239e03b01e19da946a64",
+    "profile": {
+      "name": "release-lto",
+      "opt_level": 3,
+      "lto": "fat",
+      "codegen_units": 1,
+      "panic": "abort",
+      "debug": false,
+      "strip": "symbols",
+      "incremental": false
+    }
+  },
+  "binaries": {
+    "official": {
+      "role": "contender",
+      "path": "upstream/ripgrep-15.2.0-aarch64-apple-darwin/rg",
+      "archive_url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz",
+      "checksum_url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz.sha256",
+      "size": 4014576,
+      "sha256": "a326a1fb48074202e9ad41e4cd1e389eeea372c8c6f7d7e80da81176d5d9430e",
+      "version_sha256": "1b93a92a4194b0cd390151eee9782bc4a7f759ea78c87ff567ab48fa9d224218",
+      "archive_sha256": "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+      "macho_uuid": "4BCC3257-518C-3411-8135-5EAD0BE2EC7E",
+      "features": [
+        "pcre2",
+        "neon"
+      ]
+    },
+    "native": {
+      "role": "contender",
+      "path": "upstream/build-native-apple-m4/aarch64-apple-darwin/release-lto/rg",
+      "size": 2987248,
+      "sha256": "0e39dc00e77713b723403c9ba794517f4758824e0985b86c431993199c27e92b",
+      "version_sha256": "75c7d1b39eb881dbd3b1c4b0e1ea56b5c553c8d8f65047401a9994d09694dfc7",
+      "macho_uuid": "E286685F-B2AA-3288-AB18-7A114A29C220",
+      "features": [
+        "neon"
+      ],
+      "rustflags": [
+        "-Ctarget-cpu=apple-m4"
+      ],
+      "cargo_argv": [
+        "cargo",
+        "build",
+        "--frozen",
+        "--offline",
+        "--profile",
+        "release-lto",
+        "--target",
+        "aarch64-apple-darwin",
+        "--no-default-features"
+      ]
+    },
+    "generic_lto": {
+      "role": "diagnostic",
+      "path": "upstream/build-generic/release-lto/rg",
+      "size": 3085808,
+      "sha256": "262459f5eed28d27e7abf4fae0e1c24da014f8d6063bbd281f1dd23c0674aa69",
+      "version_sha256": "75c7d1b39eb881dbd3b1c4b0e1ea56b5c553c8d8f65047401a9994d09694dfc7",
+      "features": [
+        "neon"
+      ]
+    }
+  },
+  "corpora": {
+    "linux": {
+      "kind": "git",
+      "path": "corpora-case-sensitive/linux",
+      "url": "https://github.com/BurntSushi/linux.git",
+      "commit": "84e57d292203a45c96dbcb2e6be9dd80961d981a",
+      "tree": "ceaf69a4e25f3fce6e3682275aff8711a584c640",
+      "tracked_entries": 79435,
+      "tracked_bytes": 1304813706,
+      "ignore_files": 306,
+      "checkout_sha256": "363726a4913c03a10cab8c9e39781c157c48a8a2b682b0060cc516bd0a74c0eb",
+      "info_exclude": {
+        "size": 240,
+        "sha256": "6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1"
+      },
+      "primary_license_notice": "GPL-2.0 WITH Linux-syscall-note; additional licenses may apply",
+      "storage": {
+        "image_path": "linux-case-sensitive.sparseimage",
+        "mount_path": "corpora-case-sensitive",
+        "image_type": "sparse disk image",
+        "bus_protocol": "Disk Image",
+        "filesystem_name": "Case-sensitive APFS",
+        "filesystem_type": "apfs",
+        "volume_name": "WF_RG_LINUX"
+      },
+      "case_sensitive_probe": [
+        "include/uapi/linux/netfilter/xt_CONNMARK.h",
+        "include/uapi/linux/netfilter/xt_connmark.h"
+      ]
+    },
+    "llama_cpp": {
+      "kind": "git",
+      "path": "corpora/llama.cpp",
+      "url": "https://github.com/ggml-org/llama.cpp.git",
+      "tag": "b10012",
+      "commit": "c71854292f7c367cc3b35939f88121d81945472f",
+      "tree": "be8dba6f315d2c3eefb18b680e3df3b348832442",
+      "tracked_entries": 3167,
+      "tracked_bytes": 159936106,
+      "ignore_files": 15,
+      "checkout_sha256": "74139ffe02da350fab81f5a8e42f5b7838639a6ed4b2e50bcb3dbfa8e42672d3",
+      "info_exclude": {
+        "size": 240,
+        "sha256": "6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1"
+      },
+      "primary_root_license": "MIT; vendored files may differ"
+    },
+    "subtitles_ru": {
+      "kind": "file",
+      "path": "corpora/ru.txt",
+      "archive_path": "corpora/ru.txt.gz",
+      "url": "https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2016/mono/ru.txt.gz",
+      "archive_size": 482716779,
+      "archive_md5": "85af1038045e7d8a81b084a66c709d12",
+      "archive_sha256": "112b94526e325045fd61c26f79aa59f10b62c5f45ae9b8f700cdeb7a149d897e",
+      "archive": {
+        "size": 482716779,
+        "sha256": "112b94526e325045fd61c26f79aa59f10b62c5f45ae9b8f700cdeb7a149d897e"
+      },
+      "size": 1714880274,
+      "sha256": "08c2d7399372afe859238e25cb414e5fadbe5a416a8e69418787305b1e79296f",
+      "last_modified": "2018-11-17T11:32:21Z"
+    }
+  },
+  "environment": {
+    "LC_ALL": "C",
+    "LANG": "C",
+    "TZ": "UTC",
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"
+  },
+  "common_argv": [
+    "--no-config",
+    "--engine=default",
+    "--color=never",
+    "--no-heading",
+    "--with-filename",
+    "--line-number",
+    "--column",
+    "--path-separator=/",
+    "--no-ignore-global",
+    "--no-ignore-parent"
+  ],
+  "traversals": [
+    {
+      "id": "linux_all",
+      "corpus": "linux",
+      "argv": [
+        "--no-config",
+        "--engine=default",
+        "--color=never",
+        "--path-separator=/",
+        "--no-ignore-global",
+        "--no-ignore-parent",
+        "--threads=10",
+        "--files",
+        "--null",
+        "."
+      ]
+    },
+    {
+      "id": "linux_c",
+      "corpus": "linux",
+      "argv": [
+        "--no-config",
+        "--engine=default",
+        "--color=never",
+        "--path-separator=/",
+        "--no-ignore-global",
+        "--no-ignore-parent",
+        "--threads=10",
+        "--type=c",
+        "--files",
+        "--null",
+        "."
+      ]
+    },
+    {
+      "id": "llama_all",
+      "corpus": "llama_cpp",
+      "argv": [
+        "--no-config",
+        "--engine=default",
+        "--color=never",
+        "--path-separator=/",
+        "--no-ignore-global",
+        "--no-ignore-parent",
+        "--threads=10",
+        "--files",
+        "--null",
+        "."
+      ]
+    },
+    {
+      "id": "llama_cpp",
+      "corpus": "llama_cpp",
+      "argv": [
+        "--no-config",
+        "--engine=default",
+        "--color=never",
+        "--path-separator=/",
+        "--no-ignore-global",
+        "--no-ignore-parent",
+        "--threads=10",
+        "--type=cpp",
+        "--files",
+        "--null",
+        "."
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "linux_literal",
+      "corpus": "linux",
+      "traversal": "linux_all",
+      "stdout_mode": "file_blocks",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "many-files",
+        "literal",
+        "low-result",
+        "repository-ignore"
+      ],
+      "argv": [
+        "--threads=10",
+        "PM_RESUME",
+        "."
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "linux_required_regex",
+      "corpus": "linux",
+      "traversal": "linux_c",
+      "stdout_mode": "file_blocks",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "many-files",
+        "required-literal-regex",
+        "word-boundary",
+        "type-filter",
+        "repository-ignore"
+      ],
+      "argv": [
+        "--threads=10",
+        "--type=c",
+        "--word-regexp",
+        "[A-Z]+_SUSPEND",
+        "."
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "linux_unicode_class",
+      "corpus": "linux",
+      "traversal": "linux_all",
+      "stdout_mode": "file_blocks",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "many-files",
+        "no-required-literal",
+        "unicode",
+        "low-result",
+        "repository-ignore"
+      ],
+      "argv": [
+        "--threads=10",
+        "\\p{Greek}",
+        "."
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "llama_literal",
+      "corpus": "llama_cpp",
+      "traversal": "llama_cpp",
+      "stdout_mode": "file_blocks",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "many-files",
+        "literal",
+        "material-result",
+        "type-filter",
+        "repository-ignore"
+      ],
+      "argv": [
+        "--threads=10",
+        "--type=cpp",
+        "GGML_ASSERT",
+        "."
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "llama_case_insensitive",
+      "corpus": "llama_cpp",
+      "traversal": "llama_all",
+      "stdout_mode": "file_blocks",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "many-files",
+        "case-insensitive",
+        "required-literal-regex",
+        "material-result",
+        "repository-ignore"
+      ],
+      "argv": [
+        "--threads=10",
+        "--ignore-case",
+        "token(?:izer|ization)?",
+        "."
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "llama_literal_set",
+      "corpus": "llama_cpp",
+      "traversal": "llama_cpp",
+      "stdout_mode": "file_blocks",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "many-files",
+        "literal-alternation",
+        "type-filter",
+        "repository-ignore"
+      ],
+      "argv": [
+        "--threads=10",
+        "--type=cpp",
+        "TODO|FIXME|XXX",
+        "."
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "subtitles_unicode_literal",
+      "corpus": "subtitles_ru",
+      "stdout_mode": "exact",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "single-file",
+        "unicode-literal",
+        "low-result"
+      ],
+      "argv": [
+        "--threads=1",
+        "Шерлок Холмс",
+        "./ru.txt"
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "subtitles_unicode_case_insensitive",
+      "corpus": "subtitles_ru",
+      "stdout_mode": "exact",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "single-file",
+        "unicode-literal",
+        "case-insensitive",
+        "low-result"
+      ],
+      "argv": [
+        "--threads=1",
+        "--ignore-case",
+        "Шерлок Холмс",
+        "./ru.txt"
+      ],
+      "selected_comparator": null
+    },
+    {
+      "id": "subtitles_no_literal",
+      "corpus": "subtitles_ru",
+      "stdout_mode": "exact",
+      "weight": {
+        "numerator": 1,
+        "denominator": 9
+      },
+      "coverage": [
+        "single-file",
+        "no-required-literal",
+        "unicode-regex",
+        "low-result"
+      ],
+      "argv": [
+        "--threads=1",
+        "\\w{5}\\s+\\w{5}\\s+\\w{5}\\s+\\w{5}\\s+\\w{5}\\s+\\w{5}\\s+\\w{5}",
+        "./ru.txt"
+      ],
+      "selected_comparator": null
+    }
+  ],
+  "controls": [
+    {
+      "id": "no_match_exit_1",
+      "corpus": "llama_cpp",
+      "stdout_mode": "exact",
+      "expected_status": 1,
+      "argv": [
+        "--threads=1",
+        "__WHITEFOOT_RG_BASE_IMPOSSIBLE_7D3B848D__",
+        "./README.md"
+      ]
+    },
+    {
+      "id": "invalid_regex_exit_2",
+      "corpus": "llama_cpp",
+      "stdout_mode": "exact",
+      "expected_status": 2,
+      "argv": [
+        "--threads=1",
+        "(",
+        "./README.md"
+      ]
+    }
+  ],
+  "oracles": {
+    "traversals": {
+      "linux_all": {
+        "selected": {
+          "bytes": 1304808267,
+          "files": 79366
+        },
+        "status": 0,
+        "stdout": {
+          "mode": "nul_records",
+          "bytes": 3199351,
+          "records": 79366,
+          "sha256": "70d571c6714a2d2d45f194130f24585f30d34d1d3aacc4d777c39547c0778b6d"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "linux_c": {
+        "selected": {
+          "bytes": 1181529268,
+          "files": 55926
+        },
+        "status": 0,
+        "stdout": {
+          "mode": "nul_records",
+          "bytes": 2100948,
+          "records": 55926,
+          "sha256": "4422b5bca71d3e0dc1f1b4676becb3cc6fda0a1f412ecbe78e310f1eb4c1918f"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "llama_all": {
+        "selected": {
+          "bytes": 159499724,
+          "files": 3040
+        },
+        "status": 0,
+        "stdout": {
+          "mode": "nul_records",
+          "bytes": 136146,
+          "records": 3040,
+          "sha256": "311b0c323325facbada3f0d9ee59306ffcf216908754d855c5a11404237fec6d"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "llama_cpp": {
+        "selected": {
+          "bytes": 25730902,
+          "files": 915
+        },
+        "status": 0,
+        "stdout": {
+          "mode": "nul_records",
+          "bytes": 31891,
+          "records": 915,
+          "sha256": "96a3300e3cc46e575dc43fa01cfd9a72a5a91e0e34ab8c7a57496d04390e2685"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "cases": {
+      "linux_literal": {
+        "status": 0,
+        "stdout": {
+          "mode": "file_blocks",
+          "blocks": 13,
+          "bytes": 3534,
+          "records": 39,
+          "sha256": "fb9ba8f7839ea20f7ce0ca2154d7a99ecd8181869f6cceae1d4bcac9fed0d182"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "linux_required_regex": {
+        "status": 0,
+        "stdout": {
+          "mode": "file_blocks",
+          "blocks": 218,
+          "bytes": 34822,
+          "records": 450,
+          "sha256": "f69e497ff03e065b60023e4661e2521b3e5672ba6e4925458b63acddfde6163c"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "linux_unicode_class": {
+        "status": 0,
+        "stdout": {
+          "mode": "file_blocks",
+          "blocks": 32,
+          "bytes": 8334,
+          "records": 105,
+          "sha256": "632f7a0eb63a664335cb4430cf16169d8c892d585b47e81768d7f4e724513d86"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "llama_literal": {
+        "status": 0,
+        "stdout": {
+          "mode": "file_blocks",
+          "blocks": 329,
+          "bytes": 385506,
+          "records": 4255,
+          "sha256": "1c5afa094adc5b39e96a41c3e779382c07a86c9f739066b4ac7d4390f9dd159b"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "llama_case_insensitive": {
+        "status": 0,
+        "stdout": {
+          "mode": "file_blocks",
+          "blocks": 740,
+          "bytes": 1714637,
+          "records": 15402,
+          "sha256": "8db639ca065d4c9a9a605af147f93f4ada40d39400af2dca6d7274b7be1c75ed"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "llama_literal_set": {
+        "status": 0,
+        "stdout": {
+          "mode": "file_blocks",
+          "blocks": 201,
+          "bytes": 82495,
+          "records": 773,
+          "sha256": "96e9c45603788b27adc04ce6302dc8aa5706db40b34f3691317c3a2b26bdd5a7"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "subtitles_unicode_literal": {
+        "status": 0,
+        "stdout": {
+          "mode": "exact",
+          "bytes": 52588,
+          "records": 583,
+          "sha256": "6a3943d9354b4c4441c51528cc1b855929bbb0b3339505c6d43383993af560cb"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "subtitles_unicode_case_insensitive": {
+        "status": 0,
+        "stdout": {
+          "mode": "exact",
+          "bytes": 54011,
+          "records": 604,
+          "sha256": "64aae80b62935998cbcb40f855df23f2e25aae340a553ce7e883d323c9ff195b"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "subtitles_no_literal": {
+        "status": 0,
+        "stdout": {
+          "mode": "exact",
+          "bytes": 7476,
+          "records": 41,
+          "sha256": "98f2301595101690ac42f70913f79c48ad267ef747e793e64183e3363281fb11"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "controls": {
+      "no_match_exit_1": {
+        "status": 1,
+        "stdout": {
+          "mode": "exact",
+          "bytes": 0,
+          "records": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "invalid_regex_exit_2": {
+        "status": 2,
+        "stdout": {
+          "mode": "exact",
+          "bytes": 0,
+          "records": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "bytes": 61,
+          "sha256": "4b3358a7d81eb4617b5cb7061637a11fc087a93cf7fa1139e6a0fe38f3b97197"
+        }
+      }
+    }
+  },
+  "measurement": {
+    "cache_state": "warm-conditioned",
+    "cold_cache": "unavailable-on-this-target-without-privileged-symmetric-reset",
+    "stdout_destination": "consumed-pipe",
+    "selection_run_id": "rg-base-selection-1",
+    "baseline_run_id": "rg-base-baseline-1",
+    "warmups": 3,
+    "selection_pairs": 31,
+    "baseline_repetitions": 31,
+    "bootstrap_samples": 10000,
+    "bootstrap_seed": 20260804,
+    "confidence_level": 0.95,
+    "max_relative_ci_half_width": 0.03,
+    "timeout_seconds": 120,
+    "outlier_rule": "retain-all-successful-samples",
+    "profile_cases": [
+      "linux_literal",
+      "linux_required_regex",
+      "linux_unicode_class",
+      "llama_literal",
+      "llama_case_insensitive",
+      "llama_literal_set",
+      "subtitles_unicode_literal",
+      "subtitles_unicode_case_insensitive",
+      "subtitles_no_literal"
+    ]
+  },
+  "future_comparison": {
+    "cache_state": "warm-conditioned",
+    "warmups": 3,
+    "paired_rounds": 31,
+    "schedule": "rotate-cases-and-alternate-upstream-whitefoot-by-round-and-case",
+    "rerun_selected_upstream_with_whitefoot": true,
+    "bootstrap_samples": 10000,
+    "bootstrap_seed": 20263804,
+    "bootstrap_resampling": "one-shared-round-index-vector-across-all-nine-cases",
+    "aggregate": "equal-weight-geometric-mean",
+    "aggregate_speedup_ci95_lower_bound": 2.0,
+    "per_case_whitefoot_over_upstream_ci95_upper_bound": 1.1,
+    "candidate_path_binding": "same-checked-producer-plus-same-search-stats-or-trace"
+  }
+}

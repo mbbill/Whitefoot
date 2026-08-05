@@ -12,6 +12,14 @@ execution proposal and status in `../../docs/current-plan.md`, and
 implementation detail in `../../compiler/README.md`. Only an `ACTIVE` plan
 sequences work.
 
+## Active current-plan experiment
+
+- `ripgrep/` — RG-BASE preregistration for the owner-selected 2x ripgrep
+  flagship. It freezes the Apple M4 target, pinned official/native ripgrep
+  comparators, two real source trees, one large-text corpus, nine equal-weight
+  end-to-end cases, correctness oracles, statistics, and the future 2x rule
+  before comparative timing.
+
 ## Historical fact-channel benchmarks
 
 These results used the now-archived democ implementation. They remain measured
