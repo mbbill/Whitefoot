@@ -1,6 +1,6 @@
 # 0003 — WF-LITERAL-LINE
 
-Status: DONE — bounded experiment complete; integration pending
+Status: DONE — integrated into `main` on 2026-08-05
 
 Authority: separate owner-approved bounded research on 2026-08-05 advancing
 `PERF-1`, `FLOOR-1`, and `FLOOR-2` without authorizing specification,
@@ -28,8 +28,8 @@ or 2x-wfgrep evidence.
   apparatus, and pre-timing code-shape inspection; and
 - `10a7a23f05766ab34ce375271011fc2104fe19e9` — result and retained raw
   evidence; and
-- the commit containing this final record — admitted MCTS facts and validation
-  closure.
+- `b44b737` — admitted MCTS facts and validation closure; `main` was
+  fast-forwarded through this linear history.
 
 ## Canonical evidence
 
