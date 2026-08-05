@@ -1,0 +1,245 @@
+fn digest_word(digest: own u64, value: own u64) -> own u64 pure {
+  let combined: own u64 = ixor<u64>(digest, value);
+  return imul.wrap<u64>(combined, 1099511628211_u64);
+}
+
+fn finish_digest(digest: own u64, match_count: own u64, haystack_length: own u64, needle_length: own u64) -> own u64 pure {
+  let with_count: own u64 = digest_word(digest: digest, value: match_count);
+  let with_haystack: own u64 = digest_word(digest: with_count, value: haystack_length);
+  return digest_word(digest: with_haystack, value: needle_length);
+}
+
+fn find_scalar ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>, search_start: own u64, search_end: own u64) -> own u64 reads('h 'n), traps {
+  let needle_length: own u64 = len<u8>(deref(needle));
+  let range_length: own u64 = isub.wrap<u64>(search_end, search_start);
+  let too_short: own Bool = ilt<u64>(range_length, needle_length);
+  match too_short {
+    True() => {
+      return search_end;
+    }
+    False() => {
+    }
+  }
+  let needle_first: own u8 = index<u8>(deref(needle), 0_u64);
+  let last_candidate: own u64 = isub.wrap<u64>(search_end, needle_length);
+  let candidate: own u64 = search_start;
+  loop @candidates {
+    let past_last: own Bool = igt<u64>(candidate, last_candidate);
+    match past_last {
+      True() => {
+        break @candidates;
+      }
+      False() => {
+      }
+    }
+    let candidate_in_range: own Bool = ilt<u64>(candidate, search_end);
+    match candidate_in_range {
+      True() => {
+      }
+      False() => {
+        break @candidates;
+      }
+    }
+    let candidate_byte: own u8 = index<u8>(deref(haystack), candidate);
+    let first_equal: own Bool = ieq<u8>(candidate_byte, needle_first);
+    let equal: own Bool = True();
+    match first_equal {
+      True() => {
+        let tail_index: own u64 = 1_u64;
+        loop @verify_tail {
+          let tail_done: own Bool = ige<u64>(tail_index, needle_length);
+          match tail_done {
+            True() => {
+              break @verify_tail;
+            }
+            False() => {
+            }
+          }
+          let haystack_index: own u64 = iadd.wrap<u64>(candidate, tail_index);
+          let haystack_in_range: own Bool = ilt<u64>(haystack_index, search_end);
+          match haystack_in_range {
+            True() => {
+            }
+            False() => {
+              set equal = False();
+              break @verify_tail;
+            }
+          }
+          let haystack_byte: own u8 = index<u8>(deref(haystack), haystack_index);
+          let needle_byte: own u8 = index<u8>(deref(needle), tail_index);
+          let same: own Bool = ieq<u8>(haystack_byte, needle_byte);
+          match same {
+            True() => {
+            }
+            False() => {
+              set equal = False();
+              break @verify_tail;
+            }
+          }
+          set tail_index = iadd.wrap<u64>(tail_index, 1_u64);
+        }
+      }
+      False() => {
+        set equal = False();
+      }
+    }
+    match equal {
+      True() => {
+        return candidate;
+      }
+      False() => {
+      }
+    }
+    set candidate = iadd.wrap<u64>(candidate, 1_u64);
+  }
+  return search_end;
+}
+
+fn literal_line ['h, 'n](haystack: &'h buffer<u8>, needle: &'n buffer<u8>) -> own u64 reads('h 'n), traps {
+  let haystack_length: own u64 = len<u8>(deref(haystack));
+  let needle_length: own u64 = len<u8>(deref(needle));
+  let digest: own u64 = 14695981039346656037_u64;
+  let match_count: own u64 = 0_u64;
+  let line_number: own u64 = 1_u64;
+  let line_start: own u64 = 0_u64;
+  let line_cursor: own u64 = 0_u64;
+  let search_cursor: own u64 = 0_u64;
+  let empty_needle: own Bool = ieq<u64>(needle_length, 0_u64);
+  match empty_needle {
+    True() => {
+      return finish_digest(digest: digest, match_count: match_count, haystack_length: haystack_length, needle_length: needle_length);
+    }
+    False() => {
+    }
+  }
+  let needle_index: own u64 = 0_u64;
+  let needle_has_lf: own Bool = False();
+  loop @validate_needle {
+    let needle_done: own Bool = ige<u64>(needle_index, needle_length);
+    match needle_done {
+      True() => {
+        break @validate_needle;
+      }
+      False() => {
+      }
+    }
+    let needle_byte: own u8 = index<u8>(deref(needle), needle_index);
+    let is_lf: own Bool = ieq<u8>(needle_byte, 10_u8);
+    match is_lf {
+      True() => {
+        set needle_has_lf = True();
+        break @validate_needle;
+      }
+      False() => {
+      }
+    }
+    set needle_index = iadd.wrap<u64>(needle_index, 1_u64);
+  }
+  match needle_has_lf {
+    True() => {
+      return finish_digest(digest: digest, match_count: match_count, haystack_length: haystack_length, needle_length: needle_length);
+    }
+    False() => {
+    }
+  }
+  loop @matching_lines {
+    let match_start: own u64 = find_scalar<'h, 'n>(haystack: haystack, needle: needle, search_start: search_cursor, search_end: haystack_length);
+    let no_match: own Bool = ieq<u64>(match_start, haystack_length);
+    match no_match {
+      True() => {
+        break @matching_lines;
+      }
+      False() => {
+      }
+    }
+    loop @reconcile_line {
+      let reached_match: own Bool = ige<u64>(line_cursor, match_start);
+      match reached_match {
+        True() => {
+          break @reconcile_line;
+        }
+        False() => {
+        }
+      }
+      let cursor_in_haystack: own Bool = ilt<u64>(line_cursor, haystack_length);
+      match cursor_in_haystack {
+        True() => {
+        }
+        False() => {
+          break @reconcile_line;
+        }
+      }
+      let byte: own u8 = index<u8>(deref(haystack), line_cursor);
+      let newline: own Bool = ieq<u8>(byte, 10_u8);
+      match newline {
+        True() => {
+          set line_start = iadd.wrap<u64>(line_cursor, 1_u64);
+          set line_number = iadd.wrap<u64>(line_number, 1_u64);
+        }
+        False() => {
+        }
+      }
+      set line_cursor = iadd.wrap<u64>(line_cursor, 1_u64);
+    }
+    let line_end: own u64 = match_start;
+    loop @find_line_end {
+      let at_end: own Bool = ige<u64>(line_end, haystack_length);
+      match at_end {
+        True() => {
+          break @find_line_end;
+        }
+        False() => {
+        }
+      }
+      let byte: own u8 = index<u8>(deref(haystack), line_end);
+      let newline: own Bool = ieq<u8>(byte, 10_u8);
+      match newline {
+        True() => {
+          break @find_line_end;
+        }
+        False() => {
+        }
+      }
+      set line_end = iadd.wrap<u64>(line_end, 1_u64);
+    }
+    let candidate: own u64 = line_start;
+    loop @line_matches {
+      let found: own u64 = find_scalar<'h, 'n>(haystack: haystack, needle: needle, search_start: candidate, search_end: line_end);
+      let line_done: own Bool = ieq<u64>(found, line_end);
+      match line_done {
+        True() => {
+          break @line_matches;
+        }
+        False() => {
+        }
+      }
+      let match_end: own u64 = iadd.wrap<u64>(found, needle_length);
+      set digest = digest_word(digest: digest, value: match_count);
+      set digest = digest_word(digest: digest, value: found);
+      set digest = digest_word(digest: digest, value: match_end);
+      set digest = digest_word(digest: digest, value: line_start);
+      set digest = digest_word(digest: digest, value: line_end);
+      set digest = digest_word(digest: digest, value: line_number);
+      set match_count = iadd.wrap<u64>(match_count, 1_u64);
+      set candidate = match_end;
+    }
+    let terminated: own Bool = ilt<u64>(line_end, haystack_length);
+    match terminated {
+      True() => {
+        set search_cursor = iadd.wrap<u64>(line_end, 1_u64);
+        set line_cursor = search_cursor;
+        set line_start = search_cursor;
+        set line_number = iadd.wrap<u64>(line_number, 1_u64);
+      }
+      False() => {
+        set search_cursor = haystack_length;
+        set line_cursor = haystack_length;
+      }
+    }
+  }
+  return finish_digest(digest: digest, match_count: match_count, haystack_length: haystack_length, needle_length: needle_length);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

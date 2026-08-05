@@ -1,6 +1,6 @@
 # 0003 — WF-LITERAL-LINE
 
-Status: IN PROGRESS — source audit and preregistration
+Status: IN PROGRESS — frozen apparatus, timing not yet observed
 
 Authority: separate owner-approved bounded research on 2026-08-05. This task
 may inform `PERF-1`, `FLOOR-1`, `FLOOR-2`, and a later concrete `STORE-1` or
@@ -51,11 +51,12 @@ or noise.
 ## Progress
 
 - Completed: owner authorization, numbering, independent-scope review against
-  0001, and branch creation from linear main revision `b9475f2`.
-- Current: publish this registration to main, then audit the exact upstream
-  matcher and current-language boundary before freezing an experiment.
-- Next: preregister one bounded slice, implement it without compiler changes,
-  and obtain an independent hostile review before comparative timing.
+  0001, exact ripgrep/dependency audit, active-language audit, hostile protocol
+  review, implementation, correctness gate, and pre-timing code-shape review.
+- Current: freeze the complete apparatus and pre-timing observations in one
+  clean commit. No comparative timing has been observed.
+- Next: execute the single create-once run, classify it under the frozen rules,
+  retain the evidence, update admitted design-memory facts, and stop.
 
 ## Scope and expected touch set
 
