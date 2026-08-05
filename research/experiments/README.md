@@ -22,6 +22,13 @@ sequences work.
 
 ## Completed current-compiler bounded research
 
+- `literal-line-floor/` — the active v0.17 language expresses an exact
+  runtime-needle literal line matcher, but its helper-shaped scalar lowering is
+  directionally about 5% behind same-Clang C: C/Whitefoot is 0.9535
+  [0.9223, 0.9609], below the preregistered material-loss threshold. Pinned
+  Rust `memmem` is descriptively 7.33x the same-toolchain scalar control with
+  the expected NEON packed-pair mechanism, but strict primary parity was not
+  met, so this is not promoted to a language, ripgrep, end-to-end, or 2x claim.
 - `wfgrep-scan-floor/` — the active v0.17 language and ordinary compiler match
   same-Clang C on two safe single-buffer scanner shapes. The width-16
   Boolean-dataflow full pass measures 0.9993x C [0.9969, 1.0023], and four
