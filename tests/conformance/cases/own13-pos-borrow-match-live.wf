@@ -24,3 +24,7 @@ fn twice ['r](s: &'r Sign) -> own i32 pure {
   }
   return 0_i32;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

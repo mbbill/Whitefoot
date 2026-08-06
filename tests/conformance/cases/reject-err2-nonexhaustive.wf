@@ -11,3 +11,7 @@ fn bad(x: own i32) -> own Sign pure {
     }
   }
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

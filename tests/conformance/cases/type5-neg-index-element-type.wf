@@ -2,3 +2,7 @@ fn read(items: own buffer<u8>) -> own u32 traps {
   doc "TYPE-5: index<T> must state the container's actual element type.";
   return index<u32>(items, 0_u64);
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

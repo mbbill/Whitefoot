@@ -10,3 +10,7 @@ fn inspect(holder: own box<State>) -> own unit pure {
   }
   return unit;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

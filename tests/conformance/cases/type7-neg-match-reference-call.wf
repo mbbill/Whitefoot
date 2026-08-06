@@ -14,3 +14,7 @@ fn inspect ['r](state: &'r State) -> own unit pure {
   }
   return unit;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

@@ -11,3 +11,7 @@ enum RightEq {
 fn compare(left: own LeftEq, right: own RightEq) -> own Bool pure {
   return eeq<LeftEq>(left, right);
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

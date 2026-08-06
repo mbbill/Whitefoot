@@ -4,3 +4,7 @@ fn guarded(left: own u32, right: own u32) -> own unit traps requires {
 } {
   return unit;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

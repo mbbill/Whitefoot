@@ -3,3 +3,7 @@ fn leak_uniq ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {
     return &uniq 's deref(x);
   }
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

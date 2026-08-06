@@ -6,3 +6,7 @@ enum TagEq {
 fn compare(left: own TagEq) -> own Bool pure {
   return eeq<TagEq>(left);
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

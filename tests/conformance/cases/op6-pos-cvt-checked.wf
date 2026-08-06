@@ -9,3 +9,7 @@ fn narrow(x: own i32) -> own i32 pure {
     }
   }
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

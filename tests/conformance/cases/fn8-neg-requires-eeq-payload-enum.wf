@@ -9,3 +9,7 @@ fn guarded(left: own ClausePayloadEq, right: own ClausePayloadEq) -> own unit tr
 } {
   return unit;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

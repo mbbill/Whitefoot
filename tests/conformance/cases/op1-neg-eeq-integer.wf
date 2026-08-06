@@ -1,3 +1,7 @@
 fn compare(left: own u32, right: own u32) -> own Bool pure {
   return eeq<u32>(left, right);
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

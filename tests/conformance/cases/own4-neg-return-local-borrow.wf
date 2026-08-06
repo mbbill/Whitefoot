@@ -3,3 +3,7 @@ fn leak ['r0](x: &'r0 i32) -> &'r0 i32 pure {
     return &'s deref(x);
   }
 }
+
+fn main() -> own unit pure {
+  return unit;
+}
