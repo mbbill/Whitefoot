@@ -1,17 +1,17 @@
 # 0017 — Conformance harness v0.18 lane
 
-**Planned task.** Split from task 0014's scope (same `docs/current-plan.md`
-Work item 2 bullet) so the compiler-independent harness work runs ahead of the
-compiler chain. Not yet claimed — claiming fills in `Status`, `Owner`,
-workspace, and `Base revision` and moves this file unchanged in number to
-`docs/ongoing/` per `docs/WORKFLOW.md`. This record authorizes nothing beyond
-Work item 2 itself; if `docs/current-plan.md` is replaced before this task is
-claimed, delete this file unless the new plan explicitly retains it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and cannot expand or resequence work.
 
+- **Status:** IN PROGRESS
+- **Owner / workspace:** executor agent / isolated worktree
+  `worktree-agent-a9359311cd5a0fb00`, lead-reviewed
+- **Base revision:** `8ecb736`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2
   ("first-slice conformance execution" bullet — the harness and compile-time
-  lane; task 0014 retains runtime execution). Claimable only while
-  `docs/current-plan.md` remains `ACTIVE`.
+  lane; task 0014 retains runtime execution). Split from task 0014's scope so
+  the compiler-independent harness work runs ahead of the compiler chain.
+  This record authorizes nothing beyond Work item 2 itself.
 
 ## Goal
 
@@ -55,6 +55,14 @@ transcribe the compile-time lane from the reviewed catalog at
 `/Users/bytedance/do_not_scan/wf-v018/conformance.md`, checking each case's
 expectation against the actual `spec/kernel-spec-v0.18.md` rule text (the
 catalog predates integration fixes).
+
+## Progress
+
+- **Completed:** claimed at base `8ecb736`; baseline confirmed
+  (`coverage (kernel-spec-v0.17.md): 94/94`, 78 by case, 17 by annotation).
+- **Current:** schema extension in `runner.py` + `validate_manifest`.
+- **Next:** `unsupported` verdict, v0.18 pin with new-rule annotations, then
+  the compile-time catalog lane.
 
 ## Scope and expected touch set
 
