@@ -116,7 +116,7 @@ fn io_error_classes() -> Vec<&'static str> {
 /// `named` gives the arm body of the classes a case distinguishes and
 /// `default` the body of every other class; `indent` is the column the arms
 /// start at, because a case is canonical source.
-fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -> String {
+pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -> String {
     let pad = " ".repeat(indent);
     let inner = " ".repeat(indent + 2);
     let mut arms = String::new();

@@ -26,7 +26,7 @@ use super::system::with_ir;
 // pipes, re-run here under a forced condition no real object can produce on
 // demand. Sharing the source is the point: the two targets must make it
 // behave the same way for the same host answer.
-use super::system_io::{CHUNKED_READ, WRITE_PREFIX};
+use super::system_io::{CHUNKED_READ, WRITE_PREFIX, class_arms};
 use super::{compile_link_and_run, host_optimized_module};
 
 /// A host error the deterministic host can be scripted to report.
@@ -701,5 +701,86 @@ fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
     assert_eq!(
         native.matches("declare i64 @write(i32, ptr, i64)").count(),
         1
+    );
+}
+
+#[test]
+fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
+    // [SYS-8] makes a host write that accepts zero bytes of a nonempty
+    // request `Err(WriteZero())` and never `Ok(0)`, because `Ok(0)` would
+    // report progress that did not happen and a write-until-accepted loop
+    // would spin on it forever. No real destination produces that answer for a
+    // nonempty request, so task 0012 could only establish the outcome from the
+    // emitted shape. Scripting the host to accept nothing makes it behavioural:
+    // the program observes the class itself.
+    //
+    // [SYS-7] leaves both detail fields zero for this class, because no native
+    // error code produced it, so the case reads them too — the class is not
+    // being smuggled in with a borrowed native code or facility origin.
+    let arms = class_arms(
+        12,
+        &[(
+            "WriteZero",
+            "match ieq<u32>(c, 0_u32) {\n  True() => {\n    match ieq<u8>(o, 0_u8) {\n      True() => {\n        return exit_status(code: 120_u8);\n      }\n      False() => {\n        return exit_status(code: 121_u8);\n      }\n    }\n  }\n  False() => {\n    return exit_status(code: 122_u8);\n  }\n}",
+        )],
+        "return exit_status(code: 199_u8);",
+    );
+    let source = format!(
+        r#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {{
+  let bytes: own buffer<u8> = buffer_new<u8>(2_u64, 119_u8);
+  region 'o {{
+    region 's {{
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 2_u64) {{
+        Ok(value: written) => {{
+          let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(written);
+          match narrowed {{
+            Ok(value: code) => {{
+              return exit_status(code: code);
+            }}
+            Err(error: overflowed) => {{
+              return exit_status(code: 200_u8);
+            }}
+          }}
+        }}
+        Err(error: problem) => {{
+          match move problem {{
+{arms}          }}
+        }}
+      }}
+    }}
+  }}
+}}
+"#
+    );
+
+    let run = run_on_deterministic_host(
+        source.as_bytes(),
+        &HostScript::new().writes(&[HostOutcome::Accept(0)]),
+        &[],
+    );
+    // 120 is the program's own `WriteZero` status with both detail fields
+    // observed as zero.
+    assert_eq!(
+        run.output.status.code(),
+        Some(120),
+        "trace was {:?}",
+        run.trace()
+    );
+    // One request, one attempt: the refusal ended the operation and nothing
+    // retried it inside `write_once` [SYS-8].
+    assert_eq!(run.attempts("write"), 1);
+    assert!(
+        run.trace()
+            .contains("wf_test write fd=1 count=2 accepted=0 bytes=")
+    );
+
+    // The control: with nothing scripted the same request is accepted whole
+    // and the same program reports the accepted count instead of any class.
+    let whole = run_on_deterministic_host(source.as_bytes(), &HostScript::new(), &[]);
+    assert_eq!(whole.output.status.code(), Some(2));
+    assert!(
+        whole
+            .trace()
+            .contains("wf_test write fd=1 count=2 accepted=2 bytes=ww")
     );
 }
