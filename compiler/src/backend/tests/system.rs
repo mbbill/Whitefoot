@@ -21,7 +21,7 @@ use super::{
     compile_and_run_with, host_optimized_module, optimized_main,
 };
 
-fn with_ir<ResultValue>(
+pub(super) fn with_ir<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         &IrProgram<'classified, 'lexed, 'source>,

@@ -4,6 +4,7 @@ mod arrays;
 mod base64;
 mod buffers;
 mod checked_division;
+mod deterministic_target;
 mod effect_attributes;
 mod float_conversion;
 mod floating;
@@ -145,13 +146,31 @@ fn test_directory() -> PathBuf {
 
 /// Links one emitted module into an executable inside `directory`.
 fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
+    build_linked_executable(llvm, None, directory)
+}
+
+/// Links one emitted module, optionally with one host translation unit, into
+/// an executable inside `directory`.
+///
+/// A program emitted for the native target links against the host's own
+/// facilities and passes no extra unit; a program emitted for the
+/// deterministic test target supplies the unit that answers its scripted
+/// facilities [QUAL-1].
+fn build_linked_executable(llvm: &str, host: Option<&str>, directory: &Path) -> PathBuf {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write backend test module");
-    let compile = Command::new("/usr/bin/clang")
-        .arg("-x")
-        .arg("ir")
-        .arg(&module)
+    let mut command = Command::new("/usr/bin/clang");
+    command.arg("-x").arg("ir").arg(&module);
+    let host_unit = host.map(|source| {
+        let path = directory.join("host.c");
+        std::fs::write(&path, source).expect("write deterministic host unit");
+        path
+    });
+    if let Some(path) = host_unit.as_ref() {
+        command.arg("-x").arg("c").arg(path);
+    }
+    let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
         .arg(&executable)
@@ -165,6 +184,9 @@ fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
         );
     }
     std::fs::remove_file(&module).expect("remove backend test module");
+    if let Some(path) = host_unit {
+        std::fs::remove_file(path).expect("remove deterministic host unit");
+    }
     executable
 }
 
@@ -173,8 +195,14 @@ fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
 /// The bytes are passed as raw `OsStr`s so a test can hand the program an
 /// argument that is not valid text [HOST-1].
 fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
+    compile_link_and_run(llvm, None, arguments)
+}
+
+/// Runs one emitted module, optionally linked against one host translation
+/// unit.
+fn compile_link_and_run(llvm: &str, host: Option<&str>, arguments: &[&[u8]]) -> Output {
     let directory = test_directory();
-    let executable = build_executable(llvm, &directory);
+    let executable = build_linked_executable(llvm, host, &directory);
     let output = Command::new(&executable)
         .args(
             arguments

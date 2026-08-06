@@ -68,6 +68,27 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
     let system_target = SystemTarget::for_triple(target.triple()).ok_or(
         BackendFailure::TargetLayout(TargetLayoutFailure::UnsupportedHost),
     )?;
+    emit_llvm_for(program, system_target)
+}
+
+/// Emits one program against an explicitly selected system target.
+///
+/// `emit_llvm` selects the host's native target; a test harness that has
+/// selected the deterministic test target calls this instead. Selection stays
+/// one decision taken before qualification either way [QUAL-1].
+#[cfg(test)]
+pub(crate) fn emit_llvm_for_target(
+    program: &IrProgram<'_, '_, '_>,
+    system_target: SystemTarget,
+) -> Result<LlvmModule, BackendFailure> {
+    emit_llvm_for(program, system_target)
+}
+
+fn emit_llvm_for(
+    program: &IrProgram<'_, '_, '_>,
+    system_target: SystemTarget,
+) -> Result<LlvmModule, BackendFailure> {
+    let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     let qualification = qualify_program(system_target, program)?;
     validate_program(target, &qualification, program).map_err(BackendFailure::TargetLayout)?;
     let main = program

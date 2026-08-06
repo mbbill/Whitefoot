@@ -62,7 +62,10 @@ pub(super) struct SystemEmission {
     /// Private constants the bootstrap needs.
     pub(super) constants: String,
     /// Host and intrinsic declarations the approved implementations call.
-    pub(super) declarations: BTreeSet<&'static str>,
+    ///
+    /// These are owned strings because a host facility's symbol is the target
+    /// column of its [QUAL-1] row, not a name fixed in this module.
+    pub(super) declarations: BTreeSet<String>,
     /// The approved implementations themselves.
     pub(super) definitions: String,
 }
@@ -73,7 +76,7 @@ pub(super) fn emit_system_interface(
     qualification: &Qualification,
 ) -> Result<SystemEmission, BackendFailure> {
     let mut constants = String::new();
-    let mut declarations = BTreeSet::new();
+    let mut declarations: BTreeSet<String> = BTreeSet::new();
     let mut definitions = String::new();
     let mut needs_validator = false;
 
@@ -166,27 +169,33 @@ pub(super) fn emit_system_interface(
             EXIT_STATUS => definitions.push_str(&emit_exit_status(implementation)),
             _ => return Err(BackendFailure::InvalidIr),
         }
-        for declaration in operation_declarations(ordinal) {
-            declarations.insert(*declaration);
+        for declaration in operation_declarations(ordinal, target) {
+            declarations.insert(declaration);
         }
     }
     if needs_validator {
         definitions.push_str(&emit_utf8_validator());
     }
     if let Some(error) = io_error {
-        declarations.insert(target.errno_declaration());
+        declarations.insert(target.errno_declaration().to_owned());
         definitions.push_str(&emit_io_error_mapper(program, error, target)?);
     }
 
-    if releases_natively(program, qualification)? {
-        declarations.insert("declare i32 @close(i32)");
+    // Which facility a close or a directory open reaches is the target column
+    // of the [QUAL-1] row, so both symbols come from the qualification rather
+    // than from a fixed name here.
+    if let Some(symbol) = native_release_symbol(program, qualification)? {
+        declarations.insert(format!("declare i32 @{symbol}(i32)"));
     }
 
     if let IrEntry::Command { inputs, .. } = program.entry() {
-        declarations.insert("declare ptr @signal(i32, ptr)");
-        declarations.insert("declare void @exit(i32) noreturn");
+        declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
+        declarations.insert("declare void @exit(i32) noreturn".to_owned());
         if inputs.contains(&1) {
-            declarations.insert("declare i32 @open(ptr, i32, ...)");
+            declarations.insert(format!(
+                "declare i32 @{}(ptr, i32, ...)",
+                qualification.target().directory_open_symbol()
+            ));
             constants.push_str(&format!(
                 "{WORKING_DIRECTORY} = private unnamed_addr constant [2 x i8] c\".\\00\", align 1\n"
             ));
@@ -217,39 +226,72 @@ fn record_io_error(recorded: &mut Option<IrType>, ty: IrType) -> Result<(), Back
 }
 
 /// The host and intrinsic symbols one approved implementation calls.
-fn operation_declarations(ordinal: u8) -> &'static [&'static str] {
-    match ordinal {
+///
+/// The intrinsics and the pure libc routines are the same on every qualified
+/// target; the three facilities that reach a real operating-system object are
+/// the target column of their [QUAL-1] row, so their symbols come from the
+/// selected target.
+fn operation_declarations(ordinal: u8, target: SystemTarget) -> Vec<String> {
+    let fixed: &[&str] = match ordinal {
         ARG_GET => &["declare i64 @strlen(ptr)"],
-        HOST_COPY_BYTES => &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"],
-        HOST_COPY_UTF8 => &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"],
+        HOST_COPY_BYTES | HOST_COPY_UTF8 => {
+            &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"]
+        }
         RELATIVE_PATH => &["declare ptr @memchr(ptr, i32, i64)"],
         // [PATH-2]: the target's own directory-relative facility, never a
         // prefix concatenated onto a path and resolved against an ambient
         // working directory.
-        OPEN_READ => &["declare i32 @openat(i32, ptr, i32, ...)"],
-        READ_ONCE => &["declare i64 @read(i32, ptr, i64)"],
-        WRITE_ONCE => &["declare i64 @write(i32, ptr, i64)"],
+        OPEN_READ => {
+            return vec![format!(
+                "declare i32 @{}(i32, ptr, i32, ...)",
+                target.file_open_symbol()
+            )];
+        }
+        READ_ONCE => {
+            return vec![format!(
+                "declare i64 @{}(i32, ptr, i64)",
+                target.read_symbol()
+            )];
+        }
+        WRITE_ONCE => {
+            return vec![format!(
+                "declare i64 @{}(i32, ptr, i64)",
+                target.write_symbol()
+            )];
+        }
         _ => &[],
-    }
+    };
+    fixed.iter().map(|text| (*text).to_owned()).collect()
 }
 
-/// Whether any release the program derives is a native close attempt.
-fn releases_natively(
+/// The close facility this program's releases reach, when any release the
+/// program derives is a native close attempt.
+///
+/// Every type whose [SYS-5] release is a close attempt resolves to the one
+/// facility the selected target's [QUAL-1] rows name, so a program never
+/// declares two close symbols.
+fn native_release_symbol(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
-) -> Result<bool, BackendFailure> {
+) -> Result<Option<&'static str>, BackendFailure> {
+    let mut selected = None;
     for nominal in program.nominals() {
         let IrNominalKind::SystemResource(contract) = nominal.kind() else {
             continue;
         };
-        if matches!(
-            qualification.resource(contract.resource)?.release(),
-            ReleaseImplementation::NativeClose(_)
-        ) {
-            return Ok(true);
+        let ReleaseImplementation::NativeClose(symbol) =
+            qualification.resource(contract.resource)?.release()
+        else {
+            continue;
+        };
+        if selected
+            .replace(symbol)
+            .is_some_and(|other| other != symbol)
+        {
+            return Err(BackendFailure::InvalidIr);
         }
     }
-    Ok(false)
+    Ok(selected)
 }
 
 /// The result type each used semantic identity produces in this program.
@@ -907,7 +949,7 @@ fn emit_open_read(
         "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
          entry:\n  \
          %text = extractvalue {path} %path, 0\n  \
-         %descriptor = call {file} (i32, ptr, i32, ...) @openat({directory} %root, ptr %text, \
+         %descriptor = call {file} (i32, ptr, i32, ...) @{open}({directory} %root, ptr %text, \
          i32 {flags})\n  \
          %opened = icmp sge {file} %descriptor, 0\n  \
          br i1 %opened, label %live, label %failure\n\
@@ -924,6 +966,7 @@ fn emit_open_read(
          ret {llvm} %err\n\
          }}\n\n",
         symbol = implementation.symbol(),
+        open = target.file_open_symbol(),
         flags = target.file_open_flags()
     ))
 }
@@ -980,7 +1023,7 @@ fn emit_read_once(
          transfer:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
          %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
-         %transferred = call i64 @read({file} %file, ptr %target, i64 %capacity)\n  \
+         %transferred = call i64 @{read}({file} %file, ptr %target, i64 %capacity)\n  \
          %progress = icmp sgt i64 %transferred, 0\n  \
          br i1 %progress, label %bytes, label %quiet\n\
          bytes:\n  \
@@ -1001,7 +1044,8 @@ fn emit_read_once(
          {failed_index}\n  \
          ret {llvm} %failed.outcome\n\
          }}\n\n",
-        symbol = implementation.symbol()
+        symbol = implementation.symbol(),
+        read = target.read_symbol()
     ))
 }
 
@@ -1066,7 +1110,7 @@ fn emit_write_once(
          transfer:\n  \
          %base = extractvalue {buffer} %source, 0\n  \
          %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
-         %accepted = call i64 @write({output} %output, ptr %target, i64 %count)\n  \
+         %accepted = call i64 @{write}({output} %output, ptr %target, i64 %count)\n  \
          %progress = icmp sgt i64 %accepted, 0\n  \
          br i1 %progress, label %ok, label %quiet\n\
          ok:\n  \
@@ -1088,7 +1132,8 @@ fn emit_write_once(
          %err.outcome = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err.outcome\n\
          }}\n\n",
-        symbol = implementation.symbol()
+        symbol = implementation.symbol(),
+        write = target.write_symbol()
     ))
 }
 
@@ -1360,7 +1405,8 @@ pub(super) fn emit_entry(
                 opens_directory = true;
                 writeln!(
                     body,
-                    "  %cwd = call i32 (ptr, i32, ...) @open(ptr {WORKING_DIRECTORY}, i32 {})",
+                    "  %cwd = call i32 (ptr, i32, ...) @{}(ptr {WORKING_DIRECTORY}, i32 {})",
+                    target.directory_open_symbol(),
                     target.directory_open_flags()
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;

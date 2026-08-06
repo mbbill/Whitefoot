@@ -46,6 +46,84 @@ pub(crate) enum CodeUnitFamily {
     Unix,
 }
 
+/// The set of host facilities one qualified target's approved
+/// implementations call.
+///
+/// This is the target column of the [QUAL-1] row key made concrete. One
+/// semantic identity may have more than one approved implementation, one per
+/// target, and every implementation of it answers the same specified
+/// signature, outcomes, ownership transitions, and effects. An operation whose
+/// implementation touches no host object at all — argument counting, the
+/// host-string routes, path construction, `exit_status` — resolves to the same
+/// approved row on every target, so only the facilities that reach a real
+/// operating-system object appear here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum HostFacilities {
+    /// The target's own native facilities.
+    Native,
+    /// The deterministic test host: the same operations answered from
+    /// scripted in-process state instead of real operating-system objects, so
+    /// a contract test can force a condition — a close that fails, a read that
+    /// stops short, a write that is only partly accepted — that a real file or
+    /// pipe cannot produce on demand. It supplies exactly the arrangements
+    /// those contract tests need and is not a simulator of the host.
+    ///
+    /// It exists only in a test build, so no `whitefootc` compilation of a
+    /// real program can select it.
+    #[cfg(test)]
+    DeterministicTest,
+}
+
+impl HostFacilities {
+    /// The facility the [QUAL-3] bootstrap opens the initial working
+    /// directory through.
+    const fn directory_open(self) -> &'static str {
+        match self {
+            Self::Native => "open",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_open",
+        }
+    }
+
+    /// The facility one [SYS-5] consuming release attempts its single close
+    /// through.
+    const fn close(self) -> &'static str {
+        match self {
+            Self::Native => "close",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_close",
+        }
+    }
+
+    /// The directory-relative open facility `open_read` resolves through
+    /// [PATH-2].
+    const fn file_open(self) -> &'static str {
+        match self {
+            Self::Native => "openat",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_openat",
+        }
+    }
+
+    /// The facility one `read_once` transfer attempt reaches.
+    const fn read(self) -> &'static str {
+        match self {
+            Self::Native => "read",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_read",
+        }
+    }
+
+    /// The facility one `write_once` transfer attempt reaches.
+    const fn write(self) -> &'static str {
+        match self {
+            Self::Native => "write",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_write",
+        }
+    }
+}
+
 /// The [FN-7] program kind one build produces.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProgramKind {
@@ -340,6 +418,8 @@ pub(crate) struct SystemTarget {
     /// than entering under a weaker guarantee.
     argument_backing: bool,
     directory_relative: bool,
+    /// Which host facilities this target's approved implementations call.
+    host: HostFacilities,
     root_prefix: u8,
     directory_open_flags: i32,
     file_open_flags: i32,
@@ -384,6 +464,32 @@ impl SystemTarget {
     /// The target's complete [SYS-7] class mapping, in [SYS-2] declared order.
     pub(crate) const fn error_classes(self) -> &'static [PortableErrorClass; 30] {
         self.error_classes
+    }
+
+    /// The host facility the [QUAL-3] bootstrap opens the initial working
+    /// directory through on this target.
+    pub(crate) const fn directory_open_symbol(self) -> &'static str {
+        self.host.directory_open()
+    }
+
+    /// The host facility `open_read` resolves a relative path through
+    /// [PATH-2].
+    pub(crate) const fn file_open_symbol(self) -> &'static str {
+        self.host.file_open()
+    }
+
+    /// The host facility one `read_once` transfer attempt reaches [SYS-8].
+    pub(crate) const fn read_symbol(self) -> &'static str {
+        self.host.read()
+    }
+
+    /// The host facility one `write_once` transfer attempt reaches [SYS-8].
+    ///
+    /// This is the `write_once` row's facility only. The mandatory [DIAG-3]
+    /// trap record writes through the native `write` on every target: a
+    /// scripted host must never be able to truncate a trap record.
+    pub(crate) const fn write_symbol(self) -> &'static str {
+        self.host.write()
     }
 
     /// The write-to-closed-pipe signal number [QUAL-3] normalizes once.
@@ -440,6 +546,7 @@ impl SystemTarget {
             family: Some(CodeUnitFamily::Unix),
             argument_backing: true,
             directory_relative: true,
+            host: HostFacilities::Native,
             root_prefix: b'/',
             directory_open_flags,
             // `O_RDONLY` is zero on both families. `open_read` opens for
@@ -455,6 +562,28 @@ impl SystemTarget {
             ignored_disposition: 1,
             invalid_disposition: -1,
         })
+    }
+
+    /// The deterministic test target: the host triple's own layout, ABI, and
+    /// [QUAL-2] guarantees, with the file and descriptor facilities answered
+    /// by a scripted in-process host instead of the operating system.
+    ///
+    /// It is a second column of the [QUAL-1] table rather than a relaxed one.
+    /// Every semantic identity keeps its specified signature, outcomes,
+    /// ownership transitions, and effect row; a program compiled for it runs
+    /// the same emitted lowering, so a forced condition is observed through
+    /// real compiled code. It qualifies exactly the guarantees the native
+    /// target qualifies, because a fake host that withheld one would be
+    /// answering a different specification.
+    #[cfg(test)]
+    pub(crate) fn deterministic_test() -> Self {
+        let triple = super::target::TargetLayout::host()
+            .expect("the deterministic test target runs on a qualified host")
+            .triple();
+        let mut target =
+            Self::for_triple(triple).expect("a supported host triple is a qualified target");
+        target.host = HostFacilities::DeterministicTest;
+        target
     }
 
     /// Builds one target record directly, for tests that need a target which
@@ -692,7 +821,7 @@ fn resource_row(
         // source capability without closing or flushing the descriptor
         // [SYS-12], and every other type releases with a logical consume.
         SystemResourceType::DirectoryRead | SystemResourceType::ReadFile => {
-            ReleaseImplementation::NativeClose("close")
+            ReleaseImplementation::NativeClose(target.host.close())
         }
         SystemResourceType::Args
         | SystemResourceType::HostString
