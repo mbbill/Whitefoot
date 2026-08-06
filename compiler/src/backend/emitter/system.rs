@@ -17,8 +17,8 @@
 //! `ExitStatus` onto the host process status exactly [PROG-3].
 
 use super::super::qualification::{
-    ApprovedImplementation, ProgramKind, Qualification, ReleaseImplementation, SystemTarget,
-    qualified_representation,
+    ApprovedImplementation, ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_WRITE,
+    ProgramKind, Qualification, ReleaseImplementation, SystemTarget, qualified_representation,
 };
 use super::*;
 use crate::ACTIVE_KERNEL_SPEC_VERSION;
@@ -41,11 +41,18 @@ const HOST_COPY_BYTES: u8 = 3;
 const HOST_UTF8_LEN: u8 = 4;
 const HOST_COPY_UTF8: u8 = 5;
 const RELATIVE_PATH: u8 = 6;
+const OPEN_READ: u8 = 7;
+const READ_ONCE: u8 = 8;
+const WRITE_ONCE: u8 = 9;
 const EXIT_STATUS: u8 = 10;
 
 /// The private symbol of the shared UTF-8 validator both text-route
 /// implementations use [HOST-2].
 const UTF8_VALIDATOR: &str = "wf.sys.utf8.valid";
+
+/// The private symbol of the one cold [SYS-7] outcome mapper every failing
+/// I/O implementation shares [QUAL-3].
+const IO_ERROR_MAPPER: &str = "wf.sys.io.error";
 
 /// The private constant naming the initial working directory.
 const WORKING_DIRECTORY: &str = "@.wf.sys.working.directory";
@@ -55,7 +62,7 @@ pub(super) struct SystemEmission {
     /// Private constants the bootstrap needs.
     pub(super) constants: String,
     /// Host and intrinsic declarations the approved implementations call.
-    pub(super) declarations: String,
+    pub(super) declarations: BTreeSet<&'static str>,
     /// The approved implementations themselves.
     pub(super) definitions: String,
 }
@@ -109,6 +116,11 @@ pub(super) fn emit_system_interface(
     }
 
     let results = system_call_results(program)?;
+    let target = qualification.target();
+    // The three failing I/O implementations share one cold [SYS-7] mapper, so
+    // the module resolves the `IoError` type once from whichever outcome the
+    // program actually uses.
+    let mut io_error = None;
     for (ordinal, implementation) in qualification.used_operations() {
         let result = results
             .get(usize::from(ordinal))
@@ -134,8 +146,23 @@ pub(super) fn emit_system_interface(
                 program,
                 implementation,
                 result,
-                qualification.target(),
+                target,
             )?),
+            OPEN_READ => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_open_read(implementation, &shape, target)?);
+            }
+            READ_ONCE => {
+                let shape = read_outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.failed_type)?;
+                definitions.push_str(&emit_read_once(program, implementation, &shape, target)?);
+            }
+            WRITE_ONCE => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_write_once(program, implementation, &shape, target)?);
+            }
             EXIT_STATUS => definitions.push_str(&emit_exit_status(implementation)),
             _ => return Err(BackendFailure::InvalidIr),
         }
@@ -145,6 +172,10 @@ pub(super) fn emit_system_interface(
     }
     if needs_validator {
         definitions.push_str(&emit_utf8_validator());
+    }
+    if let Some(error) = io_error {
+        declarations.insert(target.errno_declaration());
+        definitions.push_str(&emit_io_error_mapper(program, error, target)?);
     }
 
     if releases_natively(program, qualification)? {
@@ -162,16 +193,27 @@ pub(super) fn emit_system_interface(
         }
     }
 
-    let mut declaration_text = String::new();
-    for declaration in declarations {
-        declaration_text.push_str(declaration);
-        declaration_text.push('\n');
-    }
     Ok(SystemEmission {
         constants,
-        declarations: declaration_text,
+        declarations,
         definitions,
     })
+}
+
+/// Records the one `IoError` type this program's I/O outcomes carry.
+///
+/// Every [SYS-2] outcome carrying `IoError` names the one interned nominal, so
+/// two different types here would be an inconsistent IR rather than two
+/// mappers.
+fn record_io_error(recorded: &mut Option<IrType>, ty: IrType) -> Result<(), BackendFailure> {
+    match recorded {
+        Some(existing) if *existing != ty => Err(BackendFailure::InvalidIr),
+        Some(_) => Ok(()),
+        None => {
+            *recorded = Some(ty);
+            Ok(())
+        }
+    }
 }
 
 /// The host and intrinsic symbols one approved implementation calls.
@@ -181,6 +223,12 @@ fn operation_declarations(ordinal: u8) -> &'static [&'static str] {
         HOST_COPY_BYTES => &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"],
         HOST_COPY_UTF8 => &["declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)"],
         RELATIVE_PATH => &["declare ptr @memchr(ptr, i32, i64)"],
+        // [PATH-2]: the target's own directory-relative facility, never a
+        // prefix concatenated onto a path and resolved against an ambient
+        // working directory.
+        OPEN_READ => &["declare i32 @openat(i32, ptr, i32, ...)"],
+        READ_ONCE => &["declare i64 @read(i32, ptr, i64)"],
+        WRITE_ONCE => &["declare i64 @write(i32, ptr, i64)"],
         _ => &[],
     }
 }
@@ -468,17 +516,21 @@ fn emit_host_utf8_len(
 /// Overflow of the mathematical sum of the two range values in u64, an offset
 /// beyond the buffer's runtime length, or a range extending past that length
 /// traps under the bounds semantics of [OP-4], before any host transfer,
-/// before any read of the source value, and before any write of the
-/// destination. `%end < %offset` is exactly u64 overflow of the sum, and
-/// `%end <= %length` covers both remaining conditions because the capacity is
+/// before any read of the source value or resource, and before any write of
+/// the destination. `%end < %offset` is exactly u64 overflow of the sum, and
+/// `%end <= %length` covers both remaining conditions because the extent is
 /// never negative.
-fn range_validation(buffer: &str) -> String {
+///
+/// `value` names the buffer parameter the range is validated against and
+/// `extent` its second range value, which [SYS-2] spells `capacity` for the
+/// two copies and for `read_once` and `count` for `write_once`.
+fn range_validation(buffer: &str, value: &str, extent: &str) -> String {
     format!(
         "entry:\n  \
-         %end = add i64 %offset, %capacity\n  \
+         %end = add i64 %offset, {extent}\n  \
          %wrapped = icmp ult i64 %end, %offset\n  \
          %exact = xor i1 %wrapped, true\n  \
-         %length = extractvalue {buffer} %destination, 1\n  \
+         %length = extractvalue {buffer} {value}, 1\n  \
          %within = icmp ule i64 %end, %length\n  \
          %admitted = and i1 %exact, %within\n  \
          br i1 %admitted, label %measure, label %range.trap\n\
@@ -514,7 +566,7 @@ fn emit_host_copy_bytes(
         err_llvm,
         ..
     } = shape;
-    let validation = range_validation(&buffer);
+    let validation = range_validation(&buffer, "%destination", "%capacity");
     // The lossless route transfers the target's own code units with no
     // validation and no Unicode restriction [HOST-2]; its only recoverable
     // failure is a destination too small for the exact length, which leaves
@@ -573,7 +625,7 @@ fn emit_host_copy_utf8(
         err_llvm,
         ..
     } = shape;
-    let validation = range_validation(&buffer);
+    let validation = range_validation(&buffer, "%destination", "%capacity");
     // The text route validates and measures the encoding first and returns
     // the invalid or too-small outcome without writing any byte; only then
     // does it copy the complete encoding [SYS-8, HOST-2].
@@ -666,6 +718,437 @@ fn emit_relative_path(
          }}\n\n",
         symbol = implementation.symbol()
     ))
+}
+
+/// One [SYS-6] `ReadOutcome` instantiation's tags and field positions.
+struct ReadOutcomeShape {
+    llvm: String,
+    bytes_tag: u32,
+    bytes_index: usize,
+    end_tag: u32,
+    failed_tag: u32,
+    failed_index: usize,
+    failed_llvm: String,
+    failed_type: IrType,
+}
+
+/// Resolves the one [SYS-6] outcome type with more than two outcomes.
+///
+/// `ReadBytes(count: u64)` is the single measured variant, `ReadEnd()` the
+/// single empty one, and `ReadFailed(error: IoError)` the single variant
+/// carrying a nominal payload, so the three are resolved from the program's
+/// own IR rather than from any spelling.
+fn read_outcome_shape(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<ReadOutcomeShape, BackendFailure> {
+    let variants = variants_of(program, ty)?;
+    if variants.len() != 3 {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let (bytes_tag, bytes_index) = measured_variant(program, ty)?;
+    let end_tag = empty_variant_tag(program, ty)?;
+    let mut selected = None;
+    for variant in variants {
+        let [field] = variant.fields() else {
+            continue;
+        };
+        if !matches!(field.ty(), IrType::Nominal(_)) {
+            continue;
+        }
+        if selected.replace((variant.tag(), field.ty())).is_some() {
+            return Err(BackendFailure::InvalidIr);
+        }
+    }
+    let (failed_tag, failed_type) = selected.ok_or(BackendFailure::InvalidIr)?;
+    Ok(ReadOutcomeShape {
+        llvm: llvm_type(program, ty)?,
+        bytes_tag,
+        bytes_index,
+        end_tag,
+        failed_tag,
+        failed_index: variant_field_base(variants, failed_tag)?,
+        failed_llvm: llvm_type(program, failed_type)?,
+        failed_type,
+    })
+}
+
+/// One [SYS-7] class's identity and payload positions in one program's
+/// `IoError` value.
+struct IoErrorClass {
+    spelling: &'static str,
+    tag: u32,
+    /// The position of the class's `code` field; `origin` is the next one.
+    code_index: usize,
+}
+
+/// Resolves the closed thirty-class [SYS-7] set in one program's `IoError`.
+///
+/// [SYS-2] fixes the class set, its declared order, and the two inline detail
+/// fields every class carries, and the checked program interns the nominal
+/// from that same inventory. Resolution therefore reads inventory data and the
+/// program's own IR; no source name, spelling, or signature reaches it
+/// [QUAL-1].
+fn io_error_classes(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<Vec<IoErrorClass>, BackendFailure> {
+    let owner = crate::SYSTEM_NOMINALS
+        .iter()
+        .position(|nominal| nominal.spelling == "IoError")
+        .and_then(|index| u8::try_from(index).ok())
+        .ok_or(BackendFailure::InvalidIr)?;
+    let declared = crate::SYSTEM_CONSTRUCTORS
+        .iter()
+        .filter(|constructor| constructor.owner == owner);
+    let variants = variants_of(program, ty)?;
+    let code = IrType::Integer {
+        width: 32,
+        signed: false,
+    };
+    let origin = IrType::Integer {
+        width: 8,
+        signed: false,
+    };
+    let mut classes = Vec::with_capacity(variants.len());
+    for (ordinal, (constructor, variant)) in declared.zip(variants).enumerate() {
+        let tag = u32::try_from(ordinal).map_err(|_| BackendFailure::CounterOverflow)?;
+        let [first, second] = variant.fields() else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if variant.tag() != tag || first.ty() != code || second.ty() != origin {
+            return Err(BackendFailure::InvalidIr);
+        }
+        classes.push(IoErrorClass {
+            spelling: constructor.spelling,
+            tag,
+            code_index: variant_field_base(variants, tag)?,
+        });
+    }
+    if classes.len() != variants.len() {
+        return Err(BackendFailure::InvalidIr);
+    }
+    Ok(classes)
+}
+
+/// Renders the instructions building one fixed [SYS-7] class value.
+///
+/// The detail is copy data: it allocates nothing, owns nothing, and has no
+/// release action [SYS-7].
+fn io_error_value(
+    io: &str,
+    class: &IoErrorClass,
+    prefix: &str,
+    code: &str,
+    origin: &str,
+) -> (String, String) {
+    let IoErrorClass {
+        tag, code_index, ..
+    } = *class;
+    let origin_index = code_index + 1;
+    (
+        format!(
+            "  %{prefix}.tag = insertvalue {io} zeroinitializer, i32 {tag}, 0\n  \
+             %{prefix}.code = insertvalue {io} %{prefix}.tag, i32 {code}, {code_index}\n  \
+             %{prefix}.error = insertvalue {io} %{prefix}.code, i8 {origin}, {origin_index}\n"
+        ),
+        format!("%{prefix}.error"),
+    )
+}
+
+/// Renders the two instructions that read the native error slot.
+///
+/// The slot is read immediately after the failing facility call and only on
+/// the cold path [QUAL-3].
+fn native_error(target: SystemTarget, prefix: &str) -> (String, String) {
+    (
+        format!(
+            "  %{prefix}.slot = call ptr @{}()\n  \
+             %{prefix}.code = load i32, ptr %{prefix}.slot\n",
+            target.errno_location()
+        ),
+        format!("%{prefix}.code"),
+    )
+}
+
+fn emit_open_read(
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let directory = representation(SystemResourceType::DirectoryRead);
+    let path = representation(SystemResourceType::RelativePath);
+    let file = representation(SystemResourceType::ReadFile);
+    if shape.ok_llvm != file {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        ..
+    } = shape;
+    let (read_error, error) = native_error(target, "failure");
+    // [PATH-2]: the path is resolved against the capability's own directory
+    // object through the target's own directory-relative facility. Nothing is
+    // concatenated onto it and no ambient working directory is consulted, so a
+    // resolved object may lie outside that directory exactly as the process
+    // namespace resolves it — the complete promise the type makes.
+    //
+    // The lease's code units are the C string the facility takes: [HOST-3]
+    // fixes the backing as the command-lifetime argument snapshot, whose
+    // elements the target terminates, [SYS-9] takes the lease length as that
+    // element's exact length, and [PATH-1] admits no embedded NUL and retypes
+    // the same lease with no copy. Nothing is allocated or copied here.
+    Ok(format!(
+        "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
+         entry:\n  \
+         %text = extractvalue {path} %path, 0\n  \
+         %descriptor = call {file} (i32, ptr, i32, ...) @openat({directory} %root, ptr %text, \
+         i32 {flags})\n  \
+         %opened = icmp sge {file} %descriptor, 0\n  \
+         br i1 %opened, label %live, label %failure\n\
+         live:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {file} %descriptor, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
+         {ORIGIN_DIRECTORY_OPEN})\n  \
+         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
+         ret {llvm} %err\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        flags = target.file_open_flags()
+    ))
+}
+
+fn emit_read_once(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ReadOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let file = representation(SystemResourceType::ReadFile);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let ReadOutcomeShape {
+        llvm,
+        bytes_tag,
+        bytes_index,
+        end_tag,
+        failed_tag,
+        failed_index,
+        failed_llvm,
+        ..
+    } = shape;
+    let validation = range_validation(&buffer, "%destination", "%capacity");
+    let (read_error, error) = native_error(target, "failure");
+    // Range validation precedes every other action [SYS-8]. A zero-length
+    // range reports a count of zero and issues no host transfer, and is never
+    // reported as `ReadEnd`. A nonempty range makes at most one host transfer
+    // attempt: reported progress is returned immediately and never hidden by a
+    // second attempt, so `ReadBytes(count)` appears only for a count greater
+    // than zero, only `ReadEnd` states that no byte was available at the
+    // observed end, and a reported interruption reaches source as
+    // `Interrupted` rather than being retried. The host advances the file
+    // cursor by exactly the reported count [SYS-11], and exactly the first
+    // `count` bytes of the requested range may have changed.
+    Ok(format!(
+        "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %offset, \
+         i64 %capacity, ptr %record, i64 %record.length) alwaysinline {{\n\
+         {validation}\
+         measure:\n  \
+         %vacant = icmp eq i64 %capacity, 0\n  \
+         br i1 %vacant, label %empty, label %transfer\n\
+         empty:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %empty.outcome = insertvalue {llvm} %empty.tag, i64 0, {bytes_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         transfer:\n  \
+         %base = extractvalue {buffer} %destination, 0\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         %transferred = call i64 @read({file} %file, ptr %target, i64 %capacity)\n  \
+         %progress = icmp sgt i64 %transferred, 0\n  \
+         br i1 %progress, label %bytes, label %quiet\n\
+         bytes:\n  \
+         %bytes.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %bytes.outcome = insertvalue {llvm} %bytes.tag, i64 %transferred, {bytes_index}\n  \
+         ret {llvm} %bytes.outcome\n\
+         quiet:\n  \
+         %ended = icmp eq i64 %transferred, 0\n  \
+         br i1 %ended, label %exhausted, label %failure\n\
+         exhausted:\n  \
+         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
+         ret {llvm} %exhausted.outcome\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_READ})\n  \
+         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
+         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
+         {failed_index}\n  \
+         ret {llvm} %failed.outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol()
+    ))
+}
+
+fn emit_write_once(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let output = representation(SystemResourceType::Output);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    if shape.ok_llvm != "i64" {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let classes = io_error_classes(program, shape.err_type)?;
+    let refused = classes
+        .iter()
+        .find(|class| class.spelling == "WriteZero")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        ..
+    } = shape;
+    let validation = range_validation(&buffer, "%source", "%count");
+    let (read_error, error) = native_error(target, "failure");
+    // A host zero-length write is `Err(WriteZero())`, which no native error
+    // code produced: [SYS-7] leaves both detail fields zero when the target
+    // supplies no value for them.
+    let (refused_value, refused_error) =
+        io_error_value(err_llvm, refused, "refused", "0", &ORIGIN_NONE.to_string());
+    // At most one host output attempt [SYS-12]. A zero-length range reports a
+    // count of zero and issues no host transfer; otherwise the accepted count
+    // means exactly that the host operation accepted that prefix, promising
+    // neither line atomicity nor durability. A closed destination arrives as
+    // the recoverable `BrokenPipe` class because the bootstrap installed the
+    // ignored write-to-closed-pipe disposition once, before entry [QUAL-3];
+    // this path performs no per-call signal-disposition operation.
+    Ok(format!(
+        "define private {llvm} @{symbol}({output} %output, {buffer} %source, i64 %offset, \
+         i64 %count, ptr %record, i64 %record.length) alwaysinline {{\n\
+         {validation}\
+         measure:\n  \
+         %vacant = icmp eq i64 %count, 0\n  \
+         br i1 %vacant, label %empty, label %transfer\n\
+         empty:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %empty.outcome = insertvalue {llvm} %empty.tag, i64 0, {ok_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         transfer:\n  \
+         %base = extractvalue {buffer} %source, 0\n  \
+         %target = getelementptr inbounds i8, ptr %base, i64 %offset\n  \
+         %accepted = call i64 @write({output} %output, ptr %target, i64 %count)\n  \
+         %progress = icmp sgt i64 %accepted, 0\n  \
+         br i1 %progress, label %ok, label %quiet\n\
+         ok:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok.outcome = insertvalue {llvm} %ok.tag, i64 %accepted, {ok_index}\n  \
+         ret {llvm} %ok.outcome\n\
+         quiet:\n  \
+         %refused = icmp eq i64 %accepted, 0\n  \
+         br i1 %refused, label %zero, label %failure\n\
+         zero:\n\
+         {refused_value}  \
+         %zero.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %zero.outcome = insertvalue {llvm} %zero.tag, {err_llvm} {refused_error}, {err_index}\n  \
+         ret {llvm} %zero.outcome\n\
+         failure:\n\
+         {read_error}  \
+         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_WRITE})\n  \
+         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err.outcome = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
+         ret {llvm} %err.outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol()
+    ))
+}
+
+/// Emits the one cold [SYS-7] outcome mapper the failing I/O implementations
+/// share.
+///
+/// The class is the sole portable semantic discriminator, so the mapper turns
+/// one native error code into exactly one class and carries the native detail
+/// through unchanged: `code` value-preservingly in `u32`, and `origin` the
+/// target-owned discriminator naming the facility that produced it. The
+/// default arm is the closed set's own rule rather than a wildcard — a native
+/// error with no portable distinction in this set is `Other`.
+fn emit_io_error_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let io = llvm_type(program, ty)?;
+    let classes = io_error_classes(program, ty)?;
+    let other = classes
+        .iter()
+        .find(|class| class.spelling == "Other")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let mut cases = String::new();
+    let mut arms = String::new();
+    let mut mapped = BTreeSet::new();
+    for row in target.error_classes() {
+        let class = classes
+            .iter()
+            .find(|class| class.spelling == row.class)
+            .ok_or(BackendFailure::InvalidIr)?;
+        if row.codes.is_empty() {
+            continue;
+        }
+        for code in row.codes {
+            // One native error maps onto exactly one class [SYS-7].
+            if !mapped.insert(*code) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            writeln!(cases, "    i32 {code}, label %class.{}", class.tag)
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        arms.push_str(&class_arm(&io, class));
+    }
+    arms.push_str(&class_arm(&io, other));
+    Ok(format!(
+        "define private {io} @{IO_ERROR_MAPPER}(i32 %code, i8 %origin) noinline cold {{\n\
+         entry:\n  \
+         switch i32 %code, label %class.{other_tag} [\n\
+         {cases}  ]\n\
+         {arms}}}\n\n",
+        other_tag = other.tag
+    ))
+}
+
+/// One mapper arm: the class's own value, built from the two detail fields.
+fn class_arm(io: &str, class: &IoErrorClass) -> String {
+    let prefix = format!("class.{}", class.tag);
+    let (value, name) = io_error_value(io, class, &prefix, "%code", "%origin");
+    format!("{prefix}:\n{value}  ret {io} {name}\n")
 }
 
 fn emit_exit_status(implementation: ApprovedImplementation) -> String {

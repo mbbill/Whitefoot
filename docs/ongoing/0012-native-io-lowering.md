@@ -73,13 +73,23 @@ detail in these two fields maps the class to `Other` instead.
 
 ## Progress
 
-- Done: claimed at base `eca0078`; read `docs/WORKFLOW.md`, the governing
-  `SYS-7`/`SYS-8`/`SYS-9`–`SYS-12`/`PATH-2`/`QUAL-3`/`TRAP-1`/`EFF-5`
-  rules, and task 0011's landed surfaces.
-- Current: native emission for `open_read`, `read_once`, and `write_once`
-  plus the `IoError` mapping table, and removal of the last
-  `UnsupportedSystemInterface` stop.
-- Next: §9.1 optimized-module inspection, gates, record closure hand-off.
+- Done: claimed at base `eca0078`. Native emission landed for all three
+  operations: `open_read` (one direct `openat` against the capability's own
+  descriptor, no concatenation and no ambient cwd), `read_once` (the
+  three-way `ReadOutcome`, zero-length range reporting `ReadBytes(0)` with no
+  host transfer, reported progress returned without a second attempt, cursor
+  advance by exactly the reported count), and `write_once` (accepted-prefix
+  count, `Err(WriteZero())` for a host zero-length write, `BrokenPipe` as a
+  recoverable outcome under the bootstrap's one-time signal normalization).
+  Both transfers validate the range first and trap through their own
+  `TrapSite` record before any host action. One cold shared mapper turns a
+  native error code into exactly one `IoError` class with the `code`/`origin`
+  detail; the per-target class table is the complete closed thirty-class set
+  in `SYS-2` declared order with `Other` as the default arm. The last
+  `UnsupportedSystemInterface` stop is gone (the variant and its driver arm
+  are removed with it). §9.1 verified on the optimized module.
+- Current: awaiting lead review and integration.
+- Next: 0013 rebases onto this change per the recorded integration order.
 
 ## Dependencies and integration order
 

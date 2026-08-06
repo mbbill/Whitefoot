@@ -45,11 +45,6 @@ pub enum BackendFailure {
     InvalidIr,
     CounterOverflow,
     TextEmission,
-    /// The program uses a qualified [SYS-2] semantic identity whose native
-    /// emission this compiler does not implement yet. This is an explicit
-    /// unsupported compiler capability, never a source rejection and never a
-    /// target-qualification verdict.
-    UnsupportedSystemInterface,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -128,17 +123,25 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
         )
         .map_err(|_| BackendFailure::TextEmission)?;
     }
+    // The mandatory [DIAG-3] record and the qualified system interface can
+    // need the same host symbol; one module declares it once.
+    let mut system_declarations = system.declarations;
     if !traps.is_empty() {
         text.push('\n');
         text.push_str("declare i64 @write(i32, ptr, i64)\n");
+        system_declarations.remove("declare i64 @write(i32, ptr, i64)");
     }
     if !traps.is_empty() || has_matches || has_heap_storage {
         text.push_str("declare void @abort() noreturn\n");
+        system_declarations.remove("declare void @abort() noreturn");
     }
     if has_heap_storage {
         text.push_str("declare ptr @malloc(i64)\ndeclare void @free(ptr)\n");
     }
-    text.push_str(&system.declarations);
+    for declaration in &system_declarations {
+        text.push_str(declaration);
+        text.push('\n');
+    }
     if !traps.is_empty() {
         text.push_str(
             "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n",

@@ -71,10 +71,35 @@ has no edge that can carry one (TRAP-1). The IR also records the FN-7 entry
 form, its selected standard-input ordinals, and the SYS-12 stdout/stderr
 may-alias link, which nothing yet reads.
 
-A semantically accepted system program then stops at LLVM emission as an
-explicit unsupported compiler capability: the QUAL-1 target-qualification
-table, the QUAL-3 command bootstrap, and the native code for each operation
-and release action are the remaining work.
+A semantically accepted system program then compiles, links, and runs. The
+QUAL-1 target-qualification table — fixed Rust data mapping `(specification
+version, semantic ID, target, program kind)` to one approved implementation
+version and one private ABI symbol, plus per-type representation and release
+rows — is consulted once after target selection and before layout; an absent
+or incompatible row, or an unmet QUAL-2 guarantee, is a target-qualification
+failure that cites no language rule. All eleven SYS-2 operations emit as
+`alwaysinline` private wrappers with one direct call per site: the argument
+and host-string cluster, `relative_path`, `exit_status`, and the I/O cluster.
+`open_read` resolves against the capability's own descriptor through the
+target's directory-relative facility, never a prefix concatenated onto a path
+(PATH-2). `read_once` and `write_once` are SYS-8 one-attempt transfers whose
+range validation traps before any host action, report a count of zero for an
+empty range without issuing a transfer, return the host's reported progress
+without a second attempt, and map a host zero-length write to `WriteZero`
+rather than `Ok(0)`. One cold shared mapper turns a native error code into
+exactly one of SYS-7's thirty portable classes, carrying the two-field inline
+detail (`code`, `origin`); a native error with no portable distinction in that
+set is `Other`. Releases emit per SYS-5: a logical consume and `Output`'s
+source detach emit no code, while `DirectoryRead` and `ReadFile` emit one
+direct close whose diagnostic is discarded and never retried. The macOS/Linux
+command bootstrap owns the process before entry: it establishes the QUAL-2
+argument backing from the native vector (refusing startup otherwise), installs
+the ignored write-to-closed-pipe disposition once, opens `command.cwd`,
+supplies the two `Output` owners, invokes the entry once, and maps the
+returned `ExitStatus` onto the process status exactly. QUAL-3's emitted shape
+is verified on the optimized module: the wrappers inline, one source transfer
+is one direct host call, and the transfer path carries no allocation, data
+copy, dispatch, lock, or per-call signal operation.
 
 FN-7's kind-declaring judgment has one home, `syntax::entry_form`, which reads
 it from finalized syntax alone: a unit is kind-declaring exactly when a

@@ -9,15 +9,14 @@
 //! compiler-internal data — the language defines no registry, negotiation
 //! protocol, dynamic loading, or plugin interface [PROG-1].
 //!
-//! Three stops are distinct and never conflated:
+//! Every [SYS-2] semantic identity now has one approved implementation on a
+//! qualified target, so the only stop left here is qualification itself:
 //!
 //! * an absent mapping, an implementation incompatible with the selected
 //!   target or program kind, and an unmet [QUAL-2] guarantee are
 //!   target-qualification failures under [DIAG-1] — like a target-layout
 //!   failure they are not source-language rejections and cite no language
-//!   rule;
-//! * a semantic identity this compiler has not implemented yet is an explicit
-//!   unsupported compiler capability, never a qualification verdict; and
+//!   rule; and
 //! * qualification never narrows a semantic ID to what a target can supply,
 //!   and no weaker operation is substituted for an unqualified one.
 
@@ -55,6 +54,118 @@ pub(crate) enum ProgramKind {
     /// A natively compiled `command`.
     Command,
 }
+
+/// One portable [SYS-7] class and the native error codes a target maps onto
+/// it.
+///
+/// A target's table is the complete closed thirty-class set in [SYS-2]
+/// declared order: a class no native facility of that target produces keeps
+/// its row with an empty code list rather than disappearing, so the table
+/// states the whole portable vocabulary and narrows nothing by omission. A
+/// native error named by no row has no portable distinction in this set and
+/// maps to `Other` [SYS-7], which is the closed set's own rule rather than a
+/// wildcard.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PortableErrorClass {
+    /// The [SYS-2] `IoError` variant spelling this row maps onto.
+    pub(crate) class: &'static str,
+    /// The target's own native error codes, each value-preserving in `u32`.
+    pub(crate) codes: &'static [i32],
+}
+
+const fn class(class: &'static str, codes: &'static [i32]) -> PortableErrorClass {
+    PortableErrorClass { class, codes }
+}
+
+/// The Darwin-family mapping of native `errno` values onto [SYS-7] classes.
+const DARWIN_ERROR_CLASSES: [PortableErrorClass; 30] = [
+    class("NotFound", &[2]),
+    class("PermissionDenied", &[1, 13]),
+    class("AlreadyExists", &[17]),
+    class("NotDirectory", &[20]),
+    class("IsDirectory", &[21]),
+    class("DirectoryNotEmpty", &[66]),
+    class("ReadOnly", &[30]),
+    class("ResourceBusy", &[16, 26]),
+    class("InvalidInput", &[22]),
+    class("InvalidPath", &[62, 63]),
+    class("Unsupported", &[45, 78, 102]),
+    class("Interrupted", &[4]),
+    class("WouldBlock", &[35]),
+    class("TimedOut", &[60]),
+    class("BrokenPipe", &[32]),
+    // No native code produces these two: `WriteZero` is [SYS-8]'s own
+    // host-accepted-nothing outcome, and no v0.19 operation reports a
+    // truncated required transfer.
+    class("WriteZero", &[]),
+    class("UnexpectedEnd", &[]),
+    class("ConnectionRefused", &[61]),
+    class("ConnectionReset", &[54]),
+    class("ConnectionAborted", &[53]),
+    class("NotConnected", &[57]),
+    class("AddressInUse", &[48]),
+    class("AddressUnavailable", &[49]),
+    class("ResourceExhausted", &[12, 23, 24, 55]),
+    class("FileTooLarge", &[27, 84]),
+    class("NoSpace", &[28]),
+    class("QuotaExceeded", &[69]),
+    class("CrossDevice", &[18]),
+    class("DeviceFailure", &[5, 6, 19]),
+    // Every native error with no portable distinction in this set [SYS-7].
+    class("Other", &[]),
+];
+
+/// The Linux-family mapping of native `errno` values onto [SYS-7] classes.
+///
+/// The two families share the first thirty-four codes and diverge above
+/// them, so this is a separate table rather than a diff of the first.
+const LINUX_ERROR_CLASSES: [PortableErrorClass; 30] = [
+    class("NotFound", &[2]),
+    class("PermissionDenied", &[1, 13]),
+    class("AlreadyExists", &[17]),
+    class("NotDirectory", &[20]),
+    class("IsDirectory", &[21]),
+    class("DirectoryNotEmpty", &[39]),
+    class("ReadOnly", &[30]),
+    class("ResourceBusy", &[16, 26]),
+    class("InvalidInput", &[22]),
+    class("InvalidPath", &[36, 40]),
+    class("Unsupported", &[38, 95]),
+    class("Interrupted", &[4]),
+    class("WouldBlock", &[11]),
+    class("TimedOut", &[110]),
+    class("BrokenPipe", &[32]),
+    class("WriteZero", &[]),
+    class("UnexpectedEnd", &[]),
+    class("ConnectionRefused", &[111]),
+    class("ConnectionReset", &[104]),
+    class("ConnectionAborted", &[103]),
+    class("NotConnected", &[107]),
+    class("AddressInUse", &[98]),
+    class("AddressUnavailable", &[99]),
+    class("ResourceExhausted", &[12, 23, 24, 105]),
+    class("FileTooLarge", &[27, 75]),
+    class("NoSpace", &[28]),
+    class("QuotaExceeded", &[122]),
+    class("CrossDevice", &[18]),
+    class("DeviceFailure", &[5, 6, 19]),
+    class("Other", &[]),
+];
+
+/// The target-owned [SYS-7] `origin` discriminator of the directory-relative
+/// open facility.
+///
+/// `origin` selects which native facility produced a `code`, and is zero when
+/// the target supplies no value for the field. Both qualified targets are
+/// Unix-family and expose the same three facilities, so one set of values
+/// serves both.
+pub(crate) const ORIGIN_DIRECTORY_OPEN: u8 = 1;
+/// The target-owned `origin` discriminator of the read facility.
+pub(crate) const ORIGIN_READ: u8 = 2;
+/// The target-owned `origin` discriminator of the write facility.
+pub(crate) const ORIGIN_WRITE: u8 = 3;
+/// The `origin` value used when no native facility produced the code.
+pub(crate) const ORIGIN_NONE: u8 = 0;
 
 /// One [QUAL-2] guarantee a semantic ID's record may require of a target.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -231,6 +342,10 @@ pub(crate) struct SystemTarget {
     directory_relative: bool,
     root_prefix: u8,
     directory_open_flags: i32,
+    file_open_flags: i32,
+    errno_location: &'static str,
+    errno_declaration: &'static str,
+    error_classes: &'static [PortableErrorClass; 30],
     broken_pipe_signal: i32,
     ignored_disposition: i64,
     invalid_disposition: i64,
@@ -248,6 +363,27 @@ impl SystemTarget {
     /// [PATH-2] resolution uses the target's own directory-relative facility.
     pub(crate) const fn directory_open_flags(self) -> i32 {
         self.directory_open_flags
+    }
+
+    /// The flags a directory-relative open of a file for reading uses.
+    pub(crate) const fn file_open_flags(self) -> i32 {
+        self.file_open_flags
+    }
+
+    /// The symbol yielding the address of the calling thread's native error
+    /// slot, read immediately after a failing facility call.
+    pub(crate) const fn errno_location(self) -> &'static str {
+        self.errno_location
+    }
+
+    /// That symbol's declaration.
+    pub(crate) const fn errno_declaration(self) -> &'static str {
+        self.errno_declaration
+    }
+
+    /// The target's complete [SYS-7] class mapping, in [SYS-2] declared order.
+    pub(crate) const fn error_classes(self) -> &'static [PortableErrorClass; 30] {
+        self.error_classes
     }
 
     /// The write-to-closed-pipe signal number [QUAL-3] normalizes once.
@@ -275,17 +411,29 @@ impl SystemTarget {
 
     /// Returns the system-facing record of one selected target triple.
     ///
-    /// The macOS and Linux command targets differ only in the directory-open
-    /// flag value; both supply stable native argument backing that outlives
-    /// the invocation, the Unix code-unit family, and `openat`-style
+    /// The macOS and Linux command targets differ in the directory-open flag
+    /// value, the native error-slot symbol, and the native error codes their
+    /// facilities produce; both supply stable native argument backing that
+    /// outlives the invocation, the Unix code-unit family, and `openat`-style
     /// directory-relative resolution.
     pub(crate) fn for_triple(triple: &str) -> Option<Self> {
-        let directory_open_flags = match triple {
+        let (directory_open_flags, errno_location, errno_declaration, error_classes) = match triple
+        {
             // `O_RDONLY | O_DIRECTORY` on the Darwin ABI.
-            "aarch64-apple-darwin" | "x86_64-apple-darwin" => 0x0010_0000,
+            "aarch64-apple-darwin" | "x86_64-apple-darwin" => (
+                0x0010_0000,
+                "__error",
+                "declare ptr @__error()",
+                &DARWIN_ERROR_CLASSES,
+            ),
             // `O_RDONLY | O_DIRECTORY` on the Linux asm-generic ABI, which
             // both supported architectures use.
-            "aarch64-unknown-linux-gnu" | "x86_64-unknown-linux-gnu" => 0o200_000,
+            "aarch64-unknown-linux-gnu" | "x86_64-unknown-linux-gnu" => (
+                0o200_000,
+                "__errno_location",
+                "declare ptr @__errno_location()",
+                &LINUX_ERROR_CLASSES,
+            ),
             _ => return None,
         };
         Some(Self {
@@ -294,6 +442,13 @@ impl SystemTarget {
             directory_relative: true,
             root_prefix: b'/',
             directory_open_flags,
+            // `O_RDONLY` is zero on both families. `open_read` opens for
+            // reading only and adds no creation, truncation, or mode flag:
+            // [SYS-11] creates one live readable file and nothing else.
+            file_open_flags: 0,
+            errno_location,
+            errno_declaration,
+            error_classes,
             // `SIGPIPE` is 13 on every supported target.
             broken_pipe_signal: 13,
             // `SIG_IGN` and `SIG_ERR`.
@@ -317,17 +472,6 @@ impl SystemTarget {
         target.directory_relative = directory_relative;
         target
     }
-}
-
-/// One table row's implementation state for a facility this compiler knows.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OperationRow {
-    /// One approved implementation.
-    Approved(ApprovedImplementation),
-    /// The semantic identity is specified but this compiler emits no
-    /// implementation for it yet. That is an explicit unsupported compiler
-    /// capability, not a qualification verdict.
-    NotImplemented,
 }
 
 /// The complete qualification of one program against one selected target.
@@ -484,7 +628,7 @@ fn operation_row(
     operation: u8,
     target: SystemTarget,
     kind: ProgramKind,
-) -> Result<OperationRow, QualificationFailure> {
+) -> Result<ApprovedImplementation, QualificationFailure> {
     let facility = Facility::Operation(operation);
     if ACTIVE_KERNEL_SPEC_VERSION != "v0.19" || usize::from(operation) >= OPERATION_COUNT {
         return Err(QualificationFailure::MissingMapping(facility));
@@ -511,15 +655,14 @@ fn operation_row(
         4 => "wf.sys.host_utf8_len.v1",
         5 => "wf.sys.host_copy_utf8.v1",
         6 => "wf.sys.relative_path.v1",
+        7 => "wf.sys.open_read.v1",
+        8 => "wf.sys.read_once.v1",
+        9 => "wf.sys.write_once.v1",
         10 => "wf.sys.exit_status.v1",
-        // `open_read`, `read_once`, and `write_once` are qualified operations
-        // whose native emission this compiler does not implement yet.
-        _ => return Ok(OperationRow::NotImplemented),
+        // The ordinal bound above admits no other value.
+        _ => return Err(QualificationFailure::MissingMapping(facility)),
     };
-    Ok(OperationRow::Approved(ApprovedImplementation {
-        version: 1,
-        symbol,
-    }))
+    Ok(ApprovedImplementation { version: 1, symbol })
 }
 
 /// The `(specification version, resource type, target, program kind)` row.
@@ -641,18 +784,9 @@ pub(crate) fn qualify_program(
                     continue;
                 };
                 let ordinal = operation.ordinal();
-                match operation_row(ordinal, target, kind)
-                    .map_err(BackendFailure::TargetQualification)?
-                {
-                    OperationRow::Approved(implementation) => {
-                        qualification.operations[usize::from(ordinal)] = Some(implementation);
-                    }
-                    // Reported as an unsupported compiler capability, never as
-                    // a qualification verdict and never as a source rejection.
-                    OperationRow::NotImplemented => {
-                        return Err(BackendFailure::UnsupportedSystemInterface);
-                    }
-                }
+                let implementation = operation_row(ordinal, target, kind)
+                    .map_err(BackendFailure::TargetQualification)?;
+                qualification.operations[usize::from(ordinal)] = Some(implementation);
             }
         }
     }

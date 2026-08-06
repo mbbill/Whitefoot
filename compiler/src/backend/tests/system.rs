@@ -561,11 +561,11 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 }
 
 #[test]
-fn native_io_emission_remains_an_explicit_unsupported_capability() {
-    // `open_read`, `read_once`, and `write_once` are qualified operations
-    // whose native emission is not implemented here. The stop is an
-    // unsupported compiler capability, never a source rejection and never a
-    // qualification verdict.
+fn every_semantic_identity_resolves_before_layout_and_emission() {
+    // The qualification table is consulted once, after the exact target is
+    // selected and before any use of an operation is emitted, and it now has
+    // an approved implementation for every [SYS-2] identity on this target.
+    // The I/O cluster's own emission evidence is in `system_io.rs`.
     let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);
   region 'o {
@@ -583,10 +583,10 @@ fn native_io_emission_remains_an_explicit_unsupported_capability() {
 }
 "#;
     let inputs = [SourceInput::new("test.wf", source)];
-    let failure = crate::compile(&inputs, crate::CompilerLimits::default())
-        .expect_err("native I/O emission is not implemented yet");
-    assert_eq!(failure.stage(), crate::CompilationStage::Backend);
-    assert_eq!(failure.kind(), crate::CompilationFailureKind::Unsupported);
-    assert_eq!(failure.rule_id(), None);
-    assert!(failure.detail().contains("UnsupportedSystemInterface"));
+    let llvm = crate::compile(&inputs, crate::CompilerLimits::default())
+        .expect("a qualified writing command must emit");
+    assert!(llvm.contains("; QUAL-1 semantic id 9 -> @wf.sys.write_once.v1"));
+    let output = compile_and_run_with(&llvm, &[]);
+    assert_eq!(output.stdout, b"A");
+    assert_eq!(output.status.code(), Some(0));
 }

@@ -414,13 +414,6 @@ pub fn compile(
                     CompilationStage::TargetQualification,
                     CompilationFailureKind::TargetQualification,
                 ),
-                // An unimplemented system-interface qualification and
-                // emission is an explicit unsupported compiler capability,
-                // not an internal backend failure.
-                BackendFailure::UnsupportedSystemInterface => (
-                    CompilationStage::Backend,
-                    CompilationFailureKind::Unsupported,
-                ),
                 _ => (CompilationStage::Backend, CompilationFailureKind::Backend),
             };
             CompilationFailure::new(stage, kind, failure)
@@ -473,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn system_interface_constructs_compile_and_native_io_remains_unsupported() {
+    fn system_interface_constructs_compile_through_the_normal_path() {
         // The canonical FN-7 command-entry header with a conforming body
         // and exact row: the entry admits, its system calls type against
         // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
@@ -501,20 +494,17 @@ mod tests {
         .expect("a command entry selecting no input must emit");
         assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
 
-        // `open_read`, `read_once`, and `write_once` are qualified operations
-        // whose native emission is not implemented; the stop stays an explicit
-        // unsupported compiler capability, never a source rejection and never
-        // a target-qualification verdict.
+        // `open_read`, `read_once`, and `write_once` complete the qualified
+        // interface: every [SYS-2] semantic identity now has an approved
+        // implementation on this target, so no unsupported stop remains
+        // between an accepted system program and its emitted module.
         let writing =b"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
-        let failure = compile(
+        let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
         )
-        .expect_err("native I/O emission is not implemented yet");
-        assert_eq!(failure.stage(), CompilationStage::Backend);
-        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
-        assert_eq!(failure.rule_id(), None);
-        assert!(failure.detail().contains("UnsupportedSystemInterface"));
+        .expect("a qualified writing command must emit");
+        assert!(llvm.contains("; QUAL-1 semantic id 9 -> @wf.sys.write_once.v1"));
 
         // A `command` entry whose written result is not `own ExitStatus` is a
         // source rejection now, not an unsupported stop: the FN-7 entry-form

@@ -18,9 +18,11 @@ mod requires;
 mod resource_enums;
 mod slices;
 mod system;
+mod system_io;
 
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -130,17 +132,19 @@ fn compile_and_run(llvm: &str) -> Output {
     compile_and_run_with(llvm, &[])
 }
 
-/// Runs one emitted module with exact argument bytes.
-///
-/// The bytes are passed as raw `OsStr`s so a test can hand the program an
-/// argument that is not valid text [HOST-1].
-fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
+/// Creates one fresh directory for a test's own artifacts.
+fn test_directory() -> PathBuf {
     let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
         "whitefoot-backend-test-{}-{sequence}",
         std::process::id()
     ));
     std::fs::create_dir(&directory).expect("unique backend test directory");
+    directory
+}
+
+/// Links one emitted module into an executable inside `directory`.
+fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write backend test module");
@@ -160,6 +164,17 @@ fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
             llvm
         );
     }
+    std::fs::remove_file(&module).expect("remove backend test module");
+    executable
+}
+
+/// Runs one emitted module with exact argument bytes.
+///
+/// The bytes are passed as raw `OsStr`s so a test can hand the program an
+/// argument that is not valid text [HOST-1].
+fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
+    let directory = test_directory();
+    let executable = build_executable(llvm, &directory);
     let output = Command::new(&executable)
         .args(
             arguments
@@ -169,7 +184,6 @@ fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
         .output()
         .expect("run backend test executable");
     std::fs::remove_file(&executable).expect("remove backend test executable");
-    std::fs::remove_file(&module).expect("remove backend test module");
     std::fs::remove_dir(&directory).expect("remove backend test directory");
     output
 }
