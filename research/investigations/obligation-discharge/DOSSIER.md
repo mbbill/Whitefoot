@@ -127,6 +127,14 @@ outside data) carry provenance, propagated by dataflow.
   conditioned on outside data is "bad input crashes the program," the
   original defect. Mixed residuals are partitioned mechanically by conjunct:
   claim the clean conjuncts, branch the tainted ones.
+  **(Amended 2026-08-06, see PROBE-W1.md: provenance is not integrity.
+  `len(external)` is truthful metadata yet environment-sized. The
+  mechanical gate is the SUBJECT-POSITION rule — reject a claim when an
+  externally-derived value occupies the obligation's constrained-subject
+  position — not "any external variable in the predicate." The gate
+  therefore under-blocks bound-position environment-falsifiable claims;
+  those are owned by the fired-claim lifecycle of §2.7 and by contract
+  tests, not by static rejection.)**
 - **Clean residual → claim is the reference shape.** Not mechanically
   forceable (see §4, W1 item), floor-audited instead.
 - Laundering is what keeps taint from saturating: (a) control flow does not
@@ -257,6 +265,11 @@ assertion sits under here" — the row regains signal, answering defect 4 of §1
    checker upgrade, a provably-true branch condition flags the else as dead.
    Damage is quality (misclassification, dead code, lost elimination), never
    soundness. Needs a designed floor test.
+   **PROBED 2026-08-06 — see `PROBE-W1.md`. Downgraded to backstop role:
+   at the sampled floor (6 low-effort writers, fabrication-tempted
+   scenarios) the residual-printing error message steered 6/6 to honest
+   shapes; the audit rules validated synthetically with one known FP class.
+   A harsher adversarial framing remains untested.**
 2. **The entailment fragment becomes normative.** Kill rules, congruence,
    interval arithmetic, taint partitioning — all spec text at v0.17
    precision; every checker strengthening is a spec version; acceptance
@@ -325,11 +338,77 @@ ledgered lifecycle, under an untrusted-writer governance frame.
 2. **W1 floor probe**: have a writer solve discharge errors lazily; measure
    whether if-instead-of-claim divergences are mechanically detectable
    against the reference shape.
+   **EXECUTED 2026-08-06 — see `PROBE-W1.md`. 6/6 honest shapes; the
+   design's own error format did the steering; taint gate amended to the
+   subject-position rule.**
 3. **Taint saturation probe** on an input-processing program (parser-shaped):
    measure what fraction of values stay tainted past the parse layer.
+   **EXECUTED 2026-08-06 — see `PROBE-TAINT.md` (wfgrep, real v0.18
+   boundary): zero taint false positives, zero forced branches, one
+   structural claim in 723 lines. Promoted to load-bearing: boundary
+   operations need normative count-bound postconditions.**
 4. **Codegen parity spot-check**: fused claim vs today's bounds/overflow
    check, byte-level.
+   **EXECUTED 2026-08-06 — see `PROBE-CODEGEN.md`: claim shape = today's
+   check shape by construction; clang -O2 already deletes all nine in-loop
+   checks on sha256 via its own induction (runtime delta = noise), so L1
+   discharge buys certificates and transform freedom, not scalar seconds,
+   on induction-friendly shapes.**
+5. **W1 adversarial escalation** (hostile framing, weaker model, perf-gate
+   contradiction, clamp invited): **EXECUTED 2026-08-06 — see PROBE-W1.md
+   round 2: 10/10 honest; writers restructure toward provable shapes under
+   impossible constraints; remaining failures are competence-shaped and
+   fail loudly at compile time.**
 
 Owner's stated concern to keep honest: the discussion may overfit to itself —
 "到真实场景里面试一下发现根本不work." The validation plan exists to answer
 exactly that before any spec motion.
+
+## 8. Spec-revision entry points (added 2026-08-06, all falsifiers green)
+
+The owner has declared spec revision the next phase. Ordered smallest-first;
+each item names its evidence. Nothing here is authorized until the
+`docs/WORKFLOW.md` language-change loop runs per item.
+
+1. **The claim construct** (named check + `because` + DIAG-3 record carrying
+   the name; redundant-claim warning / refuted-claim error / fired-claim
+   escalation). Smallest self-contained slice; semantics is OP-5 plus
+   naming and lifecycle. Evidence: SIMULATION.md consolidation counts;
+   PROBE-W1 steering.
+2. **The L0 entailment fragment as normative text**: path-sensitive
+   dominating facts, linear arithmetic, allocation-length equality,
+   const-array element ranges, u8-type-range indexing, kill rules driven by
+   effect rows. This is the heaviest spec-engineering item and gates
+   everything else; redundant-claim-is-warning is the version-monotonicity
+   keystone. Evidence: every probe exercised exactly this fragment.
+3. **Caller-side discharge for OP-4 first** (indexes only; arithmetic modes
+   untouched in the first slice): index obligations discharge at use sites
+   from facts; unproven → compile error printing the residual; `index.get`
+   total form added. FN-8's foreign-entry clause survives as synthesized
+   boundary adapters. Evidence: SIMULATION.md L0 = 57–59% proven;
+   PROBE-TAINT's one-claim wfgrep.
+4. **Boundary-op count postconditions made normative** in the SYS family
+   (`read_once` count ≤ capacity, `host_copy_bytes` copied ≤ capacity, …):
+   without them cursor arithmetic floods with environment magnitudes.
+   Evidence: PROBE-TAINT (load-bearing), SIMULATION.md's read_bits analog.
+   Coordinate with the in-flight system-capability work.
+5. **Taint gate, subject-position form** + signature provenance column.
+   Evidence: PROBE-W1 amendment (provenance ≠ integrity; both naive
+   directions misjudge); PROBE-TAINT (zero false positives).
+6. **Counted range loop** (`for i in a..b`) with checker-visible structural
+   bounds: structural discharge for the dominant loop family, no induction
+   machinery needed, and the shape writers reach for unprompted. Evidence:
+   PROBE-W1 round 2 S4P consensus (3/4); SIMULATION.md's loop-claim family
+   would largely vanish into it.
+7. **requires-as-goal** (entry check dissolves into call-site discharge;
+   derived predicate callable by branches) — after 1–3 land. Evidence:
+   SIMULATION.md threading tax bounded (≤ depth 3, all clauses free at call
+   sites).
+8. **ensures** — two queued real cases (`read_bits` mask bound,
+   `append_slice` result bound), one deliberate deferral until 1–7 settle.
+9. **deny-claims partition marker** — after the ledger tooling exists.
+
+Not yet earned by evidence: general loop induction (item 6 removes most of
+its demand; revisit with post-revision numbers), arithmetic-mode
+dissolution (§2.9 — large surface, wait for OP-4 experience), struct/witness
+invariants (the 3 deflate branch regions are the entire near-term demand).
