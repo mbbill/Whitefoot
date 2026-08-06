@@ -437,9 +437,11 @@ fn system_operation_calls_are_named_in_declared_order() {
 fn arg_get_calls_are_checked_by_the_same_general_rule() {
     // [SYS-2] names `arg_get`'s second parameter `index`, which [FORM-3]
     // excludes from IDENT, so no complete legal `arg_get` call is writable in
-    // v0.18 (recorded at task 0007 closure; a v0.19 ruling is requested).
-    // The general GRAM-11 rule still rejects every incomplete or misspelled
-    // one, which is the coverage this defect leaves reachable.
+    // v0.18 (recorded at task 0007 closure; task 0018 carries the v0.19
+    // rename that unblocks the positive case, and this assertion's spelling
+    // belongs to that amendment's derived-material sweep). The general
+    // GRAM-11 rule still rejects every incomplete or misspelled call, which
+    // is the coverage this defect leaves reachable.
     let declared = SemanticIssueKind::InvalidNamedArguments {
         callee: "arg_get".to_owned(),
         declared_parameters: vec!["args".to_owned(), "index".to_owned()],

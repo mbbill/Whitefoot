@@ -6,7 +6,8 @@ out; it is not authority and cannot expand or resequence work.
 - **Status:** IN PROGRESS
 - **Owner / workspace:** executor agent / isolated worktree
   `worktree-agent-a38599fe34c920d17`, lead-reviewed
-- **Base revision:** `907076a`
+- **Base revision:** `54de5be` (claimed at `907076a`; rebased onto the
+  refreshed integration branch after task 0018 registered)
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, first bullet
   ("entry form"). Implements `spec/kernel-spec-v0.18.md`'s `FN-7` and
   `PROG-3`. Claimed while `docs/current-plan.md` remains `ACTIVE` (wave 3
@@ -156,6 +157,18 @@ attribution and the acceptance of the `external`/`blocks` categories into
 the checker's effect model. This task deliberately leaves the
 `SystemEffectCategory` unsupported stop in place for 0009 to remove.
 
+**Cross-link with task 0018
+(`docs/ongoing/0018-v019-arg-get-parameter-repair.md`), registered after this
+task was claimed.** 0018 repairs the v0.18 `arg_get` parameter-spelling
+contradiction by renaming `index` to `position` in v0.19. This task
+implements the general GRAM-11 rule and reads the parameter names from the
+compiler catalog, so it needs no change when that rename lands; the one
+coupling is
+`compiler/src/semantic/tests/entry_form.rs::arg_get_calls_are_checked_by_the_same_general_rule`,
+whose asserted `declared_parameters` spell the active version's names and
+therefore belong to 0018's derived-material sweep. Either order is safe; if
+0018 activates first, this task rebases and updates that one assertion.
+
 ## Validation
 
 `make -C compiler check`; new semantic tests for: a valid full four-input
@@ -175,11 +188,13 @@ has no adapter.
 
 ### Findings for the lead
 
-- **`arg_get` positive case blocked (v0.19 requested).** As recorded at task
-  0007's closure, SYS-2 names `arg_get`'s second parameter `index`, which
-  FORM-3 excludes from IDENT, so GRAM-11 admits no complete legal `arg_get`
-  call. The general named-argument rule is implemented and `arg_get` is
-  covered by negative cases only; nothing was renamed.
+- **`arg_get` positive case blocked; task 0018 now owns the repair.** As
+  recorded at task 0007's closure, SYS-2 names `arg_get`'s second parameter
+  `index`, which FORM-3 excludes from IDENT, so GRAM-11 admits no complete
+  legal `arg_get` call. The general named-argument rule is implemented and
+  `arg_get` is covered by negative cases only; nothing was renamed. Task
+  0018's v0.19 rename to `position` unblocks the positive case; see the
+  cross-link above for the one test assertion it touches.
 - **Effect-row admission for the `command` form is currently unreachable.**
   Its inadmissible categories are exactly `reads`, `writes`, and
   `allocates(arena 'r)`, each of which needs a REGIONID that only region
