@@ -1,6 +1,4 @@
-use crate::syntax::grammar::{
-    LookaheadPredicate, Production, RuleOwner, diagnostic_terminal_order,
-};
+use crate::syntax::grammar::{GrammarStage, LookaheadPredicate, Production, RuleOwner};
 use crate::syntax::terminal::TerminalSet;
 use crate::{ByteOffset, SourceId};
 
@@ -185,6 +183,7 @@ impl From<RuleOwner> for SyntaxRule {
 /// Closed expected-terminal set in approved grammar-first order.
 #[derive(Clone, Copy, Debug)]
 pub struct ExpectedTerminals {
+    stage: GrammarStage,
     terminals: TerminalSet,
     source_end: bool,
 }
@@ -201,7 +200,8 @@ impl ExpectedTerminals {
 
     /// Returns the distinct expected predicates in exact DIAG-1 order.
     pub fn iter(self) -> impl Iterator<Item = LookaheadPredicate> {
-        diagnostic_terminal_order()
+        self.stage
+            .diagnostic_terminal_order()
             .iter()
             .copied()
             .filter(move |predicate| self.contains(*predicate))
@@ -222,20 +222,23 @@ impl ExpectedTerminals {
 }
 
 pub(crate) struct ExpectedBuilder {
+    stage: GrammarStage,
     terminals: TerminalSet,
     source_end: bool,
 }
 
 impl ExpectedBuilder {
-    pub(crate) const fn empty() -> Self {
+    pub(crate) const fn empty(stage: GrammarStage) -> Self {
         Self {
+            stage,
             terminals: TerminalSet::empty(),
             source_end: false,
         }
     }
 
-    pub(crate) const fn only_end() -> Self {
+    pub(crate) const fn only_end(stage: GrammarStage) -> Self {
         Self {
+            stage,
             terminals: TerminalSet::empty(),
             source_end: true,
         }
@@ -250,6 +253,7 @@ impl ExpectedBuilder {
 
     pub(crate) const fn finish(self) -> ExpectedTerminals {
         ExpectedTerminals {
+            stage: self.stage,
             terminals: self.terminals,
             source_end: self.source_end,
         }

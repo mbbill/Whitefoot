@@ -1,9 +1,10 @@
 use crate::SpecHash;
 use crate::lexer::{LexedBundle, Lexeme, Token, TokenKind};
+use crate::syntax::grammar::{GrammarStage, STAGED_SYNTAX_CONTRACT_HASH};
 use crate::syntax::terminal::{
     FixedTerminal, TERMINAL_CONTRACT_SPEC_HASH, TerminalPredicate, TerminalSet, is_digits,
-    is_identifier, is_label, is_literal, is_operation_name, is_region_identifier, is_string,
-    is_type_identifier,
+    is_identifier, is_label, is_literal, is_operation_name, is_region_identifier,
+    is_staged_identifier, is_string, is_type_identifier,
 };
 
 use crate::syntax::outcome::{
@@ -39,18 +40,26 @@ fn fixed(set: &mut TerminalSet, terminal: FixedTerminal, spelling: &[u8]) -> boo
     true
 }
 
-fn membership(token: Token<'_>) -> Option<TerminalSet> {
+fn membership(token: Token<'_>, stage: GrammarStage) -> Option<TerminalSet> {
     let spelling = token.span().bytes();
     let mut set = TerminalSet::empty();
     let valid_shape = match token.kind() {
         TokenKind::LowerWordForm => {
-            if let Some(terminal) = FixedTerminal::from_spelling(spelling) {
+            let fixed_terminal = match stage {
+                GrammarStage::Active => FixedTerminal::from_spelling(spelling),
+                GrammarStage::Staged => FixedTerminal::from_staged_spelling(spelling),
+            };
+            let identifier = match stage {
+                GrammarStage::Active => is_identifier(spelling),
+                GrammarStage::Staged => is_staged_identifier(spelling),
+            };
+            if let Some(terminal) = fixed_terminal {
                 set.insert(TerminalPredicate::Fixed(terminal));
                 if is_literal(spelling) {
                     set.insert(TerminalPredicate::Literal);
                 }
                 true
-            } else if is_identifier(spelling) {
+            } else if identifier {
                 set.insert(TerminalPredicate::Identifier);
                 true
             } else {
@@ -129,25 +138,32 @@ fn invalid_token(token: Token<'_>) -> TerminalCompilerFailure {
     }
 }
 
-/// Applies every active specification terminal predicate to every formed token.
+/// Applies every terminal predicate of the requested contract to every formed token.
 ///
-/// Classification is context-free and failure-atomic. It never consults a
-/// parser position, another token, name lookup, or the operation table, and it
-/// retains all matching predicates rather than choosing one by priority.
+/// The caller names the contract: the active numbered specification selects
+/// the active inventory, and the staged candidate contract selects the staged
+/// inventory; every other identity fails closed. Classification is
+/// context-free and failure-atomic. It never consults a parser position,
+/// another token, name lookup, or the operation table, and it retains all
+/// matching predicates rather than choosing one by priority.
 #[must_use]
 pub fn classify_terminals<'lexed, 'source>(
     lexed: &'lexed LexedBundle<'source>,
     specification: SpecHash,
     limits: TerminalLimits,
 ) -> TerminalOutcome<'lexed, 'source> {
-    if specification != TERMINAL_CONTRACT_SPEC_HASH {
+    let stage = if specification == TERMINAL_CONTRACT_SPEC_HASH {
+        GrammarStage::Active
+    } else if specification == STAGED_SYNTAX_CONTRACT_HASH {
+        GrammarStage::Staged
+    } else {
         return TerminalOutcome::InvocationFailure(
             TerminalInvocationFailure::SpecificationMismatch {
                 expected: TERMINAL_CONTRACT_SPEC_HASH,
                 actual: specification,
             },
         );
-    }
+    };
 
     let token_count = lexed.token_count();
     if token_count > limits.max_tokens {
@@ -189,7 +205,7 @@ pub fn classify_terminals<'lexed, 'source>(
             let Lexeme::Token(token) = lexeme else {
                 continue;
             };
-            let Some(terminals) = membership(*token) else {
+            let Some(terminals) = membership(*token, stage) else {
                 if token.kind() == TokenKind::NumberForm {
                     return TerminalOutcome::SourceIssue(TerminalIssue {
                         token: token.id(),

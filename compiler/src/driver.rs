@@ -310,6 +310,13 @@ pub fn compile(
     };
     let finalized = match finalize(parsed, limits.finalizer) {
         FinalizeOutcome::Complete(complete) => complete,
+        FinalizeOutcome::InvocationFailure => {
+            return Err(CompilationFailure::new(
+                CompilationStage::Finalization,
+                CompilationFailureKind::Invocation,
+                "finalization requires the active specification contract",
+            ));
+        }
         FinalizeOutcome::ResourceFailure(failure) => {
             return Err(CompilationFailure::new(
                 CompilationStage::Finalization,

@@ -38,11 +38,16 @@ cargo run --bin whitefoot-grammar -- \
 ```
 
 It compares the proposal's complete canonical-format, lexer, and grammar
-contract with the active contract, checks the compiler's terminal inventory
-and every strong-LL(2) decision, and runs the real lexer and parser. It fails
-closed when a proposal changes that contract; a structural change must first
-extend this same native path rather than reviving an independent grammar
-engine.
+contract with the contracts this compiler carries, checks the matching
+terminal inventory and every strong-LL(2) decision, and runs the real lexer
+and parser over that contract's tables. A structural change must first extend
+this same native path rather than reviving an independent grammar engine: the
+compiler currently carries the active v0.17 tables and one staged table set
+for the v0.18 candidate contract (committed data plus a byte-exact snapshot of
+the candidate's frontend sections in `src/syntax/grammar/staged_frontend.md`).
+The production compile path always selects the active tables; the staged set
+is reachable only through the explicit staged contract identity, and any
+proposal matching neither contract fails closed.
 
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,

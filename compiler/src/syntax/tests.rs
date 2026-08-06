@@ -349,3 +349,50 @@ fn repeated_classification_is_deterministic() {
         .collect();
     assert_eq!(first_sets, second_sets);
 }
+
+#[test]
+fn staged_contract_reserves_as_external_and_blocks() {
+    use crate::syntax::grammar::STAGED_SYNTAX_CONTRACT_HASH;
+
+    let inputs = [SourceInput::new("staged.wf", b"as external blocks")];
+    let Ok(bundle) = source_bundle(&inputs) else {
+        panic!("test source bundle must be constructible");
+    };
+    let Ok(lexed) = lexed(&bundle) else {
+        panic!("staged spellings must lex");
+    };
+    let TerminalOutcome::Complete(staged) = classify_terminals(
+        &lexed,
+        STAGED_SYNTAX_CONTRACT_HASH,
+        TerminalLimits { max_tokens: 3 },
+    ) else {
+        panic!("staged spellings must classify under the staged contract");
+    };
+    let expected = [
+        FixedTerminal::As,
+        FixedTerminal::External,
+        FixedTerminal::Blocks,
+    ];
+    assert_eq!(staged.tokens().len(), expected.len());
+    for (token, terminal) in staged.tokens().iter().zip(expected) {
+        assert!(
+            token
+                .terminals()
+                .contains(TerminalPredicate::Fixed(terminal))
+        );
+        assert!(!token.terminals().contains(TerminalPredicate::Identifier));
+        assert_eq!(token.terminals().len(), 1);
+    }
+
+    let TerminalOutcome::Complete(active) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 3 },
+    ) else {
+        panic!("staged spellings must classify under the active contract");
+    };
+    for token in active.tokens() {
+        assert!(token.terminals().contains(TerminalPredicate::Identifier));
+        assert_eq!(token.terminals().len(), 1);
+    }
+}

@@ -139,6 +139,14 @@ pub enum FixedTerminal {
     Heap,
     /// `traps`.
     Traps,
+    /// `as`; staged v0.18 candidate spelling, absent from the active inventory.
+    As,
+    /// `external`; staged v0.18 candidate spelling, absent from the active
+    /// inventory.
+    External,
+    /// `blocks`; staged v0.18 candidate spelling, absent from the active
+    /// inventory.
+    Blocks,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
@@ -206,6 +214,79 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 64] = [
     FixedTerminal::Writes,
     FixedTerminal::Allocates,
     FixedTerminal::Heap,
+    FixedTerminal::Traps,
+];
+
+/// Every fixed raw-token predicate in the staged v0.18 candidate contract, in
+/// first occurrence order of that staged grammar. This inventory is reachable
+/// only through the staged contract identity; the active path never uses it.
+pub const STAGED_FIXED_TERMINALS: [FixedTerminal; 67] = [
+    FixedTerminal::Struct,
+    FixedTerminal::LeftBrace,
+    FixedTerminal::RightBrace,
+    FixedTerminal::Colon,
+    FixedTerminal::Semicolon,
+    FixedTerminal::Enum,
+    FixedTerminal::LeftParen,
+    FixedTerminal::RightParen,
+    FixedTerminal::Comma,
+    FixedTerminal::Fn,
+    FixedTerminal::ThinArrow,
+    FixedTerminal::Requires,
+    FixedTerminal::Contract,
+    FixedTerminal::Law,
+    FixedTerminal::Conform,
+    FixedTerminal::Const,
+    FixedTerminal::Equal,
+    FixedTerminal::Doc,
+    FixedTerminal::LeftAngle,
+    FixedTerminal::RightAngle,
+    FixedTerminal::LeftBracket,
+    FixedTerminal::RightBracket,
+    FixedTerminal::Dot,
+    FixedTerminal::As,
+    FixedTerminal::I8,
+    FixedTerminal::I16,
+    FixedTerminal::I32,
+    FixedTerminal::I64,
+    FixedTerminal::U8,
+    FixedTerminal::U16,
+    FixedTerminal::U32,
+    FixedTerminal::U64,
+    FixedTerminal::F32,
+    FixedTerminal::F64,
+    FixedTerminal::Unit,
+    FixedTerminal::Array,
+    FixedTerminal::Slice,
+    FixedTerminal::Box,
+    FixedTerminal::Arena,
+    FixedTerminal::Buffer,
+    FixedTerminal::Own,
+    FixedTerminal::Ampersand,
+    FixedTerminal::Uniq,
+    FixedTerminal::Let,
+    FixedTerminal::Propagate,
+    FixedTerminal::Set,
+    FixedTerminal::Return,
+    FixedTerminal::Loop,
+    FixedTerminal::Break,
+    FixedTerminal::Region,
+    FixedTerminal::Check,
+    FixedTerminal::Else,
+    FixedTerminal::Trap,
+    FixedTerminal::Give,
+    FixedTerminal::Match,
+    FixedTerminal::FatArrow,
+    FixedTerminal::Move,
+    FixedTerminal::Deref,
+    FixedTerminal::Index,
+    FixedTerminal::Pure,
+    FixedTerminal::Reads,
+    FixedTerminal::Writes,
+    FixedTerminal::Allocates,
+    FixedTerminal::Heap,
+    FixedTerminal::External,
+    FixedTerminal::Blocks,
     FixedTerminal::Traps,
 ];
 
@@ -278,6 +359,9 @@ impl FixedTerminal {
             Self::Allocates => b"allocates",
             Self::Heap => b"heap",
             Self::Traps => b"traps",
+            Self::As => b"as",
+            Self::External => b"external",
+            Self::Blocks => b"blocks",
         }
     }
 
@@ -285,6 +369,15 @@ impl FixedTerminal {
     #[must_use]
     pub fn from_spelling(spelling: &[u8]) -> Option<Self> {
         ALL_FIXED_TERMINALS
+            .iter()
+            .copied()
+            .find(|terminal| terminal.spelling() == spelling)
+    }
+
+    /// Finds the staged-contract fixed predicate with these raw-token bytes.
+    #[must_use]
+    pub fn from_staged_spelling(spelling: &[u8]) -> Option<Self> {
+        STAGED_FIXED_TERMINALS
             .iter()
             .copied()
             .find(|terminal| terminal.spelling() == spelling)
@@ -398,18 +491,53 @@ pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 72] = [
     TerminalPredicate::Digits,
 ];
 
+/// Every staged v0.18 candidate token predicate: the staged fixed inventory
+/// followed by the unchanged external predicates. `SOURCE_END` is absent.
+pub const STAGED_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
+    let mut predicates = [TerminalPredicate::Identifier; 75];
+    let mut index = 0;
+    while index < STAGED_FIXED_TERMINALS.len() {
+        predicates[index] = TerminalPredicate::Fixed(STAGED_FIXED_TERMINALS[index]);
+        index += 1;
+    }
+    predicates[67] = TerminalPredicate::Identifier;
+    predicates[68] = TerminalPredicate::TypeIdentifier;
+    predicates[69] = TerminalPredicate::RegionIdentifier;
+    predicates[70] = TerminalPredicate::Label;
+    predicates[71] = TerminalPredicate::OperationName;
+    predicates[72] = TerminalPredicate::Literal;
+    predicates[73] = TerminalPredicate::String;
+    predicates[74] = TerminalPredicate::Digits;
+    predicates
+};
+
+/// The complete predicate universe across both contracts, in stable storage
+/// order: the active inventory, then the staged-only fixed spellings.
+const COMPLETE_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
+    let mut predicates = [TerminalPredicate::Identifier; 75];
+    let mut index = 0;
+    while index < ALL_TERMINAL_PREDICATES.len() {
+        predicates[index] = ALL_TERMINAL_PREDICATES[index];
+        index += 1;
+    }
+    predicates[72] = TerminalPredicate::Fixed(FixedTerminal::As);
+    predicates[73] = TerminalPredicate::Fixed(FixedTerminal::External);
+    predicates[74] = TerminalPredicate::Fixed(FixedTerminal::Blocks);
+    predicates
+};
+
 impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 64,
-            Self::TypeIdentifier => 65,
-            Self::RegionIdentifier => 66,
-            Self::Label => 67,
-            Self::OperationName => 68,
-            Self::Literal => 69,
-            Self::String => 70,
-            Self::Digits => 71,
+            Self::Identifier => 67,
+            Self::TypeIdentifier => 68,
+            Self::RegionIdentifier => 69,
+            Self::Label => 70,
+            Self::OperationName => 71,
+            Self::Literal => 72,
+            Self::String => 73,
+            Self::Digits => 74,
         }
     }
 }
@@ -457,7 +585,7 @@ impl TerminalSet {
     /// diagnostics. Parser tables must retain their separately approved
     /// source-grammar ranks.
     pub fn iter(self) -> impl Iterator<Item = TerminalPredicate> {
-        ALL_TERMINAL_PREDICATES
+        COMPLETE_TERMINAL_PREDICATES
             .iter()
             .copied()
             .filter(move |predicate| self.contains(*predicate))
@@ -475,6 +603,13 @@ fn lower_word(spelling: &[u8]) -> bool {
 #[must_use]
 pub fn is_identifier(spelling: &[u8]) -> bool {
     lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()
+}
+
+/// Tests staged-contract `IDENT` membership: the staged grammar's complete
+/// fixed spellings, including `as`, `external`, and `blocks`, are excluded.
+#[must_use]
+pub fn is_staged_identifier(spelling: &[u8]) -> bool {
+    lower_word(spelling) && FixedTerminal::from_staged_spelling(spelling).is_none()
 }
 
 /// Tests active specification `TYPEID` membership.

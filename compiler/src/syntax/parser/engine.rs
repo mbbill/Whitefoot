@@ -1,6 +1,6 @@
 use crate::syntax::grammar::{
-    DecisionKind, GrammarNodeId, GrammarNodeKind, LookaheadPredicate, Production,
-    SYNTAX_DATA_SPEC_HASH, grammar_node,
+    DecisionKind, GrammarNodeId, GrammarNodeKind, GrammarStage, LookaheadPredicate, Production,
+    STAGED_SYNTAX_CONTRACT_HASH, SYNTAX_DATA_SPEC_HASH,
 };
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{ByteOffset, SourceId};
@@ -41,6 +41,7 @@ impl From<DiagnosticResult> for Stop {
 
 struct Parser<'classified, 'lexed, 'source> {
     classified: &'classified ClassifiedBundle<'lexed, 'source>,
+    stage: GrammarStage,
     limits: ParseLimits,
     work: Work,
     tasks: Vec<Task>,
@@ -53,10 +54,12 @@ struct Parser<'classified, 'lexed, 'source> {
 impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     fn new(
         classified: &'classified ClassifiedBundle<'lexed, 'source>,
+        stage: GrammarStage,
         limits: ParseLimits,
     ) -> Self {
         Self {
             classified,
+            stage,
             limits,
             work: Work::new(limits.max_work),
             tasks: Vec::new(),
@@ -260,9 +263,13 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         if production == Production::Program {
             return Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData));
         }
+        let root = self
+            .stage
+            .production_root(production)
+            .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
         self.push_frame(production, atom_only)?;
         self.push_task(Task::Finish(production))?;
-        self.push_task(Task::Execute(production.root()))?;
+        self.push_task(Task::Execute(root))?;
         Ok(())
     }
 
@@ -272,7 +279,9 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         kind: DecisionKind,
         arm: u8,
     ) -> Result<(), Stop> {
-        let node = grammar_node(node_id)
+        let node = self
+            .stage
+            .node(node_id)
             .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
         match kind {
             DecisionKind::Choice => {
@@ -327,6 +336,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
             decision,
             context,
             DiagnosticSite {
+                stage: self.stage,
                 source,
                 source_len,
                 tokens,
@@ -346,7 +356,9 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         tokens: &[ClassifiedToken<'source>],
         cursor: usize,
     ) -> Result<(), Stop> {
-        let node = grammar_node(node_id)
+        let node = self
+            .stage
+            .node(node_id)
             .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
         match node.kind() {
             GrammarNodeKind::Production(production) => {
@@ -411,7 +423,11 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         source_len: u64,
         tokens: &[ClassifiedToken<'source>],
     ) -> Result<(), Stop> {
-        self.push_task(Task::Execute(Production::Program.root()))?;
+        let program_root = self
+            .stage
+            .production_root(Production::Program)
+            .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
+        self.push_task(Task::Execute(program_root))?;
         let mut cursor = 0_usize;
         while let Some(task) = self.tasks.pop() {
             self.work.spend(1).map_err(Stop::Resource)?;
@@ -420,7 +436,9 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                     self.execute_node(node, source, source_len, tokens, cursor)?;
                 }
                 Task::Continue(node_id) => {
-                    let node = grammar_node(node_id)
+                    let node = self
+                        .stage
+                        .node(node_id)
                         .ok_or(Stop::Compiler(ParseCompilerFailure::MissingGrammarNode))?;
                     let decision = node
                         .decision()
@@ -448,6 +466,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                             expected,
                             context,
                             DiagnosticSite {
+                                stage: self.stage,
                                 source,
                                 source_len,
                                 tokens,
@@ -464,6 +483,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                             expected,
                             context,
                             DiagnosticSite {
+                                stage: self.stage,
                                 source,
                                 source_len,
                                 tokens,
@@ -559,24 +579,31 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     }
 }
 
-/// Derives the complete active-specification grammar with an iterative typed LL(2) parser.
+/// Derives the requested contract's complete grammar with an iterative typed LL(2) parser.
 ///
-/// The parser consumes retained predicate sets, never priority-selected token
-/// kinds. It performs no recovery, backtracking, semantic lookup, canonical
-/// formatting audit, or tree finalization, and no partial derivation escapes a
-/// failure outcome.
+/// The classified bundle's recorded contract identity selects the table set:
+/// the active numbered specification uses the active tables, the staged
+/// candidate contract uses the staged tables, and every other identity fails
+/// closed. The parser consumes retained predicate sets, never
+/// priority-selected token kinds. It performs no recovery, backtracking,
+/// semantic lookup, canonical formatting audit, or tree finalization, and no
+/// partial derivation escapes a failure outcome.
 #[must_use]
 pub fn parse<'classified, 'lexed, 'source>(
     classified: &'classified ClassifiedBundle<'lexed, 'source>,
     limits: ParseLimits,
 ) -> ParseOutcome<'classified, 'lexed, 'source> {
-    if classified.spec_hash() != SYNTAX_DATA_SPEC_HASH {
+    let stage = if classified.spec_hash() == SYNTAX_DATA_SPEC_HASH {
+        GrammarStage::Active
+    } else if classified.spec_hash() == STAGED_SYNTAX_CONTRACT_HASH {
+        GrammarStage::Staged
+    } else {
         return ParseOutcome::InvocationFailure(ParseInvocationFailure::SpecificationMismatch);
-    }
+    };
     if classified.source_bundle().is_empty() {
         return ParseOutcome::InvocationFailure(ParseInvocationFailure::EmptySourceBundle);
     }
-    match Parser::new(classified, limits).run() {
+    match Parser::new(classified, stage, limits).run() {
         Ok(tree) => ParseOutcome::Complete(ParsedBundle { classified, tree }),
         Err(Stop::Source(issue)) => ParseOutcome::SourceIssue(issue),
         Err(Stop::Resource(failure)) => ParseOutcome::ResourceFailure(failure),

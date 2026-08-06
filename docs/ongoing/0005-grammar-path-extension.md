@@ -38,12 +38,45 @@ intended extension route, extend lexer/terminal inventory, parser, LL(2)
 decision tables, and generated syntax data, then run the verifier against the
 candidate and the full gate.
 
+**Mechanism (implemented): staged grammar tables selected by contract
+identity.** The compiler carries two committed table sets. The active v0.17
+set (`generated.rs`, terminal inventory) is byte-untouched except two new
+`Production` enum variants that the active tables never reference. A new
+staged set (`compiler/src/syntax/grammar/staged.rs`) describes the complete
+v0.18 candidate grammar: 64 productions, 67 fixed terminals (+`as`,
+`external`, `blocks`), 74 strong-LL(2) decisions, 1925 SELECT_2 rows. A
+committed snapshot of the candidate's three frontend-contract sections
+(`staged_frontend.md`) pins the exact contract those tables describe;
+`STAGED_SYNTAX_CONTRACT_HASH` (its SHA-256) is the selection token. The one
+shared lexer/classifier/parser engine selects tables by the contract identity
+the caller names: the production driver always passes the active hash and is
+behaviorally unchanged; only the verifier passes the staged hash. `finalize`
+fails closed on staged derivations (no v0.18 FORM-2 semantics exist). The
+verifier accepts a candidate whose contract byte-equals either the active
+spec's sections (grammar-preserving path, unchanged) or the staged snapshot
+(then checks the staged inventory, decision coverage, and cross-arm
+disjointness, and runs the real lexer, classifier, and parser over the
+unlabelled entry and the candidate's canonical four-input command-entry
+header); anything else fails closed. The staged tables were produced offline
+by a one-shot generator validated by reproducing the committed v0.17 tables
+exactly — structure byte-identical, all 72 decisions' 1839 SELECT rows and
+atom metadata set-identical — before emitting the v0.18 set; the generator
+lives outside the repository per hygiene rules.
+
 ## Progress
 
-- **Done:** task registered.
-- **Current:** executor claimed; implementation in worktree.
-- **Next:** verifier green on the candidate; `make -C compiler check` and
-  `make check` green; lead review; land.
+- **Done:** task registered; executor implementation complete in worktree:
+  verifier verifies the candidate through the staged path
+  (`staged candidate contract verified ... 64 productions, 74 decisions, 75
+  terminal predicates`) and still verifies the active spec unchanged;
+  `make -C compiler check` and `make check` green before and after; focused
+  tests added (staged parse of the kind-declaring entry and effect rows,
+  staged reservation of the three new spellings, active-path spot checks that
+  a `program_kind` entry and an `external` row still reject and that `as`,
+  `external`, `blocks` remain active identifiers, staged-contract fail-closed
+  near-misses, finalize fail-closed).
+- **Current:** awaiting lead review of the worktree branch.
+- **Next:** lead review; land; move this record to `docs/done/`.
 
 ## Scope and expected touch set
 

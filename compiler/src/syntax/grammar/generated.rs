@@ -132,6 +132,12 @@ pub enum Production {
     Effects,
     /// The `effect` production.
     Effect,
+    /// The staged v0.18 `program_kind` production; absent from the active
+    /// grammar and never produced by the active tables.
+    ProgramKind,
+    /// The staged v0.18 `input_label` production; absent from the active
+    /// grammar and never produced by the active tables.
+    InputLabel,
 }
 
 impl Production {

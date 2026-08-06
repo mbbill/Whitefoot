@@ -1,13 +1,14 @@
 #![allow(clippy::panic)]
 
 use super::{
-    DecisionKind, GrammarNodeKind, LookaheadPredicate, Production, SYNTAX_DATA_SPEC_HASH,
-    diagnostic_terminal_order, grammar_node, productions,
+    DecisionKind, GrammarNodeKind, GrammarStage, LookaheadPredicate, Production,
+    SYNTAX_DATA_SPEC_HASH, diagnostic_terminal_order, grammar_node, productions,
 };
 use crate::ACTIVE_KERNEL_SPEC_HASH;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 
 use super::generated::{DECISIONS, SELECT_ROWS};
+use super::staged::{STAGED_DECISIONS, STAGED_SELECT_ROWS};
 
 #[test]
 fn complete_inventory_is_bound_to_exact() {
@@ -19,12 +20,46 @@ fn complete_inventory_is_bound_to_exact() {
 }
 
 #[test]
-fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
+fn staged_inventory_extends_the_active_grammar() {
+    let staged = GrammarStage::Staged;
+    assert_eq!(staged.productions().len(), 64);
+    assert_eq!(staged.diagnostic_terminal_order().len(), 75);
+    assert!(staged.productions().contains(&Production::ProgramKind));
+    assert!(staged.productions().contains(&Production::InputLabel));
+    // The two staged productions are absent from the active tables.
+    assert!(
+        GrammarStage::Active
+            .production_root(Production::ProgramKind)
+            .is_none()
+    );
+    assert!(
+        GrammarStage::Active
+            .production_root(Production::InputLabel)
+            .is_none()
+    );
+    assert!(staged.production_root(Production::ProgramKind).is_some());
+    assert!(staged.production_root(Production::InputLabel).is_some());
+    // The staged diagnostic order carries the three staged spellings.
+    for terminal in [
+        FixedTerminal::As,
+        FixedTerminal::External,
+        FixedTerminal::Blocks,
+    ] {
+        let predicate = LookaheadPredicate::Terminal(TerminalPredicate::Fixed(terminal));
+        assert!(staged.diagnostic_terminal_order().contains(&predicate));
+        assert!(!diagnostic_terminal_order().contains(&predicate));
+    }
+}
+
+fn count_stage_decisions(stage: GrammarStage) -> usize {
     let mut decisions = 0_usize;
-    for production in productions() {
-        let mut stack = vec![production.root()];
+    for production in stage.productions() {
+        let Some(root) = stage.production_root(*production) else {
+            panic!("every stage production must have a root");
+        };
+        let mut stack = vec![root];
         while let Some(node_id) = stack.pop() {
-            let Some(node) = grammar_node(node_id) else {
+            let Some(node) = stage.node(node_id) else {
                 panic!("generated node must exist");
             };
             if let Some(decision) = node.decision() {
@@ -40,12 +75,21 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 72);
+    decisions
+}
+
+#[test]
+fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
+    assert_eq!(count_stage_decisions(GrammarStage::Active), 72);
+    assert_eq!(count_stage_decisions(GrammarStage::Staged), 74);
 }
 
 #[test]
 fn program_is_one_repeat_decision_over_items() {
-    let Some(root) = grammar_node(Production::Program.root()) else {
+    let Some(root_id) = Production::Program.root() else {
+        panic!("program must have an active root");
+    };
+    let Some(root) = grammar_node(root_id) else {
         panic!("program root must exist");
     };
     assert_eq!(root.kind(), GrammarNodeKind::RepeatZero);
@@ -57,12 +101,44 @@ fn program_is_one_repeat_decision_over_items() {
 }
 
 #[test]
-fn diagnostic_order_contains_no_source_end() {
-    assert!(
-        diagnostic_terminal_order()
-            .iter()
-            .all(|item| !matches!(item, LookaheadPredicate::SourceEnd))
+fn staged_fn_decl_opens_with_an_optional_program_kind() {
+    let staged = GrammarStage::Staged;
+    let Some(root_id) = staged.production_root(Production::FnDecl) else {
+        panic!("staged fn_decl must have a root");
+    };
+    let Some(root) = staged.node(root_id) else {
+        panic!("staged fn_decl root must exist");
+    };
+    assert_eq!(root.kind(), GrammarNodeKind::Sequence);
+    let Some(first) = root.children().first().copied() else {
+        panic!("staged fn_decl root must have children");
+    };
+    let Some(first) = staged.node(first) else {
+        panic!("staged fn_decl first child must exist");
+    };
+    assert_eq!(first.kind(), GrammarNodeKind::Optional);
+    let Some(content) = first.children().first().copied() else {
+        panic!("the optional must contain the program_kind reference");
+    };
+    let Some(content) = staged.node(content) else {
+        panic!("the program_kind reference must exist");
+    };
+    assert_eq!(
+        content.kind(),
+        GrammarNodeKind::Production(Production::ProgramKind)
     );
+}
+
+#[test]
+fn diagnostic_order_contains_no_source_end() {
+    for stage in [GrammarStage::Active, GrammarStage::Staged] {
+        assert!(
+            stage
+                .diagnostic_terminal_order()
+                .iter()
+                .all(|item| !matches!(item, LookaheadPredicate::SourceEnd))
+        );
+    }
 }
 
 fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
@@ -81,12 +157,11 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
     )
 }
 
-#[test]
-fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 72);
-    assert_eq!(SELECT_ROWS.len(), 1_839);
+fn assert_detailed_rows(decisions: &[super::Decision], expected_rows: usize) {
+    let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
-    for decision in DECISIONS {
+    for decision in decisions {
+        total_rows += decision.rows().len();
         for row in decision.rows() {
             for position in 0..2 {
                 let Some(atom) = row.position(position) else {
@@ -126,5 +201,20 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
+    assert_eq!(total_rows, expected_rows);
     assert!(saw_atom_only);
+}
+
+#[test]
+fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
+    assert_eq!(DECISIONS.len(), 72);
+    assert_eq!(SELECT_ROWS.len(), 1_839);
+    assert_detailed_rows(&DECISIONS, 1_839);
+}
+
+#[test]
+fn all_staged_rows_retain_provenance_and_remain_cross_arm_disjoint() {
+    assert_eq!(STAGED_DECISIONS.len(), 74);
+    assert_eq!(STAGED_SELECT_ROWS.len(), 1_925);
+    assert_detailed_rows(&STAGED_DECISIONS, 1_925);
 }

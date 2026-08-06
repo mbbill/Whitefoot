@@ -1,7 +1,7 @@
 #![allow(clippy::panic)]
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
-use crate::syntax::grammar::{Production, productions};
+use crate::syntax::grammar::{Production, STAGED_SYNTAX_CONTRACT_HASH, productions};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
 
 use crate::{TerminalLimits, TerminalOutcome, classify_terminals};
@@ -510,4 +510,158 @@ fn main() -> own unit pure {}
         panic!("the all-production derivation must pass the independent shape finalizer");
     };
     assert!(finalized.node_count() >= productions().len());
+}
+
+const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
+
+const EXTERNAL_EFFECT_ROW: &[u8] = b"fn probe() -> own unit external {\n  return unit;\n}\n";
+
+const STAGED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
+    b"fn external() -> own unit pure {\n  let as: own i32 = blocks;\n  return unit;\n}\n";
+
+fn parse_with(
+    contract: crate::SpecHash,
+    name: &'static str,
+    source: &'static [u8],
+) -> (ParseOutcome<'static, 'static, 'static>, ()) {
+    // Tests leak their small fixtures so the borrowed pipeline stays simple.
+    let inputs = Box::leak(Box::new([SourceInput::new(name, source)]));
+    let bundle = Box::leak(Box::new(bundle(inputs)));
+    let LexOutcome::Complete(lexed) = lex(bundle, LEX_LIMITS) else {
+        panic!("staged-path fixture must lex");
+    };
+    let lexed = Box::leak(Box::new(lexed));
+    let TerminalOutcome::Complete(classified) =
+        classify_terminals(lexed, contract, TerminalLimits { max_tokens: 65_536 })
+    else {
+        panic!("staged-path fixture must classify");
+    };
+    let classified = Box::leak(Box::new(classified));
+    (parse(classified, PARSE_LIMITS), ())
+}
+
+#[test]
+fn staged_contract_parses_the_kind_declaring_entry() {
+    let (outcome, ()) = parse_with(
+        STAGED_SYNTAX_CONTRACT_HASH,
+        "staged-entry.wf",
+        KIND_DECLARING_ENTRY,
+    );
+    let ParseOutcome::Complete(parsed) = outcome else {
+        panic!("the staged tables must derive the kind-declaring entry: {outcome:?}");
+    };
+    for production in [Production::ProgramKind, Production::InputLabel] {
+        let present = parsed.tree.elements.iter().any(|element| {
+            matches!(
+                element,
+                DerivationElement::Production { production: actual, .. } if *actual == production
+            )
+        });
+        assert!(present, "staged derivation omitted {production:?}");
+    }
+}
+
+#[test]
+fn staged_contract_parses_the_external_and_blocks_effect_rows() {
+    let (outcome, ()) = parse_with(
+        STAGED_SYNTAX_CONTRACT_HASH,
+        "staged-effects.wf",
+        EXTERNAL_EFFECT_ROW,
+    );
+    assert!(
+        matches!(outcome, ParseOutcome::Complete(_)),
+        "the staged tables must derive an external effect row: {outcome:?}"
+    );
+}
+
+#[test]
+fn active_contract_still_rejects_the_kind_declaring_entry() {
+    let (outcome, ()) = parse_with(
+        ACTIVE_KERNEL_SPEC_HASH,
+        "active-entry.wf",
+        KIND_DECLARING_ENTRY,
+    );
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("a program_kind entry must stay rejected on the active path: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form1);
+}
+
+#[test]
+fn active_contract_still_rejects_an_external_effect_row() {
+    let (outcome, ()) = parse_with(
+        ACTIVE_KERNEL_SPEC_HASH,
+        "active-effects.wf",
+        EXTERNAL_EFFECT_ROW,
+    );
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("an external effect row must stay rejected on the active path: {outcome:?}");
+    };
+    // The two-token window fails at the `unit external` type decision, one
+    // token before the effect row itself; the rejection is grammar-level.
+    assert_eq!(issue.rule(), SyntaxRule::Gram3);
+
+    let (outcome, ()) = parse_with(
+        ACTIVE_KERNEL_SPEC_HASH,
+        "active-effects-tail.wf",
+        b"fn probe() -> own unit allocates(heap), external {\n  return unit;\n}\n",
+    );
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("a trailing external category must stay rejected on the active path: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Eff1);
+}
+
+#[test]
+fn active_contract_keeps_staged_spellings_as_ordinary_identifiers() {
+    let (outcome, ()) = parse_with(
+        ACTIVE_KERNEL_SPEC_HASH,
+        "active-identifiers.wf",
+        STAGED_SPELLINGS_AS_IDENTIFIERS,
+    );
+    assert!(
+        matches!(outcome, ParseOutcome::Complete(_)),
+        "as/external/blocks must remain active-path identifiers: {outcome:?}"
+    );
+}
+
+#[test]
+fn staged_contract_reserves_the_new_fixed_spellings() {
+    let (outcome, ()) = parse_with(
+        STAGED_SYNTAX_CONTRACT_HASH,
+        "staged-identifiers.wf",
+        STAGED_SPELLINGS_AS_IDENTIFIERS,
+    );
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("a staged parse must reject the reserved spellings: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form3);
+}
+
+#[test]
+fn finalization_fails_closed_on_a_staged_derivation() {
+    let (outcome, ()) = parse_with(
+        STAGED_SYNTAX_CONTRACT_HASH,
+        "staged-finalize.wf",
+        b"fn main() -> own unit pure {\n  return unit;\n}\n",
+    );
+    let ParseOutcome::Complete(parsed) = outcome else {
+        panic!("the staged tables must derive the shared minimal program: {outcome:?}");
+    };
+    let outcome = finalize(
+        parsed,
+        FinalizeLimits {
+            max_work: 8_000_000,
+            max_roots: 131_072,
+            max_shape_tasks: 131_072,
+            max_nodes: 131_072,
+            max_child_edges: 131_072,
+            max_terminals: 131_072,
+            max_sources: 16,
+        },
+    );
+    assert!(
+        matches!(outcome, FinalizeOutcome::InvocationFailure),
+        "finalization must fail closed on a staged-contract derivation"
+    );
 }

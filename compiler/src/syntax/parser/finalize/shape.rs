@@ -221,7 +221,10 @@ fn verify(
     .map_err(|_| FinalizeCompilerFailure::CounterOverflow)?;
     let mut child_cursor = 0_usize;
     tasks.clear();
-    push_task(tasks, ShapeTask::Execute(production.root()), limits)?;
+    let root = production
+        .root()
+        .ok_or(FinalizeCompilerFailure::InvalidGrammarData)?;
+    push_task(tasks, ShapeTask::Execute(root), limits)?;
     while let Some(task) = tasks.pop() {
         work.spend(1)?;
         match task {
