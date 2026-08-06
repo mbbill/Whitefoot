@@ -1,21 +1,28 @@
 # 0016 — Cost-shape inspection and hostile test gates
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 8
-of 8; task 11 of 11 — final task before Work item 4). Not yet claimed —
-claiming fills in `Status`, `Owner`, workspace, and `Base revision` and
-moves this file unchanged in number to `docs/ongoing/` per
-`docs/WORKFLOW.md`. This record authorizes nothing beyond Work items 2 and
-4 themselves; if `docs/current-plan.md` is replaced before this task is
-claimed, delete this file unless the new plan explicitly retains it.
+**Claimed task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 8
+of 8; task 11 of 11 — final task before Work item 4). This record reports
+how authorized work is carried out; it authorizes nothing beyond Work items
+2 and 4 themselves.
 
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, eighth bullet
   ("the §9.1 cost and §12.2 hostile test gates"), and Work item 4 ("return
   to the `wfgrep` checkpoint"), whose validation this task's evidence
   feeds. Also implements the plan's Verification bullet ("the §9.1 native
   cost shape is inspected on emitted code ..."). Implements dossier §9.1's
   table, the remainder of §12.2's rejection-gate list, and `QUAL-3` as the
-  qualification-side counterpart to the cost-shape claim. Claimable only
-  while `docs/current-plan.md` remains `ACTIVE`.
+  qualification-side counterpart to the cost-shape claim.
+- **Owner:** executor agent `exec-0016`
+- **Base revision:** `36dbc47` (main, "docs: close task 0014")
+- **Workspace:** worktree branch `worktree-agent-a5c67d0970c39e8c1`
+
+## Progress
+
+- Completed: claim.
+- Current: the §9.1 cost-shape gates over the optimized `wfgrep` module.
+- Next: the `Accept(0)` WriteZero behavioural case; the initialization-cost
+  measurement; coverage verification for the already-landed §12.2 items.
 
 ## Goal
 
