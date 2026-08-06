@@ -65,8 +65,9 @@ contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
 [v0.19 specification](../spec/kernel-spec-v0.19.md) remains semantic authority.
-The v0.18 system-interface surface parses and stops as explicit unsupported
-capability pending planned tasks 0006-0016.
+The first-slice system interface compiles and runs end-to-end on the native
+macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
+remain ahead of any performance claim.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules

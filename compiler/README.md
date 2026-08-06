@@ -45,7 +45,7 @@ proposal that changes that frontend contract fails closed: a structural change
 must first extend this same native path rather than reviving an independent
 grammar engine.
 
-The v0.18 system-interface surface parses, resolves, and checks through the
+The v0.19 system-interface surface parses, resolves, and checks through the
 normal semantic path: FN-7 admits both entry forms, system operation calls
 type against the SYS-2 catalog signatures, and EFF-2 checks the
 `external`/`blocks` categories exactly — the exhibited row is the union of
