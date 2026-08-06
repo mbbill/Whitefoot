@@ -4,9 +4,15 @@
 Each case is a canonical `.wf` source (tests/conformance/cases/<id>.wf) plus a
 manifest entry (tests/conformance/manifest.jsonl) declaring the rule id(s) it
 exercises and the expected verdict. Cases are driven through a named toolchain
-adapter. No active adapter exists yet; identity, corpus structure, declared rule
-coverage, and expectations remain checkable, while a semantic run fails
-explicitly.
+adapter. The active adapter is native, not Python: `compiler/tests/conformance.rs`
+compiles each case through the ordinary compiler path, realizes the ARRANGE
+below as a real invocation, and reduces the outcome to one verdict below
+(`make conformance-run`). This file stays on the other side of that boundary —
+identity, corpus structure, declared rule coverage, and schema validity — so
+the corpus keeps outliving any one compiler and no compiler behaviour is
+reimplemented here. `ADAPTER` below is the hook for a future non-native
+toolchain; with none installed, a Python-side semantic run fails explicitly
+rather than reporting an empty success.
 
 Because it tests the LANGUAGE (source -> verdict), not a compiler's internals, this
 suite outlives compiler implementations.
@@ -38,16 +44,30 @@ never executed must not carry one. Every byte string is lowercase hex so the
 corpus can express non-UTF-8 argument and path bytes exactly and diff them
 readably:
 
-  ARRANGE = {"argv": ["<hex>"...]?,          arguments after the program name
+  ARRANGE = {"argv": ["<hex>"...]?,          the complete native argument vector
              "stdin": "<hex>"?,              standard input body
              "files": [FIXTURE...]?,         fixtures under the initial directory
              "redirect": {"stdout": NAME?, "stderr": NAME?}?}
   FIXTURE = {"path":"<hex>", "bytes":"<hex>"} | {"path":"<hex>", "directory":true}
 
+`argv` is the COMPLETE native argument vector, position 0 included, exactly as
+the language's own argument value delivers it: `argv[i]` is what the program
+reads at position i, and the vector's length is the count the program reads.
+This is the only lossless reading. `Args` carries the complete native vector
+[HOST-1, SYS-9], so a schema that listed only the arguments after the invoked
+name would leave the vector's first element — an element a program can count
+and read — unstated by the case that claims to fix its invocation. Position 0
+is therefore a case's own datum rather than the harness's incidental choice of
+where it built the executable, and an adapter sets it explicitly. An absent
+`argv` means the adapter's own default vector, which supplies position 0 and
+nothing after it.
+
 A redirection NAME is an opaque sink label: two entries naming the same sink
 are the same destination, which is how "stdout and stderr redirected to one
-target" is stated. Absent keys mean the default arrangement — no extra
-arguments, empty stdin, no fixtures, separate inherited sinks.
+target" is stated. An adapter realizes one sink label as one object under the
+initial directory, so a case may also name that label as a path and read the
+combined bytes back. Absent keys mean the default arrangement — the default
+argument vector, an empty standard input, no fixtures, and separate sinks.
 """
 import hashlib, json, re, sys
 from pathlib import Path
@@ -58,9 +78,10 @@ CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec-v0.19.md")
 ACTIVE_SPEC_SHA256 = "01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398"
-# A later entrance-gated integration may install a named Rust adapter. Keeping
-# this explicit prevents a missing compiler, crash, or broad exception from
-# becoming `Unsupported`.
+# The named native adapter is compiler/tests/conformance.rs, reached through
+# `make conformance-run`; this hook stays open for a future non-native
+# toolchain. Keeping it explicit prevents a missing compiler, crash, or broad
+# exception from becoming `Unsupported`.
 ADAPTER = None
 
 

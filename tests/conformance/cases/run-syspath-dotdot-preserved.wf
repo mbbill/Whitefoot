@@ -1,0 +1,20 @@
+command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  doc "PATH-1: the near-miss a writer expects to be rejected by analogy with confinement. Construction preserves every admitted code unit exactly, including `.` and `..` components and every separator, and performs no normalization, canonicalization, prefix stripping, or component collapse; the first slice's directory capability makes no confinement claim [PATH-2].";
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            return exit_status(code: 0_u8);
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 10_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 11_u8);
+      }
+    }
+  }
+}

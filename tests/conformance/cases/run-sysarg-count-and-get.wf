@@ -1,0 +1,36 @@
+command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  doc "SYS-9: args_count is total and arg_get returns Ok at a present position and InvalidIndex beyond the last; the counted vector is the complete native one, so position 0 is the invoked name.";
+  region 'a {
+    let count: own u64 = args_count<'a>(args: &'a args);
+    let counted: own Bool = ieq<u64>(count, 3_u64);
+    match counted {
+      True() => {
+      }
+      False() => {
+        return exit_status(code: 10_u8);
+      }
+    }
+    match arg_get<'a>(args: &'a args, position: 0_u64) {
+      Ok(value: invoked) => {
+      }
+      Err(error: missing) => {
+        return exit_status(code: 11_u8);
+      }
+    }
+    match arg_get<'a>(args: &'a args, position: 2_u64) {
+      Ok(value: last) => {
+      }
+      Err(error: absent) => {
+        return exit_status(code: 12_u8);
+      }
+    }
+    match arg_get<'a>(args: &'a args, position: 3_u64) {
+      Ok(value: beyond) => {
+        return exit_status(code: 13_u8);
+      }
+      Err(error: past) => {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}

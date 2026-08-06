@@ -1,0 +1,78 @@
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "HOST-1: an argument that is not valid text retains its complete original code-unit sequence. host_bytes_len reports the exact native byte count and host_copy_bytes transfers exactly those bytes with no validation, no Unicode restriction, and no substitution [HOST-2, SYS-9].";
+  let bytes: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        region 'v {
+          let length: own u64 = host_bytes_len<'v>(value: &'v text);
+          let exact: own Bool = ieq<u64>(length, 3_u64);
+          match exact {
+            True() => {
+            }
+            False() => {
+              return exit_status(code: 10_u8);
+            }
+          }
+          region 'd {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 0_u64, capacity: 4_u64) {
+              Ok(value: copied) => {
+                let counted: own Bool = ieq<u64>(copied, 3_u64);
+                match counted {
+                  True() => {
+                  }
+                  False() => {
+                    return exit_status(code: 11_u8);
+                  }
+                }
+              }
+              Err(error: problem) => {
+                return exit_status(code: 12_u8);
+              }
+            }
+          }
+        }
+        let first: own u8 = index<u8>(bytes, 0_u64);
+        let second: own u8 = index<u8>(bytes, 1_u64);
+        let third: own u8 = index<u8>(bytes, 2_u64);
+        let tail: own u8 = index<u8>(bytes, 3_u64);
+        let head_ok: own Bool = ieq<u8>(first, 97_u8);
+        match head_ok {
+          True() => {
+          }
+          False() => {
+            return exit_status(code: 13_u8);
+          }
+        }
+        let nontext_ok: own Bool = ieq<u8>(second, 255_u8);
+        match nontext_ok {
+          True() => {
+          }
+          False() => {
+            return exit_status(code: 14_u8);
+          }
+        }
+        let last_ok: own Bool = ieq<u8>(third, 98_u8);
+        match last_ok {
+          True() => {
+          }
+          False() => {
+            return exit_status(code: 15_u8);
+          }
+        }
+        let tail_ok: own Bool = ieq<u8>(tail, 0_u8);
+        match tail_ok {
+          True() => {
+            return exit_status(code: 0_u8);
+          }
+          False() => {
+            return exit_status(code: 16_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 17_u8);
+      }
+    }
+  }
+}

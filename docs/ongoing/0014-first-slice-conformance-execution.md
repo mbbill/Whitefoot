@@ -3,7 +3,10 @@
 Live coordination record. It reports how authorized work is being carried
 out; it is not authority and expands nothing.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `BLOCKED` — the runtime case lane and the native adapter are
+  built and green; the corpus-wide gate lane is blocked by 123 pre-existing
+  runnable cases whose disposition is outside this task. See
+  [Owner-level finding](#owner-level-finding-the-corpus-wide-gate-lane).
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, sixth bullet
   ("first-slice conformance execution"), and the plan's Verification bullet
   ("first-slice conformance cases pass through the normal command path").
@@ -115,13 +118,104 @@ qualification outcome directly without executing.
 
 ## Progress
 
-- Completed: claim; base refreshed to `0a47f54`; authorities, the 0017
-  schema, the 0011/0012 closures, and the reviewed catalog re-read against
-  the active `spec/kernel-spec-v0.19.md`.
-- Current: build the native execution adapter, then port the runtime case
-  lane.
-- Next: reconcile `arrange.argv` with the 0011 complete-native-vector
-  ruling; wire the gate lane; report.
+- Completed: claim; base refreshed to `0a47f54`; the native execution
+  adapter (`compiler/tests/conformance.rs` plus `conformance/{adapter,
+  corpus,json}.rs`) — it reads the same `manifest.jsonl` bytes `runner.py`
+  reads, compiles each case through `whitefoot::compile`, realizes an
+  `arrange` as a real invocation (fixtures, exact argument bytes through the
+  raw route, an empty or supplied standard input, one-or-two-sink
+  redirection), and reduces the outcome to one corpus verdict with the same
+  match rule and the same `runnable`/`pending`/`xfail` axis.
+- Completed: 22 additive runtime cases, all reaching their declared verdict
+  through that adapter — argument count and index, the non-UTF-8 argument
+  round trip and its text-route refusal, the three recoverable copy
+  refusals with sentinel no-write witnesses, the three range traps, three
+  path-construction outcomes, one open error class, the four file shapes,
+  and the two output cases. Corpus rule coverage by case rose 90 → 100 of
+  119; `runner.py` structural validation and its 18 self-tests pass, and the
+  manifest diff is +22/−0 with no existing byte touched.
+- Completed: the `arrange.argv` reconciliation (below) and the
+  `make conformance-run` wiring onto the native adapter.
+- Blocked: the corpus-wide gate lane. See the finding below. No status was
+  flipped, no case excluded, no expectation weakened.
+
+## Reconciliation: `arrange.argv` is the complete native vector
+
+Task 0017's schema documented `arrange.argv` as "arguments after the program
+name"; task 0011 ruled that `command.args` carries the complete native
+vector including position 0 for [HOST-1] losslessness. Reconciled in the
+schema's favour of losslessness: **`arrange.argv` is the complete native
+argument vector, position 0 included**, so `argv[i]` is what the program
+reads at position i and the vector's length is the count it reads. The
+alternative would leave the vector's first element — an element a program
+can count and read — unstated by the case that claims to fix its
+invocation, and would make position 0 the harness's incidental choice of
+build path rather than the case's own datum. The adapter therefore sets
+position 0 explicitly. Recorded in `tests/conformance/runner.py`'s schema
+comment; no existing manifest line carried an `arrange`, so nothing was
+reinterpreted.
+
+## Owner-level finding: the corpus-wide gate lane
+
+Running the whole corpus through the adapter for the first time gives
+`Pass=242 Fail=123 Skip=14`. All 22 cases this task adds pass; every one of
+the 123 failures is pre-existing and falls into exactly four causes, none
+of which this task is authorized to resolve:
+
+- **A — 45 cases: a rejection carries no rule id.** The compiler rejects
+  correctly, but `CompilationFailure::rule_id` is populated only for
+  semantic stops, so a rejection at Resolution (24), Parsing (17), Lexing
+  (3), or CanonicalSource (1) reaches the adapter as `reject` with no rule
+  and cannot be compared to the case's declared rule. This is compiler
+  diagnostic plumbing, outside this task's touch set.
+- **B — 41 cases: the case unit declares no entry.** All 41 verified to
+  contain no `fn main`; [FN-7]'s whole-unit judgment fires and the
+  diagnostic cites FN-7, masking each case's own declared rule (and, for two
+  `accept` cases, contradicting the expectation outright). Either the
+  [DIAG-1] ordering is wrong or 41 protected case sources are incomplete
+  units — both are decisions above an executor. Task 0017 flagged one
+  instance (`own13-pos-borrow-match-live`) as latent; it is 41.
+- **C — 35 cases: `runnable` overclaims.** The compiler stops as
+  `SemanticUnsupported { feature: RegionsAndBorrows }`. This is exactly what
+  the corpus's own `pending` axis is for, and per-case run evidence now
+  exists, but flipping only this bucket leaves the lane red and splits one
+  ruling across two changes.
+- **D — 2 cases: genuine verdict divergence.**
+  `gram5-pos-recursive-place-projection` expects `run 0` and is rejected
+  citing TYPE-5; `type7-neg-propagate-box-holder` expects TYPE-7 and is
+  rejected citing ERR-3.
+
+Because B and D cannot be dispositioned by an executor, no move available
+here makes the lane green. The corpus-wide test is therefore `#[ignore]`d
+with the blocker written into its `#[ignore]` reason, and
+`make conformance-run` drives it and reports the complete tally
+(exit 2 today). `make check` stays green and unchanged in what it claims:
+it exercises corpus structure and declared coverage, not verdicts.
+
+## Not drafted, with reasons
+
+- `run-sysdir-open-isdirectory` — not expressible as catalogued. Measured:
+  `open_read` on a directory returns `Ok` on this target, because a
+  read-only open of a directory succeeds natively; [SYS-7] fixes the class
+  but the specification does not fix which operation surfaces `EISDIR`, so
+  pinning either surface point would pin unfixed target behaviour. An
+  `ENOTDIR` case (`plain.txt/inner`) is available and does map to a distinct
+  class, but substituting it is a scope change for the lead, not the
+  executor.
+- `run-syspath-nontext-bytes-preserved` — drafted, then withdrawn: APFS on
+  the development host refuses a non-UTF-8 filename with `EILSEQ`, so the
+  fixture cannot be created and the case would be host-conditional. HOST-1
+  losslessness is still witnessed by the argument round trip.
+- `run-syspath-nul-rejected` — not expressible at all. [HOST-1] fixes the
+  Unix code-unit family as `0x01..0xff`, so no argument fixture can carry a
+  NUL and no first-slice operation constructs a host string otherwise.
+- QUAL-level `unsupported` cases — not expressible today. The native target
+  qualifies for every semantic ID; the guarantee-withholding path is task
+  0013's `SystemTarget::probe`, which has not landed.
+- Standard-input absence — realized, not observable. The adapter supplies an
+  empty standard input whenever `arrange.stdin` is absent, but [SYS-2]
+  declares no operation that reads standard input, so no first-slice case
+  can witness it.
 
 ## Scope and expected touch set
 
@@ -153,6 +247,16 @@ run-verdict cases). Cross-links with task 0015 on the shared
 rebases onto it. Runs concurrently with task 0015 (wave 7). Task 0016
 depends on this task.
 
+**Cross-link outcome (this task landed first, and did not touch
+`support.rs`).** Arrangement realization lives in the adapter
+(`compiler/tests/conformance/adapter.rs::execute`) because it is driven by
+the manifest's typed `Arrangement`, which is where the corpus states an
+invocation. `compile_and_run` in `compiler/tests/programs/support.rs` is
+unchanged, so task 0015 rebases onto nothing here and still owns whichever
+shape its `wfgrep` integration tests need. If 0015 wants one helper rather
+than two, the corpus `Arrangement` type is the general one to lift — that
+is a lead decision, not an executor substitution.
+
 ## Validation
 
 `make check` (both the compiler gate and the repository conformance
@@ -163,6 +267,17 @@ manifest `expect`; the flagship effect-attribution pair
 (`accept-sysrelease-return-unit-declared` /
 `reject-syseff-return-unit-omitted`) both pass. A claimed task lands only
 through lead review per the executor lane in `docs/WORKFLOW.md`.
+
+**Performed.** `make check` green by unpiped exit code (repository
+invariants, spec append-only, `runner.py` 18 self-tests, coverage 119/119
+with 100 by case, and the complete compiler gate: fmt, clippy
+`-D warnings` over `--all-targets`, tests, docs, spec identity).
+`make conformance-run` runs the adapter over the complete corpus and
+reports `Pass=242 Fail=123 Skip=14`, exit 2 — 22/22 new cases pass, and
+every failure is one of the four pre-existing causes above. The flagship
+effect pair is `accept-sysrelease-return-unit-declared` /
+`reject-syseff-return-unit-pure` (the corpus's landed spelling of the
+omission direction); both pass through the adapter.
 
 ## Done-when
 

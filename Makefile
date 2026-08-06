@@ -1,8 +1,9 @@
 # Whitefoot gate — only what a research compiler needs: the compiler builds and
 # passes its tests, the conformance corpus has valid structure and declared rule
 # coverage, and the numbered spec stays append-only. Everything else is guarded
-# by AGENTS.md/CLAUDE.md. A green gate states only what it exercises; the full
-# corpus has no compiler adapter yet.
+# by AGENTS.md/CLAUDE.md. A green gate states only what it exercises: `check`
+# exercises corpus structure and declared coverage, not every case's verdict.
+# Verdicts are `conformance-run`, which is reported and not yet green.
 
 PY := python3 -B
 
@@ -40,8 +41,12 @@ conformance:
 compiler:
 	$(MAKE) -C compiler check
 
+# drive every case through the native adapter: compile, arrange, run, compare.
+# not in `check`: 123 pre-existing runnable cases do not reach their declared
+# verdict through this compiler, and resolving that needs decisions outside the
+# task that built the adapter (docs/ongoing/0014-first-slice-conformance-execution.md).
 conformance-run:
-	$(PY) tests/conformance/runner.py run
+	cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
 
 # one-time: point git at the tracked hooks (spec append-only pre-commit)
 install-hooks:

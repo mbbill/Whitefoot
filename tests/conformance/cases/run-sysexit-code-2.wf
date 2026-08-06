@@ -1,0 +1,4 @@
+command fn main() -> own ExitStatus pure {
+  doc "SYS-13: the third distinguished command code, pinning the mapping as the identity over the closed 0..255 range rather than a success or failure collapse.";
+  return exit_status(code: 2_u8);
+}

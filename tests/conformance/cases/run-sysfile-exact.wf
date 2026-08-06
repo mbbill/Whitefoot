@@ -1,0 +1,68 @@
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+  doc "SYS-8: the sharpest boundary of the family, and the one most likely to be miscoded as `a full buffer implies end of input`. A file whose size equals the requested capacity fills the range exactly, which is a success and not an end, so a further call is required and only that call reports ReadEnd.";
+  let page: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region 'c {
+              region 'p {
+                match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
+                  Ok(value: file) => {
+                    region 'f {
+                      region 'd {
+                        match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
+                          ReadBytes(count: n) => {
+                            let filled: own Bool = ieq<u64>(n, 8_u64);
+                            match filled {
+                              True() => {
+                              }
+                              False() => {
+                                return exit_status(code: 10_u8);
+                              }
+                            }
+                          }
+                          ReadEnd() => {
+                            return exit_status(code: 11_u8);
+                          }
+                          ReadFailed(error: problem) => {
+                            return exit_status(code: 12_u8);
+                          }
+                        }
+                      }
+                    }
+                    region 'g {
+                      region 'e {
+                        match read_once<'g, 'e>(file: &uniq 'g file, destination: &uniq 'e page, offset: 0_u64, capacity: 8_u64) {
+                          ReadBytes(count: more) => {
+                            return exit_status(code: 13_u8);
+                          }
+                          ReadEnd() => {
+                            return exit_status(code: 0_u8);
+                          }
+                          ReadFailed(error: problem) => {
+                            return exit_status(code: 14_u8);
+                          }
+                        }
+                      }
+                    }
+                  }
+                  Err(error: problem) => {
+                    return exit_status(code: 15_u8);
+                  }
+                }
+              }
+            }
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 16_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 17_u8);
+      }
+    }
+  }
+}
