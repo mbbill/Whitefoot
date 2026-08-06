@@ -7,12 +7,13 @@
 - Every resource family has a compiler-owned contract covering states, aliases, owner disposition on every outcome, concurrency, cleanup, and a cross-platform floor, and carries one of three completion policies: release-complete, explicitly abandonable, or completion-required; traps keep whole-process abort with no language cleanup.
 - System operations carry target-independent semantic IDs bound by a static (spec version, ID, target, program kind) qualification table with direct native lowering; hot paths admit no per-call dispatch, handle-table lookup, target tag, or global lock.
 - System names resolve from a distinct compiler-owned declaration domain; [[declaration-home]] fixes it.
-- The selection governs the v0.18 candidate batch and every later family as additive true subsets; the v0.17 compiler has no system path yet.
+- v0.18 is the active specification carrying the exact first command slice; the compiler parses the whole system surface and stops it as explicit unsupported capability pending the implementation tasks, and every later family remains an additive true subset.
 
 ## Facts
 
 - 2026-08-05 rationale: the owner selected this architecture from the dossier's alternative table after a four-critic, 31-issue adversarial review resolved every issue by evidence with none escalated; the dossier and its decision record are the canonical evidence (research/investigations/system-capability-architecture/). (sourced)
 - 2026-08-05 statement: WASI evidence shaped the selection without becoming the contract — deny-by-default preopened authority, unforgeable owned/borrowed resource handles, and separated clock/random capabilities survive review, while its Unicode-only paths, pollable composition failure, and missing caller-buffer route are recorded anti-lessons. (sourced)
+- 2026-08-06 (9768bae2) statement: v0.18 activated after exact-byte approval (governance/APPROVALS.md, 2026-08-05): the staged grammar promoted to active, every one of the 119 rules carries its META-6 derivation row, the whole system surface stops as explicit unsupported capability, and v0.17-accepted behavior is byte-identical. (code)
 
 ## Moves
 
