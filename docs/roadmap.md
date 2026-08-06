@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 10
+Revision: 11
 
 The active language authority is
 [`spec/kernel-spec-v0.19.md`](../spec/kernel-spec-v0.19.md), SHA-256
@@ -383,7 +383,11 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
 - **Missing / next:** a reopening project must account separately for growth
   and replacement; move-out/failure/cleanup/destruction; partial initialization
   and occupancy; stable versus recyclable identity; invalidation and stale
-  handles; and multi-place access/iteration/relocation under loans.
+  handles; and multi-place access/iteration/relocation under loans. First
+  concrete reopening witness (2026-08-06): sequential `wfgrep` cannot grow its
+  line buffer — `buffer<T>` has no in-place growth and STOR-1 rejects
+  rebinding an affine place — so it carries a fixed maximum line length where
+  real grep grows; see `docs/done/0015-sequential-wfgrep.md`.
 - **Facts:** [promotion checklist](../research/archive-promotion-audit.md#4-storage-checklist-retained-as-direction-outline-reopening-input) ·
   [rejected owning-sequence experiment](../research/experiments/data-layout-owning-sequence/RESULTS.md).
 
