@@ -1,18 +1,18 @@
 # 0006 — Entry-form grammar productions and kind-declaring predicate
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 1
-of 8; task 1 of 11). Not yet claimed — claiming fills in `Status`, `Owner`,
-workspace, and `Base revision` and moves this file unchanged in number to
-`docs/ongoing/` per `docs/WORKFLOW.md`. This record authorizes nothing beyond
-Work item 2 itself; if `docs/current-plan.md` is replaced before this task is
-claimed, delete this file unless the new plan explicitly retains it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and cannot expand or resequence work.
 
+- **Status:** IN PROGRESS
+- **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
+- **Base revision:** `e648713`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, first bullet
   ("compiler front-end ... entry form"), derived from Outline revision 7
   (`BOUND-1`, `CAND-8`). Implements `spec/kernel-spec-v0.18.md`'s `GRAM-2`
   grammar delta (new `program_kind` and `input_label` productions on
   `fn_decl`/`param`) and `FN-7`'s kind-declaring trigger, per dossier §11.
-  Claimable only while `docs/current-plan.md` remains `ACTIVE`.
+  Claimed under Work item 3's executor fan-out while
+  `docs/current-plan.md` remains `ACTIVE`.
 
 ## Goal
 
@@ -74,6 +74,14 @@ predicate in the resolution engine, the table-checked carrier classification
 (`RawRoleKind::TableChecked`), and the three unsupported gates. Do not
 re-implement any of it; audit it against this record's Direction bullets and
 Validation list, and fill only what is genuinely missing.
+
+## Progress
+
+- Completed: claimed at base `e648713`; refreshed the integration branch and
+  read `docs/WORKFLOW.md`, `docs/current-plan.md`, the cited
+  `spec/kernel-spec-v0.18.md` rules, and `mcts_mem/whitefoot/system-interface*`.
+- Current: auditing the activation landing against the Direction bullets.
+- Next: fill the audit gaps and expose the kind-declaring accessor.
 
 ## Scope and expected touch set
 
