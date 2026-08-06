@@ -5,7 +5,8 @@ of 8; task 11 of 11 — final task before Work item 4). This record reports
 how authorized work is carried out; it authorizes nothing beyond Work items
 2 and 4 themselves.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `IN PROGRESS` — implementation complete and both gates green;
+  awaiting lead review
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, eighth bullet
   ("the §9.1 cost and §12.2 hostile test gates"), and Work item 4 ("return
   to the `wfgrep` checkpoint"), whose validation this task's evidence
@@ -19,10 +20,72 @@ how authorized work is carried out; it authorizes nothing beyond Work items
 
 ## Progress
 
-- Completed: claim.
-- Current: the §9.1 cost-shape gates over the optimized `wfgrep` module.
-- Next: the `Accept(0)` WriteZero behavioural case; the initialization-cost
-  measurement; coverage verification for the already-landed §12.2 items.
+- Completed: claim; the §9.1 gate module over the real `wfgrep` program
+  (`compiler/src/backend/tests/cost_shape.rs`, 10 tests); the `Accept(0)`
+  WriteZero behavioural case with its control; the preregistered
+  initialization-cost measurement and its result; §12.2 coverage verified
+  rather than duplicated. `make -C compiler check` and `make check` green by
+  unpiped exit codes; lib tests 427 → 438.
+- Current: awaiting lead review.
+- Next: none in this task. Its evidence feeds Work item 4's `wfgrep`
+  checkpoint.
+
+### Gate inventory
+
+Machine-checked, anchored on `tests/programs/wfgrep.wf`'s own emitted and
+optimized module — ten §9.1 rows: target selection (one link-time table
+decision, no dispatch, no indirect call); the argument lease; the raw byte
+route and the absence of any Unicode gate; `RelativePath` retyping the
+consumed lease; `open_read` as one `openat` on the capability's own
+descriptor; the transfer path (one host call per source operation, no wrapper
+residue, the [SYS-7] mapper outlined entirely out of `main`); close as one
+discarded attempt; the value and `Output` releases reaching no host facility;
+and one initialization per buffer at allocation. Machine-checked behavioural,
+against task 0013's deterministic host: the output-batching row (3,000 matches
+cost 2 host writes) and, from the same run, the release rows and §12.2's
+per-byte-call rejection (6,000 bytes in and out for 9 host calls in total).
+
+Measured, not gated: the initialization-cost row, in
+`research/experiments/buffer-initialization-cost/`.
+
+Verified as already covered, not duplicated: §12.2's effect
+omission/addition canonical case (`reject-syseff-return-unit-pure.wf`,
+`reject-syseff-declared-unexhibited.wf`,
+`accept-sysrelease-return-unit-declared.wf`) and the primitive-lookalike items
+(`accept-sysname-lookalike-outside-kind.wf`,
+`reject-sysname-callee-outside-kind.wf`, `reject-systype-outside-kind.wf`);
+and the four task 0013 injection cases, which 0013 landed green with controls
+and this task consumes rather than rewrites.
+
+Not claimed: the §9.1 UTF-8 row's Windows conversion column, which has no
+first-slice implementation and therefore nothing to inspect. The `Output`
+release row's second half is a recording obligation, discharged by 0013's
+close/writeback observation rather than by a threshold.
+
+### Measurement result
+
+The dossier §11 stop condition did **not** fire. Whitefoot's drain over a
+language-initialized reused buffer measures at practical parity with the
+uninitialized native control §9.1 requires (1.0014, 95% interval
+[0.9982, 1.0083], half-width 0.51%), and the same-source `calloc`/`malloc`
+ablation is likewise parity (0.9985 [0.9935, 1.0071]). Because a one-page fill
+is far below what whole-process timing resolves, the preregistered decisive
+observable measured the cost directly: initializing one 4096-byte page costs
+28.76 ns, which is 10,612x below 1% of the 256 MiB drain and 612x below 1% of
+the program's 1.76 ms empty-input process floor — so no input size makes it
+material. Full numbers and limits in that bundle's `RESULTS.md`.
+
+### Correction carried out of task 0015
+
+0015's closure recorded, informally, that `wfgrep`'s newline scan is
+"recognized as memchr". It is not: the one `@memchr` call is
+`relative_path`'s embedded-NUL check, and the scan is a scalar byte-at-a-time
+loop that retains its bounds trap. No §9.1 row requires a `memchr` and §12.2's
+per-byte-call rejection is satisfied, so this is a corrected note rather than
+a defect; it is recorded in `cost_shape.rs` so the next reader does not
+inherit the wrong shape. 0015's other four emitted-shape findings — four
+allocations, one syscall site per operation, no `memcpy` libcall, nothing per
+file, line, or match — are confirmed and are now standing gates.
 
 ## Goal
 
