@@ -1,16 +1,16 @@
 # 0008 — Entry-form admission and exit-status wiring
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 3
-of 8; task 3 of 11; runs concurrently with task 0009). Not yet claimed —
-claiming fills in `Status`, `Owner`, workspace, and `Base revision` and
-moves this file unchanged in number to `docs/ongoing/` per
-`docs/WORKFLOW.md`. This record authorizes nothing beyond Work item 2
-itself; if `docs/current-plan.md` is replaced before this task is claimed,
-delete this file unless the new plan explicitly retains it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and cannot expand or resequence work.
 
+- **Status:** IN PROGRESS
+- **Owner / workspace:** executor agent / isolated worktree
+  `worktree-agent-a38599fe34c920d17`, lead-reviewed
+- **Base revision:** `907076a`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, first bullet
   ("entry form"). Implements `spec/kernel-spec-v0.18.md`'s `FN-7` and
-  `PROG-3`. Claimable only while `docs/current-plan.md` remains `ACTIVE`.
+  `PROG-3`. Claimed while `docs/current-plan.md` remains `ACTIVE` (wave 3
+  of 8; task 3 of 11; runs concurrently with task 0009).
 
 ## Goal
 
@@ -72,6 +72,17 @@ emits the wrapper shape needed to receive standard inputs and map the
 returned `ExitStatus` to the C `main`'s `i32` result per `PROG-3` — again,
 task 0011 supplies the actual native construction this wrapper calls into.
 
+## Progress
+
+- Completed: claimed at base `907076a`; refreshed the integration branch and
+  read `docs/WORKFLOW.md`, `spec/kernel-spec-v0.18.md` (`FN-7`, `PROG-3`,
+  `GRAM-11`, `SYS-1`/`SYS-2`/`SYS-3`, `DIAG-1`), and the terminal records
+  `docs/done/0006-entry-form-grammar.md` and
+  `docs/done/0007-system-declaration-domain.md`.
+- Current: implementing the FN-7 entry-form judgment.
+- Next: the two lead-assigned handoffs, then conformance status flips and
+  gates.
+
 ## Scope and expected touch set
 
 - `compiler/src/semantic/check.rs` (`check_main_header`, ~454-535)
@@ -89,10 +100,23 @@ task 0011 supplies the actual native construction this wrapper calls into.
 
 ## Dependencies and integration order
 
-Depends on task 0006 (grammar) and task 0007 (the opaque types must
-resolve for the entry's parameter/return types to type-check). Runs
-concurrently with task 0009 (wave 3) — neither depends on the other. Tasks
-0009 and 0011 depend on this task.
+Depends on task 0006 (grammar, landed `5cd1eef`) and task 0007 (the opaque
+types must resolve for the entry's parameter/return types to type-check;
+landed `c1178e8`). Both are terminal. Tasks 0009 and 0011 depend on this
+task.
+
+**Cross-link with task 0009 (`docs/ongoing/0009-effect-release-attribution.md`),
+lead-authorized overlap.** Both tasks edit
+`compiler/src/semantic/check.rs`. Integration order is fixed: **0008 lands
+first; 0009 refreshes its base onto this landing, rereads the changed
+`check_program` stage sequence, rebases, and reruns its gates.** The
+semantic boundary between them is explicit and must not move by
+last-writer-wins: this task owns the FN-7 entry-form admission judgment
+(kind table, standard-input table, entry result, and the FN-7 subset test
+over the written effect row); task 0009 owns EFF-2 exhibited-versus-declared
+attribution and the acceptance of the `external`/`blocks` categories into
+the checker's effect model. This task deliberately leaves the
+`SystemEffectCategory` unsupported stop in place for 0009 to remove.
 
 ## Validation
 
