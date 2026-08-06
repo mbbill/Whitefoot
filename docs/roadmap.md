@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 12
+Revision: 13
 
 The active language authority is
 [`spec/kernel-spec-v0.19.md`](../spec/kernel-spec-v0.19.md), SHA-256
@@ -273,8 +273,8 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### PERF-1 — Ordinary lowering and baseline code quality
 
-`[current: conservative LLVM]` `[current: upstream development table]`
-`[next: preregistered wfgrep baseline vs comparator]`
+`[current: conservative LLVM]` `[current: measured wfgrep baseline]`
+`[next: one attributed-cause optimization slice]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
@@ -671,12 +671,16 @@ remains as the owner check-in, not as a presumption against the goal.
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** the first slice is implemented and gated (tasks
-  0006-0016 all DONE): sequential `wfgrep` passes its correctness oracle and
-  §9.1 cost gates. Next per the project loop: the zero-change PERF-1
-  baseline of this exact frozen slice against a preregistered comparator,
-  with the scalar newline scan retaining its bounds trap already named as
-  the first PROOF-1 pressure candidate. Once that baseline passes its
+- **Missing / next:** the zero-change baseline is measured and attributed
+  (task 0022, preregistered): grep/wfgrep 0.65 on large-file and no-match
+  (user-compute bound; primary cause the scalar double-walk shape that LLVM
+  does not vectorize; the retained per-byte traps are secondary with an
+  ~18% ceiling, so PROOF-1's feed is real but bounded), 0.605 on many-small
+  files (attributed to the host's unsigned-binary open cost by a
+  same-provenance C control — an environment layer), a 1.105 WIN on
+  match-dense input, and a smaller process floor than the comparator. Next:
+  one preregistered optimization slice against the attributed primary
+  cause. Once that slice passes its
   project-independent controls and same-slice correctness and cost gate, return
   to that exact `wfgrep` checkpoint. Each later slice stops on either the next
   semantic blocker or the first attributed material performance blocker; the

@@ -1,87 +1,71 @@
 # Current Plan
 
-Status: ACTIVE — the owner approved this plan on 2026-08-06 ("都批"),
-together with the two conformance rulings its Work item 4 executes. The
-previous milestone (v0.18/v0.19 activation and the first command slice,
-tasks 0004-0018) completed on 2026-08-06.
+Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
+execution. The previous ACTIVE plan's milestone (baseline and consolidation,
+tasks 0019-0022) completed on 2026-08-06.
 
-Derived from: [Direction Outline revision 12](roadmap.md), items `CAND-8`,
-`PERF-1`, `BOUND-1`, `VERIFY-2`, and `PROOF-1`
+Derived from: [Direction Outline revision 13](roadmap.md), items `CAND-8`,
+`PERF-1`, `FLOOR-1`, `STORE-1`, and `VERIFY-2`
 
 ## Goal
 
-Measure what the completed first slice is worth and consolidate the compiler
-capabilities it exposed, without widening the project: establish the
-zero-change PERF-1 baseline of the exact frozen sequential `wfgrep` slice
-against a preregistered comparator, implement the two compiler capabilities
-the slice's own execution demonstrated missing, and execute the owner's
-rulings on the conformance findings — so the next widening decision
-(directory traversal, and with it the deliberately open backing-lifetime
-rule) is taken on measured ground.
-
-Per the owner's framing, the deliverable is knowledge: an attributed
-baseline (or an honest inability to attribute), each finding closed or
-converted into a named direction input, and negative results retained.
+Close the measured compute gap's first attributed cause and the largest
+known capability gap, on the same evidence discipline: one preregistered
+optimization slice against the scalar double-walk shape that task 0022
+attributed as primary, and the general borrow-mode parameter capability
+that 44 conformance cases and STORE-1 wait on. The deliverable remains
+knowledge: either the gap closes through a legal source shape and ordinary
+lowering, or the exact obstruction becomes a named language/lowering
+finding with a witness.
 
 ## Work
 
-1. **Zero-change wfgrep baseline (PERF-1).** Preregister the envelope —
-   pinned corpus with digests, frozen `tests/programs/wfgrep.wf` bytes,
-   comparator (`grep -h -F` at a pinned build; the RG-BASE noise findings
-   bind the precision protocol), timed phases, statistic and materiality
-   rules — then measure, profile, and attribute the first material
-   divergence per the layer chain before any widening. The scalar newline
-   scan retaining its bounds trap (task-0016 correction) is the
-   preregistered first attribution suspect, feeding PROOF-1 only if the
-   measured loss lands there.
-2. **Borrow-mode parameters for system nominal types** (unsupported
-   specified capability, task-0015 finding): implement on the normal path,
-   then decompose `wfgrep`'s ~500-line `main` into helpers as the witness
-   that the capability composes; the §9.1 gates must hold unchanged on the
-   refactored program.
-3. **Rule-id plumbing for pre-semantic rejections** (task-0014 bucket 1, 45
-   cases): populate `rule_id` at Lexing/CanonicalSource/Parsing/Resolution
-   stops; the conformance lane consumes it.
-4. **Conformance rulings execution** (buckets 2-4, after the owner rules):
-   the 41 incomplete-unit protected sources, the 35 runnable→pending status
-   corrections, and the 2 divergence investigations (each investigated to a
-   compiler-defect fix with regression or a protected-expectation finding
-   returned to the owner).
-5. **Return and replace.** Record baseline results in RESULTS, update the
-   outline, and replace this plan naming either the first attributed
-   performance blocker or the widening proposal (traversal + the
-   backing-lifetime decision) as the next selection.
+1. **One attributed-cause optimization slice (PERF-1).** Preregister the
+   expected code-shape consequence and a falsifier, then attempt the fused
+   single-pass scan+match source shape (and any other legal shape the
+   catalog admits) for `wfgrep`'s inner loops against the frozen baseline
+   corpus. Credit requires the preregistered binary delta plus the measured
+   ratio clearing the frozen rules; if NO legal shape reaches a vectorized
+   or materially faster form, the obstruction is recorded as a FLOOR/
+   lowering finding with a minimal witness — that negative is a full
+   success for the probe. The bounds-trap secondary (~18% ceiling) is
+   touched only if the primary closes and the residual is re-attributed.
+2. **General borrow-mode parameters and let-borrows** of scalar and enum
+   types (unsupported specified capability; task-0021 finding): implement
+   on the normal path; the 44 waiting conformance cases flip runnable and
+   must pass; wfgrep is untouched.
+3. **Attribution-divergence investigations** (the 15 recorded at
+   0019/0020): each to a compiler-defect fix with regression or a
+   protected-expectation finding returned to the owner; plus execution of
+   the gram5 one-token protected amendment on the owner's ruling.
+4. **Return and replace**: rerun the frozen baseline after item 1, record
+   results, update the outline, and replace this plan naming the next
+   attributed cause, the traversal-widening proposal, or a park.
 
 ## Verification
 
-- The baseline claim is only as wide as the preregistered envelope; parity
-  and losses are retained as findings; no timing claim precedes correctness
-  and comparable work.
-- Work items 2-3 are ordinary delivery (no specification change): gates
-  green before and after; the refactored wfgrep passes the same oracle and
-  §9.1 gates byte-for-byte on behavior.
-- Bucket executions touch protected material only per the owner's explicit
-  rulings, recorded in `governance/APPROVALS.md` where protected bytes
-  change.
+- Item 1 is one cause, one slice: byte-identical frozen work, preregistered
+  falsifier, same-source causal ablation before any mechanism credit;
+  facts-off behavior and every required check unchanged; §9.1 gates and the
+  oracle hold on every accepted shape.
+- Item 2 changes no specification byte (v0.19 already admits the modes);
+  gates green throughout; the 44 flips carry per-case run evidence.
+- Item 3 touches protected material only per explicit owner rulings.
 
 ## Done when
 
-- a preregistered baseline result (win, parity, or attributed loss) is
-  recorded in RESULTS with its envelope;
-- system-type borrow parameters are implemented with the helper-decomposed
-  wfgrep witness green;
-- the conformance lane is green or its remaining red is owner-ruled and
-  recorded; and
+- the optimization slice has a credited win or a recorded negative with its
+  witness, and the baseline is rerun either way;
+- the general borrow capability lands with the 44 cases green;
+- the divergences are each fixed-with-regression or returned to the owner,
+  and the corpus lane's remaining red (if any) is entirely owner-ruled; and
 - this plan is replaced naming the next slice or blocker.
 
 ## Not in this stage
 
-- No directory traversal, ignore stack, parallelism, or new system
-  families; no STORE-2 reopening (its witness is recorded and waits for the
-  widening proposal).
-- No optimizer or proof implementation; PROOF-1 enters only on an attributed
-  material loss at the retained-check layer.
-- No specification change of any kind.
+- No directory traversal, parallelism, new system families, or STORE-2
+  growth mechanism; no specification change; no PROOF-1 implementation
+  unless item 1's residual re-attribution lands on the traps.
 
 ## Parallel research
 
