@@ -80,6 +80,32 @@ This is a temporary live coordination record, not execution authority.
   authoring rationales restored; verified line by line that only `status`
   and `reason` moved on those 35 and no other row changed. Coverage unmoved
   at 119/119.
+- **Rebased onto main at `3d41f9b`** (was `7240f84`), no conflicts. Task
+  0025's `57a0dad` had added TYPE-7 exclusivity for a `box` holder at the
+  match scrutinee and the indexed-place root, overlapping this task's
+  `reference_value` rule at the scrutinee.
+- **Done — one TYPE-7 mechanism.** Both assert the same rule, so they became
+  one predicate, `reads_implicitly_through_holder` in `check/borrows.rs`
+  beside the existing `borrow_for_destination` TYPE-7 judgment. Neither
+  representation "won", because the two holder shapes are genuinely
+  different here and the predicate takes both facts: a borrow-mode value
+  already carries its referent's checked type, so only provenance separates
+  holder from referent; a `box` binding carries the holder's type, so its
+  referent is the question. What is unified is the rule — one predicate, one
+  `RequiredReferent` vocabulary (`Enum` for a scrutinee, `IndexableStorage`
+  for an index root), one citation and fix, asked once per position.
+  `enum_referent_of_holder` and the box arm inside `match_descriptor` are
+  gone; the index root's own unconditional borrow test now applies the same
+  requirement, so a borrow of something no `index` could reach cites TYPE-5
+  rather than TYPE-7 — matching how the box clause already behaved and how
+  TYPE-7 words its exclusivity. No case moved. Both regression sets green:
+  0025's `match_and_index_of_a_box_holder_are_type7_missing_dereferences`
+  and this task's four borrow-holder scrutinee assertions.
+- **wfgrep claim re-confirmed post-rebase.** This branch changes no byte of
+  `tests/programs/` or `backend/tests/cost_shape.rs` against main's tip; task
+  0023's rewritten fused scan+match program and re-derived gates run green
+  under this change — all nine wfgrep oracle cases and all ten cost-shape
+  gates pass.
 
 ## Goal
 
@@ -97,11 +123,14 @@ Per-case run evidence for every flip; no existing test weakened; any
 semantics question v0.19 does not settle stops the task; unpiped gates.
 Close to done with the lane delta.
 
-Validation run: `make check` green by unpiped exit code (compiler gate 447
-lib tests + 27 program tests including all nine wfgrep oracle cases
-unchanged, corpus structure, coverage 119/119, spec append-only).
-`make conformance-run` Pass=338 Fail=27 Skip=14, from Pass=306 Fail=24
-Skip=49. Per-case evidence recorded above for all 44. The "44 cases green"
+Validation run (post-rebase, on `b854ec8`): `make check` green by unpiped
+exit code — compiler gate 449 lib tests, 27 program tests including all nine
+wfgrep oracle cases and ten cost-shape gates, corpus structure, coverage
+119/119, spec append-only. `make conformance-run` Pass=342 Fail=23 Skip=14,
+measured against main at `a0a3491` Pass=310 Fail=20 Skip=49 (the `3d41f9b`
+difference is docs-only): 35 cases leave `skip`, 29 of them pass, 6 fail,
+and 3 of main's existing failures are fixed. Per-case evidence recorded
+above for all 44 and unchanged by the rebase. The "44 cases green"
 closure condition is **not met**: 32 are, and the remaining 12 need owner or
 lead decisions on the three classes named above — two protected-source
 classes and one v0.19 semantics question this task stopped on rather than
