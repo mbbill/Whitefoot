@@ -1,18 +1,18 @@
 # 0014 — First-slice conformance execution
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 7
-of 8; task 9 of 11; runs concurrently with task 0015). Not yet claimed —
-claiming fills in `Status`, `Owner`, workspace, and `Base revision` and
-moves this file unchanged in number to `docs/ongoing/` per
-`docs/WORKFLOW.md`. This record authorizes nothing beyond Work item 2
-itself; if `docs/current-plan.md` is replaced before this task is claimed,
-delete this file unless the new plan explicitly retains it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and expands nothing.
 
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, sixth bullet
   ("first-slice conformance execution"), and the plan's Verification bullet
   ("first-slice conformance cases pass through the normal command path").
   Implements dossier §12.2's required test list. Claimable only while
   `docs/current-plan.md` remains `ACTIVE`.
+- **Owner:** executor agent `exec-0014`
+- **Base revision:** `0a47f54`
+- **Workspace:** worktree `agent-a1ffd6a2ad751eb60`, branch
+  `worktree-agent-a1ffd6a2ad751eb60`
 
 ## Goal
 
@@ -112,6 +112,16 @@ and for a `run`-verdict case executes it with the harness's new
 argv/fixture/redirection support and checks the exit code; for
 `reject`/`trap`/`accept`/`unsupported` verdicts, checks the compiler or
 qualification outcome directly without executing.
+
+## Progress
+
+- Completed: claim; base refreshed to `0a47f54`; authorities, the 0017
+  schema, the 0011/0012 closures, and the reviewed catalog re-read against
+  the active `spec/kernel-spec-v0.19.md`.
+- Current: build the native execution adapter, then port the runtime case
+  lane.
+- Next: reconcile `arrange.argv` with the 0011 complete-native-vector
+  ruling; wire the gate lane; report.
 
 ## Scope and expected touch set
 
