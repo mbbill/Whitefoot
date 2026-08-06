@@ -470,26 +470,26 @@ mod tests {
         assert_eq!(failure.rule_id(), None);
         assert!(failure.detail().contains("SystemDeclarationUse"));
 
-        // A kind-declaring unit that names no system declaration still stops
-        // at its program_kind node: FN-7 entry-form admission is
-        // unimplemented, so silent acceptance of an invalid entry form is
-        // not possible.
-        let kindless_use = b"command fn main() -> own unit pure {\n  return unit;\n}\n";
+        // A `command` entry whose written result is not `own ExitStatus` is a
+        // source rejection now, not an unsupported stop: the FN-7 entry-form
+        // judgment is implemented and runs before the remaining capability
+        // stops.
+        let wrong_result = b"command fn main() -> own unit pure {\n  return unit;\n}\n";
         let failure = compile(
-            &[SourceInput::new("entry.wf", kindless_use)],
+            &[SourceInput::new("entry.wf", wrong_result)],
             CompilerLimits::default(),
         )
-        .expect_err("a kind-declaring entry must stop as unsupported");
+        .expect_err("a command entry returning own unit must be rejected");
         assert_eq!(failure.stage(), CompilationStage::Semantics);
-        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
-        assert_eq!(failure.rule_id(), None);
-        assert!(failure.detail().contains("KindDeclaringEntry"));
+        assert_eq!(failure.kind(), CompilationFailureKind::Source);
+        assert_eq!(failure.rule_id(), Some("FN-7"));
 
-        // An input_label parameter and a system effect category each parse,
-        // resolve, and then stop in semantic checking as unsupported.
+        // A system effect category on a declaration FN-7 does not govern
+        // parses, resolves, and then stops in semantic checking as
+        // unsupported: accepting `external` and `blocks` into the checker's
+        // effect model is EFF-2's judgment.
         for source in [
-            b"fn helper(app.input as value: own i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
-            b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+            b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
             b"fn probe() -> own unit blocks {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         ] {
             let failure = compile(
@@ -602,6 +602,70 @@ mod tests {
                 )
                 .as_slice(),
                 "GIVE-1",
+            ),
+            // The v0.18 FN-7 entry-form corpus, promoted from `pending` to
+            // runnable by this compiler's entry-form admission judgment.
+            (
+                "reject-syskind-service-reserved.wf",
+                include_bytes!("../../tests/conformance/cases/reject-syskind-service-reserved.wf")
+                    .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-syskind-embedded-reserved.wf",
+                include_bytes!("../../tests/conformance/cases/reject-syskind-embedded-reserved.wf")
+                    .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-syskind-unadmitted-name.wf",
+                include_bytes!("../../tests/conformance/cases/reject-syskind-unadmitted-name.wf")
+                    .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-sysentry-label-unknown.wf",
+                include_bytes!("../../tests/conformance/cases/reject-sysentry-label-unknown.wf")
+                    .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-sysentry-label-repeated.wf",
+                include_bytes!("../../tests/conformance/cases/reject-sysentry-label-repeated.wf")
+                    .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-sysentry-label-out-of-order.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-sysentry-label-out-of-order.wf"
+                )
+                .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-sysentry-label-outside-entry.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-sysentry-label-outside-entry.wf"
+                )
+                .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-sysentry-input-type-mismatch.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-sysentry-input-type-mismatch.wf"
+                )
+                .as_slice(),
+                "FN-7",
+            ),
+            (
+                "reject-sysentry-call-to-kind-entry.wf",
+                include_bytes!(
+                    "../../tests/conformance/cases/reject-sysentry-call-to-kind-entry.wf"
+                )
+                .as_slice(),
+                "FN-7",
             ),
         ] {
             let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())

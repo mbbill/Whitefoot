@@ -18,12 +18,13 @@ pub use check::check_semantics;
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedBufferRoot,
-    CheckedBufferSetTarget, CheckedDrop, CheckedEnumType, CheckedExpression, CheckedFlatElement,
-    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
-    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget,
-    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, NominalId, PropagationContext, TrapSite,
+    CheckedBufferSetTarget, CheckedDrop, CheckedEntryForm, CheckedEnumType, CheckedExpression,
+    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
+    CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType,
+    CheckedParameter, CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations,
+    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource, CheckedStatement,
+    CheckedTargetDomainObligation, CheckedType, CheckedValue, NominalId, PropagationContext,
+    TrapSite,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -254,10 +255,66 @@ pub enum SemanticIssueKind {
     FunctionFallthrough,
     /// A requirement entry uses a construct outside the FN-8 prologue subset.
     InvalidRequires,
-    /// The unique source `main` declaration has the wrong header or effect row.
+    /// The unique source `main` declaration has a header shape FN-7 admits in
+    /// neither entry form.
     InvalidMain,
     /// No source `main` declaration exists.
     MissingMain,
+    /// A `program_kind` IDENT equals no row of FN-7's closed kind table.
+    InvalidProgramKind {
+        /// Written kind IDENT.
+        kind: String,
+        /// Kinds for which FN-7 defines an entry form in this version.
+        admitted_kinds: Vec<String>,
+    },
+    /// A declaration other than the unit's entry carries a `program_kind`.
+    NonEntryProgramKind {
+        /// Function that declared the program kind.
+        function: String,
+    },
+    /// A standard-input label is unknown, repeated, out of table-ordinal
+    /// order, or carries a foreign kind prefix.
+    InvalidStandardInputLabel {
+        /// Complete written label spelling.
+        label: String,
+        /// The kind's closed standard-input labels in table-ordinal order.
+        declared_labels: Vec<String>,
+    },
+    /// An `input_label` was written outside a kind-declaring entry's own
+    /// parameters, including in a `fn_sig`.
+    StandardInputLabelOutsideEntry {
+        /// Complete written label spelling.
+        label: String,
+    },
+    /// A selected standard input's written mode and type differ from its row.
+    InvalidStandardInput {
+        /// Complete written label spelling.
+        label: String,
+        /// The row's exact written mode and type.
+        declared: &'static str,
+    },
+    /// A kind-declaring entry declared a value parameter with no
+    /// `input_label`.
+    UnlabelledEntryParameter {
+        /// Binder spelling of the unlabelled parameter.
+        parameter: String,
+    },
+    /// The entry's written result differs from its form's fixed result.
+    InvalidEntryResult {
+        /// The form's exact written result.
+        required: &'static str,
+    },
+    /// The entry's written effect row is inadmissible for its form.
+    InvalidEntryEffects {
+        /// The rows or categories the entry's form admits.
+        admitted: &'static str,
+    },
+    /// A source `call` named the kind-declaring entry, which only program
+    /// start invokes.
+    CallToKindDeclaringEntry {
+        /// Entry spelling written at the call site.
+        entry: String,
+    },
     /// Named user-call arguments differ from the parameter list.
     InvalidNamedArguments {
         /// Callee spelling at the call site.
@@ -394,18 +451,17 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
-    /// A labelled entry input: a parameter carrying an `input_label` child.
-    LabelledEntryInput,
-    /// An `external` or `blocks` category in an effect row.
+    /// An `external` or `blocks` category in an effect row: [FN-7] admission
+    /// already accepts a `command` entry that draws them, but accepting them
+    /// into the checker's effect model is [EFF-2]'s judgment and is not
+    /// implemented yet.
     SystemEffectCategory,
     /// A use resolving to an admitted system declaration ([SYS-1]): the
-    /// system semantic and lowering family — entry-form admission, call
-    /// typing against the [SYS-2] signatures, effect attribution, and
-    /// resource cleanup — is not implemented yet.
+    /// system semantic and lowering family — call typing against the [SYS-2]
+    /// signatures, effect attribution, and resource cleanup — is not
+    /// implemented yet. [FN-7] entry-form admission and [GRAM-11] call
+    /// argument spelling are already checked before this stop.
     SystemDeclarationUse,
-    /// A kind-declaring entry declaration ([FN-7] `program_kind`): the v0.18
-    /// entry-form admission judgment is not implemented yet.
-    KindDeclaringEntry,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.
@@ -460,6 +516,13 @@ impl CheckedProgram<'_, '_, '_> {
             .functions
             .get(self.data.main.0 as usize)
             .map_or("", |function| function.name.as_str())
+    }
+
+    /// Returns the [FN-7] entry form the checker admitted for this unit.
+    #[must_use]
+    #[cfg(test)]
+    pub(crate) const fn entry_form(&self) -> &CheckedEntryForm {
+        &self.data.entry
     }
 }
 

@@ -2,6 +2,7 @@ mod borrows;
 mod cleanup;
 mod contracts;
 mod control;
+mod entry_form;
 mod expressions;
 mod floats;
 mod generics;
@@ -366,9 +367,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
-        self.check_system_surface_support()?;
         let items = self.item_declarations()?;
-        self.check_main_header(&items)?;
+        // Source-language judgments the checker has implemented run before the
+        // remaining capability stops. An unsupported compiler capability
+        // establishes no source violation [DIAG-1], so it must never mask a
+        // rejection this stage can already establish -- an `external` or
+        // `blocks` row on an otherwise malformed entry used to do exactly that.
+        let entry = self.check_entry_form(&items)?;
+        self.check_system_call_arguments()?;
+        self.check_system_surface_support()?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
@@ -400,26 +407,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             conformances,
             law_derivations,
             main,
+            entry,
         })
     }
 
     /// Stops on the v0.18 system-interface surface the checker has not
     /// implemented. Each construct is grammatical under the active
-    /// specification and resolves completely — a kind-declaring unit admits
-    /// the [SYS-2] inventory into name lookup — so what stops here must
-    /// remain an explicit unsupported compiler capability, never a source
-    /// rejection and never silent acceptance.
+    /// specification, resolves completely — a kind-declaring unit admits the
+    /// [SYS-2] inventory into name lookup — and has now passed the [FN-7]
+    /// entry-form judgment, so what stops here must remain an explicit
+    /// unsupported compiler capability, never a source rejection and never
+    /// silent acceptance.
     ///
     /// The first resolved use of an admitted system declaration stops as
     /// [`UnsupportedSemanticFeature::SystemDeclarationUse`] at that use: the
-    /// name resolved, but its semantic path (call typing against the [SYS-2]
-    /// signature, effects, cleanup, lowering) does not exist yet. A
-    /// kind-declaring unit that uses no system name still stops at its
-    /// `program_kind` node, because [FN-7] v0.18 entry-form admission is
-    /// unimplemented and every later pass here assumes the unlabelled entry.
-    /// A labelled entry input and the `external`/`blocks` categories keep
-    /// their own stops, which also cover non-kind-declaring units where
-    /// [FN-7] would reject the construct once implemented.
+    /// name resolved and its call-argument spelling was checked [GRAM-11],
+    /// but the rest of its semantic path — typing against the [SYS-2]
+    /// signature, effect attribution, resource cleanup, lowering — does not
+    /// exist yet. Because [FN-7] fixes every `command` entry's result as `own
+    /// ExitStatus`, an admitted kind-declaring entry always names one system
+    /// type and therefore always reaches this stop; the boundary moved from
+    /// the entry declaration to the first system use, it did not disappear.
+    ///
+    /// The `external` and `blocks` categories keep their own stop. [FN-7]
+    /// admission already established that a `command` entry may draw them,
+    /// but accepting them into the checker's effect model is the
+    /// exhibited-versus-declared judgment [EFF-2] owns.
     fn check_system_surface_support(&self) -> Result<(), CheckStop> {
         if let Some(usage) = self
             .resolved
@@ -434,18 +447,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         for index in 0..self.tree.topology().nodes.len() {
             let node = NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            let production = self.tree.production(node)?;
-            if production == Production::InputLabel {
-                return self.unsupported(UnsupportedSemanticFeature::LabelledEntryInput, node);
-            }
-            if production == Production::Effect
+            if self.tree.production(node)? == Production::Effect
                 && (self.has_fixed(node, crate::FixedTerminal::External)?
                     || self.has_fixed(node, crate::FixedTerminal::Blocks)?)
             {
                 return self.unsupported(UnsupportedSemanticFeature::SystemEffectCategory, node);
-            }
-            if production == Production::ProgramKind {
-                return self.unsupported(UnsupportedSemanticFeature::KindDeclaringEntry, node);
             }
         }
         Ok(())
@@ -501,81 +507,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    fn check_main_header(&self, items: &[NodeId]) -> Result<(), CheckStop> {
-        let mut main = None;
-        for node in items.iter().copied().filter(|node| {
-            self.tree
-                .production(*node)
-                .is_ok_and(|production| production == Production::FnDecl)
-        }) {
-            if self
-                .declaration_at(node, DeclarationRole::Function)?
-                .spelling()
-                == "main"
-            {
-                main = Some(node);
-                break;
-            }
-        }
-        let Some(node) = main else {
-            return Err(CheckStop::Issue(SemanticIssue {
-                rule: SemanticRule::Fn7,
-                location: SemanticLocation::BundleRoot(
-                    self.resolved.syntax().root_extent().to_vec(),
-                ),
-                kind: SemanticIssueKind::MissingMain,
-            }));
-        };
-
-        let generics = self.tree.first_child_with(node, Production::Generics)?;
-        let regions = self.tree.first_child_with(node, Production::RegionParams)?;
-        let parameters = self.tree.first_child_with(node, Production::ParamList)?;
-        let rtype = self
-            .tree
-            .first_child_with(node, Production::Rtype)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let mode = self
-            .tree
-            .first_child_with(rtype, Production::Mode)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let ty = self
-            .tree
-            .first_child_with(rtype, Production::Type)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let effects = self
-            .tree
-            .first_child_with(node, Production::Effects)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if generics.is_some()
-            || regions.is_some()
-            || parameters.is_some()
-            || !self.has_fixed(mode, crate::FixedTerminal::Own)?
-            || !self.has_fixed(ty, crate::FixedTerminal::Unit)?
-            || !self.main_effects_allowed(effects)?
-        {
-            return self.issue_node(SemanticRule::Fn7, node, SemanticIssueKind::InvalidMain);
-        }
-        Ok(())
-    }
-
-    fn main_effects_allowed(&self, effects: NodeId) -> Result<bool, CheckStop> {
-        if self.has_fixed(effects, crate::FixedTerminal::Pure)? {
-            return Ok(true);
-        }
-        let effects = self.tree.children_with(effects, Production::Effect)?;
-        let spellings = effects
-            .iter()
-            .map(|effect| self.tree.direct_spelling(*effect))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(matches!(
-            spellings.as_slice(),
-            [one] if one == b"traps" || one == b"allocates(heap)"
-        ) || matches!(
-            spellings.as_slice(),
-            [first, second] if first == b"allocates(heap)" && second == b"traps"
-        ))
-    }
-
+    /// Returns the dense identity of the checked entry function.
     fn main_id(&self) -> Result<FunctionId, CheckStop> {
         self.signatures
             .iter()

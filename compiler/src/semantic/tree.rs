@@ -223,6 +223,29 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(spelling)
     }
 
+    /// Returns every IDENT token owned directly by one node, in source order.
+    ///
+    /// The single-token reader rejects a second match, which is right for the
+    /// productions carrying one name; an `input_label` carries two [GRAM-2],
+    /// and its prefix and tail are distinct checked table facts [FN-7].
+    pub(super) fn direct_identifiers(
+        &self,
+        node: NodeId,
+    ) -> Result<Vec<usize>, SemanticCompilerFailure> {
+        let classified = self.resolved.syntax().classified_bundle();
+        let mut identifiers = Vec::new();
+        for terminal in self.direct_token_indices(node)? {
+            let token = classified
+                .tokens()
+                .get(*terminal)
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            if token.terminals().contains(TerminalPredicate::Identifier) {
+                identifiers.push(*terminal);
+            }
+        }
+        Ok(identifiers)
+    }
+
     pub(super) fn direct_token_with(
         &self,
         node: NodeId,

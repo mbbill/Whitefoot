@@ -9,8 +9,8 @@ mod storage;
 use crate::CheckedProgram;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedDrop, CheckedExpression, CheckedMatchArm, CheckedMode,
-    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    BindingId, CheckedArrayRoot, CheckedDrop, CheckedEntryForm, CheckedExpression, CheckedMatchArm,
+    CheckedMode, CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
     CheckedStatement, CheckedValue,
 };
 
@@ -21,6 +21,16 @@ use storage::collect_addressed_bindings;
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    // [PROG-3] starts an instance by supplying exactly the standard inputs the
+    // entry declares and invoking it once. This lowering implements exactly the
+    // unlabelled entry's start: no supplied input and no produced `ExitStatus`.
+    // A `command` entry additionally needs the target's standard-input
+    // construction and the exit-status mapping, and no such entry reaches here
+    // today because semantic checking stops every one of them at the first
+    // system name its [FN-7] result forces it to write.
+    if checked.data.entry != CheckedEntryForm::Unlabelled {
+        return Err(LoweringFailure::InvalidCheckedProgram);
+    }
     let nominals = lower_nominals(&checked.data)?;
     let constants = lower_constants(&checked.data)?;
     let functions = checked

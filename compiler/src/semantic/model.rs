@@ -1043,6 +1043,24 @@ pub(crate) struct CheckedLawDerivation {
     pub(crate) identity: Option<CheckedLawIdentity>,
 }
 
+/// The [FN-7] entry form the checker admitted for one compilation unit.
+///
+/// Lowering needs the shape rather than the declaration: the two forms take
+/// different program-start bootstraps [PROG-3]. The `command` variant carries
+/// the standard-input table ordinals the entry selected, in the same order as
+/// its declared parameters, because ordinal identity — never type identity —
+/// selects each supplied value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedEntryForm {
+    /// The unlabelled entry: no program kind, no standard input, `own unit`.
+    Unlabelled,
+    /// A `command` entry and the standard-input rows it selected.
+    Command {
+        /// Selected [FN-7] table ordinals in strictly increasing order.
+        inputs: Vec<u8>,
+    },
+}
+
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
@@ -1060,4 +1078,5 @@ pub(crate) struct CheckedProgramData {
     #[allow(dead_code)]
     pub(crate) law_derivations: Vec<CheckedLawDerivation>,
     pub(crate) main: FunctionId,
+    pub(crate) entry: CheckedEntryForm,
 }

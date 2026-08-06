@@ -6,6 +6,7 @@ mod boxes;
 mod buffers;
 mod checked_division;
 mod contracts;
+mod entry_form;
 mod float_conversion;
 mod floating;
 mod generics;
@@ -432,14 +433,6 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 }
 
 #[test]
-fn labelled_entry_input_stops_as_explicit_unsupported_capability() {
-    assert_unsupported(
-        b"fn helper(app.input as value: own i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::LabelledEntryInput,
-    );
-}
-
-#[test]
 fn system_effect_categories_stop_as_explicit_unsupported_capability() {
     assert_unsupported(
         b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
@@ -464,22 +457,6 @@ fn resolved_system_uses_stop_as_explicit_unsupported_capability() {
     assert_unsupported(
         b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n",
         UnsupportedSemanticFeature::SystemDeclarationUse,
-    );
-}
-
-#[test]
-fn a_kind_declaring_entry_without_system_uses_stops_as_unsupported() {
-    // FN-7 v0.18 entry-form admission is unimplemented: a kind-declaring
-    // unit that names no system declaration must still stop at its
-    // `program_kind` node rather than being checked (and possibly accepted)
-    // as an ordinary unlabelled entry.
-    assert_unsupported(
-        b"command fn main() -> own unit pure {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::KindDeclaringEntry,
-    );
-    assert_unsupported(
-        b"command fn helper() -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::KindDeclaringEntry,
     );
 }
 

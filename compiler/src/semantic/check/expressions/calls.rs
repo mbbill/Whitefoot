@@ -504,6 +504,82 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// Checks [GRAM-11] named arguments at every call to a system operation.
+    ///
+    /// [GRAM-11] applies the [GRAM-8] discipline to calls: a `call` whose
+    /// callee resolves to an admitted system operation [SYS-1] writes its
+    /// value arguments as a `fieldinit_list` whose IDENTs equal the callee's
+    /// [SYS-2] declared parameter names in declared order, and positional
+    /// operands are not admitted at all. A missing, extra, repeated,
+    /// misspelled, or out-of-order name is a hard error citing GRAM-11 and the
+    /// callee's parameter list.
+    ///
+    /// The judgment runs whole-unit on resolved facts because the rest of a
+    /// system call's semantic path is still an unsupported capability: an
+    /// unsupported capability establishes no source violation [DIAG-1], so it
+    /// must not swallow the argument-spelling rejection this checker can
+    /// already establish. Region `targs`, argument types, modes, effects, and
+    /// lowering stay outside this judgment.
+    pub(in crate::semantic::check) fn check_system_call_arguments(&self) -> Result<(), CheckStop> {
+        for usage in self.resolved.lexical_uses() {
+            if usage.role() != LexicalUseRole::IdentifierCallee {
+                continue;
+            }
+            let ResolvedTarget::System(id) = usage.target() else {
+                continue;
+            };
+            let Some(crate::SystemEntity::Operation(operation)) = crate::system_entity(id) else {
+                continue;
+            };
+            let callee = self
+                .tree
+                .node_with_path(usage.origin().node())
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let call = self
+                .tree
+                .parent(callee)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.check_system_call_argument_names(call, operation)?;
+        }
+        Ok(())
+    }
+
+    fn check_system_call_argument_names(
+        &self,
+        call: NodeId,
+        operation: &'static crate::SystemOperation,
+    ) -> Result<(), CheckStop> {
+        let invalid = || SemanticIssueKind::InvalidNamedArguments {
+            callee: operation.spelling.to_owned(),
+            declared_parameters: operation
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.to_owned())
+                .collect(),
+        };
+        let fields = match self
+            .tree
+            .first_child_with(call, Production::FieldinitList)?
+        {
+            Some(list) => self.tree.children_with(list, Production::Fieldinit)?,
+            None => Vec::new(),
+        };
+        if self
+            .tree
+            .first_child_with(call, Production::AtomList)?
+            .is_some()
+            || fields.len() != operation.parameters.len()
+        {
+            return self.issue_node(SemanticRule::Gram11, call, invalid());
+        }
+        for (field, parameter) in fields.into_iter().zip(operation.parameters) {
+            if self.identifier(field)? != parameter.name {
+                return self.issue_node(SemanticRule::Gram11, field, invalid());
+            }
+        }
+        Ok(())
+    }
+
     fn invalid_named_arguments(signature: &FunctionSignature) -> SemanticIssueKind {
         SemanticIssueKind::InvalidNamedArguments {
             callee: signature.name.clone(),
