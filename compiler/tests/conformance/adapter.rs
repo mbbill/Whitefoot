@@ -22,7 +22,7 @@
 //!
 //! The corpus-wide run is `#[ignore]`d, and that is a reported blocker rather
 //! than a scoping choice — see the `#[ignore]` reason on the test itself and
-//! `docs/ongoing/0014-first-slice-conformance-execution.md`. The adapter
+//! `docs/done/0014-first-slice-conformance-execution.md`. The adapter
 //! excludes no case, weakens no expectation, and skips nothing the manifest
 //! does not itself mark `pending`; running it prints the complete tally.
 
@@ -250,11 +250,18 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "BLOCKED, not scoped out: 123 pre-existing runnable cases do not reach their \
-            declared verdict through this compiler, in four causes none of which task 0014 \
-            is authorized to resolve. Run `make conformance-run` for the complete tally and \
-            see docs/ongoing/0014-first-slice-conformance-execution.md. No case is excluded \
-            and no expectation is weakened to reach a green result."]
+#[ignore = "BLOCKED, not scoped out: 60 pre-existing runnable cases do not reach their \
+            declared verdict through this compiler, in three remaining causes. 45 \
+            rejections are correct but carry no rule id, because rule_id is populated \
+            only for semantic stops (task 0020). 9 stop as unsupported on the borrow \
+            capability task 0021 implements; they became visible only once the completed \
+            case sources stopped masking them behind FN-7, so they lie outside the \
+            enumeration the owner's pending ruling covered. 6 reject a program the \
+            specification also rejects but cite a different rule, or reject one it \
+            accepts. Run `make conformance-run` for the complete tally; the bucket \
+            history is docs/done/0014-first-slice-conformance-execution.md and the \
+            per-case classification is task 0019's. No case is excluded and no \
+            expectation is weakened to reach a green result."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(
