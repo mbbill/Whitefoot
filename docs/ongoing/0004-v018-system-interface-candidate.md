@@ -38,15 +38,22 @@ verifier; consult [[system-interface]] design memory throughout.
 
 ## Progress
 
-- **Done:** task registered; candidate seeded from v0.17.
-- **Current:** five delta packages drafting in parallel (entry form,
-  declaration domain, effects extensions, types/operations/outcomes,
-  paths/qualification), with the first-slice conformance catalog and the
-  Work-item-2 planned-task pre-drafts running alongside; the lead integrates
-  the packages serially into the candidate.
-- **Next:** serial integration and style harmonization, native grammar
-  verifier, item-by-item inventory cross-check, then the exact-approval
-  packet (SHA-256, semantic delta, impact inventory, limitations).
+- **Done:** task registered; candidate seeded; five delta packages drafted in
+  parallel and integrated serially (25 new rules, 13 modified, new §16/§17,
+  v0.18 status header); hostile integration review (17 findings: 2 blocking,
+  11 required, 4 editorial) fully applied — reflow to one-line paragraphs,
+  fenced inventory, SYS-3/FN-7 trigger unification, missed second-fragment
+  replacements, count/preorder disambiguation, version-label sweep, DIAG-1
+  qualification-failure entry, six META-4 dedups, rank-renumber header
+  sentence. 119 rule definitions, no duplicates, no orphan citations. The
+  first-slice conformance catalog and Work-item-2 planned-task pre-drafts are
+  complete in the scratch directory.
+- **Current:** waiting on task 0005 (native grammar-path extension) for the
+  verifier run.
+- **Next:** verifier green, then the exact-approval packet (SHA-256, semantic
+  delta, impact inventory, limitations, judgment-call list including GATE-2
+  and TRAP-1 as inventory additions to ratify, the dropped SCOPE-3 option,
+  the IoError representation, and the reserved `as` spelling).
 
 ## Scope and expected touch set
 
