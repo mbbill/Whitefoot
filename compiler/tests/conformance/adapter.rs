@@ -250,18 +250,15 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "BLOCKED, not scoped out: 60 pre-existing runnable cases do not reach their \
-            declared verdict through this compiler, in three remaining causes. 45 \
-            rejections are correct but carry no rule id, because rule_id is populated \
-            only for semantic stops (task 0020). 9 stop as unsupported on the borrow \
-            capability task 0021 implements; they became visible only once the completed \
-            case sources stopped masking them behind FN-7, so they lie outside the \
-            enumeration the owner's pending ruling covered. 6 reject a program the \
-            specification also rejects but cite a different rule, or reject one it \
-            accepts. Run `make conformance-run` for the complete tally; the bucket \
-            history is docs/done/0014-first-slice-conformance-execution.md and the \
-            per-case classification is task 0019's. No case is excluded and no \
-            expectation is weakened to reach a green result."]
+#[ignore = "BLOCKED, not scoped out: 25 pre-existing runnable cases do not reach their \
+            declared verdict through this compiler, in three remaining causes. 9 stop as \
+            unsupported on the borrow capability task 0021 implements (visible once the \
+            completed case sources stopped masking them behind FN-7; outside the owner's \
+            35-case ruling enumeration). 15 are rule-attribution divergences under \
+            investigation (tasks 0019/0020 findings). 1 awaits a protected-source owner \
+            ruling (gram5 region argument). Run `make conformance-run` for the complete \
+            tally; the bucket history is docs/done/0014-first-slice-conformance-execution.md \
+            and docs/done/0019/0020."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(
