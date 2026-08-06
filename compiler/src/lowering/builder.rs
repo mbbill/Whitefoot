@@ -25,11 +25,13 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // entry declares and invoking it once. This lowering implements exactly the
     // unlabelled entry's start: no supplied input and no produced `ExitStatus`.
     // A `command` entry additionally needs the target's standard-input
-    // construction and the exit-status mapping, and no such entry reaches here
-    // today because semantic checking stops every one of them at the first
-    // system name its [FN-7] result forces it to write.
+    // construction and the exit-status mapping. Semantic checking now accepts
+    // such entries — [SYS-2] call typing and [EFF-2] release attribution are
+    // implemented — so an accepted system program stops here as an explicit
+    // unsupported compiler capability until the checked-IR resource and
+    // native-lowering tasks land.
     if checked.data.entry != CheckedEntryForm::Unlabelled {
-        return Err(LoweringFailure::InvalidCheckedProgram);
+        return Err(LoweringFailure::UnsupportedSystemInterface);
     }
     let nominals = lower_nominals(&checked.data)?;
     let constants = lower_constants(&checked.data)?;
@@ -136,6 +138,13 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                 CheckedNominalKind::Box { referent } => IrNominalKind::Box {
                     referent: lower_type(*referent)?,
                 },
+                // A semantically accepted system program stops here as an
+                // explicit unsupported compiler capability: the checked-IR
+                // resource identity and its native lowering are later tasks,
+                // and an opaque resource has no target representation yet.
+                CheckedNominalKind::SystemResource { .. } => {
+                    return Err(LoweringFailure::UnsupportedSystemInterface);
+                }
             };
             Ok(IrNominal {
                 id: IrNominalId(
@@ -657,6 +666,13 @@ impl<'program> IrBuilder<'program> {
                         arguments,
                     },
                 )
+            }
+            // System-interface constructs stop as an explicit unsupported
+            // compiler capability: native lowering of [SYS-2] operations and
+            // opaque resource values belongs to later tasks.
+            CheckedExpression::SystemCall { .. }
+            | CheckedExpression::BorrowSystemResource { .. } => {
+                Err(LoweringFailure::UnsupportedSystemInterface)
             }
             CheckedExpression::IntegerOperation {
                 operation,

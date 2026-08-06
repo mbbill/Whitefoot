@@ -328,6 +328,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     nominal,
                 }
             }
+            CheckedType::Nominal(nominal)
+                if fields.is_empty()
+                    && matches!(
+                        self.nominal(nominal)?.kind,
+                        CheckedNominalKind::SystemResource { .. }
+                    ) =>
+            {
+                CheckedExpression::BorrowSystemResource {
+                    binding: local.binding,
+                    nominal,
+                }
+            }
             CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
                 binding: local.binding,
                 ty,

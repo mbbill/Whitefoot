@@ -356,6 +356,14 @@ pub enum SemanticIssueKind {
     InvalidEffectRow,
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch,
+    /// The written effect row omits a category contributed only by a
+    /// compiler-derived release, which has no source occurrence [EFF-2].
+    ReleaseEffectMismatch {
+        /// The parameter or binding whose release contributed the category.
+        owner: String,
+        /// Exact restructuring required by EFF-2.
+        mechanical_fix: &'static str,
+    },
     /// A source contract carried the syntactically admitted generic list.
     GenericContract,
     /// Two members of one source contract have the same name.
@@ -451,17 +459,6 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
-    /// An `external` or `blocks` category in an effect row: [FN-7] admission
-    /// already accepts a `command` entry that draws them, but accepting them
-    /// into the checker's effect model is [EFF-2]'s judgment and is not
-    /// implemented yet.
-    SystemEffectCategory,
-    /// A use resolving to an admitted system declaration ([SYS-1]): the
-    /// system semantic and lowering family — call typing against the [SYS-2]
-    /// signatures, effect attribution, and resource cleanup — is not
-    /// implemented yet. [FN-7] entry-form admission and [GRAM-11] call
-    /// argument spelling are already checked before this stop.
-    SystemDeclarationUse,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

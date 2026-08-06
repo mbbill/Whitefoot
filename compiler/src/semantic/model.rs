@@ -255,13 +255,26 @@ pub(crate) struct CheckedVariant {
 pub(crate) enum CheckedConstructor {
     Source(DeclarationId),
     Prelude(PreludeDeclarationId),
+    System(crate::SystemDeclarationId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedNominalKind {
-    Struct { fields: Vec<CheckedField> },
-    Enum { variants: Vec<CheckedVariant> },
-    Box { referent: CheckedType },
+    Struct {
+        fields: Vec<CheckedField>,
+    },
+    Enum {
+        variants: Vec<CheckedVariant>,
+    },
+    Box {
+        referent: CheckedType,
+    },
+    /// One [SYS-2] opaque resource type, by index into the system
+    /// nominal catalog. It has no source-visible content; its
+    /// compiler-derived release carries the fixed [SYS-5] row.
+    SystemResource {
+        nominal: u8,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -604,6 +617,13 @@ pub(crate) enum CheckedExpression {
         result: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
     },
+    /// One call to an admitted [SYS-2] system operation, by index into the
+    /// system operation catalog. Arguments follow declared parameter order.
+    SystemCall {
+        operation: u8,
+        arguments: Vec<CheckedExpression>,
+        result: CheckedType,
+    },
     IntegerOperation {
         operation: CheckedIntegerOperation,
         operand_type: CheckedType,
@@ -704,6 +724,10 @@ pub(crate) enum CheckedExpression {
         binding: BindingId,
         nominal: NominalId,
     },
+    BorrowSystemResource {
+        binding: BindingId,
+        nominal: NominalId,
+    },
     ReborrowStruct {
         binding: BindingId,
         nominal: NominalId,
@@ -736,7 +760,9 @@ impl CheckedExpression {
     pub(crate) const fn ty(&self) -> CheckedType {
         match self {
             Self::Constant(value) => value.ty(),
-            Self::Binding { ty, .. } | Self::UserCall { result: ty, .. } => *ty,
+            Self::Binding { ty, .. }
+            | Self::UserCall { result: ty, .. }
+            | Self::SystemCall { result: ty, .. } => *ty,
             Self::IntegerOperation { result, .. } | Self::NumericConversion { result, .. } => {
                 *result
             }
@@ -769,7 +795,9 @@ impl CheckedExpression {
             Self::BorrowStruct { nominal, .. } | Self::ReborrowStruct { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
-            Self::BorrowBox { nominal, .. } => CheckedType::Nominal(*nominal),
+            Self::BorrowBox { nominal, .. } | Self::BorrowSystemResource { nominal, .. } => {
+                CheckedType::Nominal(*nominal)
+            }
             Self::ConstructStruct { nominal, .. } | Self::ConstructEnum { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
@@ -967,6 +995,8 @@ pub(crate) struct CheckedEffectCapabilities {
     pub(crate) writes: Vec<DeclarationId>,
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
+    pub(crate) external: bool,
+    pub(crate) blocks: bool,
     pub(crate) traps: bool,
 }
 

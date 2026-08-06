@@ -433,30 +433,36 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 }
 
 #[test]
-fn system_effect_categories_stop_as_explicit_unsupported_capability() {
-    assert_unsupported(
+fn undeclared_system_effect_categories_reject_both_row_directions() {
+    // The two payload-free categories are checked exactly like every other
+    // category [EFF-1, EFF-2]: a non-kind-declaring unit can never exhibit
+    // them, so declaring either is declared-but-unexhibited.
+    assert_rule(
         b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::SystemEffectCategory,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
     );
-    assert_unsupported(
+    assert_rule(
         b"fn probe() -> own unit blocks {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::SystemEffectCategory,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
     );
 }
 
 #[test]
-fn resolved_system_uses_stop_as_explicit_unsupported_capability() {
-    // A kind-declaring unit resolves its admitted system names ([SYS-1],
-    // [SYS-3]); the checker has no semantic path for them yet, so the first
-    // resolved system use stops as an explicit unsupported capability —
-    // never a resolution failure and never silent acceptance.
-    assert_unsupported(
+fn checked_system_programs_complete_semantic_checking() {
+    // The system semantic family — [SYS-2] call typing, [EFF-2] effect
+    // attribution, and the release contribution — is implemented, so a
+    // conforming kind-declaring unit completes semantic checking; the
+    // remaining system boundary is lowering's explicit unsupported stop.
+    with_semantics(
         b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        UnsupportedSemanticFeature::SystemDeclarationUse,
-    );
-    assert_unsupported(
-        b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::SystemDeclarationUse,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a conforming command entry must check: {outcome:?}"
+            );
+        },
     );
 }
 

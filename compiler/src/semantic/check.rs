@@ -18,7 +18,6 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
-    SemanticUnsupported, UnsupportedSemanticFeature,
 };
 
 use super::model::{
@@ -214,6 +213,8 @@ struct EffectSet {
     writes: Vec<DeclarationId>,
     allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
+    external: bool,
+    blocks: bool,
     traps: bool,
 }
 
@@ -223,6 +224,8 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
+        external: false,
+        blocks: false,
         traps: false,
     };
     const TRAPS: Self = Self {
@@ -230,6 +233,8 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
+        external: false,
+        blocks: false,
         traps: true,
     };
     const ALLOCATES_HEAP: Self = Self {
@@ -237,6 +242,8 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
+        external: false,
+        blocks: false,
         traps: false,
     };
     const ALLOCATES_HEAP_AND_TRAPS: Self = Self {
@@ -244,6 +251,8 @@ impl EffectSet {
         writes: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
+        external: false,
+        blocks: false,
         traps: true,
     };
 
@@ -258,6 +267,8 @@ impl EffectSet {
         for region in other.allocates_arenas {
             self.add_arena_allocation(region);
         }
+        self.external |= other.external;
+        self.blocks |= other.blocks;
         self.traps |= other.traps;
         self
     }
@@ -302,6 +313,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
+    system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
     nominal_templates_by_declaration: HashMap<DeclarationId, usize>,
@@ -350,6 +362,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
             prelude_nominals: HashMap::new(),
+            system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
             nominal_templates_by_declaration: HashMap::new(),
@@ -368,14 +381,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
         let items = self.item_declarations()?;
-        // Source-language judgments the checker has implemented run before the
-        // remaining capability stops. An unsupported compiler capability
-        // establishes no source violation [DIAG-1], so it must never mask a
-        // rejection this stage can already establish -- an `external` or
-        // `blocks` row on an otherwise malformed entry used to do exactly that.
+        // The [FN-7] entry-form and [GRAM-11] system-call-argument
+        // judgments run first in DIAG-1 stage order; the former also fixes
+        // which entry shape the rest of the unit is checked under. The
+        // system semantic family — [SYS-2] call typing, [EFF-2] effect
+        // attribution including the release contribution, and the checked
+        // drop records — is implemented below, so no capability stop
+        // remains at this stage; an accepted system program stops later, at
+        // lowering, as an explicit unsupported capability.
         let entry = self.check_entry_form(&items)?;
         self.check_system_call_arguments()?;
-        self.check_system_surface_support()?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
@@ -409,52 +424,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             main,
             entry,
         })
-    }
-
-    /// Stops on the v0.18 system-interface surface the checker has not
-    /// implemented. Each construct is grammatical under the active
-    /// specification, resolves completely — a kind-declaring unit admits the
-    /// [SYS-2] inventory into name lookup — and has now passed the [FN-7]
-    /// entry-form judgment, so what stops here must remain an explicit
-    /// unsupported compiler capability, never a source rejection and never
-    /// silent acceptance.
-    ///
-    /// The first resolved use of an admitted system declaration stops as
-    /// [`UnsupportedSemanticFeature::SystemDeclarationUse`] at that use: the
-    /// name resolved and its call-argument spelling was checked [GRAM-11],
-    /// but the rest of its semantic path — typing against the [SYS-2]
-    /// signature, effect attribution, resource cleanup, lowering — does not
-    /// exist yet. Because [FN-7] fixes every `command` entry's result as `own
-    /// ExitStatus`, an admitted kind-declaring entry always names one system
-    /// type and therefore always reaches this stop; the boundary moved from
-    /// the entry declaration to the first system use, it did not disappear.
-    ///
-    /// The `external` and `blocks` categories keep their own stop. [FN-7]
-    /// admission already established that a `command` entry may draw them,
-    /// but accepting them into the checker's effect model is the
-    /// exhibited-versus-declared judgment [EFF-2] owns.
-    fn check_system_surface_support(&self) -> Result<(), CheckStop> {
-        if let Some(usage) = self
-            .resolved
-            .lexical_uses()
-            .iter()
-            .find(|usage| matches!(usage.target(), crate::ResolvedTarget::System(_)))
-        {
-            return Err(CheckStop::Unsupported(SemanticUnsupported {
-                feature: UnsupportedSemanticFeature::SystemDeclarationUse,
-                node: usage.origin().node().clone(),
-            }));
-        }
-        for index in 0..self.tree.topology().nodes.len() {
-            let node = NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            if self.tree.production(node)? == Production::Effect
-                && (self.has_fixed(node, crate::FixedTerminal::External)?
-                    || self.has_fixed(node, crate::FixedTerminal::Blocks)?)
-            {
-                return self.unsupported(UnsupportedSemanticFeature::SystemEffectCategory, node);
-            }
-        }
-        Ok(())
     }
 
     fn item_declarations(&self) -> Result<Vec<NodeId>, CheckStop> {
@@ -532,6 +501,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut parameters = Vec::with_capacity(signature.parameters.len());
         let mut next_binding = 0_u32;
         let mut next_loop = 0_u32;
+        let mut binding_names = signature
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name.clone())
+            .collect::<Vec<_>>();
         for parameter in &signature.parameters {
             let binding = BindingId(next_binding);
             next_binding = next_binding
@@ -566,6 +540,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut counters = ControlCounters {
             next_binding: &mut next_binding,
             next_loop: &mut next_loop,
+            binding_names: &mut binding_names,
         };
         let parameter_bindings = bindings.clone();
         let requires = if let Some(node) = self
@@ -600,11 +575,71 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 kind: SemanticIssueKind::FunctionFallthrough,
             }));
         }
-        let effects = requires.as_ref().map_or_else(
+        // The exhibited row is the union of exactly two contributions
+        // [EFF-2]: the syntactic contribution of the body and optional
+        // requires prologue, and the release contribution of every
+        // compiler-derived release recorded on a normal edge of the checked
+        // program [STOR-3].
+        let syntactic = requires.as_ref().map_or_else(
             || checked.effects.clone(),
             |prologue| prologue.effects.clone().union(checked.effects.clone()),
         );
-        if effects != signature.declared_effects {
+        let mut release_sites = Vec::new();
+        if let Some(prologue) = &requires {
+            self.collect_release_sites(&prologue.statements, &mut release_sites)?;
+        }
+        self.collect_release_sites(&checked.statements, &mut release_sites)?;
+        let mut release = EffectSet::NONE;
+        for site in &release_sites {
+            release = release.union(site.effects.clone());
+        }
+        let exhibited = syntactic.clone().union(release);
+        if exhibited != signature.declared_effects {
+            // A category contributed only by the release contribution has
+            // no offending source occurrence; the diagnostic renders the
+            // owner whose release contributed it, selected by the
+            // deterministic traversal that collected the sites.
+            let release_only = |exhibited_category: bool,
+                                declared_category: bool,
+                                syntactic_category: bool| {
+                exhibited_category && !declared_category && !syntactic_category
+            };
+            let undeclared_external = release_only(
+                exhibited.external,
+                signature.declared_effects.external,
+                syntactic.external,
+            );
+            let undeclared_blocks = release_only(
+                exhibited.blocks,
+                signature.declared_effects.blocks,
+                syntactic.blocks,
+            );
+            if undeclared_external || undeclared_blocks {
+                let owner = release_sites
+                    .iter()
+                    .find(|site| {
+                        (undeclared_external && site.effects.external)
+                            || (undeclared_blocks && site.effects.blocks)
+                    })
+                    .map(|site| match &site.owner {
+                        cleanup::ReleaseOwner::Binding(binding) => binding_names
+                            .get(binding.0 as usize)
+                            .cloned()
+                            .unwrap_or_else(|| "<unnamed owner>".to_owned()),
+                        cleanup::ReleaseOwner::ExpressionResult => {
+                            "<discarded expression result>".to_owned()
+                        }
+                    })
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                return self.issue_node(
+                    SemanticRule::Eff2,
+                    signature.effects_node,
+                    SemanticIssueKind::ReleaseEffectMismatch {
+                        owner,
+                        mechanical_fix: "declare the release effects of every resource this function may release, or move the owner out",
+                    },
+                );
+            }
             return self.issue_node(
                 SemanticRule::Eff2,
                 signature.effects_node,

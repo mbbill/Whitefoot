@@ -209,7 +209,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::Function,
             } => declaration,
-            ResolvedTarget::Operation(_) => return Ok(None),
+            // A system operation is not a user function template; recursion
+            // through it is impossible, so it contributes no cycle edge.
+            ResolvedTarget::Operation(_) | ResolvedTarget::System(_) => return Ok(None),
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let index = *self

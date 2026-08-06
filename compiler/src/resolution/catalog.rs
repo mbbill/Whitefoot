@@ -626,6 +626,113 @@ pub fn operation_region_effects(operation: &SystemOperation) -> (Vec<u8>, Vec<u8
     (reads, writes)
 }
 
+/// One [SYS-5] release row: the fixed effect row of a type's compiler-derived
+/// release action, given as the presence of the two payload-free categories.
+///
+/// [STOR-3] makes this row the sole input to [EFF-2]'s release contribution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SystemReleaseRow {
+    /// The release action may observe or change state outside ordinary memory.
+    pub external: bool,
+    /// The release action may block its host thread.
+    pub blocks: bool,
+}
+
+impl SystemReleaseRow {
+    /// The empty release row: a logical consume or detach with no host call.
+    pub const EMPTY: Self = Self {
+        external: false,
+        blocks: false,
+    };
+}
+
+/// Returns one system nominal's exact [SYS-5] release row.
+///
+/// `DirectoryRead` and `ReadFile` release with at most one native close
+/// attempt (`external, blocks`); every other system type — the remaining
+/// opaque types' logical consume or detach and every outcome enum, which has
+/// no release action and takes no row in the [SYS-5] table — carries the
+/// empty row.
+#[must_use]
+pub fn system_release_row(nominal: u8) -> SystemReleaseRow {
+    match nominal {
+        DIRECTORY_READ | READ_FILE => SystemReleaseRow {
+            external: true,
+            blocks: true,
+        },
+        _ => SystemReleaseRow::EMPTY,
+    }
+}
+
+/// Maps one lookup-class [SYS-2] declaration to its nominal-table index.
+#[must_use]
+pub fn system_nominal_index(id: SystemDeclarationId) -> Option<u8> {
+    let ordinal = id.ordinal();
+    (usize::from(ordinal) < SYSTEM_NOMINALS.len()).then_some(ordinal)
+}
+
+/// Maps one lookup-class [SYS-2] declaration to its constructor-table index.
+#[must_use]
+pub fn system_constructor_index(id: SystemDeclarationId) -> Option<u8> {
+    let mut ordinal = usize::from(id.ordinal());
+    if ordinal < SYSTEM_NOMINALS.len() {
+        return None;
+    }
+    ordinal -= SYSTEM_NOMINALS.len();
+    for (index, constructor) in SYSTEM_CONSTRUCTORS.iter().enumerate() {
+        if ordinal == 0 {
+            return u8::try_from(index).ok();
+        }
+        ordinal -= 1;
+        if ordinal < constructor.fields.len() {
+            return None;
+        }
+        ordinal -= constructor.fields.len();
+    }
+    None
+}
+
+/// Maps one constructor-table index to its [SYS-2] declaration identity.
+#[must_use]
+pub fn system_constructor_declaration(index: u8) -> Option<SystemDeclarationId> {
+    let mut ordinal = SYSTEM_NOMINALS.len();
+    for (constructor_index, constructor) in SYSTEM_CONSTRUCTORS.iter().enumerate() {
+        if constructor_index == usize::from(index) {
+            return u8::try_from(ordinal).ok().map(SystemDeclarationId::new);
+        }
+        ordinal += 1 + constructor.fields.len();
+    }
+    None
+}
+
+/// Maps one lookup-class [SYS-2] declaration to its operation-table index.
+#[must_use]
+pub fn system_operation_index(id: SystemDeclarationId) -> Option<u8> {
+    let mut ordinal = usize::from(id.ordinal());
+    if ordinal < SYSTEM_NOMINALS.len() {
+        return None;
+    }
+    ordinal -= SYSTEM_NOMINALS.len();
+    for constructor in &SYSTEM_CONSTRUCTORS {
+        let Some(remaining) = ordinal.checked_sub(1 + constructor.fields.len()) else {
+            return None;
+        };
+        ordinal = remaining;
+    }
+    for (index, operation) in SYSTEM_OPERATIONS.iter().enumerate() {
+        if ordinal == 0 {
+            return u8::try_from(index).ok();
+        }
+        ordinal -= 1;
+        let locals = operation.regions.len() + operation.parameters.len();
+        if ordinal < locals {
+            return None;
+        }
+        ordinal -= locals;
+    }
+    None
+}
+
 /// Builds the one hundred sixty-seven [SYS-2] declaration records in
 /// normative preorder: each nominal type in table order; then each
 /// constructor and its fields in declared order; then each operation, its

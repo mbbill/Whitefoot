@@ -387,11 +387,15 @@ pub fn compile(
         }
     };
     let ir = lower_checked(checked).map_err(|failure: LoweringFailure| {
-        CompilationFailure::new(
-            CompilationStage::Lowering,
-            CompilationFailureKind::Lowering,
-            failure,
-        )
+        // An unimplemented system-interface lowering is an explicit
+        // unsupported compiler capability at the lowering stage; every
+        // other lowering failure remains an internal failure.
+        let kind = if failure == LoweringFailure::UnsupportedSystemInterface {
+            CompilationFailureKind::Unsupported
+        } else {
+            CompilationFailureKind::Lowering
+        };
+        CompilationFailure::new(CompilationStage::Lowering, kind, failure)
     })?;
     emit_llvm(&ir)
         .map(|module| module.into_string())
@@ -454,21 +458,22 @@ mod tests {
 
     #[test]
     fn system_interface_constructs_stop_as_explicit_unsupported_capability() {
-        // The canonical FN-7 command-entry header: a kind-declaring entry
-        // resolves its admitted system names ([SYS-1], [SYS-3]) and then
-        // stops in semantic checking, whose system semantic family is not
-        // implemented — an explicit unsupported capability at the first
-        // resolved system use, never a source rejection.
-        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
+        // The canonical FN-7 command-entry header with a conforming body
+        // and exact row: the entry admits, its system calls type against
+        // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
+        // `external, blocks` from the DirectoryRead input's compiler-derived
+        // close attempt on the return edge. The remaining system boundary
+        // is lowering, which stops as an explicit unsupported capability.
+        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
         )
-        .expect_err("a kind-declaring entry must stop as unsupported");
-        assert_eq!(failure.stage(), CompilationStage::Semantics);
+        .expect_err("an accepted system program must stop at lowering as unsupported");
+        assert_eq!(failure.stage(), CompilationStage::Lowering);
         assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
         assert_eq!(failure.rule_id(), None);
-        assert!(failure.detail().contains("SystemDeclarationUse"));
+        assert!(failure.detail().contains("UnsupportedSystemInterface"));
 
         // A `command` entry whose written result is not `own ExitStatus` is a
         // source rejection now, not an unsupported stop: the FN-7 entry-form
@@ -484,22 +489,21 @@ mod tests {
         assert_eq!(failure.kind(), CompilationFailureKind::Source);
         assert_eq!(failure.rule_id(), Some("FN-7"));
 
-        // A system effect category on a declaration FN-7 does not govern
-        // parses, resolves, and then stops in semantic checking as
-        // unsupported: accepting `external` and `blocks` into the checker's
-        // effect model is EFF-2's judgment.
+        // The `external` and `blocks` categories are checked, not stopped:
+        // a non-kind-declaring unit can never exhibit them, so declaring
+        // either is an ordinary EFF-2 declared-but-unexhibited rejection.
         for source in [
             b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
             b"fn probe() -> own unit blocks {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         ] {
             let failure = compile(
-                &[SourceInput::new("unsupported.wf", source)],
+                &[SourceInput::new("rejected.wf", source)],
                 CompilerLimits::default(),
             )
-            .expect_err("the system-interface construct must stop as unsupported");
+            .expect_err("an undeclarable category must reject citing EFF-2");
             assert_eq!(failure.stage(), CompilationStage::Semantics);
-            assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
-            assert_eq!(failure.rule_id(), None);
+            assert_eq!(failure.kind(), CompilationFailureKind::Source);
+            assert_eq!(failure.rule_id(), Some("EFF-2"));
         }
     }
 

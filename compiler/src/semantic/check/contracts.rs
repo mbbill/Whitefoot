@@ -36,12 +36,18 @@ enum NormalizedMode {
     Unique(usize),
 }
 
+/// One [FN-3] six-capability effect normalization: read regions, write
+/// regions, the allocation set, and the presence of `external`, `blocks`,
+/// and `traps`. Equality is derived, so every capability compares, and the
+/// three payload-free categories compare by presence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct NormalizedEffects {
     reads: Vec<usize>,
     writes: Vec<usize>,
     allocates_heap: bool,
     allocates_arenas: Vec<usize>,
+    external: bool,
+    blocks: bool,
     traps: bool,
 }
 
@@ -515,6 +521,8 @@ fn checked_effects(effects: &EffectSet) -> CheckedEffectCapabilities {
         writes: effects.writes.clone(),
         allocates_heap: effects.allocates_heap,
         allocates_arenas: effects.allocates_arenas.clone(),
+        external: effects.external,
+        blocks: effects.blocks,
         traps: effects.traps,
     }
 }
@@ -627,6 +635,8 @@ fn normalize_effects(
         writes: normalize_regions(&effects.writes, regions)?,
         allocates_heap: effects.allocates_heap,
         allocates_arenas: normalize_regions(&effects.allocates_arenas, regions)?,
+        external: effects.external,
+        blocks: effects.blocks,
         traps: effects.traps,
     })
 }

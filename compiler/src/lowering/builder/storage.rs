@@ -69,6 +69,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             bindings.insert(*binding);
         }
         CheckedExpression::UserCall { arguments, .. }
+        | CheckedExpression::SystemCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
@@ -104,6 +105,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::SliceLength { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
+        | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowStruct { .. }
         | CheckedExpression::Project { .. } => {}
     }

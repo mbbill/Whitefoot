@@ -44,6 +44,10 @@ pub(super) struct GiveContext {
 pub(super) struct ControlCounters<'state> {
     pub(super) next_binding: &'state mut u32,
     pub(super) next_loop: &'state mut u32,
+    /// Source spelling of every allocated binding, indexed by [`BindingId`];
+    /// kept only to render the owner in a release-attributed EFF-2
+    /// diagnostic. Every allocation site pushes exactly one name.
+    pub(super) binding_names: &'state mut Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -368,6 +372,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let declaration = self.declaration_at(node, DeclarationRole::Let)?;
         let declaration_id = declaration.id();
         let binding = Self::allocate_binding(counters.next_binding)?;
+        counters.binding_names.push(declaration.spelling().to_owned());
 
         if let Some(value_match) = self.tree.first_child_with(node, Production::ValueMatch)? {
             if mode != CheckedMode::Own {

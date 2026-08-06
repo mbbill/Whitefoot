@@ -1,6 +1,7 @@
 mod conversions;
 mod floating;
 mod reinterpret;
+mod system;
 mod user;
 
 use std::collections::HashMap;
@@ -51,6 +52,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } => self.check_user_call(node, declaration, function, bindings, loop_depth),
             ResolvedTarget::Operation(operation) => {
                 self.check_operation(node, operation, function, bindings, loop_depth)
+            }
+            ResolvedTarget::System(id) => {
+                let operation = crate::system_operation_index(id)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                self.check_system_call(node, operation, function, bindings, loop_depth)
             }
             _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
         }

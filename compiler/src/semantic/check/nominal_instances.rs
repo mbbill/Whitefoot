@@ -201,6 +201,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.ensure_source_nominal_instance(template_index, instance)?;
                 Ok(())
             }
+            ResolvedTarget::System(id) => {
+                if let Some(index) = crate::system_nominal_index(id) {
+                    self.intern_system_nominal(index)?;
+                }
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -211,6 +217,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         caller: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
+        if let ResolvedTarget::System(id) = usage.target() {
+            if let Some(index) = crate::system_constructor_index(id) {
+                let owner = crate::SYSTEM_CONSTRUCTORS
+                    .get(usize::from(index))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .owner;
+                self.intern_system_nominal(owner)?;
+            }
+            return Ok(());
+        }
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
             return Ok(());
         };
@@ -273,6 +289,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(call, Production::Callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            // A call to an admitted system operation needs its written
+            // [SYS-2] parameter and result instances — including `Result`
+            // instantiations no source type spells — before function
+            // checking reads them immutably.
+            let callee_path = self.tree.path(callee)?;
+            let system_operation = self
+                .resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage| {
+                    usage.origin().node() == callee_path
+                        && matches!(
+                            usage.role(),
+                            LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
+                        )
+                })
+                .and_then(|usage| match usage.target() {
+                    ResolvedTarget::System(id) => crate::system_operation_index(id),
+                    _ => None,
+                });
+            if let Some(index) = system_operation {
+                let operation = crate::SYSTEM_OPERATIONS
+                    .get(usize::from(index))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                for parameter in operation.parameters {
+                    self.ensure_system_type(parameter.ty)?;
+                }
+                self.ensure_system_type(operation.result)?;
+                continue;
+            }
             let spelling = self.tree.direct_spelling(callee)?;
             if spelling == b"cvt" {
                 self.ensure_conversion_result(call, substitution)?;
@@ -641,6 +687,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.prelude_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
+            .retain(|_, id| (id.0 as usize) < checkpoint);
+        self.system_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         Ok(())
     }

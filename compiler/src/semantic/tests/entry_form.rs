@@ -186,12 +186,13 @@ fn an_inadmissible_entry_row_outranks_the_unsupported_effect_category() {
         },
         b"blocks",
     );
-    // The same category on a declaration FN-7 does not govern keeps its
-    // explicit unsupported stop: accepting `external` and `blocks` into the
-    // checker's effect model is [EFF-2]'s judgment, not this one.
-    assert_unsupported(
+    // The same category on a declaration FN-7 does not govern is [EFF-2]'s
+    // judgment: a non-kind-declaring function can never exhibit it, so
+    // declaring it is declared-but-unexhibited.
+    assert_rule(
         b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
-        UnsupportedSemanticFeature::SystemEffectCategory,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
     );
 }
 
@@ -223,18 +224,26 @@ fn only_the_entry_may_declare_a_program_kind() {
 }
 
 #[test]
-fn an_admitted_command_entry_reaches_the_system_use_boundary() {
-    // FN-7 admission succeeds for each of these; every `command` entry then
-    // names `ExitStatus`, so it stops at the first resolved system use rather
-    // than at its own declaration. The boundary moved right, it did not
-    // disappear.
+fn an_admitted_command_entry_completes_semantic_checking() {
+    // FN-7 admission succeeds for each of these, and the system semantic
+    // path — [SYS-2] call typing and [EFF-2] attribution including the
+    // release contribution — is implemented, so a `command` entry whose
+    // declared row equals its exhibited row completes semantic checking.
+    // The full-input entry exhibits `external, blocks` from the
+    // `DirectoryRead` input's compiler-derived close attempt; every other
+    // standard input's release row is empty [SYS-5].
     for source in [
         &b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
-        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n"[..],
         // A subset in strictly increasing table-ordinal order, skipping rows.
-        &b"command fn main(command.args as args: own Args, command.stderr as err: own Output) -> own ExitStatus traps {\n  return exit_status(code: 0_u8);\n}\n"[..],
+        &b"command fn main(command.args as args: own Args, command.stderr as err: own Output) -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"[..],
     ] {
-        assert_unsupported(source, UnsupportedSemanticFeature::SystemDeclarationUse);
+        with_semantics(source, |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a row-exact command entry must check: {outcome:?}"
+            );
+        });
     }
 }
 
@@ -274,10 +283,17 @@ fn the_standard_input_table_is_closed_at_its_input_label_node() {
 #[test]
 fn two_inputs_of_one_type_remain_two_distinct_ordinals() {
     // `command.stdout` and `command.stderr` share one type; selecting them in
-    // table order is admitted, and selecting them in reverse is not.
-    assert_unsupported(
+    // table order is admitted (and checks completely, since `Output`'s
+    // logical source detach carries the empty release row), and selecting
+    // them in reverse is not.
+    with_semantics(
         b"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        UnsupportedSemanticFeature::SystemDeclarationUse,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the in-order two-output entry must check: {outcome:?}"
+            );
+        },
     );
     assert_rule_at(
         b"command fn main(command.stderr as err: own Output, command.stdout as out: own Output) -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
@@ -425,11 +441,16 @@ fn system_operation_calls_are_named_in_declared_order() {
         SemanticRule::Gram11,
         declared("exit_status", &["code"]),
     );
-    // The correctly spelled call is admitted here and stops later, at the
-    // system semantic path this task does not implement.
-    assert_unsupported(
+    // The correctly spelled call is admitted here and the system semantic
+    // path types it completely, so the unit checks.
+    with_semantics(
         b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        UnsupportedSemanticFeature::SystemDeclarationUse,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the correctly spelled system call must check: {outcome:?}"
+            );
+        },
     );
 }
 

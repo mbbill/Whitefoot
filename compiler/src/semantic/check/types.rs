@@ -272,6 +272,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     };
                     return Ok(ty);
                 }
+                ResolvedTarget::System(id) => {
+                    let index = crate::system_nominal_index(id)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    if targs.is_some() {
+                        return self.issue_node(
+                            SemanticRule::Type5,
+                            node,
+                            SemanticIssueKind::TypeMismatch,
+                        );
+                    }
+                    return Ok(CheckedType::Nominal(self.system_nominal(index)?));
+                }
                 _ => {}
             }
         }
@@ -441,9 +453,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declared.add_arena_allocation(region);
                 }
                 2
+            } else if self.has_fixed(effect, FixedTerminal::External)? {
+                declared.external = true;
+                3
+            } else if self.has_fixed(effect, FixedTerminal::Blocks)? {
+                declared.blocks = true;
+                4
             } else if self.has_fixed(effect, FixedTerminal::Traps)? {
                 declared.traps = true;
-                3
+                5
             } else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };

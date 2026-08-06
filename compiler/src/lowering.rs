@@ -840,6 +840,11 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
+    /// A semantically accepted program uses the [SYS-1] system interface,
+    /// whose checked-IR resource identities and native lowering are not
+    /// implemented yet. This is an explicit unsupported compiler
+    /// capability, never a source rejection.
+    UnsupportedSystemInterface,
 }
 
 mod builder;

@@ -4,8 +4,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
-    CheckedVariant, NominalId,
+    CheckedConstructor, CheckedField, CheckedFlatElement, CheckedNominal, CheckedNominalKind,
+    CheckedType, CheckedVariant, IntegerType, NominalId,
 };
 use super::{CheckStop, Checker, PreludeType};
 
@@ -62,7 +62,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .flat_map(|variant| variant.fields.iter())
                 .collect(),
-            CheckedNominalKind::Box { .. } => Vec::new(),
+            CheckedNominalKind::Box { .. } | CheckedNominalKind::SystemResource { .. } => {
+                Vec::new()
+            }
         };
         Ok(fields
             .into_iter()
@@ -147,6 +149,132 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.intern_prelude_nominal(PreludeType::DivError)?;
         self.intern_prelude_nominal(PreludeType::NarrowError)?;
         Ok(())
+    }
+
+    /// Returns the already-interned instance of one [SYS-2] nominal type.
+    pub(super) fn system_nominal(&self, index: u8) -> Result<NominalId, CheckStop> {
+        self.system_nominals
+            .get(&index)
+            .copied()
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// Interns one [SYS-2] nominal type: an opaque resource becomes a
+    /// [`CheckedNominalKind::SystemResource`]; an outcome enum becomes an
+    /// ordinary checked enum whose variants and typed fields come from the
+    /// catalog, so matching, affinity, and drops use the one normal path.
+    pub(super) fn intern_system_nominal(&mut self, index: u8) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.system_nominals.get(&index) {
+            return Ok(*id);
+        }
+        let nominal = crate::SYSTEM_NOMINALS
+            .get(usize::from(index))
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let kind = if nominal.opaque {
+            CheckedNominalKind::SystemResource { nominal: index }
+        } else {
+            let mut variants = Vec::new();
+            for (constructor_index, constructor) in
+                crate::SYSTEM_CONSTRUCTORS.iter().enumerate()
+            {
+                if constructor.owner != index {
+                    continue;
+                }
+                let mut fields = Vec::with_capacity(constructor.fields.len());
+                for field in constructor.fields {
+                    fields.push(CheckedField {
+                        name: field.name.to_owned(),
+                        ty: self.ensure_system_type(field.ty)?,
+                    });
+                }
+                let declaration = u8::try_from(constructor_index)
+                    .ok()
+                    .and_then(crate::system_constructor_declaration)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let tag = u32::try_from(variants.len())
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                variants.push(CheckedVariant {
+                    name: constructor.spelling.to_owned(),
+                    constructor: CheckedConstructor::System(declaration),
+                    tag,
+                    fields,
+                });
+            }
+            CheckedNominalKind::Enum { variants }
+        };
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        self.nominals.push(CheckedNominal {
+            id,
+            name: nominal.spelling.to_owned(),
+            kind,
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        if self.system_nominals.insert(index, id).is_some() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
+    }
+
+    /// Maps one written [SYS-2] table type to its checked type, interning
+    /// every system nominal and prelude `Result` instantiation it needs.
+    pub(super) fn ensure_system_type(
+        &mut self,
+        ty: crate::SystemTypeRef,
+    ) -> Result<CheckedType, CheckStop> {
+        Ok(match ty {
+            crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
+            crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
+            crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
+            crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
+                element: CheckedFlatElement::Integer(IntegerType::U8),
+            },
+            crate::SystemTypeRef::Nominal(index) => {
+                CheckedType::Nominal(self.intern_system_nominal(index)?)
+            }
+            crate::SystemTypeRef::Result { ok, err } => {
+                let ok = match ok {
+                    crate::SystemResultPayload::U64 => CheckedType::Integer(IntegerType::U64),
+                    crate::SystemResultPayload::Nominal(index) => {
+                        CheckedType::Nominal(self.intern_system_nominal(index)?)
+                    }
+                };
+                let error = CheckedType::Nominal(self.intern_system_nominal(err)?);
+                CheckedType::Nominal(self.intern_prelude_nominal(PreludeType::Result(ok, error))?)
+            }
+        })
+    }
+
+    /// Read-only variant of [`Self::ensure_system_type`] for use during
+    /// function checking, after the mutable pre-pass interned every needed
+    /// instance.
+    pub(super) fn system_type(&self, ty: crate::SystemTypeRef) -> Result<CheckedType, CheckStop> {
+        Ok(match ty {
+            crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
+            crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
+            crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
+            crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
+                element: CheckedFlatElement::Integer(IntegerType::U8),
+            },
+            crate::SystemTypeRef::Nominal(index) => {
+                CheckedType::Nominal(self.system_nominal(index)?)
+            }
+            crate::SystemTypeRef::Result { ok, err } => {
+                let ok = match ok {
+                    crate::SystemResultPayload::U64 => CheckedType::Integer(IntegerType::U64),
+                    crate::SystemResultPayload::Nominal(index) => {
+                        CheckedType::Nominal(self.system_nominal(index)?)
+                    }
+                };
+                let error = CheckedType::Nominal(self.system_nominal(err)?);
+                CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(ok, error))?)
+            }
+        })
     }
 
     pub(super) fn enclosing_function(&self, mut node: NodeId) -> Result<NodeId, CheckStop> {

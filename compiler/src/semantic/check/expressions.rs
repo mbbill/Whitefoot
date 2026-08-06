@@ -855,6 +855,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .unsupported(UnsupportedSemanticFeature::PreludeNominalValues, node);
                 }
             },
+            ResolvedTarget::System(id) => {
+                let index = crate::system_constructor_index(id)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let record = crate::SYSTEM_CONSTRUCTORS
+                    .get(usize::from(index))
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let tag = crate::SYSTEM_CONSTRUCTORS[..usize::from(index)]
+                    .iter()
+                    .filter(|candidate| candidate.owner == record.owner)
+                    .count();
+                Constructor::Enum {
+                    nominal: self.system_nominal(record.owner)?,
+                    variant: u32::try_from(tag)
+                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                }
+            }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let declared_fields = match constructor {

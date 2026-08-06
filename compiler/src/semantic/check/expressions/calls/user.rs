@@ -75,11 +75,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut checked_slices = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
+        // The payload-free categories transfer by presence at a call
+        // boundary [EFF-2]; only region entries are projected below.
         let mut effects = EffectSet {
             reads: Vec::new(),
             writes: Vec::new(),
             allocates_heap: signature.declared_effects.allocates_heap,
             allocates_arenas: Vec::new(),
+            external: signature.declared_effects.external,
+            blocks: signature.declared_effects.blocks,
             traps: signature.declared_effects.traps,
         };
         for (field, parameter) in fields.into_iter().zip(&signature.parameters) {
@@ -297,7 +301,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(SliceInfo { region, origins }))
     }
 
-    fn check_call_borrow_overlap(
+    pub(super) fn check_call_borrow_overlap(
         &self,
         node: NodeId,
         borrows: &[Option<BorrowInfo>],

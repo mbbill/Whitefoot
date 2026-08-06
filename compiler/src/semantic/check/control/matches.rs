@@ -111,7 +111,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 variant,
                 arm_node,
                 &mut arm_bindings,
-                counters.next_binding,
+                counters,
                 scope.loops.len(),
                 &scrutinee,
             )?;
@@ -235,6 +235,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::Prelude(id) => {
                     variant.constructor == CheckedConstructor::Prelude(id)
                 }
+                ResolvedTarget::System(id) => {
+                    variant.constructor == CheckedConstructor::System(id)
+                }
                 _ => false,
             })
             .ok_or_else(|| {
@@ -251,7 +254,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         variant: &VariantDescriptor,
         arm: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        next_binding: &mut u32,
+        counters: &mut ControlCounters<'_>,
         loop_depth: usize,
         scrutinee: &super::super::TypedExpression,
     ) -> Result<Vec<CheckedMatchBinder>, CheckStop> {
@@ -289,7 +292,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             let declaration = self.declaration_at(written, DeclarationRole::MatchBinder)?;
-            let binding = Self::allocate_binding(next_binding)?;
+            let binding = Self::allocate_binding(counters.next_binding)?;
+            counters.binding_names.push(declaration.spelling().to_owned());
             let borrow = if mode == CheckedMode::Own {
                 None
             } else {
