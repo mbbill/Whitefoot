@@ -13,7 +13,8 @@ out; it is not authority and expands nothing.
   Implements dossier §12.2's required test list. Claimable only while
   `docs/current-plan.md` remains `ACTIVE`.
 - **Owner:** executor agent `exec-0014`
-- **Base revision:** `0a47f54`
+- **Base revision:** `6336311` (claimed at `0a47f54`; rebased after 0013
+  and 0015 landed, gates rerun)
 - **Workspace:** worktree `agent-a1ffd6a2ad751eb60`, branch
   `worktree-agent-a1ffd6a2ad751eb60`
 
@@ -209,9 +210,13 @@ it exercises corpus structure and declared coverage, not verdicts.
 - `run-syspath-nul-rejected` — not expressible at all. [HOST-1] fixes the
   Unix code-unit family as `0x01..0xff`, so no argument fixture can carry a
   NUL and no first-slice operation constructs a host string otherwise.
-- QUAL-level `unsupported` cases — not expressible today. The native target
-  qualifies for every semantic ID; the guarantee-withholding path is task
-  0013's `SystemTarget::probe`, which has not landed.
+- QUAL-level `unsupported` cases — still not expressible after 0013 landed.
+  The native target qualifies for every semantic ID, and 0013's second
+  qualified column is `HostFacilities::DeterministicTest` under `#[cfg(test)]`,
+  reachable from crate-internal tests but not from the `whitefoot::compile`
+  path the corpus drives. A corpus case cannot therefore select a target that
+  withholds a guarantee, so the `unsupported` expectation 0017 added has no
+  case yet.
 - Standard-input absence — realized, not observable. The adapter supplies an
   empty standard input whenever `arrange.stdin` is absent, but [SYS-2]
   declares no operation that reads standard input, so no first-slice case
@@ -247,15 +252,16 @@ run-verdict cases). Cross-links with task 0015 on the shared
 rebases onto it. Runs concurrently with task 0015 (wave 7). Task 0016
 depends on this task.
 
-**Cross-link outcome (this task landed first, and did not touch
-`support.rs`).** Arrangement realization lives in the adapter
-(`compiler/tests/conformance/adapter.rs::execute`) because it is driven by
-the manifest's typed `Arrangement`, which is where the corpus states an
-invocation. `compile_and_run` in `compiler/tests/programs/support.rs` is
-unchanged, so task 0015 rebases onto nothing here and still owns whichever
-shape its `wfgrep` integration tests need. If 0015 wants one helper rather
-than two, the corpus `Arrangement` type is the general one to lift — that
-is a lead decision, not an executor substitution.
+**Cross-link outcome (0015 landed first; rebased onto `6336311`).** No
+conflict and no shared edit: 0015 added `build_program`/`CompiledProgram`
+to `compiler/tests/programs/support.rs` for its Rust-literal `wfgrep`
+tests, and this task left `support.rs` untouched because arrangement
+realization here is driven by the manifest's typed `Arrangement`, which is
+where the corpus states an invocation. **One difference matters if the two
+are ever merged:** `CompiledProgram::run` takes arguments as argv[1..],
+while the corpus schema now fixes `arrange.argv` as the complete vector
+including position 0 (see the reconciliation above). Unifying them means
+picking one convention, which is a lead decision.
 
 ## Validation
 
