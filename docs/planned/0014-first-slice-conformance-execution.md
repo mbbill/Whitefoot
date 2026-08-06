@@ -132,6 +132,11 @@ qualification outcome directly without executing.
 
 ## Dependencies and integration order
 
+- **Prerequisite (harness lane):** task 0017 owns the manifest/runner schema
+  extension, the `unsupported` verdict, the v0.18 corpus pin and coverage
+  annotations, and the compile-time case lane; this task consumes them and
+  owns runtime execution.
+
 Depends on task 0012 (real native I/O execution is needed for the
 run-verdict cases). Cross-links with task 0015 on the shared
 `support.rs` harness extension — land whichever lands first; the other
