@@ -15,12 +15,34 @@
 //! one operation each. This module answers the different question the plan
 //! actually asks: whether the shape survives on the whole first real program,
 //! after the host optimizer has inlined every wrapper and rearranged the
-//! control flow of a five-declaration, seven-hundred-line command. Two levels
+//! control flow of a seven-declaration, seven-hundred-line command. Two levels
 //! of evidence appear here for that reason:
 //!
 //! 1. the emitted body of each [QUAL-1]-selected approved implementation, in
 //!    `wfgrep`'s own module — what the compiler emits for the row; and
-//! 2. `wfgrep`'s optimized `main` — what survives of it in a real program.
+//! 2. `wfgrep`'s own emitted code — what survives of it in a real program.
+//!
+//! Level 2 read `main` alone until task 0021, because until then every one of
+//! `wfgrep`'s helpers was inlined into it. Borrow-mode parameters of system
+//! types then let the five copies of the write-until-accepted loop become one
+//! `publish_all`, and that function costs 245 against the host inliner's 225
+//! threshold at the shipped level, so it stays out of line at four of its five
+//! call sites. [QUAL-3]'s inlining condition is scoped to the *compiler
+//! wrapper* of an approved implementation — still inlined at every site, and
+//! still asserted below — and places no such requirement on an ordinary
+//! Whitefoot function. So level 2 now reads the program's own code: `main`
+//! plus whichever declared functions survive as separate definitions.
+//!
+//! Task 0016's closure recorded the rule that governs that move: transfer-site
+//! counts equal *source*-site counts, and a change in what the optimizer does
+//! with a site requires re-deriving the gate from source, never relaxing it.
+//! The one row this touches is the publication count. `wfgrep` used to have
+//! five source `write_once` sites and now has one, reached from five source
+//! publications, so the count that was five emitted `@write` sites is now five
+//! publication entries — two naming standard output and three naming standard
+//! error, exactly as before — counted in whichever of the two forms the
+//! inliner left each site in. Nothing became an inequality and no row lost its
+//! claim.
 //!
 //! The complete §9.1 row inventory, and where each row's evidence lives, so
 //! that what is machine-checked here is not confused with what is not:
@@ -81,20 +103,117 @@ fn optimized() -> &'static str {
     MODULE.get_or_init(|| host_optimized_module(emitted()))
 }
 
-/// `wfgrep`'s optimized entry: the whole program, every wrapper inlined.
+/// `wfgrep`'s optimized entry.
 fn entry() -> &'static str {
     optimized_main(optimized())
 }
 
-/// The emitted body of one approved implementation, by symbol.
+/// Every function `wfgrep` declares, in source order.
+const DECLARED_FUNCTIONS: &[&str] = &[
+    "io_class",
+    "append_slice",
+    "copy_range",
+    "line_matches",
+    "publish_all",
+    "report_failure",
+];
+
+/// `wfgrep`'s own emitted code, function by function: the optimized entry
+/// plus every declared function the host inliner left standing.
+///
+/// Value names are function-local, so any check that reads a named result
+/// walks this list rather than the concatenation below.
+fn program_functions() -> &'static [&'static str] {
+    static FUNCTIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    FUNCTIONS.get_or_init(|| {
+        let module = optimized();
+        let mut functions = vec![entry()];
+        for name in DECLARED_FUNCTIONS {
+            let needle = format!(" @wf_{name}(");
+            if module
+                .match_indices(&needle)
+                .any(|(at, _)| definition_start(module, at).is_some())
+            {
+                functions.push(approved_row(module, &format!("wf_{name}")));
+            }
+        }
+        functions
+    })
+}
+
+/// `wfgrep`'s own emitted code as one region, for the checks that count
+/// symbols rather than read named results.
+fn program() -> &'static str {
+    static PROGRAM: OnceLock<String> = OnceLock::new();
+    PROGRAM.get_or_init(|| program_functions().join("\n"))
+}
+
+/// The start of the `define` line that introduces `symbol` at `at`, if that
+/// occurrence is a definition rather than a call.
+fn definition_start(module: &str, at: usize) -> Option<usize> {
+    let line = module[..at].rfind('\n').map_or(0, |newline| newline + 1);
+    module[line..at].starts_with("define").then_some(line)
+}
+
+/// The first argument of the call to `callee` on one printed instruction.
+///
+/// Scans at paren depth so that a `range(i32 1, 3)` annotation inside the
+/// operand does not end it early.
+fn first_argument<'line>(line: &'line str, callee: &str) -> Option<&'line str> {
+    let open = line.find(&format!("@{callee}("))? + callee.len() + 2;
+    let rest = &line[open..];
+    let mut depth = 0_usize;
+    for (offset, character) in rest.char_indices() {
+        match character {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' if depth == 0 => return Some(rest[..offset].trim()),
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => return Some(rest[..offset].trim()),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The standard descriptor each of `wfgrep`'s publications names.
+///
+/// A publication is one source `publish_all` call. In the emitted program each
+/// appears in exactly one of two forms: a call into the out-of-line
+/// `publish_all`, whose first argument is the descriptor, or — where the host
+/// inliner expanded that site — the `@write` of the expanded copy, carrying
+/// the same literal descriptor. The out-of-line body's own `@write` names the
+/// parameter instead of a literal and is not a publication site; it is the one
+/// transfer the one source `write_once` site emits.
+fn publications() -> Vec<u32> {
+    let mut descriptors = Vec::new();
+    for line in program().lines() {
+        let Some(target) = call_target(line) else {
+            continue;
+        };
+        let argument = match target {
+            "wf_publish_all" | "write" => first_argument(line, target),
+            _ => None,
+        };
+        let Some(argument) = argument else {
+            continue;
+        };
+        if let Some(descriptor) = argument
+            .split_whitespace()
+            .next_back()
+            .and_then(|token| token.parse::<u32>().ok())
+        {
+            descriptors.push(descriptor);
+        }
+    }
+    descriptors
+}
+
+/// The emitted body of one definition, by symbol.
 fn approved_row<'module>(module: &'module str, symbol: &str) -> &'module str {
     let needle = format!(" @{symbol}(");
     let start = module
         .match_indices(&needle)
-        .find_map(|(at, _)| {
-            let line = module[..at].rfind('\n').map_or(0, |newline| newline + 1);
-            module[line..at].starts_with("define").then_some(line)
-        })
+        .find_map(|(at, _)| definition_start(module, at))
         .unwrap_or_else(|| panic!("the module must define {symbol}"));
     let end = module[start..]
         .find("\n}\n")
@@ -221,7 +340,7 @@ fn target_selection_is_one_link_time_table_decision() {
     assert!(!module.contains("@wf.sys.table"));
     assert!(!module.contains("@wf.sys.target.tag"));
     // And nothing selects an implementation at run time in the finished
-    // program: every call in the entry names a symbol.
+    // program: every call the program makes names a symbol.
     for indirect in [
         "call i64 %",
         "call i32 %",
@@ -230,7 +349,7 @@ fn target_selection_is_one_link_time_table_decision() {
         "call ptr %",
     ] {
         assert!(
-            !entry().contains(indirect),
+            !program().contains(indirect),
             "an indirect call would be a run-time selection:\n{indirect}"
         );
     }
@@ -263,7 +382,7 @@ fn an_argument_lease_allocates_nothing_and_copies_no_byte() {
     }
     // In the finished program the lease is gone as a call entirely: three
     // source `arg_get` sites leave three length passes and no other trace.
-    assert_eq!(entry().matches("@strlen(").count(), 3);
+    assert_eq!(program().matches("@strlen(").count(), 3);
 }
 
 /// §9.1 rows 3 and 4 — the raw byte route is a length pass plus a
@@ -309,9 +428,12 @@ fn relative_path_retypes_the_lease_without_allocating() {
     assert!(row.contains("%embedded = call ptr @memchr(ptr %text, i32 0, i64 %length)"));
     assert_eq!(calls(row), 1, "validation is one scan:\n{row}");
     // Success carries the *same* lease value out under the new type. Nothing
-    // is allocated, nothing is copied, and no native unit is exposed.
+    // is allocated, nothing is copied, and no native unit is exposed. The
+    // outcome type's ordinal is the module's own numbering, which every
+    // declared type in the program shifts, so only the retyping itself is
+    // pinned here.
     assert!(
-        row.contains("%ok = insertvalue %wf.t16 %ok.tag, { ptr, i64 } %value, 1"),
+        row.contains("%ok = insertvalue %wf.t") && row.contains("%ok.tag, { ptr, i64 } %value, 1"),
         "success must retype the consumed lease itself:\n{row}"
     );
     for forbidden in ["@calloc", "@malloc", "@realloc", "memcpy", "memmove"] {
@@ -347,11 +469,10 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
     // In the finished program the single source `open_read` site is one direct
     // `openat` against the bound `DirectoryRead`, and the only other open is
     // the bootstrap's one-time acquisition of the initial directory [QUAL-3].
-    let program = entry();
-    assert_eq!(program.matches("@openat(").count(), 1);
-    assert_eq!(program.matches("@open(").count(), 1);
-    assert!(program.contains("@open(ptr nonnull @.wf.sys.working.directory"));
-    let opening = basic_block(program, "@openat(");
+    assert_eq!(program().matches("@openat(").count(), 1);
+    assert_eq!(program().matches("@open(").count(), 1);
+    assert!(program().contains("@open(ptr nonnull @.wf.sys.working.directory"));
+    let opening = basic_block(entry(), "@openat(");
     assert_eq!(
         calls(opening),
         1,
@@ -421,39 +542,58 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // failure arms reach.
     assert!(module.contains("@wf.sys.io.error(i32 %code, i8 %origin) noinline cold"));
 
-    let program = entry();
+    let program = program();
     // No wrapper residue: qualification requires the compiler wrapper to be
     // inlined [QUAL-3], and in the finished program not one survives.
     assert!(
         !program.contains("@wf.sys."),
-        "every approved-implementation wrapper must be inlined into the entry"
+        "every approved-implementation wrapper must be inlined into the program"
     );
     // The cold mapper is not merely marked cold: the optimizer moved every
-    // one of its call sites out of the entry into outlined cold functions, so
-    // the thirty-class mapping is unreachable on a successful transfer.
+    // one of its call sites out of the program's own code into outlined cold
+    // functions, so the thirty-class mapping is unreachable on a successful
+    // transfer.
     assert!(!program.contains("@wf.sys.io.error("));
     assert!(
         optimized().matches("@wf.sys.io.error(").count() > 1,
         "the mapper must still exist for the failure paths"
     );
-    // One host call site per source operation: one `read_once`, five
-    // `write_once`, two of them to standard output and three to standard
-    // error, which are separate owners and stay separate descriptors.
+    // One host transfer per source operation. `wfgrep` writes `read_once` and
+    // `write_once` once each, so the emitted program holds one `@read` and one
+    // `@write` for each surviving copy of `publish_all`'s body: its out-of-line
+    // definition plus every publication the inliner expanded in place.
     assert_eq!(program.matches("@read(").count(), 1);
-    assert_eq!(program.matches("@write(").count(), 5);
-    assert_eq!(program.matches("@write(i32 1,").count(), 2);
-    assert_eq!(program.matches("@write(i32 2,").count(), 3);
-    // Each of those calls is alone on its path: the block that holds it
-    // computes an address and makes one call, so nothing allocates, copies the
-    // transferred bytes, takes a lock, or touches a signal disposition beside
-    // the transfer [QUAL-3].
-    for site in ["@read(", "@write(i32 1,", "@write(i32 2,"] {
-        let block = basic_block(program, site);
-        assert_eq!(
-            calls(block),
-            1,
-            "{site} must be alone on its path:\n{block}"
-        );
+    // Five publications, two of them to standard output and three to standard
+    // error, which are separate owners and stay separate descriptors.
+    let published = publications();
+    assert_eq!(published.len(), 5, "five publications: {published:?}");
+    assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
+    assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 3);
+    let out_of_line = program
+        .lines()
+        .filter(|line| call_target(line) == Some("wf_publish_all"))
+        .count();
+    assert_eq!(
+        program.matches("@write(").count(),
+        published.len() - out_of_line + usize::from(out_of_line > 0),
+        "one transfer per surviving copy of the one source write_once site"
+    );
+    // Each transfer is alone on its path: the block that holds it computes an
+    // address and makes one call, so nothing allocates, copies the transferred
+    // bytes, takes a lock, or touches a signal disposition beside the transfer
+    // [QUAL-3].
+    for function in program_functions() {
+        for site in ["@read(", "@write("] {
+            if !function.contains(site) {
+                continue;
+            }
+            let block = basic_block(function, site);
+            assert_eq!(
+                calls(block),
+                1,
+                "{site} must be alone on its path:\n{block}"
+            );
+        }
     }
     // One-time normalization belongs to the bootstrap, not to any transfer.
     assert_eq!(program.matches("@signal(").count(), 1);
@@ -485,33 +625,39 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 /// attempt, and an ambiguous close is never retried.
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
-    let program = entry();
     // Only the two closing owners close: `DirectoryRead` and `ReadFile`. The
     // program holds both, so both appear.
-    let closes = program.matches("@close(").count();
-    assert!(closes >= 2, "both closing owners must release:\n{program}");
+    let closes = program().matches("@close(").count();
+    assert!(
+        closes >= 2,
+        "both closing owners must release:\n{}",
+        program()
+    );
     // Every close result is named once and never read again. Nothing compares
     // it, branches on it, or feeds it to a retry: the diagnostic is discarded,
     // which is what makes "never retry an ambiguous fd close" a property of
-    // the emitted code rather than a convention [SYS-5].
+    // the emitted code rather than a convention [SYS-5]. Value names are
+    // function-local, so each function is read on its own.
     let mut inspected = 0;
-    for line in program.lines() {
-        let trimmed = line.trim_start();
-        if !trimmed.contains("@close(") {
-            continue;
+    for function in program_functions() {
+        for line in function.lines() {
+            let trimmed = line.trim_start();
+            if !trimmed.contains("@close(") {
+                continue;
+            }
+            let name = trimmed
+                .split_once(" = ")
+                .map(|(name, _)| name)
+                .unwrap_or_else(|| panic!("a close result must be named:\n{line}"));
+            assert_eq!(
+                function.matches(&format!("{name} ")).count()
+                    + function.matches(&format!("{name},")).count()
+                    + function.matches(&format!("{name})")).count(),
+                1,
+                "the close diagnostic must be discarded, not inspected: {name}"
+            );
+            inspected += 1;
         }
-        let name = trimmed
-            .split_once(" = ")
-            .map(|(name, _)| name)
-            .unwrap_or_else(|| panic!("a close result must be named:\n{line}"));
-        assert_eq!(
-            program.matches(&format!("{name} ")).count()
-                + program.matches(&format!("{name},")).count()
-                + program.matches(&format!("{name})")).count(),
-            1,
-            "the close diagnostic must be discarded, not inspected: {name}"
-        );
-        inspected += 1;
     }
     assert_eq!(inspected, closes);
 }
@@ -520,7 +666,7 @@ fn every_release_close_is_one_discarded_attempt() {
 /// host facility at all.
 #[test]
 fn releasing_a_value_or_an_output_reaches_no_host_facility() {
-    let program = entry();
+    let program = program();
     // `Args`, `HostString`, `RelativePath`, and `ExitStatus` release by
     // logical consume. `Output` releases by logical source detach: no close,
     // no flush, no target call. Standard output and standard error are
@@ -560,8 +706,12 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // Required checks and the mandatory diagnostic record.
             | "wf_trap" | "abort"
         ) || target.starts_with("llvm.")
-            // The optimizer's own cold outlining of the failure arms, which is
-            // where the [SYS-7] class mapper ended up.
+            // The program's own declared functions, and the optimizer's cold
+            // outlining of their failure arms, which is where the [SYS-7]
+            // class mapper ended up.
+            || DECLARED_FUNCTIONS.iter().any(|name| {
+                target == format!("wf_{name}") || target.starts_with(&format!("wf_{name}.cold."))
+            })
             || target.starts_with("main.cold.");
         assert!(
             accounted,
@@ -580,7 +730,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
 /// `research/experiments/buffer-initialization-cost/`.
 #[test]
 fn the_reused_buffers_are_initialized_once_at_allocation() {
-    let program = entry();
+    let program = program();
     // `wfgrep` asks for exactly four buffers — input, batch, pattern, and the
     // diagnostic report — and gets exactly four allocations, each carrying its
     // own initialization in the allocation itself.
@@ -604,17 +754,28 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
             "the reused buffers must not reach {forbidden}"
         );
     }
-    // All four allocations precede every host transfer in the entry, and no
-    // allocation follows one. Combined with the exact count above, that places
-    // every initialization in the program's one-time prologue rather than in
-    // the drain, the match loop, or the flush.
-    let last_allocation = program
+    // All four allocations precede every host transfer the entry reaches, and
+    // no allocation follows one. Combined with the exact count above, that
+    // places every initialization in the program's one-time prologue rather
+    // than in the drain, the match loop, or the flush. Textual order stands
+    // for program order only within one function, so this reads the entry,
+    // where every allocation is, and takes the first publication in whichever
+    // form the inliner left it.
+    let entry = entry();
+    let last_allocation = entry
         .rfind("@calloc(")
         .expect("the program allocates its buffers");
-    for transfer in ["@openat(", "@read(", "@write("] {
-        let first = program
-            .find(transfer)
-            .unwrap_or_else(|| panic!("{transfer} must appear"));
+    let publication = ["@wf_publish_all(", "@write("]
+        .iter()
+        .filter_map(|form| entry.find(form))
+        .min()
+        .expect("the entry must reach a publication");
+    for (transfer, first) in [
+        ("@openat(", entry.find("@openat(")),
+        ("@read(", entry.find("@read(")),
+        ("a publication", Some(publication)),
+    ] {
+        let first = first.unwrap_or_else(|| panic!("{transfer} must appear"));
         assert!(
             last_allocation < first,
             "every allocation must precede the first {transfer}"
