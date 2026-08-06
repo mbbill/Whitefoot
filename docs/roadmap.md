@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 8
+Revision: 9
 
 The active language authority is
 [`spec/kernel-spec-v0.18.md`](../spec/kernel-spec-v0.18.md), SHA-256
@@ -486,7 +486,12 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   and static target qualification. v0.17 itself still has a fixed no-argument
   `main`, memory-only effect rows, and no compiler system path; the only
   ordinary external-I/O call is a private trap diagnostic.
-- **Missing / next:** v0.18 activated 2026-08-06 (`9768bae`) with the exact
+- **Missing / next:** one recorded v0.18 specification defect awaits an owner
+  ruling: SYS-2 names `arg_get`'s parameter `index`, which FORM-3 excludes
+  from IDENT, so no legal `arg_get` call exists (found by task 0007's
+  implementation; sweep shows it is the sole such collision; a one-name v0.19
+  amendment is the candidate fix). Otherwise: v0.18 activated 2026-08-06
+  (`9768bae`) with the exact
   first-command-slice batch: 25 new rules, 13 modified, the Route C
   declaration domain, and the promoted native grammar. The compiler parses
   the whole surface and reports it as explicit unsupported capability;
