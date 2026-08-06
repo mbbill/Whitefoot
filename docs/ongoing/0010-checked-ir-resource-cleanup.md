@@ -1,13 +1,12 @@
 # 0010 — Checked-IR resource identities and cleanup
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 4
-of 8; task 5 of 11). Not yet claimed — claiming fills in `Status`, `Owner`,
-workspace, and `Base revision` and moves this file unchanged in number to
-`docs/ongoing/` per `docs/WORKFLOW.md`. This record authorizes nothing
-beyond Work item 2 itself; if `docs/current-plan.md` is replaced before this
-task is claimed, delete this file unless the new plan explicitly retains
-it.
+This is a temporary live coordination record, not execution authority. Move
+this same numbered record to `docs/done/` at terminal disposition.
 
+- **Status:** `IN PROGRESS`
+- **Owner / workspace:** executor agent `exec-0010` /
+  `worktree-agent-ab29c90c092ad87ec`
+- **Base revision:** `48e53f0`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, third bullet
   ("checked-IR resource identities and cleanup"). Implements dossier §11's
   last bullet ("checked IR resource/effect identities, preservation and
@@ -57,6 +56,14 @@ checked-program side and `compiler/src/lowering.rs` /
 system-resource identity variant and cleanup-edge records keyed to task
 0009's per-type release rows, reusing the existing pattern rather than
 inventing a second cleanup mechanism.
+
+## Progress
+
+- Completed: claimed at base `48e53f0` (0009 terminal, its surfaces read).
+- Current: reading the existing `buffer`/`box` cleanup representation on both
+  the checked-program and typed-IR sides before extending it.
+- Next: system-resource identity + release-action IR operations; move the
+  lowering stop to the native-emission boundary; boundary tests.
 
 ## Scope and expected touch set
 
