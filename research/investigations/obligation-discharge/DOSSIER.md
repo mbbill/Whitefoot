@@ -319,6 +319,9 @@ ledgered lifecycle, under an untrusted-writer governance frame.
    opportunities, threading-tax occurrences. Kills or grounds the design for
    two days' cost. Prediction to falsify: most bounds obligations discharge
    or reduce to one-line residuals; threading tax appears but stays shallow.
+   **EXECUTED 2026-08-06 — see `SIMULATION.md` in this directory. Both
+   predictions held (L0: 57–59% proven, every residual one line, threading
+   depth ≤ 3, zero taint false positives); the design survives round 1.**
 2. **W1 floor probe**: have a writer solve discharge errors lazily; measure
    whether if-instead-of-claim divergences are mechanically detectable
    against the reference shape.
