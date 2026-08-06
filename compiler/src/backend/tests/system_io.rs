@@ -342,7 +342,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 }
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
-const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -649,7 +649,7 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 }
 
 /// Writes nothing, then the two-byte prefix at offset one.
-const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   let bytes: own buffer<u8> = buffer_new<u8>(4_u64, 119_u8);
   set index<u8>(bytes, 1_u64) = 120_u8;
   set index<u8>(bytes, 2_u64) = 121_u8;

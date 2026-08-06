@@ -3,16 +3,15 @@
 Live coordination record. It reports how authorized work is being carried
 out; it is not authority and it cannot expand the scope it cites.
 
-- **Status:** `WAITING` — the target column and fault-injection case 1 of 4
-  are complete and green; cases 2–4 wait on task 0012's landed operation
-  rows (see Dependencies).
+- **Status:** `IN PROGRESS` — complete and green; awaiting lead review.
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, fifth bullet
   ("the deterministic test implementation"). Implements dossier §6.10's
   deterministic-test-implementation paragraph.
 - **Owner:** executor agent `exec-0013`
 - **Workspace:** branch `worktree-agent-af48fca5bfd684c6a`
-- **Base revision:** `eca0078` (`docs: close task 0011 and complete the
-  v0.19 corpus pin`)
+- **Base revision:** `0a47f54` (`docs: close task 0012; move the 0011
+  record; refresh stale labels`) — rebased from `eca0078` once task 0012
+  landed, per the integration order below.
 
 ## Goal
 
@@ -63,34 +62,37 @@ surface outside the compiler.
 
 ## Progress
 
-- Completed (`979f2c5`): the second target column. `SystemTarget` carries
-  a `HostFacilities` column; `HostFacilities::DeterministicTest` exists
-  only in a test build, so no `whitefootc` compilation can select it. The
-  `DirectoryRead`/`ReadFile` release row and the bootstrap's
-  directory-open facility now come from that column instead of a fixed
-  libc name, and native emission is byte-identical (a test asserts the
-  two modules differ by exactly the two symbol substitutions).
-  `compiler/src/backend/tests/deterministic_target.rs` holds the scripted
-  host, the link-and-run harness, and the first fault-injection case.
-- Completed: fault-injection case 1 of 4 — a release close that reports
-  `EINTR` is attempted exactly once and never retried, with a success
-  control, plus evidence that a program reaching no host object emits
-  byte-identically on both columns.
-- Current: **waiting on task 0012.** The remaining three cases (mid-stream
-  `ReadFailed`, forced short write, close/writeback-only failure) all run
-  through `read_once`/`write_once`, whose rows are `NotImplemented` on
-  both target columns and stop as `UnsupportedSystemInterface`. Writing
-  that lowering here would duplicate task 0012's written scope, create a
-  second lowering path for the same semantic IDs, and pre-empt the
-  operation-row shapes this task was told to adopt — so this task stops at
-  the boundary rather than working around it.
-- Next, once task 0012 lands: rebase; extend `HostFacilities` with its
-  directory-relative-open, read, and write facilities (the trap writer's
-  own `@write` stays native on both columns, so a forced short write can
-  never truncate a `DIAG-3` record); add the matching `wf_test_openat`/
-  `wf_test_read`/`wf_test_write` functions and their scripts; land the
-  three remaining cases. The work is mechanical — one accessor and one
-  scripted facility per operation.
+- Completed: the second target column. `SystemTarget` carries a
+  `HostFacilities` column naming the five facilities that reach a real
+  operating-system object — directory open, directory-relative file open,
+  read, write, close. `HostFacilities::DeterministicTest` exists only in a
+  test build, so no `whitefootc` compilation can select it. The release
+  row, the bootstrap's directory open, and task 0012's three I/O rows now
+  take their symbol from that column instead of a fixed libc name.
+- Completed: native emission is unchanged. A program reaching no host
+  object emits byte-identically on both columns; a program that does
+  differs by exactly the symbol substitutions, asserted directly.
+- Completed: all four fault-injection cases task 0016 consumes, each with
+  a control that shows the forced condition is what changed the outcome:
+  1. a release close reporting `EINTR` is attempted once and never
+     retried, and the discarded diagnostic changes nothing the source
+     sees;
+  2. a mid-stream `ReadFailed` after a delivering read stops the drain as
+     its own outcome, never as the end of input;
+  3. a forced short write reports exactly the accepted count as `Ok(n)`,
+     with one host attempt and no retry finishing the range;
+  4. an output sink that fails only at close is never closed by its
+     release, so the failure cannot reach the program [SYS-12].
+- Completed: the `DIAG-3` hazard is closed by construction and by test.
+  The trap-record writer keeps the native `@write` on both columns while
+  `write_once` takes the column's symbol, so a scripted short write can
+  never truncate a trap record; one module declares both.
+- Completed: rebased onto task 0012 at `0a47f54` and adopted its
+  `open_read`/`read_once`/`write_once` row shapes. The three host names it
+  had fixed in `emitter/system.rs` now come from the column; its
+  `SystemEmission.declarations` set became `BTreeSet<String>` and its
+  `@write`/`@abort` dedupe against the trap prologue is preserved.
+- Current: awaiting lead review.
 
 ## Scope and expected touch set
 
@@ -100,6 +102,12 @@ surface outside the compiler.
 - `compiler/src/backend/emitter/system.rs` (read the host facility symbol
   from the qualification instead of a fixed libc name; native emission
   byte-identical)
+- `compiler/src/backend/emitter.rs` (a test-only `emit_llvm_for_target`)
+- `compiler/src/backend/tests.rs` (one clang-plumbing path that can link
+  one host translation unit)
+- `compiler/src/backend/tests/system.rs` and `.../system_io.rs` (one
+  visibility word each, so this module reuses their pipeline helper and
+  their contract programs rather than copying them)
 - New: `compiler/src/backend/tests/deterministic_target.rs` (the fake
   host, its script, the link-and-run harness, and the contract tests)
 
@@ -113,32 +121,42 @@ and the guarantee-withholding path — both landed at `61936d6`) and task
 Both tasks touch `compiler/src/backend/qualification.rs` and
 `compiler/src/backend/emitter/system.rs`, and both are about the same
 three `open_read`/`read_once`/`write_once` operation rows: semantic
-overlap, not merely textual. Integration order is fixed: **0012 lands
-first; this task rebases onto it before landing** and adopts 0012's final
-operation-row shapes for those three operations, adding only the
-deterministic host-facility column beside them. This task changes no
-native emission.
+overlap, not merely textual. The fixed integration order — **0012 lands
+first; this task rebases onto it** — was followed: 0012 landed at
+`2af4f8b`/`0a47f54` and this branch is rebased onto it, carrying its
+commits as ancestors. This task changes no native emission.
 
 Task 0016 depends on this task for four fault-injection cases:
-close-`EINTR` (one attempt, never retried) — **available now**; and
-mid-stream `ReadFailed`, a forced short write, and an output sink that
-fails only at close or writeback — **not yet available**, each gated on
-task 0012's `read_once`/`write_once` rows.
+close-`EINTR` (one attempt, never retried), mid-stream `ReadFailed`, a
+forced short write, and an output sink that fails only at close or
+writeback. All four are available.
 
 The surface task 0016 consumes is
 `compiler/src/backend/tests/deterministic_target.rs`:
-`HostScript::new().closes(&[HostOutcome::Fail(HostError::Interrupted)])`,
-`run_on_deterministic_host(source, &script, arguments)`, and the returned
-`DeterministicRun`'s `output`, `trace()`, and `attempts(facility)`.
-`emit_for_deterministic_target(source)` returns the module for a
-codegen-shape inspection without running it.
+
+- `HostScript::new()` with `.file(bytes)`, `.reads(&[..])`,
+  `.writes(&[..])`, `.closes(&[..])`;
+- `HostOutcome::{Succeed, Accept(n), Fail(HostError)}` and
+  `HostError::{Interrupted, DeviceFailure}` — a non-negative entry caps
+  the bytes one call may transfer, so `Accept(n)` is a short read or a
+  partial write and `Succeed` is no cap;
+- `run_on_deterministic_host(source, &script, arguments)`, returning a
+  `DeterministicRun` with `output`, `trace()`, and `attempts(facility)`
+  for `"open"`, `"openat"`, `"read"`, `"write"`, and `"close"`; and
+- `emit_for_deterministic_target(source)` for a codegen-shape inspection
+  without running it.
 
 ## Validation
 
-`make -C compiler check`; unit tests proving the fake target reproduces
-each forced condition (an exact short-read count, a write failure at a
-chosen call, a close failure) with the same source-visible outcome shape
-the real target's contract requires.
+Unit tests prove the fake target reproduces each forced condition (an
+exact short-read count, a write accepted only in part, a mid-stream read
+failure, a close failure) with the same source-visible outcome shape the
+real target's contract requires. Two of the four reuse task 0012's own
+contract programs unchanged, so the same source is exercised on both
+columns.
+
+Gates green by unpiped exit code on the rebased branch:
+`make -C compiler check` (lib tests 423 → 427) and `make check`.
 
 ## Stop condition
 

@@ -22,6 +22,11 @@ use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::SystemTarget;
 
 use super::system::with_ir;
+// The same contract programs task 0012 exercises against real files and
+// pipes, re-run here under a forced condition no real object can produce on
+// demand. Sharing the source is the point: the two targets must make it
+// behave the same way for the same host answer.
+use super::system_io::{CHUNKED_READ, WRITE_PREFIX};
 use super::{compile_link_and_run, host_optimized_module};
 
 /// A host error the deterministic host can be scripted to report.
@@ -33,12 +38,16 @@ pub(super) enum HostError {
     /// An interrupted call. A close that reports it leaves the descriptor's
     /// state unknowable, which is exactly why [SYS-5] never retries after one.
     Interrupted,
+    /// A device or input/output failure: the mid-stream condition a real file
+    /// cannot be made to produce at a chosen call.
+    DeviceFailure,
 }
 
 impl HostError {
     const fn macro_name(self) -> &'static str {
         match self {
             Self::Interrupted => "EINTR",
+            Self::DeviceFailure => "EIO",
         }
     }
 }
@@ -46,25 +55,71 @@ impl HostError {
 /// One scripted outcome of one host call.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HostOutcome {
-    /// The call succeeds naturally.
+    /// The call succeeds naturally: a read delivers what remains of the
+    /// fixture up to the requested capacity, a write accepts the whole
+    /// request, a close succeeds.
     Succeed,
+    /// A transfer succeeds but the host moves at most this many bytes. On a
+    /// close this is simply success — a close transfers nothing.
+    Accept(u64),
     /// The call fails and reports this error.
     Fail(HostError),
+}
+
+impl HostOutcome {
+    /// The script entry this outcome renders as.
+    ///
+    /// A non-negative entry is a cap on the bytes the call may transfer, so
+    /// `Succeed` is the largest representable cap — no cap at all — and a
+    /// negative entry is the negated error the call reports.
+    fn entry(self) -> String {
+        match self {
+            Self::Succeed => "LONG_MAX".to_owned(),
+            Self::Accept(count) => count.to_string(),
+            Self::Fail(error) => format!("-{}", error.macro_name()),
+        }
+    }
 }
 
 /// The scripted state one deterministic-host run answers from.
 ///
 /// A script lists the outcome of each call to one facility in call order; a
-/// call past the end of a list succeeds. That is the whole configuration
-/// surface — no recorded session, no replay, and no per-test host code.
+/// call past the end of a list succeeds naturally. With one fixture file that
+/// is the whole configuration surface — no recorded session, no replay, and
+/// no per-test host code.
 #[derive(Clone, Debug, Default)]
 pub(super) struct HostScript {
+    file: Option<Vec<u8>>,
+    reads: Vec<HostOutcome>,
+    writes: Vec<HostOutcome>,
     closes: Vec<HostOutcome>,
 }
 
 impl HostScript {
     pub(super) fn new() -> Self {
         Self::default()
+    }
+
+    /// Supplies the one fixture file a directory-relative open produces.
+    ///
+    /// Without it the open reports `ENOENT`. One file is what the first
+    /// slice's contract tests need; a second would be a second arrangement,
+    /// not a general filesystem.
+    pub(super) fn file(mut self, bytes: &[u8]) -> Self {
+        self.file = Some(bytes.to_vec());
+        self
+    }
+
+    /// Scripts the outcome of each read attempt, in call order.
+    pub(super) fn reads(mut self, outcomes: &[HostOutcome]) -> Self {
+        self.reads = outcomes.to_vec();
+        self
+    }
+
+    /// Scripts the outcome of each write attempt, in call order.
+    pub(super) fn writes(mut self, outcomes: &[HostOutcome]) -> Self {
+        self.writes = outcomes.to_vec();
+        self
     }
 
     /// Scripts the outcome of each close attempt, in call order.
@@ -76,31 +131,49 @@ impl HostScript {
     /// Renders the host translation unit this script configures.
     fn unit(&self) -> String {
         let mut source = String::from(HOST_PRELUDE);
+        source.push_str(&fixture_table(self.file.as_deref()));
+        source.push_str(&outcome_table("read", &self.reads));
+        source.push_str(&outcome_table("write", &self.writes));
         source.push_str(&outcome_table("close", &self.closes));
         source.push_str(HOST_FACILITIES);
         source
     }
 }
 
-/// Renders one facility's scripted outcome table.
-///
-/// A `0` entry succeeds and a negative entry is the negated error the call
-/// reports, which is how the facilities below read it back.
-fn outcome_table(facility: &str, outcomes: &[HostOutcome]) -> String {
-    let mut rendered = String::new();
-    let mut entries = Vec::with_capacity(outcomes.len());
-    for outcome in outcomes {
-        entries.push(match outcome {
-            HostOutcome::Succeed => "0".to_owned(),
-            HostOutcome::Fail(error) => format!("-{}", error.macro_name()),
-        });
-    }
-    // A zero-length array is not valid C, so an empty script keeps one unused
-    // slot and a length of zero.
-    let length = entries.len();
+/// Renders the one fixture file a directory-relative open produces.
+fn fixture_table(file: Option<&[u8]>) -> String {
+    let present = usize::from(file.is_some());
+    let bytes = file.unwrap_or_default();
+    let length = bytes.len();
+    let mut entries = bytes
+        .iter()
+        .map(|byte| byte.to_string())
+        .collect::<Vec<_>>();
+    // A zero-length array is not valid C, so an absent or empty fixture keeps
+    // one unused slot and a length of zero.
     if entries.is_empty() {
         entries.push("0".to_owned());
     }
+    format!(
+        "static const int wf_test_file_present = {present};\n\
+         static const unsigned char wf_test_file_bytes[] = {{ {} }};\n\
+         static const unsigned long wf_test_file_length = {length};\n\
+         static unsigned long wf_test_file_cursor = 0;\n",
+        entries.join(", ")
+    )
+}
+
+/// Renders one facility's scripted outcome table.
+fn outcome_table(facility: &str, outcomes: &[HostOutcome]) -> String {
+    let mut entries = outcomes
+        .iter()
+        .map(|outcome| outcome.entry())
+        .collect::<Vec<_>>();
+    let length = entries.len();
+    if entries.is_empty() {
+        entries.push("LONG_MAX".to_owned());
+    }
+    let mut rendered = String::new();
     writeln!(
         rendered,
         "static const long wf_test_{facility}_script[] = {{ {} }};\n\
@@ -117,12 +190,16 @@ const HOST_PRELUDE: &str = "\
 /* The deterministic test host for one Whitefoot backend test. Generated by\n\
    compiler/src/backend/tests/deterministic_target.rs; never checked in. */\n\
 #include <errno.h>\n\
+#include <limits.h>\n\
 #include <stdio.h>\n\
+#include <string.h>\n\
 #include <unistd.h>\n\
 \n\
-/* The descriptor the scripted directory open produces. It is deliberately\n\
-   not a real open descriptor: nothing in the program may treat it as one. */\n\
+/* The descriptors the scripted opens produce. They are deliberately not real\n\
+   open descriptors: nothing in the program may treat them as one, and the\n\
+   two differ so a close attempt is attributable to its own resource. */\n\
 #define WF_TEST_DIRECTORY 41\n\
+#define WF_TEST_FILE 42\n\
 \n\
 ";
 
@@ -142,28 +219,97 @@ static void wf_test_trace(const char *line) {\n\
     (void)written;\n\
 }\n\
 \n\
+/* One call's scripted entry. A call past the end of its script succeeds\n\
+   naturally, which for a transfer is the largest possible cap. */\n\
 static long wf_test_step(const long *script, unsigned long scripted,\n\
                          unsigned long *calls) {\n\
     unsigned long call = *calls;\n\
     *calls = call + 1;\n\
-    return call < scripted ? script[call] : 0;\n\
+    return call < scripted ? script[call] : LONG_MAX;\n\
+}\n\
+\n\
+/* Applies a non-negative script entry as a cap on a transfer length. */\n\
+static unsigned long wf_test_capped(long entry, unsigned long length) {\n\
+    unsigned long cap = (unsigned long)entry;\n\
+    return cap < length ? cap : length;\n\
 }\n\
 \n\
 int wf_test_open(const char *path, int flags, ...) {\n\
     char line[128];\n\
     (void)path;\n\
     (void)flags;\n\
-    snprintf(line, sizeof line, \"wf_test open -> %d\\n\", WF_TEST_DIRECTORY);\n\
+    snprintf(line, sizeof line, \"wf_test open fd=%d\\n\", WF_TEST_DIRECTORY);\n\
     wf_test_trace(line);\n\
     return WF_TEST_DIRECTORY;\n\
+}\n\
+\n\
+int wf_test_openat(int directory, const char *path, int flags, ...) {\n\
+    char line[128];\n\
+    (void)path;\n\
+    (void)flags;\n\
+    if (!wf_test_file_present) {\n\
+        snprintf(line, sizeof line, \"wf_test openat root=%d -> absent\\n\",\n\
+                 directory);\n\
+        wf_test_trace(line);\n\
+        errno = ENOENT;\n\
+        return -1;\n\
+    }\n\
+    snprintf(line, sizeof line, \"wf_test openat root=%d fd=%d\\n\", directory,\n\
+             WF_TEST_FILE);\n\
+    wf_test_trace(line);\n\
+    return WF_TEST_FILE;\n\
+}\n\
+\n\
+ssize_t wf_test_read(int descriptor, void *destination, size_t capacity) {\n\
+    char line[192];\n\
+    long entry = wf_test_step(wf_test_read_script, wf_test_read_scripted,\n\
+                              &wf_test_read_calls);\n\
+    if (entry < 0) {\n\
+        snprintf(line, sizeof line, \"wf_test read fd=%d capacity=%lu -> error\\n\",\n\
+                 descriptor, (unsigned long)capacity);\n\
+        wf_test_trace(line);\n\
+        errno = (int)(-entry);\n\
+        return -1;\n\
+    }\n\
+    unsigned long remaining = wf_test_file_length - wf_test_file_cursor;\n\
+    unsigned long delivered = capacity < remaining ? capacity : remaining;\n\
+    delivered = wf_test_capped(entry, delivered);\n\
+    memcpy(destination, wf_test_file_bytes + wf_test_file_cursor, delivered);\n\
+    wf_test_file_cursor += delivered;\n\
+    snprintf(line, sizeof line,\n\
+             \"wf_test read fd=%d capacity=%lu delivered=%lu\\n\", descriptor,\n\
+             (unsigned long)capacity, delivered);\n\
+    wf_test_trace(line);\n\
+    return (ssize_t)delivered;\n\
+}\n\
+\n\
+ssize_t wf_test_write(int descriptor, const void *source, size_t count) {\n\
+    char line[192];\n\
+    long entry = wf_test_step(wf_test_write_script, wf_test_write_scripted,\n\
+                              &wf_test_write_calls);\n\
+    if (entry < 0) {\n\
+        snprintf(line, sizeof line, \"wf_test write fd=%d count=%lu -> error\\n\",\n\
+                 descriptor, (unsigned long)count);\n\
+        wf_test_trace(line);\n\
+        errno = (int)(-entry);\n\
+        return -1;\n\
+    }\n\
+    unsigned long accepted = wf_test_capped(entry, (unsigned long)count);\n\
+    /* The accepted bytes are echoed so a test can see exactly what the sink\n\
+       received, which is what a real destination would show. */\n\
+    snprintf(line, sizeof line, \"wf_test write fd=%d count=%lu accepted=%lu \"\n\
+             \"bytes=%.*s\\n\", descriptor, (unsigned long)count, accepted,\n\
+             (int)accepted, (const char *)source);\n\
+    wf_test_trace(line);\n\
+    return (ssize_t)accepted;\n\
 }\n\
 \n\
 int wf_test_close(int descriptor) {\n\
     char line[128];\n\
     long outcome = wf_test_step(wf_test_close_script, wf_test_close_scripted,\n\
                                 &wf_test_close_calls);\n\
-    snprintf(line, sizeof line, \"wf_test close fd=%d outcome=%ld\\n\", descriptor,\n\
-             outcome);\n\
+    snprintf(line, sizeof line, \"wf_test close fd=%d outcome=%s\\n\", descriptor,\n\
+             outcome < 0 ? \"error\" : \"ok\");\n\
     wf_test_trace(line);\n\
     if (outcome < 0) {\n\
         errno = (int)(-outcome);\n\
@@ -237,6 +383,37 @@ const READS_ITS_ARGUMENTS: &[u8] =
       }
       Err(error: overflowed) => {
         return exit_status(code: 200_u8);
+      }
+    }
+  }
+}
+"#;
+
+/// Publishes three bytes to standard output and returns the accepted count,
+/// while also binding the initial working directory so exactly one resource
+/// in the program releases with a close.
+const WRITES_THEN_RELEASES_BOTH: &[u8] =
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+  let bytes: own buffer<u8> = buffer_new<u8>(3_u64, 65_u8);
+  set index<u8>(bytes, 1_u64) = 66_u8;
+  set index<u8>(bytes, 2_u64) = 67_u8;
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 3_u64) {
+        Ok(value: written) => {
+          let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(written);
+          match narrowed {
+            Ok(value: code) => {
+              return exit_status(code: code);
+            }
+            Err(error: overflowed) => {
+              return exit_status(code: 200_u8);
+            }
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 211_u8);
+        }
       }
     }
   }
@@ -347,7 +524,7 @@ fn a_release_close_that_fails_is_attempted_once_and_never_retried() {
     // The descriptor closed is the one the scripted directory open produced,
     // and the attempt reported a failure: the value itself is the selected
     // host's own `EINTR`, not a number this test fixes.
-    assert!(run.trace().contains("wf_test close fd=41 outcome=-"));
+    assert!(run.trace().contains("wf_test close fd=41 outcome=error"));
     // The failed release changes nothing the source can observe: the command
     // still produces its own status.
     assert_eq!(run.output.status.code(), Some(0));
@@ -364,7 +541,7 @@ fn a_release_close_that_succeeds_is_also_exactly_one_attempt() {
     );
 
     assert_eq!(run.attempts("close"), 1);
-    assert!(run.trace().contains("wf_test close fd=41 outcome=0"));
+    assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
     assert_eq!(run.output.status.code(), Some(0));
 }
 
@@ -376,4 +553,153 @@ fn the_deterministic_release_keeps_the_native_optimized_shape() {
     let optimized = host_optimized_module(&emit_for_deterministic_target(RELEASES_ONE_DIRECTORY));
     assert_eq!(optimized.matches("@wf_test_close(").count(), 2);
     assert!(!optimized.contains("@malloc"));
+}
+
+#[test]
+fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
+    // A file that reads normally and then fails part way through cannot be
+    // arranged on a real filesystem at a chosen call, so this is the
+    // deterministic target's case. The first attempt delivers three bytes and
+    // the second reports a device failure; the drain must observe
+    // `ReadBytes(3)` then `ReadFailed`, not a silent end of input [SYS-8,
+    // SYS-11].
+    let run = run_on_deterministic_host(
+        CHUNKED_READ,
+        &HostScript::new().file(b"abcdefgh").reads(&[
+            HostOutcome::Succeed,
+            HostOutcome::Fail(HostError::DeviceFailure),
+        ]),
+        &[b"eight.txt"],
+    );
+
+    // 202 is the program's own `ReadFailed` status: the failure reached
+    // source as its own outcome and was never reported as the end of input.
+    assert_eq!(
+        run.output.status.code(),
+        Some(202),
+        "trace was {:?}",
+        run.trace()
+    );
+    // Exactly two attempts: the failing one ended the drain and nothing
+    // retried it.
+    assert_eq!(run.attempts("read"), 2);
+    assert!(
+        run.trace()
+            .contains("wf_test read fd=42 capacity=3 delivered=3")
+    );
+    assert!(
+        run.trace()
+            .contains("wf_test read fd=42 capacity=3 -> error")
+    );
+
+    // The control: the same program over the same fixture with nothing
+    // scripted drains the file to its end and reports its own total.
+    let clean = run_on_deterministic_host(
+        CHUNKED_READ,
+        &HostScript::new().file(b"abcdefgh"),
+        &[b"eight.txt"],
+    );
+    assert_eq!(clean.output.status.code(), Some(83));
+    assert_eq!(clean.attempts("read"), 4);
+}
+
+#[test]
+fn a_forced_short_write_reports_exactly_the_count_the_host_accepted() {
+    // A destination that accepts only part of one request is not something a
+    // regular file or a pipe can be made to do on demand at a chosen call.
+    // [SYS-8] makes one `write_once` at most one host attempt, so a partial
+    // acceptance is `Ok(n)` with the exact accepted count — never a silent
+    // loop that finishes the range, and never an error.
+    let run = run_on_deterministic_host(
+        WRITE_PREFIX,
+        // The program's first request is zero-length and issues no host
+        // transfer, so the first scripted entry meets its second request of
+        // two bytes.
+        &HostScript::new().writes(&[HostOutcome::Accept(1)]),
+        &[],
+    );
+
+    // The program returns the reported count as its status: one, not two.
+    assert_eq!(
+        run.output.status.code(),
+        Some(1),
+        "trace was {:?}",
+        run.trace()
+    );
+    // One request, one attempt, and exactly the accepted prefix reached the
+    // sink: the unaccepted byte was not written by a retry.
+    assert_eq!(run.attempts("write"), 1);
+    assert!(
+        run.trace()
+            .contains("wf_test write fd=1 count=2 accepted=1 bytes=x")
+    );
+
+    // The control: with nothing scripted the same request is accepted whole
+    // and the same program reports two.
+    let whole = run_on_deterministic_host(WRITE_PREFIX, &HostScript::new(), &[]);
+    assert_eq!(whole.output.status.code(), Some(2));
+    assert!(
+        whole
+            .trace()
+            .contains("wf_test write fd=1 count=2 accepted=2 bytes=xy")
+    );
+}
+
+#[test]
+fn an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release() {
+    // [SYS-12]: releasing an `Output` is a logical source detach — no close,
+    // no flush, no target call. A sink whose failure appears only at close or
+    // writeback therefore cannot reach the program: every accepted write
+    // stands and the command still produces its own status. The scripted
+    // close proves the point by never firing for the output.
+    let run = run_on_deterministic_host(
+        WRITES_THEN_RELEASES_BOTH,
+        &HostScript::new()
+            // Every close this run makes fails. Only the directory's release
+            // closes anything, so only it can consume an entry.
+            .closes(&[
+                HostOutcome::Fail(HostError::DeviceFailure),
+                HostOutcome::Fail(HostError::DeviceFailure),
+            ]),
+        &[],
+    );
+
+    assert_eq!(
+        run.output.status.code(),
+        Some(3),
+        "trace was {:?}",
+        run.trace()
+    );
+    // The write was accepted in full and observed as such by the program.
+    assert!(
+        run.trace()
+            .contains("wf_test write fd=1 count=3 accepted=3 bytes=ABC")
+    );
+    // Exactly one close attempt, and it is the `DirectoryRead`'s. Neither
+    // `Output` owner closed its descriptor, so the sink's close-time failure
+    // is outside what any release can observe.
+    assert_eq!(run.attempts("close"), 1);
+    assert!(run.trace().contains("wf_test close fd=41 outcome=error"));
+    assert!(!run.trace().contains("wf_test close fd=1 "));
+    assert!(!run.trace().contains("wf_test close fd=2 "));
+}
+
+#[test]
+fn the_trap_record_writer_stays_native_on_the_deterministic_target() {
+    // The mandatory [DIAG-3] record and `write_once` both reach a write
+    // facility, but only the operation row has a target column: the record
+    // writer is the compiler's own and must never be scriptable, or a forced
+    // short write could truncate a trap record. One module declares both.
+    let module = emit_for_deterministic_target(WRITE_PREFIX);
+    assert!(module.contains("declare i64 @wf_test_write(i32, ptr, i64)"));
+    assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
+    assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
+    assert!(module.contains("%accepted = call i64 @wf_test_write(i32 %output"));
+
+    // And the native target still declares exactly one `@write` for both.
+    let native = super::compile(WRITE_PREFIX);
+    assert_eq!(
+        native.matches("declare i64 @write(i32, ptr, i64)").count(),
+        1
+    );
 }
