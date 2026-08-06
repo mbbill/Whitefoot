@@ -112,6 +112,8 @@ pub enum CompilationStage {
     Lowering,
     /// Selected-target representability and target-domain discharge.
     TargetLayout,
+    /// [QUAL-1] system-interface target qualification.
+    TargetQualification,
     /// Conservative textual LLVM emission.
     Backend,
 }
@@ -133,6 +135,10 @@ pub enum CompilationFailureKind {
     Lowering,
     /// A statically materialized object is not representable on the selected target.
     TargetLayout,
+    /// The selected target has no approved implementation of a system
+    /// operation the program uses, or does not supply a guarantee that
+    /// operation's record requires [QUAL-1, QUAL-2].
+    TargetQualification,
     /// LLVM emission failed internally.
     Backend,
 }
@@ -401,6 +407,13 @@ pub fn compile(
                     CompilationStage::TargetLayout,
                     CompilationFailureKind::TargetLayout,
                 ),
+                // A qualification stop is a target failure like a layout
+                // stop: it is not a source-language rejection and cites no
+                // language rule [DIAG-1].
+                BackendFailure::TargetQualification(_) => (
+                    CompilationStage::TargetQualification,
+                    CompilationFailureKind::TargetQualification,
+                ),
                 // An unimplemented system-interface qualification and
                 // emission is an explicit unsupported compiler capability,
                 // not an internal backend failure.
@@ -460,39 +473,47 @@ mod tests {
     }
 
     #[test]
-    fn system_interface_constructs_stop_as_explicit_unsupported_capability() {
+    fn system_interface_constructs_compile_and_native_io_remains_unsupported() {
         // The canonical FN-7 command-entry header with a conforming body
         // and exact row: the entry admits, its system calls type against
         // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
         // `external, blocks` from the DirectoryRead input's compiler-derived
-        // close attempt on the return edge. Target-independent lowering now
-        // carries the resource identities, the [SYS-5] release actions, and
-        // the entry facts, so the remaining system boundary is the backend:
-        // [QUAL-1] target qualification and native emission, which stop as
-        // an explicit unsupported capability.
+        // close attempt on the return edge. [QUAL-1] qualification now maps
+        // each identity to an approved implementation and the [QUAL-3]
+        // bootstrap supplies the standard inputs, so the program emits.
         let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
-        let failure = compile(
+        let llvm = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
         )
-        .expect_err("an accepted system program must stop at emission as unsupported");
-        assert_eq!(failure.stage(), CompilationStage::Backend);
-        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
-        assert_eq!(failure.rule_id(), None);
-        assert!(failure.detail().contains("UnsupportedSystemInterface"));
+        .expect("a qualified command program must emit");
+        assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
 
-        // A system-admitted unit whose entry declares no standard input
-        // stops at the same boundary: the stop is over the IR's own system
-        // facts, not over the entry's parameter list.
+        // A system-admitted unit whose entry declares no standard input emits
+        // the same bootstrap shape: the qualification is over the IR's own
+        // system facts, not over the entry's parameter list.
         let no_inputs =
             b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-        let failure = compile(
+        let llvm = compile(
             &[SourceInput::new("entry.wf", no_inputs)],
             CompilerLimits::default(),
         )
-        .expect_err("a command entry must stop at emission as unsupported");
+        .expect("a command entry selecting no input must emit");
+        assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
+
+        // `open_read`, `read_once`, and `write_once` are qualified operations
+        // whose native emission is not implemented; the stop stays an explicit
+        // unsupported compiler capability, never a source rejection and never
+        // a target-qualification verdict.
+        let writing =b"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let failure = compile(
+            &[SourceInput::new("entry.wf", writing)],
+            CompilerLimits::default(),
+        )
+        .expect_err("native I/O emission is not implemented yet");
         assert_eq!(failure.stage(), CompilationStage::Backend);
         assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
+        assert_eq!(failure.rule_id(), None);
         assert!(failure.detail().contains("UnsupportedSystemInterface"));
 
         // A `command` entry whose written result is not `own ExitStatus` is a

@@ -576,9 +576,14 @@ pub enum IrOperation {
     },
     /// One call to a [SYS-2] system operation, by semantic identity, with its
     /// value arguments in declared parameter order.
+    ///
+    /// `trap` is present exactly when the [SYS-2] row classifies the operation
+    /// `traps`; it is the [DIAG-3] record for the [SYS-8] range validation the
+    /// approved implementation performs before any transfer, read, or write.
     SystemCall {
         operation: IrSystemOperation,
         arguments: Vec<IrValueId>,
+        trap: Option<IrTrapSite>,
     },
     Integer {
         operation: IrIntegerOperation,

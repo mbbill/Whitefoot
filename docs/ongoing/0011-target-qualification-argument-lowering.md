@@ -73,10 +73,59 @@ actually construct `Args` and materialize the command bootstrap (including
 the SIGPIPE normalization), and to map a returned `ExitStatus` to the
 wrapper's `i32` result.
 
+## Progress
+
+Complete, awaiting lead review. Both gates green by unpiped exit code
+(`make -C compiler check`, `make check`); lib tests 391 → 404.
+
+- The `(specification version, semantic ID, target, program kind)` table,
+  the parallel resource rows that fix each opaque type's representation and
+  release code, and the `QUAL-2` guarantee checks live in
+  `compiler/src/backend/qualification.rs`, consulted once before layout and
+  emission. A qualification stop is `BackendFailure::TargetQualification`
+  →`CompilationStage::TargetQualification` /
+  `CompilationFailureKind::TargetQualification`, citing no language rule.
+- Approved implementations are emitted as `alwaysinline` private wrappers
+  (`@wf.sys.<operation>.v1`) with one direct call per use site, plus a
+  `; QUAL-1 ...` record in the module naming each resolved row.
+  `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`,
+  `host_utf8_len`, `host_copy_utf8`, `relative_path`, and `exit_status`
+  are implemented; the shared complete UTF-8 validator serves both text-route
+  operations.
+- The `command` bootstrap establishes the `QUAL-2` backing from the native
+  argument vector (no snapshot, no copy), installs the ignored
+  write-to-closed-pipe disposition once before entry, opens the initial
+  working directory for `command.cwd`, supplies the two `Output`
+  descriptors, invokes the entry once, and maps the returned `ExitStatus`
+  to the process status exactly. A start failure exits `71` before entry
+  and produces no `ExitStatus`.
+- Releases: logical consume and source detach emit no code; `DirectoryRead`
+  and `ReadFile` emit exactly one direct `@close`. The checked program's
+  `SYS-5` record is cross-checked against the table row.
+
+Three decisions the lead should confirm:
+
+1. `SYS-8`'s range trap needed a per-site `DIAG-3` record that
+   `IrOperation::SystemCall` did not carry, so the checked program and IR
+   now carry `trap: Option<TrapSite>` for a `traps` row. Its `rule_id` is
+   `SYS-8` (the rule stating the failing runtime condition) and its
+   `node_path` is the operation `call`, matching `DIAG-3`'s
+   table-operation-contract-check convention. This reaches outside the
+   listed touch set into `semantic/` and `lowering/`; 0012's `read_once`
+   and `write_once` inherit it.
+2. `command.args` exposes the complete native argument vector, so position
+   0 is the invoked name. Dropping it would discard an argument the target
+   supplied, which `HOST-1` forbids; nothing in the specification fixes the
+   other reading. Task 0014's runtime lane depends on this.
+3. The qualification table is a sibling module rather than a submodule of
+   `target.rs`: `compiler/src/backend/target/` is swallowed by
+   `.gitignore`'s `target/` rule, so a file there is never committed.
+
 ## Scope and expected touch set
 
-- `compiler/src/backend/target.rs` (qualification table, target-guarantee
-  check)
+- `compiler/src/backend/qualification.rs` (new: qualification table,
+  target-guarantee check) and `compiler/src/backend/target.rs` (resource
+  layout from the qualified representation)
 - `compiler/src/backend/emitter.rs` (bootstrap, `main` wrapper argument
   construction, `ExitStatus`-to-int mapping)
 - New: `compiler/src/backend/emitter/system.rs` (or similarly named
@@ -86,6 +135,11 @@ wrapper's `i32` result.
 - Read-only precedent: `compiler/src/backend/emitter/buffer.rs`, the
   closest existing example of a runtime-length value's checked-operation
   lowering.
+- Beyond the planned set, and required by the `SYS-8` trap record:
+  `compiler/src/semantic/model.rs`,
+  `compiler/src/semantic/check/expressions/calls/system.rs`,
+  `compiler/src/lowering.rs`, `compiler/src/lowering/builder.rs`, and
+  `compiler/src/driver.rs` for the qualification-failure class.
 
 ## Dependencies and integration order
 
@@ -111,3 +165,15 @@ lands only through lead review per the executor lane in
 The qualification table and argument/path lowering exist, satisfy the
 structural cost inspection above, and a command program can read its own
 arguments and construct a `RelativePath`; `make -C compiler check` green.
+
+Met. Thirteen tests in `compiler/src/backend/tests/system.rs` carry the
+evidence, including the optimized-module inspection of the lease path, the
+non-UTF-8 round trip, and a probe target that withholds each `QUAL-2`
+guarantee. Five conformance cases whose reason named this task
+(`accept-sysentry-command-all-inputs`,
+`accept-sysentry-command-no-inputs`, `accept-sysrelease-return-unit-declared`,
+`accept-syseff-conditional-release-union`,
+`accept-syseff-pure-immutable-only`) moved from `pending` to `runnable`
+after each was compiled, linked, and run; their `expect` and `doc` are
+byte-unchanged. `open_read`, `read_once`, and `write_once` remain the one
+explicit `UnsupportedSystemInterface` stop, for task 0012.

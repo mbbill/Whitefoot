@@ -6,6 +6,7 @@ use crate::{
 };
 
 use super::emitter::trap_record;
+use super::qualification::Qualification;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TargetObject {
@@ -102,10 +103,12 @@ struct Layout {
 
 pub(super) fn validate_program(
     target: TargetLayout,
+    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<(), TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
+        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
@@ -288,7 +291,10 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
             | IrOperation::BufferFill { trap, .. }
             | IrOperation::BufferIndex { trap, .. }
             | IrOperation::SliceIndex { trap, .. }
-            | IrOperation::BufferBoundsCheck { trap, .. } => Some(trap),
+            | IrOperation::BufferBoundsCheck { trap, .. }
+            | IrOperation::SystemCall {
+                trap: Some(trap), ..
+            } => Some(trap),
             _ => None,
         },
         IrInstruction::StoreBuffer { .. }
@@ -299,6 +305,7 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
 
 struct LayoutComputer<'program, 'classified, 'lexed, 'source> {
     target: TargetLayout,
+    qualification: &'program Qualification,
     program: &'program IrProgram<'classified, 'lexed, 'source>,
     nominal: HashMap<IrNominalId, Layout>,
     visiting: HashSet<IrNominalId>,
@@ -369,6 +376,23 @@ impl LayoutComputer<'_, '_, '_, '_> {
             .program
             .nominal(id)
             .ok_or(TargetLayoutFailure::InvalidIr)?;
+        // [QUAL-1] fixes an opaque system resource's representation in its
+        // qualification record, which qualification resolved before layout
+        // ran, so the selected target has an exact size and alignment for it.
+        if let IrNominalKind::SystemResource(contract) = nominal.kind() {
+            let representation = self
+                .qualification
+                .resource(contract.resource)
+                .map_err(|_| TargetLayoutFailure::InvalidIr)?
+                .representation();
+            let layout = Layout {
+                size: representation.size(),
+                align: representation.align(),
+            };
+            self.visiting.remove(&id);
+            self.nominal.insert(id, layout);
+            return Ok(layout);
+        }
         let layout = if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
             Layout { size: 8, align: 8 }
         } else if nominal.is_tag_only_enum() {
@@ -398,18 +422,11 @@ impl LayoutComputer<'_, '_, '_, '_> {
                             .map(|field| field.ty()),
                     );
                 }
-                IrNominalKind::Box { .. } => return Err(TargetLayoutFailure::InvalidIr),
-                // [QUAL-1] fixes an opaque system resource's representation in
-                // its qualification record, which this compiler does not
-                // supply yet, so the selected target cannot represent the
-                // object. Emission stops such a program as an explicit
-                // unsupported capability before layout runs; this arm is the
-                // defensive path, and like every other layout stop it cites
-                // no language rule.
-                IrNominalKind::SystemResource(_) => {
-                    return Err(TargetLayoutFailure::Unrepresentable(
-                        TargetObject::Representation,
-                    ));
+                // A box has its own layout above, and an opaque system
+                // resource returned with its qualified representation before
+                // this match; neither reaches the field walk.
+                IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+                    return Err(TargetLayoutFailure::InvalidIr);
                 }
             }
             self.struct_layout(fields)?

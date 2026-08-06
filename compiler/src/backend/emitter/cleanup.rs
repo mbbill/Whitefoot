@@ -1,13 +1,15 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
+use super::super::qualification::Qualification;
 use super::{
     BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol,
-    variant_field_base,
+    system, variant_field_base,
 };
 
 pub(super) fn emit_resource_drop_helpers(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
     for nominal in program.nominals() {
@@ -57,7 +59,7 @@ pub(super) fn emit_resource_drop_helpers(
                     });
                 }
             }
-            emit_cleanup_jobs(program, &mut output, &mut temporary, jobs)?;
+            emit_cleanup_jobs(program, qualification, &mut output, &mut temporary, jobs)?;
             output.push_str("  br label %done\n");
         }
 
@@ -140,6 +142,7 @@ enum CleanupJob {
 
 pub(super) fn emit_value_cleanup(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     output: &mut String,
     temporary: &mut u32,
     ty: IrType,
@@ -147,6 +150,7 @@ pub(super) fn emit_value_cleanup(
 ) -> Result<(), BackendFailure> {
     emit_cleanup_jobs(
         program,
+        qualification,
         output,
         temporary,
         vec![CleanupJob::Value { ty, operand }],
@@ -155,6 +159,7 @@ pub(super) fn emit_value_cleanup(
 
 fn emit_cleanup_jobs(
     program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
     output: &mut String,
     temporary: &mut u32,
     mut jobs: Vec<CleanupJob>,
@@ -219,11 +224,17 @@ fn emit_cleanup_jobs(
                                 .map_err(|_| BackendFailure::TextEmission)?;
                             }
                         }
-                        // Emitting a [SYS-5] release action needs the
-                        // qualified native implementation; `emit_llvm` stops
-                        // such a program before reaching here.
-                        IrNominalKind::SystemResource(_) => {
-                            return Err(BackendFailure::UnsupportedSystemInterface);
+                        // A resource reached through owned content releases
+                        // with its own type's action, exactly as a directly
+                        // released owner does [SYS-5].
+                        IrNominalKind::SystemResource(contract) => {
+                            system::emit_resource_release(
+                                qualification,
+                                output,
+                                temporary,
+                                *contract,
+                                &operand,
+                            )?;
                         }
                         IrNominalKind::Box { referent } => {
                             let loaded = next_temporary(temporary)?;

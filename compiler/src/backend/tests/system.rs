@@ -1,0 +1,592 @@
+//! Emitted-shape and behaviour evidence for the qualified [SYS-2] system
+//! interface: the [QUAL-1] qualification table, the [QUAL-3] command
+//! bootstrap, and the argument/path operation cluster.
+//!
+//! The cost-shape assertions read the module the host optimizer leaves, which
+//! is what [QUAL-3] says establishes the required emitted shape: inspection of
+//! emitted code and symbols, not a machine-checked language judgment.
+
+use crate::backend::qualification::{
+    CodeUnitFamily, QualificationFailure, SystemTarget, qualify_program,
+};
+use crate::{
+    ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
+    ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, TerminalLimits,
+    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, finalize, lex,
+    lower_checked, parse, resolve,
+};
+
+use super::{
+    CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,
+    compile_and_run_with, host_optimized_module, optimized_main,
+};
+
+fn with_ir<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        &IrProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("system test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("system test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("system test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("system test source must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("system test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("system test source must resolve");
+    };
+    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
+        panic!("system test source must check");
+    };
+    let ir = lower_checked(*checked).expect("checked system program must lower");
+    run(&ir)
+}
+
+/// Reads one argument's bytes and returns their wrapping sum as the status.
+const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u64 allocates(heap), traps {
+  region 'v {
+    let length: own u64 = host_bytes_len<'v>(value: &'v value);
+    let bytes: own buffer<u8> = buffer_new<u8>(length, 0_u8);
+    region 'd {
+      let copied: own Result<u64, CopyError> = host_copy_bytes<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, offset: 0_u64, capacity: length);
+      match move copied {
+        Ok(value: count) => {
+        }
+        Err(error: problem) => {
+          check False() else trap "exact capacity must fit";
+        }
+      }
+    }
+    let total: own u64 = 0_u64;
+    let cursor: own u64 = 0_u64;
+    loop @sum {
+      let done: own Bool = ieq<u64>(cursor, length);
+      match done {
+        True() => {
+          break @sum;
+        }
+        False() => {
+        }
+      }
+      let byte: own u8 = index<u8>(bytes, cursor);
+      let widened: own u64 = cvt<u8, u64>(byte);
+      set total = iadd.wrap<u64>(total, widened);
+      set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    }
+    return total;
+  }
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        let total: own u64 = checksum(value: move text);
+        let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(total);
+        match narrowed {
+          Ok(value: code) => {
+            return exit_status(code: code);
+          }
+          Err(error: overflowed) => {
+            return exit_status(code: 254_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 252_u8);
+      }
+    }
+  }
+}
+"#;
+
+#[test]
+fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
+    // Only the lease operations: no buffer, no copy, no text route.
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    let total: own u64 = args_count<'a>(args: &'a args);
+    match arg_get<'a>(args: &'a args, position: total) {
+      Ok(value: text) => {
+        region 'v {
+          let length: own u64 = host_bytes_len<'v>(value: &'v text);
+          match relative_path(value: move text) {
+            Ok(value: path) => {
+              let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(length);
+              match narrowed {
+                Ok(value: code) => {
+                  return exit_status(code: code);
+                }
+                Err(error: overflowed) => {
+                  return exit_status(code: 200_u8);
+                }
+              }
+            }
+            Err(error: rejected) => {
+              return exit_status(code: 201_u8);
+            }
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 202_u8);
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    // Selection is static for the whole build: each semantic identity resolved
+    // to exactly one private ABI symbol before emission [QUAL-1].
+    assert!(llvm.contains("; QUAL-1 semantic id 0 -> @wf.sys.args_count.v1"));
+    assert!(llvm.contains("; QUAL-1 semantic id 1 -> @wf.sys.arg_get.v1"));
+    assert!(llvm.contains("; QUAL-1 semantic id 2 -> @wf.sys.host_bytes_len.v1"));
+    assert!(llvm.contains("; QUAL-1 semantic id 6 -> @wf.sys.relative_path.v1"));
+    assert!(llvm.contains("; QUAL-1 resource HostString -> InlineLease"));
+    // No emitted program contains a runtime operation-ID switch, target tag,
+    // per-call dispatch table, or handle-table lookup [QUAL-3].
+    assert!(!llvm.contains("@wf.sys.dispatch"));
+
+    let optimized = host_optimized_module(&llvm);
+    let entry = optimized_main(&optimized);
+    // The compiler wrapper is inlined, which is the condition of
+    // qualification [QUAL-3].
+    assert!(
+        !entry.contains("@wf.sys."),
+        "no approved-implementation wrapper survives on the lease path:\n{entry}"
+    );
+    // A lease is an inline pointer and length: no allocation, no byte copy,
+    // and no handle lookup [HOST-3, SYS-9, PATH-1].
+    for forbidden in ["@malloc", "@free", "@llvm.memcpy", "@realloc"] {
+        assert!(
+            !entry.contains(forbidden),
+            "the lease path must not contain {forbidden}:\n{entry}"
+        );
+    }
+    // No indirect call: every call names a symbol.
+    assert!(
+        !entry.contains("call void %") && !entry.contains("call i64 %"),
+        "the lease path must contain no indirect call:\n{entry}"
+    );
+}
+
+#[test]
+fn a_non_utf8_argument_round_trips_its_exact_bytes() {
+    let llvm = compile(ARGUMENT_CHECKSUM);
+    // 0xff is not valid UTF-8 anywhere; the lossless route reports and copies
+    // the target's own code units with no validation [HOST-2, SYS-9].
+    let single = compile_and_run_with(&llvm, &[&[0xff]]);
+    assert_eq!(single.status.code(), Some(255));
+    // Two bytes, neither valid text on its own: 0x80 + 0x41 = 193.
+    let pair = compile_and_run_with(&llvm, &[&[0x80, 0x41]]);
+    assert_eq!(pair.status.code(), Some(193));
+    // An ordinary text argument travels the same route: 'a' + 'b' = 195.
+    let text = compile_and_run_with(&llvm, &[b"ab"]);
+    assert_eq!(text.status.code(), Some(195));
+    // A missing argument is `InvalidIndex()` and returns no value [SYS-6].
+    let absent = compile_and_run_with(&llvm, &[]);
+    assert_eq!(absent.status.code(), Some(252));
+}
+
+#[test]
+fn args_count_reports_the_complete_invocation_vector() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    let total: own u64 = args_count<'a>(args: &'a args);
+    let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(total);
+    match narrowed {
+      Ok(value: code) => {
+        return exit_status(code: code);
+      }
+      Err(error: overflowed) => {
+        return exit_status(code: 255_u8);
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    // The snapshot is the complete native argument vector the invocation
+    // supplied, including the invoked name at position 0: nothing is dropped
+    // or truncated on the way to source [FN-7, HOST-1].
+    assert_eq!(compile_and_run_with(&llvm, &[]).status.code(), Some(1));
+    assert_eq!(
+        compile_and_run_with(&llvm, &[b"one", b"two"]).status.code(),
+        Some(3)
+    );
+}
+
+#[test]
+fn relative_path_admits_by_construction_and_never_normalizes() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            return exit_status(code: 10_u8);
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 20_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 30_u8);
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    // `.` and `..` components and every separator are preserved exactly and
+    // admitted; only a target-root prefix is refused [PATH-1].
+    assert_eq!(
+        compile_and_run_with(&llvm, &[b"../a/./b"]).status.code(),
+        Some(10)
+    );
+    assert_eq!(
+        compile_and_run_with(&llvm, &[b"plain"]).status.code(),
+        Some(10)
+    );
+    // The empty sequence contains no NUL and begins with no root prefix.
+    assert_eq!(compile_and_run_with(&llvm, &[b""]).status.code(), Some(10));
+    // One leading separator is this family's target-root prefix.
+    assert_eq!(
+        compile_and_run_with(&llvm, &[b"/abs"]).status.code(),
+        Some(20)
+    );
+    // Construction consumes its input on failure too, so nothing leaks.
+    let optimized = host_optimized_module(&llvm);
+    assert!(!optimized_main(&optimized).contains("@malloc"));
+}
+
+#[test]
+fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        region 'v {
+          match host_utf8_len<'v>(value: &'v text) {
+            Ok(value: length) => {
+              let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(length);
+              match narrowed {
+                Ok(value: code) => {
+                  return exit_status(code: code);
+                }
+                Err(error: overflowed) => {
+                  return exit_status(code: 200_u8);
+                }
+              }
+            }
+            Err(error: invalid) => {
+              return exit_status(code: 201_u8);
+            }
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 202_u8);
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    for (argument, status) in [
+        (b"abc".as_slice(), 3),
+        // Two-byte, three-byte, and four-byte encodings.
+        ("é".as_bytes(), 2),
+        ("€".as_bytes(), 3),
+        ("😀".as_bytes(), 4),
+        // A lone continuation byte, an overlong encoding, a surrogate, and a
+        // value above U+10FFFF are each rejected without a replacement code
+        // point and without a truncated encoding [HOST-2].
+        (&[0x80], 201),
+        (&[0xc0, 0xaf], 201),
+        (&[0xed, 0xa0, 0x80], 201),
+        (&[0xf5, 0x80, 0x80, 0x80], 201),
+        // A truncated sequence at the end of the value is invalid, not short.
+        (&[0xe2, 0x82], 201),
+    ] {
+        assert_eq!(
+            compile_and_run_with(&llvm, &[argument]).status.code(),
+            Some(status),
+            "argument {argument:02x?}"
+        );
+    }
+}
+
+#[test]
+fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        let bytes: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
+        region 'v {
+          region 'd {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 0_u64, capacity: 2_u64) {
+              Ok(value: count) => {
+                return exit_status(code: 10_u8);
+              }
+              Err(error: problem) => {
+                match move problem {
+                  CopyTooSmall(required: needed) => {
+                    let untouched: own u8 = index<u8>(bytes, 0_u64);
+                    match ieq<u8>(untouched, 7_u8) {
+                      True() => {
+                        let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(needed);
+                        match narrowed {
+                          Ok(value: code) => {
+                            return exit_status(code: code);
+                          }
+                          Err(error: overflowed) => {
+                            return exit_status(code: 200_u8);
+                          }
+                        }
+                      }
+                      False() => {
+                        return exit_status(code: 201_u8);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 202_u8);
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    // A destination exactly large enough succeeds.
+    assert_eq!(
+        compile_and_run_with(&llvm, &[b"ab"]).status.code(),
+        Some(10)
+    );
+    // A short destination reports the exact required length and leaves the
+    // whole destination buffer unchanged [SYS-8].
+    assert_eq!(
+        compile_and_run_with(&llvm, &[b"abcde"]).status.code(),
+        Some(5)
+    );
+}
+
+#[test]
+fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        let bytes: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
+        region 'v {
+          region 'd {
+            match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 1_u64, capacity: 4_u64) {
+              Ok(value: count) => {
+                return exit_status(code: 10_u8);
+              }
+              Err(error: problem) => {
+                return exit_status(code: 20_u8);
+              }
+            }
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 30_u8);
+      }
+    }
+  }
+}
+"#;
+    let llvm = compile(source);
+    // The range validation precedes every other action, so the trap record is
+    // the operation's own site and no byte of the destination changed.
+    let output = compile_and_run_with(&llvm, &[b"ab"]);
+    assert!(!output.status.success());
+    let record = String::from_utf8(output.stderr).expect("the trap record is UTF-8");
+    assert!(
+        record.contains("\"rule_id\":\"SYS-8\""),
+        "unexpected trap record: {record}"
+    );
+    assert!(record.contains("\"function\":\"main\""));
+    assert!(record.ends_with("\n"));
+}
+
+#[test]
+fn every_release_action_emits_exactly_its_contract() {
+    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    // The one native close attempt is the `DirectoryRead` release; `Args`,
+    // both `Output` owners, and the returned `ExitStatus` release with no host
+    // call at all [SYS-5].
+    assert_eq!(llvm.matches("call i32 @close(i32").count(), 1);
+    assert!(llvm.contains("declare i32 @close(i32)"));
+    // A logical consume and a source detach are explicit releases that emit
+    // no code; the drop marker is still present for each owner.
+    assert_eq!(llvm.matches("  ; drop %v").count(), 4);
+}
+
+#[test]
+fn the_command_bootstrap_normalizes_once_and_maps_the_returned_status_exactly() {
+    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus pure {
+  return exit_status(code: 42_u8);
+}
+"#;
+    let llvm = compile(source);
+    // One-time per-invocation normalization belongs to the bootstrap before
+    // entry, never to a transfer [QUAL-3].
+    assert_eq!(llvm.matches("@signal(i32 13,").count(), 1);
+    assert!(llvm.contains("br i1 %installed, label %inputs, label %start.failure"));
+    // The [QUAL-2] backing guarantee is established before entry, and a target
+    // that cannot establish it refuses startup rather than entering.
+    assert!(llvm.contains("%backing = and i1 %argv.present, %argc.counted"));
+    assert!(llvm.contains("call void @exit(i32 71)"));
+    // The entry is invoked once and its returned code becomes the process
+    // status exactly [PROG-3, SYS-13].
+    assert_eq!(llvm.matches("call i8 @wf_main(").count(), 1);
+    assert!(llvm.contains("%code = zext i8 %status to i32"));
+    assert_eq!(compile_and_run_with(&llvm, &[]).status.code(), Some(42));
+}
+
+#[test]
+fn an_entry_selecting_no_input_still_starts_and_returns_its_status() {
+    let source = br#"command fn main() -> own ExitStatus pure {
+  return exit_status(code: 7_u8);
+}
+"#;
+    let llvm = compile(source);
+    assert!(!llvm.contains("@open("));
+    assert_eq!(compile_and_run_with(&llvm, &[]).status.code(), Some(7));
+}
+
+#[test]
+fn the_unlabelled_entry_wrapper_is_unchanged() {
+    let source = br#"fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    assert!(llvm.contains("define i32 @main() {"));
+    assert!(!llvm.contains("QUAL-1"));
+    assert_eq!(compile_and_run_with(&llvm, &[]).status.code(), Some(0));
+}
+
+#[test]
+fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    let total: own u64 = args_count<'a>(args: &'a args);
+    return exit_status(code: 0_u8);
+  }
+}
+"#;
+    with_ir(source, |program| {
+        // The qualified host target accepts the same program.
+        let qualified = SystemTarget::for_triple("aarch64-apple-darwin")
+            .expect("the probe base triple is a qualified target");
+        qualify_program(qualified, program).expect("a qualified target admits the program");
+
+        // A target that can supply neither stable native argument backing nor
+        // a pre-entry snapshot fails qualification for the command entry and
+        // for argument access [QUAL-2]; it never enters under a weaker
+        // guarantee and never narrows the semantic ID.
+        let unbacked = SystemTarget::probe(Some(CodeUnitFamily::Unix), false, true);
+        let failure = qualify_program(unbacked, program)
+            .expect_err("a target without command-lifetime argument backing must fail");
+        assert!(matches!(
+            failure,
+            crate::BackendFailure::TargetQualification(QualificationFailure::UnmetGuarantee { .. })
+        ));
+
+        // A target belonging to no lossless code-unit family still qualifies
+        // for argument counting: [HOST-1] withholds exactly the host-string
+        // and path semantic IDs, not the whole interface.
+        let lossy = SystemTarget::probe(None, true, true);
+        qualify_program(lossy, program)
+            .expect("counting arguments needs no lossless code-unit family");
+    });
+
+    // The same lossy target fails for a program that leases code units.
+    let leases = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 0_u64) {
+      Ok(value: text) => {
+        return exit_status(code: 0_u8);
+      }
+      Err(error: absent) => {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+}
+"#;
+    with_ir(leases, |program| {
+        let lossy = SystemTarget::probe(None, true, true);
+        let failure = qualify_program(lossy, program)
+            .expect_err("a target with no lossless code-unit family cannot lease code units");
+        assert!(matches!(
+            failure,
+            crate::BackendFailure::TargetQualification(QualificationFailure::UnmetGuarantee { .. })
+        ));
+    });
+}
+
+#[test]
+fn native_io_emission_remains_an_explicit_unsupported_capability() {
+    // `open_read`, `read_once`, and `write_once` are qualified operations
+    // whose native emission is not implemented here. The stop is an
+    // unsupported compiler capability, never a source rejection and never a
+    // qualification verdict.
+    let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);
+  region 'o {
+    region 's {
+      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {
+        Ok(value: written) => {
+          return exit_status(code: 0_u8);
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+    let inputs = [SourceInput::new("test.wf", source)];
+    let failure = crate::compile(&inputs, crate::CompilerLimits::default())
+        .expect_err("native I/O emission is not implemented yet");
+    assert_eq!(failure.stage(), crate::CompilationStage::Backend);
+    assert_eq!(failure.kind(), crate::CompilationFailureKind::Unsupported);
+    assert_eq!(failure.rule_id(), None);
+    assert!(failure.detail().contains("UnsupportedSystemInterface"));
+}

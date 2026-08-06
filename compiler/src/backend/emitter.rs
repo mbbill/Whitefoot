@@ -14,16 +14,20 @@ mod integer;
 mod operations;
 mod reinterpret;
 mod slice;
+mod system;
 
 use std::collections::BTreeSet;
 use std::fmt::Write;
 
+use super::qualification::{
+    Qualification, QualificationFailure, SystemTarget, qualified_representation, qualify_program,
+};
 use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
-    IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEnumType,
+    IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEntry, IrEnumType,
     IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation, IrNominal,
     IrNominalId, IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations,
-    IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType, IrValueId,
+    IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -32,13 +36,19 @@ use slice::slice_index_continue_label;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
     TargetLayout(TargetLayoutFailure),
+    /// The [QUAL-1] target-qualification table has no approved implementation
+    /// for a facility the program uses on the selected target and program
+    /// kind, or a required [QUAL-2] target guarantee is unmet. Like a
+    /// target-layout failure this is not a source-language rejection and cites
+    /// no language rule [DIAG-1].
+    TargetQualification(QualificationFailure),
     InvalidIr,
     CounterOverflow,
     TextEmission,
-    /// The lowered program carries [SYS-1] system-interface constructs, whose
-    /// [QUAL-1] target qualification and native emission are not implemented
-    /// yet. This is an explicit unsupported compiler capability, never a
-    /// source rejection and never a target-qualification verdict.
+    /// The program uses a qualified [SYS-2] semantic identity whose native
+    /// emission this compiler does not implement yet. This is an explicit
+    /// unsupported compiler capability, never a source rejection and never a
+    /// target-qualification verdict.
     UnsupportedSystemInterface,
 }
 
@@ -55,32 +65,36 @@ impl LlvmModule {
 }
 
 pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
-    // Target-independent lowering now carries the [SYS-2] semantic identities,
-    // the [SYS-5] release actions, and the [FN-7] entry facts. What is still
-    // missing is target-side: the [QUAL-1] qualification table mapping each
-    // semantic identity to one approved implementation and private ABI symbol,
-    // the [QUAL-3] command bootstrap, and the emitted code for each operation
-    // and release action. Refusing here keeps that an explicit unsupported
-    // compiler capability rather than emitting a program with silently missing
-    // releases, and it runs before layout because an opaque resource has no
-    // target representation until its qualification record fixes one.
-    reject_unqualified_system_interface(program)?;
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
-    validate_program(target, program).map_err(BackendFailure::TargetLayout)?;
+    // [QUAL-1] consults the qualification table after the exact target and ABI
+    // are selected and before emitting any use of an operation. It runs before
+    // layout because an opaque resource has no target representation until its
+    // qualification record fixes one.
+    let system_target = SystemTarget::for_triple(target.triple()).ok_or(
+        BackendFailure::TargetLayout(TargetLayoutFailure::UnsupportedHost),
+    )?;
+    let qualification = qualify_program(system_target, program)?;
+    validate_program(target, &qualification, program).map_err(BackendFailure::TargetLayout)?;
     let main = program
         .functions()
         .get(program.main_ordinal() as usize)
         .ok_or(BackendFailure::InvalidIr)?;
-    if main.result() != IrType::Unit || !main.parameters().is_empty() {
-        return Err(BackendFailure::InvalidIr);
-    }
+    let system = system::emit_system_interface(program, &qualification)?;
 
     let mut traps = Vec::new();
     let mut intrinsics = BTreeSet::new();
     let mut functions = String::new();
     for function in program.functions() {
         functions.push_str(
-            &FunctionEmitter::new(program, function, target, &mut traps, &mut intrinsics).emit()?,
+            &FunctionEmitter::new(
+                program,
+                &qualification,
+                function,
+                target,
+                &mut traps,
+                &mut intrinsics,
+            )
+            .emit()?,
         );
     }
     let has_matches = program.functions().iter().any(|function| {
@@ -89,7 +103,7 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
             .iter()
             .any(|block| matches!(block.terminator(), IrTerminator::Match { .. }))
     });
-    let drop_helpers = emit_resource_drop_helpers(program)?;
+    let drop_helpers = emit_resource_drop_helpers(program, &qualification)?;
     let has_heap_storage = !drop_helpers.is_empty()
         || program.functions().iter().any(IrFunction::contains_buffer)
         || program
@@ -104,6 +118,7 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
     );
     emit_nominal_declarations(&mut text, program)?;
     emit_global_constants(&mut text, program)?;
+    text.push_str(&system.constants);
     for (index, bytes) in traps.iter().enumerate() {
         writeln!(
             text,
@@ -123,6 +138,7 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
     if has_heap_storage {
         text.push_str("declare ptr @malloc(i64)\ndeclare void @free(ptr)\n");
     }
+    text.push_str(&system.declarations);
     if !traps.is_empty() {
         text.push_str(
             "\ndefine private void @wf_trap(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n",
@@ -131,6 +147,7 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
         text.push('\n');
     }
     text.push_str(&drop_helpers);
+    text.push_str(&system.definitions);
     for intrinsic in intrinsics {
         match intrinsic {
             IntrinsicDeclaration::Overflow { name, ty } => {
@@ -165,68 +182,8 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
         text.push('\n');
         text.push_str(&functions);
     }
-    writeln!(
-        text,
-        "define i32 @main() {{\nentry:\n  %result = call i8 @{}()\n  ret i32 0\n}}",
-        source_symbol(main.name())
-    )
-    .map_err(|_| BackendFailure::TextEmission)?;
+    text.push_str(&system::emit_entry(program, &qualification, main)?);
     Ok(LlvmModule { text })
-}
-
-/// Stops a program that needs [QUAL-1] target qualification for the system
-/// interface, which this backend does not implement yet.
-///
-/// The scan is over the IR's own facts — an opaque resource nominal, a system
-/// operation call, a compiler-derived system release action, or a
-/// kind-declaring entry — never over a source name or program shape.
-fn reject_unqualified_system_interface(
-    program: &IrProgram<'_, '_, '_>,
-) -> Result<(), BackendFailure> {
-    if !matches!(program.entry(), crate::IrEntry::Unlabelled) {
-        return Err(BackendFailure::UnsupportedSystemInterface);
-    }
-    if program
-        .nominals()
-        .iter()
-        .any(|nominal| matches!(nominal.kind(), IrNominalKind::SystemResource(_)))
-    {
-        return Err(BackendFailure::UnsupportedSystemInterface);
-    }
-    for function in program.functions() {
-        for block in function.blocks() {
-            for instruction in block.instructions() {
-                match instruction {
-                    IrInstruction::Define { operation, .. } => {
-                        if matches!(operation, IrOperation::SystemCall { .. }) {
-                            return Err(BackendFailure::UnsupportedSystemInterface);
-                        }
-                    }
-                    IrInstruction::Drop(drop) => reject_unqualified_release(*drop)?,
-                    IrInstruction::Check { .. }
-                    | IrInstruction::StoreBuffer { .. }
-                    | IrInstruction::StoreNominal { .. } => {}
-                }
-            }
-            match block.terminator() {
-                IrTerminator::Jump { drops, .. } | IrTerminator::Return { drops, .. } => {
-                    for drop in drops {
-                        reject_unqualified_release(*drop)?;
-                    }
-                }
-                IrTerminator::Match { .. } => {}
-            }
-        }
-    }
-    Ok(())
-}
-
-fn reject_unqualified_release(drop: IrDrop) -> Result<(), BackendFailure> {
-    let release = drop.release();
-    if release.action.is_some() || release.row != crate::SystemReleaseRow::EMPTY {
-        return Err(BackendFailure::UnsupportedSystemInterface);
-    }
-    Ok(())
 }
 
 fn emit_global_constants(
@@ -289,7 +246,15 @@ fn emit_nominal_declarations(
 ) -> Result<(), BackendFailure> {
     let mut emitted = false;
     for nominal in program.nominals() {
-        if nominal.is_tag_only_enum() || matches!(nominal.kind(), IrNominalKind::Box { .. }) {
+        // A box is a pointer and an opaque system resource carries the
+        // representation its [QUAL-1] qualification record fixes; neither
+        // needs a named aggregate type.
+        if nominal.is_tag_only_enum()
+            || matches!(
+                nominal.kind(),
+                IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_)
+            )
+        {
             continue;
         }
         emitted = true;
@@ -313,12 +278,8 @@ fn emit_nominal_declarations(
                     }
                 }
             }
-            IrNominalKind::Box { .. } => return Err(BackendFailure::InvalidIr),
-            // [QUAL-1] fixes an opaque resource's target representation in its
-            // qualification record; no such record exists yet, and the
-            // explicit stop above already refused this program.
-            IrNominalKind::SystemResource(_) => {
-                return Err(BackendFailure::UnsupportedSystemInterface);
+            IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+                return Err(BackendFailure::InvalidIr);
             }
         }
         output.push_str(" }\n");
@@ -366,6 +327,9 @@ enum IntrinsicDeclaration {
 
 struct FunctionEmitter<'program, 'state> {
     program: &'program IrProgram<'program, 'program, 'program>,
+    /// The [QUAL-1] table lookup this build already performed. Every emission
+    /// site reads the resolved row; none consults the table again.
+    qualification: &'program Qualification,
     function: &'program IrFunction,
     target: TargetLayout,
     traps: &'state mut Vec<Vec<u8>>,
@@ -386,6 +350,7 @@ struct FunctionEmitter<'program, 'state> {
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
     fn new(
         program: &'program IrProgram<'_, '_, '_>,
+        qualification: &'program Qualification,
         function: &'program IrFunction,
         target: TargetLayout,
         traps: &'state mut Vec<Vec<u8>>,
@@ -393,6 +358,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ) -> Self {
         Self {
             program,
+            qualification,
             function,
             target,
             traps,
@@ -581,11 +547,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 function,
                 arguments,
             } => self.emit_call(result, ty, *function, arguments),
-            // A [SYS-2] operation needs its [QUAL-1] approved implementation
-            // and private ABI symbol, which target qualification does not
-            // supply yet; the explicit stop above already refused this
-            // program.
-            IrOperation::SystemCall { .. } => Err(BackendFailure::UnsupportedSystemInterface),
+            IrOperation::SystemCall {
+                operation,
+                arguments,
+                trap,
+            } => self.emit_system_call(result, ty, *operation, arguments, trap.as_ref()),
             IrOperation::Integer {
                 operation,
                 operand_type,
@@ -856,6 +822,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrType::Buffer { .. } => {
                 emit_value_cleanup(
                     self.program,
+                    self.qualification,
                     &mut self.output,
                     &mut self.temporary,
                     drop.ty(),
@@ -865,16 +832,28 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
                     IrNominalKind::Struct { .. } => {}
-                    // A [SYS-5] release action needs its qualified native
-                    // implementation; the explicit stop above already refused
-                    // this program rather than dropping the release silently.
-                    IrNominalKind::SystemResource(_) => {
-                        return Err(BackendFailure::UnsupportedSystemInterface);
+                    // The checked program's own [SYS-5] record is the single
+                    // source of truth for which action runs here, so a table
+                    // row disagreeing with it stops rather than silently
+                    // emitting a different release.
+                    IrNominalKind::SystemResource(contract) => {
+                        if drop.release().action != Some(contract.action) {
+                            return Err(BackendFailure::InvalidIr);
+                        }
+                        let contract = *contract;
+                        system::emit_resource_release(
+                            self.qualification,
+                            &mut self.output,
+                            &mut self.temporary,
+                            contract,
+                            &value_name(drop.value()),
+                        )?;
                     }
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
                         if type_requires_cleanup(self.program, drop.ty())? {
                             emit_value_cleanup(
                                 self.program,
+                                self.qualification,
                                 &mut self.output,
                                 &mut self.temporary,
                                 drop.ty(),
@@ -950,6 +929,15 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
             if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
                 return Ok("ptr".to_owned());
+            }
+            // [QUAL-1] fixes an opaque resource's representation in its
+            // qualification record. Emission is reached only after
+            // qualification accepted the program, so the row this reads is the
+            // one qualification already resolved for this resource.
+            if let IrNominalKind::SystemResource(contract) = nominal.kind() {
+                return Ok(qualified_representation(contract.resource)
+                    .llvm()
+                    .to_owned());
             }
             if nominal.is_tag_only_enum() {
                 let IrNominalKind::Enum { variants } = nominal.kind() else {

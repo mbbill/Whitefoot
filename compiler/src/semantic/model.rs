@@ -623,6 +623,14 @@ pub(crate) enum CheckedExpression {
         operation: u8,
         arguments: Vec<CheckedExpression>,
         result: CheckedType,
+        /// The [DIAG-3] record for the operation's own runtime condition,
+        /// present exactly when the [SYS-2] row classifies it `traps`.
+        ///
+        /// [SYS-8] validates the caller-written range before any host
+        /// transfer, any read of the source, and any write of the
+        /// destination; the failing site is this operation `call`, and only
+        /// the checked program knows its source coordinate.
+        trap: Option<TrapSite>,
     },
     IntegerOperation {
         operation: CheckedIntegerOperation,

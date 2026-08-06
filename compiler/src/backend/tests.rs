@@ -17,8 +17,10 @@ mod reinterpret;
 mod requires;
 mod resource_enums;
 mod slices;
+mod system;
 
 use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -125,6 +127,14 @@ fn compile_sources(sources: &[(&str, &[u8])]) -> String {
 }
 
 fn compile_and_run(llvm: &str) -> Output {
+    compile_and_run_with(llvm, &[])
+}
+
+/// Runs one emitted module with exact argument bytes.
+///
+/// The bytes are passed as raw `OsStr`s so a test can hand the program an
+/// argument that is not valid text [HOST-1].
+fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
     let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
         "whitefoot-backend-test-{}-{sequence}",
@@ -151,6 +161,11 @@ fn compile_and_run(llvm: &str) -> Output {
         );
     }
     let output = Command::new(&executable)
+        .args(
+            arguments
+                .iter()
+                .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
+        )
         .output()
         .expect("run backend test executable");
     std::fs::remove_file(&executable).expect("remove backend test executable");

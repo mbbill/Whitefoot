@@ -691,6 +691,7 @@ impl<'program> IrBuilder<'program> {
                 operation,
                 arguments,
                 result,
+                trap,
             } => {
                 let arguments = arguments
                     .iter()
@@ -701,6 +702,7 @@ impl<'program> IrBuilder<'program> {
                     IrOperation::SystemCall {
                         operation: IrSystemOperation(*operation),
                         arguments,
+                        trap: trap.clone().map(Into::into),
                     },
                 )
             }
