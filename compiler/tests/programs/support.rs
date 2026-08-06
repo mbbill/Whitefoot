@@ -1,5 +1,8 @@
+use std::ffi::OsStr;
+use std::io::Read;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{CompilerLimits, HOST_OPTIMIZATION_ARGUMENTS, SourceInput, compile};
@@ -63,6 +66,138 @@ pub fn compile_and_run(llvm: &str) -> Output {
     std::fs::remove_file(&module).expect("remove integration-test module");
     std::fs::remove_dir(&directory).expect("remove integration-test directory");
     output
+}
+
+/// One built executable that a case invokes repeatedly.
+///
+/// A command-entry program takes its input from `command.args` and
+/// `command.cwd`, so a case needs one executable it can invoke many times
+/// with different arguments and working directories, rather than the single
+/// argument-free run [`compile_and_run`] performs.
+pub struct CompiledProgram {
+    directory: PathBuf,
+    executable: PathBuf,
+}
+
+pub fn build_program(llvm: &str) -> CompiledProgram {
+    let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!(
+        "whitefoot-program-{}-{sequence}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&directory).expect("create unique program directory");
+    let module = directory.join("program.ll");
+    let executable = directory.join("program");
+    std::fs::write(&module, llvm).expect("write program module");
+    let compilation = Command::new("/usr/bin/clang")
+        .arg("-x")
+        .arg("ir")
+        .arg(&module)
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("invoke host clang");
+    assert!(
+        compilation.status.success(),
+        "clang rejected emitted LLVM:\n{}\n{}",
+        String::from_utf8_lossy(&compilation.stderr),
+        llvm
+    );
+    CompiledProgram {
+        directory,
+        executable,
+    }
+}
+
+impl CompiledProgram {
+    /// Runs the program in `working_directory` with `arguments` as argv[1..].
+    ///
+    /// Arguments are raw bytes, because a command entry reads them through the
+    /// lossless host-string route and a case must be able to supply an
+    /// argument that is not valid UTF-8.
+    pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
+        Command::new(&self.executable)
+            .current_dir(working_directory)
+            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .output()
+            .expect("run compiled program")
+    }
+
+    /// Runs the program with standard output on a pipe whose read end this
+    /// process closes before consuming anything.
+    ///
+    /// The program therefore publishes into a destination with no reader,
+    /// which is the portable way to observe what a write to a closed pipe
+    /// reaches source as. Standard error is captured and returned.
+    pub fn run_with_closed_output(
+        &self,
+        working_directory: &Path,
+        arguments: &[&[u8]],
+    ) -> (ExitStatus, Vec<u8>) {
+        let mut child = Command::new(&self.executable)
+            .current_dir(working_directory)
+            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn compiled program");
+        drop(child.stdout.take());
+        let mut diagnostics = Vec::new();
+        child
+            .stderr
+            .take()
+            .expect("piped standard error")
+            .read_to_end(&mut diagnostics)
+            .expect("read the program's diagnostics");
+        let status = child.wait().expect("wait for compiled program");
+        (status, diagnostics)
+    }
+}
+
+impl Drop for CompiledProgram {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
+}
+
+/// One directory whose complete content a case fixes.
+pub struct FixtureDirectory {
+    path: PathBuf,
+}
+
+pub fn fixture_directory() -> FixtureDirectory {
+    let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "whitefoot-fixtures-{}-{sequence}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&path).expect("create unique fixture directory");
+    FixtureDirectory { path }
+}
+
+impl FixtureDirectory {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Writes one fixture file, whose name may be any byte sequence.
+    pub fn write(&self, name: &[u8], bytes: &[u8]) -> PathBuf {
+        let path = self.path.join(OsStr::from_bytes(name));
+        std::fs::write(&path, bytes).expect("write fixture file");
+        path
+    }
+
+    /// Places a real symbolic link at `name` pointing at `target`.
+    pub fn symlink(&self, name: &str, target: &Path) {
+        std::os::unix::fs::symlink(target, self.path.join(name)).expect("create fixture symlink");
+    }
+}
+
+impl Drop for FixtureDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
 }
 
 pub fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {

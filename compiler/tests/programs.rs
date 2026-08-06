@@ -12,4 +12,5 @@ mod programs {
     mod signal;
     mod support;
     mod text;
+    mod wfgrep;
 }

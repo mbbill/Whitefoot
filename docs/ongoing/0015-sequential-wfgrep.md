@@ -18,9 +18,68 @@ itself.
 
 ## Progress
 
-- Completed: claim.
-- Current: author `tests/programs/wfgrep.wf` and its oracle harness.
-- Next: the three OS-mechanism cases; gates.
+- Completed: `tests/programs/wfgrep.wf` (~700 lines, five declarations)
+  compiles and runs through the normal path; its correctness oracle passes
+  on the required corpus; all three OS-mechanism cases pass; both gates
+  green by unpiped exit code.
+- Current: ready for lead review.
+- Next: nothing in this task's scope. The cost-shape inspection is task
+  0016's; the informal observation is recorded below.
+
+### Placement
+
+The `.wf` program is `tests/programs/wfgrep.wf` — the flat directory every
+other program witness already uses — and its harness module is
+`compiler/tests/programs/wfgrep.rs`, registered in
+`compiler/tests/programs.rs`. `compiler/tests/programs/` holds only Rust
+harness modules, so the Method's "under `compiler/tests/programs/`" resolves
+to that pair.
+
+### Findings this slice produced
+
+1. **A borrow-mode parameter of a system nominal type is an unsupported
+   compiler capability.** `compiler/src/semantic/check/types.rs` admits a
+   non-`own` parameter only for `buffer`, `slice`, `struct`, and `box`, so
+   `fn f ['o](output: &uniq 'o Output)` stops with
+   `SemanticUnsupported { feature: RegionsAndBorrows }`. Nothing in v0.19
+   restricts it (SYS-4 gives every first-slice system type a kind whose
+   operations take `&`/`&uniq`; OWN-2 and FN-1 place no type condition on a
+   mode). Classification: unsupported specified capability, not a source
+   rejection and not a language gap. Consequence for wfgrep: no helper may
+   touch `Args`, `DirectoryRead`, `ReadFile`, or `Output`, so every system
+   call and every write-until-accepted loop is inline in `main`; the
+   partial-write loop is written out five times. The legal shape exists, so
+   this cost the program its natural decomposition rather than blocking it.
+2. **ERR-2's no-wildcard rule prices one class distinction at thirty arms.**
+   Distinguishing `BrokenPipe` and `NotFound` from the other twenty-eight
+   `IoError` classes needs a complete thirty-arm match; `io_class` is 95 of
+   the program's lines.
+3. **A growable line buffer is not expressible.** `buffer<T>` has no
+   in-place growth and STOR-1 rejects `set` on an affine place, so a program
+   cannot rebind a larger buffer to the same owner. wfgrep therefore has a
+   fixed maximum line length (one input buffer) and reports `line too long`
+   rather than truncating. This is the already-DEFERRED take/replace item in
+   STOR-1, now with a concrete witness.
+4. **Emitted shape (informal, task 0016 owns the gate).** The optimized
+   module has four allocations for the whole invocation (the `malloc` plus
+   zero-fill pairs fold to `calloc`), one `openat`, one `read` call site,
+   one `write` call site per `write_once` occurrence, one `signal` in the
+   bootstrap, no `memcpy`/`memmove` libcall, and LLVM recognizes the
+   newline scan as `memchr`. No allocation, host call, or copy is per file,
+   per line, or per match.
+5. **A non-UTF-8 file *name* is not creatable on APFS.** The corpus
+   witnesses the lossless path route with a nonexistent
+   `na\xffme\xc3\x28.txt`, whose exact bytes survive `relative_path`,
+   `open_read`, and the diagnostic's `host_copy_bytes`.
+
+### Frozen behavior this slice fixes
+
+`wfgrep PATTERN FILE...` publishes every matching line of every named file
+to standard output with no file-name prefix (`grep -h -F`), matches the
+pattern against a line without its terminator, treats an unterminated final
+run as a line and terminates it on output, treats the empty pattern as
+matching every line, reports each failing file to standard error and
+continues, and returns 0 (a match), 1 (no match), or 2 (any error).
 
 ## Goal
 
@@ -124,6 +183,14 @@ per-attempt `read_once` contract, not a stronger invariant; a smoke run on
 both a macOS and a Linux target (or CI equivalent), per the current plan's
 macOS/Linux scope. A claimed task lands only through lead review per the
 executor lane in `docs/WORKFLOW.md`.
+
+**Observed:** `make -C compiler check` and `make check` both green by
+unpiped exit code on `aarch64-apple-darwin`; the programs test binary goes
+18 → 27 cases (nine `programs::wfgrep::*`). The broken-pipe case asserts
+both `status.signal() == None` and the `broken pipe` class diagnostic, so
+it discriminates the recoverable class from a SIGPIPE death rather than
+merely observing a nonzero status. Linux remains unexercised on this host,
+exactly as task 0012 recorded for the Linux error-code column.
 
 ## Done-when
 
