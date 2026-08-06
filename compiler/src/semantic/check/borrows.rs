@@ -49,6 +49,16 @@ pub(super) struct SliceLoan {
     pub(super) place: ResolvedPlace,
 }
 
+/// The value a position requires of its operand, for [TYPE-7]'s implicit-read
+/// exclusivity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RequiredReferent {
+    /// A `match` scrutinee requires an enum value [OWN-13, ERR-2].
+    Enum,
+    /// An `index` root requires directly indexable storage [OP-4].
+    IndexableStorage,
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum AccessKind {
     Read,
@@ -676,6 +686,55 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         };
         Ok((declaration, local, borrow))
+    }
+
+    /// [TYPE-7]'s implicit read, asked once by each position that requires a
+    /// referent value rather than the holder that reaches it.
+    ///
+    /// The rule is one rule, but the two holder shapes are represented
+    /// differently here, so the predicate takes both facts. A borrow-mode
+    /// value already carries its referent's checked type, so only its
+    /// provenance — it was not written through `deref` — separates the holder
+    /// from the referent. A `box` binding carries the holder's own type, so
+    /// the question is what its referent is. Either way the answer is the
+    /// same rejection with the same `deref(.)` fix, and the position's own
+    /// wrong-type judgment forms no rejection.
+    pub(super) fn reads_implicitly_through_holder(
+        &self,
+        holds_reference: bool,
+        ty: CheckedType,
+        required: RequiredReferent,
+    ) -> Result<bool, CheckStop> {
+        if holds_reference {
+            return self.satisfies_requirement(ty, required);
+        }
+        let CheckedType::Nominal(nominal) = ty else {
+            return Ok(false);
+        };
+        let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind else {
+            return Ok(false);
+        };
+        self.satisfies_requirement(referent, required)
+    }
+
+    fn satisfies_requirement(
+        &self,
+        ty: CheckedType,
+        required: RequiredReferent,
+    ) -> Result<bool, CheckStop> {
+        Ok(match required {
+            RequiredReferent::Enum => match ty {
+                CheckedType::Bool => true,
+                CheckedType::Nominal(nominal) => {
+                    matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Enum { .. })
+                }
+                _ => false,
+            },
+            RequiredReferent::IndexableStorage => matches!(
+                ty,
+                CheckedType::Array { .. } | CheckedType::Buffer { .. } | CheckedType::Slice { .. }
+            ),
+        })
     }
 
     pub(super) fn borrow_for_destination(

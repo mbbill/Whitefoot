@@ -10,7 +10,7 @@ use super::super::super::model::{
     CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm,
     CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedType,
 };
-use super::super::borrows::BorrowInfo;
+use super::super::borrows::{BorrowInfo, RequiredReferent};
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{BreakState, ControlCounters, ControlScope, GiveContext};
 
@@ -55,9 +55,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
         // [OWN-13] matches an enum value or a place reached through a borrow.
-        // A reference value — a bare holder, a `borrow_expr`, or a
-        // reference-returning call — is the [TYPE-7] implicit read.
-        if scrutinee.reference_value {
+        // A holder written where the enum itself is required — a bare borrow
+        // holder, a `borrow_expr`, a reference-returning call, or a `box` of
+        // an enum — is the [TYPE-7] implicit read, and this scrutinee's own
+        // wrong-type judgment forms no rejection.
+        if self.reads_implicitly_through_holder(
+            scrutinee.reference_value,
+            scrutinee.expression.ty(),
+            RequiredReferent::Enum,
+        )? {
             return self.issue_node(
                 SemanticRule::Type7,
                 expression_node,
@@ -178,24 +184,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// Whether `id` is a box holder whose referent is itself matchable, which
-    /// is exactly the [TYPE-7] implicit-read shape at a match scrutinee.
-    fn enum_referent_of_holder(
-        &self,
-        id: crate::semantic::model::NominalId,
-    ) -> Result<bool, CheckStop> {
-        let CheckedNominalKind::Box { referent } = self.nominal(id)?.kind else {
-            return Ok(false);
-        };
-        Ok(match referent {
-            CheckedType::Bool => true,
-            CheckedType::Nominal(inner) => {
-                matches!(self.nominal(inner)?.kind, CheckedNominalKind::Enum { .. })
-            }
-            _ => false,
-        })
-    }
-
     fn match_descriptor(
         &self,
         ty: CheckedType,
@@ -224,21 +212,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ],
             }),
             CheckedType::Nominal(id) => {
+                // [TYPE-7]'s implicit read was already excluded by the caller,
+                // so a non-enum nominal here is the scrutinee's own mismatch.
                 let CheckedNominalKind::Enum { variants } = &self.nominal(id)?.kind else {
-                    // [TYPE-7] owns the implicit-read case exclusively: a box
-                    // holder written where a value of its referent enum would
-                    // be required is rejected citing TYPE-7 with the
-                    // `deref(.)` fix, and the scrutinee's wrong-type judgment
-                    // forms no rejection.
-                    if self.enum_referent_of_holder(id)? {
-                        return self.issue_node(
-                            SemanticRule::Type7,
-                            node,
-                            SemanticIssueKind::MissingDereference {
-                                mechanical_fix: "write `deref(holder)`",
-                            },
-                        );
-                    }
                     return self.issue_node(
                         SemanticRule::Type5,
                         node,

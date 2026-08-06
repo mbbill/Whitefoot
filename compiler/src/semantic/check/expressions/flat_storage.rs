@@ -12,11 +12,13 @@ use crate::{
 
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
-    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedMode, CheckedNominalKind,
+    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedMode,
     CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
     CheckedTargetDomainObligation, CheckedType, IntegerType, TrapSite,
 };
-use super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo};
+use super::super::borrows::{
+    AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
+};
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
@@ -658,7 +660,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
                 let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
-                if local.mode != CheckedMode::Own {
+                // A borrow holder written where its indexable referent is
+                // required is the [TYPE-7] implicit read; a borrow of
+                // something no `index` could reach falls through to the
+                // operand's own mismatch below.
+                if local.mode != CheckedMode::Own
+                    && self.reads_implicitly_through_holder(
+                        true,
+                        ty,
+                        RequiredReferent::IndexableStorage,
+                    )?
+                {
                     return self.issue_node(
                         SemanticRule::Type7,
                         node,
@@ -763,21 +775,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     slice,
                 }))
             }
-            // [TYPE-7] owns the implicit-read case exclusively: a box holder
+            // [TYPE-7] owns the implicit-read case exclusively: a `box` holder
             // written where its indexable referent would be required is
             // rejected citing TYPE-7 with the `deref(.)` fix, and the
             // operand's wrong-type judgment forms no rejection.
-            CheckedType::Nominal(id)
-                if matches!(
-                    self.nominal(id)?.kind,
-                    CheckedNominalKind::Box { referent }
-                        if matches!(
-                            referent,
-                            CheckedType::Array { .. }
-                                | CheckedType::Buffer { .. }
-                                | CheckedType::Slice { .. }
-                        )
-                ) =>
+            _ if self.reads_implicitly_through_holder(
+                false,
+                ty,
+                RequiredReferent::IndexableStorage,
+            )? =>
             {
                 self.issue_node(
                     SemanticRule::Type7,
