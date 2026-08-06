@@ -45,12 +45,16 @@ proposal that changes that frontend contract fails closed: a structural change
 must first extend this same native path rather than reviving an independent
 grammar engine.
 
-The v0.18 system-interface surface parses and resolves under the active
-grammar and resolver, then stops in semantic checking as an explicit
-unsupported compiler capability pending its implementation tasks: a resolved
-use of an admitted system declaration, a kind-declaring entry
-(`program_kind`), a labelled entry input (`input_label`), and the
-`external`/`blocks` effect categories.
+The v0.18 system-interface surface parses, resolves, and checks through the
+normal semantic path: FN-7 admits both entry forms, system operation calls
+type against the SYS-2 catalog signatures, and EFF-2 checks the
+`external`/`blocks` categories exactly — the exhibited row is the union of
+the syntactic contribution and the release contribution, the SYS-5 release
+rows of every compiler-derived release recorded on a normal control-flow
+edge, with `buffer`/`box`/arena/`const` reclamation contributing nothing
+(STOR-3). A semantically accepted system program then stops at lowering as
+an explicit unsupported compiler capability pending the checked-IR resource
+identities and the native command bootstrap.
 
 FN-7's kind-declaring judgment has one home, `syntax::entry_form`, which reads
 it from finalized syntax alone: a unit is kind-declaring exactly when a
@@ -163,11 +167,16 @@ flags or check elision.
 Effect rows are checked as exact source-level summaries for every admitted
 function. `pure` is the empty effect row, not a termination claim. The
 implemented executable paths otherwise track `reads('r)`, `writes('r)`,
-`allocates(heap)`, and `traps`, union local expression effects, propagate callee
-heap and trap effects, and substitute formal read and write regions onto actual
-borrowed-storage and slice origins. The computed row must equal the declared
-row, so both missing and superfluous capabilities reject under EFF-2. These
-facts currently stop at semantic checking and static-contract compatibility.
+`allocates(heap)`, `external`, `blocks`, and `traps`, union local expression
+effects, propagate callee heap, trap, and payload-free-category effects by
+presence, and substitute formal read and write regions onto actual
+borrowed-storage and slice origins. The exhibited row additionally unions the
+release contribution — the fixed SYS-5 rows of every compiler-derived release
+on a normal edge — and a mismatch a release alone explains is reported at the
+function's `effects` node, rendering the owning parameter or binding. The
+computed row must equal the declared row, so both missing and superfluous
+capabilities reject under EFF-2. These facts currently stop at semantic
+checking and static-contract compatibility.
 The backend emits no effect-derived LLVM function attributes or alias metadata,
 licenses no check elision from an effect row, and never emits `willreturn`;
 v0.18 has no termination checker.
