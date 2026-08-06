@@ -34,21 +34,21 @@ impl fmt::Display for SpecHash {
 }
 
 /// Version label of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.18";
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.19";
 
 /// Repository-relative path of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.18.md";
+pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.19.md";
 
 /// Exact UTF-8 text of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.18.md");
+pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.19.md");
 
 /// Exact bytes of the active immutable kernel specification.
 pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 
 /// SHA-256 identity of the active immutable kernel specification.
 pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
-    0x30, 0x7a, 0x75, 0x8e, 0x41, 0x36, 0x65, 0x31, 0xc7, 0x1d, 0xc8, 0x73, 0x6b, 0xdd, 0xc4, 0x66,
-    0x05, 0x4d, 0xbe, 0xba, 0x37, 0xf6, 0xe6, 0xdb, 0x13, 0xf0, 0x85, 0x97, 0x87, 0x71, 0x1a, 0x28,
+    0x01, 0xfb, 0x10, 0xd2, 0xd6, 0x1c, 0xc8, 0x7c, 0xce, 0x72, 0xcc, 0x98, 0x07, 0x1e, 0xda, 0x98,
+    0xc7, 0x41, 0x1f, 0xdc, 0x95, 0xaf, 0x4e, 0xf2, 0x9b, 0x79, 0xac, 0x9a, 0x49, 0xcb, 0x53, 0x98,
 ]);
 
 #[cfg(test)]
@@ -60,12 +60,12 @@ mod tests {
 
     #[test]
     fn active_spec_identity_is_the_approved_candidate_identity() {
-        assert_eq!(ACTIVE_KERNEL_SPEC_VERSION, "v0.18");
-        assert_eq!(ACTIVE_KERNEL_SPEC_PATH, "spec/kernel-spec-v0.18.md");
+        assert_eq!(ACTIVE_KERNEL_SPEC_VERSION, "v0.19");
+        assert_eq!(ACTIVE_KERNEL_SPEC_PATH, "spec/kernel-spec-v0.19.md");
         assert_eq!(ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_TEXT.as_bytes());
         assert_eq!(
             ACTIVE_KERNEL_SPEC_HASH.to_string(),
-            "307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28"
+            "01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398"
         );
     }
 }

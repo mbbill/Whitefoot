@@ -454,16 +454,14 @@ fn system_operation_calls_are_named_in_declared_order() {
 
 #[test]
 fn arg_get_calls_are_checked_by_the_same_general_rule() {
-    // [SYS-2] names `arg_get`'s second parameter `index`, which [FORM-3]
-    // excludes from IDENT, so no complete legal `arg_get` call is writable in
-    // v0.18 (recorded at task 0007 closure; task 0018 carries the v0.19
-    // rename that unblocks the positive case, and this assertion's spelling
-    // belongs to that amendment's derived-material sweep). The general
-    // GRAM-11 rule still rejects every incomplete or misspelled call, which
-    // is the coverage this defect leaves reachable.
+    // v0.19 renamed [SYS-2]'s `arg_get` parameter to `position` (the v0.18
+    // spelling `index` was a fixed [GRAM-5] atom excluded from IDENT by
+    // [FORM-3], so no complete legal call existed; task 0018). The general
+    // GRAM-11 rule rejects every incomplete or misspelled call against the
+    // repaired declared spelling.
     let declared = SemanticIssueKind::InvalidNamedArguments {
         callee: "arg_get".to_owned(),
-        declared_parameters: vec!["args".to_owned(), "index".to_owned()],
+        declared_parameters: vec!["args".to_owned(), "position".to_owned()],
     };
     assert_rule(
         b"fn probe ['a](args: &'a Args) -> own unit reads('a) {\n  let value: own u64 = arg_get<'a>(args: args);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

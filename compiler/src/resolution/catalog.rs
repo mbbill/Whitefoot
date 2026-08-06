@@ -425,7 +425,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 11] = [
                 SystemParameterMode::Borrow(0),
                 SystemTypeRef::Nominal(ARGS),
             ),
-            parameter("index", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("position", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
         result: ok_nominal(HOST_STRING, ARG_ERROR),
         external: false,
