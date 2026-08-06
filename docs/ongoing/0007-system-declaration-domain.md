@@ -1,12 +1,12 @@
 # 0007 — System-declaration domain and opaque types
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 2
-of 8; task 2 of 11). Not yet claimed — claiming fills in `Status`, `Owner`,
-workspace, and `Base revision` and moves this file unchanged in number to
-`docs/ongoing/` per `docs/WORKFLOW.md`. This record authorizes nothing beyond
-Work item 2 itself; if `docs/current-plan.md` is replaced before this task is
-claimed, delete this file unless the new plan explicitly retains it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and cannot expand or resequence work.
 
+- **Status:** IN PROGRESS
+- **Owner / workspace:** executor agent / isolated worktree
+  (`worktree-agent-af3d05349151067ca`), lead-reviewed
+- **Base revision:** `615bbae`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, first bullet
   ("system-declaration domain, opaque types"). Implements dossier §11.1's
   Route C selection as codified in `spec/kernel-spec-v0.18.md` §16:
@@ -15,8 +15,8 @@ claimed, delete this file unless the new plan explicitly retains it.
   signatures, one hundred sixty-seven records total), `SYS-3` (the syntactic
   kind-declaring admission predicate), the concrete opaque-type contracts
   `HOST-1`/`HOST-2`/`HOST-3` and `PATH-1`/`PATH-2`, and `GATE-2` (system
-  domain is not the gated FFI family). Claimable only while
-  `docs/current-plan.md` remains `ACTIVE`.
+  domain is not the gated FFI family). Claimed under Work item 3's executor
+  fan-out while `docs/current-plan.md` remains `ACTIVE`.
 
 ## Goal
 
@@ -117,6 +117,25 @@ resolve but have no implemented semantic/lowering path yet.
 
 Depends on task 0006 (the kind-declaring predicate must exist and be
 stable). Tasks 0008 and 0009 depend on this task.
+
+Overlap cross-link (lead-granted): this task was claimed while 0006 was
+still live, under the explicit integration order that 0006 lands first and
+this task rebases onto it before landing, adopting its kind-declaring
+accessor as the [SYS-3] admission trigger. Resolved: 0006 landed at
+`5cd1eef` (closure `615bbae`); this task's base includes it and consumes
+`crate::syntax::unit_program_kind` (`compiler/src/syntax/entry_form.rs`) as
+the admission trigger, keeping the [SYS-3] decision after
+`check_requires_blocks` per DIAG-1's stage order.
+
+## Progress
+
+- Done: claim; read WORKFLOW, the full task record, spec v0.18 §16/§17,
+  TYPE-6/OP-1/GRAM-11/FN-7/DIAG-1, the system-interface MCTS nodes, and the
+  post-0006 resolution engine.
+- Current: implement the system catalog, the third declaration source, the
+  DIAG-1 rank-5 collision, and the semantic-stage unsupported boundary.
+- Next: resolution unit tests (both admission states, lookalike, collision,
+  ordinal determinism); gates.
 
 ## Validation
 
