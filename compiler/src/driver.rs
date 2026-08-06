@@ -310,13 +310,6 @@ pub fn compile(
     };
     let finalized = match finalize(parsed, limits.finalizer) {
         FinalizeOutcome::Complete(complete) => complete,
-        FinalizeOutcome::InvocationFailure => {
-            return Err(CompilationFailure::new(
-                CompilationStage::Finalization,
-                CompilationFailureKind::Invocation,
-                "finalization requires the active specification contract",
-            ));
-        }
         FinalizeOutcome::ResourceFailure(failure) => {
             return Err(CompilationFailure::new(
                 CompilationStage::Finalization,
@@ -363,6 +356,13 @@ pub fn compile(
                 CompilationStage::Resolution,
                 CompilationFailureKind::Source,
                 issue,
+            ));
+        }
+        ResolutionOutcome::Unsupported { unsupported, .. } => {
+            return Err(CompilationFailure::new(
+                CompilationStage::Resolution,
+                CompilationFailureKind::Unsupported,
+                unsupported,
             ));
         }
         ResolutionOutcome::CompilerFailure { failure, .. } => {
@@ -457,6 +457,40 @@ mod tests {
         assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
         assert_eq!(failure.rule_id(), None);
         assert!(failure.detail().contains("StackFrame"));
+    }
+
+    #[test]
+    fn system_interface_constructs_stop_as_explicit_unsupported_capability() {
+        // The canonical FN-7 command-entry header: a kind-declaring entry
+        // admits the unimplemented system declaration domain, so resolution
+        // stops it before any name lookup could misreport `Args` and friends.
+        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
+        let failure = compile(
+            &[SourceInput::new("entry.wf", kind_entry)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a kind-declaring entry must stop as unsupported");
+        assert_eq!(failure.stage(), CompilationStage::Resolution);
+        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
+        assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("SystemDeclarationDomain"));
+
+        // An input_label parameter and a system effect category each parse,
+        // resolve, and then stop in semantic checking as unsupported.
+        for source in [
+            b"fn helper(app.input as value: own i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
+            b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+            b"fn probe() -> own unit blocks {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        ] {
+            let failure = compile(
+                &[SourceInput::new("unsupported.wf", source)],
+                CompilerLimits::default(),
+            )
+            .expect_err("the system-interface construct must stop as unsupported");
+            assert_eq!(failure.stage(), CompilationStage::Semantics);
+            assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
+            assert_eq!(failure.rule_id(), None);
+        }
     }
 
     #[test]

@@ -253,6 +253,27 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
+        Production::ProgramKind => add_single(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::TableChecked,
+            roles,
+            complete_counts,
+        )?,
+        Production::InputLabel => {
+            let [_, _] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            add_all(
+                classified,
+                owner,
+                &names,
+                RawRoleKind::TableChecked,
+                roles,
+                complete_counts,
+            )?;
+        }
         Production::LetStmt => add_single(
             classified,
             owner,

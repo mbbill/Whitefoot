@@ -17,6 +17,7 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
+    UnsupportedSemanticFeature,
 };
 
 use super::model::{
@@ -365,6 +366,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
+        self.check_system_surface_support()?;
         let items = self.item_declarations()?;
         self.check_main_header(&items)?;
         self.declare_nominals(&items)?;
@@ -399,6 +401,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             law_derivations,
             main,
         })
+    }
+
+    /// Stops on the v0.18 system-interface surface the checker has not
+    /// implemented: a labelled entry input (`input_label`) and the
+    /// `external`/`blocks` effect categories. Each is grammatical under the
+    /// active specification, so it must remain an explicit unsupported
+    /// compiler capability, never a source rejection. A kind-declaring entry
+    /// (`program_kind`) never reaches this checker: resolution stops it
+    /// earlier because it admits the unimplemented system declaration domain.
+    fn check_system_surface_support(&self) -> Result<(), CheckStop> {
+        for index in 0..self.tree.topology().nodes.len() {
+            let node = NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow)?;
+            let production = self.tree.production(node)?;
+            if production == Production::InputLabel {
+                return self.unsupported(UnsupportedSemanticFeature::LabelledEntryInput, node);
+            }
+            if production == Production::Effect
+                && (self.has_fixed(node, crate::FixedTerminal::External)?
+                    || self.has_fixed(node, crate::FixedTerminal::Blocks)?)
+            {
+                return self.unsupported(UnsupportedSemanticFeature::SystemEffectCategory, node);
+            }
+        }
+        Ok(())
     }
 
     fn item_declarations(&self) -> Result<Vec<NodeId>, CheckStop> {

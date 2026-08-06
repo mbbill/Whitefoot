@@ -6,8 +6,10 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// One exact raw-token spelling produced by a fixed grammar atom in the active specification.
 ///
 /// Compound source atoms such as `&uniq` are represented by their two raw
-/// token predicates. The order follows first appearance in the approved
-/// grammar and is stable language data, not parser priority.
+/// token predicates. The declaration order is the stable dense predicate
+/// index: the v0.17 inventory followed by the three spellings v0.18 added.
+/// First grammar-occurrence order is carried by [`ALL_FIXED_TERMINALS`] and
+/// is stable language data, not parser priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum FixedTerminal {
@@ -139,88 +141,16 @@ pub enum FixedTerminal {
     Heap,
     /// `traps`.
     Traps,
-    /// `as`; staged v0.18 candidate spelling, absent from the active inventory.
+    /// `as`.
     As,
-    /// `external`; staged v0.18 candidate spelling, absent from the active
-    /// inventory.
+    /// `external`.
     External,
-    /// `blocks`; staged v0.18 candidate spelling, absent from the active
-    /// inventory.
+    /// `blocks`.
     Blocks,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 64] = [
-    FixedTerminal::Struct,
-    FixedTerminal::LeftBrace,
-    FixedTerminal::RightBrace,
-    FixedTerminal::Colon,
-    FixedTerminal::Semicolon,
-    FixedTerminal::Enum,
-    FixedTerminal::LeftParen,
-    FixedTerminal::RightParen,
-    FixedTerminal::Comma,
-    FixedTerminal::Fn,
-    FixedTerminal::ThinArrow,
-    FixedTerminal::Requires,
-    FixedTerminal::Contract,
-    FixedTerminal::Law,
-    FixedTerminal::Conform,
-    FixedTerminal::Const,
-    FixedTerminal::Equal,
-    FixedTerminal::Doc,
-    FixedTerminal::LeftAngle,
-    FixedTerminal::RightAngle,
-    FixedTerminal::LeftBracket,
-    FixedTerminal::RightBracket,
-    FixedTerminal::I8,
-    FixedTerminal::I16,
-    FixedTerminal::I32,
-    FixedTerminal::I64,
-    FixedTerminal::U8,
-    FixedTerminal::U16,
-    FixedTerminal::U32,
-    FixedTerminal::U64,
-    FixedTerminal::F32,
-    FixedTerminal::F64,
-    FixedTerminal::Unit,
-    FixedTerminal::Array,
-    FixedTerminal::Slice,
-    FixedTerminal::Box,
-    FixedTerminal::Arena,
-    FixedTerminal::Buffer,
-    FixedTerminal::Own,
-    FixedTerminal::Ampersand,
-    FixedTerminal::Uniq,
-    FixedTerminal::Let,
-    FixedTerminal::Propagate,
-    FixedTerminal::Set,
-    FixedTerminal::Return,
-    FixedTerminal::Loop,
-    FixedTerminal::Break,
-    FixedTerminal::Region,
-    FixedTerminal::Check,
-    FixedTerminal::Else,
-    FixedTerminal::Trap,
-    FixedTerminal::Give,
-    FixedTerminal::Match,
-    FixedTerminal::FatArrow,
-    FixedTerminal::Move,
-    FixedTerminal::Deref,
-    FixedTerminal::Index,
-    FixedTerminal::Dot,
-    FixedTerminal::Pure,
-    FixedTerminal::Reads,
-    FixedTerminal::Writes,
-    FixedTerminal::Allocates,
-    FixedTerminal::Heap,
-    FixedTerminal::Traps,
-];
-
-/// Every fixed raw-token predicate in the staged v0.18 candidate contract, in
-/// first occurrence order of that staged grammar. This inventory is reachable
-/// only through the staged contract identity; the active path never uses it.
-pub const STAGED_FIXED_TERMINALS: [FixedTerminal; 67] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 67] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -374,15 +304,6 @@ impl FixedTerminal {
             .find(|terminal| terminal.spelling() == spelling)
     }
 
-    /// Finds the staged-contract fixed predicate with these raw-token bytes.
-    #[must_use]
-    pub fn from_staged_spelling(spelling: &[u8]) -> Option<Self> {
-        STAGED_FIXED_TERMINALS
-            .iter()
-            .copied()
-            .find(|terminal| terminal.spelling() == spelling)
-    }
-
     const fn index(self) -> u8 {
         self as u8
     }
@@ -415,89 +336,14 @@ pub enum TerminalPredicate {
     Digits,
 }
 
-/// Every approved active-specification token predicate. `SOURCE_END` is intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 72] = [
-    TerminalPredicate::Fixed(FixedTerminal::Struct),
-    TerminalPredicate::Fixed(FixedTerminal::LeftBrace),
-    TerminalPredicate::Fixed(FixedTerminal::RightBrace),
-    TerminalPredicate::Fixed(FixedTerminal::Colon),
-    TerminalPredicate::Fixed(FixedTerminal::Semicolon),
-    TerminalPredicate::Fixed(FixedTerminal::Enum),
-    TerminalPredicate::Fixed(FixedTerminal::LeftParen),
-    TerminalPredicate::Fixed(FixedTerminal::RightParen),
-    TerminalPredicate::Fixed(FixedTerminal::Comma),
-    TerminalPredicate::Fixed(FixedTerminal::Fn),
-    TerminalPredicate::Fixed(FixedTerminal::ThinArrow),
-    TerminalPredicate::Fixed(FixedTerminal::Requires),
-    TerminalPredicate::Fixed(FixedTerminal::Contract),
-    TerminalPredicate::Fixed(FixedTerminal::Law),
-    TerminalPredicate::Fixed(FixedTerminal::Conform),
-    TerminalPredicate::Fixed(FixedTerminal::Const),
-    TerminalPredicate::Fixed(FixedTerminal::Equal),
-    TerminalPredicate::Fixed(FixedTerminal::Doc),
-    TerminalPredicate::Fixed(FixedTerminal::LeftAngle),
-    TerminalPredicate::Fixed(FixedTerminal::RightAngle),
-    TerminalPredicate::Fixed(FixedTerminal::LeftBracket),
-    TerminalPredicate::Fixed(FixedTerminal::RightBracket),
-    TerminalPredicate::Fixed(FixedTerminal::I8),
-    TerminalPredicate::Fixed(FixedTerminal::I16),
-    TerminalPredicate::Fixed(FixedTerminal::I32),
-    TerminalPredicate::Fixed(FixedTerminal::I64),
-    TerminalPredicate::Fixed(FixedTerminal::U8),
-    TerminalPredicate::Fixed(FixedTerminal::U16),
-    TerminalPredicate::Fixed(FixedTerminal::U32),
-    TerminalPredicate::Fixed(FixedTerminal::U64),
-    TerminalPredicate::Fixed(FixedTerminal::F32),
-    TerminalPredicate::Fixed(FixedTerminal::F64),
-    TerminalPredicate::Fixed(FixedTerminal::Unit),
-    TerminalPredicate::Fixed(FixedTerminal::Array),
-    TerminalPredicate::Fixed(FixedTerminal::Slice),
-    TerminalPredicate::Fixed(FixedTerminal::Box),
-    TerminalPredicate::Fixed(FixedTerminal::Arena),
-    TerminalPredicate::Fixed(FixedTerminal::Buffer),
-    TerminalPredicate::Fixed(FixedTerminal::Own),
-    TerminalPredicate::Fixed(FixedTerminal::Ampersand),
-    TerminalPredicate::Fixed(FixedTerminal::Uniq),
-    TerminalPredicate::Fixed(FixedTerminal::Let),
-    TerminalPredicate::Fixed(FixedTerminal::Propagate),
-    TerminalPredicate::Fixed(FixedTerminal::Set),
-    TerminalPredicate::Fixed(FixedTerminal::Return),
-    TerminalPredicate::Fixed(FixedTerminal::Loop),
-    TerminalPredicate::Fixed(FixedTerminal::Break),
-    TerminalPredicate::Fixed(FixedTerminal::Region),
-    TerminalPredicate::Fixed(FixedTerminal::Check),
-    TerminalPredicate::Fixed(FixedTerminal::Else),
-    TerminalPredicate::Fixed(FixedTerminal::Trap),
-    TerminalPredicate::Fixed(FixedTerminal::Give),
-    TerminalPredicate::Fixed(FixedTerminal::Match),
-    TerminalPredicate::Fixed(FixedTerminal::FatArrow),
-    TerminalPredicate::Fixed(FixedTerminal::Move),
-    TerminalPredicate::Fixed(FixedTerminal::Deref),
-    TerminalPredicate::Fixed(FixedTerminal::Index),
-    TerminalPredicate::Fixed(FixedTerminal::Dot),
-    TerminalPredicate::Fixed(FixedTerminal::Pure),
-    TerminalPredicate::Fixed(FixedTerminal::Reads),
-    TerminalPredicate::Fixed(FixedTerminal::Writes),
-    TerminalPredicate::Fixed(FixedTerminal::Allocates),
-    TerminalPredicate::Fixed(FixedTerminal::Heap),
-    TerminalPredicate::Fixed(FixedTerminal::Traps),
-    TerminalPredicate::Identifier,
-    TerminalPredicate::TypeIdentifier,
-    TerminalPredicate::RegionIdentifier,
-    TerminalPredicate::Label,
-    TerminalPredicate::OperationName,
-    TerminalPredicate::Literal,
-    TerminalPredicate::String,
-    TerminalPredicate::Digits,
-];
-
-/// Every staged v0.18 candidate token predicate: the staged fixed inventory
-/// followed by the unchanged external predicates. `SOURCE_END` is absent.
-pub const STAGED_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
+/// Every approved active-specification token predicate: the fixed inventory in
+/// first occurrence order followed by the external predicates. `SOURCE_END` is
+/// intentionally absent.
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
     let mut predicates = [TerminalPredicate::Identifier; 75];
     let mut index = 0;
-    while index < STAGED_FIXED_TERMINALS.len() {
-        predicates[index] = TerminalPredicate::Fixed(STAGED_FIXED_TERMINALS[index]);
+    while index < ALL_FIXED_TERMINALS.len() {
+        predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
     predicates[67] = TerminalPredicate::Identifier;
@@ -508,21 +354,6 @@ pub const STAGED_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
     predicates[72] = TerminalPredicate::Literal;
     predicates[73] = TerminalPredicate::String;
     predicates[74] = TerminalPredicate::Digits;
-    predicates
-};
-
-/// The complete predicate universe across both contracts, in stable storage
-/// order: the active inventory, then the staged-only fixed spellings.
-const COMPLETE_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
-    let mut predicates = [TerminalPredicate::Identifier; 75];
-    let mut index = 0;
-    while index < ALL_TERMINAL_PREDICATES.len() {
-        predicates[index] = ALL_TERMINAL_PREDICATES[index];
-        index += 1;
-    }
-    predicates[72] = TerminalPredicate::Fixed(FixedTerminal::As);
-    predicates[73] = TerminalPredicate::Fixed(FixedTerminal::External);
-    predicates[74] = TerminalPredicate::Fixed(FixedTerminal::Blocks);
     predicates
 };
 
@@ -585,7 +416,7 @@ impl TerminalSet {
     /// diagnostics. Parser tables must retain their separately approved
     /// source-grammar ranks.
     pub fn iter(self) -> impl Iterator<Item = TerminalPredicate> {
-        COMPLETE_TERMINAL_PREDICATES
+        ALL_TERMINAL_PREDICATES
             .iter()
             .copied()
             .filter(move |predicate| self.contains(*predicate))
@@ -599,17 +430,12 @@ fn lower_word(spelling: &[u8]) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
 }
 
-/// Tests active specification `IDENT` membership, including the fixed-word exclusion.
+/// Tests active specification `IDENT` membership, including the fixed-word
+/// exclusion of every fixed lowercase spelling, `as`, `external`, and `blocks`
+/// among them.
 #[must_use]
 pub fn is_identifier(spelling: &[u8]) -> bool {
     lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()
-}
-
-/// Tests staged-contract `IDENT` membership: the staged grammar's complete
-/// fixed spellings, including `as`, `external`, and `blocks`, are excluded.
-#[must_use]
-pub fn is_staged_identifier(spelling: &[u8]) -> bool {
-    lower_word(spelling) && FixedTerminal::from_staged_spelling(spelling).is_none()
 }
 
 /// Tests active specification `TYPEID` membership.

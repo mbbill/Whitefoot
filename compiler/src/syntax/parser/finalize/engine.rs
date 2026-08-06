@@ -676,17 +676,11 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
 }
 
 /// Finalizes one complete private active-specification derivation in linear space and work.
-///
-/// A staged-contract derivation fails closed: FORM-2 canonical semantics are
-/// defined only by the active numbered specification.
 #[must_use]
 pub fn finalize<'classified, 'lexed, 'source>(
     parsed: ParsedBundle<'classified, 'lexed, 'source>,
     limits: FinalizeLimits,
 ) -> FinalizeOutcome<'classified, 'lexed, 'source> {
-    if parsed.classified_bundle().spec_hash() != crate::syntax::grammar::SYNTAX_DATA_SPEC_HASH {
-        return FinalizeOutcome::InvocationFailure;
-    }
     match Finalizer::new(&parsed, limits).run() {
         Ok(topology) => FinalizeOutcome::Complete(FinalizedBundle { parsed, topology }),
         Err(Stop::Resource(failure)) => FinalizeOutcome::ResourceFailure(failure),

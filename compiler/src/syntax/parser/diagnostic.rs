@@ -1,7 +1,7 @@
 use crate::lexer::TokenKind;
 use crate::syntax::grammar::{
-    Decision, DecisionContext, DecisionKind, GrammarNodeId, GrammarNodeKind, GrammarStage,
-    LookaheadPredicate, NamePredicate, Production, SelectRow,
+    Decision, DecisionContext, DecisionKind, GrammarNodeId, GrammarNodeKind, LookaheadPredicate,
+    NamePredicate, Production, SelectRow, grammar_node,
 };
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ByteOffset, SourceId};
@@ -27,7 +27,6 @@ pub(crate) enum DecisionSelection {
 
 #[derive(Clone, Copy)]
 pub(crate) struct DiagnosticSite<'tokens, 'source> {
-    pub(crate) stage: GrammarStage,
     pub(crate) source: SourceId,
     pub(crate) source_len: u64,
     pub(crate) tokens: &'tokens [ClassifiedToken<'source>],
@@ -287,7 +286,6 @@ fn construct_override(
 
 fn program_leftover(
     context: DecisionContext,
-    stage: GrammarStage,
     source: SourceId,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
@@ -300,7 +298,7 @@ fn program_leftover(
     Some(SyntaxIssue {
         rule: SyntaxRule::Gram2,
         coordinate: SyntaxCoordinate::new(source, id.start(), id.end()),
-        expected: ExpectedBuilder::only_end(stage).finish(),
+        expected: ExpectedBuilder::only_end().finish(),
     })
 }
 
@@ -345,7 +343,7 @@ fn frontier(
         arm_scores[arm] = arm_scores[arm].max(score);
         maximum = maximum.max(score);
     }
-    let mut expected = ExpectedBuilder::empty(decision.stage());
+    let mut expected = ExpectedBuilder::empty();
     let mut transparent_name = None;
     let mut transparent_disagreement = false;
     let mut atom_only = false;
@@ -482,7 +480,6 @@ fn override_issue(
     }
     Ok(program_leftover(
         decision.context(),
-        site.stage,
         site.source,
         site.tokens,
         site.cursor,
@@ -518,21 +515,8 @@ fn push_probe(
     Ok(())
 }
 
-fn production_rule(
-    stage: GrammarStage,
-    production: Production,
-) -> Result<SyntaxRule, ParseCompilerFailure> {
-    stage
-        .production_owner(production)
-        .map(SyntaxRule::from)
-        .ok_or(ParseCompilerFailure::InvalidGrammarData)
-}
-
 fn arm_node(decision: Decision, arm: u8) -> Result<Option<GrammarNodeId>, ParseCompilerFailure> {
-    let node = decision
-        .stage()
-        .node(decision.node())
-        .ok_or(ParseCompilerFailure::MissingGrammarNode)?;
+    let node = grammar_node(decision.node()).ok_or(ParseCompilerFailure::MissingGrammarNode)?;
     match decision.kind() {
         DecisionKind::Choice => node
             .children()
@@ -571,8 +555,7 @@ fn descend_or_issue(
         let node = arm_node(decision, arm).map_err(DiagnosticResult::Compiler)?;
         let Some(node) = node else {
             return Ok(Some(SyntaxIssue {
-                rule: production_rule(decision.stage(), decision.production())
-                    .map_err(DiagnosticResult::Compiler)?,
+                rule: SyntaxRule::from(decision.production().owner()),
                 coordinate: boundary_coordinate(
                     site.source,
                     site.source_len,
@@ -590,8 +573,7 @@ fn descend_or_issue(
         return Ok(None);
     }
     Ok(Some(SyntaxIssue {
-        rule: production_rule(decision.stage(), decision.production())
-            .map_err(DiagnosticResult::Compiler)?,
+        rule: SyntaxRule::from(decision.production().owner()),
         coordinate: boundary_coordinate(
             site.source,
             site.source_len,
@@ -610,7 +592,7 @@ pub(crate) fn direct_mismatch(
     site: DiagnosticSite<'_, '_>,
     work: &mut Work,
 ) -> DiagnosticResult {
-    let mut builder = ExpectedBuilder::empty(site.stage);
+    let mut builder = ExpectedBuilder::empty();
     builder.insert(LookaheadPredicate::Terminal(expected_terminal));
     let expected = builder.finish();
     match dotted_override(site.source, site.tokens, site.cursor, expected, work) {
@@ -660,13 +642,9 @@ pub(crate) fn direct_mismatch(
             });
         }
     }
-    let rule = match production_rule(site.stage, context.production) {
-        Ok(rule) => rule,
-        Err(failure) => return DiagnosticResult::Compiler(failure),
-    };
     match boundary_coordinate(site.source, site.source_len, site.tokens, site.cursor, 0) {
         Ok(coordinate) => DiagnosticResult::Issue(SyntaxIssue {
-            rule,
+            rule: SyntaxRule::from(context.production.owner()),
             coordinate,
             expected,
         }),
@@ -713,7 +691,7 @@ fn probe(
                 cursor = next;
             }
             ProbeTask::Execute(node_id, task_context) => {
-                let Some(node) = site.stage.node(node_id) else {
+                let Some(node) = grammar_node(node_id) else {
                     return DiagnosticResult::Compiler(ParseCompilerFailure::MissingGrammarNode);
                 };
                 match node.kind() {
@@ -722,14 +700,11 @@ fn probe(
                             production,
                             atom_only: node.is_atom_only_reference(),
                         };
-                        let Some(root) = site.stage.production_root(production) else {
-                            return DiagnosticResult::Compiler(
-                                ParseCompilerFailure::MissingGrammarNode,
-                            );
-                        };
-                        if let Err(failure) =
-                            push_probe(&mut tasks, ProbeTask::Execute(root, nested), site.limits)
-                        {
+                        if let Err(failure) = push_probe(
+                            &mut tasks,
+                            ProbeTask::Execute(production.root(), nested),
+                            site.limits,
+                        ) {
                             return DiagnosticResult::Resource(failure);
                         }
                     }
@@ -844,7 +819,7 @@ fn probe(
                 }
             }
             ProbeTask::Continue(node_id, task_context) => {
-                let Some(node) = site.stage.node(node_id) else {
+                let Some(node) = grammar_node(node_id) else {
                     return DiagnosticResult::Compiler(ParseCompilerFailure::MissingGrammarNode);
                 };
                 let Some(decision) = node.decision().copied() else {
@@ -936,12 +911,8 @@ pub(crate) fn diagnose_decision(
         Ok(coordinate) => coordinate,
         Err(failure) => return DiagnosticResult::Compiler(failure),
     };
-    let rule = match production_rule(decision.stage(), decision.production()) {
-        Ok(rule) => rule,
-        Err(failure) => return DiagnosticResult::Compiler(failure),
-    };
     DiagnosticResult::Issue(SyntaxIssue {
-        rule,
+        rule: SyntaxRule::from(decision.production().owner()),
         coordinate,
         expected: value.expected,
     })

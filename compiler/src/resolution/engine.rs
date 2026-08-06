@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
-use crate::{ByteOffset, CanonicalSyntaxUnit, Production, SourceId};
+use crate::{ByteOffset, CanonicalSyntaxUnit, NodePath, Production, SourceId};
 
 use super::catalog::PRELUDE_DECLARATIONS;
 use super::scopes::ScopeBuild;
@@ -9,7 +9,8 @@ use super::{
     DeclarationClass, DeclarationDomain, DeclarationId, DeclarationRecord, DeclarationRole,
     DeferredUseRecord, DeferredUseRole, DependentDeclarationRecord, DependentDeclarationRole,
     LexicalUseRecord, LexicalUseRole, PreludeDeclarationRecord, ResolutionCompilerFailure,
-    ResolutionIssue, ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin,
+    ResolutionIssue, ResolutionOutcome, ResolutionUnsupported, ResolvedSyntaxUnit, ScopeId,
+    SourceOrigin,
 };
 
 mod admission;
@@ -52,6 +53,11 @@ enum RawRoleKind {
     DependentDeclaration(DependentDeclarationRole),
     LexicalUse(LexicalUseRole),
     DeferredUse(DeferredUseRole),
+    /// A DIAG-1 table-checked carrier: the `program_kind` IDENT and both
+    /// IDENTs of an `input_label`. It declares nothing and enters no lexical
+    /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
+    /// capability, so classification produces no retained record yet.
+    TableChecked,
 }
 
 impl RawRoleKind {
@@ -60,6 +66,7 @@ impl RawRoleKind {
             Self::Declaration(_) | Self::DependentDeclaration(_) => 0,
             Self::LexicalUse(_) => 1,
             Self::DeferredUse(_) => 2,
+            Self::TableChecked => 3,
         }
     }
 }
@@ -142,6 +149,7 @@ struct Tables {
 
 enum BuildStop {
     Issue(Box<ResolutionIssue>),
+    Unsupported(ResolutionUnsupported),
     Compiler(ResolutionCompilerFailure),
 }
 
@@ -170,12 +178,59 @@ pub fn resolve<'classified, 'lexed, 'source>(
             syntax,
             issue: *issue,
         },
+        Err(BuildStop::Unsupported(unsupported)) => ResolutionOutcome::Unsupported {
+            syntax,
+            unsupported,
+        },
         Err(BuildStop::Compiler(failure)) => ResolutionOutcome::CompilerFailure { syntax, failure },
     }
 }
 
+/// Stops before declaration inventory when the unit is kind-declaring.
+///
+/// The kind-declaring judgment is syntactic and total ([FN-7]): the unit is
+/// kind-declaring exactly when a `program_kind` node exists. Such a unit
+/// admits the system declaration domain into name lookup ([SYS-1], [SYS-3]),
+/// which this compiler has not implemented, so continuing could misreport an
+/// admitted system name as undeclared. Stopping here keeps the whole unit an
+/// explicit unsupported compiler capability, never a source rejection.
+fn check_system_declaration_support(topology: &FinalizedTopology) -> Result<(), BuildStop> {
+    for index in 0..topology.nodes.len() {
+        let node = NodeId::from_index(index).ok_or(ResolutionCompilerFailure::CounterOverflow)?;
+        let record = topology
+            .node(node)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        if record.production == Production::ProgramKind {
+            return Err(BuildStop::Unsupported(
+                ResolutionUnsupported::SystemDeclarationDomain {
+                    node: node_path(topology, node)?,
+                },
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn node_path(topology: &FinalizedTopology, node: NodeId) -> Result<NodePath, BuildStop> {
+    let mut components = Vec::new();
+    let mut cursor = node;
+    loop {
+        let record = topology
+            .node(cursor)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        let Some(parent) = record.parent else {
+            break;
+        };
+        components.push(record.child_ordinal);
+        cursor = parent;
+    }
+    components.reverse();
+    Ok(NodePath { components })
+}
+
 fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
+    check_system_declaration_support(topology)?;
     let scopes = ScopeBuild::build(topology)?;
     if let Some(issue) = check_requires_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
@@ -234,6 +289,10 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                 spelling: role.spelling.clone(),
                 origin: role.origin.clone(),
             }),
+            // Table-checked carriers await the FN-7 kind-table capability;
+            // until then a unit containing one stops in semantic checking as
+            // an explicit unsupported compiler capability.
+            RawRoleKind::TableChecked => {}
         }
     }
 

@@ -56,7 +56,7 @@ fn every_fixed_predicate_is_retained_without_identifier_priority() {
     let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
         ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits { max_tokens: 64 },
+        TerminalLimits { max_tokens: 128 },
     ) else {
         panic!("fixed terminal inventory must classify");
     };
@@ -351,48 +351,34 @@ fn repeated_classification_is_deterministic() {
 }
 
 #[test]
-fn staged_contract_reserves_as_external_and_blocks() {
-    use crate::syntax::grammar::STAGED_SYNTAX_CONTRACT_HASH;
-
-    let inputs = [SourceInput::new("staged.wf", b"as external blocks")];
+fn active_contract_reserves_as_external_and_blocks() {
+    let inputs = [SourceInput::new("reserved.wf", b"as external blocks")];
     let Ok(bundle) = source_bundle(&inputs) else {
         panic!("test source bundle must be constructible");
     };
     let Ok(lexed) = lexed(&bundle) else {
-        panic!("staged spellings must lex");
+        panic!("reserved spellings must lex");
     };
-    let TerminalOutcome::Complete(staged) = classify_terminals(
+    let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
-        STAGED_SYNTAX_CONTRACT_HASH,
+        ACTIVE_KERNEL_SPEC_HASH,
         TerminalLimits { max_tokens: 3 },
     ) else {
-        panic!("staged spellings must classify under the staged contract");
+        panic!("reserved spellings must classify under the active contract");
     };
     let expected = [
         FixedTerminal::As,
         FixedTerminal::External,
         FixedTerminal::Blocks,
     ];
-    assert_eq!(staged.tokens().len(), expected.len());
-    for (token, terminal) in staged.tokens().iter().zip(expected) {
+    assert_eq!(classified.tokens().len(), expected.len());
+    for (token, terminal) in classified.tokens().iter().zip(expected) {
         assert!(
             token
                 .terminals()
                 .contains(TerminalPredicate::Fixed(terminal))
         );
         assert!(!token.terminals().contains(TerminalPredicate::Identifier));
-        assert_eq!(token.terminals().len(), 1);
-    }
-
-    let TerminalOutcome::Complete(active) = classify_terminals(
-        &lexed,
-        ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits { max_tokens: 3 },
-    ) else {
-        panic!("staged spellings must classify under the active contract");
-    };
-    for token in active.tokens() {
-        assert!(token.terminals().contains(TerminalPredicate::Identifier));
         assert_eq!(token.terminals().len(), 1);
     }
 }

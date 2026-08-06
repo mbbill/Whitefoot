@@ -394,6 +394,10 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
+    /// A labelled entry input: a parameter carrying an `input_label` child.
+    LabelledEntryInput,
+    /// An `external` or `blocks` category in an effect row.
+    SystemEffectCategory,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

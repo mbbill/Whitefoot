@@ -432,6 +432,26 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
 }
 
 #[test]
+fn labelled_entry_input_stops_as_explicit_unsupported_capability() {
+    assert_unsupported(
+        b"fn helper(app.input as value: own i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        UnsupportedSemanticFeature::LabelledEntryInput,
+    );
+}
+
+#[test]
+fn system_effect_categories_stop_as_explicit_unsupported_capability() {
+    assert_unsupported(
+        b"fn probe() -> own unit external {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        UnsupportedSemanticFeature::SystemEffectCategory,
+    );
+    assert_unsupported(
+        b"fn probe() -> own unit blocks {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        UnsupportedSemanticFeature::SystemEffectCategory,
+    );
+}
+
+#[test]
 fn result_construction_and_propagation_keep_context_and_rule_owners() {
     let source = br#"enum StepError {
   Failed();

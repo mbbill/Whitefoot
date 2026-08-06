@@ -24,7 +24,7 @@ ordered source bundle
 ```
 
 The frontend targets the exact bytes of
-`../spec/kernel-spec-v0.17.md`. `cargo run --bin whitefoot-spec` checks that
+`../spec/kernel-spec-v0.18.md`. `cargo run --bin whitefoot-spec` checks that
 those bytes are the approved candidate and that the terminal and grammar data
 name the same specification identity. The committed grammar tables are
 ordinary compiler data. The exact specification identity is versioned data;
@@ -37,17 +37,19 @@ cargo run --bin whitefoot-grammar -- \
   ../governance/spec-evolution/kernel-spec-vN-candidate.md
 ```
 
-It compares the proposal's complete canonical-format, lexer, and grammar
-contract with the contracts this compiler carries, checks the matching
-terminal inventory and every strong-LL(2) decision, and runs the real lexer
-and parser over that contract's tables. A structural change must first extend
-this same native path rather than reviving an independent grammar engine: the
-compiler currently carries the active v0.17 tables and one staged table set
-for the v0.18 candidate contract (committed data plus a byte-exact snapshot of
-the candidate's frontend sections in `src/syntax/grammar/staged_frontend.md`).
-The production compile path always selects the active tables; the staged set
-is reachable only through the explicit staged contract identity, and any
-proposal matching neither contract fails closed.
+It verifies that a grammar-preserving proposal keeps the active
+specification's complete canonical-format, lexer, and grammar contract
+byte-for-byte, checks the committed terminal inventory and every strong-LL(2)
+decision, and runs the real lexer and parser over the active tables. A
+proposal that changes that frontend contract fails closed: a structural change
+must first extend this same native path rather than reviving an independent
+grammar engine.
+
+The v0.18 system-interface surface parses under the active grammar but stops
+as an explicit unsupported compiler capability pending its implementation
+tasks: a kind-declaring entry (`program_kind`, which admits the system
+declaration domain), a labelled entry input (`input_label`), and the
+`external`/`blocks` effect categories.
 
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
@@ -127,7 +129,7 @@ or cross-instance body sharing. Generic call cycles, generic functions with
 region parameters or `requires`, and type-dependent generic `cvt` or
 `reinterpret` are explicit unsupported capabilities. Generic source contracts,
 source-contract bounds, and region-bearing generic arguments instead receive
-their v0.17-specified source rejections.
+their v0.18-specified source rejections.
 
 The first lexical borrow family adds caller region parameters, local region
 blocks, shared and unique buffer holders, explicit `deref`, resolved
@@ -148,7 +150,7 @@ row, so both missing and superfluous capabilities reject under EFF-2. These
 facts currently stop at semantic checking and static-contract compatibility.
 The backend emits no effect-derived LLVM function attributes or alias metadata,
 licenses no check elision from an effect row, and never emits `willreturn`;
-v0.17 has no termination checker.
+v0.18 has no termination checker.
 
 Target qualification is one private stage immediately before LLVM emission.
 The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple and
@@ -171,7 +173,7 @@ before the body. Callers do not prove it, and it is never turned into
 program exercises this path through the ordinary loop, buffer, effect, and
 cleanup implementation.
 
-The v0.17 compiler retains the static contract family introduced in v0.16 and
+The v0.18 compiler retains the static contract family introduced in v0.16 and
 checks it before checked-program publication.
 A nongeneric source contract contributes its source-ordered unique member
 signatures and laws. Each source conformance has one exact concrete subject,
@@ -187,7 +189,7 @@ That evidence is deliberately non-executable. Lowering reads the same ordinary
 checked functions and operations as before, ignores the contract metadata, and
 creates no contract object, dictionary, vtable, indirect call, runtime check,
 ABI component, or optimizer fact. A bound function is emitted only through its
-normal direct function path. v0.17 has no contract-member call operation, and
+normal direct function path. v0.18 has no contract-member call operation, and
 generic source contracts and source-contract generic bounds receive their
 specified FN-3 rejections rather than becoming unsupported compiler features.
 
@@ -207,7 +209,7 @@ over arrays, primitive buffers, and immutable const arrays use the same checked
 place, cleanup, and backend paths. The compiler deliberately stops before
 returned borrows, borrow-producing branch joins, arenas, slices formed through
 borrow holders, non-flat slice elements, and non-buffer borrow-backed SET-1
-targets. Direct own returned slices use v0.17's finite-origin rules through the
+targets. Direct own returned slices use v0.18's finite-origin rules through the
 normal semantic, lowering, and unchanged slice-descriptor path. A source
 claim belongs to its named data region rather than to one descriptor binding,
 so nested scopes preserve it, control joins take its conservative union, and

@@ -190,12 +190,6 @@ impl<'classified, 'lexed, 'source> FinalizedBundle<'classified, 'lexed, 'source>
 pub enum FinalizeOutcome<'classified, 'lexed, 'source> {
     /// The private derivation passed the complete linear topology audit.
     Complete(FinalizedBundle<'classified, 'lexed, 'source>),
-    /// The invocation does not select the active specification contract.
-    ///
-    /// Finalization and the FORM-2 canonical audit are defined only for the
-    /// active numbered specification; a staged-contract derivation fails
-    /// closed here instead of receiving active formatting semantics.
-    InvocationFailure,
     /// Explicit ceilings or host storage prevented completion.
     ResourceFailure(FinalizeResourceFailure),
     /// A trusted parser, tree, or grammar-data invariant failed.

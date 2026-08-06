@@ -1,7 +1,7 @@
 #![allow(clippy::panic)]
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
-use crate::syntax::grammar::{Production, STAGED_SYNTAX_CONTRACT_HASH, productions};
+use crate::syntax::grammar::{Production, productions};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
 
 use crate::{TerminalLimits, TerminalOutcome, classify_terminals};
@@ -258,7 +258,37 @@ fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
 }
 
 #[test]
-fn non_ident_program_leftover_expects_only_source_end() {
+fn non_name_program_leftover_expects_only_source_end() {
+    let inputs = [SourceInput::new("leftover.wf", b"42_i32")];
+    let bundle = bundle(&inputs);
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 8 },
+    ) else {
+        panic!("test source must classify");
+    };
+    let ParseOutcome::SourceIssue(issue) = parse(&classified, PARSE_LIMITS) else {
+        panic!("top-level literal leftover must reject");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Gram2);
+    assert_eq!(issue.expected().len(), 1);
+    assert!(
+        issue
+            .expected()
+            .contains(crate::syntax::grammar::LookaheadPredicate::SourceEnd)
+    );
+}
+
+#[test]
+fn fixed_word_program_leftover_is_a_reserved_name_slot_mismatch() {
+    // Under v0.18 the item entry expects IDENT through `program_kind?`, so a
+    // fixed lower word such as `return` at top level is DIAG-1 attribution
+    // row 3 (a reserved spelling in an IDENT slot, FORM-3) before the row 5
+    // program-leftover replacement can apply.
     let inputs = [SourceInput::new("leftover.wf", b"return unit;")];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -274,13 +304,7 @@ fn non_ident_program_leftover_expects_only_source_end() {
     let ParseOutcome::SourceIssue(issue) = parse(&classified, PARSE_LIMITS) else {
         panic!("top-level statement must reject");
     };
-    assert_eq!(issue.rule(), SyntaxRule::Gram2);
-    assert_eq!(issue.expected().len(), 1);
-    assert!(
-        issue
-            .expected()
-            .contains(crate::syntax::grammar::LookaheadPredicate::SourceEnd)
-    );
+    assert_eq!(issue.rule(), SyntaxRule::Form3);
 }
 
 #[test]
@@ -435,6 +459,11 @@ conform Name<T>: Contract<T> { doc "binding"; member = implementation; }
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: array<i32, 2> = [0_i32, zero];
+command fn entry(command.args as arguments: own i32, command.cwd as directory: own i32)
+-> own unit external, blocks
+{
+return unit;
+}
 fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
 -> own unit reads('r), writes('r), allocates(heap arena 'r), traps
 requires { let pre: own i32 = iadd.wrap(0_i32, 1_i32); check pre else trap "pre"; }
@@ -483,7 +512,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 62);
+    assert_eq!(productions().len(), 64);
     assert_eq!(
         parsed
             .tree
@@ -516,39 +545,38 @@ const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own 
 
 const EXTERNAL_EFFECT_ROW: &[u8] = b"fn probe() -> own unit external {\n  return unit;\n}\n";
 
-const STAGED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
+const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> own unit blocks {\n  return unit;\n}\n";
+
+const RESERVED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn external() -> own unit pure {\n  let as: own i32 = blocks;\n  return unit;\n}\n";
 
-fn parse_with(
-    contract: crate::SpecHash,
+fn parse_active(
     name: &'static str,
     source: &'static [u8],
-) -> (ParseOutcome<'static, 'static, 'static>, ()) {
+) -> ParseOutcome<'static, 'static, 'static> {
     // Tests leak their small fixtures so the borrowed pipeline stays simple.
     let inputs = Box::leak(Box::new([SourceInput::new(name, source)]));
     let bundle = Box::leak(Box::new(bundle(inputs)));
     let LexOutcome::Complete(lexed) = lex(bundle, LEX_LIMITS) else {
-        panic!("staged-path fixture must lex");
+        panic!("fixture must lex");
     };
     let lexed = Box::leak(Box::new(lexed));
-    let TerminalOutcome::Complete(classified) =
-        classify_terminals(lexed, contract, TerminalLimits { max_tokens: 65_536 })
-    else {
-        panic!("staged-path fixture must classify");
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 65_536 },
+    ) else {
+        panic!("fixture must classify");
     };
     let classified = Box::leak(Box::new(classified));
-    (parse(classified, PARSE_LIMITS), ())
+    parse(classified, PARSE_LIMITS)
 }
 
 #[test]
-fn staged_contract_parses_the_kind_declaring_entry() {
-    let (outcome, ()) = parse_with(
-        STAGED_SYNTAX_CONTRACT_HASH,
-        "staged-entry.wf",
-        KIND_DECLARING_ENTRY,
-    );
+fn active_contract_parses_the_kind_declaring_entry() {
+    let outcome = parse_active("entry.wf", KIND_DECLARING_ENTRY);
     let ParseOutcome::Complete(parsed) = outcome else {
-        panic!("the staged tables must derive the kind-declaring entry: {outcome:?}");
+        panic!("the active tables must derive the kind-declaring entry: {outcome:?}");
     };
     for production in [Production::ProgramKind, Production::InputLabel] {
         let present = parsed.tree.elements.iter().any(|element| {
@@ -557,111 +585,26 @@ fn staged_contract_parses_the_kind_declaring_entry() {
                 DerivationElement::Production { production: actual, .. } if *actual == production
             )
         });
-        assert!(present, "staged derivation omitted {production:?}");
+        assert!(present, "derivation omitted {production:?}");
     }
 }
 
 #[test]
-fn staged_contract_parses_the_external_and_blocks_effect_rows() {
-    let (outcome, ()) = parse_with(
-        STAGED_SYNTAX_CONTRACT_HASH,
-        "staged-effects.wf",
-        EXTERNAL_EFFECT_ROW,
-    );
-    assert!(
-        matches!(outcome, ParseOutcome::Complete(_)),
-        "the staged tables must derive an external effect row: {outcome:?}"
-    );
+fn active_contract_parses_the_external_and_blocks_effect_rows() {
+    for source in [EXTERNAL_EFFECT_ROW, BLOCKS_EFFECT_ROW] {
+        let outcome = parse_active("effects.wf", source);
+        assert!(
+            matches!(outcome, ParseOutcome::Complete(_)),
+            "the active tables must derive the system effect row: {outcome:?}"
+        );
+    }
 }
 
 #[test]
-fn active_contract_still_rejects_the_kind_declaring_entry() {
-    let (outcome, ()) = parse_with(
-        ACTIVE_KERNEL_SPEC_HASH,
-        "active-entry.wf",
-        KIND_DECLARING_ENTRY,
-    );
+fn active_contract_reserves_the_new_fixed_spellings() {
+    let outcome = parse_active("identifiers.wf", RESERVED_SPELLINGS_AS_IDENTIFIERS);
     let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("a program_kind entry must stay rejected on the active path: {outcome:?}");
-    };
-    assert_eq!(issue.rule(), SyntaxRule::Form1);
-}
-
-#[test]
-fn active_contract_still_rejects_an_external_effect_row() {
-    let (outcome, ()) = parse_with(
-        ACTIVE_KERNEL_SPEC_HASH,
-        "active-effects.wf",
-        EXTERNAL_EFFECT_ROW,
-    );
-    let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("an external effect row must stay rejected on the active path: {outcome:?}");
-    };
-    // The two-token window fails at the `unit external` type decision, one
-    // token before the effect row itself; the rejection is grammar-level.
-    assert_eq!(issue.rule(), SyntaxRule::Gram3);
-
-    let (outcome, ()) = parse_with(
-        ACTIVE_KERNEL_SPEC_HASH,
-        "active-effects-tail.wf",
-        b"fn probe() -> own unit allocates(heap), external {\n  return unit;\n}\n",
-    );
-    let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("a trailing external category must stay rejected on the active path: {outcome:?}");
-    };
-    assert_eq!(issue.rule(), SyntaxRule::Eff1);
-}
-
-#[test]
-fn active_contract_keeps_staged_spellings_as_ordinary_identifiers() {
-    let (outcome, ()) = parse_with(
-        ACTIVE_KERNEL_SPEC_HASH,
-        "active-identifiers.wf",
-        STAGED_SPELLINGS_AS_IDENTIFIERS,
-    );
-    assert!(
-        matches!(outcome, ParseOutcome::Complete(_)),
-        "as/external/blocks must remain active-path identifiers: {outcome:?}"
-    );
-}
-
-#[test]
-fn staged_contract_reserves_the_new_fixed_spellings() {
-    let (outcome, ()) = parse_with(
-        STAGED_SYNTAX_CONTRACT_HASH,
-        "staged-identifiers.wf",
-        STAGED_SPELLINGS_AS_IDENTIFIERS,
-    );
-    let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("a staged parse must reject the reserved spellings: {outcome:?}");
+        panic!("as/external/blocks must be reserved spellings excluded from IDENT: {outcome:?}");
     };
     assert_eq!(issue.rule(), SyntaxRule::Form3);
-}
-
-#[test]
-fn finalization_fails_closed_on_a_staged_derivation() {
-    let (outcome, ()) = parse_with(
-        STAGED_SYNTAX_CONTRACT_HASH,
-        "staged-finalize.wf",
-        b"fn main() -> own unit pure {\n  return unit;\n}\n",
-    );
-    let ParseOutcome::Complete(parsed) = outcome else {
-        panic!("the staged tables must derive the shared minimal program: {outcome:?}");
-    };
-    let outcome = finalize(
-        parsed,
-        FinalizeLimits {
-            max_work: 8_000_000,
-            max_roots: 131_072,
-            max_shape_tasks: 131_072,
-            max_nodes: 131_072,
-            max_child_edges: 131_072,
-            max_terminals: 131_072,
-            max_sources: 16,
-        },
-    );
-    assert!(
-        matches!(outcome, FinalizeOutcome::InvocationFailure),
-        "finalization must fail closed on a staged-contract derivation"
-    );
 }

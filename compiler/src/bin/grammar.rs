@@ -5,19 +5,16 @@ use std::path::Path;
 
 use whitefoot::{
     ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ALL_FIXED_TERMINALS,
-    ALL_TERMINAL_PREDICATES, FixedTerminal, GrammarNodeKind, GrammarStage, LexLimits, LexOutcome,
-    LookaheadPredicate, ParseLimits, ParseOutcome, STAGED_FIXED_TERMINALS,
-    STAGED_FRONTEND_CONTRACT_TEXT, STAGED_SYNTAX_CONTRACT_HASH, STAGED_TERMINAL_PREDICATES,
-    SourceBundle, SourceInput, SourceLimits, SpecHash, TerminalLimits, TerminalOutcome,
-    TerminalPredicate, classify_terminals, lex, parse,
+    ALL_TERMINAL_PREDICATES, GrammarNodeKind, LexLimits, LexOutcome, LookaheadPredicate,
+    ParseLimits, ParseOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
+    TerminalOutcome, TerminalPredicate, classify_terminals, diagnostic_terminal_order,
+    grammar_node, lex, parse, productions,
 };
 
-const PARSER_PROBE: &[u8] = b"fn main() -> own unit pure {\n  return unit;\n}\n";
-
-/// The staged candidate's canonical complete command-entry header ([FN-7])
-/// over the same minimal body, plus the unchanged unlabelled entry.
-const STAGED_PARSER_PROBES: [&[u8]; 2] = [
-    PARSER_PROBE,
+/// The unlabelled entry and the canonical complete command-entry header
+/// ([FN-7]) over the same minimal body.
+const PARSER_PROBES: [&[u8]; 2] = [
+    b"fn main() -> own unit pure {\n  return unit;\n}\n",
     b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n",
 ];
 
@@ -48,7 +45,7 @@ impl fmt::Display for VerifyError {
                 write!(formatter, "candidate is missing frontend section {marker}")
             }
             Self::ChangedFrontendContract => formatter.write_str(
-                "candidate changes the lexer or source grammar beyond the contracts this compiler carries; a structural change must first extend the native active or staged grammar path",
+                "candidate changes the lexer or source grammar of the active specification; a structural change must first extend the native grammar path",
             ),
             Self::InvalidCompilerGrammar(message) => {
                 write!(formatter, "compiler grammar data is inconsistent: {message}")
@@ -82,38 +79,26 @@ fn run() -> Result<(), VerifyError> {
     }
     let bytes = std::fs::read(Path::new(&candidate)).map_err(VerifyError::Read)?;
     let report = verify_candidate(&bytes)?;
-    match report.stage {
-        GrammarStage::Active => println!(
-            "grammar-preserving candidate verified by the active compiler: {} productions, {} decisions, {} terminal predicates",
-            report.productions, report.decisions, report.terminals
-        ),
-        GrammarStage::Staged => println!(
-            "staged candidate contract verified by the active compiler's staged grammar path: {} productions, {} decisions, {} terminal predicates",
-            report.productions, report.decisions, report.terminals
-        ),
-    }
+    println!(
+        "grammar-preserving candidate verified by the active compiler: {} productions, {} decisions, {} terminal predicates",
+        report.productions, report.decisions, report.terminals
+    );
     Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct VerifyReport {
-    stage: GrammarStage,
     productions: usize,
     decisions: usize,
     terminals: usize,
 }
 
 fn verify_candidate(candidate: &[u8]) -> Result<VerifyReport, VerifyError> {
-    let contract = frontend_contract(candidate)?;
-    let stage = if contract == frontend_contract(ACTIVE_KERNEL_SPEC_BYTES)? {
-        GrammarStage::Active
-    } else if contract == frontend_contract(STAGED_FRONTEND_CONTRACT_TEXT.as_bytes())? {
-        GrammarStage::Staged
-    } else {
+    if frontend_contract(candidate)? != frontend_contract(ACTIVE_KERNEL_SPEC_BYTES)? {
         return Err(VerifyError::ChangedFrontendContract);
-    };
-    let report = verify_compiler_grammar(stage)?;
-    run_parser_probes(stage)?;
+    }
+    let report = verify_compiler_grammar()?;
+    run_parser_probes()?;
     Ok(report)
 }
 
@@ -146,24 +131,9 @@ fn line_start(text: &str, marker: &str) -> Option<usize> {
         .find(|index| *index == 0 || text.as_bytes().get(index - 1) == Some(&b'\n'))
 }
 
-fn stage_fixed_terminals(stage: GrammarStage) -> &'static [FixedTerminal] {
-    match stage {
-        GrammarStage::Active => ALL_FIXED_TERMINALS.as_slice(),
-        GrammarStage::Staged => STAGED_FIXED_TERMINALS.as_slice(),
-    }
-}
-
-fn stage_terminal_predicates(stage: GrammarStage) -> &'static [TerminalPredicate] {
-    match stage {
-        GrammarStage::Active => ALL_TERMINAL_PREDICATES.as_slice(),
-        GrammarStage::Staged => STAGED_TERMINAL_PREDICATES.as_slice(),
-    }
-}
-
-fn verify_compiler_grammar(stage: GrammarStage) -> Result<VerifyReport, VerifyError> {
-    let fixed_terminals = stage_fixed_terminals(stage);
-    for (left_index, left) in fixed_terminals.iter().enumerate() {
-        for right in &fixed_terminals[left_index + 1..] {
+fn verify_compiler_grammar() -> Result<VerifyReport, VerifyError> {
+    for (left_index, left) in ALL_FIXED_TERMINALS.iter().enumerate() {
+        for right in &ALL_FIXED_TERMINALS[left_index + 1..] {
             if left.spelling() == right.spelling() {
                 return Err(VerifyError::InvalidCompilerGrammar(
                     "two fixed terminals have the same spelling",
@@ -172,17 +142,16 @@ fn verify_compiler_grammar(stage: GrammarStage) -> Result<VerifyReport, VerifyEr
         }
     }
 
-    let order = stage.diagnostic_terminal_order();
-    let predicates = stage_terminal_predicates(stage);
-    if order.len() != predicates.len() {
+    let order = diagnostic_terminal_order();
+    if order.len() != ALL_TERMINAL_PREDICATES.len() {
         return Err(VerifyError::InvalidCompilerGrammar(
             "terminal inventory and diagnostic order differ",
         ));
     }
-    for predicate in predicates {
+    for predicate in ALL_TERMINAL_PREDICATES {
         if order
             .iter()
-            .filter(|candidate| **candidate == LookaheadPredicate::Terminal(*predicate))
+            .filter(|candidate| **candidate == LookaheadPredicate::Terminal(predicate))
             .count()
             != 1
         {
@@ -193,20 +162,12 @@ fn verify_compiler_grammar(stage: GrammarStage) -> Result<VerifyReport, VerifyEr
     }
 
     let mut decisions = 0_usize;
-    for production in stage.productions() {
-        let root =
-            stage
-                .production_root(*production)
-                .ok_or(VerifyError::InvalidCompilerGrammar(
-                    "a production has no root node",
-                ))?;
-        let mut stack = vec![root];
+    for production in productions() {
+        let mut stack = vec![production.root()];
         while let Some(node_id) = stack.pop() {
-            let node = stage
-                .node(node_id)
-                .ok_or(VerifyError::InvalidCompilerGrammar(
-                    "a production references a missing node",
-                ))?;
+            let node = grammar_node(node_id).ok_or(VerifyError::InvalidCompilerGrammar(
+                "a production references a missing node",
+            ))?;
             if let Some(decision) = node.decision() {
                 decisions = decisions
                     .checked_add(1)
@@ -246,8 +207,7 @@ fn verify_compiler_grammar(stage: GrammarStage) -> Result<VerifyReport, VerifyEr
         }
     }
     Ok(VerifyReport {
-        stage,
-        productions: stage.productions().len(),
+        productions: productions().len(),
         decisions,
         terminals: order.len(),
     })
@@ -311,18 +271,14 @@ fn predicates_overlap(left: LookaheadPredicate, right: LookaheadPredicate) -> bo
     )
 }
 
-fn run_parser_probes(stage: GrammarStage) -> Result<(), VerifyError> {
-    let (contract, probes): (SpecHash, &[&[u8]]) = match stage {
-        GrammarStage::Active => (ACTIVE_KERNEL_SPEC_HASH, &[PARSER_PROBE]),
-        GrammarStage::Staged => (STAGED_SYNTAX_CONTRACT_HASH, &STAGED_PARSER_PROBES),
-    };
-    for probe in probes {
-        run_parser_probe(contract, probe)?;
+fn run_parser_probes() -> Result<(), VerifyError> {
+    for probe in PARSER_PROBES {
+        run_parser_probe(probe)?;
     }
     Ok(())
 }
 
-fn run_parser_probe(contract: SpecHash, probe: &[u8]) -> Result<(), VerifyError> {
+fn run_parser_probe(probe: &[u8]) -> Result<(), VerifyError> {
     let bundle = SourceBundle::with_limits(
         &[SourceInput::new("grammar-probe.wf", probe)],
         SourceLimits {
@@ -348,8 +304,11 @@ fn run_parser_probe(contract: SpecHash, probe: &[u8]) -> Result<(), VerifyError>
         LexOutcome::Complete(lexed) => lexed,
         outcome => return Err(VerifyError::ParserProbe(format!("lexing: {outcome:?}"))),
     };
-    let classified = match classify_terminals(&lexed, contract, TerminalLimits { max_tokens: 256 })
-    {
+    let classified = match classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 256 },
+    ) {
         TerminalOutcome::Complete(classified) => classified,
         outcome => {
             return Err(VerifyError::ParserProbe(format!(
@@ -375,38 +334,22 @@ fn run_parser_probe(contract: SpecHash, probe: &[u8]) -> Result<(), VerifyError>
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ACTIVE_KERNEL_SPEC_BYTES, GrammarStage, STAGED_FRONTEND_CONTRACT_TEXT, VerifyError,
-        verify_candidate,
-    };
+    use super::{ACTIVE_KERNEL_SPEC_BYTES, VerifyError, verify_candidate};
 
     #[test]
     fn exact_active_frontend_contract_verifies() {
         let report =
             verify_candidate(ACTIVE_KERNEL_SPEC_BYTES).expect("active grammar must verify");
-        assert_eq!(report.stage, GrammarStage::Active);
-        assert_eq!(report.productions, 62);
-        assert_eq!(report.decisions, 72);
-        assert_eq!(report.terminals, 72);
+        assert_eq!(report.productions, 64);
+        assert_eq!(report.decisions, 74);
+        assert_eq!(report.terminals, 75);
     }
 
     #[test]
     fn prose_outside_the_frontend_contract_may_change() {
         let mut proposal = ACTIVE_KERNEL_SPEC_BYTES.to_vec();
         proposal.extend_from_slice(b"\nSemantic-only proposal text.\n");
-        let report =
-            verify_candidate(&proposal).expect("semantic-only text must preserve the grammar");
-        assert_eq!(report.stage, GrammarStage::Active);
-    }
-
-    #[test]
-    fn exact_staged_frontend_contract_verifies() {
-        let report = verify_candidate(STAGED_FRONTEND_CONTRACT_TEXT.as_bytes())
-            .expect("staged contract must verify through the staged tables");
-        assert_eq!(report.stage, GrammarStage::Staged);
-        assert_eq!(report.productions, 64);
-        assert_eq!(report.decisions, 74);
-        assert_eq!(report.terminals, 75);
+        verify_candidate(&proposal).expect("semantic-only text must preserve the grammar");
     }
 
     #[test]
@@ -424,13 +367,14 @@ mod tests {
     }
 
     #[test]
-    fn changed_staged_effect_order_fails_closed() {
-        let changed = STAGED_FRONTEND_CONTRACT_TEXT.replacen(
+    fn changed_effect_order_fails_closed() {
+        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
+        let changed = active.replacen(
             "| \"external\" | \"blocks\" | \"traps\"",
             "| \"blocks\" | \"external\" | \"traps\"",
             1,
         );
-        assert_ne!(changed, STAGED_FRONTEND_CONTRACT_TEXT);
+        assert_ne!(changed, active);
         assert!(matches!(
             verify_candidate(changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)
@@ -438,13 +382,14 @@ mod tests {
     }
 
     #[test]
-    fn changed_staged_input_label_spelling_fails_closed() {
-        let changed = STAGED_FRONTEND_CONTRACT_TEXT.replacen(
+    fn changed_input_label_spelling_fails_closed() {
+        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
+        let changed = active.replacen(
             "input_label  := IDENT \".\" IDENT \"as\"",
             "input_label  := IDENT \".\" IDENT \"from\"",
             1,
         );
-        assert_ne!(changed, STAGED_FRONTEND_CONTRACT_TEXT);
+        assert_ne!(changed, active);
         assert!(matches!(
             verify_candidate(changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)

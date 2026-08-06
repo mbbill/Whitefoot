@@ -839,11 +839,32 @@ pub enum ResolutionOutcome<'classified, 'lexed, 'source> {
         /// Deterministic resolver issue.
         issue: ResolutionIssue,
     },
+    /// Valid source requires a resolver capability the compiler has not
+    /// implemented; this is never a source-language rejection.
+    Unsupported {
+        /// Canonical syntax retained for diagnostics or caller policy.
+        syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
+        /// Exact unimplemented resolver capability.
+        unsupported: ResolutionUnsupported,
+    },
     /// A trusted compiler invariant failed.
     CompilerFailure {
         /// Canonical syntax retained for debugging.
         syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
         /// Internal failure class.
         failure: ResolutionCompilerFailure,
+    },
+}
+
+/// A resolver capability the current compiler has not implemented.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResolutionUnsupported {
+    /// A kind-declaring unit ([FN-7]) admits the system declaration domain
+    /// into name lookup ([SYS-1], [SYS-3]). Without that domain, lookup in
+    /// such a unit could misreport an admitted system name as undeclared, so
+    /// the whole unit stops here as an explicit unsupported capability.
+    SystemDeclarationDomain {
+        /// The `program_kind` node making the unit kind-declaring.
+        node: NodePath,
     },
 }
