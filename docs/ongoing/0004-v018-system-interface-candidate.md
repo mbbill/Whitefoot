@@ -48,12 +48,14 @@ verifier; consult [[system-interface]] design memory throughout.
   sentence. 119 rule definitions, no duplicates, no orphan citations. The
   first-slice conformance catalog and Work-item-2 planned-task pre-drafts are
   complete in the scratch directory.
-- **Current:** waiting on task 0005 (native grammar-path extension) for the
-  verifier run.
-- **Next:** verifier green, then the exact-approval packet (SHA-256, semantic
-  delta, impact inventory, limitations, judgment-call list including GATE-2
-  and TRAP-1 as inventory additions to ratify, the dropped SCOPE-3 option,
-  the IoError representation, and the reserved `as` spelling).
+- **Done (verifier):** task 0005 landed (`a9c6e1a`); the native verifier
+  reports the staged candidate contract verified (64/74/75) and the active
+  spec unchanged (62/72/72); both gates green on main.
+- **Current:** exact-approval packet presented to the owner (candidate
+  SHA-256 `307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28`).
+- **Next:** on approval — record in `governance/APPROVALS.md`, activate
+  atomically with every derived artifact, close this record, and register the
+  Work-item-2 planned tasks.
 
 ## Scope and expected touch set
 
