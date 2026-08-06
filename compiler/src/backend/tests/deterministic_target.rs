@@ -224,6 +224,45 @@ const RELEASES_ONE_DIRECTORY: &[u8] =
 }
 "#;
 
+/// A command that reads its own invocation vector and reaches no host object
+/// at all, so every row it uses is one both target columns share.
+const READS_ITS_ARGUMENTS: &[u8] =
+    br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  region 'a {
+    let total: own u64 = args_count<'a>(args: &'a args);
+    let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(total);
+    match narrowed {
+      Ok(value: code) => {
+        return exit_status(code: code);
+      }
+      Err(error: overflowed) => {
+        return exit_status(code: 200_u8);
+      }
+    }
+  }
+}
+"#;
+
+#[test]
+fn a_program_reaching_no_host_object_emits_identically_on_both_targets() {
+    // The target column changes only the facilities that reach a real
+    // operating-system object. Argument access, the host-string routes, path
+    // construction, and `exit_status` resolve to the same approved row on both
+    // columns, so this program's module is the same byte for byte.
+    assert_eq!(
+        super::compile(READS_ITS_ARGUMENTS),
+        emit_for_deterministic_target(READS_ITS_ARGUMENTS)
+    );
+
+    // And it observes the same invocation vector: the deterministic target
+    // scripts host objects, never the arguments the harness already controls
+    // exactly.
+    let run = run_on_deterministic_host(READS_ITS_ARGUMENTS, &HostScript::new(), &[b"a", b"b"]);
+    assert_eq!(run.output.status.code(), Some(3));
+    assert_eq!(run.attempts("close"), 0);
+    assert_eq!(run.attempts("open"), 0);
+}
+
 #[test]
 fn the_deterministic_target_qualifies_the_same_program_as_the_native_target() {
     // The second column is a different implementation of the same
