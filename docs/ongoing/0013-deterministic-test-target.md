@@ -3,7 +3,9 @@
 Live coordination record. It reports how authorized work is being carried
 out; it is not authority and it cannot expand the scope it cites.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `WAITING` — the target column and fault-injection case 1 of 4
+  are complete and green; cases 2–4 wait on task 0012's landed operation
+  rows (see Dependencies).
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, fifth bullet
   ("the deterministic test implementation"). Implements dossier §6.10's
   deterministic-test-implementation paragraph.
@@ -72,15 +74,23 @@ surface outside the compiler.
   host, the link-and-run harness, and the first fault-injection case.
 - Completed: fault-injection case 1 of 4 — a release close that reports
   `EINTR` is attempted exactly once and never retried, with a success
-  control.
-- Current: waiting on task 0012 to land. The remaining three cases
-  (mid-stream `ReadFailed`, forced short write, close/writeback-only
-  failure) all run through `read_once`/`write_once`, which stop today as
-  `UnsupportedSystemInterface` on both target columns.
-- Next: rebase onto task 0012, adopt its `open_read`/`read_once`/
-  `write_once` operation-row shapes, add the matching `wf_test_openat`/
-  `wf_test_read`/`wf_test_write` facilities and their scripts, and land
-  the remaining three cases.
+  control, plus evidence that a program reaching no host object emits
+  byte-identically on both columns.
+- Current: **waiting on task 0012.** The remaining three cases (mid-stream
+  `ReadFailed`, forced short write, close/writeback-only failure) all run
+  through `read_once`/`write_once`, whose rows are `NotImplemented` on
+  both target columns and stop as `UnsupportedSystemInterface`. Writing
+  that lowering here would duplicate task 0012's written scope, create a
+  second lowering path for the same semantic IDs, and pre-empt the
+  operation-row shapes this task was told to adopt — so this task stops at
+  the boundary rather than working around it.
+- Next, once task 0012 lands: rebase; extend `HostFacilities` with its
+  directory-relative-open, read, and write facilities (the trap writer's
+  own `@write` stays native on both columns, so a forced short write can
+  never truncate a `DIAG-3` record); add the matching `wf_test_openat`/
+  `wf_test_read`/`wf_test_write` functions and their scripts; land the
+  three remaining cases. The work is mechanical — one accessor and one
+  scripted facility per operation.
 
 ## Scope and expected touch set
 
@@ -110,9 +120,18 @@ deterministic host-facility column beside them. This task changes no
 native emission.
 
 Task 0016 depends on this task for four fault-injection cases:
-close-`EINTR` (one attempt, never retried), mid-stream `ReadFailed`, a
-forced short write, and an output sink that fails only at close or
-writeback.
+close-`EINTR` (one attempt, never retried) — **available now**; and
+mid-stream `ReadFailed`, a forced short write, and an output sink that
+fails only at close or writeback — **not yet available**, each gated on
+task 0012's `read_once`/`write_once` rows.
+
+The surface task 0016 consumes is
+`compiler/src/backend/tests/deterministic_target.rs`:
+`HostScript::new().closes(&[HostOutcome::Fail(HostError::Interrupted)])`,
+`run_on_deterministic_host(source, &script, arguments)`, and the returned
+`DeterministicRun`'s `output`, `trace()`, and `attempts(facility)`.
+`emit_for_deterministic_target(source)` returns the module for a
+codegen-shape inspection without running it.
 
 ## Validation
 
