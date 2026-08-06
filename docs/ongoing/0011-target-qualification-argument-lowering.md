@@ -1,20 +1,22 @@
 # 0011 — Target-qualification table and argument/path lowering
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 5
-of 8; task 6 of 11). Not yet claimed — claiming fills in `Status`, `Owner`,
-workspace, and `Base revision` and moves this file unchanged in number to
-`docs/ongoing/` per `docs/WORKFLOW.md`. This record authorizes nothing
-beyond Work item 2 itself; if `docs/current-plan.md` is replaced before this
-task is claimed, delete this file unless the new plan explicitly retains
-it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and cannot expand Work item 2.
 
+- **Status:** `IN PROGRESS`
+- **Owner:** executor agent `exec-0011`
+- **Workspace:** worktree `agent-a05157aec0c262f16`, branch
+  `worktree-agent-a05157aec0c262f16`
+- **Base revision:** `6413979` (`docs: close task 0010`)
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, fourth bullet
   ("target-qualification table plus the static native macOS/Linux
-  lowering"). Implements `spec/kernel-spec-v0.18.md`'s `QUAL-1`/`QUAL-2`/
-  `QUAL-3`, `HOST-1`/`HOST-2`/`HOST-3`, `PATH-1`/`PATH-2`; `SYS-9`
-  (`Args`/`HostString`/`RelativePath` contracts) and `SYS-13`
-  (`ExitStatus`); and `PROG-3`'s status-mapping. Claimable only while
-  `docs/current-plan.md` remains `ACTIVE`.
+  lowering"). Implements the active `spec/kernel-spec-v0.19.md`'s
+  `QUAL-1`/`QUAL-2`/`QUAL-3`, `HOST-1`/`HOST-2`/`HOST-3`,
+  `PATH-1`/`PATH-2`; `SYS-9` (`Args`/`HostString`/`RelativePath`
+  contracts) and `SYS-13` (`ExitStatus`); and `PROG-3`'s status-mapping.
+  (The planned record was written against v0.18; v0.19 is the active
+  version and renamed `arg_get`'s parameter to `position` — task 0018.)
+  Claimable only while `docs/current-plan.md` remains `ACTIVE`.
 
 ## Goal
 
