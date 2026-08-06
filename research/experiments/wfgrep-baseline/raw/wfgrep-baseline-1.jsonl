@@ -1,0 +1,8 @@
+{"record":"gen","time":1786054212,"large_lines":2950299,"large_matches":2881,"dense_lines":1474854,"dense_matches":737427,"many_lines":739501,"many_matches":512}
+{"record":"gen","time":1786054279,"large_lines":2950299,"large_matches":2881,"dense_lines":1474854,"dense_matches":737427,"many_lines":739501,"many_matches":512}
+{"record":"identity","time":1786054387,"wfgrep_sha256":"d910bc2606162af69925b6ea0925071fb7e29510ea7e7c3815e665c181f40927","grep_sha256":"569588bf23c56895f046b63b029285217e442d46bec1b18498b58fefb50d8f1f"}
+{"record":"verify","time":1786054387,"case":"large","bytes":262431,"exit":0,"sha256":"f82406abf25fcaa4d9061d1fb63b7c1ebbdff98f12e66edcd6f62ced7b6805ba"}
+{"record":"verify","time":1786054388,"case":"nomatch","bytes":0,"exit":1,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"record":"verify","time":1786054388,"case":"dense","bytes":67121556,"exit":0,"sha256":"710bee45833e8b4ee5bcf69e5e33fe78d11c308732ce8357471fcc1342ee0a60"}
+{"record":"verify","time":1786054390,"case":"many","bytes":46285,"exit":0,"sha256":"7c625c3ef708366a99278958d0d492e526683212ed1b5d85d2360b25db0ae7ed"}
+{"record":"verify","time":1786054390,"case":"floor","bytes":0,"exit":1,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
