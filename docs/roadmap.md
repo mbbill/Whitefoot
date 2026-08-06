@@ -1,11 +1,11 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 7
+Revision: 8
 
 The active language authority is
-[`spec/kernel-spec-v0.17.md`](../spec/kernel-spec-v0.17.md), SHA-256
-`19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93`.
+[`spec/kernel-spec-v0.18.md`](../spec/kernel-spec-v0.18.md), SHA-256
+`307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28`.
 Released numbered specifications are immutable. The current execution proposal
 is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.17]` `[current: safe-Rust compiler]`
+`[current: spec v0.18]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -464,8 +464,8 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### BOUND-1 — System capabilities and host integration
 
-`[current: architecture selected; compiler absent]`
-`[next: v0.18 candidate and first command slice]`
+`[current: v0.18 first slice active; compiler unsupported-gated]`
+`[next: implementation waves 0006-0016]`
 
 - **Goal:** give command, service, and embedded program instances a
   coherent capability-based host boundary covering process context,
@@ -484,13 +484,17 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   and static target qualification. v0.17 itself still has a fixed no-argument
   `main`, memory-only effect rows, and no compiler system path; the only
   ordinary external-I/O call is a private trap diagnostic.
-- **Missing / next:** draft and activate one v0.18 specification batch
-  containing exactly the dossier's §11/§11.1 first-command-slice deltas
-  through the specification-change workflow, implement that slice on the
-  normal compiler path for macOS/Linux, and return to the frozen sequential
-  `wfgrep` checkpoint. Later families (clocks, network, async/wait, threads,
-  child processes) remain additive true subsets of the selected model and
-  wait for their own project pressure.
+- **Missing / next:** v0.18 activated 2026-08-06 (`9768bae`) with the exact
+  first-command-slice batch: 25 new rules, 13 modified, the Route C
+  declaration domain, and the promoted native grammar. The compiler parses
+  the whole surface and reports it as explicit unsupported capability;
+  implementation proceeds through the eleven planned tasks 0006-0016 (front
+  end, effects, checked IR, qualification and native lowering, deterministic
+  test target, conformance execution, sequential `wfgrep`, cost and hostile
+  gates), then returns to the frozen sequential `wfgrep` checkpoint. Later
+  families (clocks, network, async/wait, threads, child processes) remain
+  additive true subsets of the selected model and wait for their own project
+  pressure.
 - **Facts:** v0.17 `FN-7`, `EFF-1/2`, `PROG-1/2`, `CAP-1`, `GATE-1`, and
   `LEDGER-1` · [architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·
   [review decision record](../research/investigations/system-capability-architecture/decisions.json) ·
@@ -646,11 +650,11 @@ remains as the owner check-in, not as a presumption against the goal.
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** the BOUND-1 architecture gate closed on 2026-08-05 with
-  the dossier selection. Next: activate the v0.18 first-command-slice batch
-  and implement it, containing only argv, status, bounded file input, and
-  ordered output, with each operation a true subset of the selected resource,
-  effect, provider, and performance model. Once that slice passes its
+- **Missing / next:** the BOUND-1 architecture gate closed on 2026-08-05 and
+  v0.18 activated on 2026-08-06. Next: implement the first slice through
+  planned tasks 0006-0016 — argv, status, bounded file input, and ordered
+  output, each operation a true subset of the selected resource, effect,
+  provider, and performance model. Once that slice passes its
   project-independent controls and same-slice correctness and cost gate, return
   to that exact `wfgrep` checkpoint. Each later slice stops on either the next
   semantic blocker or the first attributed material performance blocker; the

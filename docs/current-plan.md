@@ -32,6 +32,14 @@ classified and honestly reported, negative results retained. Completing
 - The loan/freeze candidate vacated the v0.18 slot on 2026-08-05 and remains
   parked evidence under `STORE-1`.
 
+Progress (2026-08-06): Work item 1 is complete — the candidate was drafted by
+five parallel packages, integrated, hostile-reviewed (17 findings applied),
+verified by the native grammar path (task 0005), exact-approved
+(`governance/APPROVALS.md`, 2026-08-05), and activated at `9768bae` with the
+derivation ledger, promoted grammar, and unsupported gates; the outline is at
+revision 8. Work item 2 is complete — planned tasks 0006-0016 are registered.
+The current step is Work item 3, executor fan-out in dependency-wave order.
+
 ## Work
 
 1. **v0.18 specification batch (sequential; specification-change workflow).**
