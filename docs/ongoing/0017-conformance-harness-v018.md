@@ -37,12 +37,18 @@ the reviewed 40-case catalog.
   coverage must report 119/119 rules covered once the new annotations and
   cases land.
 - Compile-time lane only: cases expressible as source + expected
-  reject/unsupported/accept verdicts without executing I/O — the catalog's
-  groups A (entry/kind/name-visibility), G (effects and release attribution,
-  including the `return unit;` canonical case as `unsupported` until task
-  0009 lands its real judgment), the reserved-spelling and
+  reject/accept verdicts without executing I/O — the catalog's groups A
+  (entry/kind/name-visibility), G (effects and release attribution, including
+  the `return unit;` canonical case), the reserved-spelling and
   primitive-lookalike cases, and the kindless-unit cases. Runtime groups
   (B-F, I) stay with 0014.
+- `expect` carries the real v0.18 spec verdict; toolchain readiness lives in
+  `status`, with a `pending` reason naming the gating task and the exact
+  current compiler stop. The `unsupported` expectation kind lands as a
+  first-class schema feature reserved for the spec-level non-rejections —
+  `QUAL-1` target-qualification failure and `QUAL-2` startup refusal — which
+  are permanent language content. When the compiler tasks land, only
+  `pending` flips to `runnable`; no expectation ever changes.
 - Python here is legitimate (the corpus is deliberately compiler-independent
   tooling); keep `runner.py` self-contained.
 
@@ -58,11 +64,26 @@ catalog predates integration fixes).
 
 ## Progress
 
-- **Completed:** claimed at base `8ecb736`; baseline confirmed
-  (`coverage (kernel-spec-v0.17.md): 94/94`, 78 by case, 17 by annotation).
-- **Current:** schema extension in `runner.py` + `validate_manifest`.
-- **Next:** `unsupported` verdict, v0.18 pin with new-rule annotations, then
-  the compile-time catalog lane.
+- Direction corrected by lead ruling 2026-08-06 — expectation kind is
+  spec-verdict only; toolchain readiness lives in status (the as-registered
+  instruction would have scheduled protected-surface edits).
+- **Completed:** claimed at base `8ecb736`. Schema extension (`arrange` with
+  hex-encoded argv, stdin, file/directory fixtures, and named redirection
+  sinks; closed key set; only a `run`/`trap` case may carry one) and the
+  `unsupported` expectation kind, both validated and unit-tested. Corpus
+  re-pinned to `spec/kernel-spec-v0.18.md`. Compile-time lane landed: 24
+  additive cases (8 group A, 3 reserved/unadmitted kind, 6 entry-form label
+  near-misses, 7 group G) plus 13 coverage annotations for the rules with no
+  compile-time source-to-verdict pair. Coverage reports v0.18 119/119
+  (90 by case, 30 by annotation); `make check` green.
+- Every case source was run through `whitefootc`: the four system-unadmitted
+  cases produce their exact expected verdict today (accept, accept, OP-1,
+  TYPE-5), and all 20 kind-declaring cases pass lexical formation, terminal
+  membership, grammar derivation, and FORM-2 canonical rendering before
+  stopping at the system-declaration-domain gate.
+- **Current:** awaiting lead review.
+- **Next (not this task):** 0014 builds its runtime lane on the `arrange`
+  schema; 0007/0008/0009 flip the `pending` cases to `runnable`.
 
 ## Scope and expected touch set
 
@@ -85,6 +106,25 @@ catalog predates integration fixes).
 self-validation passes on the extended schema; every new case's expected
 verdict cross-checked against the spec rule it cites. A claimed task lands
 only through lead review per the executor lane.
+
+Catalog-vs-spec divergences found while transcribing (spec wins in each):
+
+- Catalog flag 3 calls Route C's same-spelling collision policy unsettled and
+  says its group-A case cannot get a verdict. `SYS-1` settles it — the unit is
+  rejected and neither declaration resolves — and `DIAG-1` places it at
+  declaration-inventory rank 5, which cites `TYPE-6`, not `DIAG-1`. Drafted as
+  `reject-sysname-collision-in-kind-unit`.
+- The catalog derives the `ExitStatus`-from-`u8` rejection from the dossier's
+  no-implicit-conversion prose. The activated spec routes the diagnostic
+  through `FN-1` (return type differing from the written `rtype`), so the case
+  cites `FN-1` with `SYS-13`/`TYPE-4` as exercised rules.
+- The catalog's ID `accept-sysexit-implicit-conversion-rejected` names a
+  reject case; renamed to `reject-sysexit-return-u8-no-conversion` to match
+  the corpus's `<verdict>-<family>-<slug>` shape.
+- Catalog flag 2 justifies the `unsupported` expectation kind by `QUAL-1`
+  qualification failure and `QUAL-2` startup refusal. That reading is correct
+  and is the one implemented; both rules are annotated, since neither is
+  reachable from source until a case can pin an unqualified target.
 
 ## Done-when
 

@@ -14,14 +14,40 @@ suite outlives compiler implementations.
 Verdict = ("accept",) | ("reject", rule) | ("run", exit) | ("trap",) | ("unsupported", why)
 
 Manifest line (JSON):
-  {"id": str, "rules": [rule_id...], "expect": EXPECT,
+  {"id": str, "rules": [rule_id...], "expect": EXPECT, "arrange": ARRANGE?,
    "status": "runnable"|"pending"|"xfail", "reason": str?, "doc": str}
-  EXPECT = {"kind":"accept"} | {"kind":"reject","rule":R} | {"kind":"run","exit":N} | {"kind":"trap"}
+  EXPECT = {"kind":"accept"} | {"kind":"reject","rule":R} | {"kind":"run","exit":N}
+         | {"kind":"trap"} | {"kind":"unsupported","why":str}
 
   status: runnable = must match expect;  pending = toolchain can't run it yet (skip);
           xfail = expect is the CORRECT spec behavior but the current toolchain does
                   not yet produce it (a tracked gap) — reported, non-failing; if it
                   starts matching, it is flagged XPASS (fix landed; drop the xfail).
+
+`expect` is the verdict the SPECIFICATION requires; `status` is the separate
+toolchain-readiness axis. An unimplemented compiler capability is a `status`
+fact and never rewrites `expect`.
+
+The `unsupported` expectation is for the stops the specification itself fixes
+as non-rejections citing no language rule — target qualification failure and
+pre-entry startup refusal ([QUAL-1], [QUAL-2], [PROG-3]). It is not a place to
+record that this compiler has not implemented something yet.
+
+ARRANGE describes the invocation a `run`/`trap` case needs; a case that is
+never executed must not carry one. Every byte string is lowercase hex so the
+corpus can express non-UTF-8 argument and path bytes exactly and diff them
+readably:
+
+  ARRANGE = {"argv": ["<hex>"...]?,          arguments after the program name
+             "stdin": "<hex>"?,              standard input body
+             "files": [FIXTURE...]?,         fixtures under the initial directory
+             "redirect": {"stdout": NAME?, "stderr": NAME?}?}
+  FIXTURE = {"path":"<hex>", "bytes":"<hex>"} | {"path":"<hex>", "directory":true}
+
+A redirection NAME is an opaque sink label: two entries naming the same sink
+are the same destination, which is how "stdout and stderr redirected to one
+target" is stated. Absent keys mean the default arrangement — no extra
+arguments, empty stdin, no fixtures, separate inherited sinks.
 """
 import hashlib, json, re, sys
 from pathlib import Path
@@ -30,8 +56,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
-ACTIVE_SPEC = Path("spec/kernel-spec-v0.17.md")
-ACTIVE_SPEC_SHA256 = "19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93"
+ACTIVE_SPEC = Path("spec/kernel-spec-v0.18.md")
+ACTIVE_SPEC_SHA256 = "307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28"
 # A later entrance-gated integration may install a named Rust adapter. Keeping
 # this explicit prevents a missing compiler, crash, or broad exception from
 # becoming `Unsupported`.
@@ -43,7 +69,10 @@ def matches(v, expect):
     return ((k == "accept" and v[0] == "accept")
             or (k == "reject" and v[0] == "reject" and v[1] == expect["rule"])
             or (k == "run" and v[0] == "run" and v[1] == expect["exit"])
-            or (k == "trap" and v[0] == "trap"))
+            or (k == "trap" and v[0] == "trap")
+            # `why` is the adapter's prose; the corpus asserts the verdict kind,
+            # never a diagnostic's wording.
+            or (k == "unsupported" and v[0] == "unsupported"))
 
 
 def load_manifest():
@@ -75,7 +104,7 @@ def run_cases(cases):
         m = matches(v, c["expect"])
         if status == "xfail":
             outcome = "XPASS" if m else "XFAIL"
-        elif v[0] == "unsupported":
+        elif v[0] == "unsupported" and c["expect"]["kind"] != "unsupported":
             outcome = "FAIL"                     # runnable means supported; gaps belong in pending
         else:
             outcome = "PASS" if m else "FAIL"
@@ -91,6 +120,81 @@ def spec_rule_ids(root=ROOT):
         raise ValueError(f"active specification digest mismatch: {digest}")
     text = raw.decode("utf-8")
     return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)\]", text, re.M)), spec.name
+
+
+HEX = re.compile(r"\A(?:[0-9a-f]{2})*\Z")
+
+
+def hex_errors(label, value, allow_empty=True):
+    """A byte string is lowercase hex so the corpus states non-UTF-8 bytes exactly."""
+    if not isinstance(value, str) or not HEX.match(value):
+        return [f"{label} must be a lowercase even-length hex byte string"]
+    if not allow_empty and not value:
+        return [f"{label} must not be empty"]
+    return []
+
+
+def arrange_errors(label, arrange):
+    """Check one invocation arrangement. Keys are a closed set: an unknown key is a
+    silently ignored intention, which is worse in a corpus than a rejected line."""
+    if not isinstance(arrange, dict):
+        return [f"{label}: arrange must be an object"]
+    errors = []
+    unknown = sorted(set(arrange) - {"argv", "stdin", "files", "redirect"})
+    if unknown:
+        errors.append(f"{label}: unknown arrange keys: {' '.join(unknown)}")
+
+    if "argv" in arrange:
+        argv = arrange["argv"]
+        if not isinstance(argv, list) or not argv:
+            errors.append(f"{label}: argv must be a nonempty list")
+        else:
+            for position, argument in enumerate(argv):
+                errors += hex_errors(f"{label}: argv[{position}]", argument)
+
+    if "stdin" in arrange:
+        errors += hex_errors(f"{label}: stdin", arrange["stdin"])
+
+    if "files" in arrange:
+        files = arrange["files"]
+        if not isinstance(files, list) or not files:
+            errors.append(f"{label}: files must be a nonempty list")
+        else:
+            paths = []
+            for position, fixture in enumerate(files):
+                where = f"{label}: files[{position}]"
+                if not isinstance(fixture, dict):
+                    errors.append(f"{where} must be an object")
+                    continue
+                unknown = sorted(set(fixture) - {"path", "bytes", "directory"})
+                if unknown:
+                    errors.append(f"{where}: unknown fixture keys: {' '.join(unknown)}")
+                errors += hex_errors(f"{where}.path", fixture.get("path"), allow_empty=False)
+                paths.append(fixture.get("path"))
+                is_file, is_directory = "bytes" in fixture, "directory" in fixture
+                if is_file == is_directory:
+                    errors.append(f"{where} must carry exactly one of bytes, directory")
+                elif is_file:
+                    errors += hex_errors(f"{where}.bytes", fixture["bytes"])
+                elif fixture["directory"] is not True:
+                    errors.append(f"{where}.directory must be true")
+            duplicate = sorted({path for path in paths if paths.count(path) > 1})
+            if duplicate:
+                errors.append(f"{label}: duplicate fixture paths: {' '.join(duplicate)}")
+
+    if "redirect" in arrange:
+        redirect = arrange["redirect"]
+        if not isinstance(redirect, dict) or not redirect:
+            errors.append(f"{label}: redirect must be a nonempty object")
+        else:
+            unknown = sorted(set(redirect) - {"stdout", "stderr"})
+            if unknown:
+                errors.append(f"{label}: unknown redirect streams: {' '.join(unknown)}")
+            for stream, sink in redirect.items():
+                if not isinstance(sink, str) or not sink:
+                    errors.append(f"{label}: redirect {stream} needs a nonempty sink name")
+
+    return errors
 
 
 def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
@@ -118,7 +222,9 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
         "reject": {"kind", "rule"},
         "run": {"exit", "kind"},
         "trap": {"kind"},
+        "unsupported": {"kind", "why"},
     }
+    executed_kinds = {"run", "trap"}
     for case in cases:
         case_id = case.get("id", "<missing-id>")
         case_rules = case.get("rules")
@@ -150,6 +256,14 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
                 errors.append(f"{case_id}: reject rule must appear in case rules")
         elif kind == "run" and type(expect.get("exit")) is not int:
             errors.append(f"{case_id}: run expectation requires an integer exit")
+        elif kind == "unsupported" and not expect.get("why"):
+            errors.append(f"{case_id}: unsupported expectation requires a why")
+
+        if "arrange" in case:
+            if kind not in executed_kinds:
+                errors.append(f"{case_id}: only a run or trap case may carry an arrange")
+            else:
+                errors += arrange_errors(case_id, case["arrange"])
 
         if not case.get("doc"):
             errors.append(f"{case_id}: missing documentation")
@@ -178,9 +292,14 @@ def coverage(cases, annots):
     tagged, pos, neg = set(), set(), set()
     for c in cases:
         tagged |= set(c["rules"])
-        if c["expect"]["kind"] == "reject":
+        kind = c["expect"]["kind"]
+        # Coverage measures the corpus against the specification, so every case
+        # counts whatever its toolchain-readiness status is. An `unsupported`
+        # expectation is a qualification stop: neither a positive exercise of
+        # the rule nor a rejection citing it.
+        if kind == "reject":
             neg.add(c["expect"]["rule"])
-        else:
+        elif kind != "unsupported":
             pos |= set(c["rules"])
     annotated = {a["rule"] for a in annots} & rules
     by_case = tagged & rules

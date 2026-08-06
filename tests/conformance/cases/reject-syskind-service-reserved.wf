@@ -1,0 +1,4 @@
+service fn main() -> own ExitStatus pure {
+  doc "`service` is a reserved program-kind spelling with no form defined in v0.18; a program_kind naming it is a hard error citing FN-7 at that program_kind node.";
+  return exit_status(code: 0_u8);
+}

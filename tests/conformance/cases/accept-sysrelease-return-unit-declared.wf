@@ -1,0 +1,8 @@
+fn release_read_file(file: own ReadFile) -> own unit external, blocks {
+  doc "The EFF-2 canonical case: no call, no check, and no bounds-checked index, so the complete exhibited row is the release contribution of the owned ReadFile's close attempt on the return edge [STOR-3, SYS-5, SYS-11]; declaring exactly that row is accepted.";
+  return unit;
+}
+
+command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

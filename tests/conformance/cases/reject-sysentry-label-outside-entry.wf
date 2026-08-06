@@ -1,0 +1,8 @@
+fn helper(command.args as args: own Args) -> own unit pure {
+  doc "An input_label on a parameter of any fn_decl other than the kind-declaring entry is a hard error citing FN-7 at that input_label node.";
+  return unit;
+}
+
+command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

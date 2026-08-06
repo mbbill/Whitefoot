@@ -1,0 +1,8 @@
+fn take_args(args: own Args) -> own unit pure {
+  doc "A system-unadmitted unit sees no system nominal type [SYS-3], so `Args` in a `type` role is an unresolved TYPEID citing TYPE-5.";
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

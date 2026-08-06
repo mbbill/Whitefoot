@@ -1,0 +1,10 @@
+fn open_read(root: own u64, path: own u64) -> own u64 pure {
+  doc "In a system-unadmitted unit a system spelling is an ordinary source declaration that collides with nothing [SYS-3]; no source construct becomes an inventory entry by spelling or signature [SYS-1].";
+  return root;
+}
+
+fn main() -> own unit traps {
+  let opened: own u64 = open_read(root: 3_u64, path: 4_u64);
+  check ieq<u64>(opened, 3_u64) else trap "lookalike";
+  return unit;
+}
