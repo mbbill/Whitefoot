@@ -65,6 +65,28 @@ fn the_canonical_release_case_holds_exactly() {
     assert_release_mismatch(CANONICAL_REJECT, "file", b"pure");
 }
 
+const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file ['f](file: &'f ReadFile) -> own unit pure {\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+
+const BORROWED_REJECT: &[u8] = b"fn touch_read_file ['f](file: &'f ReadFile) -> own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+
+#[test]
+fn a_borrowed_resource_parameter_contributes_no_release_row() {
+    // The exact contrast with the canonical case above, and the whole reason a
+    // helper may touch a system value without inheriting its owner's row: the
+    // release contribution collects compiler-derived *releases*, and only an
+    // owner has one [EFF-2, STOR-3]. The same body under a borrowed parameter
+    // is therefore exactly `pure`.
+    assert_complete(BORROWED_ACCEPT);
+    // And exactly `pure`: declaring the owner's row over a borrow is
+    // declared-but-unexhibited. No release contributed the categories, so this
+    // is the ordinary mismatch rather than the release-attributed diagnostic.
+    assert_rule(
+        BORROWED_REJECT,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+}
+
 #[test]
 fn over_declaring_the_release_row_rejects_likewise() {
     // The opposite direction: `Args` releases by logical consume with the

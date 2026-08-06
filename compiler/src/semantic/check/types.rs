@@ -49,6 +49,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 self.nominal(nominal)?.kind,
                                 CheckedNominalKind::Struct { .. }
                                     | CheckedNominalKind::Box { .. }
+                                    | CheckedNominalKind::SystemResource { .. }
                             )
                     );
                 if !supported {

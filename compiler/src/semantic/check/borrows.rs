@@ -483,6 +483,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     nominal,
                 }
             }
+            // An opaque resource value is its own borrow, so a child reborrow
+            // of a borrow-mode holder is that same inline value: there is no
+            // content to address and nothing to reload [SYS-2, OWN-6].
+            CheckedType::Nominal(nominal)
+                if fields.is_empty()
+                    && matches!(
+                        self.nominal(nominal)?.kind,
+                        CheckedNominalKind::SystemResource { .. }
+                    ) =>
+            {
+                CheckedExpression::BorrowSystemResource {
+                    binding: local.binding,
+                    nominal,
+                }
+            }
             _ => {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }

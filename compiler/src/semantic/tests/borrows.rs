@@ -521,3 +521,73 @@ fn main() -> own unit allocates(heap), traps {
         },
     );
 }
+
+#[test]
+fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() {
+    // [SYS-4] gives every first-slice system type shared borrows and gives a
+    // stateful resource `&uniq`, and [FN-1] attaches no type condition to a
+    // parameter mode, so a user signature admits a borrowed system value on
+    // the normal path. A statement-scoped child reborrow [OWN-6] then carries
+    // it into a system operation whose own parameter is that same mode
+    // [SYS-2]. An opaque resource has no source-visible content, so its
+    // borrow is the value itself.
+    let source = br#"fn publish ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> own unit reads('o 's), writes('o), external, blocks, traps {
+  region 'attempt {
+    match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: 0_u64, count: count) {
+      Ok(value: written) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+  let batch: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  region 'publication {
+    publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a borrowed system parameter must check: {outcome:?}");
+        };
+        let publish = &checked.data.functions[0];
+        assert!(matches!(publish.parameters[0].mode, CheckedMode::Unique(_)));
+        let CheckedStatement::Region { body, .. } = &publish.body[0] else {
+            panic!("publish must retain its attempt region");
+        };
+        let CheckedStatement::Match { scrutinee, .. } = &body[0] else {
+            panic!("publish must retain its outcome match");
+        };
+        let CheckedExpression::SystemCall { arguments, .. } = scrutinee else {
+            panic!("the scrutinee must be the system call");
+        };
+        assert!(matches!(
+            &arguments[0],
+            CheckedExpression::BorrowSystemResource { .. }
+        ));
+    });
+
+    // The row is checked both ways over the borrowed parameter's region: the
+    // write the operation performs through `&uniq 'o` is attributed to the
+    // caller-supplied region, exactly as it is for a borrowed buffer [EFF-2].
+    let declared = b"reads('o 's), writes('o), external";
+    let at = source
+        .windows(declared.len())
+        .position(|window| window == declared)
+        .expect("fixture declares the publish row");
+    let mut narrowed = source.to_vec();
+    narrowed.splice(
+        at..at + declared.len(),
+        b"reads('o 's), external".iter().copied(),
+    );
+    assert_rule(
+        &narrowed,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+}
