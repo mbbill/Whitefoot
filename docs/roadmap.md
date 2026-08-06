@@ -1,11 +1,11 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 9
+Revision: 10
 
 The active language authority is
-[`spec/kernel-spec-v0.18.md`](../spec/kernel-spec-v0.18.md), SHA-256
-`307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28`.
+[`spec/kernel-spec-v0.19.md`](../spec/kernel-spec-v0.19.md), SHA-256
+`01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398`.
 Released numbered specifications are immutable. The current execution proposal
 is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.18]` `[current: safe-Rust compiler]`
+`[current: spec v0.19]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-[v0.18 specification](../spec/kernel-spec-v0.18.md) remains semantic authority.
+[v0.19 specification](../spec/kernel-spec-v0.19.md) remains semantic authority.
 The v0.18 system-interface surface parses and stops as explicit unsupported
 capability pending planned tasks 0006-0016.
 Which gap matters next is selected by a project, never by checklist length.
@@ -486,12 +486,10 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   and static target qualification. v0.17 itself still has a fixed no-argument
   `main`, memory-only effect rows, and no compiler system path; the only
   ordinary external-I/O call is a private trap diagnostic.
-- **Missing / next:** one recorded v0.18 specification defect awaits an owner
-  ruling: SYS-2 names `arg_get`'s parameter `index`, which FORM-3 excludes
-  from IDENT, so no legal `arg_get` call exists (found by task 0007's
-  implementation; sweep shows it is the sole such collision; a one-name v0.19
-  amendment is the candidate fix). Otherwise: v0.18 activated 2026-08-06
-  (`9768bae`) with the exact
+- **Missing / next:** the arg_get/index defect was repaired by v0.19
+  (activated 2026-08-06 after exact re-approval; the sole
+  fixed-terminal/parameter collision by systematic sweep). v0.18 activated
+  2026-08-06 (`9768bae`) with the exact
   first-command-slice batch: 25 new rules, 13 modified, the Route C
   declaration domain, and the promoted native grammar. The compiler parses
   the whole surface and reports it as explicit unsupported capability;

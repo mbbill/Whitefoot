@@ -15,6 +15,7 @@
 - 2026-08-05 statement: WASI evidence shaped the selection without becoming the contract — deny-by-default preopened authority, unforgeable owned/borrowed resource handles, and separated clock/random capabilities survive review, while its Unicode-only paths, pollable composition failure, and missing caller-buffer route are recorded anti-lessons. (sourced)
 - 2026-08-06 (9768bae2) statement: v0.18 activated after exact-byte approval (governance/APPROVALS.md, 2026-08-05): the staged grammar promoted to active, every one of the 119 rules carries its META-6 derivation row, the whole system surface stops as explicit unsupported capability, and v0.17-accepted behavior is byte-identical. (code)
 
+- 2026-08-06 statement: v0.19 is active, repairing the sole SYS-2 parameter/fixed-terminal collision ([[declaration-home]] pitfall); the system inventory is otherwise byte-identical to the v0.18 selection. (code)
 ## Moves
 
 - 2026-08-05 (8f7055fc) replaced [[raw-fd-syscall-source]]: raw syscalls and integer fds in source expose forgeable identities, an implicit global fd table, manual close, weak effect precision, poor Windows portability, and an unchecked pointer wall; they remain permitted only inside compiler-owned target code (sourced)
