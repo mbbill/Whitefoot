@@ -4,7 +4,7 @@ use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::model::{
-    BindingId, CheckedMode, CheckedStatement, CheckedType, PropagationContext,
+    BindingId, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
@@ -41,6 +41,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             scope.loops.len(),
             expected_operand,
         )?;
+        let holder_without_deref = value.mode != CheckedMode::Own
+            || match value.expression.ty() {
+                CheckedType::Nominal(nominal) => {
+                    matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. })
+                }
+                _ => false,
+            };
+        if holder_without_deref {
+            return self.issue_node(
+                SemanticRule::Type7,
+                expression_node,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "write `deref(holder)`",
+                },
+            );
+        }
         let CheckedType::Nominal(result_nominal) = value.expression.ty() else {
             return self.invalid_propagation(propagate);
         };

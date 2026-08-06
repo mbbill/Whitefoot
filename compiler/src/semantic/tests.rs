@@ -468,6 +468,32 @@ fn checked_system_programs_complete_semantic_checking() {
 }
 
 #[test]
+fn propagate_of_a_box_holder_is_a_type7_missing_dereference() {
+    // ERR-3: a borrow or box holder used without `deref` retains its TYPE-7
+    // judgment; the propagate path previously fell through to ERR-3
+    // invalid-propagation for a box<Result<..>> operand (task 0019, bucket 4).
+    assert_rule(
+        br#"enum StepError {
+  Failed();
+}
+
+fn unwrap(holder: own box<Result<i32, StepError>>) -> own Result<i32, StepError> pure {
+  let accepted: own i32 = propagate holder;
+  return Ok(value: accepted);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+}
+
+#[test]
 fn result_construction_and_propagation_keep_context_and_rule_owners() {
     let source = br#"enum StepError {
   Failed();
