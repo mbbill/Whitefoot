@@ -79,24 +79,62 @@ task 0011 supplies the actual native construction this wrapper calls into.
   `GRAM-11`, `SYS-1`/`SYS-2`/`SYS-3`, `DIAG-1`), and the terminal records
   `docs/done/0006-entry-form-grammar.md` and
   `docs/done/0007-system-declaration-domain.md`.
-- Current: implementing the FN-7 entry-form judgment.
-- Next: the two lead-assigned handoffs, then conformance status flips and
-  gates.
+- Completed (`006f181`): the complete FN-7 entry-form judgment in a new
+  `compiler/src/semantic/check/entry_form.rs`, replacing `check_main_header`
+  — closed kind table, closed standard-input table, the kind row's fixed
+  result and admitted effect categories, the whole-unit `program_kind` /
+  `input_label` placement rules, and the rejected source `call` to a
+  kind-declaring entry; every rejection at the exact node FN-7 names.
+  GRAM-11 named-argument admission for a callee resolving to a SYS-2
+  operation. Both lead handoffs: the DIAG-1 stage-order repair, and
+  `arg_get` covered by negative cases only.
+- Current: record and report; the task's implementation is complete and both
+  gates are green.
+- Next: lead review and integration; task 0009 rebases onto this landing.
 
-## Scope and expected touch set
+### Deliberate departures from the written Method, for lead review
 
-- `compiler/src/semantic/check.rs` (`check_main_header`, ~454-535)
-- `compiler/src/semantic/mod.rs` (rule/issue kinds and diagnostic
-  locations)
-- `compiler/src/semantic/model.rs` (`CheckedProgramData.main` / entry-shape
-  data)
-- `compiler/src/lowering.rs` (`main_ordinal` and entry parameter binding,
-  ~810, 834-835)
-- `compiler/src/backend/emitter.rs` (the `i32 @main()` wrapper, ~55-59,
-  155-156)
-- New tests: a new file under `compiler/src/semantic/tests/` for
-  entry-form cases; a new file under `compiler/src/backend/tests/` for the
-  wrapper shape.
+1. **Diagnostic locations were repaired for both entry forms, not only the
+   new one.** The Method says the unlabelled branch "keeps today's exact
+   checks unchanged". Its *checks* are unchanged — the accepted and rejected
+   program sets are byte-identical — but v0.18's FN-7 newly fixes a per-node
+   location table for *every* FN-7 rejection, and the v0.17-era checker
+   reported all of them at the whole `fn_decl`. Two divergent location
+   schemes for one rule would have contradicted the single-normal-path rule,
+   so one judgment now serves both forms. This is a compiler defect repair
+   under `docs/WORKFLOW.md`'s blocker routing, with regressions pinning each
+   located node.
+2. **No `compiler/src/backend/emitter.rs` change, and only a boundary
+   statement in lowering.** FN-7 fixes every `command` entry's result as
+   `own ExitStatus`, so every admitted `command` entry names a system type
+   and stops at the semantic system-use boundary; no such entry can reach
+   lowering or the backend until the system type/call family lands
+   (0009/0010) and 0011 supplies the native bootstrap. An emitter wrapper
+   written now would be unreachable and untestable. Instead the checker
+   records the admitted form (`CheckedEntryForm`) and `lower_checked` states
+   that it implements exactly the unlabelled program start. The unsupported
+   boundary moved right — from the entry declaration to the first resolved
+   system use — it was not dropped.
+
+## Scope and touch set as landed
+
+- `compiler/src/semantic/check/entry_form.rs` (new; the FN-7 judgment)
+- `compiler/src/semantic/check.rs` (stage sequence; the narrowed
+  system-surface unsupported gate; `check_main_header` removed)
+- `compiler/src/semantic/check/expressions/calls.rs` (GRAM-11 over SYS-2
+  operation calls)
+- `compiler/src/semantic/mod.rs` (nine FN-7 issue kinds; two superseded
+  unsupported features removed)
+- `compiler/src/semantic/model.rs` (`CheckedEntryForm`,
+  `CheckedProgramData.entry`)
+- `compiler/src/semantic/tree.rs` (`direct_identifiers`, for an
+  `input_label`'s two IDENTs)
+- `compiler/src/lowering/builder.rs` (the entry-form boundary statement)
+- `compiler/src/driver.rs` (the superseded gate test; nine corpus negatives)
+- `compiler/src/semantic/tests/entry_form.rs` (new; 16 tests)
+- `tests/conformance/manifest.jsonl` (`status` and stale `reason` only)
+- Not touched, against the Method: `compiler/src/backend/emitter.rs` and
+  `compiler/src/backend/tests/` — see departure 2 above.
 
 ## Dependencies and integration order
 
@@ -127,6 +165,33 @@ type, unlabelled parameter, a call to a kind-declaring entry, a
 non-`ExitStatus` result); the unlabelled-`main` regression guard. A claimed
 task lands only through lead review per the executor lane in
 `docs/WORKFLOW.md`.
+
+**As run.** `make -C compiler check` and `make check` green before and after;
+lib tests 353 → 370, none removed, none weakened. The nine flipped
+conformance cases were each run through `whitefootc` and produce exactly
+their recorded `expect`, and each is additionally pinned in the compiler's
+corpus-negative regression so the flip cannot silently rot while the corpus
+has no adapter.
+
+### Findings for the lead
+
+- **`arg_get` positive case blocked (v0.19 requested).** As recorded at task
+  0007's closure, SYS-2 names `arg_get`'s second parameter `index`, which
+  FORM-3 excludes from IDENT, so GRAM-11 admits no complete legal `arg_get`
+  call. The general named-argument rule is implemented and `arg_get` is
+  covered by negative cases only; nothing was renamed.
+- **Effect-row admission for the `command` form is currently unreachable.**
+  Its inadmissible categories are exactly `reads`, `writes`, and
+  `allocates(arena 'r)`, each of which needs a REGIONID that only region
+  parameters could declare — and FN-7 rejects a region-parameter-bearing
+  entry first. The rule is implemented as written; the reachable failure set
+  is empty until a later version admits another category. The unlabelled
+  form's row check is reachable and is tested both ways.
+- **`reject-sysname-collision-in-kind-unit` now passes but was left
+  `pending`.** It expects `reject`/`TYPE-6` and `whitefootc` produces exactly
+  that. It is task 0007's rank-5 collision judgment, not this task's
+  territory, so its status was not flipped; the lead may want to flip it when
+  landing this change.
 
 ## Done-when
 
