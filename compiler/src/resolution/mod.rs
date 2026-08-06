@@ -20,8 +20,8 @@ pub use catalog::{
     SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemConstructor, SystemEntity,
     SystemField, SystemNominal, SystemOperation, SystemParameter, SystemParameterMode,
     SystemReleaseRow, SystemResultPayload, SystemTypeRef, operation_region_effects,
-    system_constructor_declaration, system_constructor_index, system_entity,
-    system_nominal_index, system_operation_index, system_release_row,
+    system_constructor_declaration, system_constructor_index, system_entity, system_nominal_index,
+    system_operation_index, system_release_row,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.

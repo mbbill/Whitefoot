@@ -5,12 +5,10 @@
 //! the whole declaration for a one-parameter defect is not the same
 //! diagnostic.
 
-use crate::{
-    SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature,
-};
+use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
 use super::super::model::CheckedEntryForm;
-use super::{assert_rule, assert_unsupported, with_semantics};
+use super::{assert_rule, with_semantics};
 
 /// Asserts the rule, premise, and the exact source bytes the location selects.
 fn assert_rule_at(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind, located: &[u8]) {

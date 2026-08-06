@@ -372,7 +372,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let declaration = self.declaration_at(node, DeclarationRole::Let)?;
         let declaration_id = declaration.id();
         let binding = Self::allocate_binding(counters.next_binding)?;
-        counters.binding_names.push(declaration.spelling().to_owned());
+        counters
+            .binding_names
+            .push(declaration.spelling().to_owned());
 
         if let Some(value_match) = self.tree.first_child_with(node, Production::ValueMatch)? {
             if mode != CheckedMode::Own {

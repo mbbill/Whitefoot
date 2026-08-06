@@ -599,11 +599,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // no offending source occurrence; the diagnostic renders the
             // owner whose release contributed it, selected by the
             // deterministic traversal that collected the sites.
-            let release_only = |exhibited_category: bool,
-                                declared_category: bool,
-                                syntactic_category: bool| {
-                exhibited_category && !declared_category && !syntactic_category
-            };
+            let release_only =
+                |exhibited_category: bool, declared_category: bool, syntactic_category: bool| {
+                    exhibited_category && !declared_category && !syntactic_category
+                };
             let undeclared_external = release_only(
                 exhibited.external,
                 signature.declared_effects.external,

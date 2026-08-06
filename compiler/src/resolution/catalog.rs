@@ -714,10 +714,7 @@ pub fn system_operation_index(id: SystemDeclarationId) -> Option<u8> {
     }
     ordinal -= SYSTEM_NOMINALS.len();
     for constructor in &SYSTEM_CONSTRUCTORS {
-        let Some(remaining) = ordinal.checked_sub(1 + constructor.fields.len()) else {
-            return None;
-        };
-        ordinal = remaining;
+        ordinal = ordinal.checked_sub(1 + constructor.fields.len())?;
     }
     for (index, operation) in SYSTEM_OPERATIONS.iter().enumerate() {
         if ordinal == 0 {

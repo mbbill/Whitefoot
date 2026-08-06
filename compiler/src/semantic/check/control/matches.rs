@@ -235,9 +235,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::Prelude(id) => {
                     variant.constructor == CheckedConstructor::Prelude(id)
                 }
-                ResolvedTarget::System(id) => {
-                    variant.constructor == CheckedConstructor::System(id)
-                }
+                ResolvedTarget::System(id) => variant.constructor == CheckedConstructor::System(id),
                 _ => false,
             })
             .ok_or_else(|| {
@@ -293,7 +291,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let declaration = self.declaration_at(written, DeclarationRole::MatchBinder)?;
             let binding = Self::allocate_binding(counters.next_binding)?;
-            counters.binding_names.push(declaration.spelling().to_owned());
+            counters
+                .binding_names
+                .push(declaration.spelling().to_owned());
             let borrow = if mode == CheckedMode::Own {
                 None
             } else {

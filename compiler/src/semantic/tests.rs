@@ -18,6 +18,7 @@ mod options;
 mod reinterpret;
 mod requires;
 mod slices;
+mod system_effects;
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{

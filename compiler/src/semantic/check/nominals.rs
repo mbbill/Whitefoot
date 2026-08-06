@@ -174,9 +174,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedNominalKind::SystemResource { nominal: index }
         } else {
             let mut variants = Vec::new();
-            for (constructor_index, constructor) in
-                crate::SYSTEM_CONSTRUCTORS.iter().enumerate()
-            {
+            for (constructor_index, constructor) in crate::SYSTEM_CONSTRUCTORS.iter().enumerate() {
                 if constructor.owner != index {
                     continue;
                 }

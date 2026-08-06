@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use crate::syntax::NodeId;
 use crate::{
     DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, SystemOperation,
-    SystemParameterMode, operation_region_effects,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, SystemOperation, SystemParameterMode,
+    operation_region_effects,
 };
 
 use super::super::super::super::model::{CheckedExpression, CheckedMode};
@@ -89,7 +89,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .is_some();
             // Every [SYS-2] result mode is `own`, so child reborrows are
             // admitted exactly as for an own-result user callee.
-            let argument = self.check_call_argument_atom(function, atom, bindings, loop_depth, true)?;
+            let argument =
+                self.check_call_argument_atom(function, atom, bindings, loop_depth, true)?;
             for access in &argument.accesses {
                 for borrow in &call_scoped_borrows {
                     if places_overlap(&access.place, &borrow.place)
