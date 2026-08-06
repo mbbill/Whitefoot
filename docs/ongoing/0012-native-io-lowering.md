@@ -1,20 +1,24 @@
 # 0012 — Native I/O lowering
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 6
-of 8; task 7 of 11; runs concurrently with task 0013). Not yet claimed —
-claiming fills in `Status`, `Owner`, workspace, and `Base revision` and
-moves this file unchanged in number to `docs/ongoing/` per
-`docs/WORKFLOW.md`. This record authorizes nothing beyond Work item 2
-itself; if `docs/current-plan.md` is replaced before this task is claimed,
-delete this file unless the new plan explicitly retains it.
+Live coordination record. It reports how authorized work is being carried
+out; it is not authority and cannot expand Work item 2.
 
+- **Status:** `IN PROGRESS`
+- **Owner:** executor agent `exec-0012`
+- **Workspace:** worktree `agent-a3e638de31b82da80`, branch
+  `worktree-agent-a3e638de31b82da80`
+- **Base revision:** `eca0078` (`docs: close task 0011 and complete the
+  v0.19 corpus pin`)
 - **Authority:** same Work item 2 bullet as task 0011 ("target-qualification
-  table plus the static native macOS/Linux lowering"). Implements
-  `spec/kernel-spec-v0.18.md`'s `PATH-2` (directory-relative resolution);
+  table plus the static native macOS/Linux lowering"). Implements the active
+  `spec/kernel-spec-v0.19.md`'s `PATH-2` (directory-relative resolution);
   `SYS-8` (one-attempt transfer semantics for `read_once`/`write_once`),
   `SYS-10`/`SYS-11` (`DirectoryRead`/`ReadFile` contracts and release), and
-  `SYS-7` (`IoError` representation); and dossier §7.1/§7.2/§7.3/§9's
-  `open_read`/`read_once`/`write_once`/release rows. Claimable only while
+  `SYS-7` (`IoError` representation, including the two-field inline detail);
+  under `QUAL-3`'s emitted shape, `TRAP-1`, and `EFF-5`; and dossier
+  §7.1/§7.2/§7.3/§9's `open_read`/`read_once`/`write_once`/release rows.
+  (The planned record was written against v0.18; v0.19 is the active
+  version and carries these rules unchanged.) Claimable only while
   `docs/current-plan.md` remains `ACTIVE`.
 
 ## Goal
@@ -67,12 +71,28 @@ detail in these two fields maps the class to `Other` instead.
 - New file under `compiler/src/backend/tests/` for I/O lowering shape
   assertions
 
+## Progress
+
+- Done: claimed at base `eca0078`; read `docs/WORKFLOW.md`, the governing
+  `SYS-7`/`SYS-8`/`SYS-9`–`SYS-12`/`PATH-2`/`QUAL-3`/`TRAP-1`/`EFF-5`
+  rules, and task 0011's landed surfaces.
+- Current: native emission for `open_read`, `read_once`, and `write_once`
+  plus the `IoError` mapping table, and removal of the last
+  `UnsupportedSystemInterface` stop.
+- Next: §9.1 optimized-module inspection, gates, record closure hand-off.
+
 ## Dependencies and integration order
 
 Depends on task 0011 (shares the qualification-table mechanism and
-module). Runs concurrently with task 0013 (wave 6) once task 0011 lands —
-neither depends on the other. Tasks 0014, 0015, and 0016 depend on this
-task.
+module); 0011 is terminal (`DONE`, landed at `61936d6`, closed by
+`eca0078`). Runs concurrently with task 0013 (wave 6) — neither depends on
+the other, but both touch the backend qualification and target surfaces
+(`compiler/src/backend/qualification.rs`, `compiler/src/backend/target.rs`,
+`compiler/src/backend/emitter/system.rs`). Lead-granted overlap
+authorization, recorded here as the agreed integration order: **this task
+lands first; task 0013 refreshes its base onto it, rereads the changed
+qualification surface, rebases, and reruns its gates.** Tasks 0014, 0015,
+and 0016 depend on this task.
 
 ## Validation
 
@@ -81,6 +101,18 @@ against real files (the fixture corpus task 0014 adds); codegen inspection
 confirming no allocation, copy, or lock on the hot transfer path. A
 claimed task lands only through lead review per the executor lane in
 `docs/WORKFLOW.md`.
+
+## Stop condition
+
+A blocker, plan defect, or specification/compiler discrepancy stops the
+task with an honest report and reproduction evidence rather than a
+workaround, a weakened check, or a narrowed deliverable.
+
+## Closure
+
+Move this record to `docs/done/` with a final status, the landed commits,
+the canonical evidence, and any remaining follow-up links, in the same
+integration change.
 
 ## Done-when
 
