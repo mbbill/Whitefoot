@@ -54,6 +54,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let scrutinee =
             self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
+        // [OWN-13] matches an enum value or a place reached through a borrow.
+        // A reference value — a bare holder, a `borrow_expr`, or a
+        // reference-returning call — is the [TYPE-7] implicit read.
+        if scrutinee.reference_value {
+            return self.issue_node(
+                SemanticRule::Type7,
+                expression_node,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "write `deref(holder)`",
+                },
+            );
+        }
         let descriptor = self.match_descriptor(scrutinee.expression.ty(), expression_node)?;
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();

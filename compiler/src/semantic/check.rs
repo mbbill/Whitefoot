@@ -166,6 +166,15 @@ struct TypedExpression {
     borrow: Option<BorrowInfo>,
     slice: Option<SliceInfo>,
     holder: Option<DeclarationId>,
+    /// Whether this expression denotes the reference itself rather than a
+    /// place reached through it.
+    ///
+    /// A destination of borrow mode wants exactly this value; a construct
+    /// that needs the referent — a `match` scrutinee under [OWN-13],
+    /// `propagate` under [ERR-3] — rejects it citing [TYPE-7] with the
+    /// `deref(.)` fix. A dereferenced place and an owned value are not
+    /// reference values even when their mode is a borrow.
+    reference_value: bool,
     effects: EffectSet,
     accesses: Vec<PlaceAccess>,
 }
@@ -184,6 +193,7 @@ impl TypedExpression {
             borrow: None,
             slice: None,
             holder: None,
+            reference_value: false,
             effects,
             accesses: Vec::new(),
         }
@@ -201,6 +211,7 @@ impl TypedExpression {
             borrow: None,
             slice: None,
             holder: None,
+            reference_value: false,
             effects,
             accesses: vec![PlaceAccess { place, kind }],
         }

@@ -24,9 +24,9 @@ use super::qualification::{
 };
 use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
-    IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEntry, IrEnumType,
-    IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation, IrNominal,
-    IrNominalId, IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations,
+    IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEntry,
+    IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation,
+    IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations,
     IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType, IrValueId, SystemResourceType,
 };
 use buffer::{buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label};
@@ -545,11 +545,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 index,
                 value,
             } => self.emit_buffer_store(*buffer, *index, *value),
-            IrInstruction::StoreNominal {
+            IrInstruction::Store {
                 address,
                 value,
-                nominal,
-            } => self.emit_nominal_store(*address, *value, *nominal),
+                referent,
+            } => self.emit_store(*address, *value, *referent),
             IrInstruction::Drop(drop) => self.emit_drop(*drop),
         }
     }
@@ -699,11 +699,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 variant,
                 field,
             } => self.emit_variant_projection(result, ty, *aggregate, *nominal, *variant, *field),
-            IrOperation::AddressOfNominal { value, nominal } => {
-                self.emit_nominal_address(result, ty, *value, *nominal)
+            IrOperation::AddressOf { value, referent } => {
+                self.emit_address_of(result, ty, *value, *referent)
             }
-            IrOperation::LoadNominal { address, nominal } => {
-                self.emit_nominal_load(result, ty, *address, *nominal)
+            IrOperation::Load { address, referent } => {
+                self.emit_load(result, ty, *address, *referent)
             }
         }
     }
@@ -946,7 +946,7 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
             llvm_type(program, element.ty())?
         )),
         IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
-        IrType::NominalAddress(_) => Ok("ptr".to_owned()),
+        IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::GuardedArrayIndex { .. } => Ok("i64".to_owned()),
         IrType::GuardedBufferIndex { .. } => Ok("i64".to_owned()),
         IrType::Nominal(id) => {

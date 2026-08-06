@@ -533,6 +533,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         borrow: local.borrow,
                         slice,
                         holder: Some(declaration),
+                        // A bare borrow holder selects the holder, not its
+                        // referent [TYPE-7, SET-1].
+                        reference_value: true,
                         effects: EffectSet::NONE,
                         accesses: Vec::new(),
                     });
@@ -699,15 +702,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
+        // [SET-1] states the shared-borrow referent as an [OWN-5] violation
+        // and gives that rule the citation; SET-1 owns only the residue of its
+        // writability relation.
         if borrow.kind != super::borrows::BorrowKind::Unique {
-            return self.issue_node(
-                SemanticRule::Set1,
-                node,
-                SemanticIssueKind::InvalidSetTarget {
-                    root_class: "shared borrow".to_owned(),
-                    required_classes: "live own storage or a live usable &uniq referent",
-                },
-            );
+            return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
         }
         let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
         let mut resolved = borrow.place;

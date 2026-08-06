@@ -157,6 +157,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         let result =
             self.substitute_parameter_type(signature.result, signature, &actual_regions)?;
+        let result_mode =
+            self.substitute_mode(signature.result_mode, signature, &actual_regions)?;
         let slice = self.substitute_slice_result(signature, result, &checked_slices)?;
         let slice_origins = slice
             .as_ref()
@@ -169,10 +171,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 result,
                 slice_origins,
             },
-            mode: signature.result_mode,
+            mode: result_mode,
             borrow: None,
             slice,
             holder: None,
+            // A reference-returning call still yields a reference value; the
+            // referent is reached only through an explicit holder [TYPE-7].
+            reference_value: result_mode != CheckedMode::Own,
             effects,
             accesses: Vec::new(),
         })

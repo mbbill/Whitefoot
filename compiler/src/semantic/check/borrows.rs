@@ -159,6 +159,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Whether `&'r T` / `&uniq 'r T` is carried for this `T`.
+    ///
+    /// [OWN-2] restricts no type, so this states what the checker, lowering,
+    /// and backend carry today rather than a language rule: every directly
+    /// stored value, plus the descriptor and opaque-handle types that are
+    /// already their own borrow. `array` content and an unsubstituted generic
+    /// stay explicitly unsupported instead of being misreported as invalid
+    /// source.
+    pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        Ok(match ty {
+            CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
+            CheckedType::Nominal(nominal) => matches!(
+                self.nominal(nominal)?.kind,
+                CheckedNominalKind::Struct { .. }
+                    | CheckedNominalKind::Enum { .. }
+                    | CheckedNominalKind::Box { .. }
+                    | CheckedNominalKind::SystemResource { .. }
+            ),
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_) => true,
+            CheckedType::Array { .. }
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => false,
+        })
+    }
+
+    /// Whether a borrow of this type is the address of the borrowed storage.
+    ///
+    /// A `buffer` or `slice` value is already a descriptor, and a `box` or
+    /// system-resource value is already its own borrow, so only directly
+    /// stored content — scalars, structs, and enums — needs a stable address
+    /// for reads and writes through the holder [OWN-5, TYPE-7].
+    pub(super) fn borrow_addresses_storage(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        Ok(match ty {
+            CheckedType::Nominal(nominal) => matches!(
+                self.nominal(nominal)?.kind,
+                CheckedNominalKind::Struct { .. } | CheckedNominalKind::Enum { .. }
+            ),
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_) => true,
+            CheckedType::Buffer { .. }
+            | CheckedType::Slice { .. }
+            | CheckedType::Array { .. }
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_) => false,
+        })
+    }
+
     pub(super) fn parameter_borrow(&self, parameter: &ParameterSignature) -> Option<BorrowInfo> {
         let (kind, region) = match parameter.mode {
             CheckedMode::Own => return None,
@@ -309,18 +363,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             CheckedType::Nominal(nominal)
                 if fields.is_empty()
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::Struct { .. }
-                    ) =>
-            {
-                CheckedExpression::BorrowStruct {
-                    binding: local.binding,
-                    nominal,
-                }
-            }
-            CheckedType::Nominal(nominal)
-                if fields.is_empty()
                     && matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. }) =>
             {
                 CheckedExpression::BorrowBox {
@@ -348,6 +390,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .map(|slice| slice.origins.clone())
                     .unwrap_or_default(),
             },
+            _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
+                CheckedExpression::BorrowAddressed {
+                    binding: local.binding,
+                    ty,
+                }
+            }
             _ => {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }
@@ -358,6 +406,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             borrow: Some(borrow),
             slice,
             holder: None,
+            // A `borrow_expr` is a reference value, never the referent
+            // [TYPE-7, GRAM-5].
+            reference_value: true,
             effects: EffectSet::NONE,
             accesses: Vec::new(),
         })
@@ -471,18 +522,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     element,
                 },
             },
-            CheckedType::Nominal(nominal)
-                if fields.is_empty()
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::Struct { .. }
-                    ) =>
-            {
-                CheckedExpression::ReborrowStruct {
-                    binding: local.binding,
-                    nominal,
-                }
-            }
             // An opaque resource value is its own borrow, so a child reborrow
             // of a borrow-mode holder is that same inline value: there is no
             // content to address and nothing to reload [SYS-2, OWN-6].
@@ -496,6 +535,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BorrowSystemResource {
                     binding: local.binding,
                     nominal,
+                }
+            }
+            _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
+                CheckedExpression::ReborrowAddressed {
+                    binding: local.binding,
+                    ty,
                 }
             }
             _ => {
@@ -514,6 +559,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             borrow: Some(borrow),
             slice: None,
             holder: Some(holder),
+            reference_value: true,
             effects: EffectSet::NONE,
             accesses: Vec::new(),
         })

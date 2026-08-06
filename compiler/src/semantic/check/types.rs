@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedFlatElement, CheckedMode,
-    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedFlatElement, CheckedMode, CheckedType,
+    CheckedValue, FloatType, IntegerType,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -39,22 +39,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_type_with(ty_node, substitution)?;
-            if mode != CheckedMode::Own {
-                let supported = matches!(ty, CheckedType::Buffer { .. })
-                    || matches!(ty, CheckedType::Slice { .. })
-                    || matches!(
-                        ty,
-                        CheckedType::Nominal(nominal)
-                            if matches!(
-                                self.nominal(nominal)?.kind,
-                                CheckedNominalKind::Struct { .. }
-                                    | CheckedNominalKind::Box { .. }
-                                    | CheckedNominalKind::SystemResource { .. }
-                            )
-                    );
-                if !supported {
-                    return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
-                }
+            if mode != CheckedMode::Own && !self.borrowable_type(ty)? {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
             }
             parameters.push(ParameterSignature {
                 declaration: declaration.id(),

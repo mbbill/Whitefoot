@@ -415,9 +415,11 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         include_bytes!("../../../tests/conformance/cases/x-struct-set-field.wf"),
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
-    assert_unsupported(
+    // Borrow-mode parameters and `let` borrows of scalars and enums, and the
+    // [OWN-13] borrowed match this case exercises, are on the normal path now.
+    with_semantics(
         include_bytes!("../../../tests/conformance/cases/x-enum-borrow-payload-live.wf"),
-        UnsupportedSemanticFeature::RegionsAndBorrows,
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
         b"struct Node {\n  next: Node;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",

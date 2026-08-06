@@ -256,10 +256,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceLength { .. }
             | CheckedExpression::BorrowBuffer { .. }
-            | CheckedExpression::BorrowStruct { .. }
+            | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
             | CheckedExpression::BorrowSystemResource { .. }
-            | CheckedExpression::ReborrowStruct { .. } => {}
+            | CheckedExpression::ReborrowAddressed { .. }
+            | CheckedExpression::DerefAddressed { .. } => {}
         }
         Ok(())
     }

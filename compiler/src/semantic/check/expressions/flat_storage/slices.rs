@@ -201,6 +201,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             borrow: None,
             slice: Some(SliceInfo { region, origins }),
             holder: None,
+            reference_value: false,
             effects: EffectSet::NONE,
             accesses,
         })

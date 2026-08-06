@@ -95,6 +95,48 @@ impl IrFlatElement {
     }
 }
 
+/// The referent of an [`IrType::Address`]: directly stored content that a
+/// borrow addresses.
+///
+/// Descriptor values (`buffer`, `slice`) and opaque handles (`box`, system
+/// resources) are already their own borrow and never appear here.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrAddressed {
+    Unit,
+    Bool,
+    Integer { width: u8, signed: bool },
+    Float { width: u8 },
+    Nominal(IrNominalId),
+}
+
+impl IrAddressed {
+    pub const fn ty(self) -> IrType {
+        match self {
+            Self::Unit => IrType::Unit,
+            Self::Bool => IrType::Bool,
+            Self::Integer { width, signed } => IrType::Integer { width, signed },
+            Self::Float { width } => IrType::Float { width },
+            Self::Nominal(id) => IrType::Nominal(id),
+        }
+    }
+
+    const fn of(ty: IrType) -> Option<Self> {
+        Some(match ty {
+            IrType::Unit => Self::Unit,
+            IrType::Bool => Self::Bool,
+            IrType::Integer { width, signed } => Self::Integer { width, signed },
+            IrType::Float { width } => Self::Float { width },
+            IrType::Nominal(id) => Self::Nominal(id),
+            IrType::Address(_)
+            | IrType::Array { .. }
+            | IrType::Buffer { .. }
+            | IrType::Slice { .. }
+            | IrType::GuardedArrayIndex { .. }
+            | IrType::GuardedBufferIndex { .. } => return None,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IrType {
     Unit,
@@ -102,7 +144,7 @@ pub enum IrType {
     Integer { width: u8, signed: bool },
     Float { width: u8 },
     Nominal(IrNominalId),
-    NominalAddress(IrNominalId),
+    Address(IrAddressed),
     Array { element: IrFlatElement, length: u64 },
     Buffer { element: IrFlatElement },
     Slice { element: IrFlatElement },
@@ -706,13 +748,13 @@ pub enum IrOperation {
         variant: u32,
         field: u32,
     },
-    AddressOfNominal {
+    AddressOf {
         value: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     },
-    LoadNominal {
+    Load {
         address: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     },
 }
 
@@ -732,10 +774,10 @@ pub enum IrInstruction {
         index: IrValueId,
         value: IrValueId,
     },
-    StoreNominal {
+    Store {
         address: IrValueId,
         value: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     },
     Drop(IrDrop),
 }

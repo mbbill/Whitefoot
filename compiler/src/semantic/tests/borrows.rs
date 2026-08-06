@@ -248,6 +248,10 @@ fn main() -> own unit pure {
     });
 }
 
+/// [SET-1] states the shared-borrow referent among the cases it hands to
+/// another rule — "A shared-borrow referent ... is not writable [OWN-5]" —
+/// and keeps only the residue of its writability relation. The rejection is
+/// unconditional either way; the citation is [OWN-5].
 #[test]
 fn shared_struct_borrows_cannot_write_copy_fields() {
     assert_rule(
@@ -264,11 +268,8 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRule::Set1,
-        SemanticIssueKind::InvalidSetTarget {
-            root_class: "shared borrow".to_owned(),
-            required_classes: "live own storage or a live usable &uniq referent",
-        },
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
     );
 }
 
@@ -587,6 +588,180 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
     );
     assert_rule(
         &narrowed,
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+}
+
+/// General borrow-mode parameters and `let` borrows: scalar and enum content
+/// is borrowed by the same machinery the buffer, struct, box, and system
+/// families already use [OWN-2, TYPE-7, OWN-13].
+#[test]
+fn scalar_and_enum_borrows_check_read_write_and_match_through_the_holder() {
+    let source = br#"enum Cell {
+  Full(v: i32);
+  Void();
+}
+
+fn read_scalar ['r](p: &'r i32) -> own i32 reads('r) {
+  return deref(p);
+}
+
+fn bump ['r](p: &uniq 'r i32) -> own unit writes('r) {
+  set deref(p) = 9_i32;
+  return unit;
+}
+
+fn score ['r](c: &'r Cell) -> own i32 reads('r), traps {
+  match deref(c) {
+    Full(v: x) => {
+      return iadd.trap<i32>(deref(x), 1_i32);
+    }
+    Void() => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> own unit traps {
+  let a: own i32 = 5_i32;
+  region 'r {
+    let s: &'r i32 = &'r a;
+    check ieq<i32>(deref(s), 5_i32) else trap "read";
+  }
+  region 'q {
+    let u: &uniq 'q i32 = &uniq 'q a;
+    set deref(u) = 7_i32;
+  }
+  check ieq<i32>(a, 7_i32) else trap "write";
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("general borrow-mode parameters must check: {outcome:?}");
+        };
+        assert!(matches!(
+            checked.data.functions[0].parameters[0].mode,
+            CheckedMode::Shared(_)
+        ));
+        assert!(matches!(
+            checked.data.functions[1].parameters[0].mode,
+            CheckedMode::Unique(_)
+        ));
+        // The read through the holder is its own checked node, so lowering
+        // never confuses the holder with its referent.
+        let CheckedStatement::Return {
+            value: CheckedExpression::DerefAddressed { .. },
+            ..
+        } = &checked.data.functions[0].body[0]
+        else {
+            panic!("a scalar deref read must retain its checked node");
+        };
+        // Matching through `&'r` derives shared payload binders [OWN-13].
+        let CheckedStatement::Match { arms, .. } = &checked.data.functions[2].body[0] else {
+            panic!("score must retain its borrowed match");
+        };
+        assert!(matches!(arms[0].binders[0].mode, CheckedMode::Shared(_)));
+        // The borrowed root carries the address; the holder is that address.
+        let main = &checked.data.functions[3];
+        let CheckedStatement::Region { body, .. } = &main.body[1] else {
+            panic!("main must retain its first region");
+        };
+        assert!(matches!(
+            &body[0],
+            CheckedStatement::Let {
+                value: CheckedExpression::BorrowAddressed { .. },
+                ..
+            }
+        ));
+    });
+}
+
+/// The near misses the same admission must keep rejecting.
+#[test]
+fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
+    // [OWN-10]: a caller-supplied region outlives the frame that owns `x`.
+    assert_rule(
+        b"fn dangle ['r0](x: own i32) -> &'r0 i32 pure {\n  return &'r0 x;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own10,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+    // [OWN-4]: a borrow narrowed to an inner region cannot be returned as the
+    // caller's region.
+    assert_rule(
+        b"fn leak ['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    let q: &'s i32 = x;\n    return q;\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own4,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+    // [TYPE-7]: no implicit read through a scalar holder.
+    assert_rule(
+        b"fn read ['r](holder: &'r i32) -> own i32 pure {\n  return holder;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+    // [TYPE-7]: a bare holder is not an enum value, so it cannot be matched.
+    assert_rule(
+        b"enum State {\n  Ready();\n  Done();\n}\n\nfn main() -> own unit pure {\n  let state: own State = Ready();\n  region 'r {\n    let holder: &'r State = &'r state;\n    match holder {\n      Ready() => {\n      }\n      Done() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+    // [TYPE-7]: neither is a `borrow_expr`.
+    assert_rule(
+        b"enum State {\n  Ready();\n}\n\nfn main() -> own unit pure {\n  let state: own State = Ready();\n  region 'r {\n    match &'r state {\n      Ready() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+    // [TYPE-7]: nor a reference-returning call's result.
+    assert_rule(
+        b"enum State {\n  Ready();\n}\n\nfn view ['r](state: &'r State) -> &'r State pure {\n  return state;\n}\n\nfn inspect ['r](state: &'r State) -> own unit pure {\n  match view<'r>(state: state) {\n    Ready() => {\n    }\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+    // [OWN-5]: a shared holder never makes its referent writable.
+    assert_rule(
+        b"fn main() -> own unit pure {\n  let a: own i32 = 1_i32;\n  region 'r {\n    let s: &'r i32 = &'r a;\n    set deref(s) = 9_i32;\n  }\n  return unit;\n}\n",
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+    // [OWN-5]: two live uniq borrows of one scalar place overlap.
+    assert_rule(
+        b"fn main() -> own unit pure {\n  let a: own i32 = 3_i32;\n  region 'r {\n    let u1: &uniq 'r i32 = &uniq 'r a;\n    let u2: &uniq 'r i32 = &uniq 'r a;\n  }\n  return unit;\n}\n",
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+    // [OWN-12]: two uniq arguments over one place alias at the call.
+    assert_rule(
+        b"fn two ['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  let x: own i32 = 0_i32;\n  region 'r {\n    two<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return unit;\n}\n",
+        SemanticRule::Own12,
+        SemanticIssueKind::BorrowConflict,
+    );
+}
+
+/// [EFF-2] §9.1 attributes reads and writes through an incoming borrow
+/// parameter to that parameter's formal region, both ways.
+#[test]
+fn scalar_borrow_parameter_effect_rows_are_exact_in_both_directions() {
+    assert_rule(
+        b"fn read_scalar ['r](p: &'r i32) -> own i32 pure {\n  return deref(p);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+    assert_rule(
+        b"fn bump ['r](p: &uniq 'r i32) -> own unit reads('r) {\n  set deref(p) = 9_i32;\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Eff2,
+        SemanticIssueKind::EffectMismatch,
+    );
+    assert_rule(
+        b"fn quiet ['r](p: &'r i32) -> own unit reads('r) {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );

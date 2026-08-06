@@ -1,6 +1,6 @@
-//! Stable storage for checked whole-struct borrows.
+//! Stable storage for checked borrows of directly stored content.
 //!
-//! `BorrowStruct` is the semantic authority. Finding those explicit nodes
+//! `BorrowAddressed` is the semantic authority. Finding those explicit nodes
 //! before CFG lowering lets an owner use one representation on every branch:
 //! its binding carries a stable address, while ordinary value uses load from
 //! that address. Lowering never infers a borrow from source shape or type alone.
@@ -65,7 +65,7 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
 
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
-        CheckedExpression::BorrowStruct { binding, .. } => {
+        CheckedExpression::BorrowAddressed { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::UserCall { arguments, .. }
@@ -106,7 +106,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::BorrowSystemResource { .. }
-        | CheckedExpression::ReborrowStruct { .. }
+        | CheckedExpression::ReborrowAddressed { .. }
+        | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => {}
     }
 }
@@ -124,21 +125,10 @@ impl IrBuilder<'_> {
             .get(&binding)
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let IrType::Nominal(nominal) = self.value_type(value)? else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        if !matches!(
-            self.nominals
-                .get(nominal.index())
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                .kind,
-            IrNominalKind::Struct { .. }
-        ) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
+        let referent = self.addressed_referent(self.value_type(value)?)?;
         let address = self.define(
-            IrType::NominalAddress(nominal),
-            IrOperation::AddressOfNominal { value, nominal },
+            IrType::Address(referent),
+            IrOperation::AddressOf { value, referent },
         )?;
         if self.bindings.insert(binding, address) != Some(value) {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -146,17 +136,37 @@ impl IrBuilder<'_> {
         Ok(())
     }
 
-    pub(super) fn lower_struct_borrow(
+    /// The referent an address may point at.
+    ///
+    /// A borrow addresses directly stored content only; a descriptor or opaque
+    /// handle is already its own borrow and never reaches this path.
+    fn addressed_referent(&self, ty: IrType) -> Result<IrAddressed, LoweringFailure> {
+        let referent = IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        if let IrAddressed::Nominal(nominal) = referent
+            && !matches!(
+                self.nominals
+                    .get(nominal.index())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .kind,
+                IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
+            )
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        Ok(referent)
+    }
+
+    pub(super) fn lower_addressed_borrow(
         &self,
         binding: BindingId,
-        nominal: IrNominalId,
+        ty: IrType,
     ) -> Result<IrValueId, LoweringFailure> {
         let value = self
             .bindings
             .get(&binding)
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        if self.value_type(value)? != IrType::NominalAddress(nominal) {
+        if self.value_type(value)? != IrType::Address(self.addressed_referent(ty)?) {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(value)
@@ -178,35 +188,35 @@ impl IrBuilder<'_> {
         &mut self,
         storage: IrValueId,
     ) -> Result<IrValueId, LoweringFailure> {
-        let IrType::NominalAddress(nominal) = self.value_type(storage)? else {
+        let IrType::Address(referent) = self.value_type(storage)? else {
             return Ok(storage);
         };
         self.define(
-            IrType::Nominal(nominal),
-            IrOperation::LoadNominal {
+            referent.ty(),
+            IrOperation::Load {
                 address: storage,
-                nominal,
+                referent,
             },
         )
     }
 
-    pub(super) fn store_nominal(
+    pub(super) fn store_addressed(
         &mut self,
         address: IrValueId,
         value: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     ) -> Result<(), LoweringFailure> {
-        if self.value_type(address)? != IrType::NominalAddress(nominal)
-            || self.value_type(value)? != IrType::Nominal(nominal)
+        if self.value_type(address)? != IrType::Address(referent)
+            || self.value_type(value)? != referent.ty()
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.current_block_mut()?
             .instructions
-            .push(IrInstruction::StoreNominal {
+            .push(IrInstruction::Store {
                 address,
                 value,
-                nominal,
+                referent,
             });
         Ok(())
     }

@@ -176,12 +176,9 @@ fn lower_function(
     constants: &[IrGlobalConstant],
 ) -> Result<IrFunction, LoweringFailure> {
     let addressed_bindings = collect_addressed_bindings(function);
-    let mut builder = IrBuilder::new(
-        nominals,
-        constants,
-        lower_type(function.result)?,
-        addressed_bindings,
-    )?;
+    let result =
+        lower_borrow_mode_type(function.result_mode, lower_type(function.result)?, nominals)?;
+    let mut builder = IrBuilder::new(nominals, constants, result, addressed_bindings)?;
     for parameter in &function.parameters {
         let ty = lower_parameter_type(parameter, nominals)?;
         let value = builder.new_value(ty)?;
@@ -204,7 +201,7 @@ fn lower_function(
     Ok(IrFunction {
         name: function.symbol.clone(),
         parameters: builder.parameters,
-        result: lower_type(function.result)?,
+        result,
         values: builder.values,
         blocks: builder
             .blocks
@@ -226,23 +223,37 @@ fn lower_parameter_type(
     parameter: &CheckedParameter,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    let ty = lower_type(parameter.ty)?;
-    if parameter.mode == CheckedMode::Own {
+    lower_borrow_mode_type(parameter.mode, lower_type(parameter.ty)?, nominals)
+}
+
+/// The representation a borrow-mode value carries.
+///
+/// A borrow of directly stored content is the address of that storage; a
+/// descriptor or opaque handle is already its own borrow and keeps its value
+/// type [OWN-2, SYS-2].
+fn lower_borrow_mode_type(
+    mode: CheckedMode,
+    ty: IrType,
+    nominals: &[IrNominal],
+) -> Result<IrType, LoweringFailure> {
+    if mode == CheckedMode::Own {
         return Ok(ty);
     }
-    let IrType::Nominal(nominal) = ty else {
+    let Some(referent) = IrAddressed::of(ty) else {
         return Ok(ty);
     };
-    let nominal_data = nominals
-        .get(nominal.index())
-        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-    Ok(
-        if matches!(nominal_data.kind, IrNominalKind::Struct { .. }) {
-            IrType::NominalAddress(nominal)
-        } else {
-            ty
-        },
-    )
+    if let IrAddressed::Nominal(nominal) = referent
+        && !matches!(
+            nominals
+                .get(nominal.index())
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                .kind,
+            IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
+        )
+    {
+        return Ok(ty);
+    }
+    Ok(IrType::Address(referent))
 }
 
 struct BuildingBlock {
@@ -655,7 +666,7 @@ impl<'program> IrBuilder<'program> {
                 if self.value_type(value)? != expected
                     && !matches!(
                         (actual, expected),
-                        (IrType::NominalAddress(left), IrType::Nominal(right)) if left == right
+                        (IrType::Address(referent), _) if referent.ty() == expected
                     )
                 {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -953,9 +964,6 @@ impl<'program> IrBuilder<'program> {
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
             CheckedExpression::BorrowBuffer { root } => self.lower_buffer_borrow(root),
-            CheckedExpression::BorrowStruct { binding, nominal } => {
-                self.lower_struct_borrow(*binding, IrNominalId(nominal.0))
-            }
             CheckedExpression::BorrowBox { binding, nominal } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
@@ -963,8 +971,16 @@ impl<'program> IrBuilder<'program> {
                 }
                 Ok(value)
             }
-            CheckedExpression::ReborrowStruct { binding, nominal } => {
-                self.lower_struct_borrow(*binding, IrNominalId(nominal.0))
+            CheckedExpression::BorrowAddressed { binding, ty }
+            | CheckedExpression::ReborrowAddressed { binding, ty } => {
+                self.lower_addressed_borrow(*binding, lower_type(*ty)?)
+            }
+            CheckedExpression::DerefAddressed { binding, ty } => {
+                let value = self.binding_value(*binding)?;
+                if self.value_type(value)? != lower_type(*ty)? {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                Ok(value)
             }
             CheckedExpression::ConstructStruct { nominal, fields } => {
                 let fields = fields
@@ -1153,11 +1169,11 @@ impl<'program> IrBuilder<'program> {
             CheckedSetTarget::BufferIndex(target) => self.lower_buffer_set(root, target, value)?,
         };
         let stored = match self.value_type(storage)? {
-            IrType::NominalAddress(nominal) => {
-                if self.value_type(replacement)? != IrType::Nominal(nominal) {
+            IrType::Address(referent) => {
+                if self.value_type(replacement)? != referent.ty() {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                self.store_nominal(storage, replacement, nominal)?;
+                self.store_addressed(storage, replacement, referent)?;
                 storage
             }
             _ => replacement,

@@ -724,9 +724,11 @@ pub(crate) enum CheckedExpression {
     BorrowBuffer {
         root: CheckedBufferRoot,
     },
-    BorrowStruct {
+    /// A borrow of directly stored content — a scalar, struct, or enum — which
+    /// is the address of the borrowed binding's storage [OWN-2, OWN-5].
+    BorrowAddressed {
         binding: BindingId,
-        nominal: NominalId,
+        ty: CheckedType,
     },
     BorrowBox {
         binding: BindingId,
@@ -736,9 +738,18 @@ pub(crate) enum CheckedExpression {
         binding: BindingId,
         nominal: NominalId,
     },
-    ReborrowStruct {
+    /// The same address, taken from a binding that already holds one: a borrow
+    /// whose place is rooted at another borrow holder [OWN-6, OWN-10].
+    ReborrowAddressed {
         binding: BindingId,
-        nominal: NominalId,
+        ty: CheckedType,
+    },
+    /// The referent value read through such a holder [TYPE-7]. The holder
+    /// itself stays a distinct expression, so lowering never has to guess
+    /// whether a borrow binding is being passed on or read through.
+    DerefAddressed {
+        binding: BindingId,
+        ty: CheckedType,
     },
     ConstructStruct {
         nominal: NominalId,
@@ -800,9 +811,9 @@ impl CheckedExpression {
             Self::BorrowBuffer { root } => CheckedType::Buffer {
                 element: root.element,
             },
-            Self::BorrowStruct { nominal, .. } | Self::ReborrowStruct { nominal, .. } => {
-                CheckedType::Nominal(*nominal)
-            }
+            Self::BorrowAddressed { ty, .. }
+            | Self::ReborrowAddressed { ty, .. }
+            | Self::DerefAddressed { ty, .. } => *ty,
             Self::BorrowBox { nominal, .. } | Self::BorrowSystemResource { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }

@@ -1,39 +1,43 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    pub(super) fn emit_nominal_address(
+    /// The entry-block slot that gives a borrowed binding its stable address.
+    ///
+    /// Only directly stored content is addressed: a descriptor or opaque
+    /// handle is already its own borrow and never reaches this operation.
+    pub(super) fn emit_address_of(
         &mut self,
         result: IrValueId,
         ty: IrType,
         value: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     ) -> Result<(), BackendFailure> {
-        if ty != IrType::NominalAddress(nominal)
-            || self.function.value_type(value) != Some(IrType::Nominal(nominal))
-            || !matches!(self.nominal(nominal)?.kind(), IrNominalKind::Struct { .. })
+        if ty != IrType::Address(referent)
+            || self.function.value_type(value) != Some(referent.ty())
+            || !self.referent_is_stored(referent)?
         {
             return Err(BackendFailure::InvalidIr);
         }
-        let nominal_type = llvm_type(self.program, IrType::Nominal(nominal))?;
-        self.declare_entry_slot(&value_name(result), &nominal_type)?;
+        let referent_type = llvm_type(self.program, referent.ty())?;
+        self.declare_entry_slot(&value_name(result), &referent_type)?;
         writeln!(
             self.output,
-            "  store {nominal_type} {}, ptr {}",
+            "  store {referent_type} {}, ptr {}",
             value_name(value),
             value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    pub(super) fn emit_nominal_load(
+    pub(super) fn emit_load(
         &mut self,
         result: IrValueId,
         ty: IrType,
         address: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     ) -> Result<(), BackendFailure> {
-        if ty != IrType::Nominal(nominal)
-            || self.function.value_type(address) != Some(IrType::NominalAddress(nominal))
+        if ty != referent.ty()
+            || self.function.value_type(address) != Some(IrType::Address(referent))
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -47,25 +51,38 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    pub(super) fn emit_nominal_store(
+    pub(super) fn emit_store(
         &mut self,
         address: IrValueId,
         value: IrValueId,
-        nominal: IrNominalId,
+        referent: IrAddressed,
     ) -> Result<(), BackendFailure> {
-        if self.function.value_type(address) != Some(IrType::NominalAddress(nominal))
-            || self.function.value_type(value) != Some(IrType::Nominal(nominal))
+        if self.function.value_type(address) != Some(IrType::Address(referent))
+            || self.function.value_type(value) != Some(referent.ty())
         {
             return Err(BackendFailure::InvalidIr);
         }
         writeln!(
             self.output,
             "  store {} {}, ptr {}",
-            llvm_type(self.program, IrType::Nominal(nominal))?,
+            llvm_type(self.program, referent.ty())?,
             value_name(value),
             value_name(address)
         )
         .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    fn referent_is_stored(&self, referent: IrAddressed) -> Result<bool, BackendFailure> {
+        Ok(match referent {
+            IrAddressed::Nominal(nominal) => matches!(
+                self.nominal(nominal)?.kind(),
+                IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
+            ),
+            IrAddressed::Unit
+            | IrAddressed::Bool
+            | IrAddressed::Integer { .. }
+            | IrAddressed::Float { .. } => true,
+        })
     }
 
     pub(super) fn emit_constant(

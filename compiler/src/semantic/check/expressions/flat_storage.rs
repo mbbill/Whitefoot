@@ -469,6 +469,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             borrow: None,
             slice: None,
             holder: None,
+            reference_value: false,
             effects,
             accesses,
         })

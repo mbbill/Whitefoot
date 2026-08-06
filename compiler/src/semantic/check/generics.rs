@@ -301,7 +301,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
-            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
+            if !self.borrowable_type(result)? {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, rtype);
+            }
         }
         let slice_return_ceiling = derive_slice_return_ceiling(&parameters, result_mode, result);
         let effects = self

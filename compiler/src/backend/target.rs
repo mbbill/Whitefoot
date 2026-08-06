@@ -250,7 +250,7 @@ fn emitted_stack_slots(
                 .value_type(*value)
                 .ok_or(TargetLayoutFailure::InvalidIr)?,
         ],
-        IrOperation::AddressOfNominal { nominal, .. } => vec![IrType::Nominal(*nominal)],
+        IrOperation::AddressOf { referent, .. } => vec![referent.ty()],
         _ => Vec::new(),
     };
     Ok(slots)
@@ -298,7 +298,7 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
             _ => None,
         },
         IrInstruction::StoreBuffer { .. }
-        | IrInstruction::StoreNominal { .. }
+        | IrInstruction::Store { .. }
         | IrInstruction::Drop(_) => None,
     }
 }
@@ -332,7 +332,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             }
             IrType::Float { .. } => Err(TargetLayoutFailure::InvalidIr),
             IrType::Nominal(id) => self.nominal_layout(id),
-            IrType::NominalAddress(_) => Ok(Layout { size: 8, align: 8 }),
+            IrType::Address(_) => Ok(Layout { size: 8, align: 8 }),
             IrType::Array { element, length } => {
                 let element = self.layout(element.ty())?;
                 let stride = align_up(

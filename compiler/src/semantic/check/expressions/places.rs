@@ -97,6 +97,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             borrow,
             slice: None,
             holder,
+            reference_value: false,
             effects,
             accesses: vec![PlaceAccess {
                 place: place.resolved,
@@ -150,8 +151,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
         let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
-        if !self.is_copy_type(ty)? {
-            if !options.explicit_move {
+        let copy = self.is_copy_type(ty)?;
+        if !copy {
+            if options.explicit_move {
+                return self.issue_node(
+                    SemanticRule::Own5,
+                    use_node,
+                    SemanticIssueKind::BorrowConflict,
+                );
+            }
+            // An affine referent may still be matched through the borrow:
+            // [OWN-13] leaves the scrutinee live and derives borrowed payload
+            // binders. Every other bare use is the [OWN-1] error.
+            if matches!(options.context, PlaceUseContext::Ordinary) {
                 return self.issue_node(
                     SemanticRule::Own1,
                     use_node,
@@ -160,13 +172,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
-            return self.issue_node(
-                SemanticRule::Own5,
-                use_node,
-                SemanticIssueKind::BorrowConflict,
-            );
         }
-        if options.explicit_move {
+        if copy && options.explicit_move {
             return self.issue_node(
                 SemanticRule::Own1,
                 use_node,
@@ -175,7 +182,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let mut resolved = borrow.place;
+        let mut resolved = borrow.place.clone();
         resolved.fields.extend_from_slice(&fields);
         self.check_loan_access(
             bindings,
@@ -188,27 +195,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(region) = borrow.origin_region {
             effects.add_read(region);
         }
-        let expression = if fields.is_empty() {
+        let expression = if !fields.is_empty() {
+            CheckedExpression::Project {
+                binding: local.binding,
+                fields: fields.clone(),
+                ty,
+                consume_root: false,
+                residual_drops: Vec::new(),
+            }
+        } else if self.borrow_addresses_storage(ty)? {
+            CheckedExpression::DerefAddressed {
+                binding: local.binding,
+                ty,
+            }
+        } else {
             CheckedExpression::Binding {
                 binding: local.binding,
                 ty,
                 slice_origins: Vec::new(),
             }
-        } else {
-            CheckedExpression::Project {
-                binding: local.binding,
-                fields,
-                ty,
-                consume_root: false,
-                residual_drops: Vec::new(),
-            }
         };
-        Ok(TypedExpression::owned_with_access(
+        if copy {
+            return Ok(TypedExpression::owned_with_access(
+                expression,
+                effects,
+                resolved,
+                AccessKind::Read,
+            ));
+        }
+        let mode = borrow.mode();
+        let mut place = borrow.place.clone();
+        place.fields.extend_from_slice(&fields);
+        Ok(TypedExpression {
             expression,
+            mode,
+            borrow: Some(BorrowInfo { place, ..borrow }),
+            slice: None,
+            holder: Some(declaration),
+            reference_value: false,
             effects,
-            resolved,
-            AccessKind::Read,
-        ))
+            accesses: vec![PlaceAccess {
+                place: resolved,
+                kind: AccessKind::Read,
+            }],
+        })
     }
 
     fn resolve_explicit_place(

@@ -160,7 +160,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::ReturnMismatch,
                     }));
                 }
-                if value.mode != function.result_mode {
+                // [FN-1] owns the result mode; [OWN-4] owns the region
+                // relation between the returned borrow and the written
+                // `rtype` region, so the two are judged separately.
+                let modes_agree = matches!(
+                    (value.mode, function.result_mode),
+                    (CheckedMode::Own, CheckedMode::Own)
+                        | (CheckedMode::Shared(_), CheckedMode::Shared(_))
+                        | (CheckedMode::Unique(_), CheckedMode::Unique(_))
+                );
+                if !modes_agree {
                     if value.mode != CheckedMode::Own && function.result_mode == CheckedMode::Own {
                         return self.issue_node(
                             SemanticRule::Type7,
@@ -176,6 +185,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         SemanticIssueKind::ReturnMismatch,
                     );
                 }
+                self.borrow_for_destination(function.result_mode, &value, expression_node)?;
                 if matches!(function.result, CheckedType::Slice { .. }) {
                     let origins = value
                         .slice
