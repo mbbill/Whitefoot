@@ -252,9 +252,9 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 #[test]
 #[ignore = "BLOCKED, not scoped out: 25 pre-existing runnable cases do not reach their \
             declared verdict through this compiler, in three remaining causes. 9 stop as \
-            unsupported on the borrow capability task 0021 implements (visible once the \
-            completed case sources stopped masking them behind FN-7; outside the owner's \
-            35-case ruling enumeration). 15 are rule-attribution divergences under \
+            unsupported on the general scalar/enum borrow-parameter capability (task \
+            0021's A/B showed the system-type capability it delivered gates none of \
+            them; next-plan candidate). 15 are rule-attribution divergences under \
             investigation (tasks 0019/0020 findings). 1 awaits a protected-source owner \
             ruling (gram5 region argument). Run `make conformance-run` for the complete \
             tally; the bucket history is docs/done/0014-first-slice-conformance-execution.md \
