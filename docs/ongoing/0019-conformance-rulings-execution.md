@@ -6,8 +6,10 @@ this same numbered record to `docs/done/` at terminal disposition.
 - **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 4 and the owner's
   2026-08-06 protected-surface approval (`governance/APPROVALS.md`)
-- **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
-- **Base revision:** (executor fills at claim)
+- **Owner / workspace:** executor agent / worktree
+  `.claude/worktrees/agent-a873aed21e5e3e431`, branch
+  `worktree-agent-a873aed21e5e3e431`, lead-reviewed
+- **Base revision:** `d84643b`
 
 ## Goal
 
@@ -19,6 +21,11 @@ naming the borrow-parameter capability (task 0021); investigate
 `gram5-pos-recursive-place-projection` (expects run 0, gets TYPE-5) and
 `type7-neg-propagate-box-holder` (expects TYPE-7, gets ERR-3) to a
 classification per the blocker routing — report, do not fix here.
+
+## Progress
+
+- Claimed at `d84643b`; baseline corpus lane re-run started for the
+  per-case bucket enumeration the approval's boundary names.
 
 ## Validation, stop, and closure
 
