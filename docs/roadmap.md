@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 13
+Revision: 14
 
 The active language authority is
 [`spec/kernel-spec-v0.19.md`](../spec/kernel-spec-v0.19.md), SHA-256
@@ -273,8 +273,8 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### PERF-1 — Ordinary lowering and baseline code quality
 
-`[current: conservative LLVM]` `[current: measured wfgrep baseline]`
-`[next: one attributed-cause optimization slice]`
+`[current: credited fused-scan win 0.65→0.75]` `[current: attributed latency floor]`
+`[next: check-aware wide-scan lowering question]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
@@ -361,10 +361,13 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
 
 - **Goal:** express useful views and mutations while retaining exact ownership,
   origin, overlap, and effect information.
-- **Current:** the compiler supports selected buffer/struct borrows, scoped
-  child reborrows, direct slices, and direct own returned slices. Returned
-  borrows, branch-produced loans, holder-derived slices, and some projected
-  writes remain absent or unsupported.
+- **Current:** the compiler supports buffer/struct borrows, scoped child
+  reborrows, direct slices, direct own returned slices, and — since task
+  0024 — borrow-mode parameters, let-borrows, deref reads/writes, and
+  matching through borrowed enums for scalar and enum content on one
+  generalized address machinery. Returned reborrows are a recorded v0.19
+  gap (OWN-6 defines child reborrows only in call-argument position);
+  branch-produced loans and holder-derived slices remain absent.
 - **Missing / next:** choose the smallest missing rule only after a real
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language
@@ -671,16 +674,17 @@ remains as the owner check-in, not as a presumption against the goal.
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** the zero-change baseline is measured and attributed
-  (task 0022, preregistered): grep/wfgrep 0.65 on large-file and no-match
-  (user-compute bound; primary cause the scalar double-walk shape that LLVM
-  does not vectorize; the retained per-byte traps are secondary with an
-  ~18% ceiling, so PROOF-1's feed is real but bounded), 0.605 on many-small
-  files (attributed to the host's unsigned-binary open cost by a
-  same-provenance C control — an environment layer), a 1.105 WIN on
-  match-dense input, and a smaller process floor than the comparator. Next:
-  one preregistered optimization slice against the attributed primary
-  cause. Once that slice passes its
+- **Missing / next:** the attributed-cause slice (task 0023, preregistered)
+  credited the fused single-pass scan+match shape: 0.65 → 0.753/0.762 vs
+  grep on scan cases, a 1.160 win on match-dense, landed with gates held.
+  Counter re-attribution names the next floor: both improved shapes
+  saturate at ~3.8 cycles/byte — the serial per-byte step's latency bound
+  against memchr's 16-byte SIMD stride, with the SWAR shape's failure as
+  the minimal witness that no legal source form lowers wide. The next
+  performance question is therefore a check-aware wide-scan LOWERING
+  capability (or the honest finding that it needs a proof mechanism);
+  bounds traps remain secondary (~18% ceiling). Once the next slice passes
+  its
   project-independent controls and same-slice correctness and cost gate, return
   to that exact `wfgrep` checkpoint. Each later slice stops on either the next
   semantic blocker or the first attributed material performance blocker; the
