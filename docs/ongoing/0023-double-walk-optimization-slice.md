@@ -6,7 +6,7 @@ This is a temporary live coordination record, not execution authority.
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 1 (PERF-1, one
   attributed cause)
 - **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
-- **Base revision:** (executor fills at claim)
+- **Base revision:** `7240f84`
 
 ## Goal
 
@@ -19,6 +19,18 @@ byte-identical work; a demonstrated inability of every legal shape to reach
 a materially faster form is a full success recorded as a FLOOR/lowering
 finding with a minimal witness. The bounds-trap secondary is out of scope
 unless the primary closes and the residual re-attributes to it.
+
+## Progress
+
+- Claimed at base `7240f84`. The current `tests/programs/wfgrep.wf` bytes
+  (task 0021's helper-decomposed form) are SHA-256
+  `7c7833906e9b8bf512eac3499e30bda50e49ecffd971650a8e15c036be137595`;
+  they differ from the bytes the 0022 baseline froze, so this slice first
+  takes a fresh same-protocol baseline of the current bytes, then measures
+  every candidate shape against that baseline.
+- Next: preregister the candidate-shape catalog and falsifiers in
+  `research/experiments/wfgrep-double-walk/PROTOCOL.md` (freeze before any
+  comparative number), with correctness-only development runs disclosed.
 
 ## Validation, stop, and closure
 
