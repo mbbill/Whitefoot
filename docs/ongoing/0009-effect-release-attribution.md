@@ -4,12 +4,14 @@
 of 8; task 4 of 11; runs concurrently with task 0008). This record
 authorizes nothing beyond Work item 2 itself.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `IN PROGRESS` (implementation and validation complete;
+  awaiting lead review)
 - **Owner:** executor agent exec-0009 (lead-directed)
 - **Workspace:** isolated worktree
   `.claude/worktrees/agent-a22d33025390b76b7`, branch
   `worktree-agent-a22d33025390b76b7`
-- **Base revision:** `907076a` (main; task 0007 closed)
+- **Base revision:** `0e5c405` (main; task 0008 closed — rebased onto it
+  per the recorded integration order)
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, second bullet
   ("effect-checking extensions and release attribution"). Implements
   `spec/kernel-spec-v0.18.md`'s `EFF-1`/`EFF-2`/`EFF-3`/`EFF-5`, `FN-3`, and
@@ -109,33 +111,46 @@ its judgments — the canonical case only needs a helper function taking
 `own ReadFile`, not the command entry form. Runs concurrently with task
 0008 (wave 3). Task 0010 depends on this task.
 
-**Cross-link (lead-authorized overlap with 0008):** both tasks touch
-`compiler/src/semantic/check.rs`, specifically the
-`check_system_surface_support` gate and `check_main_header`. Integration
-order: **0008 lands first; this task rebases onto it before landing.**
-This task's gate footprint is deliberately minimal so it sits behind
-0008's restructured boundary: it removes only the `SystemDeclarationUse`
-and `SystemEffectCategory` stops (both now implemented), relocates the
-`KindDeclaringEntry` stop to the end of semantic checking (after function
-and conformance checking, before acceptance) so genuine EFF-2/FN-3
-rejections in a kind-declaring unit report ahead of the entry-admission
-boundary, and makes `check_main_header` defer (not reject) a
-`program_kind`-carrying `main`. 0008 owns removing the
-`KindDeclaringEntry`/`LabelledEntryInput` stops and implementing FN-7
-admission in `check_main_header`; at rebase, 0008's versions of those two
-seams win and this task keeps only its effect-checking additions. A
-kind-declaring unit therefore cannot be accepted before the rebase; the
-seven pending 0009 conformance cases flip only after the rebase onto
-0008.
+**Cross-link (lead-authorized overlap with 0008): RESOLVED.** 0008 landed
+first (main `0e5c405`) and this task rebased onto it as recorded. The
+resolved seam: 0008's `check_entry_form`/`check_system_call_arguments`
+stage ordering in `check_program` is kept (source judgments before
+capability stops); this task then removed the last semantic capability
+stops — `SystemDeclarationUse` and `SystemEffectCategory`, whose families
+it implements — so `check_system_surface_support` is gone and the system
+boundary now lives at lowering as the explicit
+`LoweringFailure::UnsupportedSystemInterface` stop (0008's placeholder
+`InvalidCheckedProgram` guard on non-unlabelled entries became that
+explicit stop). 0008's entry-form tests that asserted the removed stops
+were updated to the implemented behavior: row-exact command entries now
+complete semantic checking, and non-entry `external`/`blocks` rows reject
+citing EFF-2.
 
 ## Progress
 
-- Completed: claim; required reading (WORKFLOW, spec EFF-1/EFF-2/EFF-3/
-  EFF-5, FN-1/FN-3, STOR-3, SYS-5/SYS-7, `mcts_mem/whitefoot/effects.md`,
-  0007 done record and its resolver/catalog surface).
-- Current: implementation per Method.
-- Next: unit tests, gates, rebase onto 0008 once it lands, conformance
-  flips, lead review.
+- Completed: claim and required reading; the SYS-5 release-row table and
+  preorder index helpers in the catalog (with a 167-record round-trip
+  test); `external`/`blocks` through EFF-1 parsing, the effect-set
+  representation, FN-3's six-capability normalization, and call-boundary
+  presence transfer; system nominal types interned into the one checked
+  nominal path (opaque resources as a `SystemResource` kind, outcome
+  enums as ordinary enums with catalog fields, match/construct/borrow
+  integration); SYS-2 operation call typing with region-effect projection
+  through the existing origin machinery; the EFF-2 exhibited row as
+  syntactic ∪ release contribution collected from the checked program's
+  drop records, with the release-attributed diagnostic rendering the
+  owner at the `effects` node; the lowering-stage explicit
+  `UnsupportedSystemInterface` boundary; rebase onto 0008 with the seam
+  resolved as cross-linked; unit tests (canonical pair, conditional
+  union/narrow, both over/under-declaration directions, exactly-pure
+  immutable borrow, FN-3 both directions, buffer/box scope-limit
+  regression, transitive box release, EFF-1 order/multiplicity,
+  call-boundary transfer); conformance updates (five reject flips, five
+  accept reasons moved to the lowering boundary); `make -C compiler
+  check` and `make check` green.
+- Current: submitted for lead review.
+- Next: lead review and landing; then task 0010 consumes the checked drop
+  records and release rows.
 
 ## Stop condition
 

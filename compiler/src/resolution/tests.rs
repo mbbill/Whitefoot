@@ -1382,3 +1382,73 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
         }
     });
 }
+
+#[test]
+fn system_index_helpers_agree_with_the_preorder_entity_map() {
+    // The index helpers derive table positions arithmetically from the
+    // [SYS-2] preorder; this pins them to `system_entity`, the authoritative
+    // ordinal-to-entity map, across every one of the 167 records.
+    use super::SystemDeclarationId;
+    use super::catalog::{
+        SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemEntity,
+        system_constructor_declaration, system_constructor_index, system_entity,
+        system_nominal_index, system_operation_index, system_release_row,
+    };
+
+    let mut nominals = 0_usize;
+    let mut constructors = 0_usize;
+    let mut operations = 0_usize;
+    for ordinal in 0..=u8::MAX {
+        let id = SystemDeclarationId::new(ordinal);
+        match system_entity(id) {
+            Some(SystemEntity::Nominal(nominal)) => {
+                let index = system_nominal_index(id).expect("nominal index");
+                assert_eq!(
+                    SYSTEM_NOMINALS[usize::from(index)].spelling,
+                    nominal.spelling
+                );
+                assert!(system_constructor_index(id).is_none());
+                assert!(system_operation_index(id).is_none());
+                nominals += 1;
+            }
+            Some(SystemEntity::Constructor(constructor)) => {
+                let index = system_constructor_index(id).expect("constructor index");
+                assert_eq!(
+                    SYSTEM_CONSTRUCTORS[usize::from(index)].spelling,
+                    constructor.spelling
+                );
+                assert_eq!(system_constructor_declaration(index), Some(id));
+                assert!(system_nominal_index(id).is_none());
+                assert!(system_operation_index(id).is_none());
+                constructors += 1;
+            }
+            Some(SystemEntity::Operation(operation)) => {
+                let index = system_operation_index(id).expect("operation index");
+                assert_eq!(
+                    SYSTEM_OPERATIONS[usize::from(index)].spelling,
+                    operation.spelling
+                );
+                assert!(system_nominal_index(id).is_none());
+                assert!(system_constructor_index(id).is_none());
+                operations += 1;
+            }
+            None => {
+                assert!(system_constructor_index(id).is_none());
+                assert!(system_operation_index(id).is_none());
+            }
+        }
+    }
+    assert_eq!(nominals, SYSTEM_NOMINALS.len());
+    assert_eq!(constructors, SYSTEM_CONSTRUCTORS.len());
+    assert_eq!(operations, SYSTEM_OPERATIONS.len());
+
+    // The [SYS-5] release table: exactly DirectoryRead and ReadFile release
+    // with `external, blocks`; every other system nominal's row is empty.
+    for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
+        let index = u8::try_from(index).expect("nominal table fits u8");
+        let row = system_release_row(index);
+        let expected = matches!(nominal.spelling, "DirectoryRead" | "ReadFile");
+        assert_eq!(row.external, expected, "external for {}", nominal.spelling);
+        assert_eq!(row.blocks, expected, "blocks for {}", nominal.spelling);
+    }
+}
