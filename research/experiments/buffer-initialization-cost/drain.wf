@@ -1,0 +1,102 @@
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
+  doc "Drains one named file through one reusable initialized buffer and reports a witness of what it read.";
+  let page: own buffer<u8> = buffer_new<u8>(4096_u64, 0_u8);
+  let arguments: own u64 = 0_u64;
+  region 'invocation {
+    set arguments = args_count<'invocation>(args: &'invocation args);
+  }
+  let usable: own Bool = ige<u64>(arguments, 2_u64);
+  match usable {
+    True() => {
+    }
+    False() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+  let failed: own u8 = 0_u8;
+  let witness: own u8 = 0_u8;
+  let total: own u64 = 0_u64;
+  region 'file_lease {
+    match arg_get<'file_lease>(args: &'file_lease args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region 'open_call {
+              match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
+                Ok(value: file) => {
+                  loop @chunks {
+                    let taken: own u64 = 0_u64;
+                    let ended: own u8 = 0_u8;
+                    region 'read_call {
+                      match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call page, offset: 0_u64, capacity: 4096_u64) {
+                        ReadBytes(count: delivered) => {
+                          set taken = delivered;
+                        }
+                        ReadEnd() => {
+                          set ended = 1_u8;
+                        }
+                        ReadFailed(error: problem) => {
+                          set ended = 2_u8;
+                        }
+                      }
+                    }
+                    match ieq<u8>(ended, 0_u8) {
+                      True() => {
+                      }
+                      False() => {
+                        match ieq<u8>(ended, 2_u8) {
+                          True() => {
+                            set failed = 1_u8;
+                          }
+                          False() => {
+                          }
+                        }
+                        break @chunks;
+                      }
+                    }
+                    set total = iadd.wrap<u64>(total, taken);
+                    let byte: own u8 = index<u8>(page, 0_u64);
+                    set witness = iadd.wrap<u8>(witness, byte);
+                  }
+                }
+                Err(error: problem) => {
+                  set failed = 1_u8;
+                }
+              }
+            }
+          }
+          Err(error: rejected) => {
+            set failed = 1_u8;
+          }
+        }
+      }
+      Err(error: absent) => {
+        set failed = 1_u8;
+      }
+    }
+  }
+  match ieq<u8>(failed, 0_u8) {
+    True() => {
+    }
+    False() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+  let empty: own Bool = ieq<u64>(total, 0_u64);
+  match empty {
+    True() => {
+      return exit_status(code: 1_u8);
+    }
+    False() => {
+    }
+  }
+  let quiet: own Bool = ieq<u8>(witness, 0_u8);
+  match quiet {
+    True() => {
+      return exit_status(code: 3_u8);
+    }
+    False() => {
+    }
+  }
+  return exit_status(code: 0_u8);
+}

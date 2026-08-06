@@ -22,6 +22,15 @@ sequences work.
 
 ## Completed current-compiler bounded research
 
+- `buffer-initialization-cost/` — the dossier §9.1 initialization-cost row,
+  whose control §9.1 requires to be an *uninitialized* native read loop. A
+  Whitefoot drain over a language-initialized reused buffer measures at
+  practical parity with the uninitialized C control (1.0014 [0.9982, 1.0083]),
+  and the same-source `calloc`/`malloc` ablation is likewise parity. The
+  decisive figure is direct: initializing one 4096-byte page costs 28.76 ns,
+  which is 612x below 1% of this program's 1.76 ms empty-input process floor,
+  so no input size makes it material. Dossier §11's stop condition did not
+  fire.
 - `literal-line-floor/` — the active v0.17 language expresses an exact
   runtime-needle literal line matcher, but its helper-shaped scalar lowering is
   directionally about 5% behind same-Clang C: C/Whitefoot is 0.9535
