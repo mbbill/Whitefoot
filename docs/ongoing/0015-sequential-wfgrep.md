@@ -1,19 +1,26 @@
 # 0015 — Sequential wfgrep program
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 7
-of 8; task 10 of 11; runs concurrently with task 0014). Not yet claimed —
-claiming fills in `Status`, `Owner`, workspace, and `Base revision` and
-moves this file unchanged in number to `docs/ongoing/` per
-`docs/WORKFLOW.md`. This record authorizes nothing beyond Work item 2
-itself; if `docs/current-plan.md` is replaced before this task is claimed,
-delete this file unless the new plan explicitly retains it.
+**Claimed task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 7
+of 8; task 10 of 11; runs concurrently with task 0014). This record reports
+how authorized work is carried out; it authorizes nothing beyond Work item 2
+itself.
 
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, seventh
   bullet ("the sequential `wfgrep` program"), and the plan's Done-when
   bullet ("the compiler compiles and runs the sequential `wfgrep` slice on
   macOS/Linux through the normal path, passing its correctness oracle").
-  Implements dossier §10.1's witness trace. Claimable only while
-  `docs/current-plan.md` remains `ACTIVE`.
+  Implements dossier §10.1's witness trace.
+- **Owner:** executor agent `exec-0015`
+- **Base revision:** `0a47f54` (main, "docs: close task 0012; move the 0011
+  record; refresh stale labels")
+- **Workspace:** worktree branch `worktree-agent-a33a2057ee4243a8b`
+
+## Progress
+
+- Completed: claim.
+- Current: author `tests/programs/wfgrep.wf` and its oracle harness.
+- Next: the three OS-mechanism cases; gates.
 
 ## Goal
 
