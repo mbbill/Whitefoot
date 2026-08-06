@@ -28,9 +28,33 @@ unless the primary closes and the residual re-attributes to it.
   they differ from the bytes the 0022 baseline froze, so this slice first
   takes a fresh same-protocol baseline of the current bytes, then measures
   every candidate shape against that baseline.
-- Next: preregister the candidate-shape catalog and falsifiers in
-  `research/experiments/wfgrep-double-walk/PROTOCOL.md` (freeze before any
-  comparative number), with correctness-only development runs disclosed.
+- Preregistered `research/experiments/wfgrep-double-walk/PROTOCOL.md`
+  (three shapes: hoisted first byte, fused scan+match, SWAR word scan;
+  expected consequences and falsifiers; the 0022 corpus/statistics
+  inherited) and froze it before any comparative number; pre-freeze
+  correctness-only development disclosed there.
+- Ran `wfgrep-double-walk-1` complete (AC power, all null gates but one
+  passed; `many` degraded to w=2.22% and is precision-limited). Fresh
+  current-bytes baseline reproduced 0022 (0.650/0.657 material loss on
+  the scan cases). S1 1.140/1.139, S2 1.150/1.145 — both material
+  improvements vs the fresh baseline; S3 0.896/0.899 regression with its
+  preregistered obstruction witness confirmed (no wide load forms; each
+  index keeps its own trap-guarded check). Quantitative sub-predictions
+  that missed are recorded as such in RESULTS.md.
+- Credited and landed S2 as `tests/programs/wfgrep.wf`; re-derived
+  `DECLARED_FUNCTIONS` in the §9.1 gate from the new source (drops
+  `line_matches`); nine-case oracle, ten gates, `make -C compiler check`,
+  and `make check` all green, unpiped (exit 0).
+- Rerun-baseline deliverable: the conditional confirm phase measured the
+  landed shape against grep — 0.753/0.762 on the scan cases (from
+  0.650/0.657), `dense` now a material win 1.160. Residual re-attributed
+  to the serial per-byte step against SIMD striding (~3.8 cycles/byte
+  latency floor; instruction removal saturates), a FLOOR/lowering
+  finding, NOT re-attributed to the bounds traps — the secondary stays
+  untouched per the plan boundary.
+- Canonical evidence: `research/experiments/wfgrep-double-walk/RESULTS.md`
+  and `raw/wfgrep-double-walk-1.jsonl` (SHA-256 `912ed5ee…`). Ready for
+  lead review and terminal disposition.
 
 ## Validation, stop, and closure
 
