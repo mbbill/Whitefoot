@@ -61,12 +61,26 @@ surface outside the compiler.
 
 ## Progress
 
-- Completed: claim.
-- Current: host-facility target column, emitter parameterization, fake
-  host harness.
-- Next: the four fault-injection contract tests task 0016 consumes;
-  rebase onto task 0012 and adopt its `open_read`/`read_once`/`write_once`
-  operation-row shapes.
+- Completed (`979f2c5`): the second target column. `SystemTarget` carries
+  a `HostFacilities` column; `HostFacilities::DeterministicTest` exists
+  only in a test build, so no `whitefootc` compilation can select it. The
+  `DirectoryRead`/`ReadFile` release row and the bootstrap's
+  directory-open facility now come from that column instead of a fixed
+  libc name, and native emission is byte-identical (a test asserts the
+  two modules differ by exactly the two symbol substitutions).
+  `compiler/src/backend/tests/deterministic_target.rs` holds the scripted
+  host, the link-and-run harness, and the first fault-injection case.
+- Completed: fault-injection case 1 of 4 — a release close that reports
+  `EINTR` is attempted exactly once and never retried, with a success
+  control.
+- Current: waiting on task 0012 to land. The remaining three cases
+  (mid-stream `ReadFailed`, forced short write, close/writeback-only
+  failure) all run through `read_once`/`write_once`, which stop today as
+  `UnsupportedSystemInterface` on both target columns.
+- Next: rebase onto task 0012, adopt its `open_read`/`read_once`/
+  `write_once` operation-row shapes, add the matching `wf_test_openat`/
+  `wf_test_read`/`wf_test_write` facilities and their scripts, and land
+  the remaining three cases.
 
 ## Scope and expected touch set
 
