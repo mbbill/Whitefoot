@@ -14,6 +14,15 @@ sequences work.
 
 ## Active current-plan experiment
 
+- `wfgrep-baseline/` — the PERF-1 zero-change baseline of the frozen
+  sequential wfgrep against the pinned system `grep -h -F`, preregistered
+  with null-comparison precision gates per the RG-BASE lesson. Measured:
+  0.647/0.656 (large/no-match scan), 0.605 (many small files), 1.105
+  (match-dense win), smaller process floor. Attributed: the dominant
+  many-files loss to the host's per-open cost for unsigned binaries (C
+  control; not a Whitefoot layer); the compute loss to the scalar
+  double-walk shape, with the literal matcher above the newline scan and
+  the retained per-byte traps a bounded ~18%-ceiling secondary term.
 - `ripgrep/` — RG-BASE preregistration for the owner-selected 2x ripgrep
   flagship. It freezes the Apple M4 target, pinned official/native ripgrep
   comparators, two real source trees, one large-text corpus, nine equal-weight

@@ -58,4 +58,8 @@ null-after: build
 counters: build
 	$(ENV) $(BUILD)/runner counters
 
+# Attribution profiling: make profile CASE=many REPS=15 SECONDS=6 BIN=wfgrep
+profile: build
+	$(ENV) $(BUILD)/runner profile $(CASE) $(REPS) $(SECONDS) $(BIN)
+
 check: verify
