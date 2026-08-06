@@ -162,12 +162,17 @@ impl CompilationFailure {
         }
     }
 
-    fn semantic_source(issue: crate::SemanticIssue) -> Self {
+    /// One source-language rejection carrying the rule its stage attributed.
+    ///
+    /// Every stage that can reject source already selects exactly one numbered
+    /// rule under DIAG-1; this constructor only publishes that selection, so a
+    /// caller comparing cited rules sees the same attribution at every stage.
+    fn source(stage: CompilationStage, rule_id: &'static str, detail: impl fmt::Debug) -> Self {
         Self {
-            stage: CompilationStage::Semantics,
+            stage,
             kind: CompilationFailureKind::Source,
-            rule_id: Some(issue.rule_id()),
-            detail: format!("{issue:?}"),
+            rule_id: Some(rule_id),
+            detail: format!("{detail:?}"),
         }
     }
 
@@ -189,7 +194,12 @@ impl CompilationFailure {
         &self.detail
     }
 
-    /// Returns the exact numbered source rule when this stop is semantic.
+    /// Returns the exact numbered source rule this rejection cites.
+    ///
+    /// Present for every [`CompilationFailureKind::Source`] stop, at whichever
+    /// stage selected it, and absent for every stop that is not a
+    /// source-language rejection and therefore cites no language rule
+    /// [DIAG-1].
     #[must_use]
     pub const fn rule_id(&self) -> Option<&'static str> {
         self.rule_id
@@ -231,9 +241,9 @@ pub fn compile(
     let lexed = match lex(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
-            return Err(CompilationFailure::new(
+            return Err(CompilationFailure::source(
                 CompilationStage::Lexing,
-                CompilationFailureKind::Source,
+                issue.kind().rule_id(),
                 issue,
             ));
         }
@@ -255,9 +265,9 @@ pub fn compile(
     let classified = match classify_terminals(&lexed, ACTIVE_KERNEL_SPEC_HASH, limits.terminals) {
         TerminalOutcome::Complete(complete) => complete,
         TerminalOutcome::SourceIssue(issue) => {
-            return Err(CompilationFailure::new(
+            return Err(CompilationFailure::source(
                 CompilationStage::TerminalClassification,
-                CompilationFailureKind::Source,
+                issue.owner().id(),
                 issue,
             ));
         }
@@ -286,9 +296,9 @@ pub fn compile(
     let parsed = match parse(&classified, limits.parser) {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
-            return Err(CompilationFailure::new(
+            return Err(CompilationFailure::source(
                 CompilationStage::Parsing,
-                CompilationFailureKind::Source,
+                issue.rule().id(),
                 issue,
             ));
         }
@@ -334,9 +344,9 @@ pub fn compile(
     let canonical = match audit_canonical(finalized, limits.canonical) {
         CanonicalOutcome::Complete(complete) => complete,
         CanonicalOutcome::SourceIssue(issue) => {
-            return Err(CompilationFailure::new(
+            return Err(CompilationFailure::source(
                 CompilationStage::CanonicalSource,
-                CompilationFailureKind::Source,
+                issue.rule().id(),
                 issue,
             ));
         }
@@ -358,9 +368,9 @@ pub fn compile(
     let resolved = match resolve(canonical) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
-            return Err(CompilationFailure::new(
+            return Err(CompilationFailure::source(
                 CompilationStage::Resolution,
-                CompilationFailureKind::Source,
+                issue.rule().id(),
                 issue,
             ));
         }
@@ -375,7 +385,11 @@ pub fn compile(
     let checked = match check_semantics(resolved) {
         SemanticOutcome::Complete(complete) => *complete,
         SemanticOutcome::SourceIssue { issue, .. } => {
-            return Err(CompilationFailure::semantic_source(issue));
+            return Err(CompilationFailure::source(
+                CompilationStage::Semantics,
+                issue.rule_id(),
+                issue,
+            ));
         }
         SemanticOutcome::Unsupported { unsupported, .. } => {
             return Err(CompilationFailure::new(
@@ -435,6 +449,84 @@ mod tests {
         .expect("static contract metadata must use the ordinary lowering path");
         assert!(llvm.contains("define i32 @main()"));
         assert!(!llvm.contains("Empty"));
+    }
+
+    #[test]
+    fn every_pre_semantic_rejection_publishes_the_rule_its_stage_attributed() {
+        // One source per pre-semantic stage that can reject source, each
+        // reaching its stage's own DIAG-1 attribution. A stop that publishes
+        // no rule cannot be told from a stop that cites none, so the whole
+        // frontend is checked here rather than only the semantic stage.
+        for (name, source, stage, rule) in [
+            (
+                "comment.wf",
+                b"// nope\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
+                CompilationStage::Lexing,
+                "FORM-4",
+            ),
+            (
+                "tab.wf",
+                b"fn main() -> own unit pure {\n\treturn unit;\n}\n",
+                CompilationStage::Lexing,
+                "FORM-2",
+            ),
+            (
+                "sigil.wf",
+                b"fn main() -> own unit pure {\n  let value: own i32 = 'Bad;\n  return unit;\n}\n",
+                CompilationStage::Lexing,
+                "FORM-3",
+            ),
+            (
+                "dollar.wf",
+                b"$\nfn main() -> own unit pure {\n  return unit;\n}\n",
+                CompilationStage::Lexing,
+                "FORM-1",
+            ),
+            (
+                "string.wf",
+                b"fn main() -> own unit pure {\n  let text: own str = \"bad\\t\";\n  return unit;\n}\n",
+                CompilationStage::Lexing,
+                "FORM-5",
+            ),
+            (
+                "numeric.wf",
+                b"fn main() -> own unit pure {\n  let value: own i32 = 1e+;\n  return unit;\n}\n",
+                CompilationStage::TerminalClassification,
+                "FORM-5",
+            ),
+            (
+                "construct.wf",
+                b"nope value;\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+                CompilationStage::Parsing,
+                "FORM-1",
+            ),
+            (
+                "spacing.wf",
+                b"fn  main() -> own unit pure {\n  return unit;\n}\n",
+                CompilationStage::CanonicalSource,
+                "FORM-2",
+            ),
+            (
+                "region.wf",
+                b"fn main() -> own unit pure {\n  let value: &'gone i32 = 0_i32;\n  return unit;\n}\n",
+                CompilationStage::Resolution,
+                "OWN-3",
+            ),
+        ] {
+            let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
+                .expect_err("the case must be rejected");
+            assert_eq!(failure.stage(), stage, "{name}: {failure}");
+            assert_eq!(
+                failure.kind(),
+                CompilationFailureKind::Source,
+                "{name}: {failure}"
+            );
+            assert_eq!(failure.rule_id(), Some(rule), "{name}: {failure}");
+            assert!(
+                failure.to_string().contains(rule),
+                "{name}: published diagnostic omitted {rule}: {failure}"
+            );
+        }
     }
 
     #[test]

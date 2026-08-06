@@ -618,6 +618,27 @@ pub enum ResolutionRule {
     Fn8,
 }
 
+impl ResolutionRule {
+    /// Returns the exact numbered rule spelling from the active kernel specification.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Form3 => "FORM-3",
+            Self::Form5 => "FORM-5",
+            Self::Gram10 => "GRAM-10",
+            Self::Type5 => "TYPE-5",
+            Self::Type6 => "TYPE-6",
+            Self::Const1 => "CONST-1",
+            Self::Const2 => "CONST-2",
+            Self::Own3 => "OWN-3",
+            Self::Op1 => "OP-1",
+            Self::Fn3 => "FN-3",
+            Self::Fn4 => "FN-4",
+            Self::Fn8 => "FN-8",
+        }
+    }
+}
+
 /// Which closed reserved-name set owns one spelling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReservedNameClass {

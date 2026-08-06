@@ -168,6 +168,27 @@ pub enum SyntaxRule {
     Eff1,
 }
 
+impl SyntaxRule {
+    /// Returns the exact numbered rule spelling from the active kernel specification.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Form1 => "FORM-1",
+            Self::Form2 => "FORM-2",
+            Self::Form3 => "FORM-3",
+            Self::Form5 => "FORM-5",
+            Self::Gram2 => "GRAM-2",
+            Self::Gram3 => "GRAM-3",
+            Self::Gram4 => "GRAM-4",
+            Self::Gram5 => "GRAM-5",
+            Self::Gram9 => "GRAM-9",
+            Self::Const1 => "CONST-1",
+            Self::Const2 => "CONST-2",
+            Self::Eff1 => "EFF-1",
+        }
+    }
+}
+
 impl From<RuleOwner> for SyntaxRule {
     fn from(owner: RuleOwner) -> Self {
         match owner {

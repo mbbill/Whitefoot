@@ -100,6 +100,16 @@ pub enum TerminalIssueOwner {
     Form5,
 }
 
+impl TerminalIssueOwner {
+    /// Returns the exact numbered rule spelling from the active kernel specification.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Form5 => "FORM-5",
+        }
+    }
+}
+
 /// The first formed token that matched no approved terminal predicate.
 #[derive(Clone, Copy, Debug)]
 pub struct TerminalIssue<'source> {

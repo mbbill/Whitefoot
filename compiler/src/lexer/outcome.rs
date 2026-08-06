@@ -125,10 +125,12 @@ pub enum LexCompilerFailure {
     CounterOverflow,
 }
 
-/// Non-normative classification of malformed bytes found before parsing.
+/// Classification of malformed bytes found before parsing.
 ///
-/// These categories carry no rule ID, tree path, acceptance verdict, or
-/// conformance authority.
+/// Each category is one clause of DIAG-1's raw-lexical attribution, so the
+/// numbered rule it cites is fixed by the category alone and is returned by
+/// [`SourceIssueKind::rule_id`]. These categories still carry no tree path,
+/// acceptance verdict, or conformance authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceIssueKind {
     /// The first byte of an invalid UTF-8 sequence.
@@ -149,6 +151,30 @@ pub enum SourceIssueKind {
     InvalidSourceByte,
     /// An exact `//` or `/*` prefix violates the no-comments rule.
     CommentPrefix,
+}
+
+impl SourceIssueKind {
+    /// Returns the numbered rule DIAG-1 attributes to this raw lexical defect.
+    ///
+    /// DIAG-1's raw lexical scanning paragraph fixes one rule per defect
+    /// shape, and the scanner already branches on exactly those shapes: an
+    /// invalid UTF-8 encoding or a forbidden control byte cites FORM-2
+    /// everywhere it occurs, a `'` or `@` with no lowercase follower cites
+    /// FORM-3, a `//` or `/*` prefix cites FORM-4, every STRING-interior
+    /// defect cites FORM-5, and any other byte or scalar that cannot begin a
+    /// specified token cites FORM-1.
+    #[must_use]
+    pub const fn rule_id(self) -> &'static str {
+        match self {
+            Self::InvalidUtf8 | Self::InvalidSourceByte => "FORM-2",
+            Self::UnexpectedByte => "FORM-1",
+            Self::MissingRegionName | Self::MissingLabelName => "FORM-3",
+            Self::UnterminatedString | Self::InvalidStringByte | Self::InvalidStringEscape => {
+                "FORM-5"
+            }
+            Self::CommentPrefix => "FORM-4",
+        }
+    }
 }
 
 /// One source-local issue found before a canonical tree exists.
