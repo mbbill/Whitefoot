@@ -6,7 +6,7 @@ use super::super::scopes::ScopeBuild;
 use super::super::{
     DeclarationClass, DeclarationConflict, DeclarationOrigin, DeclarationRecord, DeclarationRole,
     DeferredUseRole, DependentDeclarationRole, ReservedDeclarationRole, ResolutionCompilerFailure,
-    ResolutionIssue, ResolutionIssueKind, ResolutionRule,
+    ResolutionIssue, ResolutionIssueKind, ResolutionRule, SystemDeclarationRecord,
 };
 use super::{
     ClassifiedRole, DeclarationIndex, DeclarationMeta, EventKey, RawRoleKind,
@@ -18,8 +18,10 @@ struct InventoryTables<'a> {
     declarations: &'a [DeclarationRecord],
     metas: &'a [DeclarationMeta],
     index: &'a DeclarationIndex,
+    system: &'a [SystemDeclarationRecord],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn check_declaration_inventory(
     topology: &FinalizedTopology,
     scopes: &ScopeBuild,
@@ -28,6 +30,7 @@ pub(super) fn check_declaration_inventory(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
+    system: &[SystemDeclarationRecord],
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     if declarations.len() != metas.len()
         || metas
@@ -42,6 +45,7 @@ pub(super) fn check_declaration_inventory(
         declarations,
         metas,
         index,
+        system,
     };
     for (role_index, role) in roles.iter().enumerate() {
         if let Some((reserved_role, checked_spelling)) = reserved_role(role)
@@ -271,6 +275,39 @@ fn collision_issue(
         )));
     }
 
+    // [DIAG-1] rank 5: a TYPE-6 collision with an admitted system declaration
+    // [SYS-1]. It is selected for a colliding declaration event at the
+    // compilation root and in a nested scope alike, ahead of ranks 6 and 7 at
+    // that event; no source declaration displaces, overrides, or shadows an
+    // inventory entry, and neither declaration resolves. In a
+    // system-unadmitted unit the slice is empty and no candidate exists.
+    let mut system_conflicts = Vec::new();
+    for class in &meta.entries {
+        let domain =
+            declaration_domain(*class).ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
+        for record in tables.system {
+            if record.spelling() == declaration.spelling
+                && record.lookup_class().and_then(declaration_domain) == Some(domain)
+            {
+                system_conflicts.push(DeclarationConflict {
+                    domain,
+                    class: record
+                        .lookup_class()
+                        .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
+                    origin: DeclarationOrigin::System(record.id()),
+                });
+            }
+        }
+    }
+    sort_conflicts(&mut system_conflicts, tables.declarations);
+    if !system_conflicts.is_empty() {
+        return Ok(Some(collision(
+            declaration,
+            system_conflicts,
+            ResolutionRule::Type6,
+        )));
+    }
+
     let mut same_scope = Vec::new();
     for candidate in tables
         .index
@@ -395,6 +432,9 @@ pub(super) fn conflict_key(
     origin: &DeclarationOrigin,
     declarations: &[DeclarationRecord],
 ) -> (u8, EventKey) {
+    // [DIAG-1] orders conflicts within one domain by PRE-1 declaration
+    // ordinal first, then system declaration ordinal, then source
+    // declaration-event key.
     match origin {
         DeclarationOrigin::Prelude(id) => (
             0,
@@ -407,9 +447,20 @@ pub(super) fn conflict_key(
                 subtoken: 0,
             },
         ),
+        DeclarationOrigin::System(id) => (
+            1,
+            EventKey {
+                source: 0,
+                start: u64::from(id.ordinal()),
+                end: 0,
+                path: Vec::new(),
+                role: 0,
+                subtoken: 0,
+            },
+        ),
         DeclarationOrigin::Source(origin) => {
             let _ = declarations;
-            (1, EventKey::from_origin(origin))
+            (2, EventKey::from_origin(origin))
         }
     }
 }

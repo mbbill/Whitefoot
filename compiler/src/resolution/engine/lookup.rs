@@ -5,7 +5,7 @@ use super::super::scopes::ScopeBuild;
 use super::super::{
     DeclarationClass, DeclarationOrigin, DeclarationRecord, LexicalUseRecord, LexicalUseRole,
     ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind, ResolutionRule,
-    ResolvedTarget, ScopeId,
+    ResolvedTarget, ScopeId, SystemDeclarationRecord,
 };
 use super::inventory::conflict_key;
 use super::{BuildStop, DeclarationIndex, DeclarationMeta, UseMeta, is_visible};
@@ -16,6 +16,7 @@ pub(super) fn resolve_uses(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     uses: &[UseMeta],
+    system: &[SystemDeclarationRecord],
 ) -> Result<Vec<LexicalUseRecord>, BuildStop> {
     let mut resolved = Vec::with_capacity(uses.len());
     for use_record in uses {
@@ -71,6 +72,25 @@ pub(super) fn resolve_uses(
                 available.insert(class);
                 if admissible.contains(&class) {
                     candidates.push(ResolvedTarget::Prelude(prelude.id));
+                }
+            }
+        }
+        // The third admitted declaration source [SYS-1]: every admitted
+        // system entry is a compilation-root entry of its domain in every
+        // lexical use's candidate universe. In a system-unadmitted unit the
+        // slice is empty [SYS-3]. TYPE-6 and [SYS-2] admit a system entry
+        // only at a `type` TYPEID, a `construct` or `arm` TYPEID, and a
+        // `callee` IDENT — never at a `fn_bind` right IDENT, which admits
+        // only a top-level source function; there the visible system entry
+        // still contributes its class to the available set.
+        for record in system {
+            let Some(class) = record.lookup_class() else {
+                continue;
+            };
+            if record.spelling() == use_record.spelling && universe.contains(&class) {
+                available.insert(class);
+                if admissible.contains(&class) && system_admissible(use_record.role) {
+                    candidates.push(ResolvedTarget::System(record.id()));
                 }
             }
         }
@@ -157,6 +177,23 @@ pub(super) fn resolve_uses(
         }
     }
     Ok(resolved)
+}
+
+/// Whether one lexical-use role admits an admitted system entry at all.
+///
+/// TYPE-6's admitted-uses column and [SYS-2]'s own exclusion are
+/// entry-source-specific, not only class-specific: a `callee` IDENT admits a
+/// top-level function or an admitted system operation, while a `fn_bind`
+/// right IDENT admits only a top-level function, so the shared `Function`
+/// class cannot make that distinction by itself.
+fn system_admissible(role: LexicalUseRole) -> bool {
+    matches!(
+        role,
+        LexicalUseRole::Type
+            | LexicalUseRole::Construct
+            | LexicalUseRole::ArmVariant
+            | LexicalUseRole::IdentifierCallee
+    )
 }
 
 fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationClass> {

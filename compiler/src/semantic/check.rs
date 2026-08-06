@@ -17,7 +17,7 @@ use crate::syntax::NodeId;
 use crate::{
     DeclarationId, DeclarationRole, Production, ResolvedSyntaxUnit, SemanticCompilerFailure,
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
-    UnsupportedSemanticFeature,
+    SemanticUnsupported, UnsupportedSemanticFeature,
 };
 
 use super::model::{
@@ -404,13 +404,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// Stops on the v0.18 system-interface surface the checker has not
-    /// implemented: a labelled entry input (`input_label`) and the
-    /// `external`/`blocks` effect categories. Each is grammatical under the
-    /// active specification, so it must remain an explicit unsupported
-    /// compiler capability, never a source rejection. A kind-declaring entry
-    /// (`program_kind`) never reaches this checker: resolution stops it
-    /// earlier because it admits the unimplemented system declaration domain.
+    /// implemented. Each construct is grammatical under the active
+    /// specification and resolves completely — a kind-declaring unit admits
+    /// the [SYS-2] inventory into name lookup — so what stops here must
+    /// remain an explicit unsupported compiler capability, never a source
+    /// rejection and never silent acceptance.
+    ///
+    /// The first resolved use of an admitted system declaration stops as
+    /// [`UnsupportedSemanticFeature::SystemDeclarationUse`] at that use: the
+    /// name resolved, but its semantic path (call typing against the [SYS-2]
+    /// signature, effects, cleanup, lowering) does not exist yet. A
+    /// kind-declaring unit that uses no system name still stops at its
+    /// `program_kind` node, because [FN-7] v0.18 entry-form admission is
+    /// unimplemented and every later pass here assumes the unlabelled entry.
+    /// A labelled entry input and the `external`/`blocks` categories keep
+    /// their own stops, which also cover non-kind-declaring units where
+    /// [FN-7] would reject the construct once implemented.
     fn check_system_surface_support(&self) -> Result<(), CheckStop> {
+        if let Some(usage) = self
+            .resolved
+            .lexical_uses()
+            .iter()
+            .find(|usage| matches!(usage.target(), crate::ResolvedTarget::System(_)))
+        {
+            return Err(CheckStop::Unsupported(SemanticUnsupported {
+                feature: UnsupportedSemanticFeature::SystemDeclarationUse,
+                node: usage.origin().node().clone(),
+            }));
+        }
         for index in 0..self.tree.topology().nodes.len() {
             let node = NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow)?;
             let production = self.tree.production(node)?;
@@ -422,6 +443,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     || self.has_fixed(node, crate::FixedTerminal::Blocks)?)
             {
                 return self.unsupported(UnsupportedSemanticFeature::SystemEffectCategory, node);
+            }
+            if production == Production::ProgramKind {
+                return self.unsupported(UnsupportedSemanticFeature::KindDeclaringEntry, node);
             }
         }
         Ok(())

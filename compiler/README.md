@@ -45,18 +45,31 @@ proposal that changes that frontend contract fails closed: a structural change
 must first extend this same native path rather than reviving an independent
 grammar engine.
 
-The v0.18 system-interface surface parses under the active grammar but stops
-as an explicit unsupported compiler capability pending its implementation
-tasks: a kind-declaring entry (`program_kind`, which admits the system
-declaration domain), a labelled entry input (`input_label`), and the
+The v0.18 system-interface surface parses and resolves under the active
+grammar and resolver, then stops in semantic checking as an explicit
+unsupported compiler capability pending its implementation tasks: a resolved
+use of an admitted system declaration, a kind-declaring entry
+(`program_kind`), a labelled entry input (`input_label`), and the
 `external`/`blocks` effect categories.
 
 FN-7's kind-declaring judgment has one home, `syntax::entry_form`, which reads
 it from finalized syntax alone: a unit is kind-declaring exactly when a
 `program_kind` node exists, independent of names, types, and effect rows. The
-resolver takes that decision in DIAG-1's stage order, after complete unit-wide
-FN-8 requires-block admission and before declaration inventory, so an FN-8
-rejection outranks the kind-declaring unit's unsupported stop.
+resolver takes the SYS-3 system-admission decision from it in DIAG-1's stage
+order, after complete unit-wide FN-8 requires-block admission and before
+declaration inventory: a kind-declaring unit admits the complete SYS-2
+inventory — fourteen nominal types, thirty-nine enum-variant constructors, and
+eleven operation signatures, one hundred sixty-seven records in normative
+preorder — as a third declaration source beside source declarations and the
+prelude, while every other unit sees none of it and a system spelling there is
+an ordinary name. A source declaration colliding with an admitted system entry
+in its domain is the deterministic DIAG-1 rank-5 rejection at the source event,
+root and nested scopes alike, with a `(System, system_declaration_ordinal)`
+origin; there is no shadowing in either direction. The registered signature
+data (parameter names, modes, region parameters, result types, and the fixed
+`external`/`blocks`/`traps` classifications, with `reads`/`writes` derived
+mechanically from parameter modes) lives in the resolution catalog for the
+system semantic-admission and effect-attribution tasks to consume.
 
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,

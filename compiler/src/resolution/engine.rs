@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId, unit_program_kind};
-use crate::{ByteOffset, CanonicalSyntaxUnit, NodePath, Production, SourceId};
+use crate::{ByteOffset, CanonicalSyntaxUnit, Production, SourceId};
 
-use super::catalog::PRELUDE_DECLARATIONS;
+use super::catalog::{PRELUDE_DECLARATIONS, system_declarations};
 use super::scopes::ScopeBuild;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationId, DeclarationRecord, DeclarationRole,
     DeferredUseRecord, DeferredUseRole, DependentDeclarationRecord, DependentDeclarationRole,
     LexicalUseRecord, LexicalUseRole, PreludeDeclarationRecord, ResolutionCompilerFailure,
-    ResolutionIssue, ResolutionOutcome, ResolutionUnsupported, ResolvedSyntaxUnit, ScopeId,
-    SourceOrigin,
+    ResolutionIssue, ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin,
+    SystemDeclarationRecord,
 };
 
 mod admission;
@@ -141,6 +141,7 @@ struct UseMeta {
 struct Tables {
     scopes: Vec<super::ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
+    system: Vec<SystemDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
@@ -149,7 +150,6 @@ struct Tables {
 
 enum BuildStop {
     Issue(Box<ResolutionIssue>),
-    Unsupported(ResolutionUnsupported),
     Compiler(ResolutionCompilerFailure),
 }
 
@@ -169,6 +169,7 @@ pub fn resolve<'classified, 'lexed, 'source>(
             syntax,
             scopes: tables.scopes,
             prelude: tables.prelude,
+            system: tables.system,
             declarations: tables.declarations,
             dependent_declarations: tables.dependent_declarations,
             lexical_uses: tables.lexical_uses,
@@ -178,49 +179,8 @@ pub fn resolve<'classified, 'lexed, 'source>(
             syntax,
             issue: *issue,
         },
-        Err(BuildStop::Unsupported(unsupported)) => ResolutionOutcome::Unsupported {
-            syntax,
-            unsupported,
-        },
         Err(BuildStop::Compiler(failure)) => ResolutionOutcome::CompilerFailure { syntax, failure },
     }
-}
-
-/// Stops before declaration inventory when the unit is kind-declaring.
-///
-/// The [SYS-3] system-admission decision reads the one syntactic [FN-7]
-/// judgment published by `syntax::entry_form`, never a rederived local scan.
-/// A kind-declaring unit admits the system declaration domain into name
-/// lookup ([SYS-1], [SYS-3]), which this compiler has not implemented, so
-/// continuing could misreport an admitted system name as undeclared. Stopping
-/// here keeps the whole unit an explicit unsupported compiler capability,
-/// never a source rejection.
-fn check_system_declaration_support(topology: &FinalizedTopology) -> Result<(), BuildStop> {
-    let Some(node) = unit_program_kind(topology) else {
-        return Ok(());
-    };
-    Err(BuildStop::Unsupported(
-        ResolutionUnsupported::SystemDeclarationDomain {
-            node: node_path(topology, node)?,
-        },
-    ))
-}
-
-fn node_path(topology: &FinalizedTopology, node: NodeId) -> Result<NodePath, BuildStop> {
-    let mut components = Vec::new();
-    let mut cursor = node;
-    loop {
-        let record = topology
-            .node(cursor)
-            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-        let Some(parent) = record.parent else {
-            break;
-        };
-        components.push(record.child_ordinal);
-        cursor = parent;
-    }
-    components.reverse();
-    Ok(NodePath { components })
 }
 
 fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
@@ -229,12 +189,20 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
     // [DIAG-1] fixes this order: only complete unit-wide FN-8 admission
     // permits the [SYS-3] system-admission decision, only that decision
     // permits declaration inventory, and only complete inventory permits
-    // lexical resolution. An FN-8 rejection therefore outranks the
-    // kind-declaring unit's unsupported stop.
+    // lexical resolution.
     if let Some(issue) = check_requires_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    check_system_declaration_support(topology)?;
+    // The [SYS-3] system-admission decision reads the one syntactic [FN-7]
+    // judgment published by `syntax::entry_form`, never a rederived local
+    // scan. A kind-declaring unit admits the complete [SYS-2] inventory as a
+    // third declaration source ([SYS-1]); every other unit admits none of it,
+    // so a system spelling there is an ordinary undeclared or source name.
+    let system = if unit_program_kind(topology).is_some() {
+        system_declarations()
+    } else {
+        Vec::new()
+    };
     let roles = classify_roles(syntax, &scopes)?;
     let mut declarations = Vec::new();
     let mut dependent_declarations = Vec::new();
@@ -306,6 +274,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
         &declaration_metas,
         &declaration_index,
         &declaration_by_role,
+        &system,
     )? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
@@ -315,10 +284,12 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
         &declaration_metas,
         &declaration_index,
         &uses,
+        &system,
     )?;
     Ok(Tables {
         scopes: scopes.records,
         prelude: PRELUDE_DECLARATIONS.to_vec(),
+        system,
         declarations,
         dependent_declarations,
         lexical_uses,

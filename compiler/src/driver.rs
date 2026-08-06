@@ -358,13 +358,6 @@ pub fn compile(
                 issue,
             ));
         }
-        ResolutionOutcome::Unsupported { unsupported, .. } => {
-            return Err(CompilationFailure::new(
-                CompilationStage::Resolution,
-                CompilationFailureKind::Unsupported,
-                unsupported,
-            ));
-        }
         ResolutionOutcome::CompilerFailure { failure, .. } => {
             return Err(CompilationFailure::new(
                 CompilationStage::Resolution,
@@ -462,18 +455,35 @@ mod tests {
     #[test]
     fn system_interface_constructs_stop_as_explicit_unsupported_capability() {
         // The canonical FN-7 command-entry header: a kind-declaring entry
-        // admits the unimplemented system declaration domain, so resolution
-        // stops it before any name lookup could misreport `Args` and friends.
+        // resolves its admitted system names ([SYS-1], [SYS-3]) and then
+        // stops in semantic checking, whose system semantic family is not
+        // implemented — an explicit unsupported capability at the first
+        // resolved system use, never a source rejection.
         let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
         let failure = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
         )
         .expect_err("a kind-declaring entry must stop as unsupported");
-        assert_eq!(failure.stage(), CompilationStage::Resolution);
+        assert_eq!(failure.stage(), CompilationStage::Semantics);
         assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
         assert_eq!(failure.rule_id(), None);
-        assert!(failure.detail().contains("SystemDeclarationDomain"));
+        assert!(failure.detail().contains("SystemDeclarationUse"));
+
+        // A kind-declaring unit that names no system declaration still stops
+        // at its program_kind node: FN-7 entry-form admission is
+        // unimplemented, so silent acceptance of an invalid entry form is
+        // not possible.
+        let kindless_use = b"command fn main() -> own unit pure {\n  return unit;\n}\n";
+        let failure = compile(
+            &[SourceInput::new("entry.wf", kindless_use)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a kind-declaring entry must stop as unsupported");
+        assert_eq!(failure.stage(), CompilationStage::Semantics);
+        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
+        assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("KindDeclaringEntry"));
 
         // An input_label parameter and a system effect category each parse,
         // resolve, and then stop in semantic checking as unsupported.

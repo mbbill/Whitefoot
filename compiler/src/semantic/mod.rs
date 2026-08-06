@@ -398,6 +398,14 @@ pub enum UnsupportedSemanticFeature {
     LabelledEntryInput,
     /// An `external` or `blocks` category in an effect row.
     SystemEffectCategory,
+    /// A use resolving to an admitted system declaration ([SYS-1]): the
+    /// system semantic and lowering family — entry-form admission, call
+    /// typing against the [SYS-2] signatures, effect attribution, and
+    /// resource cleanup — is not implemented yet.
+    SystemDeclarationUse,
+    /// A kind-declaring entry declaration ([FN-7] `program_kind`): the v0.18
+    /// entry-form admission judgment is not implemented yet.
+    KindDeclaringEntry,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

@@ -10,8 +10,8 @@ use crate::{
 use super::catalog::OPERATION_FAMILIES;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationOrigin, DeclarationRole, DeferredUseRole,
-    DependentDeclarationRole, LexicalUseRole, ResolutionIssue, ResolutionIssueKind,
-    ResolutionOutcome, ResolutionRule, ResolutionUnsupported, ResolvedTarget, resolve,
+    DependentDeclarationRole, LexicalUseRecord, LexicalUseRole, ResolutionIssue,
+    ResolutionIssueKind, ResolutionOutcome, ResolutionRule, ResolvedTarget, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -225,27 +225,38 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
 #[test]
 fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
     // A unit with no `program_kind` child is not kind-declaring, so nothing
-    // about the entry-form grammar changes its ordinary resolution.
+    // about the entry-form grammar changes its ordinary resolution, and the
+    // system domain contributes no entry to it [SYS-3].
     let unlabelled = b"fn main() -> own unit pure {\n  return unit;\n}\n";
     with_one_resolution(unlabelled, |outcome| {
-        assert!(
-            matches!(outcome, ResolutionOutcome::Complete(_)),
-            "the unlabelled entry must resolve unchanged: {outcome:?}"
-        );
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("the unlabelled entry must resolve unchanged: {outcome:?}");
+        };
+        assert!(resolved.system_declarations().is_empty());
     });
 
-    // One `program_kind` child makes the unit kind-declaring, which admits the
-    // unimplemented system declaration domain. That is an explicit unsupported
-    // compiler capability, never a source rejection, and it names the exact
-    // `program_kind` node.
+    // One `program_kind` child makes the unit kind-declaring, which admits
+    // the complete SYS-2 inventory as a third declaration source [SYS-1]:
+    // the entry's system input and result types resolve to system targets.
     let kind_declaring =
         b"command fn main(command.args as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n";
     with_one_resolution(kind_declaring, |outcome| {
-        let ResolutionOutcome::Unsupported { unsupported, .. } = outcome else {
-            panic!("a kind-declaring unit must stop as unsupported: {outcome:?}");
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("a kind-declaring unit must resolve system names: {outcome:?}");
         };
-        let ResolutionUnsupported::SystemDeclarationDomain { node } = unsupported;
-        assert_eq!(node.components(), &[0, 0, 0]);
+        assert_eq!(resolved.system_declarations().len(), 167);
+        for (spelling, ordinal) in [("Args", 0), ("ExitStatus", 6)] {
+            let usage = resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage| usage.spelling() == spelling)
+                .unwrap_or_else(|| panic!("missing system type use {spelling}"));
+            assert_eq!(usage.role(), LexicalUseRole::Type);
+            assert!(matches!(
+                usage.target(),
+                ResolvedTarget::System(id) if id.ordinal() == ordinal
+            ));
+        }
     });
 
     // The judgment is syntactic: a `program_kind` on a declaration that is not
@@ -253,10 +264,10 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
     // beside it changes nothing.
     let non_entry_kind = b"command fn helper() -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
     with_one_resolution(non_entry_kind, |outcome| {
-        assert!(
-            matches!(outcome, ResolutionOutcome::Unsupported { .. }),
-            "a non-entry program_kind must still be kind-declaring: {outcome:?}"
-        );
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("a non-entry program_kind must still be kind-declaring: {outcome:?}");
+        };
+        assert_eq!(resolved.system_declarations().len(), 167);
     });
 }
 
@@ -264,8 +275,8 @@ fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
 fn fn8_admission_precedes_the_system_admission_decision() {
     // DIAG-1 fixes the stage order: only complete unit-wide FN-8 admission
     // permits the SYS-3 system-admission decision. The FN-8 rejection must
-    // therefore win over the kind-declaring unit's unsupported stop rather
-    // than being masked by it.
+    // therefore win in a kind-declaring unit before any system name enters
+    // inventory or lookup.
     let source =
         br#"command fn main(command.args as args: own Args) -> own ExitStatus pure requires {
   doc "not an admitted requires entry";
@@ -275,7 +286,7 @@ fn fn8_admission_precedes_the_system_admission_decision() {
 "#;
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the FN-8 defect must outrank the unsupported stop: {outcome:?}");
+            panic!("the FN-8 defect must outrank system admission: {outcome:?}");
         };
         assert_eq!(issue.rule(), ResolutionRule::Fn8);
         assert!(matches!(
@@ -284,8 +295,8 @@ fn fn8_admission_precedes_the_system_admission_decision() {
         ));
     });
 
-    // The same kind-declaring entry with an admitted requires block reaches the
-    // system-admission decision and stops there.
+    // The same kind-declaring entry with an admitted requires block reaches
+    // the system-admission decision and resolves with the domain admitted.
     let admitted =
         br#"command fn main(command.args as args: own Args) -> own ExitStatus traps requires {
   check args else trap "present";
@@ -294,11 +305,418 @@ fn fn8_admission_precedes_the_system_admission_decision() {
 }
 "#;
     with_one_resolution(admitted, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("an admitted requires block must reach the SYS-3 decision: {outcome:?}");
+        };
+        assert_eq!(resolved.system_declarations().len(), 167);
+    });
+}
+
+#[test]
+fn a_kind_declaring_unit_resolves_the_complete_system_lookup_inventory() {
+    // Every system nominal type as a `type` TYPEID use, every operation as an
+    // IDENT callee, one constructor in construct position, and the
+    // `ReadOutcome` variants in arm position, with deterministic [SYS-2]
+    // preorder ordinals throughout. Resolution fixes callee targets only;
+    // argument-name checking against the [SYS-2] parameter lists is the
+    // later typed stage, so the `arg_get` call here omits its second
+    // argument: the declared name `index` is a fixed [GRAM-5] atom that
+    // [FORM-3] excludes from IDENT, so a complete [GRAM-11] call to
+    // `arg_get` is unwritable under v0.18 — a recorded specification
+    // finding, not behavior this test may normalize.
+    let source = br#"command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+
+fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own Output, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError) -> own unit pure {
+  return unit;
+}
+
+fn calls(x: own u64) -> own unit pure {
+  args_count(args: x);
+  arg_get(args: x);
+  host_bytes_len(value: x);
+  host_copy_bytes(value: x, destination: x, offset: x, capacity: x);
+  host_utf8_len(value: x);
+  host_copy_utf8(value: x, destination: x, offset: x, capacity: x);
+  relative_path(value: x);
+  open_read(root: x, path: x);
+  read_once(file: x, destination: x, offset: x, capacity: x);
+  write_once(output: x, source: x, offset: x, count: x);
+  return unit;
+}
+
+fn outcomes(m: own ReadOutcome) -> own unit pure {
+  let failed: own IoError = NotFound(code: 1_u32, origin: 0_u8);
+  match m {
+    ReadBytes(count: got) => {
+      return unit;
+    }
+    ReadEnd() => {
+      return unit;
+    }
+    ReadFailed(error: cause) => {
+      return unit;
+    }
+  }
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("the complete system fixture must resolve: {outcome:?}");
+        };
+        let system_target = |usage: &LexicalUseRecord| match usage.target() {
+            ResolvedTarget::System(id) => Some(id.ordinal()),
+            _ => None,
+        };
+        let expect = |role: LexicalUseRole, spelling: &str, ordinal: u8| {
+            let usage = resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage| usage.role() == role && usage.spelling() == spelling)
+                .unwrap_or_else(|| panic!("missing system use {spelling}"));
+            assert_eq!(
+                system_target(usage),
+                Some(ordinal),
+                "wrong target for {spelling}"
+            );
+        };
+        for (spelling, ordinal) in [
+            ("Args", 0),
+            ("HostString", 1),
+            ("RelativePath", 2),
+            ("DirectoryRead", 3),
+            ("ReadFile", 4),
+            ("Output", 5),
+            ("ExitStatus", 6),
+            ("ArgError", 7),
+            ("Utf8Error", 8),
+            ("CopyError", 9),
+            ("Utf8CopyError", 10),
+            ("PathError", 11),
+            ("ReadOutcome", 12),
+            ("IoError", 13),
+        ] {
+            expect(LexicalUseRole::Type, spelling, ordinal);
+        }
+        for (spelling, ordinal) in [
+            ("args_count", 117),
+            ("arg_get", 120),
+            ("host_bytes_len", 124),
+            ("host_copy_bytes", 127),
+            ("host_utf8_len", 134),
+            ("host_copy_utf8", 137),
+            ("relative_path", 144),
+            ("open_read", 146),
+            ("read_once", 151),
+            ("write_once", 158),
+            ("exit_status", 165),
+        ] {
+            expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
+        }
+        expect(LexicalUseRole::Construct, "NotFound", 27);
+        expect(LexicalUseRole::ArmVariant, "ReadBytes", 22);
+        expect(LexicalUseRole::ArmVariant, "ReadEnd", 24);
+        expect(LexicalUseRole::ArmVariant, "ReadFailed", 25);
+    });
+}
+
+#[test]
+fn a_system_unadmitted_unit_sees_system_spellings_as_ordinary_undeclared_names() {
+    // [SYS-3]: in a unit that is not kind-declaring the system domain
+    // contributes no entry, so a system operation spelling is an ordinary
+    // undeclared callee decided by the ordinary lexical-use ranks.
+    let callee = br#"fn main() -> own unit pure {
+  let x: own u64 = 0_u64;
+  args_count(args: x);
+  return unit;
+}
+"#;
+    with_one_resolution(callee, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unadmitted system callee must be undeclared: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Op1);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse { spelling, available, .. }
+                if spelling == "args_count" && available.is_empty()
+        ));
+    });
+
+    // The same holds in the nominal-type domain.
+    let nominal = br#"fn consume(value: own HostString) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_one_resolution(nominal, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unadmitted system type must be undeclared: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type5);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "HostString"
+        ));
+    });
+}
+
+#[test]
+fn system_lookalike_declarations_in_an_unadmitted_unit_are_ordinary() {
+    // [SYS-3]: a source declaration in a system-unadmitted unit may use any
+    // system spelling; it collides with nothing and every use resolves to it
+    // under the ordinary domains. No source property makes it a system
+    // entity.
+    let source = br#"struct HostString {
+}
+
+enum Outcome {
+  ReadEnd();
+}
+
+fn args_count(args: own u64) -> own u64 pure {
+  return args;
+}
+
+fn main() -> own unit pure {
+  let x: own u64 = args_count(args: 0_u64);
+  let s: own HostString = HostString();
+  match ReadEnd() {
+    ReadEnd() => {
+      return unit;
+    }
+  }
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("lookalike declarations must be ordinary: {outcome:?}");
+        };
+        assert!(resolved.system_declarations().is_empty());
+        for (role, spelling) in [
+            (LexicalUseRole::IdentifierCallee, "args_count"),
+            (LexicalUseRole::Type, "HostString"),
+            (LexicalUseRole::Construct, "HostString"),
+            (LexicalUseRole::ArmVariant, "ReadEnd"),
+        ] {
+            let usage = resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage| usage.role() == role && usage.spelling() == spelling)
+                .unwrap_or_else(|| panic!("missing lookalike use {spelling}"));
+            assert!(
+                matches!(usage.target(), ResolvedTarget::Source { .. }),
+                "lookalike use {spelling} must resolve to source: {usage:?}"
+            );
+        }
+    });
+}
+
+#[test]
+fn system_collisions_reject_deterministically_in_both_directions() {
+    // [DIAG-1] rank 5: inside a kind-declaring unit a source declaration
+    // whose spelling equals a system entry's spelling in the same domain is a
+    // deterministic rejection at that source declaration event — before the
+    // entry declaration and after it alike — and neither name resolves.
+    let entry =
+        "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let lookalike = "fn args_count(args: own u64) -> own u64 pure {\n  return args;\n}\n";
+    for source in [
+        format!("{lookalike}\n{entry}"),
+        format!("{entry}\n{lookalike}"),
+    ] {
+        with_one_resolution(source.as_bytes(), |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("the system collision must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Type6);
+            let ResolutionIssueKind::DeclarationCollision {
+                spelling,
+                conflicts,
+            } = issue.kind()
+            else {
+                panic!("expected a declaration collision: {issue:?}");
+            };
+            assert_eq!(spelling, "args_count");
+            assert_eq!(conflicts.len(), 1);
+            assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
+            assert_eq!(conflicts[0].class(), DeclarationClass::Function);
+            assert!(matches!(
+                conflicts[0].origin(),
+                DeclarationOrigin::System(id) if id.ordinal() == 117
+            ));
+        });
+    }
+}
+
+#[test]
+fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
+    let entry =
+        "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+
+    // Nominal-type domain: a struct reusing an opaque-type spelling. The
+    // struct's constructor entry collides with nothing because an opaque
+    // type contributes no constructor, so exactly one conflict is reported.
+    let nominal = format!("{entry}\nstruct HostString {{\n}}\n");
+    with_one_resolution(nominal.as_bytes(), |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the nominal system collision must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        let ResolutionIssueKind::DeclarationCollision {
+            spelling,
+            conflicts,
+        } = issue.kind()
+        else {
+            panic!("expected a declaration collision: {issue:?}");
+        };
+        assert_eq!(spelling, "HostString");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].domain(), DeclarationDomain::NominalType);
+        assert!(matches!(
+            conflicts[0].origin(),
+            DeclarationOrigin::System(id) if id.ordinal() == 1
+        ));
+    });
+
+    // Constructor domain: a source enum variant reusing a system constructor
+    // spelling collides even though its enum nominal is fresh.
+    let variant = format!("{entry}\nenum Mine {{\n  ReadEnd();\n}}\n");
+    with_one_resolution(variant.as_bytes(), |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the constructor system collision must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        let ResolutionIssueKind::DeclarationCollision {
+            spelling,
+            conflicts,
+        } = issue.kind()
+        else {
+            panic!("expected a declaration collision: {issue:?}");
+        };
+        assert_eq!(spelling, "ReadEnd");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
+        assert!(matches!(
+            conflicts[0].origin(),
+            DeclarationOrigin::System(id) if id.ordinal() == 24
+        ));
+    });
+
+    // A nested declaration collides at rank 5 exactly like a root one
+    // ([SYS-1]: at the compilation root and in every nested scope alike);
+    // this is a rejection, never a shadow of the system entry.
+    let nested = "command fn main() -> own ExitStatus pure {\n  let host_bytes_len: own u64 = 0_u64;\n  return exit_status(code: 0_u8);\n}\n";
+    with_one_resolution(nested.as_bytes(), |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the nested system collision must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        let ResolutionIssueKind::DeclarationCollision {
+            spelling,
+            conflicts,
+        } = issue.kind()
+        else {
+            panic!("expected a declaration collision: {issue:?}");
+        };
+        assert_eq!(spelling, "host_bytes_len");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
+        assert!(matches!(
+            conflicts[0].origin(),
+            DeclarationOrigin::System(id) if id.ordinal() == 124
+        ));
+    });
+}
+
+#[test]
+fn a_prelude_collision_keeps_rank_four_in_a_system_admitted_unit() {
+    // [DIAG-1] rank 4 precedes rank 5 at one event: a PRE-1 collision in a
+    // kind-declaring unit reports only its PRE-1 conflicts.
+    let source = "command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n\nstruct Overflow {\n}\n";
+    with_one_resolution(source.as_bytes(), |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the prelude collision must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        let ResolutionIssueKind::DeclarationCollision {
+            spelling,
+            conflicts,
+        } = issue.kind()
+        else {
+            panic!("expected a declaration collision: {issue:?}");
+        };
+        assert_eq!(spelling, "Overflow");
         assert!(
-            matches!(outcome, ResolutionOutcome::Unsupported { .. }),
-            "an admitted requires block must reach the SYS-3 decision: {outcome:?}"
+            conflicts
+                .iter()
+                .all(|conflict| matches!(conflict.origin(), DeclarationOrigin::Prelude(_)))
         );
     });
+}
+
+#[test]
+fn a_system_operation_never_satisfies_a_conformance_binding() {
+    // [SYS-2]: a system operation is not the right IDENT of an FN-3
+    // `fn_bind`; a conformance binds only a top-level source function. The
+    // visible system entry still surfaces through the available classes.
+    let source = br#"command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+
+contract Task {
+  fn run(value: own u64) -> own u64 pure;
+}
+
+conform u64: Task {
+  run = args_count;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a system operation must not bind a contract member: {outcome:?}");
+        };
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse { spelling, available, .. }
+                if spelling == "args_count" && available.contains(&DeclarationClass::Function)
+        ));
+    });
+}
+
+#[test]
+fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
+    let source =
+        b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let targets = |path: &str| -> Vec<(String, u8)> {
+        with_resolution(&[SourceInput::new(path, source)], |outcome| {
+            let ResolutionOutcome::Complete(resolved) = outcome else {
+                panic!("the deterministic fixture must resolve: {outcome:?}");
+            };
+            resolved
+                .lexical_uses()
+                .iter()
+                .filter_map(|usage| match usage.target() {
+                    ResolvedTarget::System(id) => Some((usage.spelling().to_owned(), id.ordinal())),
+                    _ => None,
+                })
+                .collect()
+        })
+    };
+    let first = targets("first.wf");
+    assert_eq!(
+        first,
+        vec![
+            ("ExitStatus".to_owned(), 6),
+            ("exit_status".to_owned(), 165)
+        ]
+    );
+    assert_eq!(first, targets("first.wf"));
+    assert_eq!(first, targets("renamed/location.wf"));
 }
 
 #[test]

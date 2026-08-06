@@ -16,6 +16,12 @@ use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
 pub use engine::resolve;
 
+pub use catalog::{
+    SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemConstructor, SystemEntity,
+    SystemField, SystemNominal, SystemOperation, SystemParameter, SystemParameterMode,
+    SystemResultPayload, SystemTypeRef, operation_region_effects, system_entity,
+};
+
 /// Returns the exact OP-1 spelling of a resolved operation family.
 #[must_use]
 pub fn operation_family_spelling(id: OperationFamilyId) -> Option<&'static str> {
@@ -120,6 +126,22 @@ impl PreludeDeclarationId {
     }
 
     /// Returns the zero-based PRE-1 declaration ordinal.
+    #[must_use]
+    pub const fn ordinal(self) -> u8 {
+        self.0
+    }
+}
+
+/// Dense identity of one normative [SYS-2] system declaration record.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SystemDeclarationId(u8);
+
+impl SystemDeclarationId {
+    pub(crate) const fn new(ordinal: u8) -> Self {
+        Self(ordinal)
+    }
+
+    /// Returns the zero-based `system_declaration_ordinal` in [SYS-2] preorder.
     #[must_use]
     pub const fn ordinal(self) -> u8 {
         self.0
@@ -345,6 +367,8 @@ pub enum DeclarationOrigin {
     Source(SourceOrigin),
     /// One normative PRE-1 record.
     Prelude(PreludeDeclarationId),
+    /// One admitted [SYS-2] record; appears only in a system-admitted unit.
+    System(SystemDeclarationId),
 }
 
 /// One source declaration event and its lookup entries.
@@ -438,6 +462,8 @@ pub enum ResolvedTarget {
     Prelude(PreludeDeclarationId),
     /// One exact OP-1 operation family.
     Operation(OperationFamilyId),
+    /// One admitted [SYS-2] lookup entry ([SYS-1], [SYS-3]).
+    System(SystemDeclarationId),
 }
 
 /// One lexical use and its exact target.
@@ -500,6 +526,34 @@ impl DeferredUseRecord {
     #[must_use]
     pub const fn origin(&self) -> &SourceOrigin {
         &self.origin
+    }
+}
+
+/// One normative [SYS-2] declaration record admitted to one resolved unit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SystemDeclarationRecord {
+    id: SystemDeclarationId,
+    spelling: &'static str,
+    class: Option<DeclarationClass>,
+}
+
+impl SystemDeclarationRecord {
+    /// Returns the [SYS-2] preorder identity.
+    #[must_use]
+    pub const fn id(self) -> SystemDeclarationId {
+        self.id
+    }
+
+    /// Returns the normative spelling.
+    #[must_use]
+    pub const fn spelling(self) -> &'static str {
+        self.spelling
+    }
+
+    /// Returns the source-lookup class, or `None` for owner-local records.
+    #[must_use]
+    pub const fn lookup_class(self) -> Option<DeclarationClass> {
+        self.class
     }
 }
 
@@ -756,6 +810,7 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
     scopes: Vec<ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
+    system: Vec<SystemDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
@@ -788,6 +843,22 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         id: PreludeDeclarationId,
     ) -> Option<&PreludeDeclarationRecord> {
         self.prelude.get(usize::from(id.ordinal()))
+    }
+
+    /// Returns the admitted [SYS-2] records in normative preorder.
+    ///
+    /// The slice carries all one hundred sixty-seven records exactly when the
+    /// unit is kind-declaring ([SYS-3]) and is empty otherwise: a
+    /// system-unadmitted unit has no system entry at all.
+    #[must_use]
+    pub fn system_declarations(&self) -> &[SystemDeclarationRecord] {
+        &self.system
+    }
+
+    /// Returns one admitted [SYS-2] record by its normative identity.
+    #[must_use]
+    pub fn system_declaration(&self, id: SystemDeclarationId) -> Option<&SystemDeclarationRecord> {
+        self.system.get(usize::from(id.ordinal()))
     }
 
     /// Returns all source declaration events D01 through D14.
@@ -839,32 +910,11 @@ pub enum ResolutionOutcome<'classified, 'lexed, 'source> {
         /// Deterministic resolver issue.
         issue: ResolutionIssue,
     },
-    /// Valid source requires a resolver capability the compiler has not
-    /// implemented; this is never a source-language rejection.
-    Unsupported {
-        /// Canonical syntax retained for diagnostics or caller policy.
-        syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
-        /// Exact unimplemented resolver capability.
-        unsupported: ResolutionUnsupported,
-    },
     /// A trusted compiler invariant failed.
     CompilerFailure {
         /// Canonical syntax retained for debugging.
         syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
         /// Internal failure class.
         failure: ResolutionCompilerFailure,
-    },
-}
-
-/// A resolver capability the current compiler has not implemented.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ResolutionUnsupported {
-    /// A kind-declaring unit ([FN-7]) admits the system declaration domain
-    /// into name lookup ([SYS-1], [SYS-3]). Without that domain, lookup in
-    /// such a unit could misreport an admitted system name as undeclared, so
-    /// the whole unit stops here as an explicit unsupported capability.
-    SystemDeclarationDomain {
-        /// The `program_kind` node making the unit kind-declaring.
-        node: NodePath,
     },
 }

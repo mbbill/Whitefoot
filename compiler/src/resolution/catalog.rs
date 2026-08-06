@@ -1,6 +1,6 @@
 use super::{
     DeclarationClass, OperationFamilyId, PreludeDeclarationId, PreludeDeclarationRecord,
-    ReservedNameClass,
+    ReservedNameClass, SystemDeclarationId, SystemDeclarationRecord,
 };
 
 pub(crate) const PRELUDE_DECLARATIONS: [PreludeDeclarationRecord; 24] = [
@@ -143,6 +143,574 @@ pub(crate) fn operation_spelling(id: OperationFamilyId) -> Option<&'static str> 
     OPERATION_FAMILIES.get(usize::from(id.0)).copied()
 }
 
+/// One [SYS-2] system nominal type in normative table order.
+#[derive(Clone, Copy, Debug)]
+pub struct SystemNominal {
+    /// Exact TYPEID spelling.
+    pub spelling: &'static str,
+    /// `true` for the seven opaque types, `false` for the seven outcome enums.
+    pub opaque: bool,
+}
+
+/// One [SYS-2] enum-variant constructor in normative table order.
+#[derive(Clone, Copy, Debug)]
+pub struct SystemConstructor {
+    /// Exact TYPEID spelling.
+    pub spelling: &'static str,
+    /// Index of the owning enum nominal in [`SYSTEM_NOMINALS`].
+    pub owner: u8,
+    /// Declared fields in declared order; owner-local, never in source lookup.
+    pub fields: &'static [SystemField],
+}
+
+/// One owner-local [SYS-2] constructor field.
+#[derive(Clone, Copy, Debug)]
+pub struct SystemField {
+    /// Declared field name.
+    pub name: &'static str,
+    /// Declared field type.
+    pub ty: SystemTypeRef,
+}
+
+/// One [SYS-2] operation signature in normative table order.
+#[derive(Clone, Copy, Debug)]
+pub struct SystemOperation {
+    /// Exact IDENT spelling.
+    pub spelling: &'static str,
+    /// Region parameters in declared order, complete sigiled spellings.
+    pub regions: &'static [&'static str],
+    /// Value parameters in declared order; owner-local, never in source lookup.
+    pub parameters: &'static [SystemParameter],
+    /// Result type; every [SYS-2] result mode is `own`.
+    pub result: SystemTypeRef,
+    /// Fixed `external` classification from the written [SYS-2] row.
+    pub external: bool,
+    /// Fixed `blocks` classification from the written [SYS-2] row.
+    pub blocks: bool,
+    /// Fixed `traps` classification from the written [SYS-2] row.
+    pub traps: bool,
+}
+
+/// One owner-local [SYS-2] operation value parameter.
+#[derive(Clone, Copy, Debug)]
+pub struct SystemParameter {
+    /// Declared parameter name; [GRAM-11] named arguments must equal it.
+    pub name: &'static str,
+    /// Declared parameter mode.
+    pub mode: SystemParameterMode,
+    /// Declared parameter type.
+    pub ty: SystemTypeRef,
+}
+
+/// A [SYS-2] parameter mode; borrow modes index the operation's region list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemParameterMode {
+    /// `own`.
+    Own,
+    /// `&'r` with the zero-based declared region-parameter index.
+    Borrow(u8),
+    /// `&uniq 'r` with the zero-based declared region-parameter index.
+    UniqueBorrow(u8),
+}
+
+/// The closed set of types written in the [SYS-2] table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemTypeRef {
+    /// `u8`.
+    U8,
+    /// `u32`.
+    U32,
+    /// `u64`.
+    U64,
+    /// `buffer<u8>`.
+    BufferU8,
+    /// One system nominal type, by index into [`SYSTEM_NOMINALS`].
+    Nominal(u8),
+    /// One [PRE-1] `Result<T, E>` instantiation over table types.
+    Result {
+        /// The `Ok` payload type.
+        ok: SystemResultPayload,
+        /// The `Err` payload, an enum index into [`SYSTEM_NOMINALS`].
+        err: u8,
+    },
+}
+
+/// The closed set of `Ok` payloads in [SYS-2] `Result` instantiations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemResultPayload {
+    /// `u64`.
+    U64,
+    /// One system nominal type, by index into [`SYSTEM_NOMINALS`].
+    Nominal(u8),
+}
+
+/// One resolved [SYS-2] lookup entry, for consumers of a resolved unit.
+#[derive(Clone, Copy, Debug)]
+pub enum SystemEntity {
+    /// A system nominal type.
+    Nominal(&'static SystemNominal),
+    /// A system enum-variant constructor.
+    Constructor(&'static SystemConstructor),
+    /// A system operation.
+    Operation(&'static SystemOperation),
+}
+
+const ARGS: u8 = 0;
+const HOST_STRING: u8 = 1;
+const RELATIVE_PATH: u8 = 2;
+const DIRECTORY_READ: u8 = 3;
+const READ_FILE: u8 = 4;
+const OUTPUT: u8 = 5;
+const EXIT_STATUS: u8 = 6;
+const ARG_ERROR: u8 = 7;
+const UTF8_ERROR: u8 = 8;
+const COPY_ERROR: u8 = 9;
+const UTF8_COPY_ERROR: u8 = 10;
+const PATH_ERROR: u8 = 11;
+const READ_OUTCOME: u8 = 12;
+const IO_ERROR: u8 = 13;
+
+/// The fourteen [SYS-2] nominal types in normative table order.
+pub const SYSTEM_NOMINALS: [SystemNominal; 14] = [
+    nominal("Args", true),
+    nominal("HostString", true),
+    nominal("RelativePath", true),
+    nominal("DirectoryRead", true),
+    nominal("ReadFile", true),
+    nominal("Output", true),
+    nominal("ExitStatus", true),
+    nominal("ArgError", false),
+    nominal("Utf8Error", false),
+    nominal("CopyError", false),
+    nominal("Utf8CopyError", false),
+    nominal("PathError", false),
+    nominal("ReadOutcome", false),
+    nominal("IoError", false),
+];
+
+const fn nominal(spelling: &'static str, opaque: bool) -> SystemNominal {
+    SystemNominal { spelling, opaque }
+}
+
+/// The exact inline detail carried by every [SYS-2] `IoError` class.
+const IO_ERROR_DETAIL: [SystemField; 2] = [
+    field("code", SystemTypeRef::U32),
+    field("origin", SystemTypeRef::U8),
+];
+
+const REQUIRED_U64: [SystemField; 1] = [field("required", SystemTypeRef::U64)];
+const COUNT_U64: [SystemField; 1] = [field("count", SystemTypeRef::U64)];
+const ERROR_IO: [SystemField; 1] = [field("error", SystemTypeRef::Nominal(IO_ERROR))];
+
+const fn field(name: &'static str, ty: SystemTypeRef) -> SystemField {
+    SystemField { name, ty }
+}
+
+const fn io_class(spelling: &'static str) -> SystemConstructor {
+    SystemConstructor {
+        spelling,
+        owner: IO_ERROR,
+        fields: &IO_ERROR_DETAIL,
+    }
+}
+
+const fn constructor(
+    spelling: &'static str,
+    owner: u8,
+    fields: &'static [SystemField],
+) -> SystemConstructor {
+    SystemConstructor {
+        spelling,
+        owner,
+        fields,
+    }
+}
+
+/// The thirty-nine [SYS-2] enum-variant constructors in normative table
+/// order: each enum in table order, and within one enum each variant in
+/// declared order.
+pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 39] = [
+    constructor("InvalidIndex", ARG_ERROR, &[]),
+    constructor("Utf8Invalid", UTF8_ERROR, &[]),
+    constructor("CopyTooSmall", COPY_ERROR, &REQUIRED_U64),
+    constructor("Utf8CopyTooSmall", UTF8_COPY_ERROR, &REQUIRED_U64),
+    constructor("Utf8CopyInvalid", UTF8_COPY_ERROR, &[]),
+    constructor("PathInvalid", PATH_ERROR, &[]),
+    constructor("ReadBytes", READ_OUTCOME, &COUNT_U64),
+    constructor("ReadEnd", READ_OUTCOME, &[]),
+    constructor("ReadFailed", READ_OUTCOME, &ERROR_IO),
+    io_class("NotFound"),
+    io_class("PermissionDenied"),
+    io_class("AlreadyExists"),
+    io_class("NotDirectory"),
+    io_class("IsDirectory"),
+    io_class("DirectoryNotEmpty"),
+    io_class("ReadOnly"),
+    io_class("ResourceBusy"),
+    io_class("InvalidInput"),
+    io_class("InvalidPath"),
+    io_class("Unsupported"),
+    io_class("Interrupted"),
+    io_class("WouldBlock"),
+    io_class("TimedOut"),
+    io_class("BrokenPipe"),
+    io_class("WriteZero"),
+    io_class("UnexpectedEnd"),
+    io_class("ConnectionRefused"),
+    io_class("ConnectionReset"),
+    io_class("ConnectionAborted"),
+    io_class("NotConnected"),
+    io_class("AddressInUse"),
+    io_class("AddressUnavailable"),
+    io_class("ResourceExhausted"),
+    io_class("FileTooLarge"),
+    io_class("NoSpace"),
+    io_class("QuotaExceeded"),
+    io_class("CrossDevice"),
+    io_class("DeviceFailure"),
+    io_class("Other"),
+];
+
+const fn parameter(
+    name: &'static str,
+    mode: SystemParameterMode,
+    ty: SystemTypeRef,
+) -> SystemParameter {
+    SystemParameter { name, mode, ty }
+}
+
+const fn ok_nominal(ok: u8, err: u8) -> SystemTypeRef {
+    SystemTypeRef::Result {
+        ok: SystemResultPayload::Nominal(ok),
+        err,
+    }
+}
+
+const fn ok_u64(err: u8) -> SystemTypeRef {
+    SystemTypeRef::Result {
+        ok: SystemResultPayload::U64,
+        err,
+    }
+}
+
+/// The eleven [SYS-2] operation signatures in normative table order.
+///
+/// Each row registers the declared region parameters, value parameters, result
+/// type, and the fixed `external`/`blocks`/`traps` classification. The
+/// `reads`/`writes` region entries are not stored: [SYS-2] fixes them as a
+/// mechanical derivation from the parameter modes — every borrow of region
+/// `'r` contributes `reads('r)`, and every `&uniq 'r` parameter (each one is
+/// changed by its operation in this inventory) additionally contributes
+/// `writes('r)` — which [`operation_region_effects`] performs.
+pub const SYSTEM_OPERATIONS: [SystemOperation; 11] = [
+    SystemOperation {
+        spelling: "args_count",
+        regions: &["'a"],
+        parameters: &[parameter(
+            "args",
+            SystemParameterMode::Borrow(0),
+            SystemTypeRef::Nominal(ARGS),
+        )],
+        result: SystemTypeRef::U64,
+        external: false,
+        blocks: false,
+        traps: false,
+    },
+    SystemOperation {
+        spelling: "arg_get",
+        regions: &["'a"],
+        parameters: &[
+            parameter(
+                "args",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(ARGS),
+            ),
+            parameter("index", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: ok_nominal(HOST_STRING, ARG_ERROR),
+        external: false,
+        blocks: false,
+        traps: false,
+    },
+    SystemOperation {
+        spelling: "host_bytes_len",
+        regions: &["'v"],
+        parameters: &[parameter(
+            "value",
+            SystemParameterMode::Borrow(0),
+            SystemTypeRef::Nominal(HOST_STRING),
+        )],
+        result: SystemTypeRef::U64,
+        external: false,
+        blocks: false,
+        traps: false,
+    },
+    SystemOperation {
+        spelling: "host_copy_bytes",
+        regions: &["'v", "'d"],
+        parameters: &[
+            parameter(
+                "value",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(HOST_STRING),
+            ),
+            parameter(
+                "destination",
+                SystemParameterMode::UniqueBorrow(1),
+                SystemTypeRef::BufferU8,
+            ),
+            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: ok_u64(COPY_ERROR),
+        external: false,
+        blocks: false,
+        traps: true,
+    },
+    SystemOperation {
+        spelling: "host_utf8_len",
+        regions: &["'v"],
+        parameters: &[parameter(
+            "value",
+            SystemParameterMode::Borrow(0),
+            SystemTypeRef::Nominal(HOST_STRING),
+        )],
+        result: ok_u64(UTF8_ERROR),
+        external: false,
+        blocks: false,
+        traps: false,
+    },
+    SystemOperation {
+        spelling: "host_copy_utf8",
+        regions: &["'v", "'d"],
+        parameters: &[
+            parameter(
+                "value",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(HOST_STRING),
+            ),
+            parameter(
+                "destination",
+                SystemParameterMode::UniqueBorrow(1),
+                SystemTypeRef::BufferU8,
+            ),
+            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: ok_u64(UTF8_COPY_ERROR),
+        external: false,
+        blocks: false,
+        traps: true,
+    },
+    SystemOperation {
+        spelling: "relative_path",
+        regions: &[],
+        parameters: &[parameter(
+            "value",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(HOST_STRING),
+        )],
+        result: ok_nominal(RELATIVE_PATH, PATH_ERROR),
+        external: false,
+        blocks: false,
+        traps: false,
+    },
+    SystemOperation {
+        spelling: "open_read",
+        regions: &["'c", "'p"],
+        parameters: &[
+            parameter(
+                "root",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(DIRECTORY_READ),
+            ),
+            parameter(
+                "path",
+                SystemParameterMode::Borrow(1),
+                SystemTypeRef::Nominal(RELATIVE_PATH),
+            ),
+        ],
+        result: ok_nominal(READ_FILE, IO_ERROR),
+        external: true,
+        blocks: true,
+        traps: false,
+    },
+    SystemOperation {
+        spelling: "read_once",
+        regions: &["'f", "'d"],
+        parameters: &[
+            parameter(
+                "file",
+                SystemParameterMode::UniqueBorrow(0),
+                SystemTypeRef::Nominal(READ_FILE),
+            ),
+            parameter(
+                "destination",
+                SystemParameterMode::UniqueBorrow(1),
+                SystemTypeRef::BufferU8,
+            ),
+            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("capacity", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: SystemTypeRef::Nominal(READ_OUTCOME),
+        external: true,
+        blocks: true,
+        traps: true,
+    },
+    SystemOperation {
+        spelling: "write_once",
+        regions: &["'o", "'s"],
+        parameters: &[
+            parameter(
+                "output",
+                SystemParameterMode::UniqueBorrow(0),
+                SystemTypeRef::Nominal(OUTPUT),
+            ),
+            parameter(
+                "source",
+                SystemParameterMode::Borrow(1),
+                SystemTypeRef::BufferU8,
+            ),
+            parameter("offset", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("count", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: ok_u64(IO_ERROR),
+        external: true,
+        blocks: true,
+        traps: true,
+    },
+    SystemOperation {
+        spelling: "exit_status",
+        regions: &[],
+        parameters: &[parameter(
+            "code",
+            SystemParameterMode::Own,
+            SystemTypeRef::U8,
+        )],
+        result: SystemTypeRef::Nominal(EXIT_STATUS),
+        external: false,
+        blocks: false,
+        traps: false,
+    },
+];
+
+/// Derives one operation's `reads`/`writes` region entries from its modes.
+///
+/// Returns the zero-based declared region-parameter indices carried by
+/// `reads` and by `writes`, each in declared region-parameter order — the
+/// mechanical [SYS-2] derivation, not a hand-curated table.
+pub fn operation_region_effects(operation: &SystemOperation) -> (Vec<u8>, Vec<u8>) {
+    let mut reads = Vec::new();
+    let mut writes = Vec::new();
+    for region in 0..operation.regions.len() {
+        let Ok(region) = u8::try_from(region) else {
+            continue;
+        };
+        let borrowed = operation.parameters.iter().any(|parameter| {
+            matches!(
+                parameter.mode,
+                SystemParameterMode::Borrow(index) | SystemParameterMode::UniqueBorrow(index)
+                    if index == region
+            )
+        });
+        let written = operation.parameters.iter().any(|parameter| {
+            matches!(parameter.mode, SystemParameterMode::UniqueBorrow(index) if index == region)
+        });
+        if borrowed {
+            reads.push(region);
+        }
+        if written {
+            writes.push(region);
+        }
+    }
+    (reads, writes)
+}
+
+/// Builds the one hundred sixty-seven [SYS-2] declaration records in
+/// normative preorder: each nominal type in table order; then each
+/// constructor and its fields in declared order; then each operation, its
+/// region parameters, and its value parameters in declared order. Exactly
+/// the nominal types, constructors, and operations carry a lookup class;
+/// fields and parameters are owner-local records with none.
+pub(crate) fn system_declarations() -> Vec<SystemDeclarationRecord> {
+    let mut records = Vec::with_capacity(167);
+    let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
+        let Ok(ordinal) = u8::try_from(records.len()) else {
+            unreachable!("the closed SYS-2 inventory has 167 records");
+        };
+        records.push(SystemDeclarationRecord {
+            id: SystemDeclarationId::new(ordinal),
+            spelling,
+            class,
+        });
+    };
+    for nominal in &SYSTEM_NOMINALS {
+        push(
+            nominal.spelling,
+            Some(DeclarationClass::NominalType),
+            &mut records,
+        );
+    }
+    for constructor in &SYSTEM_CONSTRUCTORS {
+        push(
+            constructor.spelling,
+            Some(DeclarationClass::EnumVariant),
+            &mut records,
+        );
+        for field in constructor.fields {
+            push(field.name, None, &mut records);
+        }
+    }
+    for operation in &SYSTEM_OPERATIONS {
+        push(
+            operation.spelling,
+            Some(DeclarationClass::Function),
+            &mut records,
+        );
+        for region in operation.regions {
+            push(region, None, &mut records);
+        }
+        for value_parameter in operation.parameters {
+            push(value_parameter.name, None, &mut records);
+        }
+    }
+    records
+}
+
+/// Maps one lookup-class [SYS-2] ordinal to its normative entity.
+///
+/// Returns `None` for an owner-local field, region-parameter, or
+/// value-parameter ordinal, which never enters source lookup.
+pub fn system_entity(id: SystemDeclarationId) -> Option<SystemEntity> {
+    let mut ordinal = usize::from(id.ordinal());
+    if ordinal < SYSTEM_NOMINALS.len() {
+        return Some(SystemEntity::Nominal(&SYSTEM_NOMINALS[ordinal]));
+    }
+    ordinal -= SYSTEM_NOMINALS.len();
+    for constructor in &SYSTEM_CONSTRUCTORS {
+        if ordinal == 0 {
+            return Some(SystemEntity::Constructor(constructor));
+        }
+        ordinal -= 1;
+        if ordinal < constructor.fields.len() {
+            return None;
+        }
+        ordinal -= constructor.fields.len();
+    }
+    for operation in &SYSTEM_OPERATIONS {
+        if ordinal == 0 {
+            return Some(SystemEntity::Operation(operation));
+        }
+        ordinal -= 1;
+        let locals = operation.regions.len() + operation.parameters.len();
+        if ordinal < locals {
+            return None;
+        }
+        ordinal -= locals;
+    }
+    None
+}
+
 pub(crate) fn reserved_name(spelling: &str) -> Option<(ReservedNameClass, u16)> {
     if !spelling.contains('.')
         && let Some(index) = OPERATION_FAMILIES
@@ -166,8 +734,401 @@ mod tests {
 
     use super::{
         DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
-        reserved_name,
+        SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemDeclarationId, SystemEntity,
+        SystemParameterMode, SystemResultPayload, SystemTypeRef, operation_region_effects,
+        reserved_name, system_declarations, system_entity,
     };
+
+    #[test]
+    fn system_inventory_matches_the_sys2_counted_totals() {
+        // [SYS-2]: fourteen nominal types, thirty-nine enum-variant
+        // constructors, sixty-four variant fields, eleven operations,
+        // fourteen operation region parameters, twenty-five operation value
+        // parameters — one hundred sixty-seven records in preorder.
+        assert_eq!(SYSTEM_NOMINALS.len(), 14);
+        assert_eq!(SYSTEM_NOMINALS.iter().filter(|n| n.opaque).count(), 7);
+        assert_eq!(SYSTEM_CONSTRUCTORS.len(), 39);
+        assert_eq!(
+            SYSTEM_CONSTRUCTORS
+                .iter()
+                .map(|constructor| constructor.fields.len())
+                .sum::<usize>(),
+            64
+        );
+        assert_eq!(SYSTEM_OPERATIONS.len(), 11);
+        assert_eq!(
+            SYSTEM_OPERATIONS
+                .iter()
+                .map(|operation| operation.regions.len())
+                .sum::<usize>(),
+            14
+        );
+        assert_eq!(
+            SYSTEM_OPERATIONS
+                .iter()
+                .map(|operation| operation.parameters.len())
+                .sum::<usize>(),
+            25
+        );
+
+        let records = system_declarations();
+        assert_eq!(records.len(), 167);
+        assert!(
+            records
+                .iter()
+                .enumerate()
+                .all(|(index, record)| usize::from(record.id().ordinal()) == index)
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.lookup_class() == Some(DeclarationClass::NominalType))
+                .count(),
+            14
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.lookup_class() == Some(DeclarationClass::EnumVariant))
+                .count(),
+            39
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.lookup_class() == Some(DeclarationClass::Function))
+                .count(),
+            11
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.lookup_class().is_none())
+                .count(),
+            103
+        );
+
+        // Deterministic preorder spot checks used by diagnostic origins.
+        for (ordinal, spelling) in [
+            (0, "Args"),
+            (6, "ExitStatus"),
+            (7, "ArgError"),
+            (13, "IoError"),
+            (14, "InvalidIndex"),
+            (27, "NotFound"),
+            (114, "Other"),
+            (117, "args_count"),
+            (146, "open_read"),
+            (165, "exit_status"),
+        ] {
+            assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
+        }
+    }
+
+    #[test]
+    fn system_inventory_satisfies_the_sys2_data_properties() {
+        // Spellings are unique within each contributed domain and disjoint
+        // from the PRE-1 spellings of the same domain; no operation spelling
+        // is a member of `ReservedLowerNames`; nominal and constructor
+        // spellings satisfy TYPEID and operation spellings satisfy dotless
+        // IDENT; field and parameter names are unique within their owner.
+        let nominal_spellings: HashSet<_> = SYSTEM_NOMINALS
+            .iter()
+            .map(|nominal| nominal.spelling)
+            .collect();
+        assert_eq!(nominal_spellings.len(), SYSTEM_NOMINALS.len());
+        let constructor_spellings: HashSet<_> = SYSTEM_CONSTRUCTORS
+            .iter()
+            .map(|constructor| constructor.spelling)
+            .collect();
+        assert_eq!(constructor_spellings.len(), SYSTEM_CONSTRUCTORS.len());
+        let operation_spellings: HashSet<_> = SYSTEM_OPERATIONS
+            .iter()
+            .map(|operation| operation.spelling)
+            .collect();
+        assert_eq!(operation_spellings.len(), SYSTEM_OPERATIONS.len());
+
+        for prelude in PRELUDE_DECLARATIONS {
+            match prelude.class {
+                Some(DeclarationClass::NominalType) => {
+                    assert!(!nominal_spellings.contains(prelude.spelling));
+                }
+                Some(DeclarationClass::EnumVariant) => {
+                    assert!(!constructor_spellings.contains(prelude.spelling));
+                }
+                _ => {}
+            }
+        }
+        for operation in &SYSTEM_OPERATIONS {
+            assert_eq!(reserved_name(operation.spelling), None);
+            assert!(!operation.spelling.contains('.'));
+            assert!(
+                operation
+                    .spelling
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| byte.is_ascii_lowercase())
+            );
+            let parameter_names: HashSet<_> = operation
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name)
+                .collect();
+            assert_eq!(parameter_names.len(), operation.parameters.len());
+            let region_names: HashSet<_> = operation.regions.iter().copied().collect();
+            assert_eq!(region_names.len(), operation.regions.len());
+        }
+        for spelling in nominal_spellings.iter().chain(&constructor_spellings) {
+            assert!(
+                spelling
+                    .bytes()
+                    .next()
+                    .is_some_and(|byte| byte.is_ascii_uppercase())
+            );
+        }
+        for constructor in &SYSTEM_CONSTRUCTORS {
+            assert!(!SYSTEM_NOMINALS[usize::from(constructor.owner)].opaque);
+            let field_names: HashSet<_> =
+                constructor.fields.iter().map(|field| field.name).collect();
+            assert_eq!(field_names.len(), constructor.fields.len());
+        }
+    }
+
+    #[test]
+    fn system_entities_are_recovered_from_preorder_ordinals() {
+        let mut nominals = 0;
+        let mut constructors = 0;
+        let mut operations = 0;
+        let mut owner_local = 0;
+        for record in system_declarations() {
+            match (record.lookup_class(), system_entity(record.id())) {
+                (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
+                    assert_eq!(nominal.spelling, record.spelling());
+                    nominals += 1;
+                }
+                (
+                    Some(DeclarationClass::EnumVariant),
+                    Some(SystemEntity::Constructor(constructor)),
+                ) => {
+                    assert_eq!(constructor.spelling, record.spelling());
+                    constructors += 1;
+                }
+                (Some(DeclarationClass::Function), Some(SystemEntity::Operation(operation))) => {
+                    assert_eq!(operation.spelling, record.spelling());
+                    operations += 1;
+                }
+                (None, None) => owner_local += 1,
+                (class, entity) => {
+                    panic!("inconsistent record {record:?}: {class:?} vs {entity:?}")
+                }
+            }
+        }
+        assert_eq!(
+            (nominals, constructors, operations, owner_local),
+            (14, 39, 11, 103)
+        );
+        assert!(system_entity(SystemDeclarationId::new(167)).is_none());
+        assert!(system_entity(SystemDeclarationId::new(u8::MAX)).is_none());
+    }
+
+    #[test]
+    fn system_inventory_matches_independent_extraction_from_exact() {
+        let spec = crate::ACTIVE_KERNEL_SPEC_TEXT;
+
+        // The seven opaque nominal types, from the [SYS-2] prose sentence.
+        let opaque_sentence = spec
+            .split_once("Seven opaque nominal types: ")
+            .expect("exact SYS-2 opaque sentence")
+            .1
+            .split_once('.')
+            .expect("SYS-2 opaque sentence end")
+            .0;
+        let opaque: Vec<_> = opaque_sentence
+            .split('`')
+            .enumerate()
+            .filter_map(|(index, part)| (index % 2 == 1).then_some(part))
+            .collect();
+        assert_eq!(
+            opaque,
+            SYSTEM_NOMINALS
+                .iter()
+                .filter(|nominal| nominal.opaque)
+                .map(|nominal| nominal.spelling)
+                .collect::<Vec<_>>()
+        );
+
+        // The seven enums, their thirty-nine variants, and every field, from
+        // the first [SYS-2] code block.
+        let sys2 = spec
+            .split_once("[SYS-2] The system inventory is exactly:")
+            .expect("exact SYS-2 opening")
+            .1;
+        let enum_block = sys2
+            .split_once("```\n")
+            .expect("SYS-2 enum block opening")
+            .1
+            .split_once("\n```\n")
+            .expect("SYS-2 enum block closing")
+            .0;
+        let mut extracted_enums: Vec<ExtractedEnum> = Vec::new();
+        for line in enum_block.lines() {
+            let trimmed = line.trim();
+            if let Some(header) = trimmed.strip_prefix("enum ") {
+                let name = header.strip_suffix(" {").expect("SYS-2 enum header");
+                extracted_enums.push((name.to_owned(), Vec::new()));
+            } else if trimmed.ends_with(");") {
+                let (variant, rest) = trimmed.split_once('(').expect("SYS-2 variant");
+                let fields = rest.strip_suffix(");").expect("SYS-2 variant ending");
+                let fields: Vec<_> = if fields.is_empty() {
+                    Vec::new()
+                } else {
+                    fields
+                        .split(", ")
+                        .map(|field| {
+                            let (name, ty) = field.split_once(": ").expect("SYS-2 field");
+                            (name.to_owned(), ty.to_owned())
+                        })
+                        .collect()
+                };
+                extracted_enums
+                    .last_mut()
+                    .expect("SYS-2 variant outside enum")
+                    .1
+                    .push((variant.to_owned(), fields));
+            }
+        }
+        let catalog_enums: Vec<ExtractedEnum> = SYSTEM_NOMINALS
+            .iter()
+            .enumerate()
+            .filter(|(_, nominal)| !nominal.opaque)
+            .map(|(owner, nominal)| {
+                let variants = SYSTEM_CONSTRUCTORS
+                    .iter()
+                    .filter(|constructor| usize::from(constructor.owner) == owner)
+                    .map(|constructor| {
+                        let fields = constructor
+                            .fields
+                            .iter()
+                            .map(|field| (field.name.to_owned(), render_type(field.ty)))
+                            .collect();
+                        (constructor.spelling.to_owned(), fields)
+                    })
+                    .collect();
+                (nominal.spelling.to_owned(), variants)
+            })
+            .collect();
+        assert_eq!(extracted_enums, catalog_enums);
+
+        // The eleven complete operation signatures, from the second [SYS-2]
+        // code block, including each written effect row.
+        let operation_block = sys2
+            .split_once("`fn_sig` shape:\n\n```\n")
+            .expect("SYS-2 operation block opening")
+            .1
+            .split_once("\n```\n")
+            .expect("SYS-2 operation block closing")
+            .0;
+        let extracted_operations: Vec<_> = operation_block
+            .lines()
+            .map(|line| line.strip_prefix("fn ").expect("SYS-2 operation line"))
+            .map(str::to_owned)
+            .collect();
+        let catalog_operations: Vec<_> = SYSTEM_OPERATIONS.iter().map(render_operation).collect();
+        assert_eq!(extracted_operations, catalog_operations);
+    }
+
+    /// One extracted enum: its name, then each variant with its named
+    /// and typed fields, exactly as the [SYS-2] block writes them.
+    type ExtractedEnum = (String, Vec<(String, Vec<(String, String)>)>);
+
+    /// Renders one catalog type exactly as [SYS-2] writes it.
+    fn render_type(ty: SystemTypeRef) -> String {
+        match ty {
+            SystemTypeRef::U8 => "u8".to_owned(),
+            SystemTypeRef::U32 => "u32".to_owned(),
+            SystemTypeRef::U64 => "u64".to_owned(),
+            SystemTypeRef::BufferU8 => "buffer<u8>".to_owned(),
+            SystemTypeRef::Nominal(index) => {
+                SYSTEM_NOMINALS[usize::from(index)].spelling.to_owned()
+            }
+            SystemTypeRef::Result { ok, err } => {
+                let ok = match ok {
+                    SystemResultPayload::U64 => "u64".to_owned(),
+                    SystemResultPayload::Nominal(index) => {
+                        SYSTEM_NOMINALS[usize::from(index)].spelling.to_owned()
+                    }
+                };
+                format!(
+                    "Result<{ok}, {}>",
+                    SYSTEM_NOMINALS[usize::from(err)].spelling
+                )
+            }
+        }
+    }
+
+    /// Renders one catalog signature exactly as [SYS-2] writes it, with the
+    /// `reads`/`writes` entries produced by the mechanical mode derivation
+    /// rather than a stored row.
+    fn render_operation(operation: &super::SystemOperation) -> String {
+        let mut rendered = operation.spelling.to_owned();
+        if !operation.regions.is_empty() {
+            rendered.push_str(" [");
+            rendered.push_str(&operation.regions.join(", "));
+            rendered.push(']');
+        }
+        rendered.push('(');
+        let parameters: Vec<_> = operation
+            .parameters
+            .iter()
+            .map(|parameter| {
+                let mode = match parameter.mode {
+                    SystemParameterMode::Own => "own ".to_owned(),
+                    SystemParameterMode::Borrow(region) => {
+                        format!("&{} ", operation.regions[usize::from(region)])
+                    }
+                    SystemParameterMode::UniqueBorrow(region) => {
+                        format!("&uniq {} ", operation.regions[usize::from(region)])
+                    }
+                };
+                format!("{}: {mode}{}", parameter.name, render_type(parameter.ty))
+            })
+            .collect();
+        rendered.push_str(&parameters.join(", "));
+        rendered.push_str(") -> own ");
+        rendered.push_str(&render_type(operation.result));
+        let (reads, writes) = operation_region_effects(operation);
+        let mut effects = Vec::new();
+        if !reads.is_empty() {
+            let regions: Vec<_> = reads
+                .iter()
+                .map(|region| operation.regions[usize::from(*region)])
+                .collect();
+            effects.push(format!("reads({})", regions.join(" ")));
+        }
+        if !writes.is_empty() {
+            let regions: Vec<_> = writes
+                .iter()
+                .map(|region| operation.regions[usize::from(*region)])
+                .collect();
+            effects.push(format!("writes({})", regions.join(" ")));
+        }
+        if operation.external {
+            effects.push("external".to_owned());
+        }
+        if operation.blocks {
+            effects.push("blocks".to_owned());
+        }
+        if operation.traps {
+            effects.push("traps".to_owned());
+        }
+        if effects.is_empty() {
+            effects.push("pure".to_owned());
+        }
+        rendered.push(' ');
+        rendered.push_str(&effects.join(", "));
+        rendered.push(';');
+        rendered
+    }
 
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
