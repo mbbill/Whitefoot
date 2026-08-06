@@ -279,9 +279,8 @@ fn canonical_audit_resource_edges_are_explicit_and_deterministic() {
     });
 }
 
-#[test]
-fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
-    let canonical = b"const first: i32 = 1_i32;\n\nfn main() -> own unit pure {\n  let value: own i32 = 2_i32;\n  return unit;\n}\n";
+/// Asserts that a source is canonical and that no single-byte trivia edit is.
+fn only_these_trivia_bytes_render(canonical: &[u8]) {
     assert!(reaches_canonical_syntax(canonical));
     let trivia_positions: Vec<_> = canonical
         .iter()
@@ -306,4 +305,26 @@ fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
         };
         assert!(!reaches_canonical_syntax(&replaced));
     }
+}
+
+#[test]
+fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
+    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\nfn main() -> own unit pure {\n  let value: own i32 = 2_i32;\n  return unit;\n}\n");
+}
+
+/// The one canonical byte sequence [FN-7] states for a complete four-input
+/// command entry header.
+const COMMAND_ENTRY_HEADER: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {";
+
+const COMMAND_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n";
+
+#[test]
+fn the_command_entry_header_renders_from_form2_without_amendment() {
+    // FN-7 states that FORM-2 renders the entry header unamended: neither
+    // `program_kind` nor `input_label` is line-bearing or block-bearing, and
+    // the existing attachment sets join `command`, `.`, and the label tail
+    // with no bytes while separating `as` from its binder by one space. The
+    // mutation sweep is the reject side: no other trivia spelling renders.
+    assert!(COMMAND_ENTRY.starts_with(COMMAND_ENTRY_HEADER));
+    only_these_trivia_bytes_render(COMMAND_ENTRY);
 }

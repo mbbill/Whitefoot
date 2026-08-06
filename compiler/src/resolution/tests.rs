@@ -11,7 +11,7 @@ use super::catalog::OPERATION_FAMILIES;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationOrigin, DeclarationRole, DeferredUseRole,
     DependentDeclarationRole, LexicalUseRole, ResolutionIssue, ResolutionIssueKind,
-    ResolutionOutcome, ResolutionRule, ResolvedTarget, resolve,
+    ResolutionOutcome, ResolutionRule, ResolutionUnsupported, ResolvedTarget, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -219,6 +219,85 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
             issue.kind(),
             ResolutionIssueKind::RequiresShape(_)
         ));
+    });
+}
+
+#[test]
+fn the_kind_declaring_judgment_gates_only_the_system_admission_decision() {
+    // A unit with no `program_kind` child is not kind-declaring, so nothing
+    // about the entry-form grammar changes its ordinary resolution.
+    let unlabelled = b"fn main() -> own unit pure {\n  return unit;\n}\n";
+    with_one_resolution(unlabelled, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "the unlabelled entry must resolve unchanged: {outcome:?}"
+        );
+    });
+
+    // One `program_kind` child makes the unit kind-declaring, which admits the
+    // unimplemented system declaration domain. That is an explicit unsupported
+    // compiler capability, never a source rejection, and it names the exact
+    // `program_kind` node.
+    let kind_declaring =
+        b"command fn main(command.args as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n";
+    with_one_resolution(kind_declaring, |outcome| {
+        let ResolutionOutcome::Unsupported { unsupported, .. } = outcome else {
+            panic!("a kind-declaring unit must stop as unsupported: {outcome:?}");
+        };
+        let ResolutionUnsupported::SystemDeclarationDomain { node } = unsupported;
+        assert_eq!(node.components(), &[0, 0, 0]);
+    });
+
+    // The judgment is syntactic: a `program_kind` on a declaration that is not
+    // the entry still makes the unit kind-declaring, and the unlabelled `main`
+    // beside it changes nothing.
+    let non_entry_kind = b"command fn helper() -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    with_one_resolution(non_entry_kind, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Unsupported { .. }),
+            "a non-entry program_kind must still be kind-declaring: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn fn8_admission_precedes_the_system_admission_decision() {
+    // DIAG-1 fixes the stage order: only complete unit-wide FN-8 admission
+    // permits the SYS-3 system-admission decision. The FN-8 rejection must
+    // therefore win over the kind-declaring unit's unsupported stop rather
+    // than being masked by it.
+    let source =
+        br#"command fn main(command.args as args: own Args) -> own ExitStatus pure requires {
+  doc "not an admitted requires entry";
+} {
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the FN-8 defect must outrank the unsupported stop: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Fn8);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::RequiresShape(_)
+        ));
+    });
+
+    // The same kind-declaring entry with an admitted requires block reaches the
+    // system-admission decision and stops there.
+    let admitted =
+        br#"command fn main(command.args as args: own Args) -> own ExitStatus traps requires {
+  check args else trap "present";
+} {
+  return unit;
+}
+"#;
+    with_one_resolution(admitted, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Unsupported { .. }),
+            "an admitted requires block must reach the SYS-3 decision: {outcome:?}"
+        );
     });
 }
 

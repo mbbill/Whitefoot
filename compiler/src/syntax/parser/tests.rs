@@ -2,6 +2,7 @@
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::syntax::grammar::{Production, productions};
+use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ACTIVE_KERNEL_SPEC_HASH, SourceBundle, SourceId, SourceInput, SourceLimits};
 
 use crate::{TerminalLimits, TerminalOutcome, classify_terminals};
@@ -607,4 +608,132 @@ fn active_contract_reserves_the_new_fixed_spellings() {
         panic!("as/external/blocks must be reserved spellings excluded from IDENT: {outcome:?}");
     };
     assert_eq!(issue.rule(), SyntaxRule::Form3);
+}
+
+/// Returns the exact source bytes a grammar rejection selected.
+fn issue_bytes(source: &'static [u8], issue: super::SyntaxIssue) -> &'static [u8] {
+    let start = usize::try_from(issue.coordinate().start().value()).unwrap_or(usize::MAX);
+    let end = usize::try_from(issue.coordinate().end().value()).unwrap_or(usize::MAX);
+    &source[start..end]
+}
+
+#[test]
+fn malformed_input_labels_reject_at_their_exact_grammar_boundary() {
+    // `input_label := IDENT "." IDENT "as"` has no other legal spelling, so
+    // each near miss stops at the first token that cannot continue it. The
+    // reserved `as` in a label-tail IDENT slot is DIAG-1 attribution row 3.
+    for (source, rule, boundary, expected) in [
+        (
+            b"command fn main(command.args args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n".as_slice(),
+            SyntaxRule::Gram2,
+            b"args".as_slice(),
+            TerminalPredicate::Fixed(FixedTerminal::As),
+        ),
+        (
+            b"command fn main(command.args.more as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            SyntaxRule::Gram2,
+            b".",
+            TerminalPredicate::Fixed(FixedTerminal::As),
+        ),
+        (
+            b"command fn main(command. as args: own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            SyntaxRule::Form3,
+            b"as",
+            TerminalPredicate::Identifier,
+        ),
+        (
+            b"command fn main(command.args as: own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            SyntaxRule::Gram2,
+            b":",
+            TerminalPredicate::Identifier,
+        ),
+        (
+            b"command fn main(command.args as args own Args) -> own ExitStatus pure {\n  return unit;\n}\n",
+            SyntaxRule::Gram2,
+            b"own",
+            TerminalPredicate::Fixed(FixedTerminal::Colon),
+        ),
+    ] {
+        let outcome = parse_active("label.wf", source);
+        let ParseOutcome::SourceIssue(issue) = outcome else {
+            panic!("malformed label must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule, "source: {:?}", String::from_utf8_lossy(source));
+        assert_eq!(issue_bytes(source, issue), boundary);
+        assert!(
+            issue
+                .expected()
+                .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(expected))
+        );
+    }
+}
+
+#[test]
+fn the_two_new_optional_decisions_report_their_complete_expected_sets() {
+    // `fn_decl := program_kind? "fn" ...`: an IDENT-headed top-level lookahead
+    // that no complete item row accepts is DIAG-1 attribution row 4, reported
+    // at that first IDENT with the second position's expectation retained.
+    let outcome = parse_active(
+        "kind.wf",
+        b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+    );
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("a program_kind not followed by `fn` must reject: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form1);
+    assert_eq!(
+        issue_bytes(
+            b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+            issue,
+        ),
+        b"command"
+    );
+    assert_eq!(issue.expected().len(), 1);
+    assert!(
+        issue
+            .expected()
+            .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
+                TerminalPredicate::Fixed(FixedTerminal::Fn)
+            ))
+    );
+
+    // `param := input_label? IDENT ":" mode type`: after one IDENT both
+    // directions of the optional remain live, so the expected set names each.
+    let unresolved_param =
+        b"command fn main(args own Args) -> own ExitStatus pure {\n  return unit;\n}\n".as_slice();
+    let outcome = parse_active("param.wf", unresolved_param);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("an IDENT continuing neither param arm must reject: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Gram2);
+    assert_eq!(issue_bytes(unresolved_param, issue), b"own");
+    assert_eq!(issue.expected().len(), 2);
+    for expected in [FixedTerminal::Dot, FixedTerminal::Colon] {
+        assert!(
+            issue
+                .expected()
+                .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
+                    TerminalPredicate::Fixed(expected)
+                )),
+            "the param optional must expect {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn a_program_kind_and_an_input_label_derive_outside_the_entry() {
+    // The grammar attaches `program_kind` to every `fn_decl` and `input_label`
+    // to every `param`. FN-7 restricts both to the unit's entry, so the parser
+    // must derive these units and leave the rejection to semantic checking
+    // rather than reporting invalid source here.
+    for source in [
+        b"command fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
+        b"fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+    ] {
+        let outcome = parse_active("outside.wf", source);
+        assert!(
+            matches!(outcome, ParseOutcome::Complete(_)),
+            "FN-7 placement is not a grammar decision: {outcome:?}"
+        );
+    }
 }

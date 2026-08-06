@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
+use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId, unit_program_kind};
 use crate::{ByteOffset, CanonicalSyntaxUnit, NodePath, Production, SourceId};
 
 use super::catalog::PRELUDE_DECLARATIONS;
@@ -188,27 +188,22 @@ pub fn resolve<'classified, 'lexed, 'source>(
 
 /// Stops before declaration inventory when the unit is kind-declaring.
 ///
-/// The kind-declaring judgment is syntactic and total ([FN-7]): the unit is
-/// kind-declaring exactly when a `program_kind` node exists. Such a unit
-/// admits the system declaration domain into name lookup ([SYS-1], [SYS-3]),
-/// which this compiler has not implemented, so continuing could misreport an
-/// admitted system name as undeclared. Stopping here keeps the whole unit an
-/// explicit unsupported compiler capability, never a source rejection.
+/// The [SYS-3] system-admission decision reads the one syntactic [FN-7]
+/// judgment published by `syntax::entry_form`, never a rederived local scan.
+/// A kind-declaring unit admits the system declaration domain into name
+/// lookup ([SYS-1], [SYS-3]), which this compiler has not implemented, so
+/// continuing could misreport an admitted system name as undeclared. Stopping
+/// here keeps the whole unit an explicit unsupported compiler capability,
+/// never a source rejection.
 fn check_system_declaration_support(topology: &FinalizedTopology) -> Result<(), BuildStop> {
-    for index in 0..topology.nodes.len() {
-        let node = NodeId::from_index(index).ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-        let record = topology
-            .node(node)
-            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-        if record.production == Production::ProgramKind {
-            return Err(BuildStop::Unsupported(
-                ResolutionUnsupported::SystemDeclarationDomain {
-                    node: node_path(topology, node)?,
-                },
-            ));
-        }
-    }
-    Ok(())
+    let Some(node) = unit_program_kind(topology) else {
+        return Ok(());
+    };
+    Err(BuildStop::Unsupported(
+        ResolutionUnsupported::SystemDeclarationDomain {
+            node: node_path(topology, node)?,
+        },
+    ))
 }
 
 fn node_path(topology: &FinalizedTopology, node: NodeId) -> Result<NodePath, BuildStop> {
@@ -230,11 +225,16 @@ fn node_path(topology: &FinalizedTopology, node: NodeId) -> Result<NodePath, Bui
 
 fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
-    check_system_declaration_support(topology)?;
     let scopes = ScopeBuild::build(topology)?;
+    // [DIAG-1] fixes this order: only complete unit-wide FN-8 admission
+    // permits the [SYS-3] system-admission decision, only that decision
+    // permits declaration inventory, and only complete inventory permits
+    // lexical resolution. An FN-8 rejection therefore outranks the
+    // kind-declaring unit's unsupported stop.
     if let Some(issue) = check_requires_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
+    check_system_declaration_support(topology)?;
     let roles = classify_roles(syntax, &scopes)?;
     let mut declarations = Vec::new();
     let mut dependent_declarations = Vec::new();

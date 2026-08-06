@@ -51,6 +51,13 @@ tasks: a kind-declaring entry (`program_kind`, which admits the system
 declaration domain), a labelled entry input (`input_label`), and the
 `external`/`blocks` effect categories.
 
+FN-7's kind-declaring judgment has one home, `syntax::entry_form`, which reads
+it from finalized syntax alone: a unit is kind-declaring exactly when a
+`program_kind` node exists, independent of names, types, and effect rows. The
+resolver takes that decision in DIAG-1's stage order, after complete unit-wide
+FN-8 requires-block admission and before declaration inventory, so an FN-8
+rejection outranks the kind-declaring unit's unsupported stop.
+
 The resolver covers every active-specification declaration, lexical-use, and deferred
 owner/member role through one grammar-driven path, including exact scopes,
 visibility, reservations, collisions, and deterministic diagnostics.

@@ -80,8 +80,36 @@ Validation list, and fill only what is genuinely missing.
 - Completed: claimed at base `e648713`; refreshed the integration branch and
   read `docs/WORKFLOW.md`, `docs/current-plan.md`, the cited
   `spec/kernel-spec-v0.18.md` rules, and `mcts_mem/whitefoot/system-interface*`.
-- Current: auditing the activation landing against the Direction bullets.
-- Next: fill the audit gaps and expose the kind-declaring accessor.
+- Completed: audit of the activation landing. Confirmed already complete —
+  the promoted grammar tables and the two productions, the parse/finalize
+  path over both entry shapes, `as`/`external`/`blocks` reserved from IDENT,
+  the `RawRoleKind::TableChecked` carrier classification, the three
+  unsupported gates, and FORM-2 rendering of the entry header with no
+  renderer amendment. One defect found (below); the rest of the residue was
+  missing evidence rather than missing behavior.
+- Completed: gap fill. The exact FN-7 canonical command-entry header now
+  passes the FORM-2 audit byte for byte, and the existing trivia-mutation
+  sweep (extracted to one helper) proves no other trivia spelling of it
+  renders. Added grammar reject coverage for five malformed `input_label`
+  shapes at their exact boundary and expected predicate, the complete
+  expected sets at both new LL(2) decisions (`program_kind?` reports DIAG-1
+  attribution row 4 at the IDENT expecting `fn`; `input_label?` expects `.`
+  and `:`), and the non-entry `program_kind` / non-entry `input_label` parse
+  cases.
+- Completed: defect fix. `check_system_declaration_support` ran *before* the
+  FN-8 requires-block admission pass, so in a kind-declaring unit an FN-8
+  hard error was masked by the unsupported stop. DIAG-1 fixes the order —
+  "only complete FN-8 admission permits the [SYS-3] system-admission
+  decision, only that decision permits declaration inventory". Moved the
+  decision after `check_requires_blocks` with a regression on both sides.
+- Completed: accessor. The judgment now has one home,
+  `compiler/src/syntax/entry_form.rs`, exposing crate-internal
+  `unit_program_kind(&FinalizedTopology) -> Option<NodeId>`: `Some` is the
+  FN-7 judgment and carries the DIAG-1 `SourceNode`, `None` is its negation.
+  Resolution's SYS-3 gate reads it instead of rederiving a local scan.
+- Current: awaiting lead review; `make -C compiler check` and `make check`
+  green, native grammar verifier green on the active spec (64/74/75).
+- Next (lead): review and land, then close this record into `docs/done/`.
 
 ## Scope and expected touch set
 
@@ -97,11 +125,33 @@ Validation list, and fill only what is genuinely missing.
   tests, independent of full compilation.
 - Read-only: `spec/kernel-spec-v0.18.md`, `mcts_mem/whitefoot/system-interface*`.
 
+Actual touch set (rebase warning for concurrent workspaces): new
+`compiler/src/syntax/entry_form.rs`; `compiler/src/syntax/mod.rs`;
+`compiler/src/resolution/engine.rs`; and tests in
+`compiler/src/resolution/tests.rs`, `compiler/src/syntax/parser/tests.rs`,
+`compiler/src/syntax/parser/finalize/tests/canonical.rs`, plus
+`compiler/README.md`. The grammar tables and the parse/finalize path were
+already correct and are untouched. The accessor went to `syntax` rather than
+`resolution/engine/admission.rs` because 0008 reads it from semantic checking,
+which cannot reach the resolution engine's private modules.
+
 ## Dependencies and integration order
 
 None beyond v0.18 activation (Work item 1). Tasks 0007 and 0008 both depend
 on this task's terminal/production shapes and the kind-declaring predicate's
 surface being stable before they consume it.
+
+- `docs/ongoing/0007-system-declaration-domain.md` is live concurrently under
+  an explicit lead-authorized semantic overlap. It consumes this task's
+  kind-declaring accessor as its `SYS-3` admission trigger. Integration order:
+  this task lands first; 0007 refreshes, rebases onto it, and reruns its
+  gates.
+
+For 0007: `crate::syntax::unit_program_kind(topology)` is the kind-declaring
+flag; `.is_some()` gates the system branch of `resolve_uses`, and the returned
+`NodeId` is the DIAG-1 location. For 0008: the per-declaration question ("does
+*this* `fn_decl` carry a `program_kind`?") is a different query and already has
+a helper — `TreeView::first_child_with(node, Production::ProgramKind)`.
 
 ## Validation
 
