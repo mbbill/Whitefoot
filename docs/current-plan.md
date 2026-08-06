@@ -1,7 +1,7 @@
 # Current Plan
 
-Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
-execution. The previous ACTIVE plan's milestone (baseline and consolidation,
+Status: ACTIVE — the owner approved this plan and the gram5 amendment on
+2026-08-06 ("都批准"). The previous milestone (baseline and consolidation,
 tasks 0019-0022) completed on 2026-08-06.
 
 Derived from: [Direction Outline revision 13](roadmap.md), items `CAND-8`,
