@@ -39,10 +39,14 @@ verifier; consult [[system-interface]] design memory throughout.
 ## Progress
 
 - **Done:** task registered; candidate seeded from v0.17.
-- **Current:** applying the entry-form and declaration-domain deltas.
-- **Next:** effects extensions, outcome inventory, target qualification,
-  conformance expectations; then verifier run and the exact-approval packet
-  (SHA-256, semantic delta, impact inventory, limitations).
+- **Current:** five delta packages drafting in parallel (entry form,
+  declaration domain, effects extensions, types/operations/outcomes,
+  paths/qualification), with the first-slice conformance catalog and the
+  Work-item-2 planned-task pre-drafts running alongside; the lead integrates
+  the packages serially into the candidate.
+- **Next:** serial integration and style harmonization, native grammar
+  verifier, item-by-item inventory cross-check, then the exact-approval
+  packet (SHA-256, semantic delta, impact inventory, limitations).
 
 ## Scope and expected touch set
 

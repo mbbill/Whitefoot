@@ -1,8 +1,9 @@
-# Kernel Specification v0.17
+# Kernel Specification v0.18
 
-Status: REVIEW CANDIDATE v0.17 (2026-07-23; returned-slice provenance closure). Defines one signature-carried finite-origin rule for `own slice<'r, T>` function results so callers can preserve alias and effect provenance without inspecting callee bodies or adding writer syntax. These bytes are non-authoritative until the grammar-preserving check, derived-material review, full-document hash, exact owner approval, and active-target installation complete.
+Status: REVIEW CANDIDATE v0.18 (2026-08-05; BOUND-1 system-interface first command slice). Defines the owner-selected system-capability architecture's exact first command slice: a kind-declaring command entry with exact standard input labels beside the unchanged unlabelled entry; a compiler-owned system declaration domain admitted only to syntactically kind-declaring units (Route C); a closed system inventory of seven opaque nominal types, seven outcome enums with thirty-nine constructors, and eleven one-attempt operations; `external` and `blocks` effect categories with release attribution on normal control-flow edges scoped to system resource families; lossless two-family host strings with command-lifetime argv leases; relative paths without confinement claims; static target qualification with required guarantees; and whole-process trap law unchanged. Specification delta: numbered rules +25/-0 (`PROG-3`, `EFF-5`, `SYS-1..13`, `HOST-1..3`, `PATH-1..2`, `QUAL-1..3`, `TRAP-1`, `GATE-2`); thirteen existing rules modified: GRAM-2, GRAM-11, TYPE-2, TYPE-6, OP-1, FN-3, FN-7, EFF-1, EFF-2, EFF-3, STOR-3, PROG-1, and DIAG-1. Grammar productions +2 (`program_kind`, `input_label`), modified 3 (`fn_decl`, `param`, the EFF-1 effect production); terminal spellings +3 (`as`, `external`, `blocks`); tokens +0; exception clauses +0; source constructs +2 (the program-kind entry declaration; the labelled entry input); sections +2 (16, 17). The system inventory's fourteen nominal spellings, thirty-nine constructor spellings, and eleven operation spellings enter name lookup only in kind-declaring units; a unit with the unlabelled entry reserves none of them. Selection ground: the owner selected this architecture and the Route C declaration home on 2026-08-05 from the BOUND-1 dossier's alternative table after a thirty-one-issue adversarial review (research/investigations/system-capability-architecture/); GRAM-11's named-argument call spelling excludes the operation-table home by form, and conditional visibility scopes name reservation to units that declare system inputs, with the recorded fallback that declining the [SYS-3] admission mechanism at exact approval selects the prelude-extension route instead. Deliberately open and excluded: the non-argv backing-lifetime rule ([HOST-3]'s command-lifetime premise; candidates recorded in the dossier), a Windows-family meaning for the raw byte pair (unqualified), writer-visible completion policies beyond release-complete, and every later system family. These bytes are non-authoritative until the grammar check, derived-material review, full-document hash, exact owner approval, and active-target installation complete.
 
-Specification delta: thirteen existing rules modified: TYPE-6, OWN-5, OWN-7, STOR-1, STOR-5, FN-1, FN-2, FN-3, FN-4, FN-5, EFF-2, DIAG-2, and DIAG-3. Numbered rules +0/-0; tokens +0/-0; spellings +0/-0; exception clauses +0/-0; grammar productions +0/-0; terminal spellings +0/-0; source constructs +0/-0. Every direct slice value carries a finite set of possible ultimate storage origins. In a checked function body an origin is a resolved source place, the distinguished `immutable-const` origin, or one formal-slice origin naming a parameter whose direct written type is `slice<'r, T>`; borrowing a slice descriptor preserves that data provenance. `slice_of` creates a singleton set, while binding, moving, passing, and returning preserve the complete set. For a function whose written result is `own slice<'r, T>`, the signature-carried return ceiling contains `immutable-const` and exactly the formal-slice origin of every parameter whose written mode and type are exactly `own slice<'r, T>` using that same formal region declaration and element type. Every returned slice's origin set must be contained in that ceiling. A call substitutes the complete origin set of each corresponding actual slice for its formal-slice origin and takes the union; it does not inspect the callee body. Multiple same-typed parameters using the same formal result region therefore remain conservatively possible origins, while a parameter using a distinct formal region remains excluded even when one call supplies the same actual region for both. OWN-5/OWN-7 and EFF-2 quantify over every possible origin. STOR-5 and FN-2 make the boundary explicit: region-bearing values remain direct and cannot hide slice leaves inside storage or a generic argument, so per-leaf stored provenance is not silently approximated. Ordinary returned-borrow semantics, statement-scoped child reborrows, and slice formation through borrow holders are unchanged, but FN-1 explicitly rejects a borrow-mode result whose referent type is `slice`: carrying both returned-descriptor provenance and underlying slice origins requires the separate returned-borrow design. Result-carrying child reborrows, branch-dependent borrow-holder joins, and stored slice leaves remain deferred specification additions. OWN-5 explicitly rejects a slice-valued `let`-initializer `match` rather than leaving its ownership and provenance join undefined. A multi-source function selects among direct `return` statements, each checked independently against the one signature ceiling. A slice rooted in a callee-local arena allocation or supplied as raw borrowed storage rather than as an input slice is not in that ceiling and therefore cannot be returned in v0.17; arena cleanup transfer and broader returned-view suppliers require their own evidence and amendment. Selection ground: T1/T2 and W3 require every possible origin to survive calls so no alias, effect, lifetime, or stored-payload check can be bypassed; FN-1's settled signature-completeness boundary selects a caller result derived from the written signature rather than a body summary or recursive fixed point; W1 and R1 prefer the already-written direct slice type over a new return-origin annotation for this first complete pass-through/choice family; P0 retains source distinction when the writer gives one-source functions distinct formal regions; and OWN-8 permits the conservative union when a function deliberately accepts several same-typed slices under one result region. A return-origin annotation could be more precise for a same-region function that always returns one of several parameters, but it adds writer syntax and body validation; that function can instead give the selected source its own formal region. A checked body-derived summary could also be hidden from source callers, but it would make the callable contract body-sensitive and require finite fixed-point treatment for recursive groups. General per-leaf metadata would preserve slices nested in generic or stored values, but it imports the separate retained-state and cleanup obligations recorded for borrow-bearing payloads. None of those costs is justified by the current direct pass-through and genuine-choice cases. Callee-created arena origins are excluded rather than represented by a call token because active arena cleanup and identity rules do not yet prove that backing storage and its release obligation survive the callee. No runtime representation, ABI, operation, effect category, required runtime safety check, trap behavior, or protected existing verdict changes.
+Prior: REVIEW CANDIDATE v0.17 (2026-07-23; returned-slice provenance closure). Its exact SHA-256 `19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93` was installed as the active immutable v0.17 language authority on 2026-07-23 after owner approval.
+
 
 Prior: REVIEW CANDIDATE v0.16 (2026-07-23; static source-conformance closure). Defines complete whole-conformance checking for the nongeneric source-contract family and keeps contract metadata and checked-law evidence compile-time-only. Its exact SHA-256 `f93264fb4df6994a408e1327c6e8643c34b4aea55fba4b1a0b3dab3501ceb942` was installed as the active immutable v0.16 language authority on 2026-07-23 after owner approval.
 
@@ -95,8 +96,9 @@ enum_decl    := "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
 vfield       := IDENT ":" type
-fn_decl      := "fn" IDENT generics? region_params? "(" param_list? ")"
+fn_decl      := program_kind? "fn" IDENT generics? region_params? "(" param_list? ")"
                 "->" rtype effects requires_block? "{" doc? stmt* "}"
+program_kind := IDENT
 requires_block:= "requires" "{" requires_entry* "}"
 requires_entry:= doc | stmt
 contract_decl:= "contract" TYPEID generics? "{" doc? fn_sig* law* "}"
@@ -111,7 +113,8 @@ generics     := "<" gparam ("," gparam)* ">"
 gparam       := TYPEID (":" TYPEID)? | "const" IDENT ":" type
 region_params:= "[" REGIONID ("," REGIONID)* "]"
 param_list   := param ("," param)*
-param        := IDENT ":" mode type
+param        := input_label? IDENT ":" mode type
+input_label  := IDENT "." IDENT "as"
 ```
 
 [GRAM-3] Types and modes:
@@ -182,13 +185,13 @@ psuffix        := "." IDENT
 
 [GRAM-10] Named match binders. An `arm` for variant K writes every declared field of K exactly once as `IDENT ":" IDENT` (the declared field name, then a fresh binder), in declared order; a missing, extra, repeated, misspelled, or out-of-order field name is a hard error citing GRAM-10 and K's declared field list. The binder is a fresh IDENT chosen by the writer and distinct from the field name, so TYPE-6 no-shadowing is never engaged by two arms binding fields of the same name. Binder modes remain derived by OWN-13 (not written). A nullary variant is written `K()`.
 
-[GRAM-11] Named call arguments. A `call` whose callee resolves to a user `fn` writes its arguments as `fieldinit_list` [GRAM-5] — each `IDENT ":" atom` equal to the callee's declared parameter names in declared order [FN-1], the GRAM-8 discipline applied to calls. A missing, extra, repeated, misspelled, or out-of-order parameter name is a hard error citing GRAM-11 and the callee's parameter list. A `call` whose callee resolves to a table operation [OP-1] writes positional `atom_list` operands (operands are order-intrinsic and unnamed). Argument reordering is not a spelling option: declared order is the one legal byte sequence [FORM-1], so parameter names are redundant checked facts (R4 anti-transposition), never a reordering license. Op-vs-fn is resolved by name lookup [OP-1], the same partition that already selects the callee.
+[GRAM-11] Named call arguments. A `call` whose callee resolves to a user `fn` or to an admitted system operation [SYS-1] writes its arguments as `fieldinit_list` [GRAM-5] — each `IDENT ":" atom` equal to the callee's declared parameter names in declared order, fixed by [FN-1] for a user `fn` and by [SYS-2] for a system operation, the GRAM-8 discipline applied to calls. A missing, extra, repeated, misspelled, or out-of-order parameter name is a hard error citing GRAM-11 and the callee's parameter list. A `call` whose callee resolves to a table operation [OP-1] writes positional `atom_list` operands (operands are order-intrinsic and unnamed). Argument reordering is not a spelling option: declared order is the one legal byte sequence [FORM-1], so parameter names are redundant checked facts (R4 anti-transposition), never a reordering license. Op-vs-fn is resolved by name lookup [OP-1], the same partition that already selects the callee.
 
 ## 4. Types
 
 [TYPE-1] Primitive types: `i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 unit`. (`Bool` is a prelude enum, §15, not a primitive.)
 
-[TYPE-2] Composite types: `struct`, `enum`, `array<T, N>` (N a constant-expression, [CONST-1]), `slice<'r, T>` (region-carrying view), `box<T>` (heap-owned unique), `arena<'r, T>` (region-bounded owned), `buffer<T>` (heap-owned, runtime-length, flat contiguous {data-pointer, u64 length} value; affine single-owner; length fixed at allocation, no in-place growth). v0 buffer/array element type T must be copy (a primitive or tag-only enum, per the OWN-1 copy amendment); affine-element buffers are DEFERRED with recorded delta (blocked on the §5 take/replace resolution).
+[TYPE-2] Composite types: `struct`, `enum`, `array<T, N>` (N a constant-expression, [CONST-1]), `slice<'r, T>` (region-carrying view), `box<T>` (heap-owned unique), `arena<'r, T>` (region-bounded owned), `buffer<T>` (heap-owned, runtime-length, flat contiguous {data-pointer, u64 length} value; affine single-owner; length fixed at allocation, no in-place growth). The opaque system types [SYS-1] are a distinct class: they are nominal, have no writer-visible component, and are constructed only by system operations and standard entry bindings. v0 buffer/array element type T must be copy (a primitive or tag-only enum, per the OWN-1 copy amendment); affine-element buffers are DEFERRED with recorded delta (blocked on the §5 take/replace resolution).
 
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
 
@@ -200,9 +203,9 @@ psuffix        := "." IDENT
 
 | domain | declarations | admitted uses |
 |---|---|---|
-| lexical IDENT | top-level `fn_decl`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; second IDENT of `fieldbind` | a `callee` or `fn_bind` right IDENT admits only a top-level function; `const` IDENT admits only an in-scope const generic or earlier named const; `cvalue` IDENT admits only an earlier named const; `pbase` admits only an in-scope value binding or named const |
-| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; PRE-1 nominal types; lexical type `gparam`s overlay this domain while live | `type` TYPEID and the TYPEID suffix of a FORM-5 generic numeric literal admit a live type generic where that form requires one, otherwise a nominal type |
-| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant | the leading TYPEID of `construct` admits either class; the leading TYPEID of `arm` admits only enum-variant |
+| lexical IDENT | top-level `fn_decl`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; second IDENT of `fieldbind`; admitted system operations [SYS-1] | a `callee` IDENT admits a top-level function or an admitted system operation; a `fn_bind` right IDENT admits only a top-level function; `const` IDENT admits only an in-scope const generic or earlier named const; `cvalue` IDENT admits only an earlier named const; `pbase` admits only an in-scope value binding or named const |
+| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; PRE-1 nominal types; admitted system nominal types [SYS-1]; lexical type `gparam`s overlay this domain while live | `type` TYPEID and the TYPEID suffix of a FORM-5 generic numeric literal admit a live type generic where that form requires one, otherwise a nominal type |
+| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; admitted system constructors [SYS-1], classified as struct-constructor or enum-variant | the leading TYPEID of `construct` admits either class; the leading TYPEID of `arm` admits only enum-variant |
 | contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the optional bound TYPEID of a type `gparam` and the contract TYPEID of `conform_decl` |
 | REGIONID | `region_params` and `region_stmt` | every REGIONID in `type`, `mode`, `targ`, `effect`, and `borrow_expr` |
 | LABEL | `loop_stmt` | `break_stmt` |
@@ -215,7 +218,7 @@ A generic TYPEID parameter becomes visible after its declaring terminal through 
 
 Within one domain, two declarations in the compilation-unit root or in the same lexical scope are a redeclaration attributed to the later declaration event. Declarations in unrelated function or declaration owners are not duplicates merely because their spellings match. A nested lexical declaration may not shadow an entry live at that declaration. OWN-3's function-wide REGIONID uniqueness is stricter than either rule and is reported at the later region declaration with the conflicting region origin. GRAM-10 exclusively owns match-binder distinctness and freshness: a second `fieldbind` IDENT equal to its paired field label, an earlier binder in the same arm list, or any lexical-IDENT declaration live on arm entry is rejected citing GRAM-10 at that later/offending binder before it becomes a declaration, rather than also being reported as TYPE-6 shadowing. Because every top-level function is live throughout the unit, any other parameter, local, or const generic in a nested scope may not use a top-level function spelling even when that function's source item occurs later; the nested declaration is the offending shadow event. Disjoint expired lexical scopes may reuse an ordinary value or label spelling; REGIONID reuse remains forbidden throughout one function by OWN-3. Logical paths and record boundaries never create a namespace, scope, or lookup key [PROG-2].
 
-The owner-dependent declaration and use roles are exactly the carriers classified by [DIAG-1]. They do not enter or query a lexical name domain. DIAG-1 retains each for later typed owner/member checking. Deferral is neither acceptance nor rejection of its later owner/member relation.
+The owner-dependent and table-checked declaration and use roles are exactly the carriers classified by [DIAG-1]. They do not enter or query a lexical name domain. DIAG-1 retains each owner-dependent carrier for later typed owner/member checking and each table-checked carrier for later [FN-7] table checking. Deferral is neither acceptance nor rejection of its later owner/member or table relation.
 
 [TYPE-7] Reading through a reference is explicit. `deref(place)` where place has type `&'r T`, `&uniq 'r T`, `box<T>`, or `arena<'r, T>` denotes a place of referent type T [GRAM-5]; a use of that place copies it when T is copy and requires `move` when T is affine [OWN-1]. A borrow-mode or box/arena binding used where a value of its referent type T is expected is a hard error citing TYPE-7, with the mechanical fix `deref(.)`. A bare borrow holder is not rebound by `set`; SET-1 requires explicit `deref(holder)` to select its referent, and only a live usable `&uniq` holder can make that referent writable [OWN-5]. There is no implicit read-through-borrow [TYPE-4, META-2].
 
@@ -271,7 +274,15 @@ A slice access is judged as one shared access through every resolved-place origi
 
 [STOR-2] Creation: `box_new<T>(v)` returns `own box<T>`; `arena_new<'r, T>(v)` returns `own arena<'r, T>`; both are ordinary calls in the operation table. Content access is through `deref`.
 
-[STOR-3] Deallocation is compiler-derived and explicit in the checked program [DIAG-2]: every drop and arena release is represented before lowering. Every control-flow edge leaving a region block (fallthrough, `break`, `return`) carries that region's releases and drops in reverse declaration order. No finalizers; no reference counting. A `buffer<T>` drop is one compiler-derived heap free on every owner-scope exit, ordered like a `box<T>` drop; `const` items [CONST-2] are never dropped. A successful SET-1 assignment replaces one copy value and therefore derives no drop, release, finalizer, or cleanup edge; an affine target is rejected before checked-program construction [STOR-1].
+[STOR-3] Deallocation and resource release are compiler-derived and explicit in the checked program [DIAG-2]: every drop and every release is represented before lowering. Every control-flow edge leaving a region block (fallthrough, `break`, `return`) carries that region's releases and drops in reverse declaration order. Release actions run only on normal control-flow edges; a trap runs none [EFF-4]. No reference counting.
+
+The release action of a type is compiler-owned semantic data selected by that type, not a fixed enumeration of memory-reclamation actions. A `box<T>` drop is one compiler-derived heap free. A `buffer<T>` drop is one compiler-derived heap free on every owner-scope exit, ordered like a `box<T>` drop. An `arena<'r, T>` value's storage is released with its region [STOR-4]. A `const` item [CONST-2] is never dropped. Every other frame-resident owned value [STOR-1] has no release action. Each of these memory-reclamation actions carries the empty effect row.
+
+A compiler-owned resource family additionally fixes exactly one release action in its normative family contract. That action may perform one host call, and it carries exactly the effect row that contract fixes, which may include `external` and, where the contract permits synchronous waiting, `blocks`. A release action's fixed row is the sole input to [EFF-2]'s release contribution; a type whose action carries the empty row contributes no release effect anywhere. No source construct selects, replaces, supplies, suppresses, reorders, duplicates, or observes a release action, and no release action is conditional on a source declaration.
+
+There are no finalizers in the writer-registered sense: no source declaration, annotation, attribute, contract, conformance, or binding attaches a writer-defined action to a value's release, and v0.18 defines no construct that could. This clause does not forbid the compiler-owned release action above, which is fixed by the language and its family contracts rather than registered by a writer.
+
+A successful SET-1 assignment replaces one copy value and therefore derives no drop, release, finalizer, or cleanup edge; an affine target is rejected before checked-program construction [STOR-1].
 
 [STOR-4] Arena confinement: a value of type `arena<'r, T>` may not be returned, stored into a field, or moved to a destination outside `'r`'s block; borrows of its content obey OWN-10 with source region `'r`.
 
@@ -340,7 +351,7 @@ Complete generated frames remain subject to the mandatory checked-representabili
 
 Let `DotlessOperationNames` be exactly the set of distinct individual operation spellings enumerated in this rule's normative `op` column whose complete spelling satisfies IDENT and contains no dot. Let `ModeWords` be exactly the suffix alternatives in FORM-3's active OPNAME formation rule; in this version it equals `{wrap, trap, checked, sat, strict}`. `ReservedLowerNames` is exactly `DotlessOperationNames` union `ModeWords`. A printed review list is non-authoritative and, when present, must equal the corresponding derived set.
 
-Each distinct complete spelling in the operation table declares one operation-family identity, even when more than one row carries that spelling; the two `cvt` rows therefore belong to one `cvt` family. An OPNAME callee resolves to its exactly spelled operation family. An IDENT callee whose spelling belongs to `DotlessOperationNames` resolves to that operation family; every other IDENT callee admits only a top-level source `fn_decl`. Absence from the selected operation-family or function inventory is a hard error citing OP-1. Later typed operation checking uses the written type arguments and operand domains to select the applicable row within the resolved family. Operand types never select between an operation family and a function.
+Each distinct complete spelling in the operation table declares one operation-family identity, even when more than one row carries that spelling; the two `cvt` rows therefore belong to one `cvt` family. An OPNAME callee resolves to its exactly spelled operation family. An IDENT callee whose spelling belongs to `DotlessOperationNames` resolves to that operation family; every other IDENT callee admits a top-level source `fn_decl` or an admitted system operation [SYS-1]. Absence from the selected operation-family, function, or system-operation inventory is a hard error citing OP-1. Later typed operation checking uses the written type arguments and operand domains to select the applicable row within the resolved family. Operand types never select between an operation family and a function.
 
 No source declaration in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and requires-block lets; the second IDENT of `fieldbind`; every `field` and `vfield` IDENT; and the IDENT-shaped interior of `region_params` and `region_stmt`. Such a reserved binding is rejected citing exactly FORM-3. Dependent field declarations participate in this pre-resolution reservation inventory even though their owner/member duplicates remain deferred. No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and contract-member `fn_sig` IDENTs remain outside this prohibition. Dotted OPNAMEs cannot be declarations under the grammar. This reservation keeps operation-versus-function resolution context-free [META-2] and keeps a field-access place from maximal-munching as OPNAME [FORM-3].
 
@@ -398,7 +409,7 @@ A source `conform D : C { ... }` requires D to be one concrete type after ordina
 
 For each contract member in declaration order, the conformance contains exactly one `fn_bind` in that same position. The binding's left IDENT equals that member name, and its right IDENT resolves under [TYPE-6] to one top-level source function. A contract with no members therefore has an empty conformance body apart from its optional leading `doc`. A missing, extra, repeated, unknown, or out-of-order binding is an FN-3 rejection; no member is inferred from a function name or signature.
 
-The bound function has no `generics` child and no `requires` block. Region parameters are permitted and are not a `generics` child. Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, return mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals. This replacement applies inside modes, types, and effect payloads; type components then use the preceding exact concrete-type identity recursively. After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to four capabilities: the set of declared read regions, the set of declared write regions, the allocation set whose members are `heap` and each `arena` region, and the presence or absence of `traps`; `pure` is four empty capabilities. Region entries use their alpha-mapped declaration identities. Equality requires all four capabilities to be equal. Source occurrence order and repeated occurrences do not affect this equality, but no capability may be omitted or added; there is no effect subtyping or semantic implication. Parameter identifiers and region identifiers themselves need not have equal spellings. There is no parameter or result variance, mode coercion, effect subtyping, omitted effect, default, receiver, implicit subject parameter, or `Self` substitution. Any mismatch is an FN-3 rejection. A valid conformance is one complete source-ordered binding vector; no partial conformance or member result is published.
+The bound function has no `generics` child and no `requires` block. Region parameters are permitted and are not a `generics` child. Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, return mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals. This replacement applies inside modes, types, and effect payloads; type components then use the preceding exact concrete-type identity recursively. After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to six capabilities: the set of declared read regions, the set of declared write regions, the allocation set whose members are `heap` and each `arena` region, the presence or absence of `external`, the presence or absence of `blocks`, and the presence or absence of `traps`; `pure` is six empty capabilities. Region entries use their alpha-mapped declaration identities. Equality requires all six capabilities to be equal. `external` and `blocks` are compared by presence exactly as `traps` is, and a `fn_sig` member may declare either. A `fn_sig` has no body and no compiler-derived release, so it declares these categories without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a category the bound function contributes only through release. A member declaring neither category therefore cannot bind a function that exhibits one, and a `pure` member cannot bind an externally effectful function. Source occurrence order and repeated occurrences do not affect this equality, but no capability may be omitted or added; there is no effect subtyping or semantic implication. Parameter identifiers and region identifiers themselves need not have equal spellings. There is no parameter or result variance, mode coercion, effect subtyping, omitted effect, default, receiver, implicit subject parameter, or `Self` substitution. Any mismatch is an FN-3 rejection. A valid conformance is one complete source-ordered binding vector; no partial conformance or member result is published.
 
 The prelude marker contracts `Int` and `Float` [PRE-1] retain their built-in closed conformer sets (`Int`: i8 i16 i32 i64 u8 u16 u32 u64; `Float`: f32 f64), not user `conform` declarations. A generic type parameter bound by `Int` or `Float` admits exactly its built-in set and makes the corresponding operation-table rows [OP-1] and identity literals `0_T`/`1_T` [FORM-5] available, monomorphized to the concrete type's operations. A generic type parameter naming a source contract as its bound is a hard error citing FN-3 after that bound has resolved successfully. v0.17 defines no source-contract bound-satisfaction, implication, inheritance, blanket conformance, structural conformance, inference, overlap choice, specialization, negative conformance, or conformance supplied by a function signature.
 
@@ -427,25 +438,74 @@ The grammar accepts an IDENT law name and zero or more `law_arg` nodes so that s
 
 [FN-6] Recursion is permitted. Polymorphic recursion is rejected by a syntactic rule: in any call cycle among generic functions, every call instantiates the callee at exactly the caller's own type parameters. This criterion is DELIBERATELY stronger than finiteness requires (it rejects some finite permutation cycles): predictable, locally explainable rejection per OWN-8's reject-and-restructure posture; the diagnostic must name the cycle and the restructuring. Rejection-rate measurement is a registered experiment.
 
-[FN-7] Exactly one nongeneric `fn main() -> own unit` with no region parameters and no value parameters must exist. Its written effect row is exactly one of `pure`, `allocates(heap)`, `traps`, or `allocates(heap), traps`; no region-bearing effect is admitted. There is no global state and no `'static` region in v0: ambient mutable globals would (a) erode the noalias fact base every function otherwise gets from parameter-only reachability (P0; carding backlog: GlobalsAA-class evidence), (b) create hidden inter-function channels invisible in signatures (W3, FN-1 signatures-as-trust-unit), and (c) pre-seed shared state for the future concurrency layer (T1). Immutable `const` items [CONST-2] are permitted and are not global mutable state: being read-only they never erode the noalias fact base (reads of frozen rodata add no aliasing hazard), create no hidden inter-function channel (the value is source-determined in the closed unit), and are Shareable-by-construction [CAP-1]; no `'static` region is introduced (borrows of const-rooted places obey the OWN-10 const clause), and there remains no writer-mutable global and no `static mut` analog.
+[FN-7] Exactly one top-level `fn_decl` named `main` must exist in the compilation unit. That declaration is the unit's entry; it is nongeneric and declares no region parameters. The entry takes exactly one of the two forms fixed below, and no other declaration in the unit carries a `program_kind` child or an `input_label` child.
+
+The unlabelled entry carries no `program_kind` child, declares no value parameters, and has written result `own unit`. Its written effect row is exactly one of `pure`, `allocates(heap)`, `traps`, or `allocates(heap), traps`. This form is complete and unchanged: a unit that requests no standard input declares no program kind and keeps it.
+
+A kind-declaring entry carries one `program_kind` child and declares its standard inputs as labelled value parameters, each written `input_label IDENT ":" mode type` [GRAM-2]. Its written result and its admitted effect categories are fixed by its kind row below. A kind-declaring entry is invoked exactly once, by program start [PROG-3]; a `call` whose callee resolves to it is a hard error citing FN-7, because its standard inputs are supplied at start and are neither constructible nor forgeable by source. The unlabelled entry retains its ordinary callee status [TYPE-6, OP-1].
+
+The closed program-kind table is:
+
+| kind | written result | admitted effect categories |
+|---|---|---|
+| `command` | `own ExitStatus` | `allocates(heap)`, `external`, `blocks`, `traps` |
+| `service` | reserved spelling; no form defined | none |
+| `embedded` | reserved spelling; no form defined | none |
+
+A `command` entry's written effect row is any subset of that row's admitted categories written in the [EFF-1] canonical order; `pure` is the empty subset. No region-bearing effect is admitted in either entry form. `service` and `embedded` are reserved spellings only: this version defines no entry form, lifecycle, standard input, operation, or target qualification for either, and a `program_kind` naming one of them is a hard error citing FN-7. A `program_kind` naming no row of this table is the same hard error. As with an [FN-4] law name, the grammar accepts an IDENT here so that syntax formation encodes no semantic vocabulary, and the checker requires that IDENT to equal exactly one table row. The IDENT is a checked table fact: it declares nothing, resolves to no declaration, enters and queries no name domain [TYPE-6], and reserves no lexical spelling.
+
+The closed standard-input table for kind `command` is:
+
+| ordinal | label | written mode and type | supplied value |
+|---|---|---|---|
+| 0 | `command.args` | `own Args` | the immutable invocation-argument snapshot |
+| 1 | `command.cwd` | `own DirectoryRead` | the read capability for the initial working directory |
+| 2 | `command.stdout` | `own Output` | the standard output sink |
+| 3 | `command.stderr` | `own Output` | the standard error sink |
+
+Every value parameter of a `command` entry carries an `input_label` and selects one row of that table. The label's first IDENT equals the entry's `program_kind` IDENT, its second IDENT equals that row's label tail, and the parameter's written mode and type equal that row exactly; there is no conversion, default, or inferred mode [TYPE-4, TYPE-5]. Every row is optional and each may be selected at most once: an unused standard input is omitted, and the selected parameters appear in strictly increasing table-ordinal order, so declared order is the one legal byte sequence [FORM-1, GRAM-8]. A `command` entry that selects no row is admitted and receives no standard input. The binder IDENT written after `as` is chosen by the writer and is an ordinary `param` declaration in the lexical IDENT domain [TYPE-6]. Ordinal identity, never type identity, selects the supplied value: `command.stdout` and `command.stderr` share one type and remain two distinct inputs. An unknown, repeated, out-of-order, or foreign-prefix label, a mode or type differing from its row, an unlabelled value parameter of a kind-declaring entry, an `input_label` on a parameter of any other `fn_decl`, and an `input_label` in a `fn_sig` are each a hard error citing FN-7. No label tail in this or a later kind table is `wrap`, `trap`, `checked`, `sat`, or `strict`: [GRAM-1] forms a kind IDENT, `.`, and one of those five spellings as one operation-name token, so those five tails are unavailable to a label table.
+
+A compilation unit is kind-declaring exactly when at least one of its top-level `fn_decl` nodes carries a `program_kind` child. That judgment is syntactic and total: it is fixed after grammar derivation and before declaration inventory [DIAG-1], and it does not depend on the kind IDENT naming an admitted row, on the declaring function's name, on any standard input, or on any resolved type. A unit that is not kind-declaring admits no system declaration and therefore sees no system type, constructor, or operation name [SYS-3]. The declared program kind is the whole of that trigger; the entry's input types are no part of it.
+
+The one canonical byte sequence for a complete four-input command entry header is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {`. [FORM-2] renders it without amendment: `program_kind` and `input_label` are neither line-bearing nor block-bearing, so neither introduces a formatting boundary, and the existing attachment sets join `command`, `.`, and the label tail with no bytes while separating `as` and its binder by exactly one space.
+
+The entry states a program's complete standard-input access in its own signature, so no system value reaches another function except as a written parameter [FN-1]: there is no ambient authority, and no entry-supplied aggregate that source can own, name, or pass. There is no global state and no `'static` region in v0: ambient mutable globals would (a) erode the noalias fact base every function otherwise gets from parameter-only reachability (P0; carding backlog: GlobalsAA-class evidence), (b) create hidden inter-function channels invisible in signatures (W3, FN-1 signatures-as-trust-unit), and (c) pre-seed shared state for the future concurrency layer (T1). Immutable `const` items [CONST-2] are permitted and are not global mutable state: being read-only they never erode the noalias fact base (reads of frozen rodata add no aliasing hazard), create no hidden inter-function channel (the value is source-determined in the closed unit), and are Shareable-by-construction [CAP-1]; no `'static` region is introduced (borrows of const-rooted places obey the OWN-10 const clause), and there remains no writer-mutable global and no `static mut` analog. A standard input is not global state: it is one written parameter of one function, owned and moved under the ordinary rules.
+
+A missing entry is an FN-7 rejection at `BundleRoot` [DIAG-1]. A duplicate `main` spelling remains the later-source [TYPE-6] duplicate. Every other FN-7 rejection uses `SourceNode` with a `SourceCoordinate` equal to the complete checked half-open source extent of the node named here: a reserved or unadmitted kind name, or a `program_kind` on a declaration that is not the entry, at that `program_kind` node; an unknown, repeated, out-of-order, or foreign-prefix label, or an `input_label` outside a kind-declaring entry's parameters, at that `input_label` node; a written mode or type differing from its table row, and an unlabelled value parameter of a kind-declaring entry, at that complete `param` node; a written result differing from the form's fixed result, at that `rtype` node; an inadmissible effect row, at that `effects` node; a generic or region-parameter-bearing entry, at its `generics` or `region_params` child; a call to a kind-declaring entry, at that `call` node; and every remaining entry-form violation at the `fn_decl` node.
 
 [FN-8] A concrete `fn_decl` may carry one `requires` block after its effect row; the fixed grammar terminal `requires` is ineligible for IDENT under [FORM-3]. The grammar deliberately admits every `doc` or `stmt` as the selected child of a direct `requires_entry`; syntax formation does not encode the block's semantic subset. Before recursively checking any entry, an early FN-8 structural pass requires those selected children to form zero or more `let_stmt` nodes whose selected right-hand side is `ordinary_let_rhs`, followed by exactly one final `check_stmt`, and nothing else. The pass examines direct entries from left to right: every entry before the final position must select an admitted ordinary let, and the final entry must select a check. The first entry that violates that shape is reported; an empty block or an all-let sequence instead reports the `requires_block` node for its missing final check. Thus a nonfinal or repeated check, a `doc`, a `propagate_let_rhs`, a `value_match`, or any other direct statement shape is a hard error citing FN-8 before any child semantic error can win. The block is a checked callee-entry prologue, not an assumption and not a caller proof obligation: every invocation executes it once after parameter binding and before the function body, including an invocation entering through a gated foreign boundary; a false final condition traps under [OP-5]/[EFF-4], and a true condition contributes its checked fact only to the dominated function body. Ordinary call acceptance never depends on proving the condition. Its scope initially contains only the function parameters; each let introduces a fresh clause-local own copy value visible to later clause statements, and clause locals are not visible in the body. Every computation in the block must be an ANF [GRAM-9] call to a non-trapping, total operation-table row with effect `pure`; the final check condition is either a Bool clause atom or one such call returning Bool. User-function calls, construction, `move`, borrowing, `index`, mutation, control flow, allocation, and any trapping operation are rejected citing FN-8; a place is legal only as a non-consuming operand of an admitted table operation (for example `len<u8>(deref(out))`). Normal typing, ownership, and no-shadowing rules still apply after the structural pass succeeds. The final statement has exactly [OP-5] semantics; a deterministic proof from its passed fact may eliminate only downstream implicit checks such as [OP-4] bounds checks. `requires` is absent from `fn_sig` in this concrete-only first slice and cannot discharge a law under [FN-4]; contract/refinement support is DEFERRED with a recorded delta.
 
 ## 9. Effects (gated on exemplar carding before ratification)
 
-[EFF-1] Row grammar: `effects := "pure" | effect ("," effect)*` with `effect := "reads" "(" REGIONID+ ")" | "writes" "(" REGIONID+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "traps"`, in exactly this canonical order (reads, writes, allocates, traps). `pure` is the unique spelling of the empty row. Frame residency (STOR-1) is not an allocation by definition.
+[EFF-1] Row grammar: `effects := "pure" | effect ("," effect)*` with `effect := "reads" "(" REGIONID+ ")" | "writes" "(" REGIONID+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "external" | "blocks" | "traps"`, in exactly this canonical order (reads, writes, allocates, external, blocks, traps). `pure` is the unique spelling of the empty row and therefore excludes `external` and `blocks` exactly as it excludes every other category. Frame residency (STOR-1) is not an allocation by definition. The two added categories take positions between `allocates` and `traps`, which leaves the pairwise canonical order of the four pre-existing categories unchanged.
 
-[EFF-2] Exhibits is syntactic over the complete concrete function declaration: its body and optional `requires` block exhibit `traps` iff either contains any `.trap` op, `check`, a bounds-checked `index`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); they exhibit reads/writes/allocates per the operation table and borrow modes they use. Function-body attribution and call-boundary projection are separate judgments.
+A category states what a call may do, never which object it does it to. `external` states that the call may observe or change state outside ordinary Whitefoot memory, including file contents, cursors, output, host namespaces, clock and random sequences, resource lifetime, and compiler-derived resource release [STOR-3]. `blocks` states that an ordinary call may block its current host thread. Both are payload-free: neither takes a REGIONID, resource name, family name, or any other argument, and `external(cwd)`, `changes(file)`, and every other resource-parameterized effect spelling is outside this grammar and outside v0.18. A source row consequently carries no resource origin, and no rule derives a disjointness, reordering, or elimination conclusion from a row [EFF-5].
+
+`external` and `blocks` are exact fixed grammar atoms and are therefore ineligible for IDENT under [FORM-3], like every other lowercase word this grammar fixes. The apostrophe- and at-prefixed lexical classes are untouched: REGIONID `'external` and LABEL `@blocks` remain well-formed spellings.
+
+[EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its syntactic contribution and its release contribution. The syntactic contribution is syntactic over the complete concrete function declaration: its body and optional `requires` block exhibit `traps` iff either contains any `.trap` op, `check`, a bounds-checked `index`, or a call to any operation or function whose effect row includes `traps` (even if later proven away); they exhibit reads/writes/allocates per the operation table and borrow modes they use; and they exhibit `external` or `blocks` iff either contains a call to any operation or function whose effect row includes that category. The release contribution is defined below and has no syntactic occurrence anywhere in the declaration. Function-body attribution and call-boundary projection are separate judgments.
 
 While one function body is checked, every exhibited read or write is attributed after holder resolution and [OWN-5] slice-view provenance. An ultimate storage root in an own-mode binding of the current function contributes no region read or write, even when reached through a local borrow or local slice view. A named const root and `immutable-const` likewise contribute no region read; the storage is permanently read-only [CONST-2]. Caller storage reached through an incoming borrow parameter in formal region `'r` contributes `reads('r)` or, for an admitted access through `&uniq`, `writes('r)`. A formal-slice origin naming any incoming parameter whose direct type is `slice<'r, T>` contributes `reads('r)` when its viewed storage is read, regardless of whether the descriptor parameter's mode is `own`, `&'d`, or `&uniq 'd`. The descriptor's mode region `'d` still governs the descriptor borrow, but dereferencing that holder does not replace the viewed data origin with the descriptor place. The slice descriptor itself is not the viewed storage root, and [SET-1] admits no write through it. A multi-origin slice access contributes the union from every origin by these same clauses. Binding, moving, passing, returning, reborrowing, and slicing never replace an ultimate origin with a local region spelling.
 
 At a call boundary, each callee or operation `reads` or `writes` entry first retains its formal region declaration identity. Before any region-argument substitution, that identity selects each occurrence in a formal parameter's written mode or direct `slice` type and therefore the corresponding actual argument projection. A mode-region occurrence projects a borrow actual through its resolved descriptor or referent place under [OWN-6]. A direct-slice-type region occurrence projects the actual slice value's complete [OWN-5] origin set; when the actual is a borrow of a slice descriptor, holder resolution first reaches that descriptor value and then uses its underlying slice origins. If one formal declaration occurs in both the mode and direct slice type, both projections are conservatively included. Only after these occurrence-selected projections are fixed are origins and the effect entry mapped into the caller. Distinct formal declarations remain distinct for this selection even when the call supplies the same caller region for both; substituting region spellings first never widens the supplier set. Current-function own roots and immutable const storage contribute no enclosing region effect; roots supplied by the current function's incoming borrow or slice parameters contribute their formal origin regions. A later read through an `own slice` call result uses FN-1's signature-derived substituted origin union and therefore exhibits every current-function formal-region read that any permitted returned source would exhibit; the callee body cannot narrow this at the caller. Thus a callee write through a local child reborrow of incoming `&uniq 'r` storage makes the caller exhibit `writes('r)`, while the same callee write through a child reborrow of current-function owned storage adds no caller region effect. A local region spelling never appears in an enclosing function effect row merely because it was used to form a borrow, reborrow, slice, or arena value.
 
-A [SET-1] commit is one write under this attribution. A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment. Effects exhibited while evaluating the target and right-hand side contribute normally, and every bounds-checked target `index` syntactically exhibits `traps` even when its runtime check is later proof-eliminated. Rows are checked both ways against the syntactic definition: undeclared-but-exhibited and declared-but-unexhibited are both errors. Because [FN-8] requires one explicit `check`, every function with `requires` exhibits `traps`; proof-driven downstream check elision never tightens that row.
+The release contribution collects the effects of compiler-derived release. Under [STOR-3] each type fixes one compiler-derived release action together with that action's effect row. For the function being checked, the release contribution is the union of the effect rows of every release action that may run on any edge of the conservative structural normal-control graph defined in [FN-1]. A release contributes when it may run on at least one such edge; running on only some paths never weakens it, and no path condition, constant evaluation, discharged law, optimizer fact, or backend reachability judgment removes an edge from that graph. An owner moved or returned on one `match` arm and released on another therefore contributes its release row to the enclosing function, and so does a release derived on only one arm of any other branch, one `give` edge, one propagation edge, or one loop exit. On each normal edge every owner has exactly one disposition — moved or returned, consumed by an explicit consuming operation, or released by exactly one compiler-derived release action — so one owner contributes at most one release per edge, and an owner consumed on that edge contributes no release there. Release actions run only on normal edges; a trap runs none and contributes nothing [EFF-4]. A release derived inside a callee belongs to that callee's row and reaches the caller only through the ordinary call-boundary projection of the callee's declared row; it is never attributed to two functions.
 
-[EFF-3] `pure` licenses deduplication and reordering of calls with equal arguments. Elimination of an unused pure call additionally requires a termination proof; v0 provides no termination checker, so unused pure calls are not eliminated. `pure` excludes traps and all reads/writes/allocates; it does not promise termination.
+This attribution reads only the release rows [STOR-3] fixes, and it does not retrofit memory reclamation into effect rows. A `box<T>` drop, a `buffer<T>` drop, an `arena<'r, T>` region release, and the absent drop of a `const` item [CONST-2] each carry the empty release row and therefore contribute nothing to any function's exhibited row; only a resource family whose contract fixes a nonempty release row contributes one. `external` and `blocks` carry no region payload, so the preceding call-boundary projection applies only to `reads`, `writes`, and `allocates` entries: the two categories transfer by presence and are unaffected by region-argument substitution, occurrence selection, and origin projection.
+
+A [SET-1] commit is one write under this attribution. A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment. Effects exhibited while evaluating the target and right-hand side contribute normally, and every bounds-checked target `index` syntactically exhibits `traps` even when its runtime check is later proof-eliminated. Rows are checked both ways against the exhibited row defined above: undeclared-but-exhibited and declared-but-unexhibited are both errors, and a category contributed only by the release contribution is checked exactly like one written in the body. A mismatch involving the release contribution has no offending source occurrence, so it is a hard error citing EFF-2 using `SourceNode` at that function's `effects` node, with `SourceCoordinate` equal to that node's complete checked half-open source extent; the diagnostic additionally renders the parameter or binding whose release contributed the category, and the restructuring `declare the release effects of every resource this function may release, or move the owner out`. When more than one owner establishes that premise, the reported one follows DIAG-1's implementation-defined deterministic traversal. Because [FN-8] requires one explicit `check`, every function with `requires` exhibits `traps`; proof-driven downstream check elision never tightens that row.
+
+Canonically, a nongeneric function whose only parameter is `own ReadFile` and whose complete body is exactly `return unit;` exhibits `external, blocks` and must declare exactly that row. Its declaration contains no call, no `check`, no bounds-checked `index`, and no other syntactic effect occurrence, so its complete exhibited row is the release contribution of that parameter's compiler-derived release on the function-return edge. Declaring `pure` is an undeclared-but-exhibited rejection at that function's `effects` node. This shape cannot be reduced further: [FN-1] requires the body's normal exit to be unreachable, so a function with an empty body is separately rejected and is not the canonical case.
+
+[EFF-3] `pure` licenses deduplication and reordering of calls with equal arguments. Elimination of an unused pure call additionally requires a termination proof; v0 provides no termination checker, so unused pure calls are not eliminated. `pure` excludes traps, `external`, `blocks`, and all reads/writes/allocates; it does not promise termination. These licenses are unchanged for every row that was `pure` before this version, and no license stated here reaches a row carrying `external` or `blocks` [EFF-5].
 
 [EFF-4] Trap is abort: there is no unwinding and no post-violation language cleanup. The exact [DIAG-3] trap record is the sole mandatory post-violation language output.
+
+[EFF-5] Sequential external calls retain source program order. Take two calls in one function whose resolved operation or callee rows each include `external`. If one precedes the other on a normal control-flow path of the conservative structural graph [FN-1] defines, then in every execution performing both, the earlier call's external effect is performed first. This holds when the two calls name different resources, different resource families, different owners, or the same owner. A compiler-derived release action [STOR-3] whose row includes `external` participates on the same terms and occupies the position its normal edge gives it, after the releases that precede it in that edge's reverse declaration order. A call whose row includes `external` is one such ordered point even when the external work is performed inside its callee; the callee's own external calls are performed within that call site's position in this order. This ordering is a required property of every conforming lowering, at facts-off and at every optimization level; it is not an optimizer fact and no optimizer fact relaxes it.
+
+The rule orders the external calls that one execution performs. It is not a global runtime lock and not a total order over the whole program: v0.18 defines no worker, task, thread, or background-submission construct, and when such a construct is added it orders work across executions under its own rules rather than by widening this one. Independently owned resources therefore remain the mechanism by which real concurrency is expressed later, and this rule constrains only what a single execution has already sequenced.
+
+No target-side fact proves two external calls independent or reorderable. A native handle or descriptor value, a separate open, a distinct target table entry, a distinct source spelling, the absence of a recorded alias link, and equal or unequal argument values are all outside the source language and prove nothing here. Reordering, deduplicating, coalescing, hoisting, sinking, speculating, or eliminating an external call is unlicensed: [EFF-3] licenses those only for `pure`, and `pure` excludes `external`. A separately approved optional fact family may later license one exact transformation through a verifier binding the exact checked-program instance, target, backend, proposition, and authorized consequence [LEDGER-1]; that family's absence, rejection, or resource failure leaves source acceptance and facts-off lowering unchanged.
 
 ## 10. Errors
 
@@ -459,9 +519,17 @@ A [SET-1] commit is one write under this attribution. A shared-holder commit is 
 
 ## 11. Programs, closed world
 
-[PROG-1] One closed compilation unit formed by [PROG-2]; every language name is defined within it or by the prelude (§15). There is no include, import, module, separate compilation, incremental semantic cache, internal ABI, dynamic loading, reflection, or source-path lookup in the language. A logical source path contributes identity only and never a namespace or lookup key. The only external boundary is the gated FFI wall (§14).
+[PROG-1] One closed compilation unit formed by [PROG-2]; every language name is defined within it, by the prelude (§15), or by the system declaration domain admitted to that unit (§16). There is no include, import, module, separate compilation, incremental semantic cache, internal ABI, dynamic loading, reflection, or source-path lookup in the language. A logical source path contributes identity only and never a namespace or lookup key. The only external boundary for foreign code is the gated FFI wall (§14); compiler-owned system operations [QUAL-1] execute inside the trusted computing base and are not such a boundary [GATE-2].
 
 [PROG-2] One compilation unit is one ordered nonempty sequence of logical source records. Each record contains one logical path and one exact source-byte sequence. A logical path is an ASCII relative path made from one or more nonempty components separated by exactly one `/` byte, with no leading, trailing, or repeated `/`; each component contains only ASCII letters, ASCII digits, `.`, `_`, or `-`, and no component is `.` or `..`. Path spelling is preserved exactly and compared case-sensitively. An empty record sequence, an invalid logical path, or two records with the same logical path is an input-envelope failure, not a source-language rejection. Record order is exactly the order in the bound invocation; no path sort, host enumeration order, or other reordering is applied. Within that bound unit, a source record is identified by its zero-based ordinal, exact logical path, and exact source bytes.
+
+[PROG-3] A conforming implementation starts one program instance by supplying exactly the standard inputs the entry declares [FN-7] and then invoking that entry once. No source statement executes before that invocation, and no source construct observes, names, or reconstructs the private start-time aggregate through which a target may deliver those inputs.
+
+Supplying each declared standard input is a start-time obligation of the selected target. When the selected target cannot supply one, start fails before the entry is invoked: no source statement executes, no owner comes into existence, no language cleanup runs, and no `ExitStatus` is produced. A start failure is a target or environment failure. It is not a source-language rejection [DIAG-1], not a trap [SCOPE-4], and never rewrites a source acceptance judgment.
+
+A `command` entry that completes normally returns exactly one `own ExitStatus` [FN-1]. Compiler-derived release for every owner live on that return edge runs before the instance terminates [STOR-3]. The selected target then maps that returned value to the process status exactly. No other source value, written output, effect, release result, or target condition contributes to that status, and the language defines no second normal status channel. An entry whose written result is `own unit` produces no `ExitStatus`, and this version fixes no process status for that form.
+
+A trap terminates the instance abnormally [SCOPE-4]: the entry's return edge is not taken, no release action runs, and no `ExitStatus` is produced or mapped. Start failure and traps are therefore both outside the returned status, and `ExitStatus` carries normal command status only.
 
 Every record is parsed as an independent [GRAM-2] `item*` sequence and audited as an independent [FORM-2] source. A zero-byte source is a valid input record whose empty `item*` derivation fails [FORM-2]; the sole canonical zero-item source is exactly one LF byte. No token, trivia item, grammar production below the compilation-unit `program` root, or source span crosses a record boundary. The toolchain inserts no token, whitespace, delimiter, declaration, or separator between records.
 
@@ -505,7 +573,7 @@ A source-local trivia gap is the complete interval between two adjacent terminal
 
 An input-envelope failure, resource failure, target-layout failure [STOR-6], compiler-invariant failure, unsupported compiler capability, backend failure, or external-tool failure is not a source-language rejection, cites no language rule, and carries no expected-terminal set.
 
-After canonical FORM-2 succeeds for every source, semantic diagnostic selection first runs the early FN-8 structural-admission pass over every `requires_block`. Within a block, FN-8 selects its specified first invalid direct `requires_entry` or the block node for a missing final check. An invalid direct entry uses `SourceNode` at that `requires_entry` production and a `SourceCoordinate` equal to that production's complete checked half-open source extent. An empty or all-let block missing its final check uses `SourceNode` at the `requires_block` production and a `SourceCoordinate` equal to that block production's complete checked half-open source extent. These are existing owner-production extents under DIAG-1; neither case fabricates a child node, a zero-width boundary, or a terminal-only coordinate. Across blocks, the minimum tuple `(source_ordinal, byte_start, byte_end, NodePath)` of that selected location wins. Numeric fields compare ascending and NodePath compares as defined below. No declaration or use role inside an inadmissible block is classified or counted. Only complete unit-wide FN-8 admission permits role classification and its exact resource-count derivation, only complete FN-8 admission permits declaration inventory, and only complete inventory permits lexical resolution. Poison declarations and partial resolution are forbidden. An FN-8 rejection outranks every inventory or resolution rejection; an inventory rejection outranks every resolution rejection even when the later-stage event has an earlier source coordinate.
+After canonical FORM-2 succeeds for every source, semantic diagnostic selection first runs the early FN-8 structural-admission pass over every `requires_block`. Within a block, FN-8 selects its specified first invalid direct `requires_entry` or the block node for a missing final check. An invalid direct entry uses `SourceNode` at that `requires_entry` production and a `SourceCoordinate` equal to that production's complete checked half-open source extent. An empty or all-let block missing its final check uses `SourceNode` at the `requires_block` production and a `SourceCoordinate` equal to that block production's complete checked half-open source extent. These are existing owner-production extents under DIAG-1; neither case fabricates a child node, a zero-width boundary, or a terminal-only coordinate. Across blocks, the minimum tuple `(source_ordinal, byte_start, byte_end, NodePath)` of that selected location wins. Numeric fields compare ascending and NodePath compares as defined below. No declaration or use role inside an inadmissible block is classified or counted. Only complete unit-wide FN-8 admission permits role classification and its exact resource-count derivation, only complete FN-8 admission permits the [SYS-3] system-admission decision, only that decision permits declaration inventory, and only complete inventory permits lexical resolution. Poison declarations and partial resolution are forbidden. An FN-8 rejection outranks every inventory or resolution rejection; an inventory rejection outranks every resolution rejection even when the later-stage event has an earlier source coordinate.
 
 A semantic role is owned by the lowest production node whose selected right-hand side directly contains the terminal that carries the role; a role reached only through a referenced child production is owned by that child. A referenced child production means a child production node, not an external terminal predicate such as `literal`. A semantic role may occupy a complete name terminal, a complete literal terminal, or the exact TYPEID suffix of a FORM-5 generic numeric literal `0_T` or `1_T`. The suffix role's spelling excludes `_`, and its coordinate is exactly the suffix byte interval. One token may carry more than one role: for example, a law argument `0_T` has one deferred law-argument role on the complete literal and one lexical generic-type use on `T`. A struct TYPEID remains one declaration event producing two domain entries, not two events.
 
@@ -517,12 +585,13 @@ Declaration inventory creates candidates under this closed rank:
 2. an OWN-3 repeated REGIONID declaration within one function declaration or contract-member signature, parameters included;
 3. a GRAM-10 match-binder freshness violation;
 4. a TYPE-6 collision with PRE-1;
-5. a TYPE-6 compilation-root duplicate or same-lexical-scope redeclaration; and
-6. a TYPE-6 nested declaration shadowing a live declaration.
+5. a TYPE-6 collision with an admitted system declaration [SYS-1];
+6. a TYPE-6 compilation-root duplicate or same-lexical-scope redeclaration; and
+7. a TYPE-6 nested declaration shadowing a live declaration.
 
 The stage selects the minimum declaration-event key and then the first applicable rank at that event. A FORM-3 reservation payload is `(spelling, declaration_role, reserved_class, inventory_ordinal)`. Its `spelling` is the complete declaration spelling. A REGIONID payload uses its unsigiled IDENT-shaped interior while the rejection coordinate retains the complete sigiled token. Its closed declaration roles are function, named-const, parameter, let, match-binder, field, variant-field, region-parameter, and local-region. `reserved_class` is dotless-operation or mode-word. A dotless-operation ordinal is the zero-based first occurrence among distinct operation-family spellings, scanning OP-1 rows top to bottom and each `op` cell left to right and skipping every later occurrence of the same spelling; both `cvt` rows therefore name one family and one ordinal. A mode-word ordinal is the zero-based FORM-3 alternative order `wrap`, `trap`, `checked`, `sat`, `strict`. Those two reserved sets are disjoint in this version. An OWN-3 repeated-region payload is `(spelling, conflicting_region_origin)` and points to the later region declaration; OWN-3 precedes GRAM-10 in the rank even though no grammar carrier can be both a region declaration and a match binder. For the GRAM-10 violation defined by TYPE-6, the payload is `(binder_spelling, paired_field_spelling, optional_earlier_binder_origin, ordered_arm_entry_live_lexical_ident_origins)`. Earlier binders and arm-entry origins are ordered by declaration-event key. That binder does not also create a TYPE-6 duplicate or shadow candidate.
 
-A TYPE-6 collision payload is `(spelling, ordered_nonempty_conflicts)`. Conflict domains use the fixed order lexical-IDENT, nominal-type, constructor, contract, REGIONID, LABEL. Each conflict contains its domain, declaration class, and `conflicting_origin`; conflicts within one domain use PRE-1 declaration ordinal first and then source declaration-event key. A source origin is `(NodePath, SourceCoordinate, role_ordinal, subtoken_ordinal)`; a PRE-1 origin is `(PRE-1, declaration_ordinal)`, where `declaration_ordinal` is the zero-based twenty-four-record preorder fixed by TYPE-6. A struct event may report both nominal-type and constructor conflicts in that order. Rank 4 reports only PRE-1 conflicts when the same event also conflicts with source. A PRE-1 collision points to the source declaration. Rank 5 points to the later source declaration event. Rank 6 points to the nested declaration, including one shadowing a source-later but whole-unit-visible function. Every inventory rejection uses `SourceNode` at the declaration role and has no expected-terminal set.
+A TYPE-6 collision payload is `(spelling, ordered_nonempty_conflicts)`. Conflict domains use the fixed order lexical-IDENT, nominal-type, constructor, contract, REGIONID, LABEL. Each conflict contains its domain, declaration class, and `conflicting_origin`; conflicts within one domain use PRE-1 declaration ordinal first, then system declaration ordinal, then source declaration-event key. A source origin is `(NodePath, SourceCoordinate, role_ordinal, subtoken_ordinal)`; a PRE-1 origin is `(PRE-1, declaration_ordinal)`, where `declaration_ordinal` is the zero-based twenty-four-record preorder fixed by TYPE-6; a system origin is `(System, system_declaration_ordinal)`, where `system_declaration_ordinal` is the zero-based preorder fixed by [SYS-2] and appears only in a system-admitted unit [SYS-3]. A struct event may report both nominal-type and constructor conflicts in that order. Rank 4 reports only PRE-1 conflicts when the same event also conflicts with an admitted system declaration or with source. Rank 5 reports only system conflicts when the same event also conflicts with source, and is selected for a colliding declaration event at the compilation root and in a nested scope alike, ahead of ranks 6 and 7 at that event. A PRE-1 collision and a system collision each point to the source declaration. Rank 6 points to the later source declaration event. Rank 7 points to the nested declaration, including one shadowing a source-later but whole-unit-visible function. Every inventory rejection uses `SourceNode` at the declaration role and has no expected-terminal set.
 
 If inventory succeeds, every lexical use admitted by TYPE-6 or OP-1 creates one lexical-use event. The generic-numeric suffix admits a live generic TYPEID parameter; FN-3 and FORM-5, not lexical resolution, later require its numeric bound. Lexical resolution fixes only the declaration or operation-family target.
 
@@ -550,7 +619,7 @@ For one lexical-use event the closed lookup rank is:
 
 A successful non-LABEL lookup has exactly one visible admissible target; a successful LABEL lookup has exactly one enclosing target. A rank-1 payload is `(spelling, lexical_use_role, ordered_admissible_classes, ordered_nonempty_invisible_origins)`. A rank-2 payload is `(spelling, lexical_use_role, ordered_nonempty_label_origins)`. A rank-3 payload is `(spelling, lexical_use_role, ordered_admissible_classes, ordered_available_classes)`, where available classes are visible exact-spelling entries in that use's candidate universe, listed once in the closed class order and possibly empty. Complete IDENT, TYPEID, OPNAME, REGIONID, and LABEL use spellings include any sigil; only the generic-numeric suffix spelling is bare `T`. This is declaration-kind resolution, not type checking. Across use events the minimum event key wins. Every resolution rejection uses `SourceNode` at the use role and has no expected-terminal set.
 
-The dependent-declaration carriers are exactly the `field` and `vfield` declarations and the member declaration of `fn_sig`. Each is a declaration-class carrier that produces one dependent-declaration record and one declaration event for later typed owner/member checking, but none enters a resolver lookup inventory. The two field carriers participate in FORM-3's reservation inventory; the contract-member carrier does not. The deferred-use carriers are exactly the `law` name and each complete law argument, the left IDENT of `fn_bind`, the first IDENT of `fieldbind`, each `fieldinit` IDENT, and each `psuffix` IDENT. Each produces one deferred-use record for later typed owner/member checking. The lexical generic suffix inside a deferred literal law argument additionally receives its ordinary lexical-use record; this X09/U18 pair is the only same-token overlap and produces two distinct role records. In an `arm`, its leading TYPEID first resolves globally to an enum variant; later typed checking compares that variant's owning enum with the scrutinee enum, and a foreign-variant relation cites TYPE-6. The resolver does not otherwise accept or reject a dependent role's owner/member relation.
+The dependent-declaration carriers are exactly the `field` and `vfield` declarations and the member declaration of `fn_sig`. Each is a declaration-class carrier that produces one dependent-declaration record and one declaration event for later typed owner/member checking, but none enters a resolver lookup inventory. The two field carriers participate in FORM-3's reservation inventory; the contract-member carrier does not. The deferred-use carriers are exactly the `law` name and each complete law argument, the left IDENT of `fn_bind`, the first IDENT of `fieldbind`, each `fieldinit` IDENT, and each `psuffix` IDENT. Each produces one deferred-use record for later typed owner/member checking. The table-checked carriers are exactly the `program_kind` IDENT and both IDENTs of an `input_label`. Each produces one record for later [FN-7] table checking; none produces a declaration, lexical-use, dependent-declaration, or deferred-use record, none enters or queries a lexical name domain, and none participates in FORM-3's reservation inventory. The lexical generic suffix inside a deferred literal law argument additionally receives its ordinary lexical-use record; this X09/U18 pair is the only same-token overlap and produces two distinct role records. In an `arm`, its leading TYPEID first resolves globally to an enum variant; later typed checking compares that variant's owning enum with the scrutinee enum, and a foreign-variant relation cites TYPE-6. The resolver does not otherwise accept or reject a dependent role's owner/member relation.
 
 A missing whole-unit requirement is not fabricated as an inventory or lookup event. Missing `main` remains an FN-7 rejection at `BundleRoot`. Duplicate `main` names are the later-source TYPE-6 duplicate; one unique but wrong-signature `main` is a later FN-7 rejection at its source declaration. Missing or duplicate contract members, field labels, conform bindings, and law roles remain typed-dependent rejections.
 
@@ -604,6 +673,22 @@ Identical bound source bytes reaching the same failing checked site therefore pr
 
 [LEDGER-1] There is exactly one boundary-construct family (unsafe regions, FFI extern frames, trusted primitive imports), sharing one per-fact soundness-obligation ledger; manifest-free members are unrepresentable; members are AI-authored and human-approved through the gate (owner ruling D0a). A kernel writer sees these constructs only as opaque, pre-approved library signatures.
 
+[GATE-2] The system domain is not this family. A system operation is
+compiler-owned: this specification fixes its complete contract [QUAL-1] and an
+approved target entry supplies its implementation, so it is neither an unsafe
+region, an FFI extern frame, nor a trusted primitive import; it holds no
+per-fact soundness-obligation ledger entry [LEDGER-1] and is not a
+writer-authored, writer-approved, or gate-edited declaration [GATE-1]. A
+program that calls system operations therefore contains no gated construct and
+remains a kernel program [SCOPE-1], and [SCOPE-3]'s foreign-code condition is
+not engaged by a system operation. The converse separation is equally exact:
+the system domain admits exactly the operations this specification names, while
+general FFI, arbitrary imported or exported foreign calls, raw host-ABI calls,
+and writer-declared external signatures remain reserved to this family and are
+unreachable through the system domain. Adding a system operation is a
+specification amendment [META-5]; it is never a gate approval, a ledger entry,
+or a target-implementation act.
+
 ## 15. Prelude (normative, counted)
 
 [PRE-1] The prelude is exactly:
@@ -644,7 +729,755 @@ contract Float {
 }
 ```
 
-## 16. Worked example (normative bytes)
+## 16. System declaration domain (normative, counted)
+
+[SYS-1] There is exactly one compiler-owned system declaration domain. It is a
+third admitted declaration source alongside source declarations and the prelude
+[PRE-1]; it is not the prelude and not a member of the gated boundary family
+[GATE-1, LEDGER-1]. Its complete membership is the system inventory [SYS-2].
+Whether a compilation unit admits it is fixed by [SYS-3].
+
+A system declaration is compiler-owned data of this specification. It is not a
+source record, include, import, module, separate compilation, dynamic loading,
+or source-path lookup [PROG-1]. It has no source record, source node, source
+coordinate, role, or declaration event, and no source construct declares,
+redeclares, extends, reopens, or overrides it.
+
+The inventory contributes exactly three declaration classes, each already a
+member of the closed declaration-class order [DIAG-1]. A system nominal type
+takes the nominal-type class and is an entry of the nominal-type TYPEID domain
+[TYPE-6]. A system constructor takes the struct-constructor or enum-variant
+class fixed for it by [SYS-2] and is an entry of the constructor TYPEID domain
+[TYPE-6]. A system operation takes the function class and is an entry of the
+lexical IDENT domain [TYPE-6]. The domain contributes no contract, region,
+label, const-generic, generic-type, value, or operation-family entry, and
+introduces no declaration class.
+
+In a system-admitted unit every inventory entry is visible throughout the
+closed unit, is a compilation-root entry of its domain in every lexical use's
+candidate universe [DIAG-1], and participates in that domain's whole-unit
+uniqueness [TYPE-6]. That visibility depends on neither the position of the
+entry declaration, nor record order [PROG-2], nor any source declaration point.
+The owner-local field and parameter records fixed by [SYS-2] are visible only
+within their owning system declaration and never enter source lookup.
+
+In a system-admitted unit a source declaration whose spelling equals an
+inventory entry's spelling in the same domain is a collision, rejected under
+[DIAG-1], at the compilation root and in every nested scope alike. No source
+declaration displaces, replaces, overrides, reopens, or shadows an inventory
+entry, and no inventory entry displaces a source declaration: the unit is
+rejected and neither declaration resolves. No use of a colliding spelling is
+decided by proximity, declaration order, scope depth, or expected type.
+
+A system nominal type, constructor, or operation exists only as an inventory
+entry [SYS-2]. No source construct becomes one by spelling, signature,
+parameter shape, result type, effect row, or any other source property, in a
+system-admitted unit or a system-unadmitted one.
+
+Each inventory entry has one zero-based `system_declaration_ordinal` assigned by
+the [SYS-2] preorder. That ordinal is the entry's identity in a diagnostic
+origin [DIAG-1].
+
+[SYS-2] The system inventory is exactly:
+
+Seven opaque nominal types: `Args`, `HostString`, `RelativePath`,
+`DirectoryRead`, `ReadFile`, `Output`, and `ExitStatus`. Each contributes one
+nominal-type entry and no constructor entry. An opaque type has no writer-visible
+field, variant, literal, size, alignment, or representation. It is a complete
+written `type` under [GRAM-3] as a bare TYPEID with no `targs`, carries no
+region and no type parameter, and is therefore region-free under [STOR-5]. It is
+not const-eligible [CONST-2], is not a `cvt` or `reinterpret` domain [OP-6,
+OP-8], is not an integer, float, `Bool`, or tag-only enum operand domain [OP-1],
+and has no equality, ordering, or conversion operation. Its values are produced
+only by the operations in this rule and by the command entry's standard input
+bindings. Every value of an opaque type is affine under [OWN-1].
+
+Seven enum nominal types with thirty-nine variant constructors:
+
+enum ArgError {
+  InvalidIndex();
+}
+
+enum Utf8Error {
+  Utf8Invalid();
+}
+
+enum CopyError {
+  CopyTooSmall(required: u64);
+}
+
+enum Utf8CopyError {
+  Utf8CopyTooSmall(required: u64);
+  Utf8CopyInvalid();
+}
+
+enum PathError {
+  PathInvalid();
+}
+
+enum ReadOutcome {
+  ReadBytes(count: u64);
+  ReadEnd();
+  ReadFailed(error: IoError);
+}
+
+enum IoError {
+  NotFound(code: u32, origin: u8);
+  PermissionDenied(code: u32, origin: u8);
+  AlreadyExists(code: u32, origin: u8);
+  NotDirectory(code: u32, origin: u8);
+  IsDirectory(code: u32, origin: u8);
+  DirectoryNotEmpty(code: u32, origin: u8);
+  ReadOnly(code: u32, origin: u8);
+  ResourceBusy(code: u32, origin: u8);
+  InvalidInput(code: u32, origin: u8);
+  InvalidPath(code: u32, origin: u8);
+  Unsupported(code: u32, origin: u8);
+  Interrupted(code: u32, origin: u8);
+  WouldBlock(code: u32, origin: u8);
+  TimedOut(code: u32, origin: u8);
+  BrokenPipe(code: u32, origin: u8);
+  WriteZero(code: u32, origin: u8);
+  UnexpectedEnd(code: u32, origin: u8);
+  ConnectionRefused(code: u32, origin: u8);
+  ConnectionReset(code: u32, origin: u8);
+  ConnectionAborted(code: u32, origin: u8);
+  NotConnected(code: u32, origin: u8);
+  AddressInUse(code: u32, origin: u8);
+  AddressUnavailable(code: u32, origin: u8);
+  ResourceExhausted(code: u32, origin: u8);
+  FileTooLarge(code: u32, origin: u8);
+  NoSpace(code: u32, origin: u8);
+  QuotaExceeded(code: u32, origin: u8);
+  CrossDevice(code: u32, origin: u8);
+  DeviceFailure(code: u32, origin: u8);
+  Other(code: u32, origin: u8);
+}
+
+Eleven operations, each one complete signature record in the [GRAM-2] `fn_sig`
+shape:
+
+fn args_count ['a](args: &'a Args) -> own u64 reads('a);
+fn arg_get ['a](args: &'a Args, index: own u64) -> own Result<HostString, ArgError> reads('a);
+fn host_bytes_len ['v](value: &'v HostString) -> own u64 reads('v);
+fn host_copy_bytes ['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, offset: own u64, capacity: own u64) -> own Result<u64, CopyError> reads('v 'd), writes('d), traps;
+fn host_utf8_len ['v](value: &'v HostString) -> own Result<u64, Utf8Error> reads('v);
+fn host_copy_utf8 ['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, offset: own u64, capacity: own u64) -> own Result<u64, Utf8CopyError> reads('v 'd), writes('d), traps;
+fn relative_path(value: own HostString) -> own Result<RelativePath, PathError> pure;
+fn open_read ['c, 'p](root: &'c DirectoryRead, path: &'p RelativePath) -> own Result<ReadFile, IoError> reads('c 'p), external, blocks;
+fn read_once ['f, 'd](file: &uniq 'f ReadFile, destination: &uniq 'd buffer<u8>, offset: own u64, capacity: own u64) -> own ReadOutcome reads('f 'd), writes('f 'd), external, blocks, traps;
+fn write_once ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, offset: own u64, count: own u64) -> own Result<u64, IoError> reads('o 's), writes('o), external, blocks, traps;
+fn exit_status(code: own u8) -> own ExitStatus pure;
+
+The inventory is therefore exactly fourteen nominal types, thirty-nine
+enum-variant constructors, sixty-four variant fields, eleven operations,
+fourteen operation region parameters, and twenty-five operation value
+parameters.
+
+Each operation's declared region entries are fixed by its own signature: every
+borrow parameter of formal region `'r` contributes `reads('r)`, and every
+`&uniq 'r` parameter through which the operation changes the borrowed value
+additionally contributes `writes('r)`. The rows above are exactly that
+derivation together with each operation's fixed external, blocking, and trapping
+classification; a system operation's row is declaration data and is never
+derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
+An operation whose row contains `external` may observe or change state outside
+ordinary Whitefoot memory, and one whose row contains `blocks` may block its
+current host thread [EFF-1]. No system operation allocates.
+
+Every system operation is nongeneric: it declares no type parameter and no const
+parameter, so no `targ` in a system-operation call is a `type` or a `const`. A
+call whose callee resolves to a system operation writes its region arguments as
+`targs` in declared region-parameter order and its value arguments as a
+`fieldinit_list` [GRAM-5] whose IDENTs equal the declared parameter names in
+declared order, under the same discipline [GRAM-11] applies to a user function.
+Positional operands are not admitted. A system operation is not a contract
+member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies
+[FN-4]'s bound-function premise; a conformance binds only a top-level source
+function.
+
+[SYS-2] contributes exactly one hundred and sixty-seven declaration records in this preorder:
+each nominal type in table order; then each constructor in table order, and
+within one constructor each of its fields in declared order; then each operation
+in table order, and within one operation each of its parameters in declared
+order. Exactly the nominal types, the constructors, and the operations enter the
+source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1].
+The field and parameter records are owner-local: a field record enters only its
+owning constructor's table and a parameter record only its owning operation
+signature, and neither is visible to source lookup.
+
+Each nominal-type row fixes one TYPEID spelling. Each constructor row fixes one
+TYPEID spelling, its class as struct-constructor or enum-variant, its owning
+system nominal type, and its fields in declared order, each with a field name
+and a type. Each operation row fixes one IDENT spelling, its parameters in
+declared order, each with a parameter name, a mode, and a type; its result mode
+and type; and its written effect row.
+
+The table satisfies the following properties. Each is a property of this
+specification's data, established once for this document, and is not a
+source-language check. Every nominal-type and constructor spelling satisfies
+TYPEID and every operation spelling satisfies IDENT and contains no dot
+[FORM-3]. No operation spelling is a member of `ReservedLowerNames` [OP-1].
+Spellings are unique within each of the nominal-type, constructor, and lexical
+IDENT domains, and are disjoint from the PRE-1 spellings of the same domain.
+Every field name is unique within its constructor and every parameter name is
+unique within its operation. Every type written in the table is a nameable type
+[TYPE-3] fixed by this document or by this table.
+
+[SYS-3] Every compilation unit has exactly one system-admission state, fixed by
+one syntactic predicate over its complete finalized item sequence.
+
+A unit whose item sequence contains at least one top-level entry declaration
+carrying a program-kind label [FN-7] is system-admitted: the complete system
+inventory [SYS-2] enters that unit's declaration inventory as fixed by [SYS-1].
+
+A unit whose item sequence contains no top-level entry declaration carrying a
+program-kind label [FN-7] is system-unadmitted: the system domain contributes no
+entry to that unit, every system spelling is an undeclared name there, and a use
+of one is decided by the ordinary lexical-use ranks [DIAG-1]. A source
+declaration in such a unit may use any system spelling; it is then an ordinary
+declaration of its own kind, it collides with nothing, and every use of that
+spelling in the unit resolves to it under the ordinary domains [TYPE-6, OP-1].
+
+The predicate reads exactly the presence of that program-kind label. It consults
+no entry parameter list, standard input label, written type, mode, region,
+effect row, or result type; no count of entry declarations and no later [FN-7]
+whole-unit judgment; no resolved name, inferred type, or lowering outcome; and
+no use of any system name. It is therefore decided from the finalized
+compilation-unit tree alone. It is total, admits every unit to exactly one
+state, and creates no candidate, event, or rejection of its own. [DIAG-1] fixes
+the stage at which it is decided.
+
+## 17. System interface (normative, counted)
+
+[HOST-1] A host string is a lossless target-indexed sequence of code units, not
+text. The complete set of code-unit families is exactly two. On a Unix-family
+target a host-string code unit is one 8-bit value in `0x01..0xff`, so every
+arbitrary non-NUL byte sequence is representable and preserved exactly. On a
+Windows-family target a host-string code unit is one native 16-bit value, so
+every arbitrary 16-bit unit sequence is representable and preserved exactly,
+including sequences that are not a valid Unicode scalar sequence. Every
+argument, environment entry, and native path value that reaches source through
+a system operation retains its complete original code-unit sequence: no
+operation normalizes, case-folds, reorders, substitutes, truncates, or refuses
+a code-unit sequence because it is not valid text. Code-unit width and family
+are properties of the selected target [STOR-6], not a portable source layout:
+the opaque type carries them, no source construct observes them, and no
+operation yields them as source values of a fixed width. A target whose native
+representation belongs to neither family qualifies for the host-string and path
+semantic IDs only under a specification amendment [META-5] that gives that
+target its own lossless family; without that amendment it fails qualification
+for exactly those semantic IDs [QUAL-1], and no implementation narrows their
+semantics to what its own string domain can carry.
+
+[HOST-2] Conversion between host-string code units and UTF-8 text is explicit
+and fallible. There is no implicit conversion [TYPE-4]: no rule admits a host
+string where text is required or text where a host string is required, and a
+host string reaches source content only through an operation that names the
+route it takes. Exactly two routes exist. The lossless route reports the exact
+length of, and copies, the target's own code units with no validation and no
+Unicode restriction; its only recoverable failure is a destination too small
+for that exact length. The text route validates the complete code-unit sequence
+as text and either reports the exact encoded length and copies the complete
+encoding or reports an explicit invalid-text outcome; it never emits a
+replacement code point, drops a code unit, produces a truncated encoding, or
+copies part of an encoding. Escaped, quoted, and lossy display of a host string
+are a DEFERRED separate presentation family with their own delta [META-5], not
+a mode of either route. The exact operation names, signatures, buffer and range
+preconditions, and outcome types of both routes are [OP-1] table data.
+
+[HOST-3] The first system slice defines exactly one host-string type. Its value
+is an opaque inline lease — a private code-unit address and length carried in
+the value itself — over immutable backing supplied by the command invocation,
+and a relative path constructed from one retains that same inline
+representation [PATH-1]. A lease owns no code-unit storage, several live leases
+may denote the same backing code units, and its compiler-derived release is a
+logical consume with no host call and no external effect [STOR-3]. Its backing
+is the command-lifetime argument snapshot that [QUAL-2] requires of every
+qualified target. Because that backing strictly outlives every value derived
+from it, a lease denotes valid code units however it is bound, moved, matched,
+returned, passed, or stored, and no source-level rule relates a lease to its
+backing: a lease is neither a borrow nor a region-bearing type, so [STOR-5]
+places no restriction on storing one and [OWN-5] provenance does not describe
+it. That guarantee is a property of the target, enforced at qualification, and
+is not a judgment over source. A producer whose backing is not command-lifetime
+yields no value of this type: it introduces a distinct owned-backing string
+resource with its own release action and its own family contract, because
+storage class is a function of type [STOR-1] and one type carries exactly one
+release action. Conversion between the two types is an explicit later operation
+with its own delta [META-5]; no implicit retype, coercion, or representation
+change relates them [TYPE-4]. Retention of lease identity in the checked
+program [DIAG-2] serves auditing and lowering; it is not a source-acceptance
+judgment and refuses no program.
+
+[PATH-1] A relative path is an opaque value whose code units are admitted by
+construction from one host string and are never assembled, split, or
+concatenated as source text. Construction consumes its input host string on
+success and on failure. It succeeds exactly when the complete code-unit
+sequence contains no NUL code unit and begins with no target-root prefix, where
+a target-root prefix is a code-unit sequence the selected target resolves
+against a filesystem root, drive, device, or other namespace root rather than
+against a supplied directory capability. The exact target-root prefix set is
+target data fixed by that target's qualification record [QUAL-1]; a
+Unix-family leading separator and a Windows-family drive or UNC prefix are
+members of their targets' sets. Success retypes the same inline lease [HOST-3]
+with no allocation, no copy, and no code-unit change; failure yields no path
+value. Construction preserves every admitted code unit exactly — including `.`
+and `..` components and every separator — and performs no normalization,
+canonicalization, case folding, prefix stripping, or component collapse. A path
+component type, an absolute path type, and every operation that decomposes,
+enumerates, joins, or displays a path are DEFERRED additions with their own
+deltas [META-5]. The first slice constructs one relative path from one host
+string and supplies it to a directory-relative operation [PATH-2].
+
+[PATH-2] A directory-read capability names one directory object, and a
+directory-relative operation resolves a relative path against it through the
+target's own directory-relative resolution. The capability bound to the
+command's working-directory entry input is process-equivalent: resolution
+follows `.` and `..` components, symbolic links, reparse points, and mount
+transitions exactly as the surrounding process namespace does, so a resolved
+object may lie outside the directory that capability names. That is the
+complete promise this type makes, and it is not a confinement claim. An
+implementation presents no stronger one: a target implements directory-relative
+resolution with its own directory-relative facility, never by concatenating a
+prefix onto a path and resolving the result against an ambient working
+directory, and a target with no directory-relative facility fails qualification
+for the directory-relative semantic IDs [QUAL-1] rather than emulating them. A
+confined directory capability — one guaranteeing that lexical traversal, links,
+mount transitions, and rename races cannot escape a granted root — is a
+DEFERRED addition with its own distinct type and contract [META-5]; a value's
+confinement promise is fixed by its type and never changes at runtime. Absolute
+paths, cross-root operations, and target-root prefixes require their own inputs
+and operations, and a directory-read capability admits none of them [PATH-1].
+
+[QUAL-1] Every system operation has exactly one target-independent semantic ID
+owned by this specification. That ID's record binds the operation's signature,
+complete outcome set, ownership transitions, memory and external effects
+[EFF-1], compiler-derived cleanup [STOR-3], and required target guarantees
+[QUAL-2]. The checked program carries only the semantic ID [DIAG-2]: an
+operation's identity comes from resolution in the system declaration domain,
+and no source function name or spelling, logical path [PROG-2], project,
+corpus, test, or signature lookalike ever selects, adds, or removes one. A
+separate target-qualification table maps each
+`(specification version, semantic ID, target, program kind)` to exactly one
+approved implementation version and one private ABI symbol. The compiler
+consults that table after selecting the exact target and ABI [STOR-6] and
+before emitting any use of the operation. Compilation stops when the mapping is
+absent, when the approved implementation is incompatible with the selected
+target or program kind, or when a required target guarantee is unmet. That stop
+is a target-qualification failure under [DIAG-1]; like a target-layout failure
+it is not a source-language rejection and cites no language rule. Qualification
+never narrows a semantic ID to what a target can supply, and no implementation
+substitutes a different or weaker operation for an unqualified one. An approved
+implementation may be replaced only within one semantic identity: a change to
+any element the record binds is a different semantic ID under a new
+specification version [META-5] and a compatibility review, never a
+target-code update. The table is compiler-internal data; the language defines
+no registry, negotiation protocol, dynamic loading, or plugin interface
+[PROG-1].
+
+[QUAL-2] A target qualifies for a semantic ID exactly when it supplies every
+target guarantee that ID's record requires; when it cannot supply one, it fails
+qualification for that ID and compilation stops [QUAL-1] rather than admitting
+the operation under a weaker guarantee. Two guarantees are stated here because
+each is a property of the target with nothing in a program to check. The first
+is command-lifetime argument backing: a target qualified for the command entry
+and for argument access supplies immutable backing for every argument code unit
+that is valid from before entry until the command invocation ends, either as
+stable native argument backing or as one complete snapshot taken before any
+Whitefoot code runs. A target that can supply neither fails qualification for
+both IDs; a qualified target that cannot establish the backing for one
+invocation refuses startup before entry rather than entering with backing that
+does not meet this guarantee. The second is a lossless host-string code-unit
+family [HOST-1] for the host-string and path semantic IDs. Qualification
+failure and startup refusal both occur before entry, so neither is a
+source-returned status, a recoverable outcome, or a trap [TRAP-1].
+
+[QUAL-3] For a natively compiled command, selection is static for the whole
+build: [QUAL-1] fixes the approved implementation of each semantic ID at
+compile time, and the emitted program contains no runtime operation-ID switch,
+target tag, per-call dispatch table, instance handle table, or handle lookup
+that selects among implementations. A synchronous transfer lowers to its
+required source and target checks [STOR-6], at most one direct host call, one
+count or outcome check, and a cold outcome mapper reached only on failure. That
+path performs no heap allocation, no copy of the transferred data, no global
+system lock acquisition, and no per-call signal-disposition operation. The
+compiler wrapper is inlined, or any remaining call is shown to be immaterial,
+as a condition of qualification. One-time per-invocation normalization belongs
+to the command bootstrap before entry rather than to any transfer: on the first
+native command targets that bootstrap owns the process and installs the ignored
+disposition for the write-to-closed-pipe signal, so a closed output destination
+reaches source as a recoverable outcome [ERR-4]. A program kind whose process
+the bootstrap does not own obtains an equivalent host guarantee under its own
+qualification and never changes a surrounding host process's signal policy.
+This rule fixes the required emitted shape; the evidence establishing it is
+inspection of emitted code and symbols, not a machine-checked language
+judgment.
+
+[TRAP-1] A trap in a program holding system resources retains [SCOPE-4] and
+[EFF-4] exactly: the runtime attempts the mandatory [DIAG-3] record and then
+aborts the whole process without unwinding, without running language cleanup,
+and without producing a status of any kind. No release, close, flush, detach, or
+completion action fixed by a system resource contract [STOR-3] runs after a
+contract violation, and no source-visible cleanup, handler, or recovery point
+exists. Process-local memory, native descriptors, and every other process-local
+system object held at that moment are reclaimed by operating-system process
+teardown, which is a property of the host inside the [SCOPE-3] trusted computing
+base rather than a language cleanup guarantee. External effects already
+performed are not rolled back: bytes already written remain written, an object
+already created remains created, and a persistent object or already-started
+external work retains the semantics its own family gives it. A host that
+requires a Whitefoot instance to fail without ending its process runs that
+instance in a separate process. Because a trap ends the owning process, no
+instance resource table, per-instance reaper, or pending-operation transfer is
+required, and none appears on a synchronous transfer path [QUAL-3].
+Host-surviving in-process trap containment is a DEFERRED language amendment
+with its own delta [META-5].
+
+[SYS-4] Each system type has exactly one kind, one `Sendable` judgment, and one
+`Shareable` judgment [CAP-1]. Every first-slice system type permits shared
+borrows, so permitting a shared borrow is not what separates the kinds. An
+immutable value has no cursor, sequence position, or caller-visible mutation;
+owning storage does not make it a resource. A shared capability owns no
+caller-visible cursor or sequence position that a later call consumes, and its
+shared operations may observe outside state or create an independent owned
+resource. A stateful resource identifies one live stateful object; an operation
+that advances a cursor, fixes observable order, or otherwise changes its state
+takes `&uniq` or consumes the owner.
+
+| type | kind | Sendable | Shareable |
+|---|---|---|---|
+| `Args` | immutable value | yes | yes |
+| `HostString` | immutable value | yes, on the command-lifetime argv backing | yes, on the command-lifetime argv backing |
+| `RelativePath` | immutable value | yes, on the command-lifetime argv backing | yes, on the command-lifetime argv backing |
+| `DirectoryRead` | shared capability | yes | yes |
+| `ReadFile` | stateful resource | yes | no |
+| `Output` | stateful resource | yes | no |
+| `ExitStatus` | immutable value | yes | yes |
+
+`ExitStatus` is Sendable and Shareable because it is an immutable command code
+with no interior state. `HostString` and `RelativePath` are Sendable and
+Shareable because their backing is immutable and outlives the invocation; the
+judgment is a judgment about that backing, so a later string type with
+separately owned backing rederives both predicates from its own representation
+and inherits neither [SYS-9]. `ReadFile` and `Output` are not Shareable because
+a file cursor and an output publication order each have exactly one mutable
+owner; a later contract may add explicit lanes or consume `Output` into a
+publisher, and neither retroactively makes an original type shared.
+
+These are declared capability predicates. v0.18 defines no thread construct, so
+no program's acceptance depends on them; they fix what a concurrency layer may
+assume and what a later type may not inherit.
+
+Kind is a type-contract distinction and introduces no writer-visible keyword.
+`own`, `&'r`, and `&uniq 'r` [OWN-2] express every use of every kind. A family
+operation that duplicates, splits, or attenuates a resource exists only when its
+alias, ordering, cleanup, and concurrent-use rules are complete; the first slice
+declares none, so no system value is duplicated, split, attenuated, or
+converted, and no integer right mask is exposed to source.
+
+[SYS-5] Every system resource family declares one completion policy. v0.18
+defines exactly one: release-complete. Under it, compiler-derived release is the
+complete language obligation for the type, and a source program needs no
+terminal operation to discharge ownership. `Args`, `HostString`, `RelativePath`,
+`DirectoryRead`, `ReadFile`, `Output`, and `ExitStatus` are all
+release-complete, so v0.18 defines no exact-use checking obligation.
+
+Two further policy classes are named and reserved without machinery.
+Explicitly-abandonable means the type exposes a consuming abandon operation
+whose contract permits loss of unfinished external work, so abandonment is a
+source action rather than an accidental affine discard. Completion-required
+means every normal or recoverable exit must consume the owner through a terminal
+transition. v0.18 declares no type under either class and defines no operation,
+checker obligation, or diagnostic for either; naming them fixes the vocabulary a
+later buffered output, atomic replacement, pending operation, or child process
+must use rather than silently inheriting release-complete [SYS-12].
+
+The consuming release action of each system type is exactly:
+
+| type | release action | release effect |
+|---|---|---|
+| `Args` | logical consume | none |
+| `HostString` | logical consume of an inline lease | none |
+| `RelativePath` | logical consume of an inline lease | none |
+| `DirectoryRead` | at most one native close attempt | `external, blocks` |
+| `ReadFile` | one native close attempt | `external, blocks` |
+| `Output` | logical source detach | none |
+| `ExitStatus` | logical consume | none |
+
+A logical consume performs no host call, no target call, no handle lookup, no
+byte copy, and no external effect. A native close attempt discards only the
+close diagnostic and never retries an ambiguous close: a consuming close
+invalidates the source handle on success and on error, because the native
+descriptor may already be closed and reusable. `Output`'s logical source detach
+neither closes nor flushes the host descriptor [SYS-12]. Release of an outcome
+value is release of its components: `ArgError`, `Utf8Error`, `CopyError`,
+`Utf8CopyError`, `PathError`, `IoError`, and `ReadOutcome` have no release
+action and take no row above, and a `ReadOutcome` or `Result` carrying a system
+value releases that value by this table.
+
+A release action is compiler-derived and explicit in the checked program
+[STOR-3, DIAG-2]. `flush`, `sync`, directory sync, atomic commit, and final
+handle release are different semantic operations; v0.18 declares none of them,
+and release is never a substitute for one. Whole-process abort performs no
+release: a trap runs no language cleanup and returns no status [EFF-4,
+SCOPE-4], and the operating system reclaims process-local memory and handles
+while external writes are not rolled back.
+
+[SYS-6] Each system operation declares its own outcome type; there is no shared
+outcome union. An operation with exactly two outcomes returns a [PRE-1]
+`Result<T, E>` instantiation and declares no new constructor spelling. The one
+operation with more than two outcomes declares one enum whose variant spellings
+carry its operation prefix, so no two operations compete for a constructor name
+in the whole-unit constructor domain [TYPE-6]. The complete inventory is:
+
+| operation | outcome type |
+|---|---|
+| `args_count` | `own u64`; total, no failure outcome |
+| `arg_get` | `own Result<HostString, ArgError>` |
+| `host_bytes_len` | `own u64`; total, no failure outcome |
+| `host_utf8_len` | `own Result<u64, Utf8Error>` |
+| `host_copy_bytes` | `own Result<u64, CopyError>` |
+| `host_copy_utf8` | `own Result<u64, Utf8CopyError>` |
+| `relative_path` | `own Result<RelativePath, PathError>` |
+| `open_read` | `own Result<ReadFile, IoError>` |
+| `read_once` | `own ReadOutcome` |
+| `write_once` | `own Result<u64, IoError>` |
+| `exit_status` | `own ExitStatus`; total, no failure outcome |
+
+`InvalidIndex` states that the requested argument index is not present and
+returns no value. `Utf8Invalid` states that the host string is not valid UTF-8.
+`CopyTooSmall(required)` and `Utf8CopyTooSmall(required)` state the exact length
+the destination range must have for the same call to succeed. `Utf8CopyInvalid`
+states that the host string is not valid UTF-8. `PathInvalid` states that the
+consumed host string is not a valid relative path and returns no value.
+`ReadBytes(count)`, `ReadEnd`, and `ReadFailed(error)` are [SYS-8]'s three read
+outcomes. On a successful `arg_get` the `Ok` payload is the requested
+`HostString`; on a successful length, copy, or write the `Ok` payload is the
+exact `u64` byte, encoded, or accepted length.
+
+These error types are distinct nominal types and do not convert into one another
+[TYPE-4]. `propagate` [ERR-3] therefore chains only across operations that
+already share one error type: in v0.18 that is exactly `open_read` and
+`write_once` inside a function whose written result is `own Result<U, IoError>`.
+`PathError`'s `PathInvalid` and `IoError`'s `InvalidPath` are deliberately
+different failures and never substitute for each other.
+
+[SYS-7] `IoError` is the closed portable class set declared by [SYS-2]. Its
+thirty classes are the complete portable failure vocabulary of every system
+operation that can fail against a host, and the class is the sole portable
+semantic discriminator: exhaustive portable control flow branches on the class
+[ERR-2]. A target maps every native failure it can produce onto exactly one
+class. A native error with no portable distinction in this set maps to `Other`;
+a new native error likewise maps to `Other` until a later numbered specification
+deliberately adds a portable distinction. A target that cannot uphold a stated
+guarantee returns `Unsupported` rather than silently weakening it.
+
+Every class carries the same fixed-size inline target detail: `code` is the
+target's native error code for that failure, mapped value-preservingly into
+`u32`, and `origin` is the target-owned discriminator selecting which native
+facility produced `code`. Each field is zero when the target supplies no value
+for it. A target that cannot represent its detail in these two fields maps the
+class to `Other` and reports the remainder through its own diagnostics. The
+detail is diagnostic data, not a portable discriminator: source code may read
+and report it, and no portable semantics is defined in terms of it.
+
+The detail is copy data in the transfer sense: it allocates nothing, owns
+nothing, and has no release action, so `IoError` takes no row in [SYS-5]'s
+release table and no operation row in [SYS-2] carries `allocates`. A
+payload-carrying variant is affine under [OWN-1], so an `IoError` value, like a
+`ReadOutcome` value, is moved or matched rather than copied; that affinity is a
+consequence of the declared source form and is not a cleanup obligation. No
+class carries a message, a buffer, or any heap-backed payload.
+
+[SYS-8] `read_once`, `write_once`, `host_copy_bytes`, and `host_copy_utf8` are
+one-attempt operations over a caller-owned initialized `buffer<u8>` and a
+caller-written range. Each takes only call-scoped borrows, so every resource and
+buffer owner remains with the caller on every outcome.
+
+Range validation precedes every other action. For `read_once` the range is
+`offset` and `capacity`; for `write_once` it is `offset` and `count`; for the
+two copy operations it is `offset` and `capacity`. Overflow of the mathematical
+sum of the two range values in u64, an offset beyond the buffer's runtime
+length, or a range extending past that length traps under the bounds semantics
+of [OP-4], before any host transfer, before any read of the source value or
+resource, and before any write of the destination. A trap therefore leaves the
+resource, the source, and the buffer unchanged, and the target is never asked to
+validate a source pointer or a source range.
+
+For a zero-length range, `read_once` and `write_once` report a count of zero and
+issue no host transfer. A zero-length read is never reported as `ReadEnd`.
+
+For a nonempty range, `read_once` and `write_once` make at most one host
+transfer attempt. If that attempt reports progress, the operation returns that
+progress immediately and never hides a later failure by attempting again; a
+reported interruption is returned as `Interrupted`. `read_once` returns
+`ReadBytes(count)` only for a count greater than zero, and `write_once` never
+returns `Ok(0)`: a host zero-length write is `Err(WriteZero())`. A short success
+is not end of input; only `ReadEnd` states that no byte was available at the
+observed end. Repetition, accumulation, and retry policy are ordinary source
+loops over these operations; v0.18 defines no read-exact, write-all, positioned,
+or vectored operation.
+
+Buffer and cursor disposition is exact. On `ReadBytes(count)` exactly the first
+`count` bytes of the requested range may have changed, every other byte of the
+buffer is unchanged, and the file cursor advances by exactly `count`. On
+`ReadEnd` and on `ReadFailed` no byte of the buffer changes, because an attempt
+that made progress reports `ReadBytes` instead. On every recoverable failure of
+`write_once` and of both copy operations the whole buffer is unchanged. A target
+returning a count outside the validated range violates its compiler-owned
+contract; source code does not defend against it.
+
+The two copy operations differ only after range validation succeeds.
+`host_copy_bytes` performs the lossless transfer defined by [SYS-9] and has no
+failure mode beyond `CopyTooSmall(required)`.
+`host_copy_utf8` first validates and measures the encoding and returns
+`Utf8CopyInvalid()` or `Utf8CopyTooSmall(required)` without writing any byte,
+and only then copies the complete encoding. A successful copy changes exactly
+the requested destination prefix and leaves the rest of the buffer unchanged.
+
+[SYS-9] `Args` is an immutable entry value. `args_count` and `arg_get` borrow it
+and leave it live, and no operation changes its source-visible state. `arg_get`
+returns one inline opaque `HostString` lease with no allocation and no byte
+copy; several leases may refer to the same immutable bytes, and `InvalidIndex()`
+returns no value. `args_count` is total.
+
+`HostString` refers to immutable target-native code units and owns a lease over
+them rather than the storage itself. Source code cannot expose, index, or mix
+those native code units. It reads them by exactly two routes: the lossless route
+is `host_bytes_len` and `host_copy_bytes`, and the text route is `host_utf8_len`
+and `host_copy_utf8` [SYS-8]. `host_bytes_len` is total; the text route is
+fallible because conversion to text is fallible.
+
+The lossless route is defined here over a target family whose native code unit
+is exactly one byte. On such a family `host_bytes_len` returns the exact count
+of the host string's native bytes, and `host_copy_bytes` transfers exactly those
+bytes with no validation and no Unicode restriction, so a host string that is
+not valid UTF-8 reaches source exactly as given. For a target family whose
+native code unit is wider than one byte, what these two operations count and
+transfer is fixed by that family's target qualification; this specification
+defines it for no such family. A qualification that narrows the result to what
+one string domain can carry, or that transcodes it silently, does not satisfy
+the lossless contract these two operations state. The text route is defined on
+every qualified family.
+
+`relative_path` consumes its `HostString` on success and on error. Success
+validates the value and retypes the same inline representation as a
+`RelativePath`; `PathInvalid()` returns no value and returns no `HostString`.
+Neither path allocates and neither copies a byte.
+
+v0.18 declares exactly one host-string type. Its backing is the command-lifetime
+argument snapshot, and its release is a logical consume with no target call
+[SYS-5]. A producer whose backing is not command-lifetime does not reuse this
+type: it introduces a distinct type with its own release action and its own
+family contract, because storage class is a function of type [STOR-1] and one
+type cannot carry two release actions. Any conversion between the two is a
+later slice's explicit operation and never an implicit retype [TYPE-4]. No
+system value stores an ordinary source borrow or needs a runtime handle-table
+lookup.
+
+[SYS-10] `DirectoryRead` is a shared capability with one state. It is live from
+its entry binding until its release and has no other transition: v0.18 declares
+no attenuation, duplicate, split, or explicit close operation for it, so no
+other state is reachable.
+
+Opening creates aliases only downward. `open_read` creates an independent
+`ReadFile` with its own cursor domain and does not alias the capability. Two
+`DirectoryRead` values may denote the same directory object, and nothing infers
+separateness from a native handle or from a separate open.
+
+Its completion policy is release-complete [SYS-5], on the same ground as
+`ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory
+capability cannot invalidate an already opened file and cannot promise
+durability.
+
+Any number of `open_read` calls may progress concurrently through shared borrows
+of one `DirectoryRead`, exposing no ordering relative to one another. Each
+either creates its own `ReadFile` or fails, and none observes another's effect.
+
+A target that cannot open relative to a directory capability fails
+qualification; it does not emulate the operation through an ambient current
+directory. The `command.cwd` instance is process-equivalent and shareable for
+open operations, which is a statement about how it resolves and not a
+confinement claim; a confined root is a distinct later type with a distinct
+contract and does not change this promise at runtime.
+
+[SYS-11] `ReadFile` is a stateful resource with one state. `open_read` creates it
+live, with one cursor domain and one conservative filesystem-object alias
+domain. A separate open does not prove a separate object, and v0.18 declares no
+duplicate, split, or positioned-lane operation, so multiple lanes over one file
+object are not reachable and sharing the handle is never inferred. `read_once`
+is call-scoped and leaves both owners live on every outcome; its transfer,
+cursor, and buffer semantics are [SYS-8].
+
+`ReadFile` is release-complete [SYS-5]. Compiler-derived release consumes the
+resource and may discard only a close diagnostic, which carries no guarantee
+about bytes already observed and no durability guarantee. v0.18 declares no
+separate explicit-close operation. A later consuming close may expose that
+diagnostic, but it must consume the owner on every outcome and may not change
+derived-release semantics. Whole-process abort relies on operating-system
+teardown [SYS-5].
+
+[SYS-12] `Output` is a stateful resource with one state. The standard output and
+standard error entry bindings supply separate affine `Output` owners; neither is
+a shared global sink and neither carries a lock. `write_once` performs at most
+one host output attempt [SYS-8], and its accepted count means exactly that the
+host operation accepted that prefix: it promises neither line atomicity nor
+storage durability. Sequential calls across either owner preserve source order
+by the ordering rule that governs every external call, not by any aliasing
+analysis. The checked program additionally retains the conservative fact that
+redirection may make the two owners the same sink [DIAG-2]; v0.18 defines no
+consumer of that fact, and it is retained so a later verified cross-resource
+reordering fact fails closed on this pair rather than treating two separate
+`Output` owners as disjoint sinks.
+
+The v0.18 target implementation adds no hidden userspace buffering, so every
+failure the host write itself reports reaches `write_once`. `Output` is
+therefore release-complete [SYS-5]: compiler-derived release only detaches the
+source capability and reports nothing. It does not close the host descriptor, it
+does not flush, and it makes no target call; operating-system process teardown
+closes the native descriptors afterwards.
+
+That policy has one stated limitation. A failure a host surfaces only at
+descriptor close or at writeback — delayed allocation, a network filesystem, a
+late out-of-space condition — is outside v0.18's error model and can be lost, so
+a redirected command may return a successful `ExitStatus` after a failed
+writeback. This is a stated limitation of the family contract, not a silently
+weakened guarantee. Strengthening it is a later buffered or durable output type,
+which is completion-required [SYS-5] and must expose its own flush or finish
+operation; it does not inherit this policy.
+
+On command targets whose host uses signal-based broken-pipe notification,
+bootstrap owns the process and installs the command kind's ignored broken-pipe
+disposition before entry, so a broken pipe reaches `write_once` as
+`BrokenPipe` and the emitted write path contains no per-call signal operation. A
+program in any other deployment must receive an equivalent guarantee from its
+host or use a separately qualified target implementation; it may never silently
+change the surrounding host process's signal policy.
+
+Terminal control, color, and console mode are separate capabilities that v0.18
+does not declare. The mandatory trap record uses its own runtime channel
+[SCOPE-4, DIAG-3]; it never flushes an `Output` and source code cannot reach it.
+
+[SYS-13] `ExitStatus` is an opaque immutable value carrying one portable command
+code. `exit_status(code)` is its one constructor: it is total and pure, every
+`u8` is a valid command code, so the closed code range is 0 through 255 and
+there is no failure outcome, no allocation, no host call, and no external
+effect. `ExitStatus` is release-complete and its release is a logical consume
+[SYS-5].
+
+The type is opaque rather than an alias for `u8`. There are no implicit
+conversions [TYPE-4] and every binding states its exact type [TYPE-5], so
+without a stated constructor the command entry's returned value would be
+unwritable; keeping the type distinct also keeps an arbitrary integer from being
+returned as a command status, and matches how every other system type is fixed
+[SYS-2].
+
+The target maps the returned code exactly onto the host process status. Startup
+failure before entry and a trap are outside this mapping: a trap performs no
+language cleanup and returns no status [EFF-4, SCOPE-4].
+
+## 18. Worked example (normative bytes)
 
 [EX-1] The following complete program is byte-exact canonical form:
 
@@ -693,7 +1526,7 @@ fn main() -> own unit traps {
 }
 ```
 
-## 17. Spec meta-rules (CI-checked)
+## 19. Spec meta-rules (CI-checked)
 
 [META-1] Spec-CI enforces the regularity invariants defined elsewhere: one spelling per construct [FORM-1] and a 1:1 production-to-core-tree-node mapping [GRAM-1]. Its unique machine-checked content is that no rule ID is defined twice and every cross-reference resolves [META-4, META-6].
 [META-2] No context-dependent spellings or rule variants: no rule's meaning depends on surrounding context; defaulting rules do not exist.
