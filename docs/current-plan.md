@@ -1,113 +1,87 @@
 # Current Plan
 
-Status: ACTIVE — the owner approved this plan on 2026-08-05; specification
-bytes still require exact approval under the specification-change workflow
+Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
+execution. The previous ACTIVE plan's milestone (v0.18/v0.19 activation and
+the first command slice, tasks 0004-0018) completed on 2026-08-06.
 
-Derived from: [Direction Outline revision 7](roadmap.md), items `CAND-8`,
-`BOUND-1`, `PERF-1`, `VERIFY-1`, and `VERIFY-2`
+Derived from: [Direction Outline revision 12](roadmap.md), items `CAND-8`,
+`PERF-1`, `BOUND-1`, `VERIFY-2`, and `PROOF-1`
 
 ## Goal
 
-Turn the selected system-capability architecture into language and compiler
-reality: activate one v0.18 specification batch containing exactly the
-dossier's first-command-slice deltas, implement that slice on the normal
-compiler path for macOS/Linux, and return to the frozen sequential `wfgrep`
-checkpoint with its correctness oracle and cost gates.
+Measure what the completed first slice is worth and consolidate the compiler
+capabilities it exposed, without widening the project: establish the
+zero-change PERF-1 baseline of the exact frozen sequential `wfgrep` slice
+against a preregistered comparator, implement the two compiler capabilities
+the slice's own execution demonstrated missing, and execute the owner's
+rulings on the conformance findings — so the next widening decision
+(directory traversal, and with it the deliberately open backing-lifetime
+rule) is taken on measured ground.
 
-Per the owner's 2026-08-05 framing, the deliverable is what this slice proves
-about the language: every dossier §9.1 cost gate observed, every blocker
-classified and honestly reported, negative results retained. Completing
-`wfgrep` is the pressure source, not the completion condition.
-
-## Authority and evidence
-
-- Selected architecture (owner, 2026-08-05, including Route C for the
-  declaration home with the recorded fallback to a prelude extension):
-  [dossier](../research/investigations/system-capability-architecture/DOSSIER.md)
-  and its
-  [31-issue review record](../research/investigations/system-capability-architecture/decisions.json).
-- The specification-change workflow in [WORKFLOW.md](WORKFLOW.md) governs Work
-  item 1; the owner's exact byte approval of the candidate is still required
-  there and is not granted by activating this plan.
-- The loan/freeze candidate vacated the v0.18 slot on 2026-08-05 and remains
-  parked evidence under `STORE-1`.
-
-Progress (2026-08-06): Work item 1 is complete — the candidate was drafted by
-five parallel packages, integrated, hostile-reviewed (17 findings applied),
-verified by the native grammar path (task 0005), exact-approved
-(`governance/APPROVALS.md`, 2026-08-05), and activated at `9768bae` with the
-derivation ledger, promoted grammar, and unsupported gates; the outline is at
-revision 8. Work item 2 is complete — planned tasks 0006-0016 are registered.
-The current step is Work item 3, executor fan-out in dependency-wave order.
+Per the owner's framing, the deliverable is knowledge: an attributed
+baseline (or an honest inability to attribute), each finding closed or
+converted into a named direction input, and negative results retained.
 
 ## Work
 
-1. **v0.18 specification batch (sequential; specification-change workflow).**
-   Draft `governance/spec-evolution/kernel-spec-v0.18-candidate.md` from v0.17
-   with exactly the dossier §11/§11.1 inventory: the command entry form with
-   exact standard input labels (the unlabelled `fn main` entry remains
-   admissible); the seven fixed opaque types, the operation set including the
-   raw-byte pair, and the complete outcome inventory (`Result` instantiations
-   plus `ReadOutcome`); `external` and `blocks` effect categories with the
-   EFF-1 row-grammar, EFF-2 attribution, FN-3 normalization, and STOR-3
-   release extensions scoped to the new resource families; the Route C
-   system-declaration domain (TYPE-6 three-row extension, OP-1, PROG-1, the
-   new DIAG-1 rank and origin kind, and the syntactic program-kind visibility
-   trigger); portable `IoError` classes; path and host-string rules with the
-   command-lifetime backing guarantee in target qualification; and first-slice
-   conformance expectations. Verify grammar with the native verifier, obtain
-   exact owner approval, and activate atomically with every derived artifact.
-2. **Decompose implementation into `docs/planned/` upon activation**, one
-   independently integrable numbered task each with explicit dependencies:
-   compiler front-end (system-declaration domain, opaque types, entry form),
-   effect checking extensions and release attribution, checked-IR resource
-   identities and cleanup, target-qualification table plus the static native
-   macOS/Linux lowering, the deterministic test implementation, first-slice
-   conformance execution, the sequential `wfgrep` program, and the §9.1 cost
-   and §12.2 hostile test gates.
-3. **Fan-out execution under the executor lane in WORKFLOW.md.** Executor
-   agents claim planned tasks, implement in isolated worktrees, and land only
-   through lead review. Blockers and plan defects stop the task and are
-   reported as findings; no workaround closes a slice.
-4. **Return to the `wfgrep` checkpoint.** Run the frozen sequential slice's
-   correctness oracle and its scoped cost-shape gates; attribute any material
-   loss per `PERF-1` before widening the project.
+1. **Zero-change wfgrep baseline (PERF-1).** Preregister the envelope —
+   pinned corpus with digests, frozen `tests/programs/wfgrep.wf` bytes,
+   comparator (`grep -h -F` at a pinned build; the RG-BASE noise findings
+   bind the precision protocol), timed phases, statistic and materiality
+   rules — then measure, profile, and attribute the first material
+   divergence per the layer chain before any widening. The scalar newline
+   scan retaining its bounds trap (task-0016 correction) is the
+   preregistered first attribution suspect, feeding PROOF-1 only if the
+   measured loss lands there.
+2. **Borrow-mode parameters for system nominal types** (unsupported
+   specified capability, task-0015 finding): implement on the normal path,
+   then decompose `wfgrep`'s ~500-line `main` into helpers as the witness
+   that the capability composes; the §9.1 gates must hold unchanged on the
+   refactored program.
+3. **Rule-id plumbing for pre-semantic rejections** (task-0014 bucket 1, 45
+   cases): populate `rule_id` at Lexing/CanonicalSource/Parsing/Resolution
+   stops; the conformance lane consumes it.
+4. **Conformance rulings execution** (buckets 2-4, after the owner rules):
+   the 41 incomplete-unit protected sources, the 35 runnable→pending status
+   corrections, and the 2 divergence investigations (each investigated to a
+   compiler-defect fix with regression or a protected-expectation finding
+   returned to the owner).
+5. **Return and replace.** Record baseline results in RESULTS, update the
+   outline, and replace this plan naming either the first attributed
+   performance blocker or the widening proposal (traversal + the
+   backing-lifetime decision) as the next selection.
 
 ## Verification
 
-- The candidate's semantic delta equals the dossier inventory — no additional
-  capability rides along, and no listed delta is silently dropped.
-- `make -C compiler check` and `make check` green before and after each landed
-  task; first-slice conformance cases pass through the normal command path.
-- The dossier §12.2 first-slice test list is implemented, including non-text
-  arguments, invalid ranges, short reads/writes, broken pipes, redirection to
-  one sink, close-error behavior, and the effect-attribution canonical case.
-- The §9.1 native cost shape is inspected on emitted code: no allocation,
-  copy, dispatch, handle lookup, or lock on the hot paths; the buffer gates
-  use their two distinct controls.
-- Executor escalations are reviewed against the blocker routing; any language
-  gap found here enters the outline rather than being absorbed.
+- The baseline claim is only as wide as the preregistered envelope; parity
+  and losses are retained as findings; no timing claim precedes correctness
+  and comparable work.
+- Work items 2-3 are ordinary delivery (no specification change): gates
+  green before and after; the refactored wfgrep passes the same oracle and
+  §9.1 gates byte-for-byte on behavior.
+- Bucket executions touch protected material only per the owner's explicit
+  rulings, recorded in `governance/APPROVALS.md` where protected bytes
+  change.
 
 ## Done when
 
-- v0.18 is active with every derived artifact updated in the same change;
-- the compiler compiles and runs the sequential `wfgrep` slice on macOS/Linux
-  through the normal path, passing its correctness oracle;
-- the §9.1/§12.2 gates are observed with evidence recorded in their canonical
-  homes; and
-- the outline and this plan are replaced to name the next slice or blocker.
+- a preregistered baseline result (win, parity, or attributed loss) is
+  recorded in RESULTS with its envelope;
+- system-type borrow parameters are implemented with the helper-decomposed
+  wfgrep witness green;
+- the conformance lane is green or its remaining red is owner-ruled and
+  recorded; and
+- this plan is replaced naming the next slice or blocker.
 
 ## Not in this stage
 
-- No directory traversal, ignore stack, parallel search, networking, clocks,
-  randomness, async/wait, threads, child processes, buffered output
-  publisher, or general FFI.
-- No optimizer fact consumers; `PROOF-*` items enter only on an observed,
-  attributed hotspot after the slice is correctness-green.
-- No ripgrep timing claims; the 2x comparison waits for a preregistered suite
-  on a wider slice.
+- No directory traversal, ignore stack, parallelism, or new system
+  families; no STORE-2 reopening (its witness is recorded and waits for the
+  widening proposal).
+- No optimizer or proof implementation; PROOF-1 enters only on an attributed
+  material loss at the retained-check layer.
+- No specification change of any kind.
 
 ## Parallel research
 
-None proposed. The scan-floor and literal-line research results remain
-standing evidence for the later performance gates.
+None proposed.
