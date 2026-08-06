@@ -780,7 +780,7 @@ fn main() -> own unit pure {
         let discard = function("discard_call");
         assert!(matches!(
             discard.body[0],
-            CheckedStatement::DropExpression(_)
+            CheckedStatement::DropExpression { .. }
         ));
 
         let drop_binder = function("drop_binder");

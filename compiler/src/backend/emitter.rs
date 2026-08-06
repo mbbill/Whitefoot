@@ -35,6 +35,11 @@ pub enum BackendFailure {
     InvalidIr,
     CounterOverflow,
     TextEmission,
+    /// The lowered program carries [SYS-1] system-interface constructs, whose
+    /// [QUAL-1] target qualification and native emission are not implemented
+    /// yet. This is an explicit unsupported compiler capability, never a
+    /// source rejection and never a target-qualification verdict.
+    UnsupportedSystemInterface,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,6 +55,16 @@ impl LlvmModule {
 }
 
 pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
+    // Target-independent lowering now carries the [SYS-2] semantic identities,
+    // the [SYS-5] release actions, and the [FN-7] entry facts. What is still
+    // missing is target-side: the [QUAL-1] qualification table mapping each
+    // semantic identity to one approved implementation and private ABI symbol,
+    // the [QUAL-3] command bootstrap, and the emitted code for each operation
+    // and release action. Refusing here keeps that an explicit unsupported
+    // compiler capability rather than emitting a program with silently missing
+    // releases, and it runs before layout because an opaque resource has no
+    // target representation until its qualification record fixes one.
+    reject_unqualified_system_interface(program)?;
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     validate_program(target, program).map_err(BackendFailure::TargetLayout)?;
     let main = program
@@ -159,6 +174,61 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
     Ok(LlvmModule { text })
 }
 
+/// Stops a program that needs [QUAL-1] target qualification for the system
+/// interface, which this backend does not implement yet.
+///
+/// The scan is over the IR's own facts — an opaque resource nominal, a system
+/// operation call, a compiler-derived system release action, or a
+/// kind-declaring entry — never over a source name or program shape.
+fn reject_unqualified_system_interface(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<(), BackendFailure> {
+    if !matches!(program.entry(), crate::IrEntry::Unlabelled) {
+        return Err(BackendFailure::UnsupportedSystemInterface);
+    }
+    if program
+        .nominals()
+        .iter()
+        .any(|nominal| matches!(nominal.kind(), IrNominalKind::SystemResource(_)))
+    {
+        return Err(BackendFailure::UnsupportedSystemInterface);
+    }
+    for function in program.functions() {
+        for block in function.blocks() {
+            for instruction in block.instructions() {
+                match instruction {
+                    IrInstruction::Define { operation, .. } => {
+                        if matches!(operation, IrOperation::SystemCall { .. }) {
+                            return Err(BackendFailure::UnsupportedSystemInterface);
+                        }
+                    }
+                    IrInstruction::Drop(drop) => reject_unqualified_release(*drop)?,
+                    IrInstruction::Check { .. }
+                    | IrInstruction::StoreBuffer { .. }
+                    | IrInstruction::StoreNominal { .. } => {}
+                }
+            }
+            match block.terminator() {
+                IrTerminator::Jump { drops, .. } | IrTerminator::Return { drops, .. } => {
+                    for drop in drops {
+                        reject_unqualified_release(*drop)?;
+                    }
+                }
+                IrTerminator::Match { .. } => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reject_unqualified_release(drop: IrDrop) -> Result<(), BackendFailure> {
+    let release = drop.release();
+    if release.action.is_some() || release.row != crate::SystemReleaseRow::EMPTY {
+        return Err(BackendFailure::UnsupportedSystemInterface);
+    }
+    Ok(())
+}
+
 fn emit_global_constants(
     output: &mut String,
     program: &IrProgram<'_, '_, '_>,
@@ -244,6 +314,12 @@ fn emit_nominal_declarations(
                 }
             }
             IrNominalKind::Box { .. } => return Err(BackendFailure::InvalidIr),
+            // [QUAL-1] fixes an opaque resource's target representation in its
+            // qualification record; no such record exists yet, and the
+            // explicit stop above already refused this program.
+            IrNominalKind::SystemResource(_) => {
+                return Err(BackendFailure::UnsupportedSystemInterface);
+            }
         }
         output.push_str(" }\n");
     }
@@ -505,6 +581,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 function,
                 arguments,
             } => self.emit_call(result, ty, *function, arguments),
+            // A [SYS-2] operation needs its [QUAL-1] approved implementation
+            // and private ABI symbol, which target qualification does not
+            // supply yet; the explicit stop above already refused this
+            // program.
+            IrOperation::SystemCall { .. } => Err(BackendFailure::UnsupportedSystemInterface),
             IrOperation::Integer {
                 operation,
                 operand_type,
@@ -784,6 +865,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
                 match self.nominal(nominal)?.kind() {
                     IrNominalKind::Struct { .. } => {}
+                    // A [SYS-5] release action needs its qualified native
+                    // implementation; the explicit stop above already refused
+                    // this program rather than dropping the release silently.
+                    IrNominalKind::SystemResource(_) => {
+                        return Err(BackendFailure::UnsupportedSystemInterface);
+                    }
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
                         if type_requires_cleanup(self.program, drop.ty())? {
                             emit_value_cleanup(

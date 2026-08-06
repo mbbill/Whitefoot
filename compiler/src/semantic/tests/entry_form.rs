@@ -61,7 +61,7 @@ fn the_unlabelled_entry_is_admitted_and_recorded_unchanged() {
         };
         match checked.entry_form() {
             CheckedEntryForm::Unlabelled => {}
-            CheckedEntryForm::Command { inputs } => {
+            CheckedEntryForm::Command { inputs, .. } => {
                 panic!("an unlabelled entry must not record command inputs {inputs:?}");
             }
         }

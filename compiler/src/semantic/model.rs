@@ -828,17 +828,25 @@ pub(crate) struct CheckedMatchArm {
     pub(crate) fallthrough_drops: Vec<CheckedDrop>,
 }
 
+/// One compiler-derived release on a normal control-flow edge [STOR-3].
+///
+/// The record is explicit in the checked program [DIAG-2] rather than being
+/// rederived from the type by every consumer: [EFF-2]'s release contribution
+/// reads its row, and lowering carries the same record into the typed IR so a
+/// target stage can emit the exact [SYS-5] action.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedDrop {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    pub(crate) release: crate::SystemRelease,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    pub(crate) release: crate::SystemRelease,
 }
 
 /// A SET-1 target whose root, path, copy type, and post-RHS writability have
@@ -922,7 +930,12 @@ pub(crate) enum CheckedStatement {
         value: CheckedExpression,
     },
     Evaluate(CheckedExpression),
-    DropExpression(CheckedExpression),
+    /// The discarded result of an expression statement, with the
+    /// compiler-derived release it runs [STOR-3].
+    DropExpression {
+        value: CheckedExpression,
+        release: crate::SystemRelease,
+    },
     Check {
         condition: CheckedExpression,
         trap: TrapSite,
@@ -1088,7 +1101,24 @@ pub(crate) enum CheckedEntryForm {
     Command {
         /// Selected [FN-7] table ordinals in strictly increasing order.
         inputs: Vec<u8>,
+        /// Retained conservative alias links between selected inputs.
+        aliases: Vec<CheckedResourceAlias>,
     },
+}
+
+/// One retained conservative alias link between two standard-input resource
+/// owners, by [FN-7] table ordinal.
+///
+/// [SYS-12] fixes exactly one for the first slice: redirection may make the
+/// `command.stdout` and `command.stderr` owners the same sink. v0.18 defines
+/// no consumer of the fact and it refuses no program; the checked program
+/// retains it [DIAG-2] so a later verified cross-resource reordering fact
+/// fails closed on this pair rather than treating two separate `Output`
+/// owners as disjoint sinks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedResourceAlias {
+    pub(crate) left: u8,
+    pub(crate) right: u8,
 }
 
 #[derive(Debug)]

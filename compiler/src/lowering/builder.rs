@@ -21,18 +21,7 @@ use storage::collect_addressed_bindings;
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
-    // [PROG-3] starts an instance by supplying exactly the standard inputs the
-    // entry declares and invoking it once. This lowering implements exactly the
-    // unlabelled entry's start: no supplied input and no produced `ExitStatus`.
-    // A `command` entry additionally needs the target's standard-input
-    // construction and the exit-status mapping. Semantic checking now accepts
-    // such entries — [SYS-2] call typing and [EFF-2] release attribution are
-    // implemented — so an accepted system program stops here as an explicit
-    // unsupported compiler capability until the checked-IR resource and
-    // native-lowering tasks land.
-    if checked.data.entry != CheckedEntryForm::Unlabelled {
-        return Err(LoweringFailure::UnsupportedSystemInterface);
-    }
+    let entry = lower_entry(&checked.data.entry);
     let nominals = lower_nominals(&checked.data)?;
     let constants = lower_constants(&checked.data)?;
     let functions = checked
@@ -47,7 +36,31 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         nominals,
         constants,
         functions,
+        entry,
     })
+}
+
+/// Carries the [FN-7] entry form into the IR.
+///
+/// [PROG-3] starts an instance by supplying exactly the standard inputs the
+/// entry declares and invoking it once. Target-independent lowering records
+/// which inputs those are and the conservative alias links [SYS-12] fixes
+/// between them; constructing the values and mapping the returned
+/// `ExitStatus` belongs to the target stage.
+fn lower_entry(entry: &CheckedEntryForm) -> IrEntry {
+    match entry {
+        CheckedEntryForm::Unlabelled => IrEntry::Unlabelled,
+        CheckedEntryForm::Command { inputs, aliases } => IrEntry::Command {
+            inputs: inputs.clone(),
+            aliases: aliases
+                .iter()
+                .map(|alias| IrResourceAlias {
+                    left: alias.left,
+                    right: alias.right,
+                })
+                .collect(),
+        },
+    }
 }
 
 fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFailure> {
@@ -138,13 +151,14 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                 CheckedNominalKind::Box { referent } => IrNominalKind::Box {
                     referent: lower_type(*referent)?,
                 },
-                // A semantically accepted system program stops here as an
-                // explicit unsupported compiler capability: the checked-IR
-                // resource identity and its native lowering are later tasks,
-                // and an opaque resource has no target representation yet.
-                CheckedNominalKind::SystemResource { .. } => {
-                    return Err(LoweringFailure::UnsupportedSystemInterface);
-                }
+                // The opaque type's own [SYS-2] identity, [SYS-5] release
+                // action and row, and [HOST-3] backing class travel into the
+                // IR unchanged. A target representation for it is target
+                // qualification's business, not this stage's.
+                CheckedNominalKind::SystemResource { nominal } => IrNominalKind::SystemResource(
+                    crate::system_resource_contract(*nominal)
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                ),
             };
             Ok(IrNominal {
                 id: IrNominalId(
@@ -382,11 +396,15 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
                 }
-                CheckedStatement::DropExpression(expression) => {
+                CheckedStatement::DropExpression {
+                    value: expression,
+                    release,
+                } => {
                     let value = self.expression(expression)?;
                     let drop = IrDrop {
                         value,
                         ty: self.value_type(value)?,
+                        release: *release,
                     };
                     self.current_block_mut()?
                         .instructions
@@ -667,12 +685,34 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            // System-interface constructs stop as an explicit unsupported
-            // compiler capability: native lowering of [SYS-2] operations and
-            // opaque resource values belongs to later tasks.
-            CheckedExpression::SystemCall { .. }
-            | CheckedExpression::BorrowSystemResource { .. } => {
-                Err(LoweringFailure::UnsupportedSystemInterface)
+            // A system operation is identified by its target-independent
+            // semantic identity [QUAL-1]; no source spelling reaches the IR.
+            CheckedExpression::SystemCall {
+                operation,
+                arguments,
+                result,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.expression(argument))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.define(
+                    lower_type(*result)?,
+                    IrOperation::SystemCall {
+                        operation: IrSystemOperation(*operation),
+                        arguments,
+                    },
+                )
+            }
+            // An opaque resource value is its own borrow: it has no
+            // source-visible content and needs no stable address, exactly as
+            // a `box` borrow does.
+            CheckedExpression::BorrowSystemResource { binding, nominal } => {
+                let value = self.binding_value(*binding)?;
+                if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                Ok(value)
             }
             CheckedExpression::IntegerOperation {
                 operation,
@@ -1151,7 +1191,11 @@ impl<'program> IrBuilder<'program> {
                         .ok_or(LoweringFailure::InvalidCheckedProgram)?
                         .ty
                 }
-                IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
+                // An opaque system resource has no writer-visible field, so no
+                // struct path reaches through one.
+                IrNominalKind::Enum { .. }
+                | IrNominalKind::Box { .. }
+                | IrNominalKind::SystemResource(_) => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
             };
@@ -1192,7 +1236,11 @@ impl<'program> IrBuilder<'program> {
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?
                     .ty
             }
-            IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
+            // An opaque system resource has no writer-visible field, so no
+            // struct path reaches through one.
+            IrNominalKind::Enum { .. }
+            | IrNominalKind::Box { .. }
+            | IrNominalKind::SystemResource(_) => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
@@ -1234,7 +1282,11 @@ impl<'program> IrBuilder<'program> {
         if self.value_type(value)? != ty {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        Ok(IrDrop { value, ty })
+        Ok(IrDrop {
+            value,
+            ty,
+            release: drop.release,
+        })
     }
 
     fn value_type(&self, value: IrValueId) -> Result<IrType, LoweringFailure> {
@@ -1269,7 +1321,14 @@ impl<'program> IrBuilder<'program> {
             if self.value_type(value)? != ty {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
-            lowered.push(IrDrop { value, ty });
+            // The checked program already fixed what this release performs
+            // [STOR-3]; lowering preserves the record and the edge's reverse
+            // declaration order rather than rederiving either.
+            lowered.push(IrDrop {
+                value,
+                ty,
+                release: drop.release,
+            });
         }
         Ok(lowered)
     }

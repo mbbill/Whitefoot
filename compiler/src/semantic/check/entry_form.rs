@@ -27,7 +27,7 @@ use crate::{
     SystemEntity, system_entity,
 };
 
-use super::super::model::CheckedEntryForm;
+use super::super::model::{CheckedEntryForm, CheckedResourceAlias};
 use super::{CheckStop, Checker};
 
 /// One row of [FN-7]'s closed standard-input table for kind `command`.
@@ -65,6 +65,10 @@ const COMMAND_INPUTS: [StandardInput; 4] = [
     input("stderr", "own Output", "Output"),
 ];
 
+/// The `command.stdout` and `command.stderr` table ordinals.
+const COMMAND_STDOUT: u8 = 2;
+const COMMAND_STDERR: u8 = 3;
+
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
 const COMMAND_EFFECTS: &str =
@@ -73,6 +77,24 @@ const COMMAND_EFFECTS: &str =
 const UNLABELLED_RESULT: &str = "own unit";
 const UNLABELLED_EFFECTS: &str =
     "exactly one of `pure`, `allocates(heap)`, `traps`, `allocates(heap), traps`";
+
+/// Returns the conservative alias links the entry's selected inputs carry.
+///
+/// [SYS-12] fixes exactly one: when the entry selects both `command.stdout`
+/// and `command.stderr`, redirection may make those two `Output` owners the
+/// same sink. The link is a retained fact only [DIAG-2] — it decides no
+/// judgment here and refuses no program — and the first slice declares no
+/// duplicate, split, or attenuation operation, so no other pair of system
+/// values can alias and nothing beyond ordinary move tracking is needed.
+fn command_resource_aliases(inputs: &[u8]) -> Vec<CheckedResourceAlias> {
+    if inputs.contains(&COMMAND_STDOUT) && inputs.contains(&COMMAND_STDERR) {
+        return vec![CheckedResourceAlias {
+            left: COMMAND_STDOUT,
+            right: COMMAND_STDERR,
+        }];
+    }
+    Vec::new()
+}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// Admits the unit's [FN-7] entry and returns the form it admitted.
@@ -96,9 +118,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_unlabelled_entry(entry)?;
                 CheckedEntryForm::Unlabelled
             }
-            Some(kind) => CheckedEntryForm::Command {
-                inputs: self.check_kind_declaring_entry(entry, kind)?,
-            },
+            Some(kind) => {
+                let inputs = self.check_kind_declaring_entry(entry, kind)?;
+                let aliases = command_resource_aliases(&inputs);
+                CheckedEntryForm::Command { inputs, aliases }
+            }
         };
         self.reject_foreign_input_labels(entry, entry_kind)?;
         if entry_kind.is_some() {

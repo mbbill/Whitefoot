@@ -97,7 +97,12 @@ pub(super) fn type_requires_cleanup(
                                 .map(|field| field.ty()),
                         );
                     }
-                    IrNominalKind::Box { .. } => return Ok(true),
+                    // Every [SYS-5] release action is an explicit release the
+                    // target stage must emit, including a logical consume that
+                    // emits nothing.
+                    IrNominalKind::Box { .. } | IrNominalKind::SystemResource(_) => {
+                        return Ok(true);
+                    }
                 }
             }
             IrType::Unit
@@ -213,6 +218,12 @@ fn emit_cleanup_jobs(
                                 )
                                 .map_err(|_| BackendFailure::TextEmission)?;
                             }
+                        }
+                        // Emitting a [SYS-5] release action needs the
+                        // qualified native implementation; `emit_llvm` stops
+                        // such a program before reaching here.
+                        IrNominalKind::SystemResource(_) => {
+                            return Err(BackendFailure::UnsupportedSystemInterface);
                         }
                         IrNominalKind::Box { referent } => {
                             let loaded = next_temporary(temporary)?;

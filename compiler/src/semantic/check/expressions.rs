@@ -592,9 +592,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let residual_drops = if copy || fields.is_empty() {
                     Vec::new()
                 } else {
-                    self.residual_drop_paths(local.ty, &fields)?
+                    let paths = self.residual_drop_paths(local.ty, &fields)?;
+                    self.released_paths(paths)?
                         .into_iter()
-                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
+                        .map(|(fields, ty, release)| CheckedProjectedDrop {
+                            fields,
+                            ty,
+                            release,
+                        })
                         .collect()
                 };
                 if !copy {

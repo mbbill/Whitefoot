@@ -387,15 +387,11 @@ pub fn compile(
         }
     };
     let ir = lower_checked(checked).map_err(|failure: LoweringFailure| {
-        // An unimplemented system-interface lowering is an explicit
-        // unsupported compiler capability at the lowering stage; every
-        // other lowering failure remains an internal failure.
-        let kind = if failure == LoweringFailure::UnsupportedSystemInterface {
-            CompilationFailureKind::Unsupported
-        } else {
-            CompilationFailureKind::Lowering
-        };
-        CompilationFailure::new(CompilationStage::Lowering, kind, failure)
+        CompilationFailure::new(
+            CompilationStage::Lowering,
+            CompilationFailureKind::Lowering,
+            failure,
+        )
     })?;
     emit_llvm(&ir)
         .map(|module| module.into_string())
@@ -404,6 +400,13 @@ pub fn compile(
                 BackendFailure::TargetLayout(_) => (
                     CompilationStage::TargetLayout,
                     CompilationFailureKind::TargetLayout,
+                ),
+                // An unimplemented system-interface qualification and
+                // emission is an explicit unsupported compiler capability,
+                // not an internal backend failure.
+                BackendFailure::UnsupportedSystemInterface => (
+                    CompilationStage::Backend,
+                    CompilationFailureKind::Unsupported,
                 ),
                 _ => (CompilationStage::Backend, CompilationFailureKind::Backend),
             };
@@ -462,17 +465,34 @@ mod tests {
         // and exact row: the entry admits, its system calls type against
         // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
         // `external, blocks` from the DirectoryRead input's compiler-derived
-        // close attempt on the return edge. The remaining system boundary
-        // is lowering, which stops as an explicit unsupported capability.
+        // close attempt on the return edge. Target-independent lowering now
+        // carries the resource identities, the [SYS-5] release actions, and
+        // the entry facts, so the remaining system boundary is the backend:
+        // [QUAL-1] target qualification and native emission, which stop as
+        // an explicit unsupported capability.
         let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus external, blocks {\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("entry.wf", kind_entry)],
             CompilerLimits::default(),
         )
-        .expect_err("an accepted system program must stop at lowering as unsupported");
-        assert_eq!(failure.stage(), CompilationStage::Lowering);
+        .expect_err("an accepted system program must stop at emission as unsupported");
+        assert_eq!(failure.stage(), CompilationStage::Backend);
         assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
         assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("UnsupportedSystemInterface"));
+
+        // A system-admitted unit whose entry declares no standard input
+        // stops at the same boundary: the stop is over the IR's own system
+        // facts, not over the entry's parameter list.
+        let no_inputs =
+            b"command fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let failure = compile(
+            &[SourceInput::new("entry.wf", no_inputs)],
+            CompilerLimits::default(),
+        )
+        .expect_err("a command entry must stop at emission as unsupported");
+        assert_eq!(failure.stage(), CompilationStage::Backend);
+        assert_eq!(failure.kind(), CompilationFailureKind::Unsupported);
         assert!(failure.detail().contains("UnsupportedSystemInterface"));
 
         // A `command` entry whose written result is not `own ExitStatus` is a

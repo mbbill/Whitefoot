@@ -59,11 +59,21 @@ inventing a second cleanup mechanism.
 
 ## Progress
 
-- Completed: claimed at base `48e53f0` (0009 terminal, its surfaces read).
-- Current: reading the existing `buffer`/`box` cleanup representation on both
-  the checked-program and typed-IR sides before extending it.
-- Next: system-resource identity + release-action IR operations; move the
-  lowering stop to the native-emission boundary; boundary tests.
+- Completed: claimed at base `48e53f0`. The [SYS-5]/[HOST-3] contract joined
+  the resolution catalog (`SystemResourceContract`: identity, release action,
+  row, backing), with `system_release_row` now derived from it and a
+  spelling-keyed pin. `CheckedDrop`, `CheckedProjectedDrop`, and
+  `CheckedStatement::DropExpression` carry an explicit `SystemRelease`
+  record, computed once by `release_of_type`, which EFF-2 attribution now
+  reads instead of rederiving. `CheckedEntryForm::Command` carries the
+  SYS-12 stdout/stderr may-alias link. The typed IR gained
+  `IrNominalKind::SystemResource(contract)`, `IrOperation::SystemCall` by
+  SYS-2 semantic identity, `IrDrop::release`, and `IrProgram::entry`; the
+  `BorrowSystemResource` path lowers like a box borrow. The unsupported stop
+  moved from `LoweringFailure` to `BackendFailure::UnsupportedSystemInterface`
+  (stage `Backend`, kind `Unsupported`), refusing over the IR's own facts.
+- Current: gates green; record and report.
+- Next: nothing in this task's scope. 0011 consumes the exposed surface.
 
 ## Scope and expected touch set
 

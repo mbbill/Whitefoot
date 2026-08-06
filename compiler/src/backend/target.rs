@@ -399,6 +399,18 @@ impl LayoutComputer<'_, '_, '_, '_> {
                     );
                 }
                 IrNominalKind::Box { .. } => return Err(TargetLayoutFailure::InvalidIr),
+                // [QUAL-1] fixes an opaque system resource's representation in
+                // its qualification record, which this compiler does not
+                // supply yet, so the selected target cannot represent the
+                // object. Emission stops such a program as an explicit
+                // unsupported capability before layout runs; this arm is the
+                // defensive path, and like every other layout stop it cites
+                // no language rule.
+                IrNominalKind::SystemResource(_) => {
+                    return Err(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::Representation,
+                    ));
+                }
             }
             self.struct_layout(fields)?
         };

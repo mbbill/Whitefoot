@@ -52,9 +52,29 @@ type against the SYS-2 catalog signatures, and EFF-2 checks the
 the syntactic contribution and the release contribution, the SYS-5 release
 rows of every compiler-derived release recorded on a normal control-flow
 edge, with `buffer`/`box`/arena/`const` reclamation contributing nothing
-(STOR-3). A semantically accepted system program then stops at lowering as
-an explicit unsupported compiler capability pending the checked-IR resource
-identities and the native command bootstrap.
+(STOR-3).
+
+Target-independent lowering then carries those facts into the typed IR. Each
+of the seven opaque types becomes one IR nominal holding its complete
+SYS-5/HOST-3 contract: the target-independent semantic identity QUAL-1 owns,
+the one release action (logical consume, native close attempt, or `Output`'s
+source detach), that action's row, and whether the value is an inline lease
+over command-lifetime argument backing — the HOST-3 lease fact is retained
+for auditing and lowering and refuses no program. A system operation call
+lowers to its SYS-2 inventory identity, never a source spelling. Every
+compiler-derived release is an explicit IR record on the normal edge that
+carries it — a `Jump` or `Return` terminator, or a straight-line `Drop` —
+holding the released value's own action and the union of the rows it may run
+over owned content, in the checked program's reverse declaration order and in
+the position EFF-5 requires relative to surrounding calls; a trapping `check`
+has no edge that can carry one (TRAP-1). The IR also records the FN-7 entry
+form, its selected standard-input ordinals, and the SYS-12 stdout/stderr
+may-alias link, which nothing yet reads.
+
+A semantically accepted system program then stops at LLVM emission as an
+explicit unsupported compiler capability: the QUAL-1 target-qualification
+table, the QUAL-3 command bootstrap, and the native code for each operation
+and release action are the remaining work.
 
 FN-7's kind-declaring judgment has one home, `syntax::entry_form`, which reads
 it from finalized syntax alone: a unit is kind-declaring exactly when a

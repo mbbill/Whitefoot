@@ -10,6 +10,7 @@ use crate::semantic::{
     CheckedIntegerOperation, CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
     CheckedTargetDomainObligation, CheckedType, TrapSite,
 };
+use crate::{SystemRelease, SystemResourceContract};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct IrValueId(u32);
@@ -201,9 +202,23 @@ impl IrVariant {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrNominalKind {
-    Struct { fields: Vec<IrField> },
-    Enum { variants: Vec<IrVariant> },
-    Box { referent: IrType },
+    Struct {
+        fields: Vec<IrField>,
+    },
+    Enum {
+        variants: Vec<IrVariant>,
+    },
+    Box {
+        referent: IrType,
+    },
+    /// One [SYS-2] opaque system resource type. It has no field, variant, or
+    /// source-visible content: its identity is the target-independent
+    /// semantic identity [QUAL-1] the contract carries, together with the
+    /// [SYS-5] release action, that action's row, and the [HOST-3] backing
+    /// class. Every use of a value of this type — a move, a `match` binder, a
+    /// struct or enum field, a return, or a call argument — keeps that
+    /// identity, because the type is what fixes the release action.
+    SystemResource(SystemResourceContract),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -531,11 +546,38 @@ impl From<CheckedTargetDomainObligation> for IrTargetDomainObligation {
     }
 }
 
+/// The target-independent semantic identity of one [SYS-2] system operation
+/// [QUAL-1].
+///
+/// It is the operation's index in the specification's own inventory table, so
+/// no source function name or spelling, logical path, project, corpus, test,
+/// or signature lookalike can select one. A target stage maps this identity
+/// to one approved implementation and one private ABI symbol; the identity
+/// itself names no target.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct IrSystemOperation(u8);
+
+impl IrSystemOperation {
+    // Read by the target stage that maps this identity through the [QUAL-1]
+    // qualification table; nothing before that stage may dispatch on it.
+    #[allow(dead_code)]
+    #[must_use]
+    pub const fn ordinal(self) -> u8 {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
     Call {
         function: u32,
+        arguments: Vec<IrValueId>,
+    },
+    /// One call to a [SYS-2] system operation, by semantic identity, with its
+    /// value arguments in declared parameter order.
+    SystemCall {
+        operation: IrSystemOperation,
         arguments: Vec<IrValueId>,
     },
     Integer {
@@ -693,10 +735,21 @@ pub enum IrInstruction {
     Drop(IrDrop),
 }
 
+/// One compiler-derived release, explicit on the normal control-flow edge
+/// that carries it [STOR-3].
+///
+/// Every drop and every release is represented before lowering, and release
+/// actions run only on normal edges: a trap runs none [TRAP-1, EFF-4]. The IR
+/// therefore places these records only on `Jump` and `Return` terminators and
+/// as `Drop` instructions in straight-line position, never on a trapping
+/// `Check`. Their order inside one edge is the checked program's reverse
+/// declaration order, and their position relative to surrounding calls is the
+/// order [EFF-5] requires of every conforming lowering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrDrop {
     value: IrValueId,
     ty: IrType,
+    release: SystemRelease,
 }
 
 impl IrDrop {
@@ -706,6 +759,13 @@ impl IrDrop {
 
     pub const fn ty(self) -> IrType {
         self.ty
+    }
+
+    /// The exact [SYS-5] release this drop performs: the released value's own
+    /// action when it is one system resource, together with the union of the
+    /// rows of every system release it may run over owned content.
+    pub const fn release(self) -> SystemRelease {
+        self.release
     }
 }
 
@@ -801,6 +861,51 @@ impl IrFunction {
     }
 }
 
+/// One retained conservative alias link between two of the entry's
+/// standard-input resource owners, by [FN-7] table ordinal.
+///
+/// [SYS-12] fixes exactly one for the first slice: redirection may make the
+/// `command.stdout` and `command.stderr` owners the same sink. v0.18 defines
+/// no consumer, so nothing here reads it; it is retained so a later verified
+/// cross-resource reordering fact fails closed on this pair rather than
+/// treating two separate `Output` owners as disjoint sinks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrResourceAlias {
+    left: u8,
+    right: u8,
+}
+
+impl IrResourceAlias {
+    // Deliberately unread: v0.18 defines no consumer of the may-alias fact.
+    // The pair is retained so a later cross-resource reordering fact must
+    // read it and fail closed rather than inferring separateness.
+    #[allow(dead_code)]
+    #[must_use]
+    pub const fn left(self) -> u8 {
+        self.left
+    }
+
+    #[allow(dead_code)]
+    #[must_use]
+    pub const fn right(self) -> u8 {
+        self.right
+    }
+}
+
+/// The [FN-7] entry form the program starts with [PROG-3].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IrEntry {
+    /// The unlabelled entry: no supplied input and no produced status.
+    Unlabelled,
+    /// A `command` entry: program start supplies exactly the standard inputs
+    /// these table ordinals select, in this order, and maps the returned
+    /// `ExitStatus` to the host process status.
+    Command {
+        inputs: Vec<u8>,
+        aliases: Vec<IrResourceAlias>,
+    },
+}
+
 #[derive(Debug)]
 pub struct IrProgram<'classified, 'lexed, 'source> {
     _checked: CheckedProgram<'classified, 'lexed, 'source>,
@@ -808,11 +913,17 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     constants: Vec<IrGlobalConstant>,
     functions: Vec<IrFunction>,
     main: u32,
+    entry: IrEntry,
 }
 
 impl IrProgram<'_, '_, '_> {
     pub fn nominals(&self) -> &[IrNominal] {
         &self.nominals
+    }
+
+    /// The entry form program start must implement.
+    pub const fn entry(&self) -> &IrEntry {
+        &self.entry
     }
 
     pub fn nominal(&self, id: IrNominalId) -> Option<&IrNominal> {
@@ -840,13 +951,11 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
-    /// A semantically accepted program uses the [SYS-1] system interface,
-    /// whose checked-IR resource identities and native lowering are not
-    /// implemented yet. This is an explicit unsupported compiler
-    /// capability, never a source rejection.
-    UnsupportedSystemInterface,
 }
 
 mod builder;
+
+#[cfg(test)]
+mod tests;
 
 pub use builder::lower_checked;

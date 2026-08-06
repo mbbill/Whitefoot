@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::SemanticCompilerFailure;
+use crate::{SemanticCompilerFailure, SystemRelease, SystemReleaseRow};
 
 use super::super::model::{
     BindingId, CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget,
@@ -26,60 +26,60 @@ pub(super) struct ReleaseSite {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// Returns the effect row a compiler-derived release of one value of
-    /// this type may perform: the union of the fixed [SYS-5] release rows
-    /// of every system resource the value may transitively own. `buffer`,
-    /// `box`, arena, and `const` releases carry the empty row [STOR-3], so
-    /// only a contained system resource family contributes anything.
-    pub(super) fn release_effects_of_type(&self, ty: CheckedType) -> Result<EffectSet, CheckStop> {
+    /// Returns the complete [STOR-3] release record of one value of this
+    /// type: its own [SYS-5] action when it is a system resource, and the
+    /// union of the fixed [SYS-5] rows of every system resource the value may
+    /// transitively own. `buffer`, `box`, arena, and `const` releases carry
+    /// the empty row [STOR-3], so only a contained system resource family
+    /// contributes anything.
+    pub(super) fn release_of_type(&self, ty: CheckedType) -> Result<SystemRelease, CheckStop> {
         let mut visited = HashSet::new();
-        self.release_effects_of_type_inner(ty, &mut visited)
+        let row = self.release_row_of_type(ty, &mut visited)?;
+        let action = match ty {
+            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                CheckedNominalKind::SystemResource { nominal } => {
+                    crate::system_resource_contract(*nominal).map(|contract| contract.action)
+                }
+                CheckedNominalKind::Struct { .. }
+                | CheckedNominalKind::Enum { .. }
+                | CheckedNominalKind::Box { .. } => None,
+            },
+            _ => None,
+        };
+        Ok(SystemRelease { action, row })
     }
 
-    fn release_effects_of_type_inner(
+    fn release_row_of_type(
         &self,
         ty: CheckedType,
         visited: &mut HashSet<NominalId>,
-    ) -> Result<EffectSet, CheckStop> {
+    ) -> Result<SystemReleaseRow, CheckStop> {
         let CheckedType::Nominal(id) = ty else {
             // Scalars carry no release action, and array, slice, and buffer
             // elements are flat copy data with no release of their own.
-            return Ok(EffectSet::NONE);
+            return Ok(SystemReleaseRow::EMPTY);
         };
         if !visited.insert(id) {
-            return Ok(EffectSet::NONE);
+            return Ok(SystemReleaseRow::EMPTY);
         }
-        match &self.nominal(id)?.kind {
+        let component_types: Vec<CheckedType> = match &self.nominal(id)?.kind {
             CheckedNominalKind::SystemResource { nominal } => {
-                let row = crate::system_release_row(*nominal);
-                let mut effects = EffectSet::NONE;
-                effects.external = row.external;
-                effects.blocks = row.blocks;
-                Ok(effects)
+                return Ok(crate::system_release_row(*nominal));
             }
-            CheckedNominalKind::Struct { fields } => {
-                let component_types = fields.iter().map(|field| field.ty).collect::<Vec<_>>();
-                let mut effects = EffectSet::NONE;
-                for ty in component_types {
-                    effects = effects.union(self.release_effects_of_type_inner(ty, visited)?);
-                }
-                Ok(effects)
-            }
-            CheckedNominalKind::Enum { variants } => {
-                let component_types = variants
-                    .iter()
-                    .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
-                    .collect::<Vec<_>>();
-                let mut effects = EffectSet::NONE;
-                for ty in component_types {
-                    effects = effects.union(self.release_effects_of_type_inner(ty, visited)?);
-                }
-                Ok(effects)
-            }
-            CheckedNominalKind::Box { referent } => {
-                self.release_effects_of_type_inner(*referent, visited)
-            }
+            CheckedNominalKind::Struct { fields } => fields.iter().map(|field| field.ty).collect(),
+            CheckedNominalKind::Enum { variants } => variants
+                .iter()
+                .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
+                .collect(),
+            CheckedNominalKind::Box { referent } => vec![*referent],
+        };
+        let mut row = SystemReleaseRow::EMPTY;
+        for ty in component_types {
+            let component = self.release_row_of_type(ty, visited)?;
+            row.external |= component.external;
+            row.blocks |= component.blocks;
         }
+        Ok(row)
     }
 
     /// Collects every compiler-derived release the checked statements carry
@@ -120,9 +120,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Evaluate(value) => {
                     self.collect_expression_release_sites(value, sites)?;
                 }
-                CheckedStatement::DropExpression(value) => {
+                CheckedStatement::DropExpression { value, release } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    let effects = self.release_effects_of_type(value.ty())?;
+                    let effects = effects_of_row(release.row);
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::ExpressionResult,
@@ -182,7 +182,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         sites: &mut Vec<ReleaseSite>,
     ) -> Result<(), CheckStop> {
         for drop in drops {
-            let effects = self.release_effects_of_type(drop.ty)?;
+            // The drop record already carries its [SYS-5] row, so attribution
+            // reads the checked program rather than rederiving it.
+            let effects = effects_of_row(drop.release.row);
             if effects != EffectSet::NONE {
                 sites.push(ReleaseSite {
                     owner: ReleaseOwner::Binding(drop.binding),
@@ -205,7 +207,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ..
             } => {
                 for drop in residual_drops {
-                    let effects = self.release_effects_of_type(drop.ty)?;
+                    let effects = effects_of_row(drop.release.row);
                     if effects != EffectSet::NONE {
                         sites.push(ReleaseSite {
                             owner: ReleaseOwner::Binding(*binding),
@@ -263,7 +265,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 }
 
+/// Projects one [SYS-5] release row onto the two payload-free [EFF-1]
+/// categories it can contribute.
+fn effects_of_row(row: SystemReleaseRow) -> EffectSet {
+    let mut effects = EffectSet::NONE;
+    effects.external = row.external;
+    effects.blocks = row.blocks;
+    effects
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Attaches the [STOR-3] release record to each derived drop path, so
+    /// every construction site records the same fact for the same type.
+    pub(super) fn released_paths(
+        &self,
+        paths: Vec<(Vec<u32>, CheckedType)>,
+    ) -> Result<Vec<(Vec<u32>, CheckedType, SystemRelease)>, CheckStop> {
+        paths
+            .into_iter()
+            .map(|(fields, ty)| Ok((fields, ty, self.release_of_type(ty)?)))
+            .collect()
+    }
+
     pub(super) fn drop_paths(
         &self,
         ty: CheckedType,

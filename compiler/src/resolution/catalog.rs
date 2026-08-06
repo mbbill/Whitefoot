@@ -646,6 +646,161 @@ impl SystemReleaseRow {
     };
 }
 
+/// One [SYS-2] opaque system resource type, by its target-independent
+/// semantic identity rather than by any source spelling [QUAL-1].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SystemResourceType {
+    /// The command's immutable argument value [SYS-9].
+    Args,
+    /// One lossless host string [HOST-1, SYS-9].
+    HostString,
+    /// One relative path admitted by construction from a host string [PATH-1].
+    RelativePath,
+    /// One directory-read capability [PATH-2, SYS-10].
+    DirectoryRead,
+    /// One stateful open file with one cursor domain [SYS-11].
+    ReadFile,
+    /// One stateful output sink [SYS-12].
+    Output,
+    /// One immutable portable command code [SYS-13].
+    ExitStatus,
+}
+
+/// The [SYS-5] consuming release action of one system resource type.
+///
+/// The release table fixes exactly one action per type, and one type carries
+/// exactly one release action [HOST-3].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SystemReleaseAction {
+    /// A logical consume: no host call, no target call, no handle lookup, no
+    /// byte copy, and no external effect.
+    LogicalConsume,
+    /// At most one native close attempt. It discards only the close
+    /// diagnostic and never retries an ambiguous close, because the native
+    /// descriptor may already be closed and reusable.
+    NativeCloseAttempt,
+    /// `Output`'s logical source detach: it neither closes nor flushes the
+    /// host descriptor [SYS-12], and operating-system process teardown closes
+    /// the native descriptor afterwards.
+    SourceDetach,
+}
+
+/// How one system resource value is backed.
+///
+/// This is retained for auditing and lowering [DIAG-2]; it is no
+/// source-acceptance judgment and refuses no program [HOST-3].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SystemResourceBacking {
+    /// An opaque compiler-owned resource with no source-visible backing.
+    Opaque,
+    /// [HOST-3]: an inline lease — a private code-unit address and length
+    /// carried in the value itself — over the command-lifetime argument
+    /// snapshot [QUAL-2]. A lease owns no code-unit storage and several live
+    /// leases may denote the same backing code units, so lease identity is
+    /// retained rather than inferred from value separateness.
+    CommandLifetimeLease,
+}
+
+/// The complete [SYS-5]/[HOST-3] contract of one system resource type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SystemResourceContract {
+    /// The type's target-independent semantic identity.
+    pub resource: SystemResourceType,
+    /// Its one consuming release action.
+    pub action: SystemReleaseAction,
+    /// That action's fixed effect row.
+    pub row: SystemReleaseRow,
+    /// How its values are backed.
+    pub backing: SystemResourceBacking,
+}
+
+/// One compiler-derived release, as [STOR-3] and [SYS-5] fix it.
+///
+/// `action` is the release action of the released value itself when that
+/// value is one system resource, and `row` is the union of the [SYS-5] rows
+/// of every system release the value may run over owned content: release of
+/// an outcome value is release of its components, and a `buffer`, `box`,
+/// arena, or `const` release carries the empty row and no system action.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SystemRelease {
+    /// The released value's own [SYS-5] action, when it is a system resource.
+    pub action: Option<SystemReleaseAction>,
+    /// The union of every [SYS-5] row this release may run.
+    pub row: SystemReleaseRow,
+}
+
+impl SystemRelease {
+    /// A release that runs no system release action at all.
+    pub const NONE: Self = Self {
+        action: None,
+        row: SystemReleaseRow::EMPTY,
+    };
+}
+
+/// Returns one system nominal's complete [SYS-5]/[HOST-3] resource contract.
+///
+/// The seven outcome enums have no release action and take no row in the
+/// [SYS-5] table, so they carry no contract here; their release is the
+/// release of their components.
+#[must_use]
+pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
+    let (resource, action, backing) = match nominal {
+        ARGS => (
+            SystemResourceType::Args,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        HOST_STRING => (
+            SystemResourceType::HostString,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::CommandLifetimeLease,
+        ),
+        RELATIVE_PATH => (
+            SystemResourceType::RelativePath,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::CommandLifetimeLease,
+        ),
+        DIRECTORY_READ => (
+            SystemResourceType::DirectoryRead,
+            SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        READ_FILE => (
+            SystemResourceType::ReadFile,
+            SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        OUTPUT => (
+            SystemResourceType::Output,
+            SystemReleaseAction::SourceDetach,
+            SystemResourceBacking::Opaque,
+        ),
+        EXIT_STATUS => (
+            SystemResourceType::ExitStatus,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        _ => return None,
+    };
+    let row = match action {
+        // Only a native close attempt reaches the host; a logical consume and
+        // a source detach make no target call and perform no external effect.
+        SystemReleaseAction::NativeCloseAttempt => SystemReleaseRow {
+            external: true,
+            blocks: true,
+        },
+        SystemReleaseAction::LogicalConsume | SystemReleaseAction::SourceDetach => {
+            SystemReleaseRow::EMPTY
+        }
+    };
+    Some(SystemResourceContract {
+        resource,
+        action,
+        row,
+        backing,
+    })
+}
+
 /// Returns one system nominal's exact [SYS-5] release row.
 ///
 /// `DirectoryRead` and `ReadFile` release with at most one native close
@@ -655,12 +810,9 @@ impl SystemReleaseRow {
 /// empty row.
 #[must_use]
 pub fn system_release_row(nominal: u8) -> SystemReleaseRow {
-    match nominal {
-        DIRECTORY_READ | READ_FILE => SystemReleaseRow {
-            external: true,
-            blocks: true,
-        },
-        _ => SystemReleaseRow::EMPTY,
+    match system_resource_contract(nominal) {
+        Some(contract) => contract.row,
+        None => SystemReleaseRow::EMPTY,
     }
 }
 

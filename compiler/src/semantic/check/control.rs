@@ -130,7 +130,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let statement = if self.is_copy_type(value.expression.ty())? {
                     CheckedStatement::Evaluate(value.expression)
                 } else {
-                    CheckedStatement::DropExpression(value.expression)
+                    let release = self.release_of_type(value.expression.ty())?;
+                    CheckedStatement::DropExpression {
+                        value: value.expression,
+                        release,
+                    }
                 };
                 Ok(Self::continuing_statement(statement, value.effects))
             }
@@ -583,11 +587,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut drops = Vec::new();
         for (_, local) in live {
             if !self.is_copy_type(local.ty)? {
-                for (fields, ty) in self.drop_paths(local.ty, Vec::new())? {
+                let paths = self.drop_paths(local.ty, Vec::new())?;
+                for (fields, ty, release) in self.released_paths(paths)? {
                     drops.push(CheckedDrop {
                         binding: local.binding,
                         fields,
                         ty,
+                        release,
                     });
                 }
             }

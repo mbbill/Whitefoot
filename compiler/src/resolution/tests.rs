@@ -1452,3 +1452,95 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
         assert_eq!(row.blocks, expected, "blocks for {}", nominal.spelling);
     }
 }
+
+#[test]
+fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
+    use super::catalog::{
+        SYSTEM_NOMINALS, SystemReleaseAction, SystemResourceBacking, SystemResourceType,
+        system_release_row, system_resource_contract,
+    };
+
+    // [SYS-5]'s release table and [HOST-3]'s backing rule, keyed by the
+    // [SYS-2] nominal spelling so a reordered inventory cannot silently move
+    // a contract onto another type. The seven outcome enums have no release
+    // action and take no row in the table, so they carry no contract.
+    let expected = [
+        (
+            "Args",
+            SystemResourceType::Args,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "HostString",
+            SystemResourceType::HostString,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::CommandLifetimeLease,
+        ),
+        (
+            "RelativePath",
+            SystemResourceType::RelativePath,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::CommandLifetimeLease,
+        ),
+        (
+            "DirectoryRead",
+            SystemResourceType::DirectoryRead,
+            SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "ReadFile",
+            SystemResourceType::ReadFile,
+            SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "Output",
+            SystemResourceType::Output,
+            SystemReleaseAction::SourceDetach,
+            SystemResourceBacking::Opaque,
+        ),
+        (
+            "ExitStatus",
+            SystemResourceType::ExitStatus,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+    ];
+    let mut covered = 0_usize;
+    for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
+        let index = u8::try_from(index).expect("nominal table fits u8");
+        let contract = system_resource_contract(index);
+        let Some(row) = expected
+            .iter()
+            .find(|(spelling, ..)| *spelling == nominal.spelling)
+        else {
+            assert!(
+                contract.is_none(),
+                "{} takes no SYS-5 release row",
+                nominal.spelling
+            );
+            assert!(!nominal.opaque);
+            continue;
+        };
+        covered += 1;
+        assert!(nominal.opaque);
+        let contract = contract.unwrap_or_else(|| panic!("{} has a contract", nominal.spelling));
+        assert_eq!(
+            contract.resource, row.1,
+            "identity for {}",
+            nominal.spelling
+        );
+        assert_eq!(contract.action, row.2, "action for {}", nominal.spelling);
+        assert_eq!(contract.backing, row.3, "backing for {}", nominal.spelling);
+        // The row is a function of the action, and the two views agree.
+        assert_eq!(contract.row, system_release_row(index));
+        assert_eq!(
+            contract.row.external,
+            row.2 == SystemReleaseAction::NativeCloseAttempt
+        );
+        assert_eq!(contract.row.blocks, contract.row.external);
+    }
+    assert_eq!(covered, expected.len());
+}
