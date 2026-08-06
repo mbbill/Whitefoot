@@ -170,74 +170,6 @@ fn copy_range ['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'
   return target;
 }
 
-fn line_matches ['s, 'p](source: &'s buffer<u8>, start: own u64, stop: own u64, pattern: &'p buffer<u8>, length: own u64) -> own Bool reads('s 'p), traps {
-  doc "Reports whether the literal pattern bytes occur in one line's byte range.";
-  let empty: own Bool = ieq<u64>(length, 0_u64);
-  match empty {
-    True() => {
-      return True();
-    }
-    False() => {
-    }
-  }
-  let span: own u64 = isub.wrap<u64>(stop, start);
-  let fits: own Bool = ige<u64>(span, length);
-  match fits {
-    True() => {
-    }
-    False() => {
-      return False();
-    }
-  }
-  let last: own u64 = isub.wrap<u64>(span, length);
-  let offset: own u64 = 0_u64;
-  loop @candidates {
-    let past: own Bool = igt<u64>(offset, last);
-    match past {
-      True() => {
-        break @candidates;
-      }
-      False() => {
-      }
-    }
-    let base: own u64 = iadd.wrap<u64>(start, offset);
-    let probe: own u64 = 0_u64;
-    let same: own Bool = True();
-    loop @compare {
-      let done: own Bool = ige<u64>(probe, length);
-      match done {
-        True() => {
-          break @compare;
-        }
-        False() => {
-        }
-      }
-      let position: own u64 = iadd.wrap<u64>(base, probe);
-      let left: own u8 = index<u8>(deref(source), position);
-      let right: own u8 = index<u8>(deref(pattern), probe);
-      let equal: own Bool = ieq<u8>(left, right);
-      match equal {
-        True() => {
-        }
-        False() => {
-          set same = False();
-          break @compare;
-        }
-      }
-      set probe = iadd.wrap<u64>(probe, 1_u64);
-    }
-    match same {
-      True() => {
-        return True();
-      }
-      False() => {
-      }
-    }
-    set offset = iadd.wrap<u64>(offset, 1_u64);
-  }
-  return False();
-}
-
 fn publish_all ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent: own u64 = 0_u64;
@@ -453,6 +385,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       return exit_status(code: 2_u8);
     }
   }
+  let first_pattern_byte: own u8 = index<u8>(pattern, 0_u64);
+  let empty_pattern: own Bool = ieq<u64>(pattern_length, 0_u64);
   let failed: own u8 = 0_u8;
   let matched: own u8 = 0_u8;
   let filled: own u64 = 0_u64;
@@ -530,12 +464,13 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                       let scan: own u64 = 0_u64;
                       loop @lines {
                         let terminator: own u64 = available;
+                        let hit: own Bool = empty_pattern;
                         let probe: own u64 = scan;
-                        loop @find {
+                        loop @walk {
                           let done: own Bool = ige<u64>(probe, available);
                           match done {
                             True() => {
-                              break @find;
+                              break @walk;
                             }
                             False() => {
                             }
@@ -545,9 +480,72 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           match newline {
                             True() => {
                               set terminator = probe;
-                              break @find;
+                              break @walk;
                             }
                             False() => {
+                            }
+                          }
+                          match hit {
+                            True() => {
+                            }
+                            False() => {
+                              let lead: own Bool = ieq<u8>(byte, first_pattern_byte);
+                              match lead {
+                                True() => {
+                                  let same: own Bool = True();
+                                  let ahead: own u64 = 1_u64;
+                                  loop @verify {
+                                    let proven: own Bool = ige<u64>(ahead, pattern_length);
+                                    match proven {
+                                      True() => {
+                                        break @verify;
+                                      }
+                                      False() => {
+                                      }
+                                    }
+                                    let spot: own u64 = iadd.wrap<u64>(probe, ahead);
+                                    let inside: own Bool = ilt<u64>(spot, available);
+                                    match inside {
+                                      True() => {
+                                      }
+                                      False() => {
+                                        set same = False();
+                                        break @verify;
+                                      }
+                                    }
+                                    let candidate: own u8 = index<u8>(input, spot);
+                                    let stopper: own Bool = ieq<u8>(candidate, 10_u8);
+                                    match stopper {
+                                      True() => {
+                                        set same = False();
+                                        break @verify;
+                                      }
+                                      False() => {
+                                      }
+                                    }
+                                    let expected: own u8 = index<u8>(pattern, ahead);
+                                    let equal: own Bool = ieq<u8>(candidate, expected);
+                                    match equal {
+                                      True() => {
+                                      }
+                                      False() => {
+                                        set same = False();
+                                        break @verify;
+                                      }
+                                    }
+                                    set ahead = iadd.wrap<u64>(ahead, 1_u64);
+                                  }
+                                  match same {
+                                    True() => {
+                                      set hit = True();
+                                    }
+                                    False() => {
+                                    }
+                                  }
+                                }
+                                False() => {
+                                }
+                              }
                             }
                           }
                           set probe = iadd.wrap<u64>(probe, 1_u64);
@@ -559,10 +557,6 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           False() => {
                             break @lines;
                           }
-                        }
-                        let hit: own Bool = False();
-                        region 'match_call {
-                          set hit = line_matches<'match_call, 'match_call>(source: &'match_call input, start: scan, stop: terminator, pattern: &'match_call pattern, length: pattern_length);
                         }
                         match hit {
                           True() => {

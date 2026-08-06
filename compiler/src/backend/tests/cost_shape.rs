@@ -109,11 +109,15 @@ fn entry() -> &'static str {
 }
 
 /// Every function `wfgrep` declares, in source order.
+///
+/// Task 0023 re-derived this list from source when the double-walk slice
+/// fused the literal match into `main`'s scan walk: `line_matches` is no
+/// longer declared. Per task 0016's rule the list moves only by source
+/// derivation, never by relaxation.
 const DECLARED_FUNCTIONS: &[&str] = &[
     "io_class",
     "append_slice",
     "copy_range",
-    "line_matches",
     "publish_all",
     "report_failure",
 ];
