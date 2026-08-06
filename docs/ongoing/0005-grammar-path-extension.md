@@ -61,7 +61,10 @@ header); anything else fails closed. The staged tables were produced offline
 by a one-shot generator validated by reproducing the committed v0.17 tables
 exactly — structure byte-identical, all 72 decisions' 1839 SELECT rows and
 atom metadata set-identical — before emitting the v0.18 set; the generator
-lives outside the repository per hygiene rules.
+lives outside the repository per hygiene rules. For the activation task: that
+generator currently sits at `/Users/bytedance/do_not_scan/wf-grammar-gen` on
+the owner's host and reproduced the committed v0.17 tables exactly, so the
+activation work can decide whether to wire it in or regenerate independently.
 
 ## Progress
 
@@ -75,6 +78,11 @@ lives outside the repository per hygiene rules.
   a `program_kind` entry and an `external` row still reject and that `as`,
   `external`, `blocks` remain active identifiers, staged-contract fail-closed
   near-misses, finalize fail-closed).
+- **Done (rebase):** rebased onto `85c0f5c` (hostile-review candidate fixes)
+  and re-extended the staged contract snapshot and its hash; the amendments to
+  the frontend sections are prose-only (GRAM-11 wording; one EFF-1 sentence),
+  so the staged grammar tables are unchanged and the verifier reports the same
+  64/74/75 counts.
 - **Current:** awaiting lead review of the worktree branch.
 - **Next:** lead review; land; move this record to `docs/done/`.
 
