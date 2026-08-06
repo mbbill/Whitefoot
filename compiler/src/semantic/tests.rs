@@ -494,6 +494,50 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn match_and_index_of_a_box_holder_are_type7_missing_dereferences() {
+    // TYPE-7 owns the implicit-read case exclusively at every position that
+    // states the exclusivity, so a box holder written where its referent enum
+    // or its referent indexable would be required cites TYPE-7 and the
+    // position's own wrong-type judgment forms no rejection.
+    assert_rule(
+        br#"enum State {
+  Ready();
+}
+
+fn inspect(holder: own box<State>) -> own unit pure {
+  match holder {
+    Ready() => {
+    }
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+    assert_rule(
+        br#"fn read(holder: own box<buffer<u8>>) -> own u8 traps {
+  return index<u8>(holder, 0_u64);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Type7,
+        SemanticIssueKind::MissingDereference {
+            mechanical_fix: "write `deref(holder)`",
+        },
+    );
+}
+
+#[test]
 fn result_construction_and_propagation_keep_context_and_rule_owners() {
     let source = br#"enum StepError {
   Failed();

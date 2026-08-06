@@ -166,6 +166,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Whether `id` is a box holder whose referent is itself matchable, which
+    /// is exactly the [TYPE-7] implicit-read shape at a match scrutinee.
+    fn enum_referent_of_holder(
+        &self,
+        id: crate::semantic::model::NominalId,
+    ) -> Result<bool, CheckStop> {
+        let CheckedNominalKind::Box { referent } = self.nominal(id)?.kind else {
+            return Ok(false);
+        };
+        Ok(match referent {
+            CheckedType::Bool => true,
+            CheckedType::Nominal(inner) => {
+                matches!(self.nominal(inner)?.kind, CheckedNominalKind::Enum { .. })
+            }
+            _ => false,
+        })
+    }
+
     fn match_descriptor(
         &self,
         ty: CheckedType,
@@ -195,6 +213,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }),
             CheckedType::Nominal(id) => {
                 let CheckedNominalKind::Enum { variants } = &self.nominal(id)?.kind else {
+                    // [TYPE-7] owns the implicit-read case exclusively: a box
+                    // holder written where a value of its referent enum would
+                    // be required is rejected citing TYPE-7 with the
+                    // `deref(.)` fix, and the scrutinee's wrong-type judgment
+                    // forms no rejection.
+                    if self.enum_referent_of_holder(id)? {
+                        return self.issue_node(
+                            SemanticRule::Type7,
+                            node,
+                            SemanticIssueKind::MissingDereference {
+                                mechanical_fix: "write `deref(holder)`",
+                            },
+                        );
+                    }
                     return self.issue_node(
                         SemanticRule::Type5,
                         node,

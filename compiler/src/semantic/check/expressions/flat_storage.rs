@@ -12,7 +12,7 @@ use crate::{
 
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
-    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedMode,
+    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedMode, CheckedNominalKind,
     CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
     CheckedTargetDomainObligation, CheckedType, IntegerType, TrapSite,
 };
@@ -761,6 +761,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     descriptor: None,
                     slice,
                 }))
+            }
+            // [TYPE-7] owns the implicit-read case exclusively: a box holder
+            // written where its indexable referent would be required is
+            // rejected citing TYPE-7 with the `deref(.)` fix, and the
+            // operand's wrong-type judgment forms no rejection.
+            CheckedType::Nominal(id)
+                if matches!(
+                    self.nominal(id)?.kind,
+                    CheckedNominalKind::Box { referent }
+                        if matches!(
+                            referent,
+                            CheckedType::Array { .. }
+                                | CheckedType::Buffer { .. }
+                                | CheckedType::Slice { .. }
+                        )
+                ) =>
+            {
+                self.issue_node(
+                    SemanticRule::Type7,
+                    node,
+                    SemanticIssueKind::MissingDereference {
+                        mechanical_fix: "write `deref(holder)`",
+                    },
+                )
             }
             _ => self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch),
         }
