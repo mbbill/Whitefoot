@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 11
+Revision: 12
 
 The active language authority is
 [`spec/kernel-spec-v0.19.md`](../spec/kernel-spec-v0.19.md), SHA-256
@@ -226,8 +226,13 @@ facts-off evidence rather than trust in the compiler or writer.
 
 - **Goal:** compare compiler behavior with compiler-independent v0.17
   expectations through the normal command path.
-- **Current:** the corpus has valid active-spec identity, structure, coverage,
-  and protected expectations; its complete adapter path is not wired.
+- **Current:** the native execution adapter is wired (task 0014):
+  `make conformance-run` compiles and runs every case through the real
+  compiler. First full run: 242 pass / 123 pre-existing failures in four
+  recorded buckets (45 pre-semantic rejections without rule ids; 41
+  protected sources that are incomplete units; 35 runnable overclaims; 2
+  real divergences) awaiting owner rulings; the corpus gate lane is
+  ignored-with-reason until they land.
 - **Missing / next:** distinguish correct execution, valid-but-unsupported,
   wrong rejection, crash, and trap mismatch. Any existing expectation or
   status weakening remains owner-protected.
@@ -269,7 +274,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 ### PERF-1 — Ordinary lowering and baseline code quality
 
 `[current: conservative LLVM]` `[current: upstream development table]`
-`[next: wfgrep slice floor gates]`
+`[next: preregistered wfgrep baseline vs comparator]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
@@ -471,8 +476,8 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### BOUND-1 — System capabilities and host integration
 
-`[current: v0.18 first slice active; compiler unsupported-gated]`
-`[next: implementation waves 0006-0016]`
+`[current: first slice complete end-to-end with standing cost gates]`
+`[next: helper decomposition (system-type borrow parameters); later families on project pressure]`
 
 - **Goal:** give command, service, and embedded program instances a
   coherent capability-based host boundary covering process context,
@@ -491,10 +496,16 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   and static target qualification. v0.17 itself still has a fixed no-argument
   `main`, memory-only effect rows, and no compiler system path; the only
   ordinary external-I/O call is a private trap diagnostic.
-- **Missing / next:** the arg_get/index defect was repaired by v0.19
-  (activated 2026-08-06 after exact re-approval; the sole
-  fixed-terminal/parameter collision by systematic sweep). v0.18 activated
-  2026-08-06 (`9768bae`) with the exact
+- **Missing / next:** the first command slice is complete: v0.18/v0.19
+  active, the compiler implements the whole surface end-to-end on the native
+  macOS/Linux command target, sequential `wfgrep` passes its oracle, and the
+  dossier §9.1 rows are standing machine gates (task 0016). Named
+  implementation follow-up: borrow-mode parameters of system nominal types
+  are an unsupported specified capability (task-0015 finding) forcing
+  helper-free programs. Later families (clocks, network, async/wait,
+  threads, child processes) remain additive true subsets on their own
+  project pressure. Historically: v0.18 activated 2026-08-06 (`9768bae`)
+  with the exact
   first-command-slice batch: 25 new rules, 13 modified, the Route C
   declaration domain, and the promoted native grammar. The compiler parses
   the whole surface and reports it as explicit unsupported capability;
@@ -660,11 +671,12 @@ remains as the owner check-in, not as a presumption against the goal.
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** the BOUND-1 architecture gate closed on 2026-08-05 and
-  v0.18 activated on 2026-08-06. Next: implement the first slice through
-  planned tasks 0006-0016 — argv, status, bounded file input, and ordered
-  output, each operation a true subset of the selected resource, effect,
-  provider, and performance model. Once that slice passes its
+- **Missing / next:** the first slice is implemented and gated (tasks
+  0006-0016 all DONE): sequential `wfgrep` passes its correctness oracle and
+  §9.1 cost gates. Next per the project loop: the zero-change PERF-1
+  baseline of this exact frozen slice against a preregistered comparator,
+  with the scalar newline scan retaining its bounds trap already named as
+  the first PROOF-1 pressure candidate. Once that baseline passes its
   project-independent controls and same-slice correctness and cost gate, return
   to that exact `wfgrep` checkpoint. Each later slice stops on either the next
   semantic blocker or the first attributed material performance blocker; the
