@@ -129,13 +129,46 @@ the admission trigger, keeping the [SYS-3] decision after
 
 ## Progress
 
-- Done: claim; read WORKFLOW, the full task record, spec v0.18 §16/§17,
-  TYPE-6/OP-1/GRAM-11/FN-7/DIAG-1, the system-interface MCTS nodes, and the
-  post-0006 resolution engine.
-- Current: implement the system catalog, the third declaration source, the
-  DIAG-1 rank-5 collision, and the semantic-stage unsupported boundary.
-- Next: resolution unit tests (both admission states, lookalike, collision,
-  ordinal determinism); gates.
+- Done: complete implementation at `928b050` on this worktree branch,
+  awaiting lead review. The SYS-2 catalog (167 records, preorder ordinals,
+  full signature data, mechanical reads/writes derivation) sits beside
+  `PRELUDE_DECLARATIONS` in `compiler/src/resolution/catalog.rs`; the SYS-3
+  admission decision reads `syntax::unit_program_kind` after FN-8 admission
+  and replaces the activation gate; `DeclarationOrigin::System` /
+  `ResolvedTarget::System` carry `system_declaration_ordinal`; the DIAG-1
+  rank-5 collision fires at the source event in both directions, root and
+  nested alike, with the system conflict bucket ordered between PRE-1 and
+  source; `fn_bind` right IDENTs never admit a system operation; the
+  unsupported boundary moved to semantic checking
+  (`SystemDeclarationUse` at the first resolved system use,
+  `KindDeclaringEntry` for a system-name-free kind-declaring unit), and
+  resolution no longer has an unsupported outcome.
+- Validation: `make -C compiler check` and `make check` green (381 tests).
+  New tests: catalog counts/properties/entity recovery plus a byte-exact
+  extraction of both SYS-2 blocks from the active spec text (signature
+  rendering compared string-for-string); kind-declaring resolution of all
+  14 types, 11 callees, construct and arm constructors with exact ordinals;
+  unadmitted-unit undeclared-name behavior; lookalike acceptance; rank-5
+  collisions in all three domains, both textual directions, and a nested
+  scope; rank-4-before-5; conformance-binding exclusion; repeated-run and
+  path-independence determinism; semantic and driver gate tests.
+- Findings for lead routing (not absorbed here):
+  1. v0.18 internal contradiction: [SYS-2] fixes `arg_get`'s second
+     parameter name as `index`, [GRAM-11]+[SYS-2] require every system call
+     to write each parameter name as a `fieldinit` IDENT, but `index` is a
+     fixed [GRAM-5] atom excluded from IDENT by [FORM-3], so no complete
+     legal call to `arg_get` exists. Reproduction: a canonical unit calling
+     `helper(index: x)` rejects at the `:` citing GRAM-5; renaming the
+     parameter to `position` compiles the identical shape (probe pair under
+     `/Users/bytedance/do_not_scan/wf-0007/`). Blocks task 0008's
+     named-argument admission for `arg_get` and any argv-reading program
+     (the wfgrep slice); a specification-change batch must rename the
+     parameter or amend the grammar. The catalog keeps the normative
+     spelling unchanged.
+  2. Pre-existing (v0.17-era) discrepancy: the resolver cites
+     `ResolutionRule::Fn4` for a failed `fn_bind` right-IDENT lookup, while
+     DIAG-1's role table (v0.17 and v0.18 alike) says FN-3. Not touched by
+     this task.
 
 ## Validation
 
