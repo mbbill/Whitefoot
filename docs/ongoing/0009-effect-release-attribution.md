@@ -1,13 +1,15 @@
 # 0009 — Effect-checking extensions and release attribution
 
-**Planned task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 3
-of 8; task 4 of 11; runs concurrently with task 0008). Not yet claimed —
-claiming fills in `Status`, `Owner`, workspace, and `Base revision` and
-moves this file unchanged in number to `docs/ongoing/` per
-`docs/WORKFLOW.md`. This record authorizes nothing beyond Work item 2
-itself; if `docs/current-plan.md` is replaced before this task is claimed,
-delete this file unless the new plan explicitly retains it.
+**Claimed task.** Decomposed from `docs/current-plan.md` Work item 2 (wave 3
+of 8; task 4 of 11; runs concurrently with task 0008). This record
+authorizes nothing beyond Work item 2 itself.
 
+- **Status:** `IN PROGRESS`
+- **Owner:** executor agent exec-0009 (lead-directed)
+- **Workspace:** isolated worktree
+  `.claude/worktrees/agent-a22d33025390b76b7`, branch
+  `worktree-agent-a22d33025390b76b7`
+- **Base revision:** `907076a` (main; task 0007 closed)
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2, second bullet
   ("effect-checking extensions and release attribution"). Implements
   `spec/kernel-spec-v0.18.md`'s `EFF-1`/`EFF-2`/`EFF-3`/`EFF-5`, `FN-3`, and
@@ -98,11 +100,53 @@ location.
 
 ## Dependencies and integration order
 
-Depends on task 0007 (the opaque resource types and their per-type release
-rows must exist as consultable data). Does not depend on task 0008 — the
-canonical case only needs a helper function taking `own ReadFile`, not the
-command entry form. Runs concurrently with task 0008 (wave 3). Task 0010
-depends on this task.
+Depends on task 0007 (`DONE`, landed at `c1178e8`: the resolver surface —
+`SystemDeclarationId`, `ResolvedTarget::System`, the catalog tables, and
+`operation_region_effects` — is the consultable per-type data this task
+consumes; the SYS-5 release-row table itself is added to the catalog by
+this task as fixed normative content). Does not depend on task 0008 for
+its judgments — the canonical case only needs a helper function taking
+`own ReadFile`, not the command entry form. Runs concurrently with task
+0008 (wave 3). Task 0010 depends on this task.
+
+**Cross-link (lead-authorized overlap with 0008):** both tasks touch
+`compiler/src/semantic/check.rs`, specifically the
+`check_system_surface_support` gate and `check_main_header`. Integration
+order: **0008 lands first; this task rebases onto it before landing.**
+This task's gate footprint is deliberately minimal so it sits behind
+0008's restructured boundary: it removes only the `SystemDeclarationUse`
+and `SystemEffectCategory` stops (both now implemented), relocates the
+`KindDeclaringEntry` stop to the end of semantic checking (after function
+and conformance checking, before acceptance) so genuine EFF-2/FN-3
+rejections in a kind-declaring unit report ahead of the entry-admission
+boundary, and makes `check_main_header` defer (not reject) a
+`program_kind`-carrying `main`. 0008 owns removing the
+`KindDeclaringEntry`/`LabelledEntryInput` stops and implementing FN-7
+admission in `check_main_header`; at rebase, 0008's versions of those two
+seams win and this task keeps only its effect-checking additions. A
+kind-declaring unit therefore cannot be accepted before the rebase; the
+seven pending 0009 conformance cases flip only after the rebase onto
+0008.
+
+## Progress
+
+- Completed: claim; required reading (WORKFLOW, spec EFF-1/EFF-2/EFF-3/
+  EFF-5, FN-1/FN-3, STOR-3, SYS-5/SYS-7, `mcts_mem/whitefoot/effects.md`,
+  0007 done record and its resolver/catalog surface).
+- Current: implementation per Method.
+- Next: unit tests, gates, rebase onto 0008 once it lands, conformance
+  flips, lead review.
+
+## Stop condition
+
+A spec/compiler discrepancy, a defect in the cited plan item, or any need
+to alter a conformance expectation stops this task with an honest report;
+no workaround closes it.
+
+## Closure
+
+Lead review lands the branch; the record then moves to `docs/done/` with
+final status in the integration change.
 
 ## Validation
 
