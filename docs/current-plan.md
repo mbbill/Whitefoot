@@ -1,8 +1,9 @@
 # Current Plan
 
-Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
-execution. The previous ACTIVE plan's milestone (v0.18/v0.19 activation and
-the first command slice, tasks 0004-0018) completed on 2026-08-06.
+Status: ACTIVE — the owner approved this plan on 2026-08-06 ("都批"),
+together with the two conformance rulings its Work item 4 executes. The
+previous milestone (v0.18/v0.19 activation and the first command slice,
+tasks 0004-0018) completed on 2026-08-06.
 
 Derived from: [Direction Outline revision 12](roadmap.md), items `CAND-8`,
 `PERF-1`, `BOUND-1`, `VERIFY-2`, and `PROOF-1`
