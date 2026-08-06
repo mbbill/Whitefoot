@@ -289,8 +289,17 @@ fn program_leftover(
     source: SourceId,
     tokens: &[ClassifiedToken<'_>],
     cursor: usize,
+    maximum: u8,
 ) -> Option<SyntaxIssue> {
     if context != DecisionContext::ProgramItems {
+        return None;
+    }
+    // [DIAG-1] row 5 owns the frontier only when the first actual token
+    // predicate matches no consuming `item` row. A token is present here, so
+    // the exit arm's SOURCE_END row scores zero and a nonzero maximal prefix
+    // means some consuming row did accept that first token; the frontier then
+    // belongs to the earlier rows or to ordinary traversal, not to leftover.
+    if maximum != 0 {
         return None;
     }
     let token = tokens.get(cursor)?;
@@ -483,6 +492,7 @@ fn override_issue(
         site.source,
         site.tokens,
         site.cursor,
+        frontier.maximum,
     ))
 }
 

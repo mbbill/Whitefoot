@@ -259,6 +259,42 @@ fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
 }
 
 #[test]
+fn item_head_with_a_wrong_name_shape_is_a_name_slot_mismatch() {
+    // [DIAG-1] row 5 applies only when the first actual token predicate
+    // matches no consuming `item` row. `fn` and `enum` each do match one, so
+    // the earlier name-slot row owns these frontiers and cites FORM-3 at the
+    // offending name token.
+    for (source, name) in [
+        (
+            b"fn Main() -> own unit pure {}".as_slice(),
+            b"Main".as_slice(),
+        ),
+        (b"enum sign { Neg(); }".as_slice(), b"sign".as_slice()),
+    ] {
+        let inputs = [SourceInput::new("item-head.wf", source)];
+        let bundle = bundle(&inputs);
+        let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+            panic!("test source must lex");
+        };
+        let TerminalOutcome::Complete(classified) = classify_terminals(
+            &lexed,
+            ACTIVE_KERNEL_SPEC_HASH,
+            TerminalLimits { max_tokens: 32 },
+        ) else {
+            panic!("test source must classify");
+        };
+        let outcome = parse(&classified, PARSE_LIMITS);
+        let ParseOutcome::SourceIssue(issue) = outcome else {
+            panic!("wrong name shape must reject: {source:?}");
+        };
+        assert_eq!(issue.rule(), SyntaxRule::Form3, "source: {source:?}");
+        let start = usize::try_from(issue.coordinate().start().value()).unwrap_or(usize::MAX);
+        let end = usize::try_from(issue.coordinate().end().value()).unwrap_or(usize::MAX);
+        assert_eq!(&source[start..end], name, "source: {source:?}");
+    }
+}
+
+#[test]
 fn non_name_program_leftover_expects_only_source_end() {
     let inputs = [SourceInput::new("leftover.wf", b"42_i32")];
     let bundle = bundle(&inputs);
