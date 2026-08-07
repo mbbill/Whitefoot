@@ -1,7 +1,9 @@
 # Obligation-discharge batch 1 — specification-change candidate
 
 Status: CANDIDATE, DRAFT (2026-08-06; owner rulings of 2026-08-07 applied,
-§12). Non-authoritative. This document is the
+§12; adversarial-review fixes F2–F11 applied 2026-08-07, see
+`research/investigations/obligation-discharge/CANDIDATE-REVIEW.md` and the
+revision-pass notes in §12). Non-authoritative. This document is the
 complete batch-1 delta of the obligation-discharge design against the exact
 text of `spec/kernel-spec-v0.20.md`. It authorizes nothing: per
 `docs/WORKFLOW.md`, activation requires owner approval of exact bytes, and per
@@ -22,8 +24,9 @@ Base: `spec/kernel-spec-v0.20.md` (REVIEW CANDIDATE v0.20 bytes as of
 2026-08-06). Per ruling O1 the target version is v0.21, and the
 full-document candidate at `kernel-spec-v0.21-candidate.md` is generated
 from this delta after the compiler grammar-path extension (§3 sequencing).
-An independent adversarial review is in flight and may produce a second
-revision pass before formal approval.
+The independent adversarial review landed 2026-08-07 (commit ccffbd0); its
+mandatory soundness fix F2, acceptance fixes F3–F8, and editorial batch are
+applied in this revision.
 
 ## 1. Proposed version-header paragraph
 
@@ -35,9 +38,11 @@ status header, in the v0.20 header conventions.
 > discharge of index bounds). Adds one named runtime-check statement —
 > `claim name: e because "text";` — whose semantics are exactly [OP-5]'s
 > check-else-trap plus a name carried by the [DIAG-3] trap record and a
-> version-monotone lifecycle: a claim whose predicate the checker already
+> lifecycle version-monotone in the redundancy direction: a claim whose
+> predicate the checker already
 > proves is a non-rejecting redundancy advisory, a claim whose predicate the
-> checker refutes is a hard error, and a fired claim is surfaced for
+> checker refutes is a hard error — the lifecycle's one deliberate
+> non-monotone edge [ENT-1] — and a fired claim is surfaced for
 > reclassification as a toolchain contract [CLM-1, CLM-2]. Adds the closed
 > deterministic L0 entailment fragment as normative acceptance machinery
 > [ENT-1..ENT-6]: difference-bound facts over tracked places, length terms,
@@ -45,9 +50,11 @@ status header, in the v0.20 header conventions.
 > facts, check and claim facts, FN-8 requires facts by clause-local
 > substitution, copy/conversion equalities, allocation-length equalities,
 > constant-offset wrap/trap/checked arithmetic, the unsigned midpoint family,
-> const-array element ranges, implicit type ranges); shortest-path closure
+> const-array element ranges, implicit type ranges); one least-fixed-point
+> difference-bound closure
 > with disequality strengthening; and kill, join, and no-induction loop rules
-> driven by resolved-place overlap and [EFF-2] effect-row projection.
+> driven by [OWN-7] resolved-place overlap and [EFF-2] effect-row
+> projection, with scope-exit kills ordered before joins.
 > Rewrites [OP-4]: a source `index` compiles with no runtime bounds check
 > exactly when the fragment discharges its bounds obligation at that node,
 > and an undischarged index is a compile-time rejection whose diagnostic
@@ -65,18 +72,21 @@ status header, in the v0.20 header conventions.
 > [SYS-9] relations are retained facts with no L0 consumer in this version.
 > Specification delta:
 > numbered rules +8/-0 (CLM-1, CLM-2, ENT-1, ENT-2, ENT-3, ENT-4, ENT-5,
-> ENT-6); thirteen existing rules modified: FORM-2 (claim_stmt is
+> ENT-6); fifteen existing rules modified: FORM-2 (claim_stmt is
 > line-bearing),
 > FORM-5 (STRING homes), GRAM-4 (claim_stmt production; stmt gains one
 > alternative), GIVE-1 (claim is non-delivering), OP-1 (index_get row;
 > derived reserved sets grow by one), OP-4 (rewritten to discharge-or-reject;
-> offset atom fixed as `own u64`),
+> offset atom fixed as `own u64`), FN-1 (a passed `claim` gains its normal
+> edge in the conservative structural graph),
 > FN-8 (passed fact feeds ENT-3; synthesized boundary adapter), EFF-2 (traps
 > contribution: bounds-checked index out, claim in), SET-1 (no runtime check
-> in target evaluation), DIAG-2 (discharged disposition; claims always
+> in target evaluation), DIAG-1 (claim-name carrier class added to the
+> closed taxonomy), DIAG-2 (discharged disposition; claims always
 > retained), DIAG-3 (claim trap record; index-place row removed), SYS-8
 > (successful-count bounds stated as postconditions, replacing the
-> target-facing sentence in place), SYS-9 (the arg_get index relation and
+> target-facing sentence in place, and the range-validation cross-reference
+> repointed), SYS-9 (the arg_get index relation and
 > the two host-string length relations stated for the first time). Tokens
 > +2/-0 (`claim`, `because` as exact fixed lowercase grammar atoms; terminal
 > predicates 75 -> 77); terminal spellings +2/-0; grammar productions +1/-0
@@ -107,8 +117,9 @@ status header, in the v0.20 header conventions.
 
 ## 2. Grammar delta
 
-[GRAM-4]'s statement block becomes (complete replacement of the two changed
-lines plus one added production; every other line byte-identical):
+[GRAM-4]'s statement block becomes (one changed line — the `stmt`
+continuation line — plus one added production; `check_stmt` is quoted
+unchanged for context, and every other line is byte-identical):
 
 ```
 stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
@@ -188,7 +199,12 @@ must-divergence [GIVE-1].
 
 The claim name is one IDENT and is not a declaration: it enters no [TYPE-6]
 domain, no [OP-1] reservation inventory, and no lexical lookup, and no source
-construct references it. Within one `fn_decl` every claim name is unique; a
+construct references it; its [DIAG-1] carrier classification is the
+claim-name carrier that rule's modification adds (§6). Because the name is
+outside the reservation inventory, a claim may be named `len` or `wrap`,
+while `trap`, `claim`, and every other exact fixed lowercase grammar atom
+remain unwritable as IDENT [FORM-3] — a chosen asymmetry (ruling O6), not
+an accident. Within one `fn_decl` every claim name is unique; a
 repeated spelling is a hard error citing CLM-1 at the later `claim_stmt`
 node. The `because` STRING is the claim's justification: mandatory
 compile-time review data retained by the checked program [DIAG-2], absent
@@ -199,9 +215,16 @@ appear in a `requires` block. This version defines no taint judgment: no
 predicate is illegal by operand provenance (the subject-position gate is a
 later batch with its own delta).
 
-[CLM-2] Claim lifecycle judgments are fixed by the entailment fragment and
-are version-monotone [ENT-1]. When the closed fact state dominating a
-`claim_stmt` derives its predicate [ENT-4], the claim is redundant: the
+[CLM-2] Claim lifecycle judgments are fixed by the entailment fragment
+under [ENT-1]'s monotonicity law, whose one enumerated non-monotone edge is
+this rule's refutation. Redundancy and refutation are judged only for a
+predicate with comparison origin [ENT-3]; a conforming claim whose
+predicate has none — a constructed `True()`, a `band` result — is neither
+redundant nor refutable, is accepted, and traps whenever it evaluates false
+at runtime, exactly as today's `check` on the same expression. When the
+closed fact state at a
+`claim_stmt` [ENT-3] derives its predicate [ENT-4], the claim is redundant:
+the
 program remains accepted, the check still executes [CLM-1], and a conforming
 implementation reports one non-rejecting redundancy advisory naming the claim
 — an advisory is not a [DIAG-1] rejection, and a later specification version
@@ -233,13 +256,24 @@ and [DIAG-2] for the obligations this version attaches; a solver result never
 participates, and no implementation may strengthen, weaken, time-bound, or
 randomize the derivable set: two conforming implementations derive the same
 closed fact state at every program point and the same disposition for every
-obligation and claim. The fragment joins the trusted computing base exactly
+obligation and claim. In a generic function, discharge, redundancy, and
+refutation are judged per concrete [FN-2] instantiation, exactly as
+instantiations are re-checked as concrete code; a const-generic constant
+term is judged at its instantiated value, never symbolically. The fragment
+joins the trusted computing base exactly
 as the type and ownership checkers do [SCOPE-3]; a wrong derivation is a
 compiler defect class, owned by testing, not a language hedge. Version
-monotonicity is law: a later specification version may add fact sources and
-closure rules and may remove none, so checker strengthening converts claims
-into [CLM-2] advisories and undischarged obligations into discharged ones,
-and never the reverse.
+monotonicity is law with one enumerated exception: a later specification
+version may add fact sources and closure rules and may remove none, so
+checker strengthening never converts a discharged obligation into an
+undischarged one and never converts a claim into a redundancy-ground
+rejection — a claim the stronger fragment proves becomes a [CLM-2]
+advisory in every later version, never an error. The one exception is
+refutation: a strengthened fragment may newly derive a claim predicate's
+exact negation and reject under [CLM-2], rejecting a program thereby
+proven to trap on every execution reaching that claim. Refutation is the
+lifecycle's one deliberate non-monotone edge; no other judgment of this
+family may tighten acceptance across versions.
 
 [ENT-2] The fragment judges one function body at a time; no fact crosses a
 call boundary except as [ENT-3] source S4 fixes for the body's own `requires`
@@ -249,8 +283,10 @@ different fragment types are well-formed and are created only by the sources
 [ENT-3] admits.
 
 A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root
-`pbase` IDENT resolves to a `param`, ordinary `let`, requires-clause local,
-or match-binder value binding or to a named const [CONST-2], formed with any
+`pbase` IDENT resolves to any `let_stmt` binding (whichever of the three
+right-hand forms — ordinary, `propagate`, or `value_match` — the statement
+selects), a `param`, a requires-clause local, any match binder regardless
+of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any
 number of `psuffix` field selections and `deref` wrappings and no `index`
 segment, whose final selected type is one fragment type; (b) a length term
 `len(P)`, of fragment type u64, where P is a place formed under the same
@@ -258,11 +294,15 @@ restriction whose final selected type is `array<T, N>`, `slice<'r, T>`, or
 `buffer<T>`; (c) a constant — the mathematical value of an integer literal or
 of an integer-typed named const, or symbolically an in-scope integer-typed
 const-generic parameter; or (d) the distinguished zero term Z, used only to
-carry constant bounds. Two places are the same term exactly when their
-canonical source spellings [FORM-2] are byte-identical; distinct spellings
-are distinct terms even when they resolve to overlapping storage. Term
+carry constant bounds. Two places are the same term exactly when their root
+`pbase` IDENTs resolve to the same declaration event [TYPE-6, DIAG-1] and
+their canonical source spellings [FORM-2] are byte-identical; a fresh
+binding legally reusing an expired spelling [TYPE-6] is therefore a
+distinct term, and distinct spellings are distinct terms even when they
+resolve to overlapping storage. Term
 identity thus under-approximates aliasing, which is sound for derivation,
-while kills [ENT-5] use resolved-place overlap [OWN-5], which
+while kills [ENT-5] use the resolved-place overlap relation [OWN-7] over
+[OWN-5] resolved places, which
 over-approximates it.
 
 An atomic fact is one difference bound `t1 - t2 <= c` (t1, t2 terms, c a
@@ -271,15 +311,21 @@ normalize exactly: `a <= b` is `a - b <= 0`; `a < b` is `a - b <= -1`;
 `a = b` is the bound pair `a - b <= 0` and `b - a <= 0`; `a >= b` and
 `a > b` swap operands; `a != b` is one disequality. A constant operand folds
 through Z: `a <= 7` is `a - Z <= 7`. Implicit facts hold at every program
-point: every term t of fragment type T carries `t - Z <= max(T)` and
+point: every term t carries the reflexive bound `t - t <= 0`; every term t
+of fragment type T carries `t - Z <= max(T)` and
 `Z - t <= -min(T)`; every length term over a place of type `array<T, N>`
 carries the equality `len(P) = N` (both bounds), with concrete N a constant
 and const-generic N a symbolic constant term.
 
-[ENT-3] The fact state at a program point contains exactly the facts below
-whose establishing event dominates the point on the conservative structural
-normal-control graph [FN-1], subject to the kills, joins, and loop rule of
-[ENT-5], closed under [ENT-4]. Nothing else is a fact: no ensures, struct
+[ENT-3] The fact state is defined constructively over the conservative
+structural normal-control graph [FN-1]: each source below establishes its
+facts at its stated point; facts flow forward along normal edges; kill
+events apply on the edges where [ENT-5] places them, with scope-exit kills
+applied before any join; merge points take the [ENT-5] join and loop heads
+the [ENT-5] loop rule; and the state queried at any point is the [ENT-4]
+closure of that flow. Dominated straight-line establishment is a
+consequence of this construction, not a second definition. Nothing else is
+a fact: no ensures, struct
 invariant, loop induction, user-function postcondition, or taint judgment
 exists in this version.
 
@@ -288,7 +334,8 @@ when (a) it is a call to one of `ieq`, `ine`, `ilt`, `ile`, `igt`, `ige`
 [OP-2] whose two operands are each a term or constant, R the corresponding
 relation over them; or (b) it is a bare IDENT naming a `let` binding of type
 `own Bool` whose initializer right-hand side satisfies (a) with relation R,
-no operand term of R is killed [ENT-5] on any path from that initializer to
+no [ENT-5] kill event (a)–(d) applies to a fact supported by an operand
+term of R on any path from that initializer to
 the use, and the binding is the target of no `set` on any such path. No other
 shape has one: `band`, `bor`, `bnot`, `eeq`, `ene`, user-function results,
 and deeper indirection chains contribute nothing in this version.
@@ -322,8 +369,8 @@ The sources are:
 - S6 (length facts). `let b: own buffer<T> = buffer_new<T>(n, v);`
   establishes len(b) = n on the normal continuation [OP-9], n read as term or
   constant. `let m: own u64 = len<T>(P);` for a tracked P establishes
-  m = len(P). `let s: own slice<'r, T> = slice_of…(&'r P);` establishes
-  len(s) = len(P).
+  m = len(P). `let s: own slice<'r, T> = slice_of…(&'r P);` for a tracked P
+  establishes len(s) = len(P).
 - S7 (constant-offset arithmetic). For `let s: own T = iadd.wrap<T>(p, k);`
   with p a term of type T and k a constant in either operand position, when
   the closed state at that point derives `min(T) <= p + k` and
@@ -334,8 +381,9 @@ The sources are:
   unconditionally: the executed contract check is the proof [OP-2]. For a
   `match` whose scrutinee is directly a call `iadd.checked<T>(p, k)` or
   `isub.checked<T>(p, k)` with constant k, or a bare IDENT let-bound to one
-  with no kill of p between the initializer and the match and no `set` of
-  that binding, the `Ok(value: w)` arm establishes w = p ± k at arm entry;
+  where no [ENT-5] kill event applies to a fact supported by p between the
+  initializer and the match and that binding is no `set` target on that
+  path, the `Ok(value: w)` arm establishes w = p ± k at arm entry;
   the `Err` arm establishes nothing.
 - S8 (the midpoint family). Where a body contains, in this definitional
   shape with T unsigned, lo and hi terms of type T,
@@ -346,9 +394,12 @@ The sources are:
   let m: own T = iadd.wrap<T>(lo, h);
   ```
 
-  (the three lets need not be adjacent; `idiv.trap<T>(d, 2_T)` is admitted as
-  the alternative defining shape of h), and no member of {lo, hi, d, h} is
-  killed or `set` between its definition and m's definition, then: when the
+  (the three lets need not be adjacent; `idiv.trap<T>` of d and the literal
+  two of the concrete type T is admitted as
+  the alternative defining shape of h), and, between each member's
+  definition and m's definition, no [ENT-5] kill event applies to a fact
+  supported by any member of {lo, hi, d, h} and no member is a `set`
+  target, then: when the
   closed state at m's definition derives lo <= hi, the facts lo <= m and
   m <= hi are established at m; when it derives lo < hi, additionally
   m <= hi - 1. This is the whole family; no other multi-variable arithmetic
@@ -367,7 +418,8 @@ The sources are:
   path discipline as S7's checked-arithmetic origin: with k the actual bound
   to the call's bounding parameter — `capacity` for `read_once`,
   `host_copy_bytes`, and `host_copy_utf8`; `count` for `write_once` — read
-  as a term or constant and not killed on the path to the match, the
+  as a term or constant, where no [ENT-5] kill event applies to a fact
+  supported by k on the path to the match, the
   `ReadBytes(count: w)` arm of a `read_once` match and the `Ok(value: w)`
   arm of the other three establish w <= k at arm entry; every other arm
   establishes nothing. These facts carry the same trust class as S6's
@@ -380,10 +432,10 @@ established and implicit facts and closed under exactly: (1) from
 `t1 - t2 <= c1` and `t2 - t3 <= c2`, derive `t1 - t3 <= c1 + c2`; (2) from
 `t1 - t2 <= 0` and a disequality between t1 and t2 in either orientation,
 derive `t1 - t2 <= -1`; (3) of two bounds on one ordered pair, the smaller
-constant subsumes. The closure is unique and finite up to subsumption: only
-terms written in the function participate, and it equals the all-pairs
-shortest-path bounds of the difference graph with disequality strengthening
-iterated to its unique fixed point. Derivability is exact: `a - b <= c` is
+constant subsumes. This least closure is the one definition: it is unique
+and finite up to subsumption because only terms written in the function
+participate, the rules are monotone, and the least fixed point is reached
+in finitely many steps. Derivability is exact: `a - b <= c` is
 derivable when the closed state contains `a - b <= c'` with c' <= c;
 `a = b` when both `a - b <= 0` and `b - a <= 0` are derivable; `a != b` when
 a disequality is present or `a - b <= -1` or `b - a <= -1` is derivable. A
@@ -403,27 +455,40 @@ box/arena holder binding any of its places reads through by `deref`. Z and
 constants have empty support and never die.
 
 A fact dies at the earliest of: (a) a `set p = e;` commit whose resolved
-target [SET-1, OWN-5] overlaps the resolved place of any support member;
+target [SET-1, OWN-5] overlaps, under [OWN-7]'s overlap relation, the
+resolved place of any support member;
 (b) a call — user function, table operation, or system operation — one of
 whose [EFF-2] boundary-projected `writes` occurrences projects onto a caller
-place or origin set whose storage may overlap the resolved place of any
+place or origin set containing a place that overlaps [OWN-7] the resolved
+place of any
 support member; the projection is exactly [EFF-2]'s, so a callee writing only
 through one `&uniq` actual kills exactly the facts whose support overlaps
 that actual's resolved place, and a call whose row carries no `writes` kills
-nothing; (c) a consuming use [OWN-1] of any support member's root; (d) the
-end of the region of any borrow holder in its support and the end of the
-lexical scope of any support binding, including region exit [OWN-3].
+nothing; (c) a consuming use [OWN-1] of any support member's root; (d) an
+edge leaving the region of any borrow holder in its support or leaving the
+lexical scope of any support binding, region exit [OWN-3] included. Scope
+exits are edge events: kills (c) and (d) apply on every edge leaving the
+scope, before any join at that edge's target is taken — mirroring
+[STOR-3]'s edge-carried releases — so no arm-local or block-local fact
+survives its scope into a join under any reading.
 
 Joins: at the continuation of a `match_stmt` or `value_match`, the fact
-state is the join of the closed states at every arm exit edge reaching that
-continuation on the conservative structural graph [FN-1]; an arm every path
+state is the join of the states on every arm exit edge reaching that
+continuation on the conservative structural graph [FN-1], each taken after
+that edge's scope-exit kills and then closed [ENT-4]; an arm every path
 of which leaves by `return`, `break` to an enclosing loop, or `propagate`'s
 error edge contributes nothing there. The join keeps, for each ordered term
 pair, the weakest (largest-constant) bound held by all joined states, and
 each disequality held by all of them; the join of closed states is closed.
-The continuation of a `loop_stmt` is the join over the closed states at its
-`break` statements. A `propagate` right-hand side's `Err` edge leaves the
-function; its normal continuation keeps the preceding state and its binder
+The continuation of a `loop_stmt` is the join over the states on its
+`break` edges, each likewise taken after its scope-exit kills and closed. A
+`loop_stmt` with no `break` naming its label has an empty join: its
+continuation state is the contradictory all-derivable state [ENT-4],
+consistent with that continuation being unreachable in truth while the
+conservative graph keeps it reachable. A `propagate` right-hand side's
+`Err` edge leaves the
+function; its normal continuation keeps the preceding state subject to the
+initializer call's own kill events (b) and (c), and its binder
 gains no fact.
 
 Loops carry no induction in this version: the fact state at the head of each
@@ -483,7 +548,11 @@ normally continuing edge…".
 |---|---|---|---|
 | `index_get` | `array<T, N>`, `slice<'r, T>`, `buffer<T>`, copy element T | `(place, u64) -> own Option<T>` | pure |
 
-No text change: `DotlessOperationNames`, and therefore `ReservedLowerNames`,
+The row is appended as the last row of the OP-1 table, which fixes
+`index_get`'s derived dotless-family ordinal as the last in [DIAG-1]'s
+reservation payloads; the `(place, u64)` signature notation follows
+`slice_of`'s existing place-operand row style. No text change:
+`DotlessOperationNames`, and therefore `ReservedLowerNames`,
 grow by the derived member `index_get`. `index_get` is a table operation with
 positional operands [GRAM-11].
 
@@ -517,8 +586,20 @@ positional operands [GRAM-11].
 > returns `Some(value: v)` with a copy of the selected element when
 > `i < len(p)` and `None()` otherwise; the length comparison is its own
 > semantics, not a contract check, so it is pure and total, carries no
-> obligation, and is an expression call, never a place; it does not admit
+> obligation, and is an expression call, never a place; its place operand is
+> a non-consuming read of the base — the affine base is neither moved nor
+> partially consumed by the call, exactly as an `index` base or `len`
+> operand; it does not admit
 > writes.
+
+**[FN-1]** One edge-enumeration sentence of the conservative structural
+normal-control graph changes: "An ordinary `let`, `set`, expression
+statement, and a passed `check` have a normal edge to
+`normal_successor(s)`." becomes "An ordinary `let`, `set`, expression
+statement, and a passed `check` or `claim` have a normal edge to
+`normal_successor(s)`." — giving `claim_stmt` the normal continuation edge
+that [CLM-1], [ENT-3] S3, [EFF-2], and [GIVE-1] rely on (review finding
+F6.1).
 
 **[FN-8]** Two sentences change. "…every invocation executes it once after
 parameter binding and before the function body, including an invocation
@@ -555,6 +636,13 @@ each `index<T>(base, offset)`, `base` is evaluated before `offset`, and the
 index's [OP-4] discharge obligation is judged at that target place exactly
 as in read position, so accepted target evaluation executes no runtime check
 and cannot trap. Field suffixes introduce no runtime evaluation."
+
+**[DIAG-1]** The closed carrier taxonomy gains one class (review finding
+F6.2): "The claim-name carrier is exactly the IDENT of a `claim_stmt`
+[CLM-1]. It produces one record for CLM-1's per-function uniqueness
+judgment; it produces no declaration, lexical-use, dependent-declaration,
+deferred-use, or table-checked record, enters and queries no lexical name
+domain, and does not participate in FORM-3's reservation inventory."
 
 **[DIAG-2]** The disposition sentences become: "Every potentially removable
 implicit source-language check has exactly one disposition: `retained`, or
@@ -628,6 +716,11 @@ stated facts — a zero-length range reports a count of zero, and for a
 nonempty range `ReadBytes(count)` implies `count > 0` — remain exactly as
 written, and this candidate adds no lower-bound fact source.
 
+A second [SYS-8] edit repairs the cross-reference the rewritten [OP-4]
+would leave dangling (review finding F9): in the range-validation
+paragraph, "traps under the bounds semantics of [OP-4]" becomes "traps as
+the operation-internal contract check retained by [OP-4] [ERR-4]".
+
 **[SYS-9] modification.** Three relation sentences are added in the survey's
 proposed wording, one per operation, each in the [SYS-12] retained-fact
 form:
@@ -659,7 +752,8 @@ is unchanged. The failing-call companion bound `required > capacity` is
 recorded by the survey and proposed by neither it nor this candidate.
 
 Accounting: this section adds no rule, token, or production; it modifies
-[SYS-8] and [SYS-9] (candidate total: thirteen modified rules) and extends
+[SYS-8] (two edits) and [SYS-9] (candidate total: fifteen modified rules
+with [FN-1] and [DIAG-1], §6) and extends
 [ENT-3] with source S10.
 
 ## 8. Acceptance-set delta and monotonicity
@@ -704,9 +798,11 @@ branch-shaped in the corpus (no edit).
   `build_huffman_table`, `copy_distance` depth-3 specimen) so their bodies
   gain entry facts.
 - `tests/programs/sha256_abc.wf` (9 sites, 1 test assertion): 0 L0-proven;
-  add 3 claims, one being the loop-head claim
-  `16 <= extend_index < 64` covering all five schedule accesses (hottest
-  loop: 5 checks/iteration -> 1 claim check at L0).
+  add 4 claims — the loop-head pair `16 <= extend_index` and
+  `extend_index < 64`, since the simulation's single conjoined claim splits
+  into two single-comparison claims under ruling O11, covering all five
+  schedule accesses, plus two others (hottest
+  loop: 5 checks/iteration -> 2 claim checks at L0).
 - Effect rows: every function whose `traps` came only from bounds-checked
   indexes and which ends up fully proven must drop `traps`; functions
   gaining claims keep it. This row churn is part of the same migration
@@ -733,7 +829,10 @@ migration edits, reproduces the simulation's classification: per-site
 proven / claim / branch buckets matching SIMULATION.md's table for
 `utf8parse` (25 proven, 2 claims covering 11 sites, 0 forced branches),
 the deflate-dynamic unit (17 proven, ~8 claims, 4–5 branch regions), and
-`sha256_abc` (0 proven, 3 claims covering 8 sites), with every rejection at
+`sha256_abc` (0 proven, 4 claims covering 8 sites — SIMULATION.md's frozen
+"3 claims" row counts its conjoined loop-head claim once, where ruling
+O11's single-comparison rule requires two, and is read accordingly), with
+every rejection at
 an undischarged site printing a one-line residual per [ENT-6]. Divergence in
 either direction is investigated before activation: a site the checker
 proves that the simulation did not is re-derived by hand against ENT-2..5
@@ -802,10 +901,44 @@ The rulings are applied throughout this document.
   no L0 consumer; no lower-bound fact source in this batch.
 
 No genuine contradiction between DOSSIER §8 items 1–3 plus Section D and
-v0.20 was found during drafting: every collision (OP-4's implicit checks,
-EFF-2's index clause, DIAG-3's index row, SET-1's target-trap sentence,
-FN-8's check-elision sentence, SYS-8's target-facing sentence) is a
-deliberate, enumerated modification above rather than an ambiguity. The two
-tensions the draft flagged are both closed by ruling: O3's operand-value
-record amendment is queued with ledger tooling, and O9's previously
-unstated offset typing is now stated in [OP-4].
+v0.20 remains: every collision (OP-4's implicit checks, EFF-2's index
+clause, DIAG-3's index row, SET-1's target-trap sentence, FN-8's
+check-elision sentence, SYS-8's target-facing sentence and range-validation
+cross-reference, FN-1's edge enumeration, DIAG-1's closed carrier taxonomy)
+is a deliberate, enumerated modification above rather than an ambiguity.
+The first draft missed the last three; the adversarial review caught them
+(findings F6 and F9) and they are now enumerated. The two tensions the
+draft flagged are both closed by ruling: O3's operand-value record
+amendment is queued with ledger tooling, and O9's previously unstated
+offset typing is now stated in [OP-4].
+
+### Revision-pass notes (2026-08-07, post-review)
+
+Fixes F2–F8 and the editorial batch of
+`research/investigations/obligation-discharge/CANDIDATE-REVIEW.md` (commit
+ccffbd0) are applied throughout. Choices the review left open are adopted
+here explicitly rather than silently:
+
+1. The empty-join value for a break-less `loop_stmt` continuation is the
+   contradictory all-derivable state [ENT-4, ENT-5]. The review proposed
+   this with "presumably"; it is now normative candidate text and should be
+   confirmed at the approval sitting.
+2. `index_get`'s place operand is stated non-consuming explicitly (§6
+   OP-4), while `len`, `slice_of`, and the `index` base inherit v0.20's
+   latent unstated non-consuming reading that [ENT-6]'s fallback
+   (`let n: own u64 = len<T>(P);`) relies on. A one-sentence v0.21
+   clarification of the existing operations' place operands would be a
+   sixteenth modified rule; recommended, not drafted — owner call at the
+   approval sitting.
+3. F2 is repaired by both of the review's independent repairs — scope-exit
+   kills ordered before joins as edge events, and declaration-anchored term
+   identity — not only the mandatory first.
+4. The sha256 acceptance bucket is restated as 4 claims and the hot-loop
+   static count as 2 claim checks per iteration at L0 (F8, ruling O11).
+   SIMULATION.md is frozen research and is deliberately not edited; the
+   divergence is explained at the two places the buckets are used (§9,
+   §10).
+5. F4 is worded per lead direction: redundancy monotonicity is absolute,
+   and CLM-2 refutation is the one enumerated acceptance-tightening edge
+   [ENT-1]; the review's alternative (cross-version refutation as advisory)
+   was not taken.
