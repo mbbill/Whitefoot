@@ -1,9 +1,14 @@
 # Obligation-discharge batch 1 — specification-change candidate
 
-Status: CANDIDATE, DRAFT (2026-08-06; owner rulings of 2026-08-07 applied,
-§12; adversarial-review fixes F2–F11 applied 2026-08-07, see
+Status: CANDIDATE, APPROVED AT SITTING (drafted 2026-08-06; owner rulings
+of 2026-08-07 applied, §12; adversarial-review fixes F2–F11 applied
+2026-08-07, see
 `research/investigations/obligation-discharge/CANDIDATE-REVIEW.md` and the
-revision-pass notes in §12). Non-authoritative. This document is the
+revision-pass notes in §12; owner approval at the 2026-08-07 sitting
+adopted the second [OP-1] modification and admitted this candidate to the
+activation pipeline). Non-authoritative: language authority arises only
+from the `docs/WORKFLOW.md` step-4 exact-byte approval of the full v0.21
+candidate generated from this delta, and its activation. This document is the
 complete batch-1 delta of the obligation-discharge design against the exact
 text of `spec/kernel-spec-v0.20.md`. It authorizes nothing: per
 `docs/WORKFLOW.md`, activation requires owner approval of exact bytes, and per
@@ -72,11 +77,13 @@ status header, in the v0.20 header conventions.
 > [SYS-9] relations are retained facts with no L0 consumer in this version.
 > Specification delta:
 > numbered rules +8/-0 (CLM-1, CLM-2, ENT-1, ENT-2, ENT-3, ENT-4, ENT-5,
-> ENT-6); fifteen existing rules modified: FORM-2 (claim_stmt is
+> ENT-6); sixteen existing rules modified: FORM-2 (claim_stmt is
 > line-bearing),
 > FORM-5 (STRING homes), GRAM-4 (claim_stmt production; stmt gains one
 > alternative), GIVE-1 (claim is non-delivering), OP-1 (index_get row;
-> derived reserved sets grow by one), OP-4 (rewritten to discharge-or-reject;
+> derived reserved sets grow by one; non-consuming place-operand reads
+> stated for `len`, `slice_of`, and the `index`/`index_get` base), OP-4
+> (rewritten to discharge-or-reject;
 > offset atom fixed as `own u64`), FN-1 (a passed `claim` gains its normal
 > edge in the conservative structural graph),
 > FN-8 (passed fact feeds ENT-3; synthesized boundary adapter), EFF-2 (traps
@@ -117,14 +124,6 @@ status header, in the v0.20 header conventions.
 > non-authoritative until the grammar check, derived-material review,
 > full-document hash, exact owner approval, and active-target installation
 > complete.
-
-The header states fifteen modified rules. One further OP-1 sentence —
-non-consuming place-operand reads — is drafted in §6 as a pending sixteenth
-modification for owner adoption at the approval sitting: adopting it edits
-the header's count and OP-1 list entry in one line; dropping it deletes the
-§6 block and changes nothing else. The header bytes above deliberately do
-not mention it, so they are final under either outcome except for that one
-edit.
 
 ## 2. Grammar delta
 
@@ -573,8 +572,8 @@ reservation payloads; the `(place, u64)` signature notation follows
 grow by the derived member `index_get`. `index_get` is a table operation with
 positional operands [GRAM-11].
 
-**[OP-1] — pending sixteenth modification (drafted for the approval
-sitting per reviewer recommendation F11.7; owner adoption pending).** One
+**[OP-1] — second modification (reviewer recommendation F11.7; adopted by
+the owner at the 2026-08-07 sitting).** One
 sentence is added immediately after the operation-family resolution
 paragraph (the paragraph ending "Operand types never select between an
 operation family, a system operation, and a function."): "A bare `place`
@@ -583,14 +582,12 @@ operand, the place viewed by `slice_of` through its explicit borrow, and
 the base place of `index` and `index_get` — is a non-consuming read: it
 neither moves nor partially consumes an affine root [OWN-1], exactly the
 reading [FN-8] already states for a place used as a non-consuming operand
-of an admitted table operation." Adoption makes [ENT-6]'s fallback
+of an admitted table operation." This makes [ENT-6]'s fallback
 (`let n: own u64 = len<T>(P);`) well-formed for every affine base by
-stated rule rather than by v0.20's latent reading, and turns the [OP-4]
-index_get non-consuming sentence into a restatement rather than a special
-case. Accounting is kept dual so the sitting resolves it in one line:
-fifteen modified rules stand firm; adoption makes sixteen and adds one
-clause to the §1 header's OP-1 list entry; rejection deletes this block
-and changes nothing else.
+stated rule rather than by v0.20's latent reading, and makes the [OP-4]
+index_get non-consuming sentence a restatement rather than a special
+case. With this adoption the candidate total is sixteen modified rules,
+counted in the §1 header and in §7's accounting.
 
 **[OP-4]** Complete replacement:
 
@@ -793,8 +790,9 @@ is unchanged. The failing-call companion bound `required > capacity` is
 recorded by the survey and proposed by neither it nor this candidate.
 
 Accounting: this section adds no rule, token, or production; it modifies
-[SYS-8] (two edits) and [SYS-9] (candidate total: fifteen modified rules
-with [FN-1] and [DIAG-1], §6) and extends
+[SYS-8] (two edits) and [SYS-9] (candidate total: sixteen modified rules
+with [FN-1], [DIAG-1], and the adopted second [OP-1] modification, §6) and
+extends
 [ENT-3] with source S10.
 
 ## 8. Acceptance-set delta and monotonicity
@@ -968,9 +966,9 @@ here explicitly rather than silently:
    OP-4), while `len`, `slice_of`, and the `index` base inherit v0.20's
    latent unstated non-consuming reading that [ENT-6]'s fallback
    (`let n: own u64 = len<T>(P);`) relies on. The one-sentence
-   clarification is now drafted as the pending sixteenth modification (§6,
-   OP-1) per the reviewer's recommendation; owner adoption or rejection at
-   the approval sitting is a one-line accounting change either way.
+   clarification was drafted as the second [OP-1] modification (§6) per the
+   reviewer's recommendation and adopted by the owner at the 2026-08-07
+   sitting, closing the latent reading and making sixteen modified rules.
 3. F2 is repaired by both of the review's independent repairs — scope-exit
    kills ordered before joins as edge events, and declaration-anchored term
    identity — not only the mandatory first.
@@ -988,5 +986,5 @@ here explicitly rather than silently:
    the five choices above. The subsequent polish pass scoped the §1
    header's monotonicity sentence with the refutation exception, named
    [ENT-6]'s rebinding step for nested-index offsets, gave the [DIAG-1]
-   carrier insertion its exact anchor, and drafted the pending sixteenth
-   modification (§6, OP-1).
+   carrier insertion its exact anchor, and drafted the second [OP-1]
+   modification (§6), which the owner adopted at the sitting.
