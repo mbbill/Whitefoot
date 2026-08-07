@@ -2,12 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — handed back 2026-08-07 at a clean boundary, before any
-  compiler file was touched. Nothing is half-built: the branch holds only the
-  assembled candidate and this record, and `make check` exits 0. A successor
-  takes over from the hand-back brief below. This is earlier than the
-  pre-authorized "grammar path + pins green" boundary; the reason is in the
-  brief.
+- **Status:** `BLOCKED` — 2026-08-07 round 3. The generator exists and
+  reproduces every structural table byte-for-byte, but the byte-for-byte gate
+  on `SELECT_ROWS` is unreachable: the committed v0.22 rows are not a function
+  of the v0.22 grammar. Evidence and the open ruling are in "Generator
+  reproduction gate" below. No compiler file is modified; the worktree is
+  clean at the branch tip.
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
   2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's
@@ -123,6 +123,69 @@ checked IR is compiler-internal, so this is not desugaring in the spec's sense.
   it reproduces v0.22's existing tables byte-for-byte first, then extend. The
   reviewer's `infix_tail`/`infix` name-mismatch carry-forward is a property of
   that generator, so it is a first-class test of it.
+
+## Generator reproduction gate (round 3, 2026-08-07)
+
+The generator is built (scratch, `/Users/bytedance/do_not_scan/wf-gen`): it
+reads a numbered specification, parses the normative EBNF — including the four
+inline prose productions the hand-back brief warned about — and emits the whole
+of `generated.rs`. Two inputs are historical rather than derived and are carried
+as explicit tables: the `Production` enum order, and the decision-slot order
+(`psuffix`'s choice occupies slot 74 because v0.22 appended it).
+
+**Reproduced byte-for-byte:** the header, the `Production` enum, `PRODUCTIONS`
+(65), `PRODUCTION_ROOTS`, `PRODUCTION_OWNERS`, `GRAMMAR_CHILDREN` (465),
+`GRAMMAR_TERMINALS` (232), `GRAMMAR_NODES` (530 — every kind, arena range,
+decision slot and atom-only flag), and `DIAGNOSTIC_ORDER` (76). `DECISIONS`
+matches on all 75 nodes, kinds, contexts and arm counts.
+
+**Not reproducible, and the reason is a defect in the committed data.**
+`SELECT_ROWS` is 2003 committed against 1893 derived. Read as what
+`select_arm` actually consumes — the set of predicate pairs per arm — the
+derived table is a strict subset of the committed one:
+
+- 70 predicate pairs across 27 decisions appear only in the committed table;
+- 0 appear only in the derived table;
+- all 70 involve `]` (`RightBracket`) at a position the grammar cannot produce.
+
+Witness: decision 8 is `variant := TYPEID "(" vfield_list? ")" ";"` at the
+`vfield_list?` optional. The committed table carries `(arm 1, RightBracket,
+Semicolon)` — on lookahead `] ;`, skip the field list. Nothing in the grammar
+puts `]` there; the parser's very next action after that arm is
+`Match(RightParen)`, which `]` cannot satisfy. The same shape recurs after
+`type`, `targs?`, `param_list?`, `effect` and the rest of the 27.
+
+A further 57 rows differ only in provenance: the committed row names the first
+node in node order bearing that predicate (192 = `region_params`' `]`, 41 =
+`variant`'s `)`, 125 = `law`'s `,`, 170 = `generics`' `>`) where the derivation
+names the real site (478 = `psuffix`'s `]`, 421/432/470 = call/construct/deref
+`)`). Provenance feeds diagnostics only.
+
+84 committed rows carry provenance node 192 — exactly the "84 discovered-missing
+`]`-closing SELECT_2 follow rows" recorded in `docs/done/0031-v022-grammar-and-
+respell.md`. That patch added `]` far more broadly than the grammar warrants and
+attributed it to the wrong node.
+
+**The difference is inert.** With the derived table swapped in,
+`cargo test --manifest-path compiler/Cargo.toml --lib` reports 517 passed,
+1 failed. The single failure is `assert_eq!(SELECT_ROWS.len(), 2_003)` at
+`compiler/src/syntax/grammar/tests.rs:126` (`left: 1893, right: 2003`) — a
+literal count pin that every grammar change already updates (0030 moved it
+1925 -> 1959). No parser, diagnostic, finalize or conformance test changed
+verdict. The committed file has been restored; this is a measurement, not a
+change.
+
+**Open ruling.** Either (A) generate v0.23's tables canonically from the v0.23
+grammar, dropping the 70 spurious pairs and fixing provenance, and move the
+count pin as every grammar change does; or (B) teach the generator to reproduce
+the over-approximation so the gate is byte-exact, which encodes a known defect
+and carries the wrong provenance into v0.23. This executor recommends (A) and
+selects neither. Extension is not started pending the ruling.
+
+Note for whoever owns the tooling decision: 0030 and 0031 each built and then
+deleted a one-shot generator, and this task rebuilt it a third time. The tables
+are not hand-editable. Keeping the generator somewhere would stop the next
+grammar task paying this cost again.
 
 ## Hand-back brief
 
