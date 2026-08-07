@@ -7,16 +7,23 @@
 //! arms fork and join, loops iterate through their break edges, and
 //! `return`/`give`/`break`/`propagate` leave scopes on edges. Scope-exit
 //! kills always apply on the edge, before any join at the edge's target.
+//!
+//! The [ENT-3] fact sources themselves — which checked shape establishes
+//! which relation — live in [`sources`]; this module owns the graph, the
+//! kills, the joins, and the obligation judgment, and calls into the sources
+//! at each establishment point.
+
+mod sources;
 
 use std::collections::HashSet;
 
 use super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression, CheckedFunction,
-    CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    BindingId, CheckedArrayRoot, CheckedConst, CheckedExpression, CheckedFunction, CheckedLoopId,
+    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
+    CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
-use super::state::{FactState, Relation, close, join};
-use super::term::{PlaceRoot, PlaceTerm, TermId, TermKind, TermTable, integer_value};
+use super::state::{FactState, OutcomeFact, Relation, close, join};
+use super::term::{LengthBound, PlaceRoot, PlaceTerm, TermId, TermKind, TermTable, integer_value};
 use super::{EntailmentContext, FunctionEntailment, ObligationOutcome, fragment_type};
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -74,6 +81,16 @@ struct LoopFrame {
     breaks: Vec<FactState>,
 }
 
+/// The [ENT-3] facts one `match` scrutinee admits at its arms' entries: the
+/// S1 comparison relation, taken positively on `True()` and exactly negated
+/// on `False()`, and the S7/S10 fact one named arm's value binder gains,
+/// carried with that arm's tag. Every other arm establishes nothing.
+#[derive(Default)]
+struct ArmFacts {
+    comparison: Option<Relation>,
+    outcome: Option<(u32, OutcomeFact)>,
+}
+
 /// A `value_match` frame collecting give-edge states for the continuation.
 struct GiveFrame {
     scope_depth: usize,
@@ -114,6 +131,9 @@ pub(super) fn analyze(
     analyzer
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
+    // [ENT-3] S4: the substituted `requires` relation enters the body's entry
+    // fact state, the one fact that crosses into the body [ENT-2, FN-8].
+    analyzer.establish_requires_facts(&mut state);
     analyzer.walk_block(&function.body, &mut state);
     analyzer.scopes.pop();
     FunctionEntailment {
@@ -342,6 +362,9 @@ impl Analyzer<'_, '_> {
         }
         state.kill(|term| self.scope_kills_term(term, &exited));
         state.origins.retain(|binding, _| !exited.contains(binding));
+        state
+            .outcomes
+            .retain(|binding, _| !exited.contains(binding));
     }
 
     // ------------------------------------------------------------------
@@ -460,31 +483,7 @@ impl Analyzer<'_, '_> {
         };
         let left = self.read_operand(left_expression)?;
         let right = self.read_operand(right_expression)?;
-        Some(match operation {
-            CheckedIntegerOperation::Equal => Relation::Equal { left, right },
-            CheckedIntegerOperation::NotEqual => Relation::Distinct { left, right },
-            CheckedIntegerOperation::Less => Relation::Bound {
-                left,
-                right,
-                bound: -1,
-            },
-            CheckedIntegerOperation::LessEqual => Relation::Bound {
-                left,
-                right,
-                bound: 0,
-            },
-            CheckedIntegerOperation::Greater => Relation::Bound {
-                left: right,
-                right: left,
-                bound: -1,
-            },
-            CheckedIntegerOperation::GreaterEqual => Relation::Bound {
-                left: right,
-                right: left,
-                bound: 0,
-            },
-            _ => return None,
-        })
+        sources::comparison_relation(*operation, left, right)
     }
 
     /// [ENT-3] comparison origin of a match scrutinee: shape (a) directly, or
@@ -685,6 +684,24 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// Interns the length term `len(P)` and, for an `array<T, N>` place,
+    /// registers the [ENT-2] implicit length equality `len(P) = N` that holds
+    /// at every program point. Every length term is created here, so the
+    /// implicit equality is never missed at a site that only reads a length.
+    fn length_term(&mut self, base: PlaceTerm, array_length: Option<CheckedConst>) -> TermId {
+        let length_term = self.terms.intern(TermKind::Length(base));
+        if let Some(length) = array_length {
+            let bound = match length {
+                CheckedConst::Value(value) => LengthBound::Constant(i128::from(value)),
+                CheckedConst::Parameter(declaration) => {
+                    LengthBound::Equal(self.terms.intern(TermKind::ConstParameter(declaration)))
+                }
+            };
+            self.terms.set_length_bound(length_term, bound);
+        }
+        length_term
+    }
+
     /// [ENT-6]: the bounds obligation `i < len(P)`, normalized
     /// `i - len(P) <= -1`, discharged exactly when the closed fact state at
     /// the node derives it.
@@ -696,21 +713,7 @@ impl Analyzer<'_, '_> {
         node_path: crate::NodePath,
         state: &FactState,
     ) {
-        let length_term = self.terms.intern(TermKind::Length(base.clone()));
-        if let Some(length) = array_length {
-            let bound = match length {
-                CheckedConst::Value(value) => {
-                    Some(super::term::LengthBound::Constant(i128::from(value)))
-                }
-                CheckedConst::Parameter(declaration) => {
-                    let parameter = self.terms.intern(TermKind::ConstParameter(declaration));
-                    Some(super::term::LengthBound::Equal(parameter))
-                }
-            };
-            if let Some(bound) = bound {
-                self.terms.set_length_bound(length_term, bound);
-            }
-        }
+        let length_term = self.length_term(base.clone(), array_length);
         let offset_term = self.read_operand(offset);
         let closed = close(state, &self.terms);
         let discharged = match offset_term {
@@ -810,6 +813,9 @@ impl Analyzer<'_, '_> {
                 {
                     state.origins.insert(*binding, relation);
                 }
+                // Sources S5, S6, S7, and S9 establish at the binding, after
+                // the initializer's own kills [ENT-3, ENT-5].
+                self.establish_binding_facts(*binding, value, state);
                 true
             }
             CheckedStatement::PropagateLet {
@@ -843,6 +849,7 @@ impl Analyzer<'_, '_> {
                         });
                         if place.fields.is_empty() {
                             state.origins.remove(&place.binding);
+                            state.outcomes.remove(&place.binding);
                         }
                     }
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -876,9 +883,8 @@ impl Analyzer<'_, '_> {
                 true
             }
             CheckedStatement::Check { condition, .. } => {
-                // S2 check facts are a later slice; the condition still
-                // judges its obligations and applies its kills.
                 self.expression_effects(condition, state);
+                self.establish_passed_condition(condition, state);
                 true
             }
             CheckedStatement::Return { value, .. } => {
@@ -911,15 +917,10 @@ impl Analyzer<'_, '_> {
                 arms,
                 ..
             } => {
-                self.expression_effects(scrutinee, state);
-                let relation = if *enum_type == CheckedEnumType::Bool {
-                    self.scrutinee_relation(scrutinee, state)
-                } else {
-                    None
-                };
+                let facts = self.arm_facts(scrutinee, *enum_type, state);
                 let mut exits = Vec::new();
                 for arm in arms {
-                    if let Some(exit) = self.walk_arm(arm, state, relation.as_ref()) {
+                    if let Some(exit) = self.walk_arm(arm, state, &facts) {
                         exits.push(exit);
                     }
                 }
@@ -937,12 +938,7 @@ impl Analyzer<'_, '_> {
                 arms,
                 ..
             } => {
-                self.expression_effects(scrutinee, state);
-                let relation = if *enum_type == CheckedEnumType::Bool {
-                    self.scrutinee_relation(scrutinee, state)
-                } else {
-                    None
-                };
+                let facts = self.arm_facts(scrutinee, *enum_type, state);
                 self.gives.push(GiveFrame {
                     scope_depth: self.scopes.len(),
                     gives: Vec::new(),
@@ -950,7 +946,7 @@ impl Analyzer<'_, '_> {
                 for arm in arms {
                     // Every delivering path leaves by `give`; an arm's
                     // fall-through state contributes nothing [GIVE-1].
-                    let _ = self.walk_arm(arm, state, relation.as_ref());
+                    let _ = self.walk_arm(arm, state, &facts);
                 }
                 let frame = self.gives.pop();
                 let gives = frame.map(|frame| frame.gives).unwrap_or_default();
@@ -990,17 +986,17 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// Walks one match arm from `entry`; establishes the S1 branch fact at
-    /// arm entry, applies the arm's scope-exit kills on fall-through, and
-    /// returns the arm-exit state when the arm reaches the continuation.
+    /// Walks one match arm from `entry`; establishes the arm-entry facts the
+    /// scrutinee admits, applies the arm's scope-exit kills on fall-through,
+    /// and returns the arm-exit state when the arm reaches the continuation.
     fn walk_arm(
         &mut self,
         arm: &CheckedMatchArm,
         entry: &FactState,
-        relation: Option<&Relation>,
+        facts: &ArmFacts,
     ) -> Option<FactState> {
         let mut state = entry.clone();
-        if let Some(relation) = relation {
+        if let Some(relation) = &facts.comparison {
             // Bool arms: tag 1 is `True()`, tag 0 is `False()`; the False
             // arm takes the exact negation [ENT-3].
             if arm.tag == 1 {
@@ -1008,6 +1004,11 @@ impl Analyzer<'_, '_> {
             } else if arm.tag == 0 {
                 state.establish(&relation.negated());
             }
+        }
+        if let Some((tag, outcome)) = &facts.outcome
+            && arm.tag == *tag
+        {
+            self.establish_binder_fact(arm, outcome, &mut state);
         }
         self.scopes
             .push(arm.binders.iter().map(|b| b.binding).collect());
@@ -1160,11 +1161,18 @@ impl Analyzer<'_, '_> {
         state
             .origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
+        state
+            .outcomes
+            .retain(|binding, _| !kills.set_bindings.contains(binding));
         if kills.exits_function {
             state.origins.clear();
+            state.outcomes.clear();
         } else {
             state
                 .origins
+                .retain(|binding, _| !kills.exited_bindings.contains(binding));
+            state
+                .outcomes
                 .retain(|binding, _| !kills.exited_bindings.contains(binding));
         }
     }

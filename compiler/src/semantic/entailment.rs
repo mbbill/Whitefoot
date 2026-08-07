@@ -8,11 +8,18 @@
 //! diagnostic, acceptance, or lowering behavior consumes it yet; [OP-4]
 //! discharge behavior is a later slice.
 //!
-//! Judgments are per function body [ENT-2]; no fact crosses a call boundary.
-//! Implemented fact sources in this slice: the [ENT-3] S1 branch and match
-//! facts and both comparison-origin shapes. The remaining sources are
-//! additive later work; absent sources only under-derive, which is the
-//! version-monotone direction [ENT-1].
+//! Judgments are per function body [ENT-2]; the [ENT-3] S4 `requires`
+//! relation is the one fact that enters from outside the body, and no fact
+//! crosses a call boundary.
+//!
+//! Implemented fact sources: S1 branch and match facts with both
+//! comparison-origin shapes, S2 check facts, S4 requires facts, S5 copy and
+//! conversion equalities, S6 length facts, S7 constant-offset arithmetic, S9
+//! const-array element ranges, and S10 boundary count facts. S3 (claim facts)
+//! awaits a checked representation of `claim`, which is an unsupported
+//! semantic capability in this compiler; the label S8 is retired, not reused
+//! [ENT-3]. An absent source only under-derives, which is the version-monotone
+//! direction [ENT-1].
 
 mod flow;
 mod state;

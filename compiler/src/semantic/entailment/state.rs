@@ -57,6 +57,30 @@ impl Relation {
     }
 }
 
+/// What one match arm's value binder gains when the scrutinee is an
+/// outcome-carrying call [ENT-3] S7, S10.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OutcomeRelation {
+    /// S7 checked arithmetic: the binder equals the base term shifted by this
+    /// constant.
+    Shifted(i128),
+    /// S10 boundary count: the binder is at most the base term.
+    AtMost,
+}
+
+/// One pending arm fact: the relation the observing arm's value binder gains,
+/// against a base term whose support must survive the path to the match.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OutcomeFact {
+    /// The variant whose arm observes it — `Ok` for checked arithmetic and
+    /// for the `Result`-shaped boundary calls, `ReadBytes` for `read_once`.
+    /// Every other arm establishes nothing [ENT-3].
+    pub(crate) variant: &'static str,
+    /// The term the binder is related to: p for S7, k for S10.
+    pub(crate) base: TermId,
+    pub(crate) relation: OutcomeRelation,
+}
+
 /// One live fact state on the structural flow [ENT-3].
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FactState {
@@ -72,6 +96,10 @@ pub(crate) struct FactState {
     /// [ENT-3] comparison origins (b): `own Bool` bindings whose initializer
     /// comparison is still valid on every path from initializer to here.
     pub(crate) origins: HashMap<BindingId, Relation>,
+    /// [ENT-3] S7/S10 outcome origins: bindings holding the outcome of a
+    /// checked-arithmetic or bounded boundary call, under the same no-kill,
+    /// no-`set` path discipline the comparison origins carry.
+    pub(crate) outcomes: HashMap<BindingId, OutcomeFact>,
 }
 
 impl FactState {
@@ -120,6 +148,7 @@ impl FactState {
             let [left, right] = relation.terms();
             !killed(left) && !killed(right)
         });
+        self.outcomes.retain(|_, outcome| !killed(outcome.base));
     }
 }
 
@@ -300,11 +329,15 @@ pub(crate) fn join(states: &[FactState], terms: &TermTable) -> FactState {
     for state in rest {
         distinct.retain(|pair| state.distinct.contains(pair));
     }
-    // Comparison origins are path conditions, not facts; an origin survives a
-    // join only when every contributing path carries the same relation.
+    // Comparison and outcome origins are path conditions, not facts; one
+    // survives a join only when every contributing path carries the same one.
     let mut origins = contributing
         .first()
         .map(|state| state.origins.clone())
+        .unwrap_or_default();
+    let mut outcomes = contributing
+        .first()
+        .map(|state| state.outcomes.clone())
         .unwrap_or_default();
     for state in contributing.iter().skip(1) {
         origins.retain(|binding, relation| {
@@ -313,11 +346,18 @@ pub(crate) fn join(states: &[FactState], terms: &TermTable) -> FactState {
                 .get(binding)
                 .is_some_and(|other| other == relation)
         });
+        outcomes.retain(|binding, outcome| {
+            state
+                .outcomes
+                .get(binding)
+                .is_some_and(|other| other == outcome)
+        });
     }
     FactState {
         all_derivable: false,
         bounds,
         distinct,
         origins,
+        outcomes,
     }
 }
