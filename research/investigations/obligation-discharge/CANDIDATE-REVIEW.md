@@ -984,3 +984,922 @@ strike-or-park)**, R2 (check-beside-claim, tracked to FLOOR-5), R3
 axis's first sweep found exactly one construct in the S8 position —
 machinery justified by an anticipated program rather than a written
 one — which is the `index_get` failure mode recurring one layer deeper.
+
+---
+
+# FLOOR-5 review (2026-08-07; spelling-relief candidate at 75dd5f6, against installed `spec/kernel-spec-v0.22.md`)
+
+Target: `governance/spec-evolution/spelling-relief-candidate.md` (592
+lines). Base: `spec/kernel-spec-v0.22.md` (installed 817a8a7). Context
+authorities: `research/investigations/spelling-relief/SWEEP.md` (the
+T1–T4 rule and the A/C verdicts this batch implements). Reviewer did not
+author the candidate. This section records findings only; it changes no
+candidate text. Severity legend as above: **S** soundness-breaking, **A**
+acceptance-changing, **E** editorial.
+
+Summary: 1 S, 9 A, 7 E, 3 residue findings. Worst by severity: **F1**
+(no ENT-5 join rule for `if` continuations; the permissive completion
+deletes a bounds check). Worst for the batch's viability: **F2** — the
+drafted `expr` production is not strong-LL(2), and the candidate's own
+EX-1 cannot be parsed by the grammar the candidate drafts. F1, F2, F3,
+and F4 are must-fix before approval.
+
+Anchors: all eight verbatim quotations I spot-checked against v0.22 are
+byte-exact (GRAM-6's no-if sentence, GIVE-1's declared-type anchor and
+delivery recursion, GRAM-9's atom-position list, OP-2's explicit-type-
+argument paragraph, ERR-2's exhaustiveness sentence, GRAM-1's compound-
+token sentence, FORM-2's value-match prefix sentence), as are FN-8's two
+and DIAG-1's, DIAG-3's, and EFF-2's. The anchoring craft is good where
+the candidate anchors at all; see F11(a) for where it does not.
+
+---
+
+## F1 (S) — No ENT-5 join rule for `if` continuations; the reading ENT-3 itself offers deletes a bounds check
+
+**Candidate text (§3 [ENT-3]):** S1's establishment sentence becomes
+"For an `if_stmt` or `value_if` whose condition has comparison origin R,
+R is established at the then-block's entry and R's exact negation at the
+else-block's entry; for an else-free `if_stmt`, the negation is
+established on the false edge, **which joins the then exit at the
+continuation [ENT-5]**."
+
+**v0.22 [ENT-5], complete join text:** "Joins: at the continuation of a
+`match_stmt` or `value_match`, the fact state is the join of the states
+on every arm exit edge reaching that continuation… The continuation of a
+`loop_stmt` is the join over the states on its `break` edges…" There is
+no third sentence. **ENT-5 is not in the candidate's twenty-two-rule
+modification list**, so after this batch the fragment defines joins for
+`match`, `value_match`, and `loop` only — and the batch has just made
+`if` the sole legal spelling of every Bool conditional, i.e. the
+overwhelmingly common merge point.
+
+**Attack.** [ENT-3]'s constructive definition reads: "each source below
+establishes its facts at its stated point; **facts flow forward along
+normal edges**; kill events apply on the edges where [ENT-5] places
+them, with scope-exit kills applied before any join; **merge points take
+the [ENT-5] join**". If an `if` continuation is a merge point, ENT-5
+supplies no join and the state is undefined — ENT-1's law ("two
+conforming implementations derive the same closed fact state at every
+program point") is violated outright. If it is *not* a merge point —
+textually available, because ENT-5 enumerates which continuations are
+joins and this is not one of them — then the first clause governs and
+facts flow forward along the normal edges:
+
+```
+fn f(b: own buffer<u8>, i: own u64) -> own u8 traps {
+  let n = len(b);
+  if ilt(i, n) {
+    let seen = b[i];
+  }
+  let x = b[i];
+  return x;
+}
+```
+
+The then-block establishes `i < n` (S1). Its support is `{i, n}`, both
+bound outside the block, so no [ENT-5] scope-exit kill touches it on the
+block's exit edge. Under the flow-forward reading that fact reaches
+`let x = b[i];`, where it discharges `i - len(b) <= -1`. [OP-4]: "A
+discharged subscript reads or writes with **no runtime bounds check in
+every build mode**." Calling `f` with `i >= len(b)` reads out of bounds
+with no check. The correct completion — join the then exit against the
+false edge, which carries `n <= i` — leaves the obligation underivable
+and rejects, which is what v0.22 does today for the `match` spelling of
+the same program.
+
+This is the exact shape of F1/F2 in the batch-1 review: the normative
+bytes as drafted license the access, and no open question is drafted
+against it (the candidate does not list ENT-5 as touched at all).
+
+**Fix.** Add ENT-5 to the modification list with a fourth join sentence:
+at the continuation of an `if_stmt`, the state is the join of the
+then-block exit edge and the else-block exit edge (or, for an else-free
+`if_stmt`, the false edge), each taken after that edge's scope-exit
+kills and then closed — word-for-word parallel to the `match_stmt`
+sentence, including the "an arm every path of which leaves by `return`,
+`break`, or `propagate`'s error edge contributes nothing there" clause,
+which an `if` needs identically. A `value_if` needs the same treatment
+as `value_match`.
+
+---
+
+## F2 (A) — The drafted `expr` production is not strong-LL(2); EX-1 does not parse
+
+**Candidate text (§2):** "`expr := atom | call | construct | infix`",
+"`infix := atom infix_op atom`", and the justification: "the `expr`
+decision distinguishes `infix` from a bare `atom` at the second token
+(an operator token follows the first atom; no other continuation of a
+complete atom begins with an operator token)".
+
+**v0.22 [GRAM-1]:** "every choice, optional, and repetition decision has
+pairwise-disjoint strong-LL(2) `SELECT_2` languages, so a parser selects
+exactly one arm with at most two tokens", and "`SELECT_2` and the
+two-token parser bound count the expanded raw formed tokens".
+
+**Attack.** The justification confuses "the token following the complete
+atom" with "the second token of the phrase". `SELECT_2` is the language
+of the first *two tokens*. An `atom` is one token only when it is a
+literal; every other atom is longer:
+
+| atom shape | first two tokens |
+|---|---|
+| `a.f` | `(IDENT, ".")` |
+| `a[i]` | `(IDENT, "[")` |
+| `deref(p)` | `("deref", "(")` |
+| `move p` | `("move", IDENT)` |
+| `&'r p` | `("&", REGIONID)` |
+
+Each pair belongs to `SELECT_2(atom)` **and** to `SELECT_2(infix)`, so
+the four-way `expr` choice is not pairwise disjoint and the parser
+cannot select an arm within its two-token bound. Minimal witness pair:
+
+```
+let x = a.f;            // expr -> atom
+let x = a.f + 1_i32;    // expr -> infix
+```
+
+Both begin `a` `.`. The decisive token sits at an unbounded distance
+(`a.f.g.h.i + 1_i32`).
+
+The candidate's own [EX-1] replacement contains the failure:
+
+```
+let v = match deref(p) +checked 2_i32 {
+```
+
+`value_match`'s scrutinee is an `expr`; the two tokens at that decision
+are `deref` and `(`, which is exactly `SELECT_2` of a bare `place`
+atom. The normative worked example is unparseable under the normative
+grammar of the same document.
+
+This is not a drafting slip in one sentence — it is the reason C1 looked
+cheap. SWEEP's key fact ("with GRAM-9 (ANF) retained, an expression
+contains exactly one operation, so no precedence table exists and the T3
+uniqueness argument is trivial") is true and survives; what does not
+survive is the inference that *no precedence* implies *no left
+factoring*. Precedence and factoring are independent problems.
+
+**Fix.** Left-factor at the shared prefix:
+
+```
+expr        := atom infix_tail? | call | construct
+infix_tail  := infix_op atom
+```
+
+The optional's decision point is after the complete atom, where
+lookahead is one token: an operator token selects the tail, and
+FOLLOW(`expr`) — `;` (ordinary/propagate let, `return_stmt`,
+`expr_stmt`), `{` (`if` condition, `match` scrutinee), `else`
+(`check_stmt`) — selects the skip. Those sets are disjoint at one token,
+so the factored form is strong-LL(1) at that decision and needs no new
+argument.
+
+Cost the candidate must then re-state: productions become 65 + 5 = 70,
+not 69; `infix` as a named node kind is either dropped in favour of
+`infix_tail` carrying the node (preserving GRAM-1's 1:1 production-to-
+node mapping) or GRAM-1 gains a sentence saying the `expr` node kind is
+`infix` exactly when the tail is present. §2's strong-LL(2) paragraph
+must be rewritten, not patched: the sentence quoted above is false as
+written and should not survive into the spec.
+
+**Process note.** `CLAUDE.md` requires the new grammar to be verified
+with the native grammar verifier *before* a spec change is proposed. The
+candidate defers it ("Verifier expectations: fail-closed against the
+v0.22 tables (grammar-extending), recorded at proposal; the grammar-path
+task extends the lexer/parser first"), following the v0.21/v0.22
+precedent recorded in `docs/done/0030-grammar-path-extension.md`. This
+is the case where the deferral cost something: the verifier's
+`SELECT_2` check is precisely what catches F2, and it would have caught
+it in minutes. Independently confirmed while checking accounting: the
+v0.22 baseline really is 65 productions (61 in fenced blocks plus the
+four inline `const`, `cvalue`, `effect`, `effects`), matching the
+verifier's 65 in task 0030.
+
+---
+
+## F3 (A) — Three table-operation classes lose a type argument that no operand can supply; the corpus cannot be migrated
+
+**Candidate text (§3 [TYPE-5] replacement):** "Call sites state
+explicitly exactly what their callee class requires: type, region, and
+const arguments for user generics [FN-2], region arguments for system
+operations [SYS-2], and **type arguments for the type-choosing
+operations `cvt`, `reinterpret`, and `array_new`** [OP-6, CONST-1] —
+required there, **forbidden on every value-typed table operation, whose
+selected type is operand-derived** [OP-2]."
+
+The class rule is stated over the whole table but the derivation is only
+ever argued for [OP-2]'s two-operand and one-operand integer paragraphs.
+Three classes fall outside it.
+
+**(a) Nullary operations — no operand exists.** [OP-1] row: "`finf`
+`fnan` | f32 f64 | `() -> own T` | pure". Zero operands, so nothing to
+derive from, and the targ is forbidden. Corpus witnesses, both live:
+
+```
+tests/programs/telemetry_packet.wf:68:  let nan: own f32 = fnan<f32>();
+tests/programs/telemetry_packet.wf:89:    let infinity: own f32 = finf<f32>();
+```
+
+Under the candidate these two lines have no legal spelling at all. The
+printer cannot compute one, which directly refutes §5's "All migration
+is printer-driven … zero semantic judgment". [OP-8] compounds it: the
+retained sentence "negative infinity is `fneg(finf<T>())`" is normative
+text spelling a construct the batch forbids.
+
+**(b) `arena_new` — the region is not operand-derived.** [OP-1] row:
+"`arena_new` | any T | `(own T) -> own arena<'r, T>`". `'r` appears only
+in the result. `arena_new` is a table operation, not a [SYS-2] system
+operation — §17 is explicit that "Every system operation is nongeneric…
+A call whose callee resolves to a system operation writes its region
+arguments as `targs`", and `arena_new` is not in that inventory — so the
+"region arguments for system operations" clause does not cover it and
+the "forbidden on every value-typed table operation" clause does. Three
+corpus sites, e.g.
+
+```
+tests/conformance/cases/stor4-pos-arena-confined.wf:4:    let a: own arena<'r, i32> = arena_new<'r, i32>(4_i32);
+```
+
+Deleting `<'r, i32>` leaves the arena's region unrecoverable, and A3
+simultaneously deletes the `let` annotation that was the only other
+place `'r` appeared. This one is worse than (a): it is not merely
+unwritable, it is a region-inference demand, which is exactly what
+TYPE-5's own replacement text swears off ("This is unique
+reconstruction within one statement, not inference").
+
+**(c) `array_new`'s second argument is a const, not a type.** The
+candidate licenses "**type** arguments for the type-choosing operations
+… `array_new`", but [GRAM-3] `targ := type | REGIONID | const` and the
+corpus writes `array_new<i32, 4>`, `array_new<T, n>`,
+`array_new<i32, name>` (12 sites). [CONST-1]'s const-generic forwarding
+path — "`const N` is usable as an `array<T, N>` size and forwardable as
+a `const` targ" — depends on that second argument. As worded, N is not
+licensed.
+
+**Fix.** State the retained-targ class by enumeration over the operation
+table rather than by the phrase "type-choosing", and make it total: the
+operations that keep written arguments are exactly `cvt`, `reinterpret`,
+`array_new` (type *and* const), `arena_new` (region and type), and
+`finf`/`fnan` (type); every other table operation's selected type is
+operand-derived and its targ is forbidden. Then re-count: §1 claims
+"only the type-choosing structural operations (`cvt`, `reinterpret`,
+`array_new`) keep type arguments, everywhere and mandatorily", which
+becomes six spellings, not three, and §5's "1260 call sites" needs
+re-measuring against the corrected class (I could not reproduce 1260
+with a simple regex; my upper bound over all lowercase-callee targ call
+sites in the two named directories is 1666, of which 96 are
+cvt/reinterpret/array_new, the remainder including user-generic calls
+that keep theirs — so 1260 is plausible but unverified, unlike the five
+counts in F11(g) which reproduce exactly).
+
+---
+
+## F4 (A) — A value initializer with an empty delivery set has no derived type
+
+**Candidate text (§3 [GIVE-1]):** "every delivering `give` of one value
+initializer must have one identical exact mode and type, which is the
+binding's derived mode and type [TYPE-5]". **[TYPE-5] replacement:** "a
+`value_match` or `value_if` from the derived common delivery type
+[GIVE-1]."
+
+**Attack.** v0.22's [GIVE-1] gives delivery four structural forms, only
+one of which is a `give`: "an arm delivers when its final statement is a
+`give_stmt`, a `return_stmt`, a `break_stmt` whose resolved target loop
+lexically encloses the same value match, or a `match_stmt` every arm of
+which delivers". So a legal value initializer can have **zero**
+delivering `give`s:
+
+```
+let v = match r {
+  Ok(value: w) => { return w; }
+  Err(error: e) => { return unit; }
+}
+```
+
+Every arm delivers (both end in `return_stmt`), so [GIVE-1]'s
+give-completeness recursion is satisfied and the construct is accepted
+today. Under v0.22, `v`'s mode and type came from the binder annotation.
+Under the candidate the delivery set is empty, "the common exact mode
+and type of its delivering `give`s" is undefined, and TYPE-5's guarantee
+"no two derivations can disagree" is satisfied only vacuously — there is
+no derivation. `v` is a binding of no type. The same holds for the
+`break` form inside a loop and for a `value_if` both of whose branches
+return.
+
+The continuation is unreachable, so nothing *reads* `v` — but [TYPE-6]
+still enters `v` as a lexical declaration, [ENT-2] still asks whether it
+is a tracked place of a fragment type, and [DIAG-1] still has to
+classify it. "Unreachable, so don't care" is not a rule; one
+implementation will reject and another will accept.
+
+**Fix.** Make the empty delivery set a hard error citing GIVE-1 at the
+`let_stmt` node (mechanical fix: spell the construct as a `match_stmt`
+or `if_stmt` and drop the binding). This is a **third** acceptance-set
+narrowing and must be listed in §4, which today enumerates exactly two.
+Note it is also a *new* rejection of a program v0.22 accepts, so it is
+not covered by §4's "the error classes that lived only in deleted bytes
+die with them" — it is the opposite direction.
+
+---
+
+## F5 (A) — GIVE-1's blanket generalization contradicts the chained `value_if`
+
+**Candidate text (§3 [GIVE-1]):** "Every 'value match' occurrence
+generalizes to the value initializer".
+
+**v0.22 [GIVE-1], one of the occurrences that sweeps up:** "A final
+nested `value_match` delivers only to its own inner let and therefore
+does not make the outer arm deliver."
+
+**Attack.** Generalized as instructed, that sentence reads "A final
+nested value initializer delivers only to its own inner let and
+therefore does not make the outer arm deliver." But the candidate's own
+`value_if := "if" expr "{" stmt* "}" "else" (value_if | "{" stmt* "}")`
+makes the else-position `value_if` of a chain *exactly* a nested value
+form that must deliver to the **outer** let — that is what an `else if`
+chain is:
+
+```
+let grade = if a {
+  give 1_i32;
+} else if b {
+  give 2_i32;
+} else {
+  give 3_i32;
+}
+```
+
+The `else if b { … } else { … }` node is a `value_if` nested inside a
+`value_if`, and its `give`s deliver to `grade`. The generalized sentence
+says they cannot. Meanwhile [GRAM-6]'s flattening mandate makes the
+chained form the *only* legal spelling, so the rule as generalized
+rejects the only legal spelling of every else-if value ladder — and
+SWEEP names the corpus's Bool ladders as A4's stated target.
+
+The root cause is that "every occurrence generalizes" is a sweep
+instruction, not a verbatim-anchored replacement (see F11(a)); it cannot
+be applied without reading each occurrence for whether the
+generalization is intended.
+
+**Fix.** Anchor that sentence individually and restate it as: a final
+nested value form bound by its **own** `let` delivers only to that inner
+let; an else-position `value_if` of the same chain delivers to the
+chain's binding. Equivalently, define the chain as one construct with
+n+1 branches rather than as nesting.
+
+---
+
+## F6 (A) — ENT-2 and three ENT-3 sources are outside the modification list and go stale
+
+The candidate lists [ENT-3] as having "Four sites" (S1's origin clause,
+S1's establishment sentence, S6's forms, S7's shapes) and does not list
+[ENT-2] at all. Both are wrong.
+
+**(a) [ENT-2]'s term-root enumeration is closed and now short by one.**
+"a `place` … whose root `pbase` IDENT resolves to any `let_stmt` binding
+(**whichever of the three right-hand forms — ordinary, `propagate`, or
+`value_match` — the statement selects**)". The batch adds a fourth,
+`value_if`. Left unamended, a `value_if`-bound binding is not a term, so
+no fact about it can form. This is not merely stale prose — it changes
+acceptance under mechanical migration:
+
+```
+// v0.22 — accepted, n is a term, facts about n discharge downstream
+let n: own u64 = match ilt<u64>(i, m) { True() => { give 1_u64; } False() => { give 0_u64; } }
+
+// printer output under A4 — n is no longer a term; every obligation over n goes underivable
+let n = if ilt(i, m) { give 1_u64; } else { give 0_u64; }
+```
+
+The respelling is exactly what §5 promises is "zero semantic judgment",
+and it silently deletes discharge facts.
+
+**(b) [ENT-3] S5 and S9 quote annotated `let`s.** S5: "for
+`let x: own T = lit;`… for `let x: own T = p;`… for
+`let y: own Dst = cvt<Src, Dst>(p);`". S9: "For `let x: own T = c[i];`".
+A3 deletes those annotations; the source shapes as written match nothing
+after migration. S5's third form additionally needs no change to its
+`cvt<Src, Dst>` targ (correctly retained), which is worth stating
+explicitly since every neighbouring targ dies.
+
+**(c) [ENT-3] S4 quotes a targ'd `len`.** "or a call `len<T>(P)` over
+such a place — read as the length term len(P)". The candidate respells
+`len<T>(P)` in S6 and in ENT-6 but not in S4.
+
+**Fix.** Add ENT-2 to the modification list (one anchored replacement:
+three forms become four) and raise ENT-3's site count from four to
+seven. Then re-audit: a grep for `<T>`, `<i32>`, `: own`, and `: &` in
+§18 is the whole job.
+
+---
+
+## F7 (A) — GRAM-9 still mandates the annotation A3 deletes
+
+**Candidate text (§3 [GRAM-9]):** one site only — "'Every call argument,
+construct field value, and subscript offset is an `atom` [GRAM-5]'
+becomes 'Every call argument, construct field value, infix operand, and
+subscript offset is an `atom` [GRAM-5]'."
+
+**v0.22 [GRAM-9], the sentence the candidate leaves alone:** "A computed
+value is forwarded to another operation only by binding it with a
+preceding `let` (**stating its explicit mode and type [TYPE-5]**) and
+referencing the binding."
+
+After the batch, [GRAM-4] has no annotation slot and [TYPE-5] says the
+binder's mode and type "are derived, never written", while [GRAM-9] —
+the rule that *creates* almost every let in an ANF language — still
+requires the writer to state them. Two normative rules, direct
+contradiction, both cited constantly. A conforming implementation can
+cite GRAM-9 to reject every annotation-free forwarding let, which is to
+say every let in the migrated corpus.
+
+**Fix.** Second GRAM-9 site: delete the parenthetical, or replace it
+with "(whose mode and type are derived [TYPE-5])". The rule count stays
+22; the site count rises by one.
+
+---
+
+## F8 (A) — DIAG-1's OP-2 diagnostic locations are all `call` nodes that infix operations no longer have
+
+**Candidate text (§3 [DIAG-1]):** "The typed-call location sentence 'a
+missing explicit type argument uses `SourceNode` at the `call` node and
+that node's complete source extent' **is scoped to the callee classes
+that still carry type arguments**; for a value-typed table operation the
+class is unreachable and the operand-type error follows OP-2's rewritten
+second-operand attribution."
+
+**v0.22 [DIAG-1], the full paragraph:** "For a typed call to an [OP-2]
+operation, a missing explicit type argument uses `SourceNode` at the
+`call` node and that node's complete source extent. **A wrong
+type-argument kind, count, or domain, or a missing operand, uses the
+same call location.** An extra operand or every wrong exact operand type
+other than the TYPE-7 implicit-read case uses `SourceNode` at the first
+offending `atom` node in source order and that atom's complete extent.
+The cited rule is the rule selected by [OP-2]: FN-2, OP-1, or TYPE-5."
+
+**Attack (a).** The paragraph is scoped "for a typed call to an [OP-2]
+operation", and after A1 **no** [OP-2] operation carries a type
+argument. "Scoped to the callee classes that still carry type arguments"
+therefore scopes it to the empty set: the first sentence becomes dead
+text, and the *second* sentence — which locates OP-1's wrong-domain and
+missing-operand errors — is silently orphaned along with it, because
+"the same call location" no longer exists for an infix operation. Write
+`a + b` with `a : own f64`: [OP-2]'s replacement says this "cites
+[OP-1]", and DIAG-1 has no `SourceNode` to offer. Every operand-domain
+diagnostic on the twenty respelled operations loses its location.
+
+**Attack (b).** Attribution row 2 gains "an `infix` operand" but not the
+operator tokens: "the two actual tokens at the start of that occurrence
+are `(IDENT, "(")`, `(IDENT, "<")`, `(OPNAME, "(")`, `(OPNAME, "<")`,
+`(TYPEID, "(")`, or `(TYPEID, "<")`, the rejection cites [GRAM-9]". The
+single most likely new writer error is nested infix:
+
+```
+let x = a + b * c;
+```
+
+`b * c` is not an `atom`, so this must be rejected under GRAM-9 — but
+the second operand *starts* at `(IDENT, "*")`, which is not in row 2's
+token list, so the parse fails at `*` with no attributed rule. Adding an
+infix surface without teaching the ANF-attribution row about operator
+tokens leaves the new construct's characteristic error unattributed.
+
+**Fix.** (a) Replace the paragraph, do not scope it: keep the call-node
+locations for the callee classes that genuinely retain arguments (user
+generics [FN-2], SYS-2 region arguments, and F3's corrected retained-targ
+set) and add a parallel sentence locating operand-domain and
+operand-count errors at the `infix` node, with wrong-operand-type at the
+second operand atom per OP-2. (b) Extend row 2's token list with the
+twenty operator tokens for occurrences in infix-operand position.
+
+---
+
+## F9 (A) — FORM-2 double-governs `if` rendering, so canonical bytes are not uniquely determined
+
+**Candidate text (§3 [FORM-2]):** the block-bearing list "gains
+`if_stmt` and `value_if` **and their then/else blocks**", plus a new
+appended sentence: "An `if` renders its introducer through `{` on one
+line; an `else` renders as the join line `} else {`…".
+
+**v0.22 [FORM-2], the rule that still applies to every list member:**
+"The block-bearing productions are … Their introducer through `{` is one
+line; their children render on following lines at depth plus one; **and
+`}` renders on its own line at the original depth**."
+
+**Attack (a) — two rules, two answers.** With `if_stmt` in the
+block-bearing list, the generic sentence renders its `}` on its own line
+at the original depth; the new sentence renders it as `} else {`. Both
+are normative, neither is stated to override the other, and [FORM-1]
+requires input bytes to equal *the* rendering. There is no unique
+rendering, so either no `if`/`else` program is canonical or two
+implementations disagree. The precedent the candidate is reaching for —
+`requires {` … `} {` — works because FORM-2 states it in a dedicated
+paragraph *and* because `fn_decl`'s body and `requires_block` are two
+separate productions; here one production owns two or more brace blocks,
+which is new in the grammar.
+
+**Attack (b) — the list holds productions, and then/else blocks are not
+productions.** The block-bearing list names `struct_decl`, `enum_decl`,
+… `arm`, plus the phrase "the body of `fn_decl`". `if_stmt`'s branches
+are inline `"{" stmt* "}"` occurrences with no production name; "their
+then/else blocks" cannot be added to a list of productions without
+inventing two productions (cost: +2, contradicting the +4 accounting).
+
+**Attack (c) — the chain nesting.** In `} else if c {`, the
+else-position `if_stmt` is itself block-bearing, so the generic sentence
+puts its "introducer through `{`" on its own line at its own depth,
+which is the deep-nesting layout A4 exists to kill.
+
+**Fix.** State the override explicitly: `if_stmt` and `value_if` are
+block-bearing *and* their rendering is governed solely by the new
+sentence, which must then be complete — introducer line, then-children
+at depth+1, join line at the original depth, else-children at depth+1,
+final `}` at the original depth, and the else-if chain rendering the
+nested `if` on the join line at the original depth. Drop "and their
+then/else blocks".
+
+---
+
+## F10 (A) — OP-7 and OP-8 keep normative sentences about the explicit type argument A1 deletes
+
+**Candidate text:** "**[OP-7]** One sentence appended…"; "**[OP-8]**
+Spelling mentions only: `iadd.sat`/`isub.sat` read `+sat`/`-sat`,
+`imul.sat` reads `*sat`, and the shift/rotate/abs/float sentences are
+unchanged (those operations keep named spellings)."
+
+Both understate the damage. Sentences left standing:
+
+- [OP-7]: "Signedness-parametric lowering **keyed on the explicit type
+  argument** (`ishr` is `ashr` for signed T and `lshr` for unsigned T;
+  `imin` is `smin` or `umin`)…" and "Nominal enum identity is likewise
+  **checked from the explicit type argument** before `eeq`/`ene`
+  lowering".
+- [OP-8]: "`eeq<T>(a, b)` is `True()` exactly when…", "`ene<T>(a, b)` is
+  its exact boolean complement", "Both operands **and the explicit type
+  argument** must have that exact T", and "negative infinity is
+  `fneg(finf<T>())`".
+
+`ishr`, `imin`, `eeq`, and `ene` all keep their *names* but all lose
+their *type arguments* under A1's "every value-typed table operation"
+(22 `eeq<` and 15 `ene<` sites in the corpus), so these are not spelling
+mentions — they are lowering and identity rules whose stated input no
+longer exists. The `eeq`/`ene` selected type is genuinely operand-derived
+and the rules survive with rewording; the point is that the candidate
+declares them untouched.
+
+**Fix.** Add OP-7 (two more sites) and OP-8 (three more sites) properly:
+"keyed on the explicit type argument" becomes "keyed on the
+operand-derived selected type", and OP-8's `eeq<T>`/`ene<T>`/`finf<T>`
+spellings resolve per F3's corrected retained-targ set.
+
+---
+
+## F11 (E) — Editorial batch
+
+**(a) The "thirty-two verbatim-anchored modification sites" count is not
+reproducible, and at least four "sites" are not anchored.** The
+candidate defines "a site is one contiguous verbatim-anchored
+replacement", then uses prose sweeps for [GIVE-1] ("Every 'value match'
+occurrence generalizes to the value initializer" — the direct cause of
+F5), [OP-8] ("Spelling mentions only" — F10), [DIAG-1] ("is scoped to
+the callee classes that still carry type arguments" — F8), and [OP-2]'s
+negation paragraph ("takes the same derivation"). Summing the
+per-rule counts the document itself states gives 33, not 32, and the
+prose sweeps have no determinate site count at all. A batch destined for
+exact-byte owner approval must be applicable mechanically from its own
+deltas; this one is not.
+
+**(b) The [ERR-3] replacement garbles the sentence.** v0.22 reads
+"Propagation: `let x: own T = propagate e;` requires `e : own
+Result<T, E>` **and the enclosing function's return type `own
+Result<U, E>` (same E — no conversions, TYPE-4)**." The candidate's
+replacement ends "…requires `e : own Result<T, E>`, and x's derived mode
+and type are `own T` [TYPE-5]", with "the rest byte-identical" — so the
+return-type requirement now dangles off "x's derived mode and type are…
+and the enclosing function's return type…". Re-anchor on the full
+sentence and append the derived-type clause after it.
+
+**(c) [GRAM-6]'s flattening mandate orders an ungrammatical fix inside a
+`value_if`.** "an `else` whose block contains exactly one `if_stmt` and
+nothing else is a hard error citing GRAM-6 (spell `else if`)". In a
+`value_if` whose else block is exactly one *else-free* `if_stmt`, the
+prescribed fix is unspellable: `value_if`'s else alternative is
+`value_if | "{" stmt* "}"` and `value_if` requires its own `else`. The
+program is rejected either way (GIVE-1 also refuses, since an else-free
+`if_stmt` never delivers), so acceptance is unchanged — but the
+mechanical fix is unfollowable. Scope the flattening mandate to a nested
+`if_stmt` that has an `else`, or to `if_stmt` else-blocks only.
+
+**(d) Empty-`else` is double-cited.** `let v = if c { give 1_i32; }
+else { }` is rejected by GRAM-6 (empty else) and by GIVE-1 (the else
+does not deliver). [META-4] wants one statement of a fact; say which
+rule owns it, or scope GRAM-6's empty-else rule to `if_stmt`, leaving
+`value_if`'s to GIVE-1.
+
+**(e) [FN-8]'s exclusion list is now incomplete.** "a `propagate_let_rhs`,
+a `value_match`, or any other direct statement shape is a hard error
+citing FN-8" — the catch-all covers `value_if` and `if_stmt` correctly,
+but the enumeration should name `value_if` beside `value_match` since it
+names the sibling.
+
+**(f) The R3-register settlement for TYPE-5 is thinner than the register
+asks for.** The register (v0.22 line 36) says its entries "were
+minimality-selected, not evidence-selected, and require validation
+before ratification", and flags this one specifically: "interior
+annotation mandate (TYPE-5 — **round-2 verdict still needs_evidence**)".
+The candidate settles it with SWEEP's T1 argument. That argument is
+sound, but it is a design rule, not the writer/codegen comparison the
+register's own wording demands — the same currency the register asks for
+in the FN-8 entry ("semantics selected, spelling not yet compared"). The
+other two settlements are better grounded: "match-only conditionals and
+no-if" rests on a redundancy proof (the two arm labels are always
+exactly `True()`/`False()` in fixed order), and "prefix arithmetic
+surface" rests on SWEEP's objective tiebreaks, which is exactly R3's
+stated currency. Recommend the owner rule explicitly on whether a T1
+argument discharges a `needs_evidence` register entry, since this batch
+sets the precedent for the remaining eleven.
+
+**(g) Migration counts verify; one does not.** Measured independently
+over `tests/programs` + `tests/conformance/cases` (399 `.wf` files,
+excluding the `.claude/worktrees/` mirror, which doubles every naive
+count): let annotations **1748** (claimed 1748 ✓), `True()` arms
+**257** (claimed 257 ✓), `ilt`/`igt` sites **56** (claimed 56 ✓),
+`iadd.wrap` **229** (claimed 229 ✓), `iadd.trap` **47** (claimed 47 ✓),
+`check` statements 409 by a loose regex against a claimed 404 (the
+difference is `check` inside `doc`/message strings — consistent). Only
+the 1260 value-op targ deletions did not reproduce; see F3.
+
+---
+
+## Verified — axes and attacks that survived
+
+**T3 uniqueness — the hard axis. Survived every attack except through
+F4/F5.**
+
+- **Else-if flattening vs. block nesting.** `else { if d { … } else { … } }`
+  and `else if d { … } else { … }` are the same program; GRAM-6's
+  flattening mandate kills the first. The mandate reaches inside a
+  `value_if`'s else too (it is an `else` with a block), so both the
+  statement and the value ladder have exactly one spelling. Checked the
+  else-free nested case, the "if plus one more statement" case (block
+  form correctly required, and the flattened alternative would change
+  semantics, so no dual spelling), and deep chains.
+- **`value_if` vs `value_match`.** They never compete: GRAM-6 makes the
+  scrutinee/condition type decide, one form per class, and no type has
+  both. Parser-side they are disjoint at one token after `let IDENT =`
+  (`propagate` / `match` / `if` / else `expr`), and `if` is an exact
+  fixed atom so [FORM-3] excludes it from IDENT — no `expr` can begin
+  with it.
+- **Infix vs named call for the four respelled comparisons.** Confirmed
+  bare `<`/`>` were **not** drafted, so no dual spelling exists there.
+  Confirmed the respelled four cannot be written both ways: once `ieq`
+  `ine` `ile` `ige` leave the [OP-1] op column they leave the derived
+  `DotlessOperationNames` automatically (the set is derived as "spellings
+  … whose complete spelling satisfies IDENT and contains no dot", and
+  `==` does not satisfy IDENT), so `ieq(a, b)` falls through to
+  "every other IDENT callee admits a top-level source `fn_decl` or an
+  admitted system operation" and, absent such a declaration, is a hard
+  error citing OP-1. One spelling each. The same derivation makes the
+  `DotlessOperationNames`/`ReservedLowerNames` shrink self-maintaining —
+  no extra site needed, and the candidate is right to claim it.
+- **Operator maximal munch.** Worked through the adversarial cases: `a -
+  -1_i32` (operator then negative literal — round-trips, both tokens
+  distinct, canonical bytes stable); `a - 1_u64` vs `-1_u64` (the
+  candidate's own claim, confirmed against GRAM-1's unchanged numeric-form
+  clause); `a+1_i32` and `a +-1_i32` (both lex and parse, both rejected
+  as non-canonical under FORM-1 — a rejection, not a second spelling);
+  `a-1_i32` (lexes as two atoms and fails to parse — see below); `->`
+  preserved by the explicit `-`-followed-by-`>` carve-out; `/` safe
+  because [FORM-4] has no comments; `!` correctly left as a raw lexical
+  defect outside `!=`, since GRAM-1's single-byte punctuation list does
+  not contain it and the candidate only extends the compound sentence.
+- **Suffix words cannot collide with identifiers.** `a -wrap b` versus
+  `a - wrap b` is not a hazard: `wrap`, `checked`, and `sat` are in
+  `ModeWords` and therefore `ReservedLowerNames`, so [OP-1]'s reservation
+  makes them unwritable as any binding, parameter, field, or function
+  name. No place expression can ever spell them.
+- **FORM-2 attachment.** Verified directly against the sets: `=` is in
+  neither attachment set, so `= =` never renders adjacent and `==` cannot
+  arise by attachment; `>` and `<` are in the sets but as *single-byte
+  terminals*, and `<=`/`>=` are distinct compound terminals that are not
+  members, so they always render spaced; `const c: array<u8, 4> = […]`
+  renders `> =`, not `>=`, because `=` is in neither set. Also checked
+  `a[i] + b`, `a.f + b`, `a + b[i]`, `&'r p + q` — all render with the
+  operator spaced on both sides, as the candidate claims.
+- **Annotation-free lets.** Walked every right-hand form for a
+  second reading: literal (own T, suffix mandatory), generic numeric
+  `0_T`, bare copy place, `move place`, `borrow_expr`, `deref(p)` (copy
+  of the referent under TYPE-7), call (FN-1/SYS-2 `rtype`), construct
+  (`own K`), `propagate` (own T from `Result<T, E>`). Each produces one
+  mode and one type; none admits two readings. TYPE-5's "no binder's
+  type depends on a later statement" survives the value forms on a
+  technicality worth naming: the delivering `give`s are inside the *same*
+  `let_stmt`, so the derivation stays statement-local even though it now
+  reads an arbitrarily deep subtree.
+- **`a-1_i32` diagnostic.** Lexes as `a` then numeric `-1_i32` (the
+  numeric-form clause is unchanged and wins on `-`+digit), giving two
+  adjacent atoms and a parse failure rather than "spell it `a - 1_i32`".
+  Correct behaviour, poor message; worth a DIAG-1 hint row eventually,
+  not a batch blocker.
+
+**T4 globality — survived.** The retained-targ rule keys on callee class,
+not use site (subject to F3 making the class total). The empty-`else` and
+flattening rules key on block content, which is syntactic structure, not
+context or inference. The one rule that looked like a violation is
+GRAM-6's type-driven conditional class: the scrutinee's type is not a
+grammar class, and T4's letter says "grammar class … never on use-site
+context". I attacked it through generics — if a `match` scrutinee could
+have symbolic type T, legality would flip per [FN-2] instantiation — and
+it is unreachable: `arm := TYPEID "(" fieldbind_list? ")" "=>"` names
+variant constructors, which no symbolic T supplies, so a `match` on a
+generic-typed scrutinee cannot be written. Type-driven here is a total
+function of a fact the checker always has, and it does not depend on
+inference succeeding. It passes, but the owner should note the precedent
+being set: this is the first class rule in the language keyed on a
+checked type rather than a grammar shape.
+
+**Semantic drift — survived.** Bare `+ - * / %` map row-for-row onto
+`iadd.trap` `isub.trap` `imul.trap` `idiv.trap` `irem.trap`, whose
+[OP-2] semantics, [ERR-4] contract-violation classification, and
+[EFF-2] `traps` contribution are untouched; the EFF-2 replacement
+correctly keeps both the bare-operator and the surviving `.trap` OPNAME
+carriers (`ineg.trap`, `iabs.trap`, `ishl.trap`, `ishr.trap`), and
+`buffer_new`'s `traps` still arrives through "or a call". [OP-2]'s
+operand-derived selected type cannot change which row resolves: the
+family is chosen by the operator token alone ("infix resolution consults
+no name domain"), and within the family the row is chosen by the
+selected type, which under both v0.22 and the candidate must equal both
+operands' exact type — the written targ was already required to match
+them, so the derived value is the same integer type at every site where
+the program was accepted before. Where they would differ, the program
+was already rejected. [DIAG-3]'s trap record changes `node_path` from
+`call` to `infix` and nothing else, which is a location change, not a
+semantics change. Accounting checks: the 20 respelled op-column
+spellings (3 ops × 4 modes, 2 ops × 2 modes, 4 comparisons) equal the 20
+new terminal spellings (5 bare + 11 suffixed + 4 compound) and equal the
+20 alternatives in the drafted `infix_op` list — three independent
+counts, all consistent. Baseline 65 productions verified independently
+against both the document and task 0030's verifier figure.
+
+**Deferral reasoning for C3 (O2) — sound.** All three grounds check out
+against v0.22: [CLM-1] does require a per-`fn_decl`-unique name and
+[DIAG-3]'s record carries it where `check`'s carries the STRING, so trap
+bytes genuinely change; [CLM-2] refutation genuinely converts some
+accepted `check`s into hard errors, which no respelling may smuggle; and
+[FN-8]'s structural pass genuinely requires "exactly one final
+`check_stmt`", so unifying forces an FN-8 decision. Keep C3 out.
+
+---
+
+## Residue hunt (standing axis)
+
+**R1 — two mode-suffix mechanisms now carry the same three words.**
+After C1, `wrap`/`checked`/`sat` are spelled two ways: dot-separated on
+the operations that keep names (`ineg.wrap`, `ishl.trap`, `iabs.checked`)
+and glued to an operator on the ones that do not (`+wrap`, `/checked`,
+`*sat`). Two lexical rules form them ([FORM-3]'s OPNAME clause and the
+new operator-form clause), and the reservation story runs through only
+one of them (`ModeWords` is defined as "the suffix alternatives in
+FORM-3's active OPNAME formation rule", which is now a proper subset of
+where mode words appear). Re-derivable from kernel principles? Only
+half — the *concept* is [OP-7]'s mode axis, which is principled; the
+*duplication* is an artifact of respelling some rows and not others.
+Proliferation-bounded? Yes, at two. One mechanism per concern? No. The
+honest reading is that this residue is temporary by construction: O6
+already tracks `.trap`/`.checked` dissolution, and the candidate is
+right that "when it lands, bare `+` is already the spelling it needs".
+Recommend recording it as a named, dated debt with O6 as its discharge
+condition rather than leaving it implicit — and adding one sentence to
+[OP-1] making `ModeWords` derived from both carriers, so the reservation
+set does not quietly depend on which rows happen to be respelled.
+
+**R2 — the comparison family is split by a lexer accident, and the split
+is writer-visible.** `==` `!=` `<=` `>=` are infix; `ilt` `igt` are named
+calls. The boundary carries no semantic content: all six are one [OP-1]
+row, one signature, one effect. [OP-7] exists to make operation names
+"W1-predictable", and a writer now cannot predict from the operation
+which spelling it takes. The candidate sees this ("the asymmetry against
+`<=`/`>=` is visible in EX-1's first branch" — and it is: EX-1's
+`sign_of` reads `if ilt(x, 0_i32) { … } else if x == 0_i32 {`, two
+spellings of comparison in one function). The split also propagates into
+the reservation set: `ieq`/`ine`/`ile`/`ige` become writer-reusable
+names while `ilt`/`igt` stay reserved, so a program may now declare
+`fn ieq(…)` but not `fn ilt(…)`. Imported habit? No — it is the opposite,
+a native constraint. But it is the batch's one piece of surface whose
+shape is explained by the implementation rather than the language, which
+is exactly what the axis hunts for. See O1.
+
+**R3 — the derived common delivery type is real machinery, and it is the
+batch's only addition.** The candidate flags this itself (O4) and is
+right to: A1/A3/A4 are deletions, C1 is a constant swap, and this one
+rule is new normalization. It earns its place — deleting the binder
+annotation forces *something* to type the binding — but it is worth
+recording that its cost is not the one-line agreement rule as drafted.
+It is the rule plus its completeness obligation (F4's empty set), plus
+[ENT-2]'s term enumeration (F6a), plus the nested-delivery interaction
+(F5). Three of this review's nine A findings trace to it. Proportionate
+to A3's 1748 deleted annotations — yes, comfortably. But it should ship
+as a fully-worked rule, not a sentence.
+
+---
+
+## O1–O7 — recommendations
+
+**O1 (bare `<`/`>` infix) — recommend (a) as drafted for this batch,
+with a correction to the record and a named revisit condition.** The
+exclusion is forced: `(IDENT, "<")` cannot select between `a < b` and a
+generic call at two tokens, and this is not speculative — [DIAG-1]'s
+attribution row 2 already lists `(IDENT, "<")` as a GRAM-9 signal, so
+the pair is load-bearing in the current design. But **the candidate
+mis-scopes option (b)**. It calls (b) "a breaking canonical change on
+every generic call **and type**"; in fact type-level targs never
+compete with a comparison, because `type := TYPEID targs?` and
+`construct := TYPEID targs?` both begin with TYPEID, and TYPEID is not
+an `atom` (`atom := literal | "move" place | place | borrow_expr`,
+`pbase := IDENT | "deref" …`). Nor does `(OPNAME, "<")` compete. After
+A1 deletes value-op targs, the *entire* remaining collision surface is
+`(IDENT, "<")` on user-generic `fn` calls and SYS-2 region arguments —
+a far smaller change than "every generic call and type", and one a
+call-targs-only introducer (a turbofish-shaped compound token) would
+close without touching a single type. That does not make (b) right for
+this batch, but the owner should rule on (a) knowing (b) costs a
+fraction of what the candidate states. Revisit condition: R2's
+predictability cost, measured, or the next batch that touches call
+syntax for another reason.
+
+**O2 (C3 deferral) — confirm as drafted.** Reasoning verified above
+against all three grounds; nothing to add.
+
+**O3 (requires-clause lets) — recommend the uniform annotation-free
+reading, as drafted.** T4 is decisive here: a split production would
+make annotation legality depend on which block a `let` sits in, which is
+a grammar class, so it would technically pass T4 — but SWEEP's B-row
+argument is T2 ("the interface is the trust boundary"), and the
+boundary fact in a requires block is the final `check` condition, not
+the scaffolding lets that compute it. [FN-8] already treats those lets
+as a mechanical prologue subset ("zero or more `let_stmt` nodes whose
+selected right-hand side is `ordinary_let_rhs`, followed by exactly one
+final `check_stmt`"), and their right-hand sides are table-op-typed and
+therefore self-typed. One `let_stmt` production, one rule. Also cheaper:
+the alternative adds a production and a second `let` node kind.
+
+**O4 (derived common delivery type) — confirm the rule, but not as
+drafted.** The agreement construction is right and is genuinely T3-unique
+(agreement over a closed set is not a join and admits no widening). It
+must ship with the empty-delivery-set case closed (F4), the nested-value
+interaction restated (F5), and [ENT-2]'s term roots extended (F6a).
+
+**O5 (`=[` cvalue attachment) — recommend closing it as standing, as
+drafted.** Verified independently: `=` is in neither FORM-2 attachment
+set, so it always renders spaced and no infix operator can become
+adjacent to it; `==` cannot arise from two `=` terminals; and the only
+`=`-adjacency in the language remains `=[` from `[` being in the
+right-attachment set, which C1 does not touch. The candidate's reasoning
+is correct and the conclusion holds.
+
+**O6 (another-batch items) — confirm as restated.** One addition:
+R1 should be attached to the `.trap`/`.checked` dissolution item as its
+explicit discharge condition, so the two-mode-suffix-mechanism debt has
+a named owner rather than living only in this review.
+
+**O7 (empty then-block with non-empty `else`) — confirm the admission,
+and state it in ERR-2.** The reasoning holds: the inverted spelling
+`if bnot(c) { B }` is a different checked program (it contains an extra
+operation, and under ANF that operation is a real node with a real
+effect row), so there is no dual spelling to kill and no T3 rule is
+owed. Note the asymmetry is already stated for the other direction
+(empty `else` rejected, spell the else-free form), so the pair of rules
+is complete and content-driven. Worth one clause in the [ERR-2] addition
+so a reader does not infer symmetry: the empty *then* is admitted, the
+empty *else* is not, and both follow from "the else-free form is the
+one spelling of the empty alternative".
+
+---
+
+## Severity counts
+
+| severity | count | ids |
+|---|---|---|
+| S | 1 | F1 |
+| A | 9 | F2, F3, F4, F5, F6, F7, F8, F9, F10 |
+| E | 7 | F11(a)–(g) |
+| residue | 3 | R1, R2, R3 |
+
+Must-fix before approval: **F1** (ENT-5 join), **F2** (left-factor
+`expr`; the current draft's own EX-1 does not parse), **F3** (retained-targ
+class is not total — two `finf`/`fnan`, three `arena_new`, and twelve
+`array_new` corpus sites have no legal spelling), **F4** (empty delivery
+set). F5–F10 are corrections to rules the candidate declares untouched
+or scopes by prose; each is a one-anchor fix but each is a live
+contradiction if it ships. F2 additionally changes the accounting the
+owner would be approving: 70 productions, not 69.
+
+What the batch got right, since the finding list is long: the migration
+measurements are honest (five of six reproduce exactly), the anchor
+craft is byte-exact where anchors exist, the token and op-column
+accounting is internally consistent across three independent counts, the
+production baseline of 65 is correct, the two structural findings the
+candidate surfaces up front are both real and both correctly diagnosed,
+C3's deferral is correctly reasoned, and the T3 uniqueness argument for
+the else-if chain — the part most likely to hide a second spelling —
+holds under every attack I could construct.
