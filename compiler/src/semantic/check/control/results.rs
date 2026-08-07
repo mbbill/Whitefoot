@@ -1,13 +1,23 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
-use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
+use crate::{
+    DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
+    SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
+};
 
 use super::super::super::model::{
     BindingId, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
+
+// [DIAG-1] the return position asks TYPE-7's implicit read before the
+// operand's OWN-1 spelling judgments because TYPE-7 is defined first.
+const _: () = assert!(
+    SemanticRule::Type7.definition_rank() < SemanticRule::Own1.definition_rank(),
+    "check_return_implicit_read precedes the operand's OWN-1 judgments"
+);
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     #[allow(clippy::too_many_arguments)]
@@ -119,5 +129,73 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             SemanticIssueKind::InvalidPropagation,
         )
+    }
+
+    /// [TYPE-7]'s implicit read at return position: a live borrow-mode or
+    /// box binding used where the written `rtype` requires its referent
+    /// value is rejected citing TYPE-7, and [FN-1] forms no candidate for
+    /// that use. TYPE-7's definition precedes OWN-1's spelling judgments,
+    /// so this same-node rejection event is cited first
+    /// [DIAG-1, `SemanticRule::definition_rank`].
+    pub(super) fn check_return_implicit_read(
+        &self,
+        function: &FunctionSignature,
+        expression_node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(), CheckStop> {
+        if function.result_mode != CheckedMode::Own {
+            return Ok(());
+        }
+        let atom = self.tree.only_child(expression_node)?;
+        if self.tree.production(atom)? != Production::Atom {
+            return Ok(());
+        }
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(());
+        };
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(());
+        };
+        if !self.tree.children(pbase)?.is_empty()
+            || !self
+                .tree
+                .children_with(place, Production::Psuffix)?
+                .is_empty()
+        {
+            return Ok(());
+        }
+        let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = usage.target()
+        else {
+            return Ok(());
+        };
+        let Some(local) = bindings.get(&declaration) else {
+            return Ok(());
+        };
+        if !local.live {
+            return Ok(());
+        }
+        let referent = if local.mode != CheckedMode::Own {
+            Some(local.ty)
+        } else if let CheckedType::Nominal(nominal) = local.ty
+            && let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind
+        {
+            Some(referent)
+        } else {
+            None
+        };
+        if referent == Some(function.result) {
+            return self.issue_node(
+                SemanticRule::Type7,
+                expression_node,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "write `deref(holder)`",
+                },
+            );
+        }
+        Ok(())
     }
 }

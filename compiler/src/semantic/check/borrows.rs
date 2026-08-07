@@ -39,6 +39,17 @@ pub(super) enum ReborrowPosition {
     ReturnExpression,
 }
 
+// [DIAG-1] same-node judgment order inside the borrow checker: a suspended
+// holder's OWN-5 rejection is asked after OWN-1's liveness and spelling
+// judgments and before the reborrow admissions, and the returned reborrow
+// asks OWN-10's creation obligation before OWN-14's admission, because each
+// earlier-defined rule cites first at one offending use.
+const _: () = {
+    assert!(SemanticRule::Own1.definition_rank() < SemanticRule::Own5.definition_rank());
+    assert!(SemanticRule::Own5.definition_rank() < SemanticRule::Own6.definition_rank());
+    assert!(SemanticRule::Own10.definition_rank() < SemanticRule::Own14.definition_rank());
+};
+
 /// [OWN-14]'s exact restructuring for a rejected reborrow form.
 const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
      return it as the complete return expression from a parameter or let-bound holder, \

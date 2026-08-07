@@ -893,3 +893,39 @@ fn suspended_uniq_match_roots_do_not_resume() {
         SemanticIssueKind::BorrowConflict,
     );
 }
+
+/// [DIAG-1] one offending use establishing several rejections cites the
+/// first-defined established rule: a holder returned where the written
+/// `rtype` requires its referent value cites TYPE-7 (with FN-1 forming no
+/// candidate), ahead of OWN-1's spelling judgments at the same node; a
+/// holder returned where the holder itself is required stays OWN-1.
+#[test]
+fn same_node_return_rejections_cite_the_first_defined_rule() {
+    let type7 = SemanticIssueKind::MissingDereference {
+        mechanical_fix: "write `deref(holder)`",
+    };
+    assert_rule(
+        b"fn read(holder: own box<i32>) -> own i32 pure {\n  return holder;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        type7.clone(),
+    );
+    assert_rule(
+        b"fn read(holder: own box<i32>) -> own i32 pure {\n  return move holder;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        type7.clone(),
+    );
+    assert_rule(
+        b"fn grab ['r](p: &uniq 'r i32) -> own i32 pure {\n  return p;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Type7,
+        type7,
+    );
+    // The referent is not required here, so TYPE-7 is not established and
+    // OWN-1's bare-affine spelling is the sole rejection.
+    assert_rule(
+        b"fn pass(holder: own box<i32>) -> own box<i32> pure {\n  return holder;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own1,
+        SemanticIssueKind::BareAffineUse {
+            mechanical_fix: "write `move p` for the affine place",
+        },
+    );
+}

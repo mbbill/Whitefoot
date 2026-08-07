@@ -147,6 +147,56 @@ impl SemanticRule {
             Self::Eff2 => "EFF-2",
         }
     }
+
+    /// [DIAG-1] same-node citation rank: this rule's definition position in
+    /// the active kernel specification. Simultaneously established
+    /// post-resolution rejections whose offending premise is the same use of
+    /// the same canonical node are one rejection event citing the established
+    /// rule whose rank is least, so a site with a known simultaneity asks its
+    /// judgments in ascending rank order. The order is machine-checked
+    /// against the active specification text by
+    /// `definition_rank_matches_the_active_specification`.
+    #[must_use]
+    pub const fn definition_rank(self) -> usize {
+        match self {
+            Self::Form5 => 0,
+            Self::Form7 => 1,
+            Self::Give1 => 2,
+            Self::Gram8 => 3,
+            Self::Gram10 => 4,
+            Self::Gram11 => 5,
+            Self::Type2 => 6,
+            Self::Type5 => 7,
+            Self::Type6 => 8,
+            Self::Type7 => 9,
+            Self::Set1 => 10,
+            Self::Const1 => 11,
+            Self::Const2 => 12,
+            Self::Own1 => 13,
+            Self::Own4 => 14,
+            Self::Own5 => 15,
+            Self::Own6 => 16,
+            Self::Own10 => 17,
+            Self::Own11 => 18,
+            Self::Own12 => 19,
+            Self::Own14 => 20,
+            Self::Stor1 => 21,
+            Self::Stor5 => 22,
+            Self::Op1 => 23,
+            Self::Op5 => 24,
+            Self::Op6 => 25,
+            Self::Fn1 => 26,
+            Self::Fn2 => 27,
+            Self::Fn3 => 28,
+            Self::Fn4 => 29,
+            Self::Fn7 => 30,
+            Self::Fn8 => 31,
+            Self::Eff1 => 32,
+            Self::Eff2 => 33,
+            Self::Err2 => 34,
+            Self::Err3 => 35,
+        }
+    }
 }
 
 /// Exact checked location selected for a semantic rejection.

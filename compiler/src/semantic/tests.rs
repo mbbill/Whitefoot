@@ -22,11 +22,11 @@ mod system_effects;
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
-    ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    ParseLimits, ParseOutcome, ResolutionOutcome, SemanticIssueKind, SemanticLocation,
-    SemanticOutcome, SemanticRule, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, UnsupportedSemanticFeature, audit_canonical, check_semantics,
-    classify_terminals, finalize, parse, resolve,
+    ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_TEXT, CanonicalLimits, CanonicalOutcome,
+    FinalizeLimits, FinalizeOutcome, ParseLimits, ParseOutcome, ResolutionOutcome,
+    SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, SourceBundle, SourceInput,
+    SourceLimits, TerminalLimits, TerminalOutcome, UnsupportedSemanticFeature, audit_canonical,
+    check_semantics, classify_terminals, finalize, parse, resolve,
 };
 
 use super::model::{CheckedExpression, CheckedStatement};
@@ -911,4 +911,71 @@ fn main() -> own unit pure {
         assert_eq!(drops.len(), 1);
         assert_eq!(drops[0].binding, *taken);
     });
+}
+
+/// [DIAG-1] the same-node citation rank is the rules' definition order in
+/// the active specification; `SemanticRule::definition_rank` must agree with
+/// the specification bytes for every citable rule.
+#[test]
+fn definition_rank_matches_the_active_specification() {
+    const ALL: [SemanticRule; 36] = [
+        SemanticRule::Form5,
+        SemanticRule::Form7,
+        SemanticRule::Type2,
+        SemanticRule::Const1,
+        SemanticRule::Const2,
+        SemanticRule::Type5,
+        SemanticRule::Set1,
+        SemanticRule::Own1,
+        SemanticRule::Own4,
+        SemanticRule::Own5,
+        SemanticRule::Own6,
+        SemanticRule::Own10,
+        SemanticRule::Own11,
+        SemanticRule::Own12,
+        SemanticRule::Own14,
+        SemanticRule::Type7,
+        SemanticRule::Stor1,
+        SemanticRule::Stor5,
+        SemanticRule::Op1,
+        SemanticRule::Op6,
+        SemanticRule::Op5,
+        SemanticRule::Fn1,
+        SemanticRule::Fn2,
+        SemanticRule::Fn3,
+        SemanticRule::Fn4,
+        SemanticRule::Fn7,
+        SemanticRule::Fn8,
+        SemanticRule::Gram11,
+        SemanticRule::Gram8,
+        SemanticRule::Gram10,
+        SemanticRule::Type6,
+        SemanticRule::Err2,
+        SemanticRule::Err3,
+        SemanticRule::Give1,
+        SemanticRule::Eff1,
+        SemanticRule::Eff2,
+    ];
+    let definition_line = |rule: SemanticRule| {
+        let prefix = format!("[{}]", rule.id());
+        ACTIVE_KERNEL_SPEC_TEXT
+            .lines()
+            .position(|line| line.starts_with(&prefix))
+            .unwrap_or_else(|| panic!("no definition line for {}", rule.id()))
+    };
+    let mut ranks: Vec<usize> = ALL.iter().map(|rule| rule.definition_rank()).collect();
+    ranks.sort_unstable();
+    ranks.dedup();
+    assert_eq!(ranks.len(), ALL.len(), "ranks must be unique");
+    let mut by_rank = ALL;
+    by_rank.sort_unstable_by_key(|rule| rule.definition_rank());
+    let mut by_specification = ALL;
+    by_specification.sort_unstable_by_key(|rule| definition_line(*rule));
+    for (ranked, specified) in by_rank.iter().zip(&by_specification) {
+        assert_eq!(
+            ranked.id(),
+            specified.id(),
+            "definition_rank disagrees with the active specification order"
+        );
+    }
 }

@@ -144,6 +144,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                self.check_return_implicit_read(function, expression_node, bindings)?;
                 // A borrow_expr as the complete return expression is the sole
                 // non-argument position that admits a written reborrow form:
                 // the returned reborrow [OWN-14]. Control leaves the function
