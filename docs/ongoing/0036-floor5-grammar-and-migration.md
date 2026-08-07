@@ -2,12 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` — 2026-08-07 round 3. The generator exists and
-  reproduces every structural table byte-for-byte, but the byte-for-byte gate
-  on `SELECT_ROWS` is unreachable: the committed v0.22 rows are not a function
-  of the v0.22 grammar. Evidence and the open ruling are in "Generator
-  reproduction gate" below. No compiler file is modified; the worktree is
-  clean at the branch tip.
+- **Status:** `WAITING` — 2026-08-07 round 3, handed back at a clean boundary.
+  The reproduction gate is discharged and the lead's ruling on it is
+  implemented and landed on the branch: the generator is in-repo wired to a
+  gate check, and the v0.22 tables are canonical (7f68c71).
+  `make -C compiler check` exits 0. The candidate re-assembly and the table
+  extension are NOT started; the successor brief says why and what is left.
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
   2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's
@@ -175,21 +175,108 @@ literal count pin that every grammar change already updates (0030 moved it
 verdict. The committed file has been restored; this is a measurement, not a
 change.
 
-**Open ruling.** Either (A) generate v0.23's tables canonically from the v0.23
-grammar, dropping the 70 spurious pairs and fixing provenance, and move the
-count pin as every grammar change does; or (B) teach the generator to reproduce
-the over-approximation so the gate is byte-exact, which encodes a known defect
-and carries the wrong provenance into v0.23. This executor recommends (A) and
-selects neither. Extension is not started pending the ruling.
+**Ruled (A), canonical generation, and implemented in 7f68c71.** The generator
+is now `compiler/src/bin/grammar_tables/` (bin `whitefoot-grammar-tables`).
+`--check` regenerates from the active specification and compares against the
+committed tables; the same comparison runs as a test inside
+`make -C compiler check`, so "the committed tables are the tables the
+specification's grammar implies" is machine-checked from now on. The two
+historical inputs — `Production` enum order and decision-slot order — are
+explicit tables carrying comments that say they are historical, not derived.
 
-Note for whoever owns the tooling decision: 0030 and 0031 each built and then
-deleted a one-shot generator, and this task rebuilt it a third time. The tables
-are not hand-editable. Keeping the generator somewhere would stop the next
-grammar task paying this cost again.
+The canonicalization was landed as its own commit so the v0.23 delta lands
+against a clean base. Its complete diff is the first two of the three
+components the lead asked to see enumerated:
 
-## Hand-back brief
+| component | effect |
+|---|---|
+| 70 grammar-underivable predicate pairs dropped, 27 decisions | landed 7f68c71 |
+| 57 provenance corrections | landed 7f68c71 |
+| rows the v0.23 grammar adds | not started |
 
-Read this section and the two above it; the rest is history.
+`SELECT_ROWS` 2003 -> 1893 and the count pin moved with it, as it does for
+every grammar change. The third component will move the count again; report it
+as its own number rather than netting it against these two.
+
+## 0031's defect, recorded where it will be found
+
+Task 0031 hand-added 84 `]`-closing SELECT_2 follow rows (its record says so).
+The rows are wrong in two independent ways:
+
+- **Over-broad.** 70 of the resulting predicate pairs, across 27 decisions,
+  place `]` at a position the grammar cannot derive. Decision 8 is
+  `variant := TYPEID "(" vfield_list? ")" ";"` and carried
+  `(arm 1, RightBracket, Semicolon)`; the parser's next action after that arm
+  is `Match(RightParen)`, which `]` cannot satisfy.
+- **Mis-attributed.** All 84 name provenance node 192, `region_params`' `]`,
+  rather than node 478, `psuffix`' `]` — the site that actually made `]` a
+  follower in v0.22. The same first-occurrence mistake affects 57 rows for
+  `)` (41 instead of 421/432/470), `,` (125 instead of 438/458), and `>`
+  (170 instead of 241).
+
+**Nothing caught it for a whole version, and the verifier could not have.**
+`whitefoot-grammar`'s triple counts productions, decisions and terminal
+predicates; none of those three moves when rows are added, and its internal
+consistency check only asks that every arm has a row and that arms stay
+disjoint — adding rows to one arm violates neither. The corpus could only ever
+catch *missing* rows, by failing to parse; a spurious row is invisible to it
+because no valid program reaches that lookahead. That asymmetry is why the
+derivation check is the right home for this invariant.
+
+Harm was bounded: `select_arm` requires both positions to match, and the
+terminal `Match` tasks still enforce the real tokens, so a spurious row could
+degrade a diagnostic but not admit an invalid program. Wrong provenance
+mis-attributes DIAG-1 name slots and expected-set reporting.
+
+## Round-3 successor brief
+
+Start here. Everything the round-2 brief says about building a generator
+(its items 3, 4 and 5) is discharged — the generator exists, is in-repo, and
+is gated. Its items 1 and 2 are semantic-path findings that belong to 0038,
+not to this task's remaining scope. Base yourself on branch tip 7f68c71,
+rebased onto main at 6c0333e.
+
+**What is left, in order.**
+
+1. **Re-assemble the candidate** from `spelling-relief-candidate.md` at
+   1a41eed (31 rules, 61 verbatim-anchored sites; the round-1 assembly at
+   `9ca13585…` is superseded and should be regenerated, not patched). Be aware
+   the delta states its sites as *prose*, not as a machine-applicable patch:
+   §3 runs about 780 lines and each rule's anchors have to be read out of the
+   paragraph describing them. This is the single largest remaining unit and is
+   why round 3 stopped here rather than starting it with the budget left.
+   Assert each anchor occurs exactly once; report the SHA-256.
+2. **Extend the tables.** Point the generator at the candidate
+   (`cargo run --bin whitefoot-grammar-tables -- PATH` prints the derived
+   file) and install its output. The 21 new fixed spellings are already in
+   `fixed_terminal` in `model.rs`, transcribed from the delta's GRAM-5 block
+   rather than guessed — note `+checked`, `/checked`, `%checked`, and that
+   there is no `&&`, `||`, `<` or `>`. You must still add the matching
+   `FixedTerminal` variants and spellings in `compiler/src/syntax/terminal.rs`
+   and grow `ALL_TERMINAL_PREDICATES` 76 -> 97 (`TerminalSet`'s u128 still
+   fits). `if_stmt`, `value_if`, `infix_tail` and `infix_op` append to
+   `ENUM_ORDER`; their decisions append to `DECISION_ORDER` automatically.
+   Expect the verifier at 69 productions.
+3. **Repoint identity pins** (0029/0030/0031 style):
+   `compiler/src/spec.rs` (path, `include_str!`, and the test), the
+   `include_bytes!` in `compiler/src/bin/spec.rs`, the 65/75/76 assertions in
+   `compiler/src/bin/grammar.rs`, `tests/conformance/runner.py`,
+   `docs/roadmap.md`, and `spec/derivation/derivation-ledger.md`.
+4. **Report the third diff component as its own number** — rows the v0.23
+   grammar adds — rather than netting it against the 70 dropped pairs and 57
+   provenance fixes already landed in 7f68c71. That decomposition is a
+   standing lead instruction.
+
+**Two traps that survive.** The verifier's `frontend_contract` compares the
+candidate against the *compiled-in* active spec, so it only goes green once the
+pins move (0030's round-1 blocker; do not re-derive it). And byte-for-byte
+agreement on a grammar proves the tables and the EBNF agree, never that the
+extended tables are complete — 0038's corpus parse stays the completeness
+oracle.
+
+## Hand-back brief (round 2 — superseded in part, retained for history)
+
+Items 3, 4 and 5 are discharged by round 3. Items 1 and 2 belong to 0038.
 
 **Why the hand-back is here rather than at "grammar path + pins green".** The
 generator that ruling 2 makes a hard gate is an iterative build — reproducing
