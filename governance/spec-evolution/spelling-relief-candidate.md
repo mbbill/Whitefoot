@@ -269,6 +269,35 @@ byte at all (so `!=` cannot), and although `<` is in the left set and
 either — every `>`-then-`=` position is separated by one space because
 `=` is in neither set — so `<=` and `>=` cannot arise by attachment.
 
+Metanotation convention (drafting note; O9 ruled, §6). C1 makes `+ - *
+/ %` source operator tokens, and this specification already writes
+mathematical notation in those same bytes. The two are told apart by
+two facts the document already states normatively — no new convention
+is introduced, and none is needed:
+
+- Canonical source renders every infix operator with exactly one space
+  on each side [FORM-2], so *unspaced* arithmetic or comparison is
+  never canonical source: [OP-2]'s `a+b`, `a-b`, `a*b` and its result
+  relations `a=b`, `a≠b`, `a<b`, `a<=b`, `a>b`, `a>=b`, and [FN-4]'s
+  `x+y`, `2^K-1`, and `MAX-1` are all mathematical by their bytes.
+- Canonical source admits exactly one operation per expression
+  [GRAM-9], so a *spaced* relation carrying an arithmetic operator
+  together with a relational one is never canonical source either,
+  spacing notwithstanding. This is what covers the [ENT] fragment,
+  whose relation notation is spaced throughout — `a - b <= c`,
+  `t1 - t3 <= c1 + c2`, `p + k <= max(T)`, `b - a <= -c - 1`,
+  `i - len(P) <= -1` — and which a spacing rule alone would misread.
+
+Measured over the active document: those two facts discriminate every
+backticked arithmetic occurrence except three, on two lines — [OP-2]'s
+two `iK::MIN / -1` and [OP-9]'s `n * sizeof(T)`, each spaced,
+single-operation, and relation-free. Those three are exactly the
+occurrences this batch restates in words at sites [OP-2] (e) and
+[OP-9]. The minimal edit set is therefore **complete, not merely
+small**: it is precisely the residue the two standing facts cannot
+discriminate, which is why no whole-document metanotation change is
+owed and none is drafted.
+
 Strong-LL analysis (decision by decision; the false claim of the first
 draft — that the unfactored choice decides "at the second token" — is
 withdrawn):
@@ -676,13 +705,16 @@ here exactly as it is in [EX-1]. Its remaining sentences — signed and
 unsigned ordering, the same-exact-T requirement, and totality/purity
 over `own Bool` — are byte-identical. The replacement does bind `a` and
 `b`, which the v0.22 sentence left free even though the result sentence
-below it uses them. Flagged for the O9 ruling: this paragraph is where
-the metanotation collision is sharpest, because the byte-identical
-result sentence reads "`True()` exactly when `a=b`, `a≠b`, `a<b`,
-`a<=b`, `a>b`, or `a>=b`" — mathematical relations in the same bytes as
-the source operators one sentence above. It is left byte-identical
-under O9's recommended split, but it is the strongest case for the
-alternative.
+below it uses them. This paragraph is where the metanotation question
+[O9, ruled] is sharpest and, on the ruling, where it answers itself:
+the byte-identical result sentence reads "`True()` exactly when `a=b`,
+`a≠b`, `a<b`, `a<=b`, `a>b`, or `a>=b`" — mathematical relations one
+sentence below the source spellings `a == b`, `a != b`, `a <= b`, `a
+>= b` — and the two are distinguished by [FORM-2]'s mandatory
+one-space-each-side rendering, which makes every unspaced form
+non-source by construction. The result sentence is therefore left
+byte-identical, and this paragraph is the convention's clearest
+demonstration rather than a counterexample to it (§2 drafting note).
 
 (d) The negation paragraph's opening "For `ineg.wrap<T>(a)`,
 `ineg.trap<T>(a)`, and `ineg.checked<T>(a)`, T is one signed member of
@@ -910,8 +942,9 @@ domains, `≡D`, and the `yes`/`holds`/`refuted`/`zero of T` verdicts —
 is byte-identical, and the paragraph below the table (K as bit width,
 the unsigned `min` argument, the signed refutation witness, the
 unavailability rule, and the base-derivation-record sentences) is
-byte-identical apart from the `min(2^K-1, x+y)` metanotation flagged
-under O9.
+byte-identical, `min(2^K-1, x+y)` and `MAX-1` included: both are
+unspaced and therefore mathematical by [FORM-2]'s rendering rule, so
+[O9]'s ruling leaves them untouched.
 
 **[FN-8]** Three sites plus one retention. "Every computation in the block must be an ANF
 [GRAM-9] call to a non-trapping, total operation-table row with effect
@@ -1212,8 +1245,32 @@ A4, C1 as revised; C3 deferred (O2, reviewer-verified on all three
 grounds); O3 uniform annotation-free requires lets (reviewer-recommended
 on the T2 ground: the boundary fact is the final check, not the
 scaffolding); O5 the `=[` attachment stands closed (reviewer-verified:
-`=` is in neither attachment set, `==` cannot arise by attachment); O7
+`=` is in neither attachment set, `==` cannot arise by attachment,
+extended by this repair to `<=`, `>=`, and `!=`); O7
 the empty then-block admitted with the asymmetry stated in ERR-2.
+
+O9 — arithmetic metanotation versus the new operator tokens — is ruled
+(lead, 2026-08-07): the minimal option stands, so the batch restates in
+words only the spots it already edits and leaves every other backticked
+arithmetic occurrence byte-identical; no whole-document metanotation
+change is owed. The reason is recorded as a drafting note in §2, and
+the record differs in one respect from the ruling as first stated. The
+ruling's ground was that mathematical relations are written unspaced
+with single symbols while source spellings are spaced — true of
+[OP-2]'s comparison paragraph, but **false of the [ENT] fragment**,
+which writes its mathematical relations spaced throughout (`a - b <=
+c`, `p + k <= max(T)`, `b - a <= -c - 1`). A spacing rule alone would
+therefore have misread the largest body of collision-prone notation in
+the document, so the note states the discriminator as the two standing
+facts that actually hold: [FORM-2]'s mandatory one-space-each-side
+rendering (which rules out unspaced notation as source) together with
+[GRAM-9]'s one-operation-per-expression rule (which rules out any
+relation carrying both an arithmetic and a relational operator). That
+pair discriminates every backticked arithmetic occurrence in the active
+document except three, on two lines, and those three are exactly the
+ones this batch already restates in words. The ruling's conclusion is
+thus not merely upheld but strengthened: the minimal edit set is
+provably complete rather than a pragmatic trim.
 
 Open (owner ruling needed; drafted with the recommended option):
 
@@ -1237,29 +1294,6 @@ Open (owner ruling needed; drafted with the recommended option):
   `.trap`/`.checked` OPNAME dissolution — now carrying R1 as its named
   discharge condition — and float/enum/bitwise infix (needs
   collision-free spellings).
-- O9 — arithmetic metanotation collides with the new operator tokens.
-  C1 makes `+ - * / %` source operator tokens, and the specification
-  already uses those exact bytes inside backticks as *mathematical*
-  notation, so after this batch a reader cannot tell which is meant.
-  Measured: ten backticked spots — [OP-2]'s `a+b`, `a-b`, `a*b` and
-  its two `iK::MIN / -1`; [OP-8]'s `xor x, -1` and `amt & (width-1)`;
-  [OP-9]'s `n * sizeof(T)`; [FN-4]'s `min(2^K-1, x+y)` and `MAX-1` —
-  plus the unbackticked relation notation of the [ENT] fragment
-  (`a - b <= c`, `t1 - t3 <= c1 + c2`, `s = p ± k`), which is
-  pervasive and also collides with `<=`/`>=`. This is the same class
-  as review V6 (v0.22's bracket metanotation colliding with the new
-  subscript), which was settled by restating the affected sentences in
-  words. **Drafted with the recommended option: fix only where this
-  batch already edits.** Three of the ten sit inside sites this repair
-  rewrites and are stated in words there ([OP-2] site (a) and (e),
-  [OP-9]); the other seven and the whole [ENT] relation notation are
-  left byte-identical, because rewriting them is a large edit to rules
-  the batch does not otherwise touch, and mathematical reading is
-  unambiguous in their contexts (no ENT relation is a source
-  expression). Owner ruling requested on whether that split is the
-  right line, or whether the [ENT] fragment should get a stated
-  metanotation convention in this batch rather than a later one.
-
 - O8 — register-settlement precedent (review F11f): the TYPE-5
   settlement rests on SWEEP's T1 argument, while the register entry
   says `needs_evidence` (writer/codegen comparison currency). The
