@@ -56,8 +56,10 @@ Two structural findings remain surfaced up front:
 > its class; an `if_stmt` `else` with an empty block is rejected (spell
 > the else-free form; the empty then-block is admitted — both follow
 > from the else-free form being the one spelling of the empty
-> alternative), an `else` whose block is exactly one `else`-bearing
-> `if_stmt` must flatten to `else if`, and the canonical layout is
+> alternative), an `else` whose block is exactly one `if_stmt` must
+> flatten to `else if` (universal; the undeliverable `value_if` case is
+> [GIVE-1]'s rejection, on which GRAM-6 forms no candidate), and the
+> canonical layout is
 > multi-line with `} else {` and `} else if … {` join lines, governed
 > solely by [FORM-2]'s dedicated `if` sentence, no one-line form.
 > Respells the hottest integer table operations as infix with modes as
@@ -69,9 +71,11 @@ Two structural findings remain surfaced up front:
 > per expression, and the `expr` grammar left-factored so the decision
 > is strong-LL at one token after the shared atom prefix. `ilt` and
 > `igt` remain named calls (O1). The `if` continuation is an enumerated
-> [ENT-5] merge point, so branch facts join exactly as the match
+> [ENT-5] merge point in the same CFG idiom as `match`, with the empty
+> join defined as the contradictory state for both, so branch facts
+> join exactly as the match
 > spelling joins today. Specification delta: numbered rules +0/-0;
-> twenty-four existing rules modified at forty-four verbatim-anchored
+> twenty-four existing rules modified at forty-six verbatim-anchored
 > modification sites (a site is one contiguous verbatim-anchored
 > replacement; every site in this candidate is anchored — no prose
 > sweeps): FORM-2 (block-bearing list; the sole-governance `if`
@@ -79,30 +83,39 @@ Two structural findings remain surfaced up front:
 > tokens; operator-form munch with the minus/arrow/literal
 > disambiguation; the `infix` node-kind sentence), GRAM-4
 > (annotation-free `let_stmt`; `if_stmt` and `value_if`), GRAM-5
-> (left-factored `expr` with `infix`, `infix_tail`, `infix_op`; call
+> (left-factored `expr` with `infix_tail` and `infix_op`; call
 > targs retained for the classes that keep them), GRAM-6 (rewritten:
-> type-driven conditional forms; flattening and empty-else rules scoped
-> per review), GRAM-7 (rewritten: two `if` node kinds beside the two
+> type-driven conditional forms; the universal flattening mandate with
+> [GIVE-1] ownership of the undeliverable `value_if` case), GRAM-7
+> (rewritten: two `if` node kinds beside the two
 > `match` kinds), GIVE-1 (complete replacement: the derived-delivery
 > rule), GRAM-9 (two sites: infix operands; the forwarding-let
 > parenthetical), TYPE-5 (rewritten: statement-local derivation; the
 > total retained-argument class; boundaries stay fully explicit), OP-1
-> (three sites: op-column respells; infix resolution by exact operator
+> (four sites: row selection reworded off the written argument;
+> op-column respells; infix resolution by exact operator
 > token; `ModeWords` derived from both suffix carriers), OP-2 (two
 > sites: operand-derived selected type replaces the explicit-argument
 > judgment, binary and negation paragraphs), OP-7 (three sites: infix
-> convention; two keyed-on-the-selected-type rewrites), OP-8 (three
-> sites: sat respells; `eeq`/`ene` operand-derived identity), ERR-2
+> convention; two keyed-on-the-selected-type rewrites), OP-8 (two
+> sites plus one retention: sat respells; the contiguous `eeq`/`ene`
+> operand-derived identity; `fneg(finf<T>())` retained), ERR-2
 > (Bool exhaustiveness via `if`, with the empty-then/empty-else
 > asymmetry stated), ERR-3 (full-sentence re-anchor with the derived
-> type), FN-8 (four sites: infix conditions; example; `value_if` named
-> in the exclusion list; clause lets annotation-free), EFF-2 (traps
-> contribution names bare infix arithmetic), DIAG-1 (two sites: the
+> type), FN-8 (three sites plus one retention: infix conditions;
+> example; `value_if` named
+> in the exclusion list; clause lets annotation-free retained), EFF-2
+> (traps
+> contribution names bare infix arithmetic), DIAG-1 (three sites:
+> attribution row 2's position guard and token list gain the infix
+> operand; the
 > typed-call location paragraph replaced for the retained-argument and
-> infix classes; attribution row 2 gains operator-token starts),
+> infix classes),
 > DIAG-3 (bare-operator overflow record), ENT-2 (value_if joins the
 > term-root forms), ENT-3 (seven sites: S1 origin and establishment;
-> S4/S5/S6/S7/S9 respells), ENT-5 (the `if`-continuation join), ENT-6
+> S4/S5/S6/S7/S9 respells), ENT-5 (the branch-continuation join in the
+> CFG idiom, with the empty join defined for `match` and `if` alike),
+> ENT-6
 > (fallback respelled), EX-1 (complete worked-example rewrite) — plus
 > three R3-PROVISIONAL register settlements (match-only conditionals
 > and no-if; prefix arithmetic surface; the interior annotation
@@ -111,16 +124,22 @@ Two structural findings remain surfaced up front:
 > (`+ - * / %`, `== != <= >=`, and eleven suffixed operator forms);
 > operation-table op-column respells 20 spellings, shrinking
 > `DotlessOperationNames` and `ReservedLowerNames` by the four dotless
-> comparisons `ieq` `ine` `ile` `ige`; grammar productions +5
-> (`if_stmt`, `value_if`, `infix`, `infix_tail`, `infix_op`; total 70),
+> comparisons `ieq` `ine` `ile` `ige`; grammar productions +4
+> (`if_stmt`, `value_if`, `infix_tail`, `infix_op`; total 69 — the
+> `infix` node kind is carried by `infix_tail`'s 1:1 mapping, not a
+> phantom production),
 > with `stmt`, `let_stmt`, and `expr` modified; exception clauses
 > +0/-0; sections +0. The accepted-program set changes as one canonical
-> respelling plus three deliberate narrowings: the Bool-scrutinee
-> `match` is rejected (spell `if`); a value initializer with an empty
+> respelling plus two deliberate narrowings: the Bool-scrutinee
+> `match` is rejected (spell `if`), and a value initializer with an
+> empty
 > delivery set is rejected (spell the statement form and drop the
-> binding); and delivery-type disagreement is rejected at the second
-> divergent `give` (previously a per-give mismatch against the deleted
-> annotation) — while the error classes that lived only in deleted
+> binding). Delivery-type disagreement is a re-citation, not a
+> narrowing: a v0.22-accepted program's `give`s each matched the one
+> written annotation and therefore agree with each other, so none is
+> newly rejected there, while `give`s that agreed with each other
+> against a wrong annotation join the widening below. The error
+> classes that lived only in deleted
 > bytes die with their bytes. Every operation's semantics, every trap,
 > every discharge judgment, and the claim lifecycle are unchanged; bare
 > infix arithmetic is byte-for-byte today's `.trap` mode under a
@@ -156,7 +175,6 @@ both an atom expression and an infix expression):
 
 ```
 expr           := atom infix_tail? | call | construct
-infix          := atom infix_tail
 infix_tail     := infix_op atom
 infix_op       := "+" | "+wrap" | "+checked" | "+sat"
                 | "-" | "-wrap" | "-checked" | "-sat"
@@ -165,10 +183,12 @@ infix_op       := "+" | "+wrap" | "+checked" | "+sat"
                 | "==" | "!=" | "<=" | ">="
 ```
 
-`infix` is the node-kind production: the parser recognizes the factored
-`expr` arm, and a selected `infix_tail` reduces the atom and tail to one
-`infix` node, preserving [GRAM-1]'s 1:1 production-to-node mapping
-(stated as one GRAM-1 sentence, §3). `call := callee targs? …` is
+`infix_tail` maps 1:1 to the `infix` node kind: a selected tail forms
+one `infix` node spanning the complete `expr` — the atom and the tail —
+so [GRAM-1]'s production-to-node mapping stays 1:1 with no phantom
+production and no exception clause [META-3] (stated as one GRAM-1
+sentence, §3; review NEW-1 — the honest production total is 69, and the
+verifier count is an owner-approved number, so it must be exact). `call := callee targs? …` is
 retained byte-identical — `targs` remains grammatical on every call and
 the checker enforces the per-callee-class policy [TYPE-5, OP-2]:
 required for user-generic calls, system-operation region arguments, and
@@ -219,10 +239,13 @@ were checked for pairwise SELECT-set disjointness by a scratch script
 (do_not_scan, deleted after use) on 2026-08-07 — all seven decisions
 pass, and the two expr-critical positions of the rewritten [EX-1]
 (`match deref(p) +checked 2_i32 {` and `if ilt(x, 0_i32) {`) trace
-through the factored productions and parse. Verifier expectations:
-fail-closed against the v0.22 tables (grammar-extending), recorded at
-proposal; post-extension, productions 65 + 5 = 70; exact terminal
-counts established by the grammar-path task.
+through the factored productions and parse. Re-run after the NEW-1
+production change: the dropped `infix` production appeared on no
+right-hand side, so every decision row is identical, and all seven
+pass again (same-day re-run, script recreated and deleted). Verifier
+expectations: fail-closed against the v0.22 tables (grammar-extending),
+recorded at proposal; post-extension, productions 65 + 4 = 69; exact
+terminal counts established by the grammar-path task.
 
 ## 3. Modified rules (complete replacement deltas, verbatim anchors)
 
@@ -248,9 +271,9 @@ through `{` on one line."
 two compound punctuation tokens." becomes "`->`, `=>`, `==`, `!=`,
 `<=`, and `>=` are the six compound punctuation tokens."; the
 operator-form clause is added after the numeric-form clause exactly as
-§2 states it; and one node-mapping sentence is added: "An `expr` that
-selects `infix_tail` forms one `infix` node over the atom and tail; the
-`infix` production names that node kind, so the 1:1
+§2 states it; and one node-mapping sentence is added: "`infix_tail` maps to the
+`infix` node kind: a selected tail forms one `infix` node spanning the
+complete `expr` — the atom and the tail — so the 1:1
 production-to-node mapping is preserved by the factored recognition."
 
 **[GRAM-4]** As §2: `let_stmt` loses `":" mode type` and gains the
@@ -278,12 +301,15 @@ is `match` on prelude `Bool` [PRE-1]; a conditional value is a
 > type `own Bool` under exactly the [OP-5] condition judgment, TYPE-7
 > exclusivity included; every other condition failure cites GRAM-6 at
 > the condition `expr` node. An `if_stmt` `else` whose block is empty
-> is a hard error citing GRAM-6 (spell the else-free `if`; a
-> `value_if`'s undelivering else is [GIVE-1]'s rejection, not this
-> one). An `else` whose block contains exactly one `else`-bearing
-> `if_stmt` and nothing else is a hard error citing GRAM-6 (spell
-> `else if`); an else-free nested `if_stmt` stays in block form, whose
-> flattening would change which paths continue. A conditional value is
+> is a hard error citing GRAM-6 at that `if_stmt` node (spell the
+> else-free `if`; a `value_if`'s undelivering else is [GIVE-1]'s
+> rejection, not this one). An `else` whose block contains exactly one
+> `if_stmt` and nothing else is a hard error citing GRAM-6 at that
+> nested `if_stmt` node (spell `else if`); in a `value_if` whose else
+> block is exactly one else-free `if_stmt`, the branch cannot deliver,
+> [GIVE-1] owns the rejection, and GRAM-6 forms no candidate there, so
+> the flattening fix is never demanded where the chain form could not
+> be spelled. A conditional value is
 > a `let`-initializer `match` or `if` [GRAM-7, GIVE-1]; iteration is
 > `loop` + `break`.
 
@@ -328,8 +354,8 @@ rule, per ruling O4 and review F4/F5):
 > initializer is a hard error citing GIVE-1 at the later `give_stmt`
 > node — derivation is agreement over the closed delivery set, never a
 > join, widening, or common-supertype rule. A value initializer whose
-> delivery set is empty — every arm or branch leaves by `return`, by
-> `break` to an enclosing loop, or by `propagate`'s error edge — is a
+> delivery set is empty — every arm or branch leaves by `return` or by
+> `break` to an enclosing loop — is a
 > hard error citing GIVE-1 at the `let_stmt` node; the mechanical fix
 > is the statement form (`match_stmt` or `if_stmt`) with the binding
 > dropped. On every control path an arm or branch terminates in exactly
@@ -401,7 +427,14 @@ binding."
 > [GRAM-10], call argument names [GRAM-11] — and are deleted exactly
 > where reconstruction is unique and no transposition risk exists.
 
-**[OP-1]** Three sites. (i) The table's op column respells twenty
+**[OP-1]** Four sites. (0) The row-selection sentence "Later typed
+operation checking uses the written type arguments and operand domains
+to select the applicable row within the resolved family." becomes
+"Later typed operation checking uses the operand domains and, for the
+retained-argument operations [TYPE-5], the written arguments, to
+select the applicable row within the resolved family." (review NEW-2 —
+the same keyed-on-the-deleted-argument defect class as F10, one rule
+upstream of the OP-7/OP-8 fixes). (i) The table's op column respells twenty
 spellings in place: `iadd.wrap isub.wrap imul.wrap` become
 `+wrap -wrap *wrap`; `iadd.trap isub.trap imul.trap` become `+ - *`;
 `iadd.checked isub.checked imul.checked` become `+checked -checked
@@ -465,7 +498,7 @@ checked from the explicit type argument before `eeq`/`ene` lowering"
 becomes "Nominal enum identity is likewise checked from the
 operand-derived selected type before `eeq`/`ene` lowering".
 
-**[OP-8]** Three sites. "`iadd.sat`/`isub.sat` are
+**[OP-8]** Two sites plus one retention. "`iadd.sat`/`isub.sat` are
 `llvm.sadd.sat`/`uadd.sat` or `ssub.sat`/`usub.sat` clamping to T's
 range; `imul.sat` widens, multiplies, and clamps" becomes
 "`+sat`/`-sat` are `llvm.sadd.sat`/`uadd.sat` or `ssub.sat`/`usub.sat`
@@ -480,7 +513,9 @@ complement." "Both operands and the explicit type argument must have
 that exact T; representation equality never permits cross-enum
 comparison." becomes "Both operands must have that exact T, derived by
 [OP-2]'s agreement rule; representation equality never permits
-cross-enum comparison." The `fneg(finf<T>())` sentence is retained
+cross-enum comparison." The `eeq` and both-operands sentences are
+adjacent in v0.22 and form one contiguous site. The `fneg(finf<T>())`
+sentence is retained
 byte-identical — `finf` keeps its type argument in the
 retained-argument class [TYPE-5].
 
@@ -500,7 +535,7 @@ and the enclosing function's return type `own Result<U, E>` (same E —
 no conversions, TYPE-4); x's derived mode and type are `own T`
 [TYPE-5]." The rest of the rule is byte-identical.
 
-**[FN-8]** Four sites. "Every computation in the block must be an ANF
+**[FN-8]** Three sites plus one retention. "Every computation in the block must be an ANF
 [GRAM-9] call to a non-trapping, total operation-table row with effect
 `pure`; the final check condition is either a Bool clause atom or one
 such call returning Bool." becomes "Every computation in the block must
@@ -523,7 +558,13 @@ contains any trapping-mode operation — a bare infix arithmetic
 operator (`+`, `-`, `*`, `/`, `%`) or a `.trap` OPNAME — `check`,
 `claim`, or a call".
 
-**[DIAG-1]** Two sites. The typed-call location paragraph "For a typed
+**[DIAG-1]** Three sites. Attribution row 2's position guard "an `atom`
+occurrence in `atom_list`, `fieldinit`, or the subscript offset"
+becomes "an `atom` occurrence in `atom_list`, `fieldinit`, an `infix`
+operand, or the subscript offset" — without this the token-list
+addendum below is unreachable (review F8b: the guard admits the
+occurrence, the token list then fires, and `let x = a + b * c;`
+attributes at `*`). The typed-call location paragraph "For a typed
 call to an [OP-2] operation, a missing explicit type argument uses
 `SourceNode` at the `call` node and that node's complete source
 extent. A wrong type-argument kind, count, or domain, or a missing
@@ -601,14 +642,22 @@ becomes "For `let x = c[i];`" (x's derived type is the element type).
 **[ENT-5]** One site. Before "The continuation of a `loop_stmt` is the
 join over the states on its `break` edges", insert: "At the
 continuation of an `if_stmt` or `value_if`, the fact state is the join
-of the then-block exit edge and the else-block exit edge — or, for an
-else-free `if_stmt`, the false edge — each taken after that edge's
+of the states on every branch exit edge reaching that continuation on
+the conservative structural graph [FN-1] — for an else-free `if_stmt`,
+the false edge is such an edge — each taken after that edge's
 scope-exit kills and then closed [ENT-4]; a branch every path of which
 leaves by `return`, `break` to an enclosing loop, or `propagate`'s
-error edge contributes nothing there." (Review F1: without this, the
-`if` continuation is either an undefined merge point or a
-fact-flow-through that deletes a bounds check; the join makes the `if`
-spelling behave exactly as the `match` spelling it replaces.)
+error edge contributes nothing there. An empty join — no arm or branch
+exit edge reaches the continuation — is the contradictory
+all-derivable state [ENT-4], as for a break-free loop; this empty-join
+clause governs `match_stmt` and `value_match` continuations
+identically." (Review F1 and its residues: without the join, the `if`
+continuation is either an undefined merge point or a fact-flow-through
+that deletes a bounds check; the CFG idiom covers chains, else-free
+forms, and nesting without enumeration — the else-position `if` of a
+chain contributes its branch exit edges directly; and the empty-join
+clause closes the hole v0.22 inherited for all-arms-return `match`
+continuations rather than duplicating it for `if`.)
 
 **[ENT-6]** The fallback "in canonical ANF, one `let` binding
 `len<T>(P)` followed by one `claim` on, or `match` over, the admitted
@@ -670,21 +719,26 @@ match (GRAM-7)" remains.
 
 ## 4. Acceptance-set delta
 
-One canonical respelling plus three deliberate narrowings. Respelling:
+One canonical respelling plus two deliberate narrowings. Respelling:
 every existing program's canonical bytes change and old bytes reject
 under FORM-1 — migrated mechanically (§5). Widening: the error classes
 that lived only in deleted bytes die with them (a wrong let annotation,
-a wrong or missing value-op type argument — unwritable states now).
-Narrowings: (1) a Bool-scrutinee `match` is rejected (spell `if`) — the
+a wrong or missing value-op type argument — unwritable states now,
+including `give`s that agreed with each other against a wrong
+annotation). Narrowings: (1) a Bool-scrutinee `match` is rejected
+(spell `if`) — the
 type-driven one-form-per-class rule T3 requires; (2) a value
 initializer with an empty delivery set — every arm or branch leaves by
-`return`, `break`, or `propagate`'s error edge — is rejected at the
+`return` or `break` — is rejected at the
 `let_stmt` node (review F4; v0.22 accepts it with the annotation
 supplying the never-read binding's type; migration: spell the
-statement form and drop the binding); (3) delivery-type disagreement is
-rejected at the second divergent `give` (previously a per-give
-mismatch against the deleted annotation — same programs rejected,
-different citation and location). Every operation's semantics, every
+statement form and drop the binding). Delivery-type disagreement is a
+re-citation, not a narrowing (review NEW-4): a v0.22-accepted
+program's `give`s each matched the one written annotation and
+therefore agree with each other, so the agreement rule newly rejects
+none — only the citation and location change (GIVE-1 at the second
+divergent `give`, where TYPE-5 at each mismatching `give` stood
+before). Every operation's semantics, every
 trap, every discharge judgment, and the claim lifecycle are unchanged;
 the `if` continuation joins facts exactly as the `match` continuation
 it respells [ENT-5].
@@ -693,7 +747,10 @@ it respells [ENT-5].
 against the respelled v0.22 corpus, canonical `.wf` sources only, 399
 files excluding the worktree mirror)
 
-- Deleted-class type arguments: **1357** call sites (the first draft's
+- Deleted-class type arguments: **1357** occurrences on 1356 source
+  lines — exactly one line carries two deleted-class calls, which
+  reconciles the reviewer's line-oriented 1356 with this occurrence
+  count (the first draft's
   1260 under-counted — it omitted the float family and `box_new`; this
   count is the complete deleted class: every table operation except
   the six retained). Retained-class sites, untouched: **101**
@@ -707,8 +764,12 @@ files excluding the worktree mirror)
   and 47 `iadd.trap` (reviewer-reproduced), plus the `== != <= >=`
   sites; 56 `ilt`/`igt` sites keep named calls under O1, losing only
   their type arguments.
-- `check` statements: 404 — untouched (C3 open, O2; the reviewer's 409
-  includes five `check` occurrences inside strings).
+- `check` statements: **389** — untouched (C3 open, O2). Measured as
+  line-leading `check` statements, which [FORM-2]'s line-bearing rule
+  makes exact, and confirmed by the `else trap` count, unique to
+  `check_stmt`; the twenty additional loose-grep occurrences live
+  inside `doc` strings and trap messages (both earlier figures — the
+  draft's 404 and the review's 409 — were loose counts).
 - Empty-delivery-set value initializers (narrowing 2): any corpus
   instance is respelled to the statement form in the same migration;
   none is expected (the shape is pointless), and the migration pass
