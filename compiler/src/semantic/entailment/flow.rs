@@ -13,8 +13,7 @@ use std::collections::HashSet;
 use super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType,
-    IntegerType,
+    CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::state::{FactState, Relation, close, join};
 use super::term::{PlaceRoot, PlaceTerm, TermId, TermKind, TermTable, integer_value};
@@ -1252,16 +1251,10 @@ impl Analyzer<'_, '_> {
             CheckedExpression::DerefAddressed { binding, .. } => {
                 format!("deref({})", self.binding_name(*binding))
             }
-            CheckedExpression::ArrayIndex {
-                root,
-                element_type,
-                offset,
-                ..
-            } => {
+            CheckedExpression::ArrayIndex { root, offset, .. } => {
                 let base = self.array_root_place(root);
                 format!(
-                    "index<{}>({}, {})",
-                    type_name(*element_type, self.context),
+                    "{}[{}]",
                     self.render_place(&base),
                     self.render_expression(offset)
                 )
@@ -1273,8 +1266,7 @@ impl Analyzer<'_, '_> {
                     fields: root.fields.clone(),
                 };
                 format!(
-                    "index<{}>({}, {})",
-                    type_name(root.element.ty(), self.context),
+                    "{}[{}]",
                     self.render_place(&base),
                     self.render_expression(offset)
                 )
@@ -1286,8 +1278,7 @@ impl Analyzer<'_, '_> {
                     fields: Vec::new(),
                 };
                 format!(
-                    "index<{}>({}, {})",
-                    type_name(root.element.ty(), self.context),
+                    "{}[{}]",
                     self.render_place(&base),
                     self.render_expression(offset)
                 )
@@ -1366,23 +1357,5 @@ const fn integer_type_name(ty: IntegerType) -> &'static str {
         IntegerType::U16 => "u16",
         IntegerType::U32 => "u32",
         IntegerType::U64 => "u64",
-    }
-}
-
-fn type_name(ty: CheckedType, context: &EntailmentContext<'_>) -> String {
-    match ty {
-        CheckedType::Unit => "unit".to_owned(),
-        CheckedType::Bool => "Bool".to_owned(),
-        CheckedType::Integer(ty) => integer_type_name(ty).to_owned(),
-        CheckedType::Float(ty) => match ty {
-            FloatType::F32 => "f32".to_owned(),
-            FloatType::F64 => "f64".to_owned(),
-        },
-        CheckedType::Nominal(id) => context
-            .nominals
-            .get(id.0 as usize)
-            .map(|nominal| nominal.name.clone())
-            .unwrap_or_else(|| "?".to_owned()),
-        _ => "?".to_owned(),
     }
 }

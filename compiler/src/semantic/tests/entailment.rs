@@ -43,10 +43,10 @@ fn a_dominating_branch_discharges_the_guarded_index_and_not_the_other_arm() {
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   match ilt<u64>(i, 4_u64) {
     True() => {
-      return index<i32>(values, i);
+      return values[i];
     }
     False() => {
-      return index<i32>(values, i);
+      return values[i];
     }
   }
 }
@@ -66,11 +66,11 @@ fn main() -> own unit pure {
 fn a_constant_offset_discharges_against_a_const_array_and_a_too_large_one_reports() {
     let source = br#"const count: u64 = 4_u64;
 
-const table: array<u8, count> = [10_u8, 20_u8, 30_u8, 40_u8];
+const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn read() -> own u8 traps {
-  let inside: own u8 = index<u8>(table, 2_u64);
-  let outside: own u8 = index<u8>(table, 9_u64);
+  let inside: own u8 = table[2_u64];
+  let outside: own u8 = table[9_u64];
   return inside;
 }
 
@@ -100,7 +100,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   let flag: own Bool = ilt<u64>(i, 4_u64);
   match flag {
     True() => {
-      return index<i32>(values, i);
+      return values[i];
     }
     False() => {
       return 0_i32;
@@ -124,7 +124,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   set i = iadd.wrap<u64>(i, 1_u64);
   match flag {
     True() => {
-      return index<i32>(values, i);
+      return values[i];
     }
     False() => {
       return 0_i32;
@@ -162,7 +162,7 @@ fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps
     True() => {
       match ilt<u64>(p.count, 4_u64) {
         True() => {
-          return index<i32>(values, i);
+          return values[i];
         }
         False() => {
           return 0_i32;
@@ -198,7 +198,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
           return 0_i32;
         }
         False() => {
-          return index<i32>(values, i);
+          return values[i];
         }
       }
     }
@@ -226,7 +226,7 @@ fn a_contradictory_state_discharges_every_obligation() {
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   match ilt<u64>(i, 0_u64) {
     True() => {
-      return index<i32>(values, 9_u64);
+      return values[9_u64];
     }
     False() => {
       return 0_i32;
@@ -267,7 +267,7 @@ fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps
       match ilt<u64>(p.count, 4_u64) {
         True() => {
           eat(p: move p);
-          return index<i32>(values, i);
+          return values[i];
         }
         False() => {
           return 0_i32;
@@ -308,9 +308,9 @@ fn read(values: own array<i32, count>, p: own Pair) -> own i32 traps {
   match ilt<u64>(p.count, 4_u64) {
     True() => {
       set p.other = 9_u64;
-      let kept: own i32 = index<i32>(values, p.count);
+      let kept: own i32 = values[p.count];
       set p.count = 9_u64;
-      let lost: own i32 = index<i32>(values, p.count);
+      let lost: own i32 = values[p.count];
       return kept;
     }
     False() => {
@@ -334,7 +334,7 @@ fn main() -> own unit pure {
 fn a_callee_writing_through_a_unique_borrow_kills_facts_on_that_place() {
     let source = br#"const count: u64 = 4_u64;
 
-fn bump ['w](p: &uniq 'w u64) -> own unit writes('w) {
+fn bump['w](p: &uniq 'w u64) -> own unit writes('w) {
   set deref(p) = 9_u64;
   return unit;
 }
@@ -345,7 +345,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       region 'w {
         bump<'w>(p: &uniq 'w i);
       }
-      return index<i32>(values, i);
+      return values[i];
     }
     False() => {
       return 0_i32;
@@ -368,7 +368,7 @@ fn main() -> own unit pure {
 fn a_callee_with_no_writes_row_kills_nothing() {
     let source = br#"const count: u64 = 4_u64;
 
-fn peek ['r](p: &'r u64) -> own u64 reads('r) {
+fn peek['r](p: &'r u64) -> own u64 reads('r) {
   return deref(p);
 }
 
@@ -378,7 +378,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       region 'r {
         let seen: own u64 = peek<'r>(p: &'r i);
       }
-      return index<i32>(values, i);
+      return values[i];
     }
     False() => {
       return 0_i32;
@@ -421,8 +421,8 @@ fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) ->
       }
     }
   }
-  let in_wide: own i32 = index<i32>(wide, i);
-  let in_narrow: own i32 = index<i32>(narrow, i);
+  let in_wide: own i32 = wide[i];
+  let in_narrow: own i32 = narrow[i];
   return in_wide;
 }
 
@@ -449,7 +449,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       return 0_i32;
     }
   }
-  return index<i32>(values, i);
+  return values[i];
 }
 
 fn main() -> own unit pure {
@@ -476,7 +476,7 @@ fn read(values: own array<i32, count>, pick: own Bool) -> own i32 traps {
       let j: own u64 = 0_u64;
       match ilt<u64>(j, 4_u64) {
         True() => {
-          return index<i32>(values, j);
+          return values[j];
         }
         False() => {
           return 0_i32;
@@ -485,7 +485,7 @@ fn read(values: own array<i32, count>, pick: own Bool) -> own i32 traps {
     }
     False() => {
       let j: own u64 = 9_u64;
-      return index<i32>(values, j);
+      return values[j];
     }
   }
 }
@@ -517,7 +517,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       }
     }
   }
-  return index<i32>(values, i);
+  return values[i];
 }
 
 fn main() -> own unit pure {
@@ -550,7 +550,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       }
     }
   }
-  return index<i32>(values, i);
+  return values[i];
 }
 
 fn main() -> own unit pure {
@@ -580,7 +580,7 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       }
     }
   }
-  return index<i32>(values, i);
+  return values[i];
 }
 
 fn main() -> own unit pure {
@@ -601,13 +601,13 @@ fn give_edges_join_at_the_value_match_continuation_with_arm_facts_dead() {
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   let picked: own i32 = match ilt<u64>(i, 4_u64) {
     True() => {
-      give index<i32>(values, i);
+      give values[i];
     }
     False() => {
       give 0_i32;
     }
   }
-  let after: own i32 = index<i32>(values, i);
+  let after: own i32 = values[i];
   return picked;
 }
 
@@ -651,7 +651,7 @@ fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> own Result
   match ilt<u64>(i, 4_u64) {
     True() => {
       let v: own u64 = propagate source(flag: flag);
-      let a: own i32 = index<i32>(values, i);
+      let a: own i32 = values[i];
       return Ok(value: a);
     }
     False() => {
@@ -687,9 +687,9 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
       return 0_i32;
     }
   }
-  let before: own i32 = index<i32>(values, i);
+  let before: own i32 = values[i];
   loop @l {
-    let inside: own i32 = index<i32>(values, i);
+    let inside: own i32 = values[i];
     set i = iadd.wrap<u64>(i, 1_u64);
     match ilt<u64>(i, 4_u64) {
       True() => {
@@ -726,10 +726,10 @@ fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
     }
   }
   loop @l {
-    let inside: own i32 = index<i32>(values, i);
+    let inside: own i32 = values[i];
     break @l;
   }
-  return index<i32>(values, i);
+  return values[i];
 }
 
 fn main() -> own unit pure {
@@ -756,7 +756,7 @@ struct Holder {
 }
 
 fn read(h: own Holder, i: own u64) -> own u8 traps {
-  return index<u8>(h.data, i);
+  return h.data[i];
 }
 
 fn main() -> own unit pure {
@@ -776,7 +776,7 @@ fn a_nested_index_offset_is_no_term_and_renders_its_canonical_bytes() {
 fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> own u8 traps {
   match ilt<u64>(j, 4_u64) {
     True() => {
-      return index<u8>(lens, index<u64>(order, j));
+      return lens[order[j]];
     }
     False() => {
       return 0_u8;
@@ -800,7 +800,41 @@ fn main() -> own unit pure {
     );
     assert_eq!(
         outcomes[1].residual.as_deref(),
-        Some("index<u64>(order, j) < len(lens)")
+        Some("order[j] < len(lens)")
+    );
+}
+
+#[test]
+fn a_buffer_or_slice_offset_renders_the_same_subscript_spelling() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn from_buffer(values: own array<u8, count>) -> own u8 allocates(heap), traps {
+  let b: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
+  return values[b[0_u64]];
+}
+
+fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> own u8 reads('r), traps {
+  return values[order[0_u64]];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let buffer = obligations(source, "from_buffer");
+    assert_eq!(buffer.len(), 2, "inner offset first, then the outer site");
+    assert_eq!(buffer[0].residual.as_deref(), Some("0_u64 < len(b)"));
+    assert_eq!(
+        buffer[1].residual.as_deref(),
+        Some("b[0_u64] < len(values)")
+    );
+
+    let slice = obligations(source, "from_slice");
+    assert_eq!(slice.len(), 2, "inner offset first, then the outer site");
+    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len(order)"));
+    assert_eq!(
+        slice[1].residual.as_deref(),
+        Some("order[0_u64] < len(values)")
     );
 }
 
@@ -810,7 +844,7 @@ fn a_buffer_obligation_stays_undischarged_without_the_length_fact_sources() {
     // land, a buffer bound is honestly underivable [ENT-1].
     let source = br#"fn read() -> own u8 allocates(heap), traps {
   let b: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
-  return index<u8>(b, 0_u64);
+  return b[0_u64];
 }
 
 fn main() -> own unit pure {
@@ -830,11 +864,11 @@ fn set_targets_carry_the_same_obligation_in_target_position() {
 fn write(values: own array<u16, count>, i: own u64) -> own u16 traps {
   match ilt<u64>(i, 4_u64) {
     True() => {
-      set index<u16>(values, i) = 9_u16;
+      set values[i] = 9_u16;
       return 1_u16;
     }
     False() => {
-      set index<u16>(values, i) = 9_u16;
+      set values[i] = 9_u16;
       return 0_u16;
     }
   }

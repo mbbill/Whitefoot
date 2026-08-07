@@ -73,9 +73,8 @@ impl EntailmentContext<'_> {
 /// [ENT-6] disposition of one bounds obligation, judged at its source node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ObligationOutcome {
-    /// The `index` node the obligation is attached to, by its trap record's
-    /// path — one record per subscript, the per-site anchor the v0.22
-    /// candidate keeps.
+    /// The subscript's `psuffix` node the obligation is attached to, by its
+    /// trap record's path — one record per subscript in a chain [ENT-6].
     pub(crate) node_path: NodePath,
     /// The closed fact state at the node derives the normalized relation.
     pub(crate) discharged: bool,
