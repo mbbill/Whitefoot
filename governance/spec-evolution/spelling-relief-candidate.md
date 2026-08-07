@@ -19,6 +19,33 @@ outside the reported list and are load-bearing: [FN-1]'s conservative
 structural control graph gives `if_stmt` and a `value_if` `let` no edges
 at all, and [OWN-5]'s slice-join prohibition is keyed on a declared type
 A3 deletes and reaches only `value_match`.
+
+Seventh sweep pattern (2026-08-07). The six patterns above are lexical:
+each keys on a spelling, a production form, or a node-kind enumeration.
+Normative prose that names a deleted construct *in words* — "explicit
+type argument", "every binding states its exact type", "the base place's
+already-stated type", "one comparison call" — carries none of those
+bytes and is unreachable from any of them. That class was swept
+separately (§7), against all four constructs this batch deletes: the
+written type argument, the `let` annotation, the Bool-scrutinee `match`,
+and — the one an annotation-focused probe forgets — the *call spelling*
+of the ten families C1 respells as infix.
+
+It found three further sites, [OP-4], [SYS-13], and [OWN-13], and two
+call-spelling anchor extensions that add no site, [ENT-3] S4 and
+[DIAG-3]. One of those, [ENT-3] S4, is an unlisted narrowing on the
+[FN-1] scale rather than a characterization defect: S4 fires only on
+"one comparison call", so after C1 no `requires` prologue establishes
+its entry fact and every dependent obligation is rejected under [OP-4]
+(62 corpus files carry `requires` blocks). It also found the one
+defect in this candidate's own text: [OP-2] site (g) retained a mandate
+that the FN-2 missing-type-argument judgment applies, after site (f)
+deleted the only sentence defining it — with a third such FN-2 naming
+carried into [DIAG-1]'s own replacement text. It cleared, by inspection
+of the active file, three sites reported to exist and absent from
+v0.22 — a [TYPE-4] `let` judgment, an [OWN-1] declared type, and a
+[STOR-1] declared binding type (§7).
+
 This document is the complete spelling-relief delta against the exact text
 of the active `spec/kernel-spec-v0.22.md` (installed 817a8a7). Authority:
 `research/investigations/spelling-relief/SWEEP.md`, implementing its A and
@@ -89,10 +116,15 @@ Two structural findings remain surfaced up front:
 > join defined as the contradictory state for both, so branch facts
 > join exactly as the match
 > spelling joins today. Specification delta: numbered rules +0/-0;
-> thirty-one existing rules modified at sixty-one verbatim-anchored
+> thirty-four existing rules modified at sixty-four verbatim-anchored
 > modification sites (a site is one contiguous verbatim-anchored
 > replacement; every site in this candidate is anchored — no prose
-> sweeps): FORM-2 (block-bearing list; the sole-governance `if`
+> sweeps. The count is of anchor/replacement pairs in §3, not of delta
+> line items: a reviewer counting the pairs reaches sixty-four, and a
+> site whose replacement edits several sentences of one contiguous
+> paragraph — [OP-2] (b) two, [OP-2] (g) three, [ENT-3] S4 two,
+> [DIAG-3] two — is still one site):
+> FORM-2 (block-bearing list; the sole-governance `if`
 > rendering sentence; value-if prefix line), FORM-3 (the OPNAME
 > example respelled to a surviving OPNAME), GRAM-1 (four sites: six
 > compound
@@ -110,7 +142,10 @@ Two structural findings remain surfaced up front:
 > parenthetical), TYPE-5 (rewritten: statement-local derivation; the
 > total retained-argument class; boundaries stay fully explicit),
 > OWN-5 (the slice-valued-join prohibition rekeyed to the derived
-> delivery type and extended to `value_if`), STOR-2 (`box_new` loses
+> delivery type and extended to `value_if`), OWN-13 (the value-initializer
+> ownership sentence rekeyed off the deleted `let` annotation and
+> extended to `value_if`, keeping its T1 single-move argument),
+> STOR-2 (`box_new` loses
 > its argument), STOR-5 (the region-bearing-content substitution
 > sentence, whose `box_new` half loses the `targ` its diagnostic was
 > anchored at), OP-1
@@ -123,7 +158,9 @@ Two structural findings remain surfaced up front:
 > respelled infix; the negation paragraph de-argumented; the div/rem
 > mode clause named off the deleted `.trap`/`.checked` spellings;
 > operand-derived selected type replaces the explicit-argument
-> judgment, binary and negation paragraphs), OP-7 (three sites: infix
+> judgment, binary and negation paragraphs), OP-4 (the subscript
+> element-type derivation re-keyed off the base place's "already-stated"
+> type), OP-7 (three sites: infix
 > convention; two keyed-on-the-selected-type rewrites), OP-8 (two
 > sites plus one retention: sat respells; the contiguous `eeq`/`ene`
 > operand-derived identity; `fneg(finf<T>())` retained), OP-9
@@ -143,10 +180,14 @@ Two structural findings remain surfaced up front:
 > attribution row 2's position guard and token list gain the infix
 > operand; the
 > typed-call location paragraph replaced for the retained-argument and
-> infix classes),
-> DIAG-3 (bare-operator overflow record), ENT-2 (value_if joins the
+> infix classes, its closing citation re-keyed to the callee's class
+> because [OP-2] no longer selects FN-2),
+> DIAG-3 (bare-operator overflow record, with the `node_path`
+> enumeration above it admitting the `infix` node), ENT-2 (value_if
+> joins the
 > term-root forms), ENT-3 (seven sites: S1 origin and establishment;
-> S4/S5/S6/S7/S9 respells), ENT-5 (the branch-continuation join in the
+> S4 re-keyed so a requires prologue spelled infix still establishes
+> its entry fact; S5/S6/S7/S9 respells), ENT-5 (the branch-continuation join in the
 > CFG idiom, with the empty join defined for `match` and `if` alike),
 > ENT-6
 > (fallback respelled), EX-1 (complete worked-example rewrite) — plus
@@ -593,6 +634,48 @@ makes an else-position `value_if` part of its chain rather than a
 separate initializer, so a chain reports once at the outermost
 `value_if`.
 
+**[OWN-13]** One site (seventh pattern, §7). The value-initializer
+ownership sentence "A `let`-initializer `match` binds its value from arm
+`give`s [GIVE-1]; scrutinee treatment and binder-mode derivation are
+unchanged, and each arm delivers a value of the `let`'s declared mode and
+type, so on the taken arm an `own` result is moved exactly once (no
+double-move; T1 preserved)." is replaced:
+
+> A value initializer — a `let`-initializer `match` or `if` — binds its
+> value from its arm or branch `give`s [GIVE-1]; scrutinee treatment and
+> binder-mode derivation are unchanged, and each delivering arm or branch
+> delivers a value of the binding's derived mode and type [GIVE-1,
+> TYPE-5], so on the taken arm or branch an `own` result is moved exactly
+> once (no double-move; T1 preserved).
+
+Two defects in one sentence, one from A3 and one from A4, in a rule that
+appeared on no earlier list. "the `let`'s declared mode and type" is the
+only occurrence of `declared mode` in the active document and names
+exactly the annotation A3 deletes, so the T1 no-double-move argument —
+the reason the sentence exists — rests on a construct this batch
+removes. The replacement rests it on the derived delivery type instead,
+which is the same value by construction: [GIVE-1] derives the binding's
+mode and type as the one exact mode and type every delivering `give`
+shares, so "a value of the binding's derived mode and type" is what each
+delivering arm or branch produces, and the single-move conclusion is
+unchanged. Second, exactly as at [OWN-5], the sentence names only the
+`match` spelling, so after A4 a `value_if`'s delivered value has no
+stated ownership treatment at all. Both halves are respelling-neutral:
+the same programs move the same values exactly once in either spelling.
+
+This rule escaped patterns 5 and 6 because it writes "`let`-initializer
+`match`" in words rather than as the node kind `value_match`, so a
+node-kind enumeration sweep cannot reach it, and it escaped pattern 4
+because it carries no `let IDENT: mode` form. Every other [OWN-13]
+sentence is byte-identical, the closing "arm-result region join"
+PROVISIONAL note included: that phrase labels the judgment stated in the
+sentence before it, which is already written node-kind-neutrally ("A
+`give e;` whose `e` is a borrow reaching through a binder or an outer
+borrow obeys [OWN-4]/[OWN-5] exactly as a returned borrow of the same
+mode") and therefore already reaches a `value_if` branch, and [GIVE-1]'s
+replacement restates the same borrow judgment generically. Relabeling it
+would change no judgment.
+
 **[STOR-2]** One site. "Creation: `box_new<T>(v)` returns `own box<T>`;
 `arena_new<'r, T>(v)` returns `own arena<'r, T>`" becomes "Creation:
 `box_new(v)` returns `own box<T>` for `v`'s exact type T [OP-2];
@@ -760,13 +843,66 @@ cites [OP-1]." is replaced:
 > concrete operand type outside the closed integer set, an inadmissible
 > generic type, or a wrong operand count cites [OP-1].
 
-(g) The negation judgment paragraph's opening "Each negation call has exactly one
-explicit type argument and exactly one positional atom operand of that
-exact selected type." becomes "Each negation call carries no written
-type argument and has exactly one positional atom operand, whose exact
-type is the selected type — restricted to the signed subset exactly as
-stated below." (its remaining sentences unchanged; TYPE-7 exclusivity,
-exact table result, and consuming-construct ownership are untouched).
+(g) The negation judgment paragraph's first three sentences "Each negation
+call has exactly one explicit type argument and exactly one positional atom
+operand of that exact selected type. The explicit-type-argument and
+symbolic-generic judgments are the same as in the earlier two-operand
+operation judgment paragraph, except that every concrete selected type must
+belong to the signed subset `i8 i16 i32 i64`; selecting an unsigned integer
+or another domain cites [OP-1]. The same FN-2 missing-type-argument, OP-1
+type-argument-kind/count and operand-count, TYPE-7 implicit-read
+exclusivity, TYPE-5 wrong-operand-type, exact table-result, and
+consuming-construct judgments apply." are replaced:
+
+> Each negation call carries no written type argument and has exactly one
+> positional atom operand; that operand's exact type is the selected type.
+> The type-derivation and symbolic-generic judgments are the same as in the
+> earlier two-operand operation judgment paragraph — the selected type is
+> derived from the operand, never written — except that every concrete
+> selected type must belong to the signed subset `i8 i16 i32 i64`;
+> selecting an unsigned integer or another domain cites [OP-1]. The same
+> OP-1 written-argument, argument-kind, and operand-count judgments, and
+> the same TYPE-7 implicit-read exclusivity, exact table-result, and
+> consuming-construct judgments, apply.
+
+The paragraph's fourth and final sentence ("No operand value or expected
+result type selects the negation mode, changes its signed domain, or
+inserts a conversion.") is byte-identical and stays true: it quantifies
+over the operand's *value* and over the expected result type, neither of
+which this batch makes type-selecting, and the signed domain stays fixed
+by this rule rather than by the operand. One contiguous site.
+
+Why all three sentences and not only the opening one. Rewriting the
+opening sentence alone — "its remaining sentences unchanged" — leaves two
+dangling references in the same paragraph, both of the F10/NEW-2 class,
+and the first of them is load-bearing:
+
+- Sentence 3 mandates that "The same FN-2 missing-type-argument …
+  judgments apply" while site (f) deletes the only sentence that defines
+  that judgment ("Absence of the required explicit type argument cites
+  [FN-2]."). Applied literally, the surviving mandate runs a
+  missing-type-argument judgment against a call that can no longer carry
+  a type argument, so every `ineg.wrap`, `ineg.trap`, and `ineg.checked`
+  call is rejected for a missing argument — a total, unlisted narrowing
+  of the negation family, the same shape as the [FN-4] discharge defect.
+- Sentence 2 delegates "The explicit-type-argument and symbolic-generic
+  judgments" to the two-operand paragraph, where after site (f) there is
+  no explicit-type-argument judgment left to delegate to. The
+  symbolic-generic half does survive (f) verbatim, and the replacement
+  keeps delegating to it rather than restating it.
+
+Two judgments leave sentence 3's list because their domains are empty
+after A1, not because the batch narrows them. FN-2's
+missing-type-argument judgment goes with the written argument it was
+about, and a written argument now cites OP-1 under (f)'s replacement —
+which is why the replacement list opens with the OP-1 written-argument
+judgment. TYPE-5's wrong-operand-type judgment was the mismatch between a
+written type argument and the operand; with the selected type derived
+*from* that operand there is nothing left for it to disagree with, and
+(f)'s operand-agreement error is explicitly a two-operand error reported
+at the second operand atom, which a negation call does not have. TYPE-5
+still reaches the negation *result* through the consuming-construct
+judgment the list retains.
 
 Sites (a)–(d) are the miss this repair exists to close: the 46-site
 revision rewrote OP-2's two *judgment* paragraphs off the written type
@@ -775,6 +911,30 @@ writing one. As assembled the rule was self-contradictory — its own
 rewritten paragraph read "Each operation in the preceding paragraphs
 carries no written type argument" directly beneath four paragraphs
 whose every operation carried one.
+
+**[OP-4]** One site (seventh pattern, §7). The subscript element-type
+derivation clause "derived from the base place's already-stated type by
+the same declared-type selection that types a field suffix, never from
+expected type or cross-statement inference [TYPE-5]" is replaced:
+
+> derived from the base place's already-fixed type [TYPE-5] — written
+> where the binding carries an annotation, derived at a body `let` — by
+> the same declared-type selection that types a field suffix, never from
+> expected type or cross-statement inference
+
+The clause names the deleted annotation in words rather than in its
+spelling, so none of the six lexical patterns reaches it. After A3 a
+base place rooted in a body `let` has no stated type, and the clause
+cites [TYPE-5] — the rule this batch rewrites to say the opposite — for
+a property it states as "already-stated". The judgment does not move:
+the base place's selected type is fixed before the subscript is checked
+in either spelling, and the property the clause exists to state, "never
+from expected type or cross-statement inference", is exactly what the
+rewritten TYPE-5 preserves. The three indexable base types, `array<T,
+N>`'s const length, the field-suffix selection, the bounds obligation,
+and the offset judgment are byte-identical. (The near-miss "already-
+stated indexable type" in the v0.22 version header is frozen history,
+cleared with the other `Prior:` paragraphs below.)
 
 **[OP-7]** Three sites. One sentence appended: "A respelled operation's
 operator token is its one constant spelling — bare operators carry the
@@ -996,8 +1156,23 @@ that atom's complete extent. The cited rule is the rule selected by
 > wrong exact operand type other than the TYPE-7 implicit-read case
 > uses `SourceNode` at the first offending `atom` node in source order
 > and that atom's complete extent — for [OP-2]'s operand-agreement
-> error, the second operand atom. The cited rule is the rule selected
-> by [OP-2]: FN-2, OP-1, or TYPE-5.
+> error, the second operand atom. The cited rule is the rule selected by
+> the callee's class: [FN-2] for a user-generic call, [SYS-2] for a
+> system operation's region arguments, and, for a table operation, the
+> rule [OP-2] selects — OP-1 or TYPE-5.
+
+The closing sentence is the third [FN-2] bridge, and unlike the other
+two it lives in text this batch itself writes. The previous revision
+carried v0.22's "The cited rule is the rule selected by [OP-2]: FN-2,
+OP-1, or TYPE-5." into the replacement verbatim, but after sites (f) and
+(g) [OP-2] selects FN-2 for nothing: the only two sentences that made a
+table operation cite FN-2 are deleted, and every remaining FN-2 citation
+in this paragraph belongs to the user-generic half the replacement's own
+first sentence added. Attributing that citation to OP-2's selection is
+therefore wrong in the new paragraph's widened scope, and dropping FN-2
+outright would strand the user-generic case. Keying the selection to the
+callee's class states what each half actually does and leaves [FN-2]'s
+own bytes untouched (§7).
 
 Attribution row 2's "are `(IDENT, "(")`, `(IDENT, "<")`, `(OPNAME,
 "(")`, `(OPNAME, "<")`, `(TYPEID, "(")`, or `(TYPEID, "<")`, the
@@ -1005,13 +1180,51 @@ rejection cites [GRAM-9]" gains: "; in an infix-operand occurrence, a
 two-token start whose second token is an operator token — the
 forbidden nested-infix start — likewise cites [GRAM-9]".
 
-**[DIAG-3]** "For an executed `iadd.trap`, `isub.trap`, or `imul.trap`
-overflow, `rule_id` is `OP-2`, `message` is `integer overflow`, and
-`node_path` is the trapping `call` node." becomes "For an executed
-bare `+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is
-`integer overflow`, and `node_path` is the trapping `infix` node; a
-bare `/` or `%` contract violation is a table-operation contract check
-at its `infix` node."
+**[DIAG-3]** One site, its anchor extended upward by one sentence to the
+`node_path` enumeration (seventh pattern, §7). "and the operation `call`
+for a table-operation contract check and for the [SYS-8] range
+validation judged under [OP-4]'s retained operation-internal semantics.
+For an executed `iadd.trap`, `isub.trap`, or `imul.trap` overflow,
+`rule_id` is `OP-2`, `message` is `integer overflow`, and `node_path` is
+the trapping `call` node." becomes "and the operation `call` — or, for
+an operation spelled infix, the `infix` node — for a table-operation
+contract check and for the [SYS-8] range validation judged under
+[OP-4]'s retained operation-internal semantics. For an executed bare
+`+`, `-`, or `*` overflow, `rule_id` is `OP-2`, `message` is `integer
+overflow`, and `node_path` is the trapping `infix` node; a bare `/` or
+`%` contract violation is a table-operation contract check at its
+`infix` node."
+
+The enumeration sentence is the seventh pattern's find; the sentence
+below it was already a site. Left alone, [DIAG-3] would define
+`node_path` for a table-operation contract check as "the operation
+`call`" two sentences above this batch's own clause placing a bare `/`
+or `%` contract violation "at its `infix` node" — the general rule
+naming a node kind the infix spelling does not produce, contradicted by
+the specific one. The parenthetical is vacuous for the [SYS-8] half and
+deliberately so: system operations are never spelled infix, their range
+validation keeps its `call` node, and [OP-4]'s closing cross-reference
+to "the operation `call` node [DIAG-3]" for exactly that judgment stays
+true and byte-identical.
+
+**[SYS-13]** One site (seventh pattern, §7). The opacity argument "There
+are no implicit conversions [TYPE-4] and every binding states its exact
+type [TYPE-5], so without a stated constructor the command entry's
+returned value would be unwritable" becomes "There are no implicit
+conversions [TYPE-4] and every value's type is exactly what its producer
+fixes [TYPE-5], so without a stated constructor the command entry's
+returned value would be unwritable".
+
+The same class as the [OP-4] site: the premise is the deleted annotation
+stated in words. The argument is unchanged and in fact simpler after A3.
+What made an `ExitStatus` unwritable without `exit_status(code)` was
+never the annotation — it was that no conversion, literal, or
+construction produces the type, and the replacement states exactly that
+under the rewritten TYPE-5, where a binding's type is what its
+right-hand side produces. `exit_status(code)` remains the one
+constructor, the closed 0–255 code range and the totality, purity, and
+no-failure properties are untouched, and the rest of [SYS-13] is
+byte-identical.
 
 **[ENT-2]** "(whichever of the three right-hand forms — ordinary,
 `propagate`, or `value_match` — the statement selects)" becomes
@@ -1030,9 +1243,23 @@ negation at the `False()` arm's entry." becomes "For an `if_stmt` or
 at the then-block's entry and R's exact negation at the else-block's
 entry; for an else-free `if_stmt`, the negation is established on the
 false edge, which joins the then exit at the continuation [ENT-5]."
-S4's "or a call `len<T>(P)` over such a place — read as the length
-term len(P)" becomes "or a call `len(P)` over such a place — read as
-the length term len(P)". S5's "for `let x: own T = lit;`, x =
+S4's normalization and firing sentences "replace every requires-clause
+local by its unique defining right-hand side, repeatedly, until only
+parameters, named consts, literals, and admitted table-operation calls
+remain. When the result is one comparison call admitted by the
+comparison-origin shape (a) whose operands after substitution are each a
+term over parameters or named consts, a constant, or a call `len<T>(P)`
+over such a place — read as the length term len(P) — that relation is
+established at body entry." become "replace every requires-clause local
+by its unique defining right-hand side, repeatedly, until only
+parameters, named consts, literals, and admitted table-operation calls
+and infix spellings remain. When the result is one comparison admitted
+by the comparison-origin shape (a) whose operands after substitution are
+each a term over parameters or named consts, a constant, or a call
+`len(P)` over such a place — read as the length term len(P) — that
+relation is established at body entry." (one contiguous site; it
+subsumes the `len<T>(P)` respell the previous revision anchored alone).
+S5's "for `let x: own T = lit;`, x =
 value(lit); for `let x: own T = p;` with p a term of type T, x = p;
 for `let y: own Dst = cvt<Src, Dst>(p);` with (Src, Dst) a total pair
 [OP-6] and p a term or constant, y = p." becomes "for `let x = lit;`,
@@ -1049,6 +1276,50 @@ slice_of form loses its annotation likewise. S7's shapes respell:
 "`p -checked k`"; every side condition, range premise, and kill
 discipline is byte-identical. S9's "For `let x: own T = c[i];`"
 becomes "For `let x = c[i];`" (x's derived type is the element type).
+
+S4 is the load-bearing member of the seventh pattern and the one site in
+this repair whose omission would have been an unlisted *narrowing*, in
+the [FN-1] class rather than the [OP-4]/[SYS-13] characterization class.
+Both of its defects name the deleted construct in words: the
+normalization terminates on "admitted table-operation **calls**", and
+the rule fires only "When the result is one comparison **call**". C1
+respells `ieq` `ine` `ile` `ige` as `==` `!=` `<=` `>=`, and this
+batch's own [FN-8] site deliberately admits "an ANF [GRAM-9] call to, or
+infix spelling of" an operation-table row inside a `requires` block. So
+after the batch a requires prologue normally reduces to a form S4 can
+neither terminate on nor recognize; S4 establishes nothing at body
+entry; every obligation that depended on the prologue fact goes
+undischarged; and [OP-4] makes an undischarged subscript obligation "a
+compile-time rejection". The unrepaired batch would therefore reject the
+`requires`-carrying programs it compiles today, exactly as the
+unrepaired [FN-1] graph would have rejected every `if` program.
+
+Measured on the active corpus (2026-08-07; canonical `.wf` sources only,
+excluding `archive/` and the worktree mirror — §5's basis): **62** files
+carry a `requires` block, one block each, and 60 of those blocks end in
+a final `check`. Thirty-nine of the 60 conditions are a direct
+comparison call — 38 `ile`, 1 `ilt` — so after C1 exactly 38 head with
+an infix `<=` and only the single `ilt` keeps a call spelling under O1.
+The remaining 21 are Bool clause atoms whose defining right-hand sides
+are the same comparison family (`ige` `ile` `ieq` `ine` respell;
+`igt` `ilt` do not), so S4's substitution step lands them in the
+identical broken form; the canonical shape is `let permitted: own Bool =
+ieq<i32>(copied, x); check permitted …`, which migrates to `let
+permitted = copied == x; check permitted …`
+(`tests/conformance/cases/fn8-neg-requires-user-call.wf`, verified).
+Independently of the final condition, 45 arithmetic lets inside these
+blocks (`imul.wrap` 40, `iadd.wrap` 4, `iadd.trap` 1) respell to infix
+and so break the normalization's termination clause on their own, while
+`ishr.wrap`, `band`, and `len` keep call spellings and do not. (An
+earlier revision of this paragraph reported 122 files on a basis that
+did not exclude the worktree mirror, and so counted every canonical
+source twice; its 82/76/4/2/46 breakdown did not reconcile against
+itself and is withdrawn.) The repair is
+keyed forward, not widened: "one comparison admitted by the
+comparison-origin shape (a)" delegates the spelling question to (a),
+which this batch's S1 site already rewrites to admit exactly the four
+infix comparisons plus `ilt`/`igt`, so the admitted set is unchanged and
+no new origin becomes derivable.
 
 **[ENT-5]** One site. Before "The continuation of a `loop_stmt` is the
 join over the states on its `break` edges", insert: "At the
@@ -1130,7 +1401,8 @@ match (GRAM-7)" remains.
 
 ## 4. Acceptance-set delta
 
-One canonical respelling plus three deliberate narrowings. Respelling:
+One canonical respelling, three deliberate narrowings, and one named
+consequence. Respelling:
 every existing program's canonical bytes change and old bytes reject
 under FORM-1 — migrated mechanically (§5). Widening: the error classes
 that lived only in deleted bytes die with them (a wrong let annotation,
@@ -1155,9 +1427,26 @@ same footing as v0.22's measured-empty S8 narrowing. Note that `else`
 adds no such narrowing: it is already an exact fixed atom in v0.22's
 `check_stmt` and is already excluded from IDENT.
 
-Three further classes are *not* acceptance-set changes only because the
-prose-sweep repair keys them forward; each would have been an unlisted
-change had the 46-site revision shipped. [FN-4]'s source-law discharge
+**[TYPE-5]'s body-let mismatch rejection becomes unspellable, not
+accepted.** Under v0.22 a body `let` whose written annotation disagreed
+with its initializer was a [TYPE-5] rejection. Under this batch that
+program is not rejected but unspellable, because the annotation it
+disagreed with no longer exists. The check that vanished is precisely
+the body-position redundancy the T2 test classifies as rot and this
+batch deletes by rule — the same trade approved with A3, not a new one.
+This is a consequence of the respelling, not a fourth acceptance change:
+no program that v0.22 accepts is rejected, and no program v0.22 rejects
+is accepted. (Rule id verified against the active file rather than
+assumed: v0.22 locates that rejection at [OP-2]'s "TYPE-5 owns
+let-binding and call-argument exactness", which occurs once and which
+site (f) retains byte-identical below its replaced span. [TYPE-4]
+supplies the no-conversion law the rejection rests on but states no
+`let` judgment at all — it is about `cvt` and implicit conversion — so
+it is not the citation and not a site, §7.)
+
+Five further classes are *not* acceptance-set changes only because the
+prose and pattern-7 sweeps key them forward; each would have been an
+unlisted change had an earlier revision shipped. [FN-4]'s source-law discharge
 is re-keyed to the operand-derived selected type, so exactly the same
 conformances discharge exactly the same laws — unrepaired it was a
 total narrowing, because the mandated body had no legal spelling.
@@ -1168,7 +1457,19 @@ unreachable and every `if` program rejected. [OWN-5]'s slice-valued
 join prohibition is rekeyed to the derived delivery type and extended
 to `value_if`, so it rejects exactly the programs it rejects today —
 unrepaired it was a *widening*, admitting in the `if` spelling a join
-v0.22 rejects in the `match` spelling. Delivery-type disagreement is a
+v0.22 rejects in the `match` spelling. [ENT-3] S4 is re-keyed so a
+`requires` prologue whose comparison is spelled infix still establishes
+its entry fact, so exactly the same obligations discharge — unrepaired
+it was a narrowing on the [FN-1] scale, because S4 fires only on "one
+comparison call" while C1 makes the four nonstrict comparisons infix
+and [FN-8] admits them there, leaving every dependent subscript
+obligation undischarged and rejected under [OP-4] across the 62
+corpus files carrying `requires` blocks. [OP-2]'s negation judgment
+(site (g)) drops the FN-2 missing-type-argument mandate along with the
+argument it quantified over — unrepaired it was a total narrowing of
+the negation family, rejecting every `ineg.wrap`, `ineg.trap`, and
+`ineg.checked` call for an argument A1 forbids it to carry.
+Delivery-type disagreement is a
 re-citation, not a narrowing (review NEW-4): a v0.22-accepted
 program's `give`s each matched the one written annotation and
 therefore agree with each other, so the agreement rule newly rejects
@@ -1327,10 +1628,16 @@ OP-7/OP-8's keyed-on-the-argument sentences, GRAM-9's forwarding
 parenthetical, FN-1's control graph, FN-4's discharge shape, OWN-5's
 slice join, STOR-2/STOR-5's `box_new`, OP-9's `buffer_new`, FORM-3's
 OPNAME example, GRAM-1's shape-kind enumeration,
-DIAG-1's call-node locations, ENT-2/ENT-3/ENT-5/ENT-6's fact machinery,
+DIAG-1's call-node locations and FN-2 citation, DIAG-3's `node_path`
+enumeration, OP-4's "already-stated" base-place type,
+SYS-13's unwritability argument, OWN-13's declared-mode-and-type
+delivery sentence, ENT-2/ENT-3/ENT-5/ENT-6's fact
+machinery including ENT-3 S4's requires-prologue normalization,
 FN-8's clause subset, ERR-2/ERR-3, the register entries, and EX-1's
 bytes — is an enumerated modification above. That claim now rests on
-the mechanical sweep of §7 rather than on the modified-rule list.
+the mechanical sweep of §7 — seven patterns, the seventh non-lexical
+and run against all four deleted constructs — rather than on the
+modified-rule list.
 
 ## 7. Sweep method and site ledger
 
@@ -1366,6 +1673,44 @@ Patterns swept, each over the complete file:
    `value_match`), and of `True()`/`False()` arm positions.
 6. Every arm-scoped, join, control-graph, and reachability prose site,
    reached from the node-kind enumeration of pattern 5.
+7. Every normative sentence naming a deleted construct *in words*
+   rather than in its spelling. Patterns 1–6 are lexical: each keys on
+   a spelling, a production form, or a node-kind enumeration, and a
+   sentence like "every binding states its exact type" contains none of
+   those bytes, so no earlier pattern can reach it. Swept as a phrase
+   sweep over the complete file for each way a deleted construct is
+   named in prose. The batch deletes **four** constructs, not three,
+   and the fourth is the one an annotation-focused probe forgets:
+
+   - the written type argument — "explicit type argument", "written
+     type argument", and the hyphenated forms a space-separated grep
+     cannot see ("explicit-type-argument", "missing-type-argument",
+     "type-argument-kind"), which is how [OP-2] site (g)'s surviving
+     FN-2 mandate hid;
+   - the `let` annotation — "states its … type", "stating its explicit
+     mode and type", "declared `mode type`", "declared mode and type",
+     "at the binder", "No inference", "full mode", "already-stated",
+     "declared-type", "annotation";
+   - the Bool-scrutinee conditional — "conditional control is `match`
+     on prelude `Bool`", and the node kinds written in words rather
+     than as productions ("a `let`-initializer `match`", "each arm
+     delivers");
+   - **the call spelling itself.** C1 respells ten operation families
+     as infix, so every sentence that says an operation is reached by
+     a "call" *in words* — "admitted table-operation calls", "one
+     comparison call", "the operation `call` for a table-operation
+     contract check" — names a form those operations no longer have.
+     This class is invisible to patterns 1 and 2, which look for
+     operation *spellings*, and it is where the sweep's one remaining
+     narrowing lived ([ENT-3] S4).
+
+   Every hit was classified against the site list. Two probe failures
+   are recorded so the next reviewer does not repeat them: searching
+   "declared type" returns zero hits in the active file while the live
+   defect is spelled "declared mode and type" ([OWN-13] — the one
+   "declared mode" in the document), and a phrase list built from the
+   three *deletions* rather than the four *constructs* never asks about
+   the call spelling at all.
 
 Fifteen new sites, all verbatim-anchored and each anchor verified to
 occur exactly once in the active file: FORM-3 1, GRAM-1 1 (its fourth),
@@ -1374,16 +1719,80 @@ OWN-5 1, STOR-2 1, STOR-5 1, OP-1 1 (its fifth), OP-2 5, OP-9 1, FN-1
 and two — FN-1's control graph and OWN-5's slice join — were found only
 by patterns 5 and 6.
 
+Pattern 7 found three further sites and extended two existing anchors,
+each anchor verified to occur exactly once in the active file.
+
+The three sites. [OP-4]'s "already-stated" base-place type and
+[SYS-13]'s "every binding states its exact type" opacity argument are
+characterization defects of the same class as [GRAM-9]'s forwarding
+parenthetical — a rule stating in words where a type comes from, keyed
+on the annotation A3 deletes and citing the very rule this batch
+rewrites to say the opposite — and neither rejects nor admits a program
+class. [OWN-13]'s "each arm delivers a value of the `let`'s declared
+mode and type" is the third and the only one that adds a rule to the
+batch: it carries both an A3 defect (the sole "declared mode" in the
+document) and an A4 defect (it names only the `match` spelling, the
+[OWN-5] gap class), and it evaded patterns 4, 5, and 6 by writing
+"`let`-initializer `match`" in words rather than as `value_match`.
+
+The two anchor extensions, both in the call-spelling class and neither
+adding a site. [ENT-3] S4 is the one pattern-7 find that *is* an
+unlisted narrowing, in the [FN-1] class: it normalizes to "admitted
+table-operation calls" and fires only on "one comparison call", so
+after C1 the `requires` prologue this batch's own [FN-8] site admits
+reduces to a form S4 cannot recognize, no entry fact is established,
+and [OP-4] turns the resulting undischarged obligations into
+compile-time rejections across the 62 corpus files carrying `requires`
+blocks (§3, measured on §5's canonical-sources basis). [DIAG-3]'s `node_path` enumeration names "the operation
+`call` for a table-operation contract check" two sentences above this
+batch's own clause placing a bare `/` or `%` violation at its `infix`
+node. A third call-spelling correction, [DIAG-1]'s "the rule selected
+by [OP-2]: FN-2, OP-1, or TYPE-5.", lies inside an existing site's
+replacement text and likewise adds no site.
+
+Pattern 7 also found the one defect in this candidate's own text rather
+than in v0.22: [OP-2] site (g) retained a mandate that the FN-2
+missing-type-argument judgment applies after site (f) deleted the only
+sentence defining it, repaired in §3. Every other pattern-7 hit was
+already a site — [TYPE-5], [GRAM-4]'s production, [GRAM-6]'s
+`match`-on-`Bool` sentence, [GRAM-7]'s `let IDENT : mode type =`
+prefix, [GIVE-1]'s "declared `mode type` (stated at the binder)",
+[GRAM-9]'s forwarding parenthetical, [OP-1]'s written-argument row
+selection, [OP-2] (f) and (g), [OP-7], [OP-8], [FN-4] (i), [DIAG-1]'s
+typed-call paragraph, and the R3-PROVISIONAL register's "interior
+annotation mandate".
+
 Recount, independently: FORM-2 3, FORM-3 1, GRAM-1 4, GRAM-4 1, GRAM-5
-1, GRAM-6 1, GRAM-7 1, GIVE-1 1, GRAM-9 2, TYPE-5 1, OWN-5 1, STOR-2 1,
-STOR-5 1, OP-1 5, OP-2 7, OP-7 3, OP-8 2, OP-9 1, FN-1 1, FN-4 2, FN-8
-3, EFF-2 1, ERR-2 1, ERR-3 1, DIAG-1 3, DIAG-3 1, ENT-2 1, ENT-3 7,
-ENT-5 1, ENT-6 1, EX-1 1 = **61 sites across 31 rules**, reconciling
-against the previous 46/24 as exactly the fifteen sites and seven rules
-above. Productions remain 65 + 4 = 69 and no production text moved;
-the four retentions (FN-8's clause lets, OP-8's `fneg(finf<T>())`,
-GRAM-5's `call := callee targs? …`, and GRAM-6's subscript sentence)
-are still excluded from the total.
+1, GRAM-6 1, GRAM-7 1, GIVE-1 1, GRAM-9 2, TYPE-5 1, OWN-5 1, OWN-13 1,
+STOR-2 1,
+STOR-5 1, OP-1 5, OP-2 7, OP-4 1, OP-7 3, OP-8 2, OP-9 1, FN-1 1, FN-4
+2, FN-8
+3, EFF-2 1, ERR-2 1, ERR-3 1, DIAG-1 3, DIAG-3 1, SYS-13 1, ENT-2 1,
+ENT-3 7,
+ENT-5 1, ENT-6 1, EX-1 1 = **64 sites across 34 rules**, reconciling
+against the previous 61/31 as exactly the three pattern-7 sites
+([OP-4], [SYS-13], [OWN-13]) and their three rules, and against the
+original 46/24 as those plus the fifteen sites and seven rules of the
+prose sweep. The count is of
+anchor/replacement pairs in §3, not of delta line items: a site is one
+contiguous verbatim-anchored replacement however many sentences it
+edits, so [OP-2] (b) — two edited sentences of one paragraph — [OP-2]
+(g) — three — [ENT-3] S4 — two — and [DIAG-3] — two — are one site
+each, and a reviewer counting pairs reaches 64. Three pattern-7
+corrections deliberately do *not* raise the count, because each widens
+an anchor or edits replacement text inside a site the batch already
+had: [ENT-3] S4 (ENT-3 stays 7), [DIAG-3]'s `node_path` enumeration
+(DIAG-3 stays 1), and [DIAG-1]'s FN-2 citation sentence (DIAG-1 stays
+3). Productions remain 65 + 4 = 69 and no production text moved:
+§2's two EBNF blocks are byte-identical through this repair, MD5
+00f6095415ba43440367b87d94f06a3e (`stmt`/`let_stmt`/`if_stmt`/
+`value_if`) and cfd44788e1b76e4017271f8e639f2308 (`expr`/`infix_tail`/
+`infix_op`), re-verified after this revision's edits and recorded so the
+next revision can re-check the property mechanically. [EX-1]'s program
+block is likewise unmoved (MD5 814fdabade0cea99e3879bd5fdc6f892). The
+four retentions (FN-8's clause lets, OP-8's
+`fneg(finf<T>())`, GRAM-5's `call := callee targs? …`, and GRAM-6's
+subscript sentence) are still excluded from the total.
 
 Inspected and cleared — near-misses that are *not* sites, recorded so
 the next reviewer does not re-derive them:
@@ -1401,16 +1810,58 @@ the next reviewer does not re-derive them:
   and the whole float `.strict` family. Not respelled by C1.
 - [FN-2]'s explicit-type-argument prose. Scoped to function, source
   nominal, and PRE-1 nominal generics; table operations are none of
-  those, and OP-2's deleted "Absence … cites [FN-2]" sentence removes
-  the only bridge.
+  those. v0.22 bridges FN-2 to the table operations twice, not once, so
+  the clearance rests on the pair: site (f) removes the first bridge,
+  the binary judgment's "Absence of the required explicit type argument
+  cites [FN-2].", and site (g) removes the second, the negation
+  judgment's "The same FN-2 missing-type-argument … judgments apply".
+  Either bridge left standing would keep a missing-type-argument
+  judgment alive over an argument no call can write, rejecting the
+  family it governs; with both removed, FN-2 reaches no table
+  operation. The earlier revision cleared this entry on the first
+  bridge alone and called it "the only bridge", which the pattern-7
+  sweep falsified. A third naming, in [DIAG-1]'s "The cited rule is the
+  rule selected by [OP-2]: FN-2, OP-1, or TYPE-5.", is a consequence of
+  the other two rather than an independent bridge — and it sits in text
+  this batch itself writes, having been carried into the DIAG-1
+  replacement verbatim. It is corrected inside that existing site (§3),
+  which re-keys the citation to the callee's class, so [FN-2]'s own
+  bytes remain untouched by this batch and this entry stays a clearance
+  rather than becoming a site.
+- [TYPE-4], [OWN-1], and [STOR-1], each reported to this drafting lane
+  as an unlisted pattern-7 site and each verified absent from the
+  active file. [TYPE-4] states the no-implicit-conversion law and the
+  `cvt` totality partition and never mentions `let`; it carries no
+  annotation/initializer mismatch judgment to split, and the body-let
+  mismatch rejection v0.22 actually states lives at [OP-2]'s "TYPE-5
+  owns let-binding and call-argument exactness" (occurs once, retained
+  byte-identical by site (f); §4). "declared type" occurs zero times in
+  the whole active file, so neither [OWN-1] — copy/affine
+  classification and consumption — nor [STOR-1] keys any judgment on a
+  binding's declared type. [STOR-1]'s only neighbouring phrase is
+  "There is no per-binding storage annotation", which is about storage
+  class, is not a type annotation, and is untouched by A3. Recorded by
+  name so the next reviewer does not re-derive three absent sites.
+- The `param`, `rtype`, and entry-point `input_label IDENT ":" mode
+  type` productions. Signature positions keep their annotations by
+  design — A3 deletes the binder annotation only — so a `mode type`
+  match there is a pattern-7 near-miss, not a site.
+- [CLM-1]'s `own Bool` condition. Judged through [OP-5] exactly as
+  `check` is, so it follows the `if` condition judgment without an
+  edit, the same reasoning as the [OWN-13] entry below.
 - [ENT-3] S10's `match_stmt`/`value_match` over `read_once` and the
   transfer operations. The scrutinee is a payload enum, so it keeps
   `match` under GRAM-6's type-driven rule; S1 is the Bool-scrutinee
   source and is already a site.
-- [OWN-13] match ownership. `Bool` is copy under [OWN-1] ("tag-only
-  enums … copy on use"), so a Bool scrutinee is a copy use in both
-  spellings and the `if` condition needs no ownership analogue; it
-  inherits [OP-5]'s condition judgment exactly as `check` does.
+- [OWN-13]'s *scrutinee* ownership, as distinct from its delivery
+  sentence, which is a site (§3). `Bool` is copy under [OWN-1]
+  ("tag-only enums … copy on use"), so a Bool scrutinee is a copy use
+  in both spellings and the `if` condition needs no ownership
+  analogue; it inherits [OP-5]'s condition judgment exactly as `check`
+  does. This half of the rule is why [OWN-13] appeared on the cleared
+  list of the prose sweep and stayed off the site list until pattern 7
+  read the other half: the scrutinee question really is closed, and
+  the defect is one sentence further down, in what the arms *deliver*.
 - [TYPE-6] lexical scoping. Branch blocks are ordinary lexical scopes
   under "A nested lexical declaration may not shadow an entry live at
   that declaration"; no node-kind enumeration to extend.
