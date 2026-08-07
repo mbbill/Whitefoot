@@ -747,13 +747,16 @@ it respells [ENT-5].
 against the respelled v0.22 corpus, canonical `.wf` sources only, 399
 files excluding the worktree mirror)
 
-- Deleted-class type arguments: **1357** occurrences on 1356 source
-  lines — exactly one line carries two deleted-class calls, which
-  reconciles the reviewer's line-oriented 1356 with this occurrence
-  count (the first draft's
-  1260 under-counted — it omitted the float family and `box_new`; this
-  count is the complete deleted class: every table operation except
-  the six retained). Retained-class sites, untouched: **101**
+- Deleted-class type arguments: **1353** occurrences (settled by the
+  reviewer's final per-callee enumeration across the 399 files; the
+  earlier 1357/1356 figures both admitted invalid-spelling fixtures.
+  The first draft's 1260 under-counted — it omitted the float family
+  and `box_new`; this count is the complete deleted class: every table
+  operation except the six retained). Separately: five
+  deliberately-invalid OPNAME spellings in negative conformance
+  fixtures (`irotl.trap`, `idiv.wrap`, `fneg.strict`, `iadd.bogus`,
+  `add.wrap`) are NOT deleted-class sites — they never parse to a
+  table-op call, and the migration never touches them. Retained-class sites, untouched: **101**
   (`cvt`/`reinterpret`/`array_new`/`arena_new`/`finf`/`fnan` — the F3
   orphans now have their one legal spelling, unchanged).
 - Let annotations deleted: 1748 binders (reviewer-reproduced).

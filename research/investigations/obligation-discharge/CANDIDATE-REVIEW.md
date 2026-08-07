@@ -2376,3 +2376,163 @@ without a further review round beyond confirming the five landed. Given
 that the last revision closed eight of eleven cleanly, I would expect
 the next pass to be verifiable in a single targeted read rather than a
 full re-attack.
+
+---
+
+### Final pass (2026-08-07; candidate at 0e81dd8, 848 lines, 24 rules / 46 sites, 69 productions)
+
+Single read against the five items named at the end of the re-verify.
+All five landed; every newly quoted anchor resolves verbatim and
+uniquely in v0.22 (DIAG-1's row-2 position guard, ENT-5's loop-join
+sentence, OP-1's row-selection sentence, ERR-2's exhaustiveness
+sentence — each exactly one occurrence, so every replacement is
+unambiguous).
+
+**1. F8(b) — guard and token list now meet.** DIAG-1 is three sites, and
+the new one extends the position guard to "an `atom` occurrence in
+`atom_list`, `fieldinit`, an `infix` operand, or the subscript offset".
+Traced end to end on the witness: for `let x = a + b * c;` provenance
+would next enter the infix-operand occurrence at `b`, the guard now
+admits it, the two-token start is (IDENT, `*`), the token-list addendum
+fires, and the rejection cites GRAM-9 at `*`. **Closed.** The bounded-
+lookahead residual I recorded stands unchanged and unfixed by design —
+`a + b.f * c` puts the operator past token two and still falls through
+— which is the same limit row 2's existing call/construct detection
+has, correctly left alone.
+
+**2. NEW-3 — universal mandate, hard-error form, ownership delegation.**
+GRAM-6 now reads "An `else` whose block contains exactly one `if_stmt`
+and nothing else is a hard error citing GRAM-6 at that nested `if_stmt`
+node (spell `else if`); in a `value_if` whose else block is exactly one
+else-free `if_stmt`, the branch cannot deliver, [GIVE-1] owns the
+rejection, and GRAM-6 forms no candidate there". The `else`-bearing
+qualifier is gone, the clause has the citation and node its siblings
+have, the false path-continuation justification is deleted, and the
+delegation uses v0.22's own "forms no candidate" idiom. Re-walked all
+four cases: (`if_stmt`, else-free) now flattens, so
+`if a { P } else { if b { X } }` is rejected and only `else if` remains
+— **the T3 dual spelling is closed**; (`if_stmt`, else-bearing)
+flattens; (`value_if`, else-bearing) flattens into a chained `value_if`
+and is correctly outside the carve-out, which is scoped to the else-free
+case only; (`value_if`, else-free) is GIVE-1's, and the carve-out is
+total because "an else-free `if_stmt` has a continuing false edge and
+never delivers" is categorical. Each case has exactly one legal spelling
+or is rejected in both forms, with a followable diagnostic in every one.
+The empty-`else` clause also gained the node it was missing. **Closed.**
+
+**3. NEW-2 — OP-1 fourth site.** Row selection is reworded off the
+deleted input: "uses the operand domains and, for the retained-argument
+operations [TYPE-5], the written arguments, to select the applicable
+row". Checked it still does its two jobs: the two `cvt` rows are
+selected by the written pair (`cvt` is retained), and `ishr`'s
+`ashr`/`lshr` and `imin`'s `smin`/`umin` are selected by the operand
+domain. **Closed.**
+
+**4. NEW-1 — clean 69 with an honest 1:1 mapping.** The phantom
+`infix := atom infix_tail` production is deleted from the block; the
+mapping is now "`infix_tail` maps 1:1 to the `infix` node kind: a
+selected tail forms one `infix` node spanning the complete `expr` — the
+atom and the tail", with no phantom production and no exception clause
+[META-3]. Productions are +4 (`if_stmt`, `value_if`, `infix_tail`,
+`infix_op`), total **69**, and §1, §2, and the GRAM-1 sentence all
+agree. The node spans more than its own production, which is unusual but
+stated, and it is what DIAG-1's "at the `infix` node and its complete
+extent" and DIAG-3's "the trapping `infix` node" both need — checked
+both, and each still resolves. The LL re-run is reasoned rather than
+re-asserted ("the dropped `infix` production appeared on no right-hand
+side, so every decision row is identical"), which is correct: an
+unreachable production contributes to no decision, so all seven rows
+carry over unchanged. **Closed.**
+
+**5. Numeric corrections — three of four exact, one still wrong.**
+
+- **389 ✓.** §5 now carries 389 with both derivations stated (line-
+  leading `check`, exact under FORM-2's line-bearing rule; confirmed by
+  `else trap`, unique to `check_stmt`) and correctly characterizes the
+  draft's 404 and my 409 as loose counts. Matches my measurement.
+- **Two narrowings ✓.** §1 and §4 both drop delivery-type disagreement
+  to a re-citation and place the widening explicitly ("`give`s that
+  agreed with each other against a wrong annotation"), which is a
+  cleaner statement than the one I proposed.
+- **ENT-5 CFG idiom and empty join ✓.** The sentence now reads "the join
+  of the states on every branch exit edge reaching that continuation on
+  the conservative structural graph [FN-1]", matching the `match`
+  sentence word for word in idiom, with the else-free false edge named
+  as such an edge. Chains need no enumeration: an else-position `if`
+  contributes its branch exit edges directly to the shared continuation.
+  The empty join is defined once and governs "`match_stmt` and
+  `value_match` continuations identically", so the hole v0.22 inherited
+  is retired rather than duplicated. Re-ran my three sharpest F1 attacks
+  against the reworded sentence — original bounds attack, kill-in-one-
+  branch, one-branch-returns — all three give the same sound outcome as
+  before. Checked that the contradictory empty-join state cannot leak:
+  it derives every bound, so a later join taking "the weakest bound held
+  by all" is never restricted by it and yields the other state's bounds.
+- **1357 ✗ — the figure and its reconciliation are both wrong.** §5 now
+  says "**1357** occurrences on 1356 source lines — exactly one line
+  carries two deleted-class calls, which reconciles the reviewer's
+  line-oriented 1356 with this occurrence count". My 1356 was not
+  line-oriented: it came from `grep -oE`, which emits one line per
+  *match*, so it was already an occurrence count and the stated
+  reconciliation does not hold. I settled the difference by enumerating
+  every distinct lowercase callee taking a `<` across the 399 files and
+  summing by hand. The genuine deleted class — every table operation
+  except the six retained — totals **1353** occurrences. My 1356 was
+  1353 plus three deliberately-invalid OPNAME spellings my pattern
+  admitted: `irotl.trap` (rotates are dotless-total, [OP-8]),
+  `idiv.wrap` ("There are no wrap modes for division/remainder",
+  [OP-2]), and `fneg.strict` (`fneg` is dotless, [OP-3]). Two more
+  invalid spellings sit in the same corpus and neither pattern caught,
+  `iadd.bogus` and `add.wrap`. All five are rejection fixtures in
+  negative conformance cases; none is a table operation, so none is a
+  member of the deleted class, and the printer will never delete a type
+  argument from them because they never parse to a table-op call.
+  **The figure should be 1353**, with a separate line noting the five
+  invalid-spelling fixtures that migrate by no rule. This is confined to
+  §5's migration record — §1's version-header paragraph does not cite
+  it, and no rule, acceptance class, token count, or production count
+  depends on it — so it is a record correction, not a defect in the
+  batch.
+
+**Accounting recounted independently.** Sites: FORM-2 3, GRAM-1 3,
+GRAM-4 1, GRAM-5 1, GRAM-6 1, GRAM-7 1, GIVE-1 1, GRAM-9 2, TYPE-5 1,
+OP-1 4, OP-2 2, OP-7 3, OP-8 2, ERR-2 1, ERR-3 1, FN-8 3, EFF-2 1,
+DIAG-1 3, DIAG-3 1, ENT-2 1, ENT-3 7, ENT-5 1, ENT-6 1, EX-1 1 = **46**,
+across **24** rules — both matching, and both reconciling against the
+previous 44 as exactly the two new sites (OP-1's row selection, DIAG-1's
+position guard). The two retention relabels ("plus one retention" on
+FN-8 and OP-8) fix the labelling nit without moving the total, since
+retentions were already excluded from 44. OP-8's claim that the `eeq`
+and both-operands sentences "are adjacent in v0.22 and form one
+contiguous site" is correct — they are consecutive sentences.
+Productions 65 + 4 = 69 ✓.
+
+**One carry-forward note for the grammar-path task, not a finding.** The
+production is named `infix_tail` while its node kind is named `infix`;
+every other production/node pair in this grammar shares a name. If the
+generated syntax data derives node kinds from production names, that
+asymmetry is the one place this batch will surprise the extension task —
+which is precisely the surprise NEW-1 existed to prevent, so it is worth
+one line in the task's success criteria rather than discovering it at
+verifier time.
+
+### Final verdict
+
+**READY-FOR-OWNER.** All five items landed as specified; the two
+findings that touched the batch's load-bearing axes — NEW-3 on T3
+uniqueness and F8(b) on GRAM-9 attribution — are closed with the
+mechanisms I would have written, and NEW-3 in particular is closed using
+the candidate's own ownership idiom rather than a special case. The
+grammar is strong-LL with an honest 69-production count and a 1:1 node
+mapping; the ENT-5 join is now stated in the spec's own CFG idiom and
+retires an inherited hole instead of duplicating it; the retained-
+argument class is total against the complete operation table; GIVE-1
+ships as a fully-worked rule; and every corpus figure in §5 except one
+reproduces exactly.
+
+Residual, named and non-blocking: **§5's deleted-class figure should be
+1353, not 1357, and the "1356 lines" reconciliation is incorrect** — the
+gap is five invalid-OPNAME rejection fixtures, not a line-counting
+artifact. One line in the migration record, outside the version-header
+bytes, affecting no rule or count. Recommend correcting it in the commit
+that goes to the owner; it does not warrant another review round.
