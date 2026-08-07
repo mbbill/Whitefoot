@@ -2,8 +2,11 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` (plan defect: the written scope cannot reach the
-  written success criterion; see Blocker)
+- **Status:** `BLOCKED` on one item only — the grammar path is complete and
+  the verifier is green at 65/74/77; `make -C compiler check` cannot close
+  until the derivation ledger carries META-6 rows for the eight new rules
+  (see Progress). The original blocker below is resolved by the owner's
+  atomic-activation ruling.
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice items 1 and 3,
   and the owner's 2026-08-07 approval of
   `governance/spec-evolution/obligation-discharge-batch1-candidate.md`
@@ -11,7 +14,7 @@ This is a temporary live coordination record, not execution authority.
 - **Owner / workspace:** exec-0030 /
   `/Users/bytedance/do_not_scan/wf-0030-worktree`, branch
   `task/0030-grammar-path-extension`
-- **Base revision:** d459b49
+- **Base revision:** 76b59f7 (rebased 2026-08-07)
 - **Dependency:** none (candidate approved; this task gates v0.21 candidate
   generation per ruling O1)
 
@@ -30,12 +33,45 @@ after.
 
 ## Progress
 
-Orientation complete; stopped before any compiler edit. No file under
-`compiler/` is touched by this branch. Baseline `make -C compiler check`
-green at base revision d459b49 (v0.20 identity
-`b082ef3f…312dc1`, 120 rules).
+Round 1 (2026-08-07): orientation only; stopped before any compiler edit and
+reported the mechanism blocker recorded below. Baseline
+`make -C compiler check` green at d459b49.
 
-## Blocker
+Round 2, under the atomic-activation ruling: the grammar path is extended and
+every identity pin repointed on this branch (commit 0156826).
+
+- The verifier accepts `kernel-spec-v0.21-candidate.md` at **65 productions,
+  74 decisions, 77 terminal predicates**, exit 0. The decision count is
+  unchanged because `claim_stmt`, like `check_stmt`, is a pure sequence that
+  owns no predictive decision. Main is untouched and still verifies the v0.20
+  candidate at 64/74/75.
+- Candidate SHA-256 on this branch:
+  `815dea4c60de56c2d32c0b52ba0062912ace5420f2c1d5100cff7c7de985ca85`.
+- Table delta: fixed spellings 67 -> 69, terminal predicates 75 -> 77,
+  productions 64 -> 65, SELECT_2 rows 1925 -> 1959. The 34 new rows are
+  exactly the check/else mirror the isomorphism predicts; no LL(2) conflict
+  appeared, and cross-arm disjointness holds (`claim` and `because` are new
+  fixed terminals, so they no longer satisfy IDENT).
+- 462 compiler lib tests green; `cargo fmt`, `clippy -D warnings`, and
+  `cargo doc -D warnings` green; the standalone conformance corpus is
+  unaffected and stays pinned to v0.20 at 120/120.
+- One-shot generator used for the table renumbering and deleted with its
+  scratch directory; nothing generated-by-script lands in the repository.
+
+**Remaining blocker (one).** `whitefoot-spec` fails: the derivation ledger
+has no row for `[CLM-1]`, `[CLM-2]`, or `[ENT-1]`..`[ENT-6]`. The rule-count
+pin is already moved to 128. Authoring those eight META-6 rows is
+specification-drafting judgment — each row states a derivation chain from the
+constitution and a derived / existence-only status that feeds the ledger's
+statistics line — not an identity repoint, and the ledger lives under
+`spec/`, which this task is instructed not to touch. Precedent: at the v0.20
+activation (18359d5) the ledger rows already existed from the candidate stage
+and activation only relabelled and recounted them; the v0.21 candidate on main
+carries no such rows. Fabricating chains for an audit artifact would be worse
+than leaving them undone, so this stops here for the lead and the drafting
+agent.
+
+## Blocker (round 1, resolved by the atomic-activation ruling)
 
 The success criterion cannot be reached by the written scope, and the
 obstacle is not an LL(2) conflict. `whitefoot-grammar` has only a
@@ -99,8 +135,10 @@ Whichever is chosen also needs a decision about the table generator.
 
 ## Stop condition
 
-Reached. The task resumes only under a repaired plan item that names the
-mechanism and the generator.
+Round 1's stop condition was cleared by the owner ruling. The current stop is
+the eight missing derivation-ledger rows; the task resumes when they land, at
+which point `make -C compiler check` is expected to close with no further
+compiler change.
 
 ## Plan repair (lead, 2026-08-07, owner ruling "3")
 
