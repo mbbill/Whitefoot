@@ -350,7 +350,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.discover_called_function_signatures(false)?;
         for index in 0..self.signatures.len() {
             if !self.signatures[index].substitution.bindings.is_empty() {
-                self.check_function(index)?;
+                self.check_function(index, None)?;
             }
         }
         self.signatures.clear();
