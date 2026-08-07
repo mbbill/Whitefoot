@@ -2,11 +2,11 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `ONGOING` (claimed 2026-08-07)
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
-- **Dependency:** 0032
+- **Owner / workspace:** exec-0033 / worktree `/Users/bytedance/do_not_scan/wf-0033`, branch `task/0033-ent-fact-sources`
+- **Base revision:** 482609d39f82d4170dff297334d6cee601876256
+- **Dependency:** 0032 (terminal, `docs/done/0032-ent-core-engine.md`)
 
 ## Goal
 
