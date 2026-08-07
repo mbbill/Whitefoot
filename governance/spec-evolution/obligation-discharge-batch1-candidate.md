@@ -6,12 +6,15 @@ text of `spec/kernel-spec-v0.20.md`. It authorizes nothing: per
 `docs/WORKFLOW.md`, activation requires owner approval of exact bytes, and per
 `compiler/README.md` a grammar-extending candidate additionally requires the
 native grammar path to be extended first (verifier evidence in §3). Scope is
-exactly items 1–3 of `research/investigations/obligation-discharge/DOSSIER.md`
-§8: the claim construct, the normative L0 entailment fragment, and caller-side
-discharge for OP-4 index bounds only. Everything else in that dossier —
-arithmetic-mode dissolution, requires-as-goal, ensures, the taint gate,
-boundary-op count postconditions, counted range loops, partitions and ledger
-tooling — is deliberately out of this batch (§10).
+items 1–3 of `research/investigations/obligation-discharge/DOSSIER.md` §8 —
+the claim construct, the normative L0 entailment fragment, and caller-side
+discharge for OP-4 index bounds — plus, folded in on lead direction
+2026-08-06, the count-bound core of item 4 as Section D (§7): the SYS
+count-bound postconditions surveyed by `SYS-POSTCONDITIONS.md` (commit
+a926f13), with coordination with the BOUND-1 owner pending. Everything else
+in that dossier — arithmetic-mode dissolution, requires-as-goal, ensures, the
+taint gate, counted range loops, partitions and ledger tooling — is
+deliberately out of this batch (§11).
 
 Base: `spec/kernel-spec-v0.20.md` (REVIEW CANDIDATE v0.20 bytes as of
 2026-08-06). Target version number and canonical candidate path are an owner
@@ -48,16 +51,26 @@ status header, in the v0.20 header conventions.
 > `Option<T>` is added to the operation table; the [SYS-8] range-validation
 > trap is unchanged as an operation-internal contract check. [FN-8]'s
 > foreign-entry execution is restated as one toolchain-synthesized boundary
-> adapter at gated entries, trap semantics unchanged. Specification delta:
+> adapter at gated entries, trap semantics unchanged. Makes the [SYS-8]
+> one-attempt count bounds and three [SYS-9] length and index relations
+> normative checker-visible postconditions in the [SYS-12] retained-fact
+> form, and admits the four count bounds as [ENT-3] boundary fact source
+> S10 in the same trust class as allocation-length equality; the three
+> [SYS-9] relations are retained facts with no L0 consumer in this version.
+> Specification delta:
 > numbered rules +8/-0 (CLM-1, CLM-2, ENT-1, ENT-2, ENT-3, ENT-4, ENT-5,
-> ENT-6); eleven existing rules modified: FORM-2 (claim_stmt is line-bearing),
+> ENT-6); thirteen existing rules modified: FORM-2 (claim_stmt is
+> line-bearing),
 > FORM-5 (STRING homes), GRAM-4 (claim_stmt production; stmt gains one
 > alternative), GIVE-1 (claim is non-delivering), OP-1 (index_get row;
 > derived reserved sets grow by one), OP-4 (rewritten to discharge-or-reject),
 > FN-8 (passed fact feeds ENT-3; synthesized boundary adapter), EFF-2 (traps
 > contribution: bounds-checked index out, claim in), SET-1 (no runtime check
 > in target evaluation), DIAG-2 (discharged disposition; claims always
-> retained), DIAG-3 (claim trap record; index-place row removed). Tokens
+> retained), DIAG-3 (claim trap record; index-place row removed), SYS-8
+> (successful-count bounds stated as postconditions, replacing the
+> target-facing sentence in place), SYS-9 (the arg_get index relation and
+> the two host-string length relations stated for the first time). Tokens
 > +2/-0 (`claim`, `because` as exact fixed lowercase grammar atoms; terminal
 > predicates 75 -> 77); terminal spellings +2/-0; grammar productions +1/-0
 > (`claim_stmt`); exception clauses +0/-0; source constructs +1 (the claim
@@ -66,7 +79,7 @@ status header, in the v0.20 header conventions.
 > sections +1 (new §18, worked example and meta-rules renumbered; no existing
 > cross-reference names either renumbered section). The accepted-program set
 > changes in both directions and this transition is deliberately non-monotone
-> (§7): it grows by claim statements and `index_get` calls, and it shrinks by
+> (§8): it grows by claim statements and `index_get` calls, and it shrinks by
 > exactly four classes — an `index` whose bounds obligation the fragment does
 > not discharge, an effect row whose `traps` was exhibited only by
 > bounds-checked indexes, a declaration spelled `index_get`, and identifiers
@@ -336,6 +349,21 @@ The sources are:
   declared element values, vlo <= x and x <= vhi are established at the
   binding. The index's own bounds obligation [ENT-6] is judged separately
   and is unaffected. Deeper const shapes establish nothing in this version.
+- S10 (boundary count facts; Section D, §7, coordination pending). For a
+  `match_stmt` or `value_match` whose scrutinee is directly a call to
+  `read_once`, `write_once`, `host_copy_bytes`, or `host_copy_utf8`
+  [SYS-2, SYS-8], or a bare IDENT naming a `let` binding of the call's
+  outcome type initialized by such a call under the same no-kill, no-`set`
+  path discipline as S7's checked-arithmetic origin: with k the actual bound
+  to the call's bounding parameter — `capacity` for `read_once`,
+  `host_copy_bytes`, and `host_copy_utf8`; `count` for `write_once` — read
+  as a term or constant and not killed on the path to the match, the
+  `ReadBytes(count: w)` arm of a `read_once` match and the `Ok(value: w)`
+  arm of the other three establish w <= k at arm entry; every other arm
+  establishes nothing. These facts carry the same trust class as S6's
+  allocation-length equality — a declared operation contract, never a
+  writer statement. The three [SYS-9] relations of Section D are retained
+  checked-program facts and are not L0 fact sources in this version (§7).
 
 [ENT-4] The closed fact state at a point is the least set containing its
 established and implicit facts and closed under exactly: (1) from
@@ -535,7 +563,87 @@ the claim's exact IDENT spelling; the justification STRING is compile-time
 data and does not appear in the record." (Alternative encoding is open
 question O3.)
 
-## 7. Acceptance-set delta and monotonicity
+**[SYS-8], [SYS-9]** — modified by Section D; exact deltas in §7.
+
+## 7. Section D — SYS count-bound postconditions (coordination with BOUND-1 owner pending)
+
+Basis: `research/investigations/obligation-discharge/SYS-POSTCONDITIONS.md`
+(commit a926f13; survey of the count-returning [SYS-2] operations in v0.20).
+Finding of record: zero of the seven count-returning system operations state
+a checkable bound today — the four one-attempt transfers (`read_once`,
+`write_once`, `host_copy_bytes`, `host_copy_utf8`) imply `count <= bound` in
+prose only, and `args_count`, `host_bytes_len`, and `host_utf8_len` state no
+relation at all. These bounds are load-bearing for this candidate's
+fragment: PROBE-TAINT.md's wfgrep result (one structural claim in 723 lines,
+zero forced branches) assumed exactly `read_once`'s `count <= capacity` and
+`host_copy_bytes`'s `copied <= capacity`; without them, cursor arithmetic
+downstream of every boundary read floods with environment magnitudes and
+[ENT] cannot discharge it. The mechanism adds no new construct: [QUAL-1]
+already binds an operation's complete outcome set to its semantic ID, and
+[SYS-12]'s retained-redirection fact is the exact stylistic precedent for a
+checker-visible fact stated as prose plus [DIAG-2] retention.
+
+This section's wording is drafting material in the survey's proposed
+sentences: final text is settled at approval in coordination with the owner
+of the in-flight BOUND-1 system-capability work, which owns the SYS-family
+surface. Two rules are modified.
+
+**[SYS-8] modification.** In the "Buffer and cursor disposition is exact."
+paragraph, the sentence "A target returning a count outside the validated
+range violates its compiler-owned contract; source code does not defend
+against it." is replaced in place by the survey's consolidated paragraph:
+
+> Every successful count is bounded by the caller's validated range, and the
+> checked program retains that bound as a fact about the returned value
+> [DIAG-2]. On `ReadBytes(count)` the count is at most the requested
+> `capacity`; on a successful `write_once` the accepted length is at most
+> the requested `count`; on a successful `host_copy_bytes` or
+> `host_copy_utf8` the copied length is at most the requested `capacity`.
+> These are postconditions of the operations, not defensive obligations on
+> source: a target returning a larger count violates its compiler-owned
+> contract [QUAL-1], and source code neither checks nor branches on that
+> possibility.
+
+The existing conditional lower bound is deliberately not flattened: [SYS-8]'s
+stated facts — a zero-length range reports a count of zero, and for a
+nonempty range `ReadBytes(count)` implies `count > 0` — remain exactly as
+written, and this candidate adds no lower-bound fact source.
+
+**[SYS-9] modification.** Three relation sentences are added in the survey's
+proposed wording, one per operation, each in the [SYS-12] retained-fact
+form:
+
+- `args_count`/`arg_get`: "`arg_get` returns `Ok` exactly when `position` is
+  less than the count `args_count` returns for the same `Args`, and the
+  checked program retains that relation [DIAG-2]."
+- `host_bytes_len`: "That count is exactly the `required` length a
+  `host_copy_bytes` on the same host string reports, so a `host_copy_bytes`
+  whose `capacity` is at least that count returns `Ok` with exactly that
+  count, and the checked program retains that relation [DIAG-2]."
+- `host_utf8_len`: "On `Ok(length)`, a `host_copy_utf8` on the same host
+  string neither returns `Utf8CopyInvalid()` nor, for a `capacity` of at
+  least `length`, returns `Utf8CopyTooSmall(required)`, and the checked
+  program retains that relation [DIAG-2]."
+
+**Checker consumption is deliberately split.** The four count bounds are L0
+fact sources in this batch: [ENT-3] source S10 admits each at the match arm
+observing the successful outcome, in the same trust class as S6's
+allocation-length equality — a declared operation contract, never a writer
+statement, so [SCOPE-2] and the W3 keystone are untouched. The three
+[SYS-9] relations become normative retained facts but are not L0 fact
+sources: consuming them requires relating two calls on the same `Args` or
+`HostString` value (cross-call congruence), which is outside this batch's
+fragment. Until a later version adds that machinery their effect is
+[SYS-12]-style fail-closed retention plus review value, and the `Err` arms
+they could someday prove dead remain written — match exhaustiveness [ERR-2]
+is unchanged. The failing-call companion bound `required > capacity` is
+recorded by the survey and proposed by neither it nor this candidate.
+
+Accounting: this section adds no rule, token, or production; it modifies
+[SYS-8] and [SYS-9] (candidate total: thirteen modified rules) and extends
+[ENT-3] with source S10.
+
+## 8. Acceptance-set delta and monotonicity
 
 Grows: programs containing `claim_stmt` statements; programs calling
 `index_get`. Shrinks: (1) any program with an `index` whose bounds obligation
@@ -551,7 +659,7 @@ governs every subsequent version. The current `tests/programs/` corpus
 contains no identifier spelled `claim`, `because`, or `index_get` (checked
 2026-08-06), so class (3)/(4) migration is empty today.
 
-## 8. Migration note (SIMULATION.md buckets)
+## 9. Migration note (SIMULATION.md buckets)
 
 Source: `research/investigations/obligation-discharge/SIMULATION.md`
 (hand-simulation at exactly this candidate's L0 strength; single-analyst
@@ -592,10 +700,10 @@ changing any protected verdict requires owner agreement and an
 approval-ledger entry per standing law (no such edit is made or implied by
 this candidate).
 
-## 9. Acceptance criterion
+## 10. Acceptance criterion
 
 Batch 1 is implemented correctly only when the real checker, run at exactly
-this candidate's L0 strength on the three simulation programs after the §8
+this candidate's L0 strength on the three simulation programs after the §9
 migration edits, reproduces the simulation's classification: per-site
 proven / claim / branch buckets matching SIMULATION.md's table for
 `utf8parse` (25 proven, 2 claims covering 11 sites, 0 forced branches),
@@ -610,17 +718,19 @@ and a site it fails that the simulation proved is a defect in this text or
 the implementation. `make -C compiler check` and `make check` gate the
 activation change as always.
 
-## 10. Explicitly out of batch 1
+## 11. Explicitly out of batch 1
 
 Per DOSSIER §8 ordering: arithmetic `.trap`/`.checked` mode dissolution
 (§2.9 — OP-2 rows unchanged here), requires-as-goal (FN-8 entry execution
 unchanged), `ensures`, the taint/subject-position gate and signature
-provenance column, boundary-op count postconditions (SYS-8 unchanged),
-counted range loops, loop induction, struct/witness invariants, partition
-policies and ledger tooling, and any warning-bytes normalization. Each needs
-its own candidate and evidence.
+provenance column, counted range loops, loop induction, struct/witness
+invariants, partition policies and ledger tooling, and any warning-bytes
+normalization. Within Section D's own area, also out: cross-call-congruence
+consumption of the three [SYS-9] relations, any lower-bound fact source,
+and the failing-call `required > capacity` companion bound. Each needs its
+own candidate and evidence.
 
-## 11. Open questions requiring owner ruling
+## 12. Open questions requiring owner ruling
 
 - O1. Version number and path: does this batch become
   `kernel-spec-v0.21-candidate.md` (path currently unoccupied), and does the
@@ -667,7 +777,7 @@ its own candidate and evidence.
 - O12. Boundary adapters: batch 1 preserves FN-8 trap semantics at gated
   entries; the dossier's §2.8 error-protocol return for foreign callers is
   deferred to the requires-as-goal batch. Confirm the deferral.
-- O13. EFF-2 row churn (§7 class 2, §8) is a deliberate consequence of
+- O13. EFF-2 row churn (§8 class 2, §9) is a deliberate consequence of
   removing index `traps` in this batch rather than deferring that clause
   until arithmetic dissolution. Confirm.
 - O14. Residual rendering: the fixed whole-obligation schema of [ENT-6]
@@ -675,11 +785,24 @@ its own candidate and evidence.
   difference bound after transitive reduction), which is more informative
   but requires a canonical-frontier selection rule this candidate does not
   draft.
+- O15. Section D coordination: the exact [SYS-8]/[SYS-9] wording is settled
+  at approval with the BOUND-1 owner. Two sub-choices inside it: whether
+  the consolidated [SYS-8] paragraph replaces the target-facing sentence in
+  place (the survey's proposal, adopted in §7) or is added beside it; and
+  whether Section D rides in this batch's candidate at all or lands as its
+  own coordinated candidate on the BOUND-1 critical path.
+- O16. Section D scope inside this batch: the three [SYS-9] relations are
+  proposed as normative retained facts with no L0 consumer (§7). Confirm
+  landing them now versus deferring the (c)-class rows until cross-call
+  congruence exists; and confirm that no lower-bound fact source (the
+  guarded `capacity > 0 ∧ ReadBytes(count) ⇒ count > 0`) is wanted in this
+  batch.
 
-No genuine contradiction between DOSSIER §8 items 1–3 and v0.20 was found
-during drafting: every collision (OP-4's implicit checks, EFF-2's index
-clause, DIAG-3's index row, SET-1's target-trap sentence, FN-8's
-check-elision sentence) is a deliberate, enumerated modification above
-rather than an ambiguity. The nearest tension is O3 (dossier wants operand
-values in the trap record; DIAG-3's fixed schema has no home for them) and
-O9 (offset typing unstated in the studied text).
+No genuine contradiction between DOSSIER §8 items 1–3 plus Section D and
+v0.20 was found during drafting: every collision (OP-4's implicit checks,
+EFF-2's index clause, DIAG-3's index row, SET-1's target-trap sentence,
+FN-8's check-elision sentence, SYS-8's target-facing sentence) is a
+deliberate, enumerated modification above rather than an ambiguity. The
+nearest tensions are O3 (dossier wants operand values in the trap record;
+DIAG-3's fixed schema has no home for them) and O9 (offset typing unstated
+in the studied text).
