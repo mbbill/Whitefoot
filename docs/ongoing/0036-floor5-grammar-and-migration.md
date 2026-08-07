@@ -2,13 +2,14 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` (2026-08-07: the approved delta's site sweep misses ten
-  normative sites in five rules; FN-4's mandatory law-discharge body shape
-  becomes unspellable, which no acceptance-set section predicts and which no
-  mechanical transform can repair. Step 1 assembled through all anchored sites;
-  steps 2–5 not started, because the retained-argument class may move.)
+- **Status:** `WAITING` (2026-08-07: the round-1 blocker is ruled; waiting on the
+  drafter's fixed delta before re-assembling the candidate. Read-only
+  preparation meanwhile.)
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
-  candidate `governance/spec-evolution/spelling-relief-candidate.md`
+  candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
+  2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's
+  discharge premise, expand this task to full atomic activation, and sequence
+  re-assembly after the fixed delta
 - **Owner / workspace:** exec-0036 / `/Users/bytedance/do_not_scan/wf-0036`
   on branch `task/0036-floor5-grammar-and-migration`
 - **Base revision:** b345e2c
@@ -16,24 +17,46 @@ This is a temporary live coordination record, not execution authority.
 
 ## Goal
 
-0031-style atomic activation prep for the FLOOR-5 spelling batch, on one
-task branch: (1) assemble `kernel-spec-v0.23-candidate.md` from active
-v0.22 plus the FLOOR-5 delta; (2) extend the grammar path — two keywords,
-twenty operator spellings, the left-factored `expr`/`infix_tail`, the
-if/value_if productions, deletions for targs and let annotations, FORM-2
-layout; expected verifier total 69 productions (reviewer carry-forward:
-production `infix_tail` maps to node kind `infix`, a name mismatch the
-generator may not expect — make it a success criterion, not a surprise);
-(3) repoint identity pins; (4) migrate the corpus: 1353 targ deletions,
-1748 let annotations, 257 Bool matches to if/else with mandatory else-if
-flattening, ~384 infix respells — scripted in scratch, every file passing
-the branch compiler's parse + FORM-2 canonical audit, plus a REVIEW PACKET
-(diffstat, ten representative before/after excerpts, verdict-meaning
-statement); (5) evidence: verifier green on branch, `make -C compiler
-check` and repo `make check` exit 0 (direct exit codes), adapter
-comparison; (6) STOP before merge with the candidate SHA-256.
+0031-style **full atomic activation** for the FLOOR-5 spelling batch on one
+task branch. The original card scoped this task to the grammar path only while
+still demanding a green compiler gate and adapter parity; the lead's 2026-08-07
+ruling accepts that the card was under-scoped and expands the task to the whole
+activation. Scope:
 
-Discoveries outside the candidate stop the task with evidence.
+1. Re-assemble `kernel-spec-v0.23-candidate.md` from active v0.22 plus the
+   **fixed** FLOOR-5 delta (FN-4's discharge premise re-keyed to the
+   operand-derived selected type, the ten uncovered prose sites, GRAM-1's
+   shape-kind enumeration, and the drafter's re-sweep for the same miss class).
+2. Extend the grammar path — the `if` keyword, twenty operator spellings, the
+   left-factored `expr`/`infix_tail`, `if_stmt`/`value_if`, the targ and
+   let-annotation deletions, FORM-2 layout. Expected verifier total 69
+   productions. Reviewer carry-forward as an explicit success criterion:
+   production `infix_tail` maps to node kind `infix`, and every other
+   production/node pair in this grammar shares a name, so this is where a
+   generator deriving node kinds from production names breaks.
+3. Extend the **semantic path**: TYPE-5 statement-local derivation replacing
+   written annotations, OP-2 operand-derived row selection, GIVE-1 derived
+   delivery with the empty-delivery-set rejection, GRAM-6 type-driven
+   conditional forms, and `if_stmt`/`value_if` through resolution, checking,
+   ENT-3 S1 branch facts, ENT-5 joins, lowering, and backend. FN-4's discharge
+   shape in `calls.rs` and `catalog.rs` follows the re-keyed premise.
+4. Repoint identity pins (0029/0030 style).
+5. Migrate the corpus by scripted transform in scratch: deleted-class type
+   arguments, body-let annotations, Bool matches to if/else with mandatory
+   else-if flattening, infix respells. Every migrated file passes the branch
+   compiler's parse and FORM-2 canonical audit; conformance cases migrate in
+   the same change and no verdict changes meaning.
+6. Evidence: verifier green on the branch with the expected production total;
+   `make -C compiler check` and repo `make check` exit 0, exit codes read
+   directly and never through a pipe; conformance adapter comparison against
+   main's 386/1/14 lane. Plus the REVIEW PACKET — per-file diffstat, ten
+   representative before/after excerpts covering every transform class, and the
+   verdict-meaning statement.
+7. STOP before merge, reporting the candidate SHA-256.
+
+Discoveries outside the candidate stop the task with evidence. If the expanded
+scope proves too large to finish reliably, hand back at a clean boundary as
+0031's first executor did.
 
 ## Progress
 
