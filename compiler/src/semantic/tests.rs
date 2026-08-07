@@ -130,6 +130,17 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 }
 
 #[test]
+fn a_claim_statement_stops_as_an_unsupported_capability_not_a_rejection() {
+    let source = br#"fn main() -> own unit traps {
+  let flag: own Bool = True();
+  claim held: flag because "constructed true";
+  return unit;
+}
+"#;
+    assert_unsupported(source, UnsupportedSemanticFeature::ClaimStatement);
+}
+
+#[test]
 fn scalar_constants_calls_operations_and_checks_publish_one_checked_program() {
     let source = br#"const base: i32 = 40_i32;
 

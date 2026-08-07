@@ -12,10 +12,10 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_bound_to_exact() {
     assert_eq!(SYNTAX_DATA_SPEC_HASH, ACTIVE_KERNEL_SPEC_HASH);
-    assert_eq!(productions().len(), 64);
-    assert_eq!(diagnostic_terminal_order().len(), 75);
+    assert_eq!(productions().len(), 65);
+    assert_eq!(diagnostic_terminal_order().len(), 77);
     assert_eq!(productions()[0], Production::Program);
-    assert_eq!(productions()[63], Production::Effect);
+    assert_eq!(productions()[64], Production::Effect);
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
     assert_eq!(DECISIONS.len(), 74);
-    assert_eq!(SELECT_ROWS.len(), 1_925);
+    assert_eq!(SELECT_ROWS.len(), 1_959);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -167,6 +167,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 1_925);
+    assert_eq!(total_rows, 1_959);
     assert!(saw_atom_only);
 }

@@ -520,6 +520,7 @@ return unit;
 loop @again { break @again; }
 region 'inner { give ordinary; }
 check ordinary else trap "check";
+claim named: ordinary because "claim";
 match ordinary { Some(value: payload) => { give payload; } }
 }
 fn main() -> own unit pure {}
@@ -549,7 +550,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 64);
+    assert_eq!(productions().len(), 65);
     assert_eq!(
         parsed
             .tree
@@ -586,6 +587,11 @@ const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> own unit blocks {\n  return uni
 
 const RESERVED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn external() -> own unit pure {\n  let as: own i32 = blocks;\n  return unit;\n}\n";
+
+const CLAIM_STATEMENT: &[u8] = b"fn probe() -> own unit traps {\n  let flag: own Bool = True();\n  claim held: flag because \"constructed true\";\n  return unit;\n}\n";
+
+const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
+    b"fn probe() -> own unit pure {\n  let claim: own i32 = 0_i32;\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -635,6 +641,31 @@ fn active_contract_parses_the_external_and_blocks_effect_rows() {
             "the active tables must derive the system effect row: {outcome:?}"
         );
     }
+}
+
+#[test]
+fn active_contract_parses_the_claim_statement() {
+    let outcome = parse_active("claim.wf", CLAIM_STATEMENT);
+    let ParseOutcome::Complete(parsed) = outcome else {
+        panic!("the active tables must derive a claim statement: {outcome:?}");
+    };
+    let present = parsed.tree.elements.iter().any(|element| {
+        matches!(
+            element,
+            DerivationElement::Production { production: actual, .. }
+                if *actual == Production::ClaimStmt
+        )
+    });
+    assert!(present, "derivation omitted ClaimStmt");
+}
+
+#[test]
+fn active_contract_reserves_the_claim_spellings() {
+    let outcome = parse_active("identifiers.wf", CLAIM_SPELLINGS_AS_IDENTIFIERS);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("claim/because must be reserved spellings excluded from IDENT: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form3);
 }
 
 #[test]

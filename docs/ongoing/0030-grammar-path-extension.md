@@ -2,8 +2,13 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` (plan defect: the written scope cannot reach the
-  written success criterion; see Blocker)
+- **Status:** `IN PROGRESS` — work complete and green, awaiting lead review.
+  The verifier is at 65/74/77 on this branch and 64/74/75 on main, and
+  `make -C compiler check` is green including `whitefoot-spec` at 128 rules.
+  Both earlier blockers are cleared: the round-1 mechanism defect by the
+  owner's atomic-activation ruling, the round-2 ledger gap by f374082.
+  Nothing is installed into `spec/` and nothing is merged; the candidate
+  SHA-256 below goes to the owner for step-4 exact-byte approval.
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice items 1 and 3,
   and the owner's 2026-08-07 approval of
   `governance/spec-evolution/obligation-discharge-batch1-candidate.md`
@@ -11,7 +16,7 @@ This is a temporary live coordination record, not execution authority.
 - **Owner / workspace:** exec-0030 /
   `/Users/bytedance/do_not_scan/wf-0030-worktree`, branch
   `task/0030-grammar-path-extension`
-- **Base revision:** d459b49
+- **Base revision:** f374082 (rebased 2026-08-07, second rebase)
 - **Dependency:** none (candidate approved; this task gates v0.21 candidate
   generation per ruling O1)
 
@@ -30,12 +35,43 @@ after.
 
 ## Progress
 
-Orientation complete; stopped before any compiler edit. No file under
-`compiler/` is touched by this branch. Baseline `make -C compiler check`
-green at base revision d459b49 (v0.20 identity
-`b082ef3f…312dc1`, 120 rules).
+Round 1 (2026-08-07): orientation only; stopped before any compiler edit and
+reported the mechanism blocker recorded below. Baseline
+`make -C compiler check` green at d459b49.
 
-## Blocker
+Round 2, under the atomic-activation ruling: the grammar path is extended and
+every identity pin repointed on this branch (commits aa279bc and c2066fd).
+
+- The verifier accepts `kernel-spec-v0.21-candidate.md` at **65 productions,
+  74 decisions, 77 terminal predicates**, exit 0. The decision count is
+  unchanged because `claim_stmt`, like `check_stmt`, is a pure sequence that
+  owns no predictive decision. Main is untouched and still verifies the v0.20
+  candidate at 64/74/75.
+- Candidate SHA-256 as computed in this worktree, and the bytes the active
+  identity pins:
+  `3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f`.
+  The count-corrected header (f374082) changed one line only; all three of
+  the verifier's frontend-contract sections are byte-identical to the
+  previous candidate, verified directly, so the grammar tables were
+  untouched and only the hash pin moved.
+- Table delta: fixed spellings 67 -> 69, terminal predicates 75 -> 77,
+  productions 64 -> 65, SELECT_2 rows 1925 -> 1959. The 34 new rows are
+  exactly the check/else mirror the isomorphism predicts; no LL(2) conflict
+  appeared, and cross-arm disjointness holds (`claim` and `because` are new
+  fixed terminals, so they no longer satisfy IDENT).
+- `make -C compiler check` green end to end: 462 lib tests, `cargo fmt`,
+  `clippy -D warnings`, `cargo doc -D warnings`, and `whitefoot-spec`
+  reporting v0.21 identity `3c63a627…934df9f` at 128 rules. The standalone
+  conformance corpus is unaffected and stays pinned to v0.20 at 120/120,
+  which is correct while nothing is installed into `spec/`.
+- One-shot generator used for the table renumbering and deleted with its
+  scratch directory; nothing generated-by-script lands in the repository.
+
+The round-2 blocker — eight missing META-6 derivation-ledger rows for
+`[CLM-1]`, `[CLM-2]`, and `[ENT-1]`..`[ENT-6]` — was resolved on main by
+f374082 and needed no compiler change here beyond the hash repoint.
+
+## Blocker (round 1, resolved by the atomic-activation ruling)
 
 The success criterion cannot be reached by the written scope, and the
 obstacle is not an LL(2) conflict. `whitefoot-grammar` has only a
@@ -99,8 +135,10 @@ Whichever is chosen also needs a decision about the table generator.
 
 ## Stop condition
 
-Reached. The task resumes only under a repaired plan item that names the
-mechanism and the generator.
+Both stop conditions are cleared. Execution stops here by instruction: the
+branch is not merged and nothing is installed into `spec/`. Installation and
+integration follow the owner's step-4 exact-byte approval of
+`3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f`.
 
 ## Plan repair (lead, 2026-08-07, owner ruling "3")
 

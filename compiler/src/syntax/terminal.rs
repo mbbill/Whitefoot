@@ -7,9 +7,9 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 ///
 /// Compound source atoms such as `&uniq` are represented by their two raw
 /// token predicates. The declaration order is the stable dense predicate
-/// index: the v0.17 inventory followed by the three spellings v0.18 added.
-/// First grammar-occurrence order is carried by [`ALL_FIXED_TERMINALS`] and
-/// is stable language data, not parser priority.
+/// index: the v0.17 inventory, the three spellings v0.18 added, then the two
+/// v0.21 added. First grammar-occurrence order is carried by
+/// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum FixedTerminal {
@@ -147,10 +147,14 @@ pub enum FixedTerminal {
     External,
     /// `blocks`.
     Blocks,
+    /// `claim`.
+    Claim,
+    /// `because`.
+    Because,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 67] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 69] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -204,6 +208,8 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 67] = [
     FixedTerminal::Check,
     FixedTerminal::Else,
     FixedTerminal::Trap,
+    FixedTerminal::Claim,
+    FixedTerminal::Because,
     FixedTerminal::Give,
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
@@ -292,6 +298,8 @@ impl FixedTerminal {
             Self::As => b"as",
             Self::External => b"external",
             Self::Blocks => b"blocks",
+            Self::Claim => b"claim",
+            Self::Because => b"because",
         }
     }
 
@@ -339,21 +347,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 75] = {
-    let mut predicates = [TerminalPredicate::Identifier; 75];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 77] = {
+    let mut predicates = [TerminalPredicate::Identifier; 77];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[67] = TerminalPredicate::Identifier;
-    predicates[68] = TerminalPredicate::TypeIdentifier;
-    predicates[69] = TerminalPredicate::RegionIdentifier;
-    predicates[70] = TerminalPredicate::Label;
-    predicates[71] = TerminalPredicate::OperationName;
-    predicates[72] = TerminalPredicate::Literal;
-    predicates[73] = TerminalPredicate::String;
-    predicates[74] = TerminalPredicate::Digits;
+    predicates[69] = TerminalPredicate::Identifier;
+    predicates[70] = TerminalPredicate::TypeIdentifier;
+    predicates[71] = TerminalPredicate::RegionIdentifier;
+    predicates[72] = TerminalPredicate::Label;
+    predicates[73] = TerminalPredicate::OperationName;
+    predicates[74] = TerminalPredicate::Literal;
+    predicates[75] = TerminalPredicate::String;
+    predicates[76] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -361,14 +369,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 67,
-            Self::TypeIdentifier => 68,
-            Self::RegionIdentifier => 69,
-            Self::Label => 70,
-            Self::OperationName => 71,
-            Self::Literal => 72,
-            Self::String => 73,
-            Self::Digits => 74,
+            Self::Identifier => 69,
+            Self::TypeIdentifier => 70,
+            Self::RegionIdentifier => 71,
+            Self::Label => 72,
+            Self::OperationName => 73,
+            Self::Literal => 74,
+            Self::String => 75,
+            Self::Digits => 76,
         }
     }
 }
@@ -431,8 +439,8 @@ fn lower_word(spelling: &[u8]) -> bool {
 }
 
 /// Tests active specification `IDENT` membership, including the fixed-word
-/// exclusion of every fixed lowercase spelling, `as`, `external`, and `blocks`
-/// among them.
+/// exclusion of every fixed lowercase spelling, `as`, `external`, `blocks`,
+/// `claim`, and `because` among them.
 #[must_use]
 pub fn is_identifier(spelling: &[u8]) -> bool {
     lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()

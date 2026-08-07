@@ -340,9 +340,9 @@ mod tests {
     fn exact_active_frontend_contract_verifies() {
         let report =
             verify_candidate(ACTIVE_KERNEL_SPEC_BYTES).expect("active grammar must verify");
-        assert_eq!(report.productions, 64);
+        assert_eq!(report.productions, 65);
         assert_eq!(report.decisions, 74);
-        assert_eq!(report.terminals, 75);
+        assert_eq!(report.terminals, 77);
     }
 
     #[test]

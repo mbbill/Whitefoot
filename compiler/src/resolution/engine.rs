@@ -58,6 +58,12 @@ enum RawRoleKind {
     /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
     /// capability, so classification produces no retained record yet.
     TableChecked,
+    /// A DIAG-1 claim-name carrier: the IDENT of a `claim_stmt`. It declares
+    /// nothing, enters and queries no lexical name domain, and does not
+    /// participate in FORM-3's reservation inventory; its CLM-1 per-function
+    /// uniqueness judgment is an unimplemented compiler capability, so
+    /// classification produces no retained record yet.
+    ClaimName,
 }
 
 impl RawRoleKind {
@@ -67,6 +73,7 @@ impl RawRoleKind {
             Self::LexicalUse(_) => 1,
             Self::DeferredUse(_) => 2,
             Self::TableChecked => 3,
+            Self::ClaimName => 4,
         }
     }
 }
@@ -257,10 +264,11 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                 spelling: role.spelling.clone(),
                 origin: role.origin.clone(),
             }),
-            // Table-checked carriers await the FN-7 kind-table capability;
-            // until then a unit containing one stops in semantic checking as
-            // an explicit unsupported compiler capability.
-            RawRoleKind::TableChecked => {}
+            // Table-checked carriers await the FN-7 kind-table capability, and
+            // claim-name carriers the CLM-1 claim capability; until then a unit
+            // containing one stops in semantic checking as an explicit
+            // unsupported compiler capability.
+            RawRoleKind::TableChecked | RawRoleKind::ClaimName => {}
         }
     }
 
