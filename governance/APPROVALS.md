@@ -249,3 +249,9 @@ specification or test change.
 - reason: full decision delegation to the lead for the night — reviews (including 0034's corpus-migration diff and any executor deliverable), integration, and sequencing proceed without owner stops; nothing blocks awaiting owner input. Owner ratifies or fixes forward after waking.
 - boundary: the active implementation ladder (0033-0035) and its integration; spec ACTIVATIONS remain out of scope for the night (FLOOR-5 stays frozen at READY for an awake review).
 - evidence: owner instruction "别停了，一直跑吧，你帮我决定。别block了…如果真有问题的话到时候再修" (2026-08-07).
+
+## 2026-08-07 — approval (overnight delegation: 0034 conformance changes)
+- owner: lead-approved under the recorded overnight delegation; owner ratification pending
+- reason: the OP-4 flip's conformance consequences — op4-pos-index repurposed to op4-neg-index-undischarged (+ discharged sibling), op4-trap-index-oob repurposed to clm1-trap-runtime-violation (runtime-trap concern relocated to the claim per the R4 ladder), nine verdict-meaning-preserving lane migrations (incl. the eff2 pair's trap-carrier swap, old carrier inexpressible), runner ACTIVE_SPEC pin advanced to v0.22 with six interim compiler-test annotations pending 0035's independent cases. Adapter 364/1/14 -> 366/1/14; coverage 128/128.
+- boundary: the enumerated cases and manifest rows in task/0034 commit b382cf8.
+- evidence: 0034 report + lead review, per the 2026-08-07 standing overnight delegation.
