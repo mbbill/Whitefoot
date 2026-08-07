@@ -75,7 +75,53 @@ done: the blocker's likely repair moves TYPE-5's retained-argument class, which
 would change the terminal inventory, the grammar tables, the migration counts,
 and the candidate hash.
 
-## Blocker
+## Read-only preparation (round 2, at 46c1a0c)
+
+Semantic-path site map, measured not estimated. The load-bearing finding is
+that `if`/`value_if` is far cheaper than the card implies: `CheckedEnumType`
+already has a `Bool` variant and `check/control/matches.rs:193` already builds
+a Bool `MatchDescriptor`, so both forms check into the *existing* checked
+Bool-match statements. Entailment (`entailment/flow.rs:208,219,958,978,1155,
+1163`), lowering (`lowering/builder.rs:506,519`), cleanup, drops, and backend
+all consume `CheckedStatement::Match`/`ValueMatchLet` and need no change — ENT-3
+S1 and the ENT-5 join come out isomorphic for free, which is what the candidate
+asserts. GRAM-1's 1:1 production-to-node law governs the source tree; the
+checked IR is compiler-internal, so this is not desugaring in the spec's sense.
+
+- `if`/`value_if` new work: syntax productions and nodes, the FORM-2 printer,
+  and GRAM-6's three new rejections in `check/control.rs` and
+  `check/control/matches.rs` (Bool-scrutinee `match`, empty `else`, else-if
+  flattening).
+- Let-annotation deletion: `check/control.rs:443 check_let` reads the `Mode`
+  and `Type` children and threads the declared type into
+  `check_match(.., Some(expected))`. The new GIVE-1 inverts that direction —
+  the delivery set produces the type by agreement, so the descriptor returns
+  the derived mode and type from the first delivering `give`, later `give`s are
+  checked for exact agreement, and the empty delivery set rejects at the
+  `let_stmt` node. The OWN-5 `SliceValueMatch` guard and the propagate path
+  re-key onto the derived type.
+- Type-argument deletion: 31 `Production::Targs`/`Targ` read sites across
+  semantic and resolution; the table-op ones concentrate in
+  `check/expressions/calls.rs` (4). Retained-class readers stay. FN-4's
+  discharge shape sits at `check/expressions/calls.rs:150` and
+  `resolution/catalog.rs:108` and follows the re-keyed premise.
+- FORM-2 printer: `finalize/canonical/format.rs` is table-driven
+  (`is_line_bearing:18`, `is_block_bearing:58`). Adding the two productions is
+  one line each; the new mechanism is the join line (`} else {`,
+  `} else if … {`), since no production renders a close-and-open brace line
+  today. The `fn … requires` `} {` line is the precedent to follow.
+- Grammar tables are the real risk: `syntax/grammar/generated.rs` is 4131 lines
+  of committed LL(2) data (65 productions, 75 decisions, 530 nodes, 364 select
+  atoms, 2003 select rows) with no in-repo generator; 0030 and 0031 both used
+  one-shot scratch generators. Going to 69 productions and +21 fixed terminals
+  (76 -> 97 predicates, still inside `TerminalSet`'s u128) moves FOLLOW sets
+  broadly, because operator tokens newly follow every atom — `psuffix*`,
+  `place`, `atom_list`, and `expr` rows all shift. Plan: build the generator so
+  it reproduces v0.22's existing tables byte-for-byte first, then extend. The
+  reviewer's `infix_tail`/`infix` name-mismatch carry-forward is a property of
+  that generator, so it is a first-class test of it.
+
+## Blocker (round 1 — RULED, retained for history)
 
 The approved delta enumerates 24 rules at 46 anchored sites and its §4 claims
 the acceptance-set change is "one canonical respelling plus two deliberate
