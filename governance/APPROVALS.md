@@ -231,3 +231,9 @@ specification or test change.
 - reason: corpus/test migration rules relaxed — edits (scripted or manual) are permitted; the owner reviews the result, same treatment as spec bytes. Standing simplification going forward: spec changes and test changes both go to owner review; no canonical-emitter tooling is built for migration at this stage. Existing law unchanged: conformance verdict meanings never shift silently.
 - boundary: task 0031 item (4) re-scoped to reviewable respell; future respell batches inherit this process.
 - evidence: owner instruction "算了，把规矩放宽一点。可以改，但改完了要给我看，我审批…未来spec和测试都是给我review就好了" (2026-08-07).
+
+## 2026-08-07 — approval (conformance repurpose)
+- owner: approved in session
+- reason: `type5-neg-index-element-type` repurposed — v0.22 deletes stated index element types, making the tested error unspellable; the case becomes a positive pin of the new element-type derivation (`items[0_u64]` binds u8). Same concern, stronger form (R4: check-time rejection promoted to unrepresentable).
+- boundary: that one case source + manifest row, within task 0031.
+- evidence: owner instruction "改用途" (2026-08-07).
