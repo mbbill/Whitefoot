@@ -1019,6 +1019,11 @@ pub(crate) struct CheckedFunction {
     pub(crate) declared_allocates_heap: bool,
     pub(crate) requires: Vec<CheckedStatement>,
     pub(crate) body: Vec<CheckedStatement>,
+    /// Retained dark [ENT] analysis summary [DIAG-2]. No acceptance,
+    /// diagnostic, or lowering behavior reads it in this slice; tests
+    /// exercise it directly.
+    #[allow(dead_code)]
+    pub(crate) entailment: super::entailment::FunctionEntailment,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

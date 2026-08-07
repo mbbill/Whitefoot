@@ -20,6 +20,7 @@ use crate::{
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
 };
 
+use super::entailment::{EntailmentCallee, EntailmentContext, analyze_function};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedContract, CheckedExpression,
     CheckedFunction, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
@@ -425,9 +426,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let nominal_count_before_function_checking = self.nominals.len();
         let main = self.main_id()?;
 
+        // Kill-relevant [EFF-2] projections for the dark entailment engine,
+        // indexed by dense function identity [ENT-5].
+        let mut callees = vec![EntailmentCallee::default(); self.signatures.len()];
+        for signature in &self.signatures {
+            if let Some(slot) = callees.get_mut(signature.id.0 as usize) {
+                *slot = EntailmentCallee::from_signature(
+                    signature.parameters.iter().map(|parameter| parameter.mode),
+                    &signature.declared_effects.writes,
+                );
+            }
+        }
         let mut functions = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
-            functions.push(self.check_function(index)?);
+            functions.push(self.check_function(index, Some(&callees))?);
         }
         if self.nominals.len() != nominal_count_before_function_checking {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -510,17 +522,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    fn check_function(&self, index: usize) -> Result<CheckedFunction, CheckStop> {
+    /// Checks one function. `callees` carries the [EFF-2] projections the
+    /// dark entailment engine reads; `None` skips the engine, which is the
+    /// symbolic generic-template validation pass — [ENT] judgments are per
+    /// concrete instantiation [ENT-1].
+    pub(super) fn check_function(
+        &self,
+        index: usize,
+        callees: Option<&[EntailmentCallee]>,
+    ) -> Result<CheckedFunction, CheckStop> {
         let signature = self
             .signatures
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.check_function_signature(signature)
+        self.check_function_signature(signature, callees)
     }
 
     fn check_function_signature(
         &self,
         signature: &FunctionSignature,
+        callees: Option<&[EntailmentCallee]>,
     ) -> Result<CheckedFunction, CheckStop> {
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
@@ -671,7 +692,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::EffectMismatch,
             );
         }
-        Ok(CheckedFunction {
+        let mut function = CheckedFunction {
             id: signature.id,
             declaration: signature.declaration,
             name: signature.name.clone(),
@@ -686,6 +707,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .map(|prologue| prologue.statements)
                 .unwrap_or_default(),
             body: checked.statements,
-        })
+            entailment: super::entailment::FunctionEntailment::default(),
+        };
+        // The dark [ENT] engine runs behind the accepted path: it computes
+        // the closed fact states and obligation dispositions and retains
+        // them, with zero acceptance impact [ENT-1].
+        if let Some(callees) = callees {
+            function.entailment = analyze_function(
+                &function,
+                &EntailmentContext {
+                    callees,
+                    constants: &self.checked_constants,
+                    nominals: &self.nominals,
+                    binding_names: &binding_names,
+                },
+            );
+        }
+        Ok(function)
     }
 }

@@ -6,6 +6,7 @@
 //! capability, never as a source-language rejection.
 
 mod check;
+mod entailment;
 mod model;
 mod tree;
 
