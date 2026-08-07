@@ -37,12 +37,10 @@ impl fmt::Display for SpecHash {
 pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.21";
 
 /// Repository-relative path of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_PATH: &str =
-    "governance/spec-evolution/kernel-spec-v0.21-candidate.md";
+pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.21.md";
 
 /// Exact UTF-8 text of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_TEXT: &str =
-    include_str!("../../governance/spec-evolution/kernel-spec-v0.21-candidate.md");
+pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.21.md");
 
 /// Exact bytes of the active immutable kernel specification.
 pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
@@ -63,10 +61,7 @@ mod tests {
     #[test]
     fn active_spec_identity_is_the_approved_candidate_identity() {
         assert_eq!(ACTIVE_KERNEL_SPEC_VERSION, "v0.21");
-        assert_eq!(
-            ACTIVE_KERNEL_SPEC_PATH,
-            "governance/spec-evolution/kernel-spec-v0.21-candidate.md"
-        );
+        assert_eq!(ACTIVE_KERNEL_SPEC_PATH, "spec/kernel-spec-v0.21.md");
         assert_eq!(ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_TEXT.as_bytes());
         assert_eq!(
             ACTIVE_KERNEL_SPEC_HASH.to_string(),

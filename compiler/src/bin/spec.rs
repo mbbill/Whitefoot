@@ -8,8 +8,7 @@ use whitefoot::{
     TERMINAL_CONTRACT_SPEC_HASH,
 };
 
-const APPROVED_CANDIDATE: &[u8] =
-    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.21-candidate.md");
+const APPROVED_CANDIDATE: &[u8] = include_bytes!("../../../spec/kernel-spec-v0.21.md");
 const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
 
 fn is_rule_id(text: &str) -> bool {

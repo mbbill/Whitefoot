@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — work complete and green, awaiting lead review.
+- **Status:** `DONE` (2026-08-07: grammar path landed with v0.21 activation; verifier 65/74/77; gate green; merged a77995f)
   The verifier is at 65/74/77 on this branch and 64/74/75 on main, and
   `make -C compiler check` is green including `whitefoot-spec` at 128 rules.
   Both earlier blockers are cleared: the round-1 mechanism defect by the
