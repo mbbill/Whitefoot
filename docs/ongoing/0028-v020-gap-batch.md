@@ -6,8 +6,9 @@ This is a temporary live coordination record, not execution authority.
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 3 and the
   owner's 2026-08-06 batch authorization; exact byte approval still
   required before activation
-- **Owner / workspace:** executor drafts, lead reviews, owner approves
-- **Base revision:** (executor fills at claim)
+- **Owner / workspace:** executor drafts, lead reviews, owner approves;
+  worktree `task/0028-v020-batch`
+- **Base revision:** `23bb7b0`
 
 ## Goal
 
