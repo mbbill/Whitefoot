@@ -2,10 +2,10 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0032 / worktree `/Users/bytedance/do_not_scan/wf-0032`, branch `task/0032-ent-core-engine`
+- **Base revision:** fb7d16a915f5535cd3f1156ce0f150b5e8eacb32
 - **Dependency:** none
 
 ## Goal
