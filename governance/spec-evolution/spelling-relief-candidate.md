@@ -1492,8 +1492,9 @@ its entry fact, so exactly the same obligations discharge — unrepaired
 it was a narrowing on the [FN-1] scale, because S4 fires only on "one
 comparison call" while C1 makes the four nonstrict comparisons infix
 and [FN-8] admits them there, leaving every dependent subscript
-obligation undischarged and rejected under [OP-4] across the 62
-corpus files carrying `requires` blocks. [OP-2]'s negation judgment
+obligation undischarged and rejected under [OP-4] across the 25
+canonical files this batch migrates, and across the 37 more in the
+preserved `tests/codegen/` holding corpus when those are promoted (§3). [OP-2]'s negation judgment
 (site (g)) drops the FN-2 missing-type-argument mandate along with the
 argument it quantified over — unrepaired it was a total narrowing of
 the negation family, rejecting every `ineg.wrap`, `ineg.trap`, and
@@ -1771,8 +1772,10 @@ table-operation calls" and fires only on "one comparison call", so
 after C1 the `requires` prologue this batch's own [FN-8] site admits
 reduces to a form S4 cannot recognize, no entry fact is established,
 and [OP-4] turns the resulting undischarged obligations into
-compile-time rejections across the 62 corpus files carrying `requires`
-blocks (§3, measured on §5's canonical-sources basis). [DIAG-3]'s `node_path` enumeration names "the operation
+compile-time rejections across the 25 canonical files carrying
+`requires` blocks that this batch migrates — §5's basis — and across
+the 37 more in the preserved `tests/codegen/` holding corpus at their
+promotion (§3). [DIAG-3]'s `node_path` enumeration names "the operation
 `call` for a table-operation contract check" two sentences above this
 batch's own clause placing a bare `/` or `%` violation at its `infix`
 node. A third call-spelling correction, [DIAG-1]'s "the rule selected
