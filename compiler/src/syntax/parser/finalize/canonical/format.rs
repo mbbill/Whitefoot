@@ -231,6 +231,7 @@ fn right_attaches(predicate: TerminalPredicate) -> bool {
                 | FixedTerminal::Colon
                 | FixedTerminal::LeftParen
                 | FixedTerminal::LeftAngle
+                | FixedTerminal::LeftBracket
         )
     )
 }
