@@ -16,7 +16,9 @@
 - 2026-08-06 rationale: global prove-or-handle — an unproven assertion is always a compile error — was weighed and rejected as global law, because a deterministic no-search checker leaves a large true-but-unprovable residue that would be camouflaged inside genuine fallibility; it is retained as a candidate opt-in partition mode. (sourced)
 - 2026-08-06 rationale: assume-without-check, the shape where a writer-stated fact reaches the prover with no runtime check, was weighed and rejected outright: no construct may introduce a fact without either a proof or an executed runtime check. (sourced)
 - 2026-08-06 rationale: the trap-versus-value classification standard is modal rather than probabilistic — a predicate whose falsity is reachable in a correct program is a value, and one whose falsity means the program's own reasoning is broken is a trap — because probability is unverifiable and a broken environment makes an unlikely failure certain. (sourced)
+- 2026-08-07 (1032eb63) pitfall: a claim opening a walk loop's body is an every-iteration retained check, so the wide-probe lowering correctly refuses to skip it and wfgrep's hot loop lost every wide probe it had previously been credited for; claims inside hit arms preserve recognition. Claim placement is a performance decision, not only an audit one. (code)
 
 ## Moves
 
 - 2026-08-07 (1032eb63) replaced [[implicit-retained-checks]]: an implicit retained check leaves the trap surface unstated and unauditable, so every unproved obligation must now either derive from stated facts, be carried by a named claim, or reject the program (sourced)
+- 2026-08-07 (817a8a7c) dropped: the total-access operation `index_get`, added one version earlier: under caller-side discharge the washing branch already is the kernel's total access, and the second form served nothing the branch did not (sourced)
