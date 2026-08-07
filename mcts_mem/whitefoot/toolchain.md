@@ -18,6 +18,8 @@
 - 2026-07-22 implementation: resolved `loop`/`break` now reuse the compiler's existing checked control flow and typed block parameters; iterative scalar and tag-only-enum programs execute through LLVM while FN-1, OWN-11, and explicit edge cleanup remain enforced. (code)
 - 2026-07-22 implementation: exact owner-approved v0.13 is active, with compiler and conformance identities bound to its hash. Result propagation's contextual affine consumption reuses the normal semantic, checked-program, typed IR, and LLVM path; checked division/remainder is the next closed Result-producing family. (code)
 
+- 2026-08-07 (7f68c71f) pitfall: the committed LL(2) select table had carried 70 predicate pairs the grammar cannot derive and 57 rows naming the wrong provenance node since a hand patch a version earlier, and nothing detected it for a version. The detection asymmetry is the lesson: a MISSING row has two detectors (the corpus fails to parse, and the arm-coverage check), while a SPURIOUS row has none — the verifier counts productions, decisions, and terminal predicates and none of them moves when rows are added, and no valid program ever reaches the impossible lookahead a spurious row answers. The tables are now derived from the specification grammar and the derivation is gated. (code)
+
 ## Moves
 
 - 2026-07-22 (ed9e3db4) replaced [[product-scale-checked-artifact-toolchain]]: mandatory checked artifacts, replay, capability overlays, release gates, and whole-compiler resource profiles delayed the first executable compiler without serving the current research goal; proportional independent tests and direct ordinary compiler structures retain the useful correctness constraints (sourced)
