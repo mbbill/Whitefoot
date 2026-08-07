@@ -22,3 +22,7 @@ fn inspect(wrapper: own Wrapper) -> own unit pure {
   }
   return unit;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}

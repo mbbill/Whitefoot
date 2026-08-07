@@ -11,3 +11,7 @@ fn inspect ['r](holder: &'r Packet) -> own unit pure {
   }
   return unit;
 }
+
+fn main() -> own unit pure {
+  return unit;
+}
