@@ -104,7 +104,10 @@ status header, in the v0.20 header conventions.
 > exact `own u64` (the newly stated typing rule). From this version forward
 > the [ENT-1]
 > monotonicity law governs: checker strengthening may only convert claims to
-> advisories and undischarged obligations to discharged ones. Selection
+> advisories and undischarged obligations to discharged ones, with one
+> enumerated exception — a strengthened fragment may newly refute a claim
+> under [CLM-2], rejecting a program thereby proven to trap on every
+> execution reaching it. Selection
 > ground: evidence-selected — SIMULATION.md (L0 discharges 57–59% of
 > non-test bounds sites outright on three real programs, every residual one
 > line, threading depth ≤ 3), PROBE-W1 rounds 1–2 (16/16 honest writer shapes
@@ -114,6 +117,14 @@ status header, in the v0.20 header conventions.
 > non-authoritative until the grammar check, derived-material review,
 > full-document hash, exact owner approval, and active-target installation
 > complete.
+
+The header states fifteen modified rules. One further OP-1 sentence —
+non-consuming place-operand reads — is drafted in §6 as a pending sixteenth
+modification for owner adoption at the approval sitting: adopting it edits
+the header's count and OP-1 list entry in one line; dropping it deletes the
+§6 block and changes nothing else. The header bytes above deliberately do
+not mention it, so they are final under either outcome except for that one
+edit.
 
 ## 2. Grammar delta
 
@@ -516,8 +527,14 @@ diagnostic renders the residual as exactly: the offset atom's canonical
 source bytes, then ` < len(`, then the base place's canonical source bytes,
 then `)`. The mechanical fix is one dominating claim or branch establishing
 the relation — in canonical ANF, one `let` binding `len<T>(P)` followed by
-one `claim` on, or `match` over, the admitted comparison [CLM-1, ENT-3];
-that fallback always closes discharge and reproduces the pre-revision
+one `claim` on, or `match` over, the admitted comparison [CLM-1, ENT-3].
+For an offset atom that is itself an index-bearing place — legal under
+[GRAM-5]'s place grammar but no term under [ENT-2] — the fix first rebinds
+that inner read through one ordinary `let` (and, where the element type is
+narrower than u64, one total `cvt` [OP-6], both S5-tracked), making the
+offset a term whose own inner obligation is discharged the same way. With
+at most that one rebinding step per nested offset,
+the fallback always closes discharge and reproduces the pre-revision
 runtime check per site, from zero cost where facts already prove the bound
 to full price where none do.
 
@@ -555,6 +572,25 @@ reservation payloads; the `(place, u64)` signature notation follows
 `DotlessOperationNames`, and therefore `ReservedLowerNames`,
 grow by the derived member `index_get`. `index_get` is a table operation with
 positional operands [GRAM-11].
+
+**[OP-1] — pending sixteenth modification (drafted for the approval
+sitting per reviewer recommendation F11.7; owner adoption pending).** One
+sentence is added immediately after the operation-family resolution
+paragraph (the paragraph ending "Operand types never select between an
+operation family, a system operation, and a function."): "A bare `place`
+operand that a table-operation row reads without consuming — the `len`
+operand, the place viewed by `slice_of` through its explicit borrow, and
+the base place of `index` and `index_get` — is a non-consuming read: it
+neither moves nor partially consumes an affine root [OWN-1], exactly the
+reading [FN-8] already states for a place used as a non-consuming operand
+of an admitted table operation." Adoption makes [ENT-6]'s fallback
+(`let n: own u64 = len<T>(P);`) well-formed for every affine base by
+stated rule rather than by v0.20's latent reading, and turns the [OP-4]
+index_get non-consuming sentence into a restatement rather than a special
+case. Accounting is kept dual so the sitting resolves it in one line:
+fifteen modified rules stand firm; adoption makes sixteen and adds one
+clause to the §1 header's OP-1 list entry; rejection deletes this block
+and changes nothing else.
 
 **[OP-4]** Complete replacement:
 
@@ -638,11 +674,16 @@ as in read position, so accepted target evaluation executes no runtime check
 and cannot trap. Field suffixes introduce no runtime evaluation."
 
 **[DIAG-1]** The closed carrier taxonomy gains one class (review finding
-F6.2): "The claim-name carrier is exactly the IDENT of a `claim_stmt`
+F6.2). Inserted into the carrier-taxonomy paragraph, immediately after the
+table-checked-carriers sentences (after "… and none participates in
+FORM-3's reservation inventory.") and before the X09/U18 sentence: "The
+claim-name carrier is exactly the IDENT of a `claim_stmt`
 [CLM-1]. It produces one record for CLM-1's per-function uniqueness
 judgment; it produces no declaration, lexical-use, dependent-declaration,
 deferred-use, or table-checked record, enters and queries no lexical name
-domain, and does not participate in FORM-3's reservation inventory."
+domain, and does not participate in FORM-3's reservation inventory." The
+X09/U18 only-same-token-overlap sentence is unaffected: the claim-name
+carrier is single-role.
 
 **[DIAG-2]** The disposition sentences become: "Every potentially removable
 implicit source-language check has exactly one disposition: `retained`, or
@@ -926,10 +967,10 @@ here explicitly rather than silently:
 2. `index_get`'s place operand is stated non-consuming explicitly (§6
    OP-4), while `len`, `slice_of`, and the `index` base inherit v0.20's
    latent unstated non-consuming reading that [ENT-6]'s fallback
-   (`let n: own u64 = len<T>(P);`) relies on. A one-sentence v0.21
-   clarification of the existing operations' place operands would be a
-   sixteenth modified rule; recommended, not drafted — owner call at the
-   approval sitting.
+   (`let n: own u64 = len<T>(P);`) relies on. The one-sentence
+   clarification is now drafted as the pending sixteenth modification (§6,
+   OP-1) per the reviewer's recommendation; owner adoption or rejection at
+   the approval sitting is a one-line accounting change either way.
 3. F2 is repaired by both of the review's independent repairs — scope-exit
    kills ordered before joins as edge events, and declaration-anchored term
    identity — not only the mandatory first.
@@ -942,3 +983,10 @@ here explicitly rather than silently:
    and CLM-2 refutation is the one enumerated acceptance-tightening edge
    [ENT-1]; the review's alternative (cross-version refutation as advisory)
    was not taken.
+6. Re-verification (2026-08-07, commit 9a4ff9f) confirmed every finding
+   closed, found no new soundness or acceptance issue, and concurred with
+   the five choices above. The subsequent polish pass scoped the §1
+   header's monotonicity sentence with the refutation exception, named
+   [ENT-6]'s rebinding step for nested-index offsets, gave the [DIAG-1]
+   carrier insertion its exact anchor, and drafted the pending sixteenth
+   modification (§6, OP-1).
