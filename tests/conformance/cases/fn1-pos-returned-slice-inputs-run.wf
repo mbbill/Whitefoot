@@ -1,8 +1,8 @@
-fn pass_slice ['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn pass_slice['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
   return move value;
 }
 
-fn choose_slice ['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose_slice['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
   match take_left {
     True() => {
       return move left;
@@ -19,13 +19,13 @@ fn main() -> own unit traps {
   region 'view {
     let pass_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let passed: own slice<'view, u8> = pass_slice<'view>(value: move pass_source);
-    let passed_value: own u8 = index<u8>(passed, 0_u64);
+    let passed_value: own u8 = passed[0_u64];
     check ieq<u8>(passed_value, 11_u8) else trap "returned slice pass through";
     let left_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let right_source: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
     let take_left: own Bool = False();
     let selected: own slice<'view, u8> = choose_slice<'view>(take_left: take_left, left: move left_source, right: move right_source);
-    let selected_value: own u8 = index<u8>(selected, 0_u64);
+    let selected_value: own u8 = selected[0_u64];
     check ieq<u8>(selected_value, 29_u8) else trap "returned slice choice";
   }
   return unit;

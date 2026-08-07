@@ -65,9 +65,9 @@ fn the_canonical_release_case_holds_exactly() {
     assert_release_mismatch(CANONICAL_REJECT, "file", b"pure");
 }
 
-const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file ['f](file: &'f ReadFile) -> own unit pure {\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> own unit pure {\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-const BORROWED_REJECT: &[u8] = b"fn touch_read_file ['f](file: &'f ReadFile) -> own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_REJECT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> own unit external, blocks {\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_borrowed_resource_parameter_contributes_no_release_row() {

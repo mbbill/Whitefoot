@@ -135,7 +135,7 @@ fn main() -> own unit pure {
 
 #[test]
 fn affine_const_is_not_usable_as_an_owned_law_identity() {
-    let source = br#"const zero: array<u8, 1> = [0_u8];
+    let source = br#"const zero: array<u8, 1> =[0_u8];
 
 contract InvalidIdentity {
   fn combine(x: own array<u8, 1>, y: own array<u8, 1>) -> own array<u8, 1> pure;
@@ -468,10 +468,10 @@ fn main() -> own unit pure {
 #[test]
 fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
     let source = br#"contract LengthSum {
-  fn sum ['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left 'right);
+  fn sum['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left 'right);
 }
 
-fn add_lengths ['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b 'a) {
+fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b 'a) {
   let first_length: own u64 = len<u8>(deref(first));
   let second_length: own u64 = len<u8>(deref(second));
   return iadd.wrap<u64>(first_length, second_length);
@@ -496,11 +496,11 @@ fn main() -> own unit pure {
 #[test]
 fn positional_region_alpha_equality_includes_slice_type_regions() {
     let source = br#"contract ByteReader {
-  fn first ['source](values: own slice<'source, u8>) -> own u8 reads('source), traps;
+  fn first['source](values: own slice<'source, u8>) -> own u8 reads('source), traps;
 }
 
-fn read_first ['input](bytes: own slice<'input, u8>) -> own u8 reads('input), traps {
-  return index<u8>(bytes, 0_u64);
+fn read_first['input](bytes: own slice<'input, u8>) -> own u8 reads('input), traps {
+  return bytes[0_u64];
 }
 
 conform u8: ByteReader {
@@ -522,10 +522,10 @@ fn main() -> own unit pure {
 #[test]
 fn positional_region_ordinal_swap_is_not_alpha_equal() {
     let source = br#"contract FirstLength {
-  fn length ['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left);
+  fn length['left, 'right](x: &'left buffer<u8>, y: &'right buffer<u8>) -> own u64 reads('left);
 }
 
-fn second_length ['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b) {
+fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b) {
   return len<u8>(deref(second));
 }
 
@@ -548,7 +548,7 @@ fn main() -> own unit pure {
 #[test]
 fn contract_slice_results_share_function_signature_formation() {
     let source = br#"contract SlicePass {
-  fn pass ['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure;
+  fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure;
 }
 
 fn main() -> own unit pure {
@@ -567,7 +567,7 @@ fn main() -> own unit pure {
 
     assert_rule(
         br#"contract Invalid {
-  fn borrowed ['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> &uniq 'descriptor slice<'data, u8> pure;
+  fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> &uniq 'descriptor slice<'data, u8> pure;
 }
 
 fn main() -> own unit pure {

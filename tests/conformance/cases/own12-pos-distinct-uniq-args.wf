@@ -1,4 +1,4 @@
-fn two ['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
+fn two['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {
   return unit;
 }
 

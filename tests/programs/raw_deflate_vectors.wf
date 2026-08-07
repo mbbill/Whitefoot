@@ -1,14 +1,14 @@
-const fixed_phrase_expected: array<u8, 17> = [104_u8, 101_u8, 108_u8, 108_u8, 111_u8, 32_u8, 104_u8, 101_u8, 108_u8, 108_u8, 111_u8, 32_u8, 104_u8, 101_u8, 108_u8, 108_u8, 111_u8];
+const fixed_phrase_expected: array<u8, 17> =[104_u8, 101_u8, 108_u8, 108_u8, 111_u8, 32_u8, 104_u8, 101_u8, 108_u8, 108_u8, 111_u8, 32_u8, 104_u8, 101_u8, 108_u8, 108_u8, 111_u8];
 
-const dynamic_input_bytes: array<u8, 72> = [13_u8, 202_u8, 91_u8, 2_u8, 128_u8, 32_u8, 8_u8, 4_u8, 64_u8, 158_u8, 139_u8, 152_u8, 160_u8, 213_u8, 253_u8, 239_u8, 90_u8, 243_u8, 61_u8, 103_u8, 19_u8, 173_u8, 28_u8, 26_u8, 17_u8, 236_u8, 150_u8, 207_u8, 134_u8, 11_u8, 145_u8, 171_u8, 21_u8, 32_u8, 164_u8, 140_u8, 119_u8, 112_u8, 93_u8, 217_u8, 243_u8, 178_u8, 251_u8, 240_u8, 76_u8, 135_u8, 55_u8, 150_u8, 85_u8, 121_u8, 116_u8, 186_u8, 104_u8, 114_u8, 75_u8, 235_u8, 73_u8, 96_u8, 132_u8, 10_u8, 118_u8, 208_u8, 159_u8, 101_u8, 210_u8, 80_u8, 41_u8, 198_u8, 18_u8, 41_u8, 203_u8, 15_u8];
+const dynamic_input_bytes: array<u8, 72> =[13_u8, 202_u8, 91_u8, 2_u8, 128_u8, 32_u8, 8_u8, 4_u8, 64_u8, 158_u8, 139_u8, 152_u8, 160_u8, 213_u8, 253_u8, 239_u8, 90_u8, 243_u8, 61_u8, 103_u8, 19_u8, 173_u8, 28_u8, 26_u8, 17_u8, 236_u8, 150_u8, 207_u8, 134_u8, 11_u8, 145_u8, 171_u8, 21_u8, 32_u8, 164_u8, 140_u8, 119_u8, 112_u8, 93_u8, 217_u8, 243_u8, 178_u8, 251_u8, 240_u8, 76_u8, 135_u8, 55_u8, 150_u8, 85_u8, 121_u8, 116_u8, 186_u8, 104_u8, 114_u8, 75_u8, 235_u8, 73_u8, 96_u8, 132_u8, 10_u8, 118_u8, 208_u8, 159_u8, 101_u8, 210_u8, 80_u8, 41_u8, 198_u8, 18_u8, 41_u8, 203_u8, 15_u8];
 
-const dynamic_match_input_bytes: array<u8, 82> = [237_u8, 205_u8, 217_u8, 17_u8, 195_u8, 32_u8, 12_u8, 5_u8, 64_u8, 157_u8, 79_u8, 8_u8, 35_u8, 129_u8, 147_u8, 254_u8, 123_u8, 181_u8, 75_u8, 72_u8, 1_u8, 249_u8, 223_u8, 153_u8, 61_u8, 155_u8, 104_u8, 229_u8, 208_u8, 136_u8, 96_u8, 183_u8, 252_u8, 108_u8, 184_u8, 16_u8, 185_u8, 90_u8, 1_u8, 66_u8, 202_u8, 248_u8, 14_u8, 174_u8, 43_u8, 123_u8, 94_u8, 118_u8, 31_u8, 158_u8, 233_u8, 240_u8, 198_u8, 178_u8, 42_u8, 143_u8, 78_u8, 23_u8, 77_u8, 110_u8, 105_u8, 61_u8, 9_u8, 140_u8, 80_u8, 193_u8, 14_u8, 122_u8, 177_u8, 76_u8, 26_u8, 42_u8, 197_u8, 88_u8, 34_u8, 101_u8, 121_u8, 254_u8, 199_u8, 207_u8, 199_u8, 3_u8];
+const dynamic_match_input_bytes: array<u8, 82> =[237_u8, 205_u8, 217_u8, 17_u8, 195_u8, 32_u8, 12_u8, 5_u8, 64_u8, 157_u8, 79_u8, 8_u8, 35_u8, 129_u8, 147_u8, 254_u8, 123_u8, 181_u8, 75_u8, 72_u8, 1_u8, 249_u8, 223_u8, 153_u8, 61_u8, 155_u8, 104_u8, 229_u8, 208_u8, 136_u8, 96_u8, 183_u8, 252_u8, 108_u8, 184_u8, 16_u8, 185_u8, 90_u8, 1_u8, 66_u8, 202_u8, 248_u8, 14_u8, 174_u8, 43_u8, 123_u8, 94_u8, 118_u8, 31_u8, 158_u8, 233_u8, 240_u8, 198_u8, 178_u8, 42_u8, 143_u8, 78_u8, 23_u8, 77_u8, 110_u8, 105_u8, 61_u8, 9_u8, 140_u8, 80_u8, 193_u8, 14_u8, 122_u8, 177_u8, 76_u8, 26_u8, 42_u8, 197_u8, 88_u8, 34_u8, 101_u8, 121_u8, 254_u8, 199_u8, 207_u8, 199_u8, 3_u8];
 
-const mixed_block_input_bytes: array<u8, 78> = [12_u8, 202_u8, 91_u8, 2_u8, 128_u8, 32_u8, 8_u8, 4_u8, 64_u8, 158_u8, 139_u8, 152_u8, 160_u8, 213_u8, 253_u8, 239_u8, 90_u8, 243_u8, 61_u8, 103_u8, 19_u8, 173_u8, 28_u8, 26_u8, 17_u8, 236_u8, 150_u8, 207_u8, 134_u8, 11_u8, 145_u8, 171_u8, 21_u8, 32_u8, 164_u8, 140_u8, 119_u8, 112_u8, 93_u8, 217_u8, 243_u8, 178_u8, 251_u8, 240_u8, 76_u8, 135_u8, 55_u8, 150_u8, 85_u8, 121_u8, 116_u8, 186_u8, 104_u8, 114_u8, 75_u8, 235_u8, 73_u8, 96_u8, 132_u8, 10_u8, 118_u8, 208_u8, 159_u8, 101_u8, 210_u8, 80_u8, 41_u8, 198_u8, 18_u8, 41_u8, 203_u8, 111_u8, 25_u8, 169_u8, 57_u8, 57_u8, 249_u8, 0_u8];
+const mixed_block_input_bytes: array<u8, 78> =[12_u8, 202_u8, 91_u8, 2_u8, 128_u8, 32_u8, 8_u8, 4_u8, 64_u8, 158_u8, 139_u8, 152_u8, 160_u8, 213_u8, 253_u8, 239_u8, 90_u8, 243_u8, 61_u8, 103_u8, 19_u8, 173_u8, 28_u8, 26_u8, 17_u8, 236_u8, 150_u8, 207_u8, 134_u8, 11_u8, 145_u8, 171_u8, 21_u8, 32_u8, 164_u8, 140_u8, 119_u8, 112_u8, 93_u8, 217_u8, 243_u8, 178_u8, 251_u8, 240_u8, 76_u8, 135_u8, 55_u8, 150_u8, 85_u8, 121_u8, 116_u8, 186_u8, 104_u8, 114_u8, 75_u8, 235_u8, 73_u8, 96_u8, 132_u8, 10_u8, 118_u8, 208_u8, 159_u8, 101_u8, 210_u8, 80_u8, 41_u8, 198_u8, 18_u8, 41_u8, 203_u8, 111_u8, 25_u8, 169_u8, 57_u8, 57_u8, 249_u8, 0_u8];
 
-const literal_only_dynamic_input_bytes: array<u8, 13> = [5_u8, 192_u8, 129_u8, 8_u8, 0_u8, 0_u8, 0_u8, 0_u8, 32_u8, 182_u8, 253_u8, 165_u8, 78_u8];
+const literal_only_dynamic_input_bytes: array<u8, 13> =[5_u8, 192_u8, 129_u8, 8_u8, 0_u8, 0_u8, 0_u8, 0_u8, 32_u8, 182_u8, 253_u8, 165_u8, 78_u8];
 
-const dynamic_expected_bytes: array<u8, 100> = [16_u8, 15_u8, 0_u8, 0_u8, 12_u8, 9_u8, 8_u8, 3_u8, 7_u8, 7_u8, 7_u8, 1_u8, 5_u8, 4_u8, 9_u8, 18_u8, 15_u8, 6_u8, 5_u8, 2_u8, 0_u8, 0_u8, 5_u8, 3_u8, 4_u8, 13_u8, 6_u8, 6_u8, 2_u8, 0_u8, 3_u8, 1_u8, 6_u8, 19_u8, 8_u8, 1_u8, 13_u8, 11_u8, 9_u8, 14_u8, 10_u8, 11_u8, 4_u8, 17_u8, 16_u8, 1_u8, 10_u8, 9_u8, 5_u8, 6_u8, 5_u8, 14_u8, 6_u8, 12_u8, 4_u8, 13_u8, 13_u8, 5_u8, 7_u8, 14_u8, 9_u8, 5_u8, 2_u8, 3_u8, 9_u8, 1_u8, 14_u8, 2_u8, 14_u8, 3_u8, 16_u8, 9_u8, 6_u8, 6_u8, 8_u8, 7_u8, 3_u8, 2_u8, 6_u8, 15_u8, 7_u8, 0_u8, 11_u8, 9_u8, 14_u8, 2_u8, 10_u8, 0_u8, 8_u8, 3_u8, 2_u8, 13_u8, 1_u8, 6_u8, 12_u8, 2_u8, 2_u8, 13_u8, 4_u8, 9_u8];
+const dynamic_expected_bytes: array<u8, 100> =[16_u8, 15_u8, 0_u8, 0_u8, 12_u8, 9_u8, 8_u8, 3_u8, 7_u8, 7_u8, 7_u8, 1_u8, 5_u8, 4_u8, 9_u8, 18_u8, 15_u8, 6_u8, 5_u8, 2_u8, 0_u8, 0_u8, 5_u8, 3_u8, 4_u8, 13_u8, 6_u8, 6_u8, 2_u8, 0_u8, 3_u8, 1_u8, 6_u8, 19_u8, 8_u8, 1_u8, 13_u8, 11_u8, 9_u8, 14_u8, 10_u8, 11_u8, 4_u8, 17_u8, 16_u8, 1_u8, 10_u8, 9_u8, 5_u8, 6_u8, 5_u8, 14_u8, 6_u8, 12_u8, 4_u8, 13_u8, 13_u8, 5_u8, 7_u8, 14_u8, 9_u8, 5_u8, 2_u8, 3_u8, 9_u8, 1_u8, 14_u8, 2_u8, 14_u8, 3_u8, 16_u8, 9_u8, 6_u8, 6_u8, 8_u8, 7_u8, 3_u8, 2_u8, 6_u8, 15_u8, 7_u8, 0_u8, 11_u8, 9_u8, 14_u8, 2_u8, 10_u8, 0_u8, 8_u8, 3_u8, 2_u8, 13_u8, 1_u8, 6_u8, 12_u8, 2_u8, 2_u8, 13_u8, 4_u8, 9_u8];
 
 fn make_dynamic_input() -> own buffer<u8> allocates(heap), traps {
   let input: own buffer<u8> = buffer_new<u8>(72_u64, 0_u8);
@@ -20,8 +20,8 @@ fn make_dynamic_input() -> own buffer<u8> allocates(heap), traps {
         break @fill_dynamic_source;
       }
       False() => {
-        let byte: own u8 = index<u8>(dynamic_input_bytes, index_value);
-        set index<u8>(input, index_value) = byte;
+        let byte: own u8 = dynamic_input_bytes[index_value];
+        set input[index_value] = byte;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
       }
     }
@@ -39,8 +39,8 @@ fn make_dynamic_match_input() -> own buffer<u8> allocates(heap), traps {
         break @fill_dynamic_match_source;
       }
       False() => {
-        let byte: own u8 = index<u8>(dynamic_match_input_bytes, index_value);
-        set index<u8>(input, index_value) = byte;
+        let byte: own u8 = dynamic_match_input_bytes[index_value];
+        set input[index_value] = byte;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
       }
     }
@@ -58,8 +58,8 @@ fn make_literal_only_dynamic_input() -> own buffer<u8> allocates(heap), traps {
         break @fill_literal_only_dynamic_source;
       }
       False() => {
-        let byte: own u8 = index<u8>(literal_only_dynamic_input_bytes, index_value);
-        set index<u8>(input, index_value) = byte;
+        let byte: own u8 = literal_only_dynamic_input_bytes[index_value];
+        set input[index_value] = byte;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
       }
     }
@@ -95,21 +95,21 @@ fn error_code(error: own InflateError) -> own u8 pure {
 
 fn main() -> own unit allocates(heap), traps {
   let valid_input: own buffer<u8> = buffer_new<u8>(15_u64, 0_u8);
-  set index<u8>(valid_input, 0_u64) = 0_u8;
-  set index<u8>(valid_input, 1_u64) = 2_u8;
-  set index<u8>(valid_input, 2_u64) = 0_u8;
-  set index<u8>(valid_input, 3_u64) = 253_u8;
-  set index<u8>(valid_input, 4_u64) = 255_u8;
-  set index<u8>(valid_input, 5_u64) = 104_u8;
-  set index<u8>(valid_input, 6_u64) = 101_u8;
-  set index<u8>(valid_input, 7_u64) = 1_u8;
-  set index<u8>(valid_input, 8_u64) = 3_u8;
-  set index<u8>(valid_input, 9_u64) = 0_u8;
-  set index<u8>(valid_input, 10_u64) = 252_u8;
-  set index<u8>(valid_input, 11_u64) = 255_u8;
-  set index<u8>(valid_input, 12_u64) = 108_u8;
-  set index<u8>(valid_input, 13_u64) = 108_u8;
-  set index<u8>(valid_input, 14_u64) = 111_u8;
+  set valid_input[0_u64] = 0_u8;
+  set valid_input[1_u64] = 2_u8;
+  set valid_input[2_u64] = 0_u8;
+  set valid_input[3_u64] = 253_u8;
+  set valid_input[4_u64] = 255_u8;
+  set valid_input[5_u64] = 104_u8;
+  set valid_input[6_u64] = 101_u8;
+  set valid_input[7_u64] = 1_u8;
+  set valid_input[8_u64] = 3_u8;
+  set valid_input[9_u64] = 0_u8;
+  set valid_input[10_u64] = 252_u8;
+  set valid_input[11_u64] = 255_u8;
+  set valid_input[12_u64] = 108_u8;
+  set valid_input[13_u64] = 108_u8;
+  set valid_input[14_u64] = 111_u8;
   let valid_output: own buffer<u8> = buffer_new<u8>(5_u64, 0_u8);
   region 'valid_region {
     let valid_result: own Result<u64, InflateError> = inflate<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
@@ -122,23 +122,23 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  let valid_zero: own u8 = index<u8>(valid_output, 0_u64);
-  let valid_one: own u8 = index<u8>(valid_output, 1_u64);
-  let valid_two: own u8 = index<u8>(valid_output, 2_u64);
-  let valid_three: own u8 = index<u8>(valid_output, 3_u64);
-  let valid_four: own u8 = index<u8>(valid_output, 4_u64);
+  let valid_zero: own u8 = valid_output[0_u64];
+  let valid_one: own u8 = valid_output[1_u64];
+  let valid_two: own u8 = valid_output[2_u64];
+  let valid_three: own u8 = valid_output[3_u64];
+  let valid_four: own u8 = valid_output[4_u64];
   check ieq<u8>(valid_zero, 104_u8) else trap "stored byte zero";
   check ieq<u8>(valid_one, 101_u8) else trap "stored byte one";
   check ieq<u8>(valid_two, 108_u8) else trap "stored byte two";
   check ieq<u8>(valid_three, 108_u8) else trap "stored byte three";
   check ieq<u8>(valid_four, 111_u8) else trap "stored byte four";
   let invalid_length_input: own buffer<u8> = buffer_new<u8>(6_u64, 0_u8);
-  set index<u8>(invalid_length_input, 0_u64) = 1_u8;
-  set index<u8>(invalid_length_input, 1_u64) = 1_u8;
-  set index<u8>(invalid_length_input, 2_u64) = 0_u8;
-  set index<u8>(invalid_length_input, 3_u64) = 255_u8;
-  set index<u8>(invalid_length_input, 4_u64) = 255_u8;
-  set index<u8>(invalid_length_input, 5_u64) = 65_u8;
+  set invalid_length_input[0_u64] = 1_u8;
+  set invalid_length_input[1_u64] = 1_u8;
+  set invalid_length_input[2_u64] = 0_u8;
+  set invalid_length_input[3_u64] = 255_u8;
+  set invalid_length_input[4_u64] = 255_u8;
+  set invalid_length_input[5_u64] = 65_u8;
   let invalid_length_output: own buffer<u8> = buffer_new<u8>(1_u64, 9_u8);
   region 'invalid_length_region {
     let invalid_length_result: own Result<u64, InflateError> = inflate<'invalid_length_region>(out: &uniq 'invalid_length_region invalid_length_output, input: move invalid_length_input);
@@ -172,13 +172,13 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  let invalid_length_sentinel: own u8 = index<u8>(invalid_length_output, 0_u64);
+  let invalid_length_sentinel: own u8 = invalid_length_output[0_u64];
   check ieq<u8>(invalid_length_sentinel, 9_u8) else trap "invalid length wrote output";
   let truncated_input: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
-  set index<u8>(truncated_input, 0_u64) = 1_u8;
-  set index<u8>(truncated_input, 1_u64) = 2_u8;
-  set index<u8>(truncated_input, 2_u64) = 0_u8;
-  set index<u8>(truncated_input, 3_u64) = 253_u8;
+  set truncated_input[0_u64] = 1_u8;
+  set truncated_input[1_u64] = 2_u8;
+  set truncated_input[2_u64] = 0_u8;
+  set truncated_input[3_u64] = 253_u8;
   let truncated_output: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
   region 'truncated_region {
     let truncated_result: own Result<u64, InflateError> = inflate<'truncated_region>(out: &uniq 'truncated_region truncated_output, input: move truncated_input);
@@ -212,16 +212,16 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  let truncated_sentinel: own u8 = index<u8>(truncated_output, 0_u64);
+  let truncated_sentinel: own u8 = truncated_output[0_u64];
   check ieq<u8>(truncated_sentinel, 7_u8) else trap "truncation wrote output";
   let full_input: own buffer<u8> = buffer_new<u8>(7_u64, 0_u8);
-  set index<u8>(full_input, 0_u64) = 1_u8;
-  set index<u8>(full_input, 1_u64) = 2_u8;
-  set index<u8>(full_input, 2_u64) = 0_u8;
-  set index<u8>(full_input, 3_u64) = 253_u8;
-  set index<u8>(full_input, 4_u64) = 255_u8;
-  set index<u8>(full_input, 5_u64) = 65_u8;
-  set index<u8>(full_input, 6_u64) = 66_u8;
+  set full_input[0_u64] = 1_u8;
+  set full_input[1_u64] = 2_u8;
+  set full_input[2_u64] = 0_u8;
+  set full_input[3_u64] = 253_u8;
+  set full_input[4_u64] = 255_u8;
+  set full_input[5_u64] = 65_u8;
+  set full_input[6_u64] = 66_u8;
   let full_output: own buffer<u8> = buffer_new<u8>(1_u64, 11_u8);
   region 'full_region {
     let full_result: own Result<u64, InflateError> = inflate<'full_region>(out: &uniq 'full_region full_output, input: move full_input);
@@ -255,16 +255,16 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  let full_sentinel: own u8 = index<u8>(full_output, 0_u64);
+  let full_sentinel: own u8 = full_output[0_u64];
   check ieq<u8>(full_sentinel, 11_u8) else trap "output full wrote prefix";
   let fixed_literal_input: own buffer<u8> = buffer_new<u8>(7_u64, 0_u8);
-  set index<u8>(fixed_literal_input, 0_u64) = 203_u8;
-  set index<u8>(fixed_literal_input, 1_u64) = 72_u8;
-  set index<u8>(fixed_literal_input, 2_u64) = 205_u8;
-  set index<u8>(fixed_literal_input, 3_u64) = 201_u8;
-  set index<u8>(fixed_literal_input, 4_u64) = 201_u8;
-  set index<u8>(fixed_literal_input, 5_u64) = 7_u8;
-  set index<u8>(fixed_literal_input, 6_u64) = 0_u8;
+  set fixed_literal_input[0_u64] = 203_u8;
+  set fixed_literal_input[1_u64] = 72_u8;
+  set fixed_literal_input[2_u64] = 205_u8;
+  set fixed_literal_input[3_u64] = 201_u8;
+  set fixed_literal_input[4_u64] = 201_u8;
+  set fixed_literal_input[5_u64] = 7_u8;
+  set fixed_literal_input[6_u64] = 0_u8;
   let fixed_literal_output: own buffer<u8> = buffer_new<u8>(5_u64, 0_u8);
   region 'fixed_literal_region {
     let fixed_literal_result: own Result<u64, InflateError> = inflate<'fixed_literal_region>(out: &uniq 'fixed_literal_region fixed_literal_output, input: move fixed_literal_input);
@@ -277,22 +277,22 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  let fixed_literal_zero: own u8 = index<u8>(fixed_literal_output, 0_u64);
-  let fixed_literal_one: own u8 = index<u8>(fixed_literal_output, 1_u64);
-  let fixed_literal_two: own u8 = index<u8>(fixed_literal_output, 2_u64);
-  let fixed_literal_three: own u8 = index<u8>(fixed_literal_output, 3_u64);
-  let fixed_literal_four: own u8 = index<u8>(fixed_literal_output, 4_u64);
+  let fixed_literal_zero: own u8 = fixed_literal_output[0_u64];
+  let fixed_literal_one: own u8 = fixed_literal_output[1_u64];
+  let fixed_literal_two: own u8 = fixed_literal_output[2_u64];
+  let fixed_literal_three: own u8 = fixed_literal_output[3_u64];
+  let fixed_literal_four: own u8 = fixed_literal_output[4_u64];
   check ieq<u8>(fixed_literal_zero, 104_u8) else trap "fixed literal byte zero";
   check ieq<u8>(fixed_literal_one, 101_u8) else trap "fixed literal byte one";
   check ieq<u8>(fixed_literal_two, 108_u8) else trap "fixed literal byte two";
   check ieq<u8>(fixed_literal_three, 108_u8) else trap "fixed literal byte three";
   check ieq<u8>(fixed_literal_four, 111_u8) else trap "fixed literal byte four";
   let fixed_match_input: own buffer<u8> = buffer_new<u8>(5_u64, 0_u8);
-  set index<u8>(fixed_match_input, 0_u64) = 75_u8;
-  set index<u8>(fixed_match_input, 1_u64) = 76_u8;
-  set index<u8>(fixed_match_input, 2_u64) = 68_u8;
-  set index<u8>(fixed_match_input, 3_u64) = 5_u8;
-  set index<u8>(fixed_match_input, 4_u64) = 0_u8;
+  set fixed_match_input[0_u64] = 75_u8;
+  set fixed_match_input[1_u64] = 76_u8;
+  set fixed_match_input[2_u64] = 68_u8;
+  set fixed_match_input[3_u64] = 5_u8;
+  set fixed_match_input[4_u64] = 0_u8;
   let fixed_match_output: own buffer<u8> = buffer_new<u8>(16_u64, 0_u8);
   region 'fixed_match_region {
     let fixed_match_result: own Result<u64, InflateError> = inflate<'fixed_match_region>(out: &uniq 'fixed_match_region fixed_match_output, input: move fixed_match_input);
@@ -313,23 +313,23 @@ fn main() -> own unit allocates(heap), traps {
         break @check_fixed_match;
       }
       False() => {
-        let fixed_match_byte: own u8 = index<u8>(fixed_match_output, fixed_match_index);
+        let fixed_match_byte: own u8 = fixed_match_output[fixed_match_index];
         check ieq<u8>(fixed_match_byte, 97_u8) else trap "fixed overlapping match byte";
         set fixed_match_index = iadd.wrap<u64>(fixed_match_index, 1_u64);
       }
     }
   }
   let fixed_phrase_input: own buffer<u8> = buffer_new<u8>(10_u64, 0_u8);
-  set index<u8>(fixed_phrase_input, 0_u64) = 203_u8;
-  set index<u8>(fixed_phrase_input, 1_u64) = 72_u8;
-  set index<u8>(fixed_phrase_input, 2_u64) = 205_u8;
-  set index<u8>(fixed_phrase_input, 3_u64) = 201_u8;
-  set index<u8>(fixed_phrase_input, 4_u64) = 201_u8;
-  set index<u8>(fixed_phrase_input, 5_u64) = 87_u8;
-  set index<u8>(fixed_phrase_input, 6_u64) = 200_u8;
-  set index<u8>(fixed_phrase_input, 7_u64) = 64_u8;
-  set index<u8>(fixed_phrase_input, 8_u64) = 144_u8;
-  set index<u8>(fixed_phrase_input, 9_u64) = 0_u8;
+  set fixed_phrase_input[0_u64] = 203_u8;
+  set fixed_phrase_input[1_u64] = 72_u8;
+  set fixed_phrase_input[2_u64] = 205_u8;
+  set fixed_phrase_input[3_u64] = 201_u8;
+  set fixed_phrase_input[4_u64] = 201_u8;
+  set fixed_phrase_input[5_u64] = 87_u8;
+  set fixed_phrase_input[6_u64] = 200_u8;
+  set fixed_phrase_input[7_u64] = 64_u8;
+  set fixed_phrase_input[8_u64] = 144_u8;
+  set fixed_phrase_input[9_u64] = 0_u8;
   let fixed_phrase_output: own buffer<u8> = buffer_new<u8>(17_u64, 0_u8);
   region 'fixed_phrase_region {
     let fixed_phrase_result: own Result<u64, InflateError> = inflate<'fixed_phrase_region>(out: &uniq 'fixed_phrase_region fixed_phrase_output, input: move fixed_phrase_input);
@@ -350,8 +350,8 @@ fn main() -> own unit allocates(heap), traps {
         break @check_fixed_phrase;
       }
       False() => {
-        let fixed_phrase_actual: own u8 = index<u8>(fixed_phrase_output, fixed_phrase_index);
-        let fixed_phrase_wanted: own u8 = index<u8>(fixed_phrase_expected, fixed_phrase_index);
+        let fixed_phrase_actual: own u8 = fixed_phrase_output[fixed_phrase_index];
+        let fixed_phrase_wanted: own u8 = fixed_phrase_expected[fixed_phrase_index];
         check ieq<u8>(fixed_phrase_actual, fixed_phrase_wanted) else trap "fixed distance-extra byte";
         set fixed_phrase_index = iadd.wrap<u64>(fixed_phrase_index, 1_u64);
       }
@@ -378,8 +378,8 @@ fn main() -> own unit allocates(heap), traps {
         break @check_dynamic_output;
       }
       False() => {
-        let dynamic_actual: own u8 = index<u8>(dynamic_output, dynamic_output_index);
-        let dynamic_wanted: own u8 = index<u8>(dynamic_expected_bytes, dynamic_output_index);
+        let dynamic_actual: own u8 = dynamic_output[dynamic_output_index];
+        let dynamic_wanted: own u8 = dynamic_expected_bytes[dynamic_output_index];
         check ieq<u8>(dynamic_actual, dynamic_wanted) else trap "dynamic output byte";
         set dynamic_output_index = iadd.wrap<u64>(dynamic_output_index, 1_u64);
       }
@@ -398,7 +398,7 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  let literal_only_byte: own u8 = index<u8>(literal_only_output, 0_u64);
+  let literal_only_byte: own u8 = literal_only_output[0_u64];
   check ieq<u8>(literal_only_byte, 65_u8) else trap "literal-only dynamic output byte";
   let dynamic_match_input: own buffer<u8> = make_dynamic_match_input();
   let dynamic_match_output: own buffer<u8> = buffer_new<u8>(400_u64, 0_u8);
@@ -431,8 +431,8 @@ fn main() -> own unit allocates(heap), traps {
             }
             False() => {
               let output_index: own u64 = iadd.wrap<u64>(dynamic_match_base, dynamic_match_index);
-              let dynamic_match_actual: own u8 = index<u8>(dynamic_match_output, output_index);
-              let dynamic_match_wanted: own u8 = index<u8>(dynamic_expected_bytes, dynamic_match_index);
+              let dynamic_match_actual: own u8 = dynamic_match_output[output_index];
+              let dynamic_match_wanted: own u8 = dynamic_expected_bytes[dynamic_match_index];
               check ieq<u8>(dynamic_match_actual, dynamic_match_wanted) else trap "dynamic match output byte";
               set dynamic_match_index = iadd.wrap<u64>(dynamic_match_index, 1_u64);
             }
@@ -451,8 +451,8 @@ fn main() -> own unit allocates(heap), traps {
         break @fill_mixed_block_input;
       }
       False() => {
-        let mixed_block_input_byte: own u8 = index<u8>(mixed_block_input_bytes, mixed_block_input_index);
-        set index<u8>(mixed_block_input, mixed_block_input_index) = mixed_block_input_byte;
+        let mixed_block_input_byte: own u8 = mixed_block_input_bytes[mixed_block_input_index];
+        set mixed_block_input[mixed_block_input_index] = mixed_block_input_byte;
         set mixed_block_input_index = iadd.wrap<u64>(mixed_block_input_index, 1_u64);
       }
     }
@@ -477,25 +477,25 @@ fn main() -> own unit allocates(heap), traps {
         break @check_mixed_block_prefix;
       }
       False() => {
-        let mixed_block_actual: own u8 = index<u8>(mixed_block_output, mixed_block_index);
-        let mixed_block_wanted: own u8 = index<u8>(dynamic_expected_bytes, mixed_block_index);
+        let mixed_block_actual: own u8 = mixed_block_output[mixed_block_index];
+        let mixed_block_wanted: own u8 = dynamic_expected_bytes[mixed_block_index];
         check ieq<u8>(mixed_block_actual, mixed_block_wanted) else trap "mixed block prefix byte";
         set mixed_block_index = iadd.wrap<u64>(mixed_block_index, 1_u64);
       }
     }
   }
-  let mixed_block_h: own u8 = index<u8>(mixed_block_output, 100_u64);
-  let mixed_block_e: own u8 = index<u8>(mixed_block_output, 101_u64);
-  let mixed_block_l0: own u8 = index<u8>(mixed_block_output, 102_u64);
-  let mixed_block_l1: own u8 = index<u8>(mixed_block_output, 103_u64);
-  let mixed_block_o: own u8 = index<u8>(mixed_block_output, 104_u64);
+  let mixed_block_h: own u8 = mixed_block_output[100_u64];
+  let mixed_block_e: own u8 = mixed_block_output[101_u64];
+  let mixed_block_l0: own u8 = mixed_block_output[102_u64];
+  let mixed_block_l1: own u8 = mixed_block_output[103_u64];
+  let mixed_block_o: own u8 = mixed_block_output[104_u64];
   check ieq<u8>(mixed_block_h, 104_u8) else trap "mixed block suffix h";
   check ieq<u8>(mixed_block_e, 101_u8) else trap "mixed block suffix e";
   check ieq<u8>(mixed_block_l0, 108_u8) else trap "mixed block suffix first l";
   check ieq<u8>(mixed_block_l1, 108_u8) else trap "mixed block suffix second l";
   check ieq<u8>(mixed_block_o, 111_u8) else trap "mixed block suffix o";
   let invalid_tree_input: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
-  set index<u8>(invalid_tree_input, 0_u64) = 5_u8;
+  set invalid_tree_input[0_u64] = 5_u8;
   let invalid_tree_output: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
   region 'invalid_tree_region {
     let invalid_tree_result: own Result<u64, InflateError> = inflate<'invalid_tree_region>(out: &uniq 'invalid_tree_region invalid_tree_output, input: move invalid_tree_input);
@@ -518,8 +518,8 @@ fn main() -> own unit allocates(heap), traps {
         break @fill_dynamic_truncated;
       }
       False() => {
-        let dynamic_truncated_byte: own u8 = index<u8>(dynamic_input_bytes, dynamic_truncated_index);
-        set index<u8>(dynamic_truncated_input, dynamic_truncated_index) = dynamic_truncated_byte;
+        let dynamic_truncated_byte: own u8 = dynamic_input_bytes[dynamic_truncated_index];
+        set dynamic_truncated_input[dynamic_truncated_index] = dynamic_truncated_byte;
         set dynamic_truncated_index = iadd.wrap<u64>(dynamic_truncated_index, 1_u64);
       }
     }
@@ -580,8 +580,8 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let invalid_huffman_input: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
-  set index<u8>(invalid_huffman_input, 0_u64) = 27_u8;
-  set index<u8>(invalid_huffman_input, 1_u64) = 3_u8;
+  set invalid_huffman_input[0_u64] = 27_u8;
+  set invalid_huffman_input[1_u64] = 3_u8;
   let invalid_huffman_output: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
   region 'invalid_huffman_region {
     let invalid_huffman_result: own Result<u64, InflateError> = inflate<'invalid_huffman_region>(out: &uniq 'invalid_huffman_region invalid_huffman_output, input: move invalid_huffman_input);
@@ -596,8 +596,8 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let invalid_distance_input: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
-  set index<u8>(invalid_distance_input, 0_u64) = 3_u8;
-  set index<u8>(invalid_distance_input, 1_u64) = 2_u8;
+  set invalid_distance_input[0_u64] = 3_u8;
+  set invalid_distance_input[1_u64] = 2_u8;
   let invalid_distance_output: own buffer<u8> = buffer_new<u8>(3_u64, 0_u8);
   region 'invalid_distance_region {
     let invalid_distance_result: own Result<u64, InflateError> = inflate<'invalid_distance_region>(out: &uniq 'invalid_distance_region invalid_distance_output, input: move invalid_distance_input);
@@ -612,13 +612,13 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let fixed_full_input: own buffer<u8> = buffer_new<u8>(7_u64, 0_u8);
-  set index<u8>(fixed_full_input, 0_u64) = 203_u8;
-  set index<u8>(fixed_full_input, 1_u64) = 72_u8;
-  set index<u8>(fixed_full_input, 2_u64) = 205_u8;
-  set index<u8>(fixed_full_input, 3_u64) = 201_u8;
-  set index<u8>(fixed_full_input, 4_u64) = 201_u8;
-  set index<u8>(fixed_full_input, 5_u64) = 7_u8;
-  set index<u8>(fixed_full_input, 6_u64) = 0_u8;
+  set fixed_full_input[0_u64] = 203_u8;
+  set fixed_full_input[1_u64] = 72_u8;
+  set fixed_full_input[2_u64] = 205_u8;
+  set fixed_full_input[3_u64] = 201_u8;
+  set fixed_full_input[4_u64] = 201_u8;
+  set fixed_full_input[5_u64] = 7_u8;
+  set fixed_full_input[6_u64] = 0_u8;
   let fixed_full_output: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
   region 'fixed_full_region {
     let fixed_full_result: own Result<u64, InflateError> = inflate<'fixed_full_region>(out: &uniq 'fixed_full_region fixed_full_output, input: move fixed_full_input);

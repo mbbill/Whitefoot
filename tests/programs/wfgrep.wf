@@ -1,26 +1,26 @@
-const usage_text: array<u8, 30> = [117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 46_u8, 46_u8, 46_u8, 10_u8];
+const usage_text: array<u8, 30> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 46_u8, 46_u8, 46_u8, 10_u8];
 
-const error_prefix: array<u8, 8> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8];
+const error_prefix: array<u8, 8> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8];
 
-const error_separator: array<u8, 2> = [58_u8, 32_u8];
+const error_separator: array<u8, 2> =[58_u8, 32_u8];
 
-const reason_missing: array<u8, 26> = [110_u8, 111_u8, 32_u8, 115_u8, 117_u8, 99_u8, 104_u8, 32_u8, 102_u8, 105_u8, 108_u8, 101_u8, 32_u8, 111_u8, 114_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
+const reason_missing: array<u8, 26> =[110_u8, 111_u8, 32_u8, 115_u8, 117_u8, 99_u8, 104_u8, 32_u8, 102_u8, 105_u8, 108_u8, 101_u8, 32_u8, 111_u8, 114_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
 
-const reason_denied: array<u8, 18> = [112_u8, 101_u8, 114_u8, 109_u8, 105_u8, 115_u8, 115_u8, 105_u8, 111_u8, 110_u8, 32_u8, 100_u8, 101_u8, 110_u8, 105_u8, 101_u8, 100_u8, 10_u8];
+const reason_denied: array<u8, 18> =[112_u8, 101_u8, 114_u8, 109_u8, 105_u8, 115_u8, 115_u8, 105_u8, 111_u8, 110_u8, 32_u8, 100_u8, 101_u8, 110_u8, 105_u8, 101_u8, 100_u8, 10_u8];
 
-const reason_directory: array<u8, 15> = [105_u8, 115_u8, 32_u8, 97_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
+const reason_directory: array<u8, 15> =[105_u8, 115_u8, 32_u8, 97_u8, 32_u8, 100_u8, 105_u8, 114_u8, 101_u8, 99_u8, 116_u8, 111_u8, 114_u8, 121_u8, 10_u8];
 
-const reason_invalid_path: array<u8, 22> = [105_u8, 110_u8, 118_u8, 97_u8, 108_u8, 105_u8, 100_u8, 32_u8, 114_u8, 101_u8, 108_u8, 97_u8, 116_u8, 105_u8, 118_u8, 101_u8, 32_u8, 112_u8, 97_u8, 116_u8, 104_u8, 10_u8];
+const reason_invalid_path: array<u8, 22> =[105_u8, 110_u8, 118_u8, 97_u8, 108_u8, 105_u8, 100_u8, 32_u8, 114_u8, 101_u8, 108_u8, 97_u8, 116_u8, 105_u8, 118_u8, 101_u8, 32_u8, 112_u8, 97_u8, 116_u8, 104_u8, 10_u8];
 
-const reason_long_line: array<u8, 14> = [108_u8, 105_u8, 110_u8, 101_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
+const reason_long_line: array<u8, 14> =[108_u8, 105_u8, 110_u8, 101_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
-const reason_unreadable: array<u8, 12> = [99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 10_u8];
+const reason_unreadable: array<u8, 12> =[99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 10_u8];
 
-const reason_broken_pipe: array<u8, 20> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 98_u8, 114_u8, 111_u8, 107_u8, 101_u8, 110_u8, 32_u8, 112_u8, 105_u8, 112_u8, 101_u8, 10_u8];
+const reason_broken_pipe: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 98_u8, 114_u8, 111_u8, 107_u8, 101_u8, 110_u8, 32_u8, 112_u8, 105_u8, 112_u8, 101_u8, 10_u8];
 
-const reason_write_error: array<u8, 20> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 119_u8, 114_u8, 105_u8, 116_u8, 101_u8, 32_u8, 101_u8, 114_u8, 114_u8, 111_u8, 114_u8, 10_u8];
+const reason_write_error: array<u8, 20> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 119_u8, 114_u8, 105_u8, 116_u8, 101_u8, 32_u8, 101_u8, 114_u8, 114_u8, 111_u8, 114_u8, 10_u8];
 
-const reason_pattern_too_long: array<u8, 25> = [119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 112_u8, 97_u8, 116_u8, 116_u8, 101_u8, 114_u8, 110_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
+const reason_pattern_too_long: array<u8, 25> =[119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 58_u8, 32_u8, 112_u8, 97_u8, 116_u8, 116_u8, 101_u8, 114_u8, 110_u8, 32_u8, 116_u8, 111_u8, 111_u8, 32_u8, 108_u8, 111_u8, 110_u8, 103_u8, 10_u8];
 
 fn io_class(error: own IoError) -> own u8 pure {
   doc "Reduces one portable IoError class to the distinctions wfgrep reports.";
@@ -118,7 +118,7 @@ fn io_class(error: own IoError) -> own u8 pure {
   }
 }
 
-fn append_slice ['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d), traps {
+fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d), traps {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity: own u64 = len<u8>(deref(destination));
   let length: own u64 = len<u8>(text);
@@ -141,15 +141,15 @@ fn append_slice ['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text
         break @append;
       }
     }
-    let byte: own u8 = index<u8>(text, taken);
-    set index<u8>(deref(destination), at) = byte;
+    let byte: own u8 = text[taken];
+    set deref(destination)[at] = byte;
     set at = iadd.wrap<u64>(at, 1_u64);
     set taken = iadd.wrap<u64>(taken, 1_u64);
   }
   return at;
 }
 
-fn copy_range ['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('s), writes('d), traps {
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('s), writes('d), traps {
   doc "Copies one half-open source range into the destination at one offset.";
   let target: own u64 = at;
   let cursor: own u64 = from;
@@ -162,15 +162,15 @@ fn copy_range ['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'
       False() => {
       }
     }
-    let byte: own u8 = index<u8>(deref(source), cursor);
-    set index<u8>(deref(destination), target) = byte;
+    let byte: own u8 = deref(source)[cursor];
+    set deref(destination)[target] = byte;
     set target = iadd.wrap<u64>(target, 1_u64);
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }
   return target;
 }
 
-fn publish_all ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent: own u64 = 0_u64;
   loop @publish {
@@ -197,7 +197,7 @@ fn publish_all ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length:
   return Ok(value: unit);
 }
 
-fn report_failure ['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> own unit reads('a 'e 'r), writes('e 'r), external, blocks, traps {
+fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> own unit reads('a 'e 'r), writes('e 'r), external, blocks, traps {
   doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";
   let length: own u64 = 0_u64;
   region 'report_prefix {
@@ -385,7 +385,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       return exit_status(code: 2_u8);
     }
   }
-  let first_pattern_byte: own u8 = index<u8>(pattern, 0_u64);
+  let first_pattern_byte: own u8 = pattern[0_u64];
   let empty_pattern: own Bool = ieq<u64>(pattern_length, 0_u64);
   let failed: own u8 = 0_u8;
   let matched: own u8 = 0_u8;
@@ -451,7 +451,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           let trailing: own Bool = igt<u64>(carry, 0_u64);
                           match trailing {
                             True() => {
-                              set index<u8>(input, carry) = 10_u8;
+                              set input[carry] = 10_u8;
                               set available = iadd.wrap<u64>(carry, 1_u64);
                             }
                             False() => {
@@ -475,7 +475,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                             False() => {
                             }
                           }
-                          let byte: own u8 = index<u8>(input, probe);
+                          let byte: own u8 = input[probe];
                           let newline: own Bool = ieq<u8>(byte, 10_u8);
                           match newline {
                             True() => {
@@ -513,7 +513,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                         break @verify;
                                       }
                                     }
-                                    let candidate: own u8 = index<u8>(input, spot);
+                                    let candidate: own u8 = input[spot];
                                     let stopper: own Bool = ieq<u8>(candidate, 10_u8);
                                     match stopper {
                                       True() => {
@@ -523,7 +523,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                       False() => {
                                       }
                                     }
-                                    let expected: own u8 = index<u8>(pattern, ahead);
+                                    let expected: own u8 = pattern[ahead];
                                     let equal: own Bool = ieq<u8>(candidate, expected);
                                     match equal {
                                       True() => {
@@ -617,8 +617,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                         let source_index: own u64 = iadd.wrap<u64>(scan, moved);
-                        let byte: own u8 = index<u8>(input, source_index);
-                        set index<u8>(input, moved) = byte;
+                        let byte: own u8 = input[source_index];
+                        set input[moved] = byte;
                         set moved = iadd.wrap<u64>(moved, 1_u64);
                       }
                       set carry = tail;

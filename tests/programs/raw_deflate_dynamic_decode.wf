@@ -1,18 +1,18 @@
-fn store_dynamic_length ['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit writes('l 'd), traps {
+fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit writes('l 'd), traps {
   let is_literal: own Bool = ilt<u64>(position, literal_count);
   match is_literal {
     True() => {
-      set index<u8>(deref(literal_lengths), position) = value;
+      set deref(literal_lengths)[position] = value;
     }
     False() => {
       let distance_index: own u64 = isub.wrap<u64>(position, literal_count);
-      set index<u8>(deref(distance_lengths), distance_index) = value;
+      set deref(distance_lengths)[distance_index] = value;
     }
   }
   return unit;
 }
 
-fn decode_dynamic ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
+fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
   let literal_count_bits: own u64 = 0_u64;
   region 'literal_count_call {
     match read_bits<'literal_count_call, 'literal_count_call>(state: &uniq 'literal_count_call deref(state), input: &'literal_count_call deref(input), count: 5_u32) {
@@ -67,7 +67,7 @@ fn decode_dynamic ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u
         break @read_code_lengths;
       }
       False() => {
-        let ordered_symbol_byte: own u8 = index<u8>(code_length_order, code_index);
+        let ordered_symbol_byte: own u8 = code_length_order[code_index];
         let ordered_symbol: own u64 = cvt<u8, u64>(ordered_symbol_byte);
         let length_bits: own u64 = 0_u64;
         region 'code_length_call {
@@ -82,7 +82,7 @@ fn decode_dynamic ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u
         }
         match cvt<u64, u8>(length_bits) {
           Ok(value: length) => {
-            set index<u8>(code_lengths, ordered_symbol) = length;
+            set code_lengths[ordered_symbol] = length;
           }
           Err(error: conversion_error) => {
             let error: own InflateError = InvalidHuffmanTree();
@@ -264,7 +264,7 @@ fn decode_dynamic ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u
       }
     }
   }
-  let end_length: own u8 = index<u8>(literal_lengths, 256_u64);
+  let end_length: own u8 = literal_lengths[256_u64];
   let missing_end: own Bool = ieq<u8>(end_length, 0_u8);
   match missing_end {
     True() => {

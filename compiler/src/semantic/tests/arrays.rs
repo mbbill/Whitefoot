@@ -10,13 +10,13 @@ use super::{assert_rule, with_semantics};
 fn constants_fill_length_and_index_share_exact_array_types() {
     let source = br#"const count: u64 = 4_u64;
 
-const table: array<u8, count> = [10_u8, 20_u8, 30_u8, 40_u8];
+const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn main() -> own unit traps {
   let values: own array<i32, count> = array_new<i32, count>(7_i32);
   let length: own u64 = len<i32>(values);
-  let local: own i32 = index<i32>(values, 2_u64);
-  let stored: own u8 = index<u8>(table, 2_u64);
+  let local: own i32 = values[2_u64];
+  let stored: own u8 = table[2_u64];
   check ieq<u64>(length, 4_u64) else trap "length drift";
   check ieq<i32>(local, 7_i32) else trap "fill drift";
   check ieq<u8>(stored, 30_u8) else trap "const drift";
@@ -102,7 +102,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
-        b"const table: array<u8, 2> = [1_u8];\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"const table: array<u8, 2> =[1_u8];\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
@@ -122,7 +122,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  let items: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  let value: own u8 = index<u8>(items, 0_u32);\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let items: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  let value: own u8 = items[0_u32];\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
@@ -176,8 +176,8 @@ fn main() -> own unit pure {
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
     let source = br#"fn main() -> own unit traps {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  set index<u8>(values, 1_u64) = 9_u8;
-  let stored: own u8 = index<u8>(values, 1_u64);
+  set values[1_u64] = 9_u8;
+  let stored: own u8 = values[1_u64];
   check ieq<u8>(stored, 9_u8) else trap "set drift";
   return unit;
 }
@@ -213,17 +213,17 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
 #[test]
 fn indexed_set_rechecks_type_effect_and_root_liveness() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set index<u8>(values, 0_u64) = 1_u8;\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set index<u8>(values, 0_u64) = 1_u16;\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
-        b"fn consume(values: own array<u8, 2>) -> own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set index<u8>(values, 0_u64) = consume(values: move values);\n  return unit;\n}\n",
+        b"fn consume(values: own array<u8, 2>) -> own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return unit;\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -246,8 +246,8 @@ fn main() -> own unit traps {
   let inner: own Inner = Inner(values: move values);
   let outer: own Outer = Outer(inner: move inner);
   let length: own u64 = len<u8>(outer.inner.values);
-  set index<u8>(outer.inner.values, 1_u64) = 9_u8;
-  let stored: own u8 = index<u8>(outer.inner.values, 1_u64);
+  set outer.inner.values[1_u64] = 9_u8;
+  let stored: own u8 = outer.inner.values[1_u64];
   check ieq<u64>(length, 2_u64) else trap "length drift";
   check ieq<u8>(stored, 9_u8) else trap "set drift";
   return unit;
@@ -294,7 +294,7 @@ fn main() -> own unit traps {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   let inner: own Inner = Inner(values: move values);
   let outer: own Outer = Outer(inner: move inner);
-  set index<u8>(outer.inner.values, 1_u64) = replacement(value: move outer);
+  set outer.inner.values[1_u64] = replacement(value: move outer);
   return unit;
 }
 "#,
@@ -319,7 +319,7 @@ fn main() -> own unit traps {
   let outer: own Outer = Outer(inner: move inner);
   region 'view {
     let held: &'view Outer = &'view outer;
-    set index<u8>(outer.inner.values, 1_u64) = 9_u8;
+    set outer.inner.values[1_u64] = 9_u8;
   }
   return unit;
 }
@@ -335,7 +335,7 @@ fn region_bearing_array_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid ['r](value: own array<slice<'r, u8>, 1>) -> own unit pure {
+        br#"fn invalid['r](value: own array<slice<'r, u8>, 1>) -> own unit pure {
   return unit;
 }
 
@@ -347,7 +347,7 @@ fn main() -> own unit pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid ['r](value: own slice<'r, u8>) -> own unit pure {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit pure {
   array_new<slice<'r, u8>, 1>(move value);
   return unit;
 }

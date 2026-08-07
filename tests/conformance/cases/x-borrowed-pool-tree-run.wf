@@ -4,7 +4,7 @@ struct Pool {
   count: u64;
 }
 
-fn build ['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('r), traps {
+fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('r), traps {
   doc "Build a complete tree bottom-up in two parallel buffers; index zero is the null sentinel.";
   let leaves: own u64 = ishl.wrap<u64>(1_u64, depth);
   let start: own u64 = deref(pool).count;
@@ -17,8 +17,8 @@ fn build ['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes(
       }
       False() => {
         let slot: own u64 = deref(pool).count;
-        set index<u64>(deref(pool).left, slot) = 0_u64;
-        set index<u64>(deref(pool).right, slot) = 0_u64;
+        set deref(pool).left[slot] = 0_u64;
+        set deref(pool).right[slot] = 0_u64;
         set deref(pool).count = iadd.trap<u64>(slot, 1_u64);
         set index_value = iadd.trap<u64>(index_value, 1_u64);
       }
@@ -46,8 +46,8 @@ fn build ['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes(
               let left_child: own u64 = iadd.trap<u64>(start, doubled);
               let right_child: own u64 = iadd.trap<u64>(left_child, 1_u64);
               let slot: own u64 = deref(pool).count;
-              set index<u64>(deref(pool).left, slot) = left_child;
-              set index<u64>(deref(pool).right, slot) = right_child;
+              set deref(pool).left[slot] = left_child;
+              set deref(pool).right[slot] = right_child;
               set deref(pool).count = iadd.trap<u64>(slot, 1_u64);
               set parent = iadd.trap<u64>(parent, 1_u64);
             }
@@ -61,8 +61,8 @@ fn build ['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes(
   return start;
 }
 
-fn checksum ['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
-  let left_child: own u64 = index<u64>(deref(pool).left, root);
+fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
+  let left_child: own u64 = deref(pool).left[root];
   let leaf: own Bool = ieq<u64>(left_child, 0_u64);
   match leaf {
     True() => {
@@ -71,7 +71,7 @@ fn checksum ['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
     False() => {
     }
   }
-  let right_child: own u64 = index<u64>(deref(pool).right, root);
+  let right_child: own u64 = deref(pool).right[root];
   let left_count: own u64 = checksum<'r>(pool: pool, root: left_child);
   let right_count: own u64 = checksum<'r>(pool: pool, root: right_child);
   let children: own u64 = iadd.trap<u64>(left_count, right_count);

@@ -1,4 +1,4 @@
-fn mix ['r](a: &uniq 'r i32, b: &'r i32) -> own unit pure {
+fn mix['r](a: &uniq 'r i32, b: &'r i32) -> own unit pure {
   return unit;
 }
 

@@ -67,7 +67,7 @@ fn borrowed_column_effect_rows_are_exact() {
 
 #[test]
 fn borrowed_buffer_length_exhibits_a_read_of_its_storage_origin() {
-    let source = br#"fn length ['r](values: &'r buffer<u8>) -> own u64 reads('r) {
+    let source = br#"fn length['r](values: &'r buffer<u8>) -> own u64 reads('r) {
   return len<u8>(deref(values));
 }
 
@@ -102,7 +102,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
   let values: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
   region 'r {
     let shared: &'r buffer<u8> = &'r values;
-    set index<u8>(values, 0_u64) = 1_u8;
+    set values[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -115,7 +115,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
 #[test]
 fn user_calls_reject_overlapping_unique_arguments() {
     assert_rule(
-        br#"fn two ['r](first: &uniq 'r buffer<u8>, second: &uniq 'r buffer<u8>) -> own unit pure {
+        br#"fn two['r](first: &uniq 'r buffer<u8>, second: &uniq 'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
@@ -135,7 +135,7 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn own_storage_cannot_be_borrowed_into_a_caller_region() {
     assert_rule(
-        br#"fn invalid ['caller](values: own buffer<u8>) -> own unit pure {
+        br#"fn invalid['caller](values: own buffer<u8>) -> own unit pure {
   let escaped: &'caller buffer<u8> = &'caller values;
   return unit;
 }
@@ -151,12 +151,12 @@ fn main() -> own unit pure {
 
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
-    let source = br#"fn write ['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
-  set index<u8>(deref(out), 0_u64) = 1_u8;
+    let source = br#"fn write['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+  set deref(out)[0_u64] = 1_u8;
   return unit;
 }
 
-fn proxy ['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+fn proxy['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
   write<'r>(out: move out);
   return unit;
 }
@@ -181,16 +181,16 @@ fn borrowed_struct_fields_keep_projection_provenance_and_exact_effects() {
   count: u64;
 }
 
-fn count ['r](pool: &'r Pool) -> own u64 reads('r) {
+fn count['r](pool: &'r Pool) -> own u64 reads('r) {
   return deref(pool).count;
 }
 
-fn first ['r](pool: &'r Pool) -> own u64 reads('r), traps {
-  return index<u64>(deref(pool).left, 0_u64);
+fn first['r](pool: &'r Pool) -> own u64 reads('r), traps {
+  return deref(pool).left[0_u64];
 }
 
-fn update ['r](pool: &uniq 'r Pool) -> own unit writes('r), traps {
-  set index<u64>(deref(pool).right, 0_u64) = 9_u64;
+fn update['r](pool: &uniq 'r Pool) -> own unit writes('r), traps {
+  set deref(pool).right[0_u64] = 9_u64;
   set deref(pool).count = 1_u64;
   return unit;
 }
@@ -259,7 +259,7 @@ fn shared_struct_borrows_cannot_write_copy_fields() {
   value: u64;
 }
 
-fn invalid ['r](counter: &'r Counter) -> own unit writes('r) {
+fn invalid['r](counter: &'r Counter) -> own unit writes('r) {
   set deref(counter).value = 1_u64;
   return unit;
 }
@@ -299,7 +299,7 @@ fn main() -> own unit allocates(heap), traps {
   values: buffer<u64>;
 }
 
-fn steal ['r](pool: &'r Pool) -> own buffer<u64> pure {
+fn steal['r](pool: &'r Pool) -> own buffer<u64> pure {
   return move deref(pool).values;
 }
 
@@ -319,7 +319,7 @@ fn call_scoped_struct_loans_are_checked_against_later_place_arguments() {
   value: u64;
 }
 
-fn consume ['r](counter: &uniq 'r Counter, value: own u64) -> own unit pure {
+fn consume['r](counter: &uniq 'r Counter, value: own u64) -> own unit pure {
   return unit;
 }
 
@@ -340,7 +340,7 @@ fn main() -> own unit pure {
   value: u64;
 }
 
-fn observe ['r](counter: &'r Counter, value: own u64) -> own unit pure {
+fn observe['r](counter: &'r Counter, value: own u64) -> own unit pure {
   return unit;
 }
 
@@ -365,7 +365,7 @@ fn main() -> own unit pure {
   sibling: buffer<u8>;
 }
 
-fn consume ['r](source: &'r buffer<u8>, sibling: own buffer<u8>) -> own unit pure {
+fn consume['r](source: &'r buffer<u8>, sibling: own buffer<u8>) -> own unit pure {
   return unit;
 }
 
@@ -394,11 +394,11 @@ fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
     });
 
     with_semantics(
-        br#"fn observe ['r](out: &'r buffer<u8>) -> own unit pure {
+        br#"fn observe['r](out: &'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
-fn proxy ['r](out: &'r buffer<u8>) -> own unit pure {
+fn proxy['r](out: &'r buffer<u8>) -> own unit pure {
   region 'child {
     observe<'child>(out: &'child deref(out));
   }
@@ -417,11 +417,11 @@ fn main() -> own unit pure {
     );
 
     assert_rule(
-        br#"fn take ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+        br#"fn take['r](out: &uniq 'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
-fn invalid ['r](out: &'r buffer<u8>) -> own unit pure {
+fn invalid['r](out: &'r buffer<u8>) -> own unit pure {
   region 'child {
     take<'child>(out: &uniq 'child deref(out));
   }
@@ -437,11 +437,11 @@ fn main() -> own unit pure {
     );
 
     assert_rule(
-        br#"fn take ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+        br#"fn take['r](out: &uniq 'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
-fn invalid ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+fn invalid['r](out: &uniq 'r buffer<u8>) -> own unit pure {
   region 'child {
     take<'child>(out: &uniq 'child deref(out));
     take<'child>(out: &uniq 'child deref(out));
@@ -458,11 +458,11 @@ fn main() -> own unit pure {
     );
 
     assert_rule(
-        br#"fn take_two ['r](first: &uniq 'r buffer<u8>, second: &uniq 'r buffer<u8>) -> own unit pure {
+        br#"fn take_two['r](first: &uniq 'r buffer<u8>, second: &uniq 'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
-fn invalid ['r](out: &uniq 'r buffer<u8>) -> own unit pure {
+fn invalid['r](out: &uniq 'r buffer<u8>) -> own unit pure {
   region 'child {
     take_two<'child>(first: &uniq 'child deref(out), second: &uniq 'child deref(out));
   }
@@ -478,7 +478,7 @@ fn main() -> own unit pure {
     );
 
     with_semantics(
-        br#"fn observe ['r](out: &'r buffer<u8>) -> own unit pure {
+        br#"fn observe['r](out: &'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
@@ -501,7 +501,7 @@ fn main() -> own unit allocates(heap), traps {
     );
 
     assert_rule(
-        br#"fn observe ['r](out: &'r buffer<u8>) -> own unit pure {
+        br#"fn observe['r](out: &'r buffer<u8>) -> own unit pure {
   return unit;
 }
 
@@ -532,7 +532,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // it into a system operation whose own parameter is that same mode
     // [SYS-2]. An opaque resource has no source-visible content, so its
     // borrow is the value itself.
-    let source = br#"fn publish ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> own unit reads('o 's), writes('o), external, blocks, traps {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, count: own u64) -> own unit reads('o 's), writes('o), external, blocks, traps {
   region 'attempt {
     match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: 0_u64, count: count) {
       Ok(value: written) => {
@@ -603,16 +603,16 @@ fn scalar_and_enum_borrows_check_read_write_and_match_through_the_holder() {
   Void();
 }
 
-fn read_scalar ['r](p: &'r i32) -> own i32 reads('r) {
+fn read_scalar['r](p: &'r i32) -> own i32 reads('r) {
   return deref(p);
 }
 
-fn bump ['r](p: &uniq 'r i32) -> own unit writes('r) {
+fn bump['r](p: &uniq 'r i32) -> own unit writes('r) {
   set deref(p) = 9_i32;
   return unit;
 }
 
-fn score ['r](c: &'r Cell) -> own i32 reads('r), traps {
+fn score['r](c: &'r Cell) -> own i32 reads('r), traps {
   match deref(c) {
     Full(v: x) => {
       return iadd.trap<i32>(deref(x), 1_i32);
@@ -683,20 +683,20 @@ fn main() -> own unit traps {
 fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     // [OWN-10]: a caller-supplied region outlives the frame that owns `x`.
     assert_rule(
-        b"fn dangle ['r0](x: own i32) -> &'r0 i32 pure {\n  return &'r0 x;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn dangle['r0](x: own i32) -> &'r0 i32 pure {\n  return &'r0 x;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own10,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
     // [OWN-4]: a borrow narrowed to an inner region cannot be returned as the
     // caller's region.
     assert_rule(
-        b"fn leak ['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    let q: &'s i32 = x;\n    return q;\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn leak['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    let q: &'s i32 = x;\n    return q;\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own4,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
     // [TYPE-7]: no implicit read through a scalar holder.
     assert_rule(
-        b"fn read ['r](holder: &'r i32) -> own i32 pure {\n  return holder;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn read['r](holder: &'r i32) -> own i32 pure {\n  return holder;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Type7,
         SemanticIssueKind::MissingDereference {
             mechanical_fix: "write `deref(holder)`",
@@ -720,7 +720,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [TYPE-7]: nor a reference-returning call's result.
     assert_rule(
-        b"enum State {\n  Ready();\n}\n\nfn view ['r](state: &'r State) -> &'r State pure {\n  return state;\n}\n\nfn inspect ['r](state: &'r State) -> own unit pure {\n  match view<'r>(state: state) {\n    Ready() => {\n    }\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"enum State {\n  Ready();\n}\n\nfn view['r](state: &'r State) -> &'r State pure {\n  return state;\n}\n\nfn inspect['r](state: &'r State) -> own unit pure {\n  match view<'r>(state: state) {\n    Ready() => {\n    }\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Type7,
         SemanticIssueKind::MissingDereference {
             mechanical_fix: "write `deref(holder)`",
@@ -740,7 +740,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [OWN-12]: two uniq arguments over one place alias at the call.
     assert_rule(
-        b"fn two ['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  let x: own i32 = 0_i32;\n  region 'r {\n    two<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return unit;\n}\n",
+        b"fn two['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  let x: own i32 = 0_i32;\n  region 'r {\n    two<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return unit;\n}\n",
         SemanticRule::Own12,
         SemanticIssueKind::BorrowConflict,
     );
@@ -751,17 +751,17 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
 #[test]
 fn scalar_borrow_parameter_effect_rows_are_exact_in_both_directions() {
     assert_rule(
-        b"fn read_scalar ['r](p: &'r i32) -> own i32 pure {\n  return deref(p);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn read_scalar['r](p: &'r i32) -> own i32 pure {\n  return deref(p);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn bump ['r](p: &uniq 'r i32) -> own unit reads('r) {\n  set deref(p) = 9_i32;\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn bump['r](p: &uniq 'r i32) -> own unit reads('r) {\n  set deref(p) = 9_i32;\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn quiet ['r](p: &'r i32) -> own unit reads('r) {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn quiet['r](p: &'r i32) -> own unit reads('r) {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -774,7 +774,7 @@ fn scalar_borrow_parameter_effect_rows_are_exact_in_both_directions() {
 #[test]
 fn returned_reborrows_follow_own14_admission_and_own4_regions() {
     with_semantics(
-        b"fn passthru ['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn passthru['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("a shared returned reborrow of a parameter must check: {outcome:?}");
@@ -782,7 +782,7 @@ fn returned_reborrows_follow_own14_admission_and_own4_regions() {
         },
     );
     with_semantics(
-        b"fn passthru ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn passthru['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("a unique returned reborrow of a parameter must check: {outcome:?}");
@@ -792,12 +792,12 @@ fn returned_reborrows_follow_own14_admission_and_own4_regions() {
     // [OWN-4]: the returned borrow's local region cannot reach the written
     // rtype region, in either mode.
     assert_rule(
-        b"fn leak ['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    return &'s deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn leak['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    return &'s deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own4,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
     assert_rule(
-        b"fn leak ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  region 's {\n    return &uniq 's deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn leak['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  region 's {\n    return &uniq 's deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own4,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
@@ -813,21 +813,21 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
          return it as the complete return expression from a parameter or let-bound holder, \
          or return the holder itself";
     assert_rule(
-        b"fn bind ['r](x: &'r i32) -> own unit pure {\n  region 'c {\n    let y: &'c i32 = &'c deref(x);\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn bind['r](x: &'r i32) -> own unit pure {\n  region 'c {\n    let y: &'c i32 = &'c deref(x);\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own14,
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
         },
     );
     assert_rule(
-        b"fn down ['r0](x: &uniq 'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn down['r0](x: &uniq 'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own14,
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
         },
     );
     assert_rule(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn pick ['r](holder: &'r Packet) -> &'r i32 reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n      return &'r deref(payload);\n    }\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn pick['r](holder: &'r Packet) -> &'r i32 reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n      return &'r deref(payload);\n    }\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own14,
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
@@ -888,7 +888,7 @@ fn suspended_uniq_match_roots_do_not_resume() {
     );
     // A returned reborrow is not created through a suspended holder.
     assert_rule(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn peek ['r](holder: &uniq 'r Packet) -> &uniq 'r Packet reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n    }\n  }\n  return &uniq 'r deref(holder);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn peek['r](holder: &uniq 'r Packet) -> &uniq 'r Packet reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n    }\n  }\n  return &uniq 'r deref(holder);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
@@ -915,7 +915,7 @@ fn same_node_return_rejections_cite_the_first_defined_rule() {
         type7.clone(),
     );
     assert_rule(
-        b"fn grab ['r](p: &uniq 'r i32) -> own i32 pure {\n  return p;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn grab['r](p: &uniq 'r i32) -> own i32 pure {\n  return p;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Type7,
         type7,
     );

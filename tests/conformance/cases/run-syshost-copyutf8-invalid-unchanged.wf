@@ -30,7 +30,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
               break @sentinel;
             }
             False() => {
-              let byte: own u8 = index<u8>(bytes, offset);
+              let byte: own u8 = bytes[offset];
               let intact: own Bool = ieq<u8>(byte, 90_u8);
               match intact {
                 True() => {

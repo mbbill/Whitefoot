@@ -8,7 +8,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect ['r](packet: &'r Packet) -> own i32 pure {
+fn inspect['r](packet: &'r Packet) -> own i32 pure {
   doc "OWN-13: matching deref(packet) derives a shared Pair binder; deref(item).left reads through that provenance.";
   match deref(packet) {
     Data(item: item) => {

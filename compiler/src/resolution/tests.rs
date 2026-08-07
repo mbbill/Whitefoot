@@ -895,7 +895,7 @@ fn main() -> own unit pure {
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
     let source = br#"contract Bound {
-  fn member ['sig](value: &'sig i32) -> own i32 reads('sig);
+  fn member['sig](value: &'sig i32) -> own i32 reads('sig);
   law identity(member, 0_i32);
 }
 
@@ -925,7 +925,7 @@ conform Package<i32, one>: Bound {
   member = implementation;
 }
 
-fn user<T: Bound, const n: i32> ['call](arg: &'call T) -> &'call T reads('call) {
+fn user<T: Bound, const n: i32>['call](arg: &'call T) -> &'call T reads('call) {
   return arg;
 }
 
@@ -1167,7 +1167,7 @@ fn future() -> own unit pure {
 #[test]
 fn sibling_contract_signatures_do_not_share_region_parameters() {
     let source = br#"contract Separate {
-  fn first ['r](value: &'r i32) -> own unit pure;
+  fn first['r](value: &'r i32) -> own unit pure;
   fn second() -> own slice<'r, i32> pure;
 }
 "#;

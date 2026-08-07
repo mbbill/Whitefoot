@@ -32,7 +32,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         }
                       }
                     }
-                    let beyond: own u8 = index<u8>(page, 3_u64);
+                    let beyond: own u8 = page[3_u64];
                     let intact: own Bool = ieq<u8>(beyond, 90_u8);
                     match intact {
                       True() => {

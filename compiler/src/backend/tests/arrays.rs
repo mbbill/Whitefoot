@@ -52,7 +52,7 @@ fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
 }
 
 fn read(values: own array<u16, 4>, offset: own u64) -> own u16 traps {
-  let value: own u16 = index<u16>(values, offset);
+  let value: own u16 = values[offset];
   return value;
 }
 
@@ -92,7 +92,7 @@ fn main() -> own unit traps {
 fn out_of_bounds_array_read_reports_op4_before_abort() {
     let source = br#"fn main() -> own unit traps {
   let values: own array<u8, 2> = array_new<u8, 2>(7_u8);
-  let value: own u8 = index<u8>(values, 2_u64);
+  let value: own u8 = values[2_u64];
   return unit;
 }
 "#;
@@ -125,8 +125,8 @@ fn indexed_set_checks_before_rhs_and_updates_the_array() {
 
 fn main() -> own unit traps {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  set index<u8>(values, 1_u64) = replacement();
-  let stored: own u8 = index<u8>(values, 1_u64);
+  set values[1_u64] = replacement();
+  let stored: own u8 = values[1_u64];
   check ieq<u8>(stored, 9_u8) else trap "set drift";
   return unit;
 }
@@ -165,7 +165,7 @@ fn failing_indexed_set_target_never_evaluates_rhs() {
 
 fn main() -> own unit traps {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  set index<u8>(values, 2_u64) = replacement();
+  set values[2_u64] = replacement();
   return unit;
 }
 "#;
@@ -200,9 +200,9 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
       False() => {
       }
     }
-    let previous: own u64 = index<u64>(window, cursor);
+    let previous: own u64 = window[cursor];
     let mixed: own u64 = ixor<u64>(previous, step);
-    set index<u64>(window, cursor) = imul.wrap<u64>(mixed, 1099511628211_u64);
+    set window[cursor] = imul.wrap<u64>(mixed, 1099511628211_u64);
     set total = iadd.wrap<u64>(total, previous);
     let at_end: own Bool = ieq<u64>(cursor, 7_u64);
     let next_cursor: own u64 = match at_end {
@@ -274,8 +274,8 @@ fn main() -> own unit traps {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   let inner: own Inner = Inner(values: move values, sibling: 77_u16);
   let outer: own Outer = Outer(prefix: 123_u32, inner: move inner);
-  set index<u8>(outer.inner.values, 1_u64) = replacement();
-  let stored: own u8 = index<u8>(outer.inner.values, 1_u64);
+  set outer.inner.values[1_u64] = replacement();
+  let stored: own u8 = outer.inner.values[1_u64];
   check ieq<u8>(stored, 9_u8) else trap "array update";
   check ieq<u16>(outer.inner.sibling, 77_u16) else trap "inner sibling";
   check ieq<u32>(outer.prefix, 123_u32) else trap "outer sibling";

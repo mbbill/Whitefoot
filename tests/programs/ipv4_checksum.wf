@@ -1,6 +1,6 @@
-const ipv4_header: array<u8, 20> = [69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
+const ipv4_header: array<u8, 20> =[69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
 
-fn ipv4_checksum ['r](header: own slice<'r, u8>) -> own u16 reads('r), traps {
+fn ipv4_checksum['r](header: own slice<'r, u8>) -> own u16 reads('r), traps {
   let length: own u64 = len<u8>(header);
   let odd: own u64 = iand<u64>(length, 1_u64);
   check ieq<u64>(odd, 0_u64) else trap "IPv4 header length";
@@ -16,8 +16,8 @@ fn ipv4_checksum ['r](header: own slice<'r, u8>) -> own u16 reads('r), traps {
       }
     }
     let low_offset: own u64 = iadd.wrap<u64>(offset, 1_u64);
-    let high_byte: own u8 = index<u8>(header, offset);
-    let low_byte: own u8 = index<u8>(header, low_offset);
+    let high_byte: own u8 = header[offset];
+    let low_byte: own u8 = header[low_offset];
     let high_word: own u32 = cvt<u8, u32>(high_byte);
     let low_word: own u32 = cvt<u8, u32>(low_byte);
     let shifted_high: own u32 = ishl.wrap<u32>(high_word, 8_u32);
@@ -61,8 +61,8 @@ fn main() -> own unit allocates(heap), traps {
       False() => {
       }
     }
-    let byte: own u8 = index<u8>(ipv4_header, offset);
-    set index<u8>(runtime_header, offset) = byte;
+    let byte: own u8 = ipv4_header[offset];
+    set runtime_header[offset] = byte;
     set offset = iadd.wrap<u64>(offset, 1_u64);
   }
   region 'runtime_view {

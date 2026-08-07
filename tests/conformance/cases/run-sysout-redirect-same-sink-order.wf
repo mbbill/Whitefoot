@@ -56,10 +56,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         }
                       }
                     }
-                    let byte0: own u8 = index<u8>(page, 0_u64);
-                    let byte1: own u8 = index<u8>(page, 1_u64);
-                    let byte2: own u8 = index<u8>(page, 2_u64);
-                    let byte3: own u8 = index<u8>(page, 3_u64);
+                    let byte0: own u8 = page[0_u64];
+                    let byte1: own u8 = page[1_u64];
+                    let byte2: own u8 = page[2_u64];
+                    let byte3: own u8 = page[3_u64];
                     let head0: own Bool = ieq<u8>(byte0, 65_u8);
                     match head0 {
                       True() => {

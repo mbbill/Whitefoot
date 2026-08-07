@@ -395,8 +395,8 @@ const READS_ITS_ARGUMENTS: &[u8] =
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
     br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   let bytes: own buffer<u8> = buffer_new<u8>(3_u64, 65_u8);
-  set index<u8>(bytes, 1_u64) = 66_u8;
-  set index<u8>(bytes, 2_u64) = 67_u8;
+  set bytes[1_u64] = 66_u8;
+  set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 3_u64) {

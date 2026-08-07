@@ -1,4 +1,4 @@
-fn takes_one ['p](x: &'p i32) -> own unit pure {
+fn takes_one['p](x: &'p i32) -> own unit pure {
   return unit;
 }
 

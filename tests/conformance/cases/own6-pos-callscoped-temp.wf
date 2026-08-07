@@ -1,4 +1,4 @@
-fn bump ['r](n: &uniq 'r i32) -> own unit pure {
+fn bump['r](n: &uniq 'r i32) -> own unit pure {
   return unit;
 }
 

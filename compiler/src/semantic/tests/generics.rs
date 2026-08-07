@@ -237,8 +237,8 @@ fn main() -> own unit traps {
   let small: own array<u8, 2> = forward<2>(value: move small_input);
   let large_input: own array<u8, 5> = array_new<u8, 5>(9_u8);
   let large: own array<u8, 5> = forward<5>(value: move large_input);
-  let first: own u8 = index<u8>(small, 1_u64);
-  let second: own u8 = index<u8>(large, 4_u64);
+  let first: own u8 = small[1_u64];
+  let second: own u8 = large[4_u64];
   check ieq<u8>(first, 7_u8) else trap "small const instance";
   check ieq<u8>(second, 9_u8) else trap "large const instance";
   return unit;
@@ -586,14 +586,14 @@ fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> own buffer<T>
 fn main() -> own unit allocates(heap), traps {
   let bytes: own array<u8, 2> = filled_array<u8, 2>(value: 7_u8);
   let words: own array<i64, 3> = filled_array<i64, 3>(value: -5_i64);
-  let byte: own u8 = index<u8>(bytes, 1_u64);
-  let word: own i64 = index<i64>(words, 2_u64);
+  let byte: own u8 = bytes[1_u64];
+  let word: own i64 = words[2_u64];
   let storage: own buffer<u16> = filled_buffer<u16>(length: 2_u64, value: 9_u16);
-  let buffered: own u16 = index<u16>(storage, 1_u64);
+  let buffered: own u16 = storage[1_u64];
   let samples: own array<f32, 2> = filled_float_array<f32, 2>(value: 1.5_f32);
-  let sample: own f32 = index<f32>(samples, 1_u64);
+  let sample: own f32 = samples[1_u64];
   let weights: own buffer<f64> = filled_float_buffer<f64>(length: 2_u64, value: 2.5_f64);
-  let weight: own f64 = index<f64>(weights, 1_u64);
+  let weight: own f64 = weights[1_u64];
   check ieq<u8>(byte, 7_u8) else trap "generic array";
   check ieq<i64>(word, -5_i64) else trap "generic const array";
   check ieq<u16>(buffered, 9_u16) else trap "generic buffer";
@@ -620,7 +620,7 @@ fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
   return unit;
 }
 
-fn invalid ['r]() -> own unit pure {
+fn invalid['r]() -> own unit pure {
   instantiate<slice<'r, u8>>();
   return unit;
 }
@@ -636,7 +636,7 @@ fn main() -> own unit pure {
         br#"struct Marker<T> {
 }
 
-fn invalid ['r](value: own Marker<slice<'r, u8>>) -> own unit pure {
+fn invalid['r](value: own Marker<slice<'r, u8>>) -> own unit pure {
   return unit;
 }
 
@@ -648,7 +648,7 @@ fn main() -> own unit pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid ['r](value: own Option<slice<'r, u8>>) -> own unit pure {
+        br#"fn invalid['r](value: own Option<slice<'r, u8>>) -> own unit pure {
   return unit;
 }
 
@@ -664,7 +664,7 @@ fn main() -> own unit pure {
   return unit;
 }
 
-fn invalid ['r]() -> own unit pure {
+fn invalid['r]() -> own unit pure {
   instantiate<arena<'r, u8>>();
   return unit;
 }

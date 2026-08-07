@@ -86,7 +86,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
         False() => {
         }
       }
-      let byte: own u8 = index<u8>(bytes, cursor);
+      let byte: own u8 = bytes[cursor];
       let widened: own u64 = cvt<u8, u64>(byte);
       set total = iadd.wrap<u64>(total, widened);
       set cursor = iadd.wrap<u64>(cursor, 1_u64);
@@ -352,7 +352,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
               Err(error: problem) => {
                 match move problem {
                   CopyTooSmall(required: needed) => {
-                    let untouched: own u8 = index<u8>(bytes, 0_u64);
+                    let untouched: own u8 = bytes[0_u64];
                     match ieq<u8>(untouched, 7_u8) {
                       True() => {
                         let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(needed);

@@ -15,15 +15,15 @@ struct InflateState {
   bits: u32;
 }
 
-const length_bases: array<u16, 29> = [3_u16, 4_u16, 5_u16, 6_u16, 7_u16, 8_u16, 9_u16, 10_u16, 11_u16, 13_u16, 15_u16, 17_u16, 19_u16, 23_u16, 27_u16, 31_u16, 35_u16, 43_u16, 51_u16, 59_u16, 67_u16, 83_u16, 99_u16, 115_u16, 131_u16, 163_u16, 195_u16, 227_u16, 258_u16];
+const length_bases: array<u16, 29> =[3_u16, 4_u16, 5_u16, 6_u16, 7_u16, 8_u16, 9_u16, 10_u16, 11_u16, 13_u16, 15_u16, 17_u16, 19_u16, 23_u16, 27_u16, 31_u16, 35_u16, 43_u16, 51_u16, 59_u16, 67_u16, 83_u16, 99_u16, 115_u16, 131_u16, 163_u16, 195_u16, 227_u16, 258_u16];
 
-const length_extras: array<u8, 29> = [0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 1_u8, 1_u8, 2_u8, 2_u8, 2_u8, 2_u8, 3_u8, 3_u8, 3_u8, 3_u8, 4_u8, 4_u8, 4_u8, 4_u8, 5_u8, 5_u8, 5_u8, 5_u8, 0_u8];
+const length_extras: array<u8, 29> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 1_u8, 1_u8, 2_u8, 2_u8, 2_u8, 2_u8, 3_u8, 3_u8, 3_u8, 3_u8, 4_u8, 4_u8, 4_u8, 4_u8, 5_u8, 5_u8, 5_u8, 5_u8, 0_u8];
 
-const distance_bases: array<u16, 30> = [1_u16, 2_u16, 3_u16, 4_u16, 5_u16, 7_u16, 9_u16, 13_u16, 17_u16, 25_u16, 33_u16, 49_u16, 65_u16, 97_u16, 129_u16, 193_u16, 257_u16, 385_u16, 513_u16, 769_u16, 1025_u16, 1537_u16, 2049_u16, 3073_u16, 4097_u16, 6145_u16, 8193_u16, 12289_u16, 16385_u16, 24577_u16];
+const distance_bases: array<u16, 30> =[1_u16, 2_u16, 3_u16, 4_u16, 5_u16, 7_u16, 9_u16, 13_u16, 17_u16, 25_u16, 33_u16, 49_u16, 65_u16, 97_u16, 129_u16, 193_u16, 257_u16, 385_u16, 513_u16, 769_u16, 1025_u16, 1537_u16, 2049_u16, 3073_u16, 4097_u16, 6145_u16, 8193_u16, 12289_u16, 16385_u16, 24577_u16];
 
-const distance_extras: array<u8, 30> = [0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 2_u8, 2_u8, 3_u8, 3_u8, 4_u8, 4_u8, 5_u8, 5_u8, 6_u8, 6_u8, 7_u8, 7_u8, 8_u8, 8_u8, 9_u8, 9_u8, 10_u8, 10_u8, 11_u8, 11_u8, 12_u8, 12_u8, 13_u8, 13_u8];
+const distance_extras: array<u8, 30> =[0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 2_u8, 2_u8, 3_u8, 3_u8, 4_u8, 4_u8, 5_u8, 5_u8, 6_u8, 6_u8, 7_u8, 7_u8, 8_u8, 8_u8, 9_u8, 9_u8, 10_u8, 10_u8, 11_u8, 11_u8, 12_u8, 12_u8, 13_u8, 13_u8];
 
-fn read_bits ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count: own u32) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
+fn read_bits['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count: own u32) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
   loop @fill_bits {
     let enough: own Bool = ige<u32>(deref(state).bits, count);
     match enough {
@@ -41,7 +41,7 @@ fn read_bits ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count
           False() => {
           }
         }
-        let next_byte: own u8 = index<u8>(deref(input), deref(state).input_offset);
+        let next_byte: own u8 = deref(input)[deref(state).input_offset];
         let next_word: own u64 = cvt<u8, u64>(next_byte);
         let shifted: own u64 = ishl.wrap<u64>(next_word, deref(state).bits);
         set deref(state).hold = ior<u64>(deref(state).hold, shifted);
@@ -58,7 +58,7 @@ fn read_bits ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count
   return Ok(value: value);
 }
 
-fn decode_fixed_symbol ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
+fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
   let code: own u64 = 0_u64;
   let first: own u64 = 0_u64;
   let symbol_index: own u64 = 0_u64;
@@ -154,7 +154,7 @@ fn decode_fixed_symbol ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<
   return Ok(value: decoded);
 }
 
-fn emit_byte ['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, value: own u8) -> own Result<unit, InflateError> reads('s 'o), writes('s 'o), traps {
+fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, value: own u8) -> own Result<unit, InflateError> reads('s 'o), writes('s 'o), traps {
   let output_length: own u64 = len<u8>(deref(out));
   let output_full: own Bool = ige<u64>(deref(state).output_offset, output_length);
   match output_full {
@@ -165,12 +165,12 @@ fn emit_byte ['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, va
     False() => {
     }
   }
-  set index<u8>(deref(out), deref(state).output_offset) = value;
+  set deref(out)[deref(state).output_offset] = value;
   set deref(state).output_offset = iadd.wrap<u64>(deref(state).output_offset, 1_u64);
   return Ok(value: unit);
 }
 
-fn decode_fixed ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
+fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
   loop @fixed_codes {
     let symbol: own u64 = 0_u64;
     region 'symbol_call {
@@ -250,7 +250,7 @@ fn decode_fixed ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
   return Ok(value: unit);
 }
 
-fn inflate ['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u64, InflateError> reads('r), writes('r), allocates(heap), traps {
+fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u64, InflateError> reads('r), writes('r), allocates(heap), traps {
   let input_length: own u64 = len<u8>(input);
   let output_length: own u64 = len<u8>(deref(out));
   let state: own InflateState = InflateState(input_offset: 0_u64, output_offset: 0_u64, hold: 0_u64, bits: 0_u32);
@@ -296,10 +296,10 @@ fn inflate ['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u
         let len_high_offset: own u64 = iadd.wrap<u64>(state.input_offset, 1_u64);
         let nlen_low_offset: own u64 = iadd.wrap<u64>(state.input_offset, 2_u64);
         let nlen_high_offset: own u64 = iadd.wrap<u64>(state.input_offset, 3_u64);
-        let len_low_byte: own u8 = index<u8>(input, state.input_offset);
-        let len_high_byte: own u8 = index<u8>(input, len_high_offset);
-        let nlen_low_byte: own u8 = index<u8>(input, nlen_low_offset);
-        let nlen_high_byte: own u8 = index<u8>(input, nlen_high_offset);
+        let len_low_byte: own u8 = input[state.input_offset];
+        let len_high_byte: own u8 = input[len_high_offset];
+        let nlen_low_byte: own u8 = input[nlen_low_offset];
+        let nlen_high_byte: own u8 = input[nlen_high_offset];
         set state.input_offset = iadd.wrap<u64>(state.input_offset, 4_u64);
         let len_low: own u16 = cvt<u8, u16>(len_low_byte);
         let len_high_word: own u16 = cvt<u8, u16>(len_high_byte);
@@ -349,7 +349,7 @@ fn inflate ['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u
             }
             False() => {
               let source_index: own u64 = iadd.wrap<u64>(state.input_offset, copied);
-              let byte: own u8 = index<u8>(input, source_index);
+              let byte: own u8 = input[source_index];
               region 'stored_emit {
                 match emit_byte<'stored_emit, 'stored_emit>(state: &uniq 'stored_emit state, out: &uniq 'stored_emit deref(out), value: byte) {
                   Ok(value: emitted) => {

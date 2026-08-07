@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
-    let source = br#"const bytes: array<u8, 4> = [1_u8, 2_u8, 3_u8, 4_u8];
+    let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum ['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
+fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
   let offset: own u64 = 0_u64;
   let total: own u64 = 0_u64;
   let length: own u64 = len<u8>(values);
@@ -17,7 +17,7 @@ fn sum ['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
       False() => {
       }
     }
-    let byte: own u8 = index<u8>(values, offset);
+    let byte: own u8 = values[offset];
     let word: own u64 = cvt<u8, u64>(byte);
     set total = iadd.wrap<u64>(total, word);
     set offset = iadd.wrap<u64>(offset, 1_u64);
@@ -66,7 +66,7 @@ fn slice_index_retains_the_op4_trap_before_address_formation() {
   let bytes: own array<u8, 2> = array_new<u8, 2>(0_u8);
   region 'view {
     let window: own slice<'view, u8> = slice_of<'view, u8>(&'view bytes);
-    let value: own u8 = index<u8>(window, 2_u64);
+    let value: own u8 = window[2_u64];
   }
   return unit;
 }
@@ -97,13 +97,13 @@ fn slice_index_retains_the_op4_trap_before_address_formation() {
 
 #[test]
 fn returned_slice_descriptors_execute_without_transferring_storage() {
-    let source = br#"const fixed: array<u8, 2> = [7_u8, 13_u8];
+    let source = br#"const fixed: array<u8, 2> =[7_u8, 13_u8];
 
-fn pass ['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
   return move value;
 }
 
-fn choose ['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
   match take_left {
     True() => {
       return move left;
@@ -114,12 +114,12 @@ fn choose ['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r
   }
 }
 
-fn fixed_view ['r]() -> own slice<'r, u8> pure {
+fn fixed_view['r]() -> own slice<'r, u8> pure {
   return slice_of<'r, u8>(&'r fixed);
 }
 
-fn borrowed_first ['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
-  return index<u8>(deref(value), 0_u64);
+fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+  return deref(value)[0_u64];
 }
 
 fn main() -> own unit traps {
@@ -133,16 +133,16 @@ fn main() -> own unit traps {
     }
     let initial: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let passed: own slice<'view, u8> = pass<'view>(value: move initial);
-    let pass_value: own u8 = index<u8>(passed, 0_u64);
+    let pass_value: own u8 = passed[0_u64];
     check ieq<u8>(pass_value, 11_u8) else trap "pass";
     let left_view: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let right_view: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
     let take_left: own Bool = False();
     let selected: own slice<'view, u8> = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
-    let selected_value: own u8 = index<u8>(selected, 0_u64);
+    let selected_value: own u8 = selected[0_u64];
     check ieq<u8>(selected_value, 29_u8) else trap "choice";
     let constant: own slice<'view, u8> = fixed_view<'view>();
-    let constant_value: own u8 = index<u8>(constant, 1_u64);
+    let constant_value: own u8 = constant[1_u64];
     check ieq<u8>(constant_value, 13_u8) else trap "const";
   }
   return unit;
