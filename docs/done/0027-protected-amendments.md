@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `DONE`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 2 and the
   owner's 2026-08-06 19-item approval (`governance/APPROVALS.md`)
 - **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
@@ -59,3 +59,18 @@ remaining red afterwards must be exactly the three OWN-6-gap cases
 Programmatic before/after diff showing only the enumerated bytes moved;
 per-case adapter evidence; unpiped gates. Close to done with the final
 tally.
+
+## Terminal outcome (2026-08-07)
+
+All 19 approved amendments executed byte-minimally and landed (merge of
+task/0027-protected-amendments, head 15a5265; gates unpiped EXIT=0). Lane
+moved 342/23/14 to 356/9/14. 14 amendments reach their declared verdicts.
+Five amendments applied exactly as approved unmasked causes outside the
+approval, reported open above and carried as follow-ups: three sources with
+no `fn main` (FN-7; need a new owner ruling of the familiar mechanical-
+completion shape), one OWN-5 conflict contradicting the case's declared
+intent (`own13-pos-uniq-match-payloads`; needs investigation routing), and
+one second bare affine return (`own1-pos-return-affine-contextual-move`;
+candidate for the task 0028 v0.20 batch, same shape as the TYPE-7/OWN-1
+case). Negative coverage note: no case now rejects citing OP-2/OP-7/OP-8 —
+the recorded cost of the owner's correction choice.

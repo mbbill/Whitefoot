@@ -39,3 +39,5 @@ green.
 - Landed commits: `67469e7`/`03ee2e8`/`b854ec8`/`18ca21a`. Both gates green
   by unpiped exit codes; 449 lib tests; coverage 119/119; obligation-
   discharge (owner session) untouched.
+
+> Correction (2026-08-07, task 0027): the "12 protected-source asks" label above is a closure-compression error; the asks itemized and approved were 9 (three EFF-2 `reads` rows, six TYPE-5 region arguments). The other three of the 12 are the OWN-6 returned-reborrow gap cases, which are spec-gap candidates, not source asks. Per-case enumeration recovered from the pre-closure record at 18ca21a; see docs/done/0027-protected-amendments.md.
