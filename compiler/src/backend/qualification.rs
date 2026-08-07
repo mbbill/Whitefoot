@@ -173,7 +173,7 @@ const DARWIN_ERROR_CLASSES: [PortableErrorClass; 30] = [
     class("TimedOut", &[60]),
     class("BrokenPipe", &[32]),
     // No native code produces these two: `WriteZero` is [SYS-8]'s own
-    // host-accepted-nothing outcome, and no v0.21 operation reports a
+    // host-accepted-nothing outcome, and no v0.22 operation reports a
     // truncated required transfer.
     class("WriteZero", &[]),
     class("UnexpectedEnd", &[]),
@@ -759,7 +759,7 @@ fn operation_row(
     kind: ProgramKind,
 ) -> Result<ApprovedImplementation, QualificationFailure> {
     let facility = Facility::Operation(operation);
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.21" || usize::from(operation) >= OPERATION_COUNT {
+    if ACTIVE_KERNEL_SPEC_VERSION != "v0.22" || usize::from(operation) >= OPERATION_COUNT {
         return Err(QualificationFailure::MissingMapping(facility));
     }
     // Every [SYS-2] operation exists only in a system-admitted unit, which is
@@ -801,7 +801,7 @@ fn resource_row(
     kind: ProgramKind,
 ) -> Result<ResourceImplementation, QualificationFailure> {
     let facility = Facility::Resource(contract.resource);
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.21" {
+    if ACTIVE_KERNEL_SPEC_VERSION != "v0.22" {
         return Err(QualificationFailure::MissingMapping(facility));
     }
     if kind != ProgramKind::Command {
@@ -859,7 +859,7 @@ fn resource_row(
 /// supplies command-lifetime argument backing; a target that can supply
 /// neither fails qualification for both IDs.
 fn command_entry_row(target: SystemTarget) -> Result<(), QualificationFailure> {
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.21" {
+    if ACTIVE_KERNEL_SPEC_VERSION != "v0.22" {
         return Err(QualificationFailure::MissingMapping(Facility::CommandEntry));
     }
     if !target.supplies(TargetGuarantee::CommandLifetimeArgumentBacking) {

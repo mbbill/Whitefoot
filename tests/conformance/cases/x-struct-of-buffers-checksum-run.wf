@@ -18,9 +18,9 @@ fn main() -> own unit allocates(heap), traps {
       False() => {
       }
     }
-    set index<u64>(columns.left, cursor) = cursor;
+    set columns.left[cursor] = cursor;
     let doubled: own u64 = imul.wrap<u64>(cursor, 2_u64);
-    set index<u64>(columns.right, cursor) = doubled;
+    set columns.right[cursor] = doubled;
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }
   set cursor = 0_u64;
@@ -33,8 +33,8 @@ fn main() -> own unit allocates(heap), traps {
       False() => {
       }
     }
-    let left_value: own u64 = index<u64>(columns.left, cursor);
-    let right_value: own u64 = index<u64>(columns.right, cursor);
+    let left_value: own u64 = columns.left[cursor];
+    let right_value: own u64 = columns.right[cursor];
     set total = iadd.wrap<u64>(total, left_value);
     set total = iadd.wrap<u64>(total, right_value);
     set cursor = iadd.wrap<u64>(cursor, 1_u64);

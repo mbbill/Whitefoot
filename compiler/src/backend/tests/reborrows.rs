@@ -46,7 +46,7 @@ fn general_scalar_and_enum_borrows_execute_through_host_llvm() {
 #[test]
 fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
     let llvm = compile(
-        br#"fn bump ['r](n: &uniq 'r i32) -> own unit writes('r) {
+        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
   set deref(n) = 42_i32;
   return unit;
 }

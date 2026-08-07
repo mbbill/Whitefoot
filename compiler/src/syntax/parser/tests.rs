@@ -233,7 +233,7 @@ fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
             SyntaxRule::Form3,
         ),
         (
-            b"const value: array<i32, 1_i32> = [0_i32];".as_slice(),
+            b"const value: array<i32, 1_i32> =[0_i32];".as_slice(),
             SyntaxRule::Const1,
         ),
         (b"const value: i32 = 42;".as_slice(), SyntaxRule::Form5),
@@ -495,7 +495,7 @@ law identity(member, 0_i32);
 conform Name<T>: Contract<T> { doc "binding"; member = implementation; }
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
-const table: array<i32, 2> = [0_i32, zero];
+const table: array<i32, 2> =[0_i32, zero];
 command fn entry(command.args as arguments: own i32, command.cwd as directory: own i32)
 -> own unit external, blocks
 {
@@ -513,7 +513,7 @@ let made: own Name<T> = Name<T>(value: ordinary);
 let moved: own i32 = move ordinary;
 let borrowed: &'r i32 = &'r ordinary;
 let unique_borrow: &uniq 'r i32 = &uniq 'r ordinary;
-let loaded: own i32 = index<i32>(table, ordinary);
+let loaded: own i32 = table[ordinary];
 set deref(pointer).field = ordinary;
 user<T, 'r, 2>(arg: ordinary);
 return unit;

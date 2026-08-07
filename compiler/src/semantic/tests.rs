@@ -536,7 +536,7 @@ fn main() -> own unit pure {
     );
     assert_rule(
         br#"fn read(holder: own box<buffer<u8>>) -> own u8 traps {
-  return index<u8>(holder, 0_u64);
+  return holder[0_u64];
 }
 
 fn main() -> own unit pure {

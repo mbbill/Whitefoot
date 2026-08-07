@@ -189,8 +189,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self.has_fixed(pbase, FixedTerminal::Index)? {
-            return self.invalid_requires(entry);
+        for suffix in self.tree.children_with(place, Production::Psuffix)? {
+            if self.subscript_offset(suffix)?.is_some() {
+                return self.invalid_requires(entry);
+            }
         }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
             let nested = self

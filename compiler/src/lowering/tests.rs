@@ -616,7 +616,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "fn main() -> own unit allocates(heap), traps {{\n  let data: own buffer<u8> = buffer_new<u8>(64_u64, 97_u8);\n  let mark: own u8 = 88_u8;\n  let seen: own u64 = 0_u64;\n  let stop: own u64 = len<u8>(data);\n  let cursor: own u64 = 0_u64;\n  loop @walk {{\n    let done: own Bool = ige<u64>(cursor, stop);\n    match done {{\n      True() => {{\n        break @walk;\n      }}\n      False() => {{\n      }}\n    }}\n    let byte: own u8 = index<u8>(data, cursor);\n{middle}    set cursor = iadd.wrap<u64>(cursor, {step});\n  }}\n  check ilt<u64>(seen, 1000_u64) else trap \"walk drift\";\n  return unit;\n}}\n"
+        "fn main() -> own unit allocates(heap), traps {{\n  let data: own buffer<u8> = buffer_new<u8>(64_u64, 97_u8);\n  let mark: own u8 = 88_u8;\n  let seen: own u64 = 0_u64;\n  let stop: own u64 = len<u8>(data);\n  let cursor: own u64 = 0_u64;\n  loop @walk {{\n    let done: own Bool = ige<u64>(cursor, stop);\n    match done {{\n      True() => {{\n        break @walk;\n      }}\n      False() => {{\n      }}\n    }}\n    let byte: own u8 = data[cursor];\n{middle}    set cursor = iadd.wrap<u64>(cursor, {step});\n  }}\n  check ilt<u64>(seen, 1000_u64) else trap \"walk drift\";\n  return unit;\n}}\n"
     )
     .into_bytes()
 }

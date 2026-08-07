@@ -507,14 +507,21 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Psuffix => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
-            roles,
-            complete_counts,
-        )?,
+        Production::Psuffix => {
+            // The field alternative owns exactly one projected-field name; the
+            // subscript alternative owns only bracket punctuation, and its
+            // offset atom classifies through the atom's own productions.
+            if !names.is_empty() {
+                add_single(
+                    classified,
+                    owner,
+                    &names,
+                    RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
+                    roles,
+                    complete_counts,
+                )?;
+            }
+        }
         Production::Law => add_single(
             classified,
             owner,

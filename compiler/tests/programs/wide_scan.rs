@@ -16,7 +16,7 @@ use std::os::unix::process::ExitStatusExt;
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
-const ORACLE: &[u8] = br#"fn publish_all ['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+const ORACLE: &[u8] = br#"fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent: own u64 = 0_u64;
   loop @publish {
@@ -67,19 +67,19 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   }
   match ige<u64>(chosen, 1_u64) {
     True() => {
-      set selector = index<u8>(choice, 0_u64);
+      set selector = choice[0_u64];
     }
     False() => {
     }
   }
   let data: own buffer<u8> = buffer_new<u8>(37_u64, 97_u8);
-  set index<u8>(data, 0_u64) = 88_u8;
-  set index<u8>(data, 1_u64) = 88_u8;
-  set index<u8>(data, 15_u64) = 88_u8;
-  set index<u8>(data, 16_u64) = 88_u8;
-  set index<u8>(data, 17_u64) = 88_u8;
-  set index<u8>(data, 31_u64) = 10_u8;
-  set index<u8>(data, 36_u64) = 88_u8;
+  set data[0_u64] = 88_u8;
+  set data[1_u64] = 88_u8;
+  set data[15_u64] = 88_u8;
+  set data[16_u64] = 88_u8;
+  set data[17_u64] = 88_u8;
+  set data[31_u64] = 10_u8;
+  set data[36_u64] = 88_u8;
   let found: own buffer<u8> = buffer_new<u8>(64_u64, 0_u8);
   let count: own u64 = 0_u64;
   let mark: own u8 = 88_u8;
@@ -94,13 +94,13 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       False() => {
       }
     }
-    let byte: own u8 = index<u8>(data, cursor);
+    let byte: own u8 = data[cursor];
     let newline: own Bool = ieq<u8>(byte, 10_u8);
     match newline {
       True() => {
         match cvt<u64, u8>(cursor) {
           Ok(value: narrow) => {
-            set index<u8>(found, count) = narrow;
+            set found[count] = narrow;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
           Err(error: wide_position) => {
@@ -115,7 +115,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       True() => {
         match cvt<u64, u8>(cursor) {
           Ok(value: narrow_lead) => {
-            set index<u8>(found, count) = narrow_lead;
+            set found[count] = narrow_lead;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
           Err(error: wide_lead) => {
@@ -127,7 +127,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }
-  set index<u8>(found, count) = 200_u8;
+  set found[count] = 200_u8;
   set count = iadd.wrap<u64>(count, 1_u64);
   let blank: own buffer<u8> = buffer_new<u8>(40_u64, 97_u8);
   let blank_stop: own u64 = len<u8>(blank);
@@ -141,11 +141,11 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       False() => {
       }
     }
-    let blank_byte: own u8 = index<u8>(blank, blank_cursor);
+    let blank_byte: own u8 = blank[blank_cursor];
     let blank_newline: own Bool = ieq<u8>(blank_byte, 10_u8);
     match blank_newline {
       True() => {
-        set index<u8>(found, count) = 210_u8;
+        set found[count] = 210_u8;
         set count = iadd.wrap<u64>(count, 1_u64);
       }
       False() => {
@@ -154,7 +154,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     let blank_lead: own Bool = ieq<u8>(blank_byte, mark);
     match blank_lead {
       True() => {
-        set index<u8>(found, count) = 211_u8;
+        set found[count] = 211_u8;
         set count = iadd.wrap<u64>(count, 1_u64);
       }
       False() => {
@@ -162,7 +162,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set blank_cursor = iadd.wrap<u64>(blank_cursor, 1_u64);
   }
-  set index<u8>(found, count) = 201_u8;
+  set found[count] = 201_u8;
   set count = iadd.wrap<u64>(count, 1_u64);
   let short_stop: own u64 = 20_u64;
   let short_cursor: own u64 = 0_u64;
@@ -175,13 +175,13 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       False() => {
       }
     }
-    let short_byte: own u8 = index<u8>(data, short_cursor);
+    let short_byte: own u8 = data[short_cursor];
     let short_newline: own Bool = ieq<u8>(short_byte, 10_u8);
     match short_newline {
       True() => {
         match cvt<u64, u8>(short_cursor) {
           Ok(value: short_narrow) => {
-            set index<u8>(found, count) = short_narrow;
+            set found[count] = short_narrow;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
           Err(error: short_wide) => {
@@ -196,7 +196,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       True() => {
         match cvt<u64, u8>(short_cursor) {
           Ok(value: short_narrow_lead) => {
-            set index<u8>(found, count) = short_narrow_lead;
+            set found[count] = short_narrow_lead;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
           Err(error: short_wide_lead) => {
@@ -208,7 +208,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set short_cursor = iadd.wrap<u64>(short_cursor, 1_u64);
   }
-  set index<u8>(found, count) = 202_u8;
+  set found[count] = 202_u8;
   set count = iadd.wrap<u64>(count, 1_u64);
   region 'phase_publish {
     match publish_all<'phase_publish, 'phase_publish>(output: &uniq 'phase_publish out, source: &'phase_publish found, length: count) {
@@ -232,7 +232,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           False() => {
           }
         }
-        let empty_byte: own u8 = index<u8>(empty, empty_cursor);
+        let empty_byte: own u8 = empty[empty_cursor];
         let empty_newline: own Bool = ieq<u8>(empty_byte, 10_u8);
         match empty_newline {
           True() => {
@@ -249,8 +249,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   match ieq<u8>(selector, 109_u8) {
     True() => {
       let field: own buffer<u8> = buffer_new<u8>(37_u64, 97_u8);
-      set index<u8>(field, 21_u64) = 88_u8;
-      set index<u8>(field, 36_u64) = 89_u8;
+      set field[21_u64] = 88_u8;
+      set field[36_u64] = 89_u8;
       let scratch: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
       let wall: own u64 = 64_u64;
       let probe: own u64 = 0_u64;
@@ -263,11 +263,11 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           False() => {
           }
         }
-        let hostile_byte: own u8 = index<u8>(field, probe);
+        let hostile_byte: own u8 = field[probe];
         let hostile_lead: own Bool = ieq<u8>(hostile_byte, mark);
         match hostile_lead {
           True() => {
-            set index<u8>(scratch, 0_u64) = 88_u8;
+            set scratch[0_u64] = 88_u8;
             region 'lead_write {
               match publish_all<'lead_write, 'lead_write>(output: &uniq 'lead_write out, source: &'lead_write scratch, length: 1_u64) {
                 Ok(value: lead_published) => {
@@ -283,7 +283,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         let hostile_tail: own Bool = ieq<u8>(hostile_byte, 89_u8);
         match hostile_tail {
           True() => {
-            set index<u8>(scratch, 0_u64) = 89_u8;
+            set scratch[0_u64] = 89_u8;
             region 'tail_write {
               match publish_all<'tail_write, 'tail_write>(output: &uniq 'tail_write out, source: &'tail_write scratch, length: 1_u64) {
                 Ok(value: tail_published) => {

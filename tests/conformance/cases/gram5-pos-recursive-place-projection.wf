@@ -6,7 +6,7 @@ struct OuterProjection {
   inner: InnerProjection;
 }
 
-fn read_projection ['r](outer: &'r OuterProjection) -> own i32 reads('r) {
+fn read_projection['r](outer: &'r OuterProjection) -> own i32 reads('r) {
   return deref(outer).inner.value;
 }
 

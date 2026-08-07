@@ -13,7 +13,7 @@ fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> own box<Tree> allo
   return box_new<Tree>(move branch);
 }
 
-fn count ['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
+fn count['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
   match deref(deref(tree)) {
     Leaf() => {
       return 1_u64;

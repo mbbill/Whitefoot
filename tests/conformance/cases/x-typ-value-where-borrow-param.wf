@@ -1,4 +1,4 @@
-fn needs_ref ['r](p: &'r i32) -> own unit pure {
+fn needs_ref['r](p: &'r i32) -> own unit pure {
   return unit;
 }
 

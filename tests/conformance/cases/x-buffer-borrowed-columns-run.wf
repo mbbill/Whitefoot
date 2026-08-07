@@ -3,7 +3,7 @@ struct Columns {
   right: buffer<u64>;
 }
 
-fn fill ['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> own unit writes('r), traps {
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> own unit writes('r), traps {
   let index_value: own u64 = 0_u64;
   loop @fill {
     let done: own Bool = ieq<u64>(index_value, length);
@@ -12,9 +12,9 @@ fn fill ['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: ow
         break @fill;
       }
       False() => {
-        set index<u64>(deref(left), index_value) = index_value;
+        set deref(left)[index_value] = index_value;
         let shifted: own u64 = iadd.wrap<u64>(index_value, 10_u64);
-        set index<u64>(deref(right), index_value) = shifted;
+        set deref(right)[index_value] = shifted;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
       }
     }
@@ -22,7 +22,7 @@ fn fill ['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: ow
   return unit;
 }
 
-fn fold ['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> own u64 reads('r), traps {
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> own u64 reads('r), traps {
   let index_value: own u64 = 0_u64;
   let total: own u64 = 0_u64;
   loop @fold {
@@ -32,8 +32,8 @@ fn fold ['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> 
         break @fold;
       }
       False() => {
-        let left_value: own u64 = index<u64>(deref(left), index_value);
-        let right_value: own u64 = index<u64>(deref(right), index_value);
+        let left_value: own u64 = deref(left)[index_value];
+        let right_value: own u64 = deref(right)[index_value];
         set total = iadd.wrap<u64>(total, left_value);
         set total = iadd.wrap<u64>(total, right_value);
         set index_value = iadd.wrap<u64>(index_value, 1_u64);

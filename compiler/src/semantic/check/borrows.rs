@@ -316,6 +316,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place_node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        // A borrow of a subscripted place views one storage element; this
+        // version's borrows view whole bindings and field projections only.
+        for suffix in self.tree.children_with(place_node, Production::Psuffix)? {
+            if self.subscript_offset(suffix)?.is_some() {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            }
+        }
         if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
             return self.check_child_reborrow(
                 node, place_node, pbase, region, kind, bindings, loop_depth, position,
@@ -381,7 +388,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidBorrowLifetime,
             );
         }
-        let (fields, ty) = self.resolve_struct_path(place_node, local.ty)?;
+        let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let place = ResolvedPlace {
             root: declaration,
             fields: fields.clone(),
@@ -601,7 +609,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        let (fields, ty) = self.resolve_struct_path(place_node, local.ty)?;
+        let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let mut place = parent.place.clone();
         place.fields.extend_from_slice(&fields);
         self.check_loan_access(

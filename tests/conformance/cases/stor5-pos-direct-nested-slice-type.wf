@@ -1,4 +1,4 @@
-fn nested_length ['outer, 'inner](values: own slice<'outer, slice<'inner, u8>>) -> own u64 pure {
+fn nested_length['outer, 'inner](values: own slice<'outer, slice<'inner, u8>>) -> own u64 pure {
   return len<slice<'inner, u8>>(values);
 }
 

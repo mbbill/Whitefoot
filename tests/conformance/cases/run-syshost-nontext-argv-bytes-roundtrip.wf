@@ -32,10 +32,10 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
             }
           }
         }
-        let first: own u8 = index<u8>(bytes, 0_u64);
-        let second: own u8 = index<u8>(bytes, 1_u64);
-        let third: own u8 = index<u8>(bytes, 2_u64);
-        let tail: own u8 = index<u8>(bytes, 3_u64);
+        let first: own u8 = bytes[0_u64];
+        let second: own u8 = bytes[1_u64];
+        let third: own u8 = bytes[2_u64];
+        let tail: own u8 = bytes[3_u64];
         let head_ok: own Bool = ieq<u8>(first, 97_u8);
         match head_ok {
           True() => {

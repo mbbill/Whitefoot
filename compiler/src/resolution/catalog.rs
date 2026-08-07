@@ -44,7 +44,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 83] = [
     "iadd.wrap",
     "isub.wrap",
     "imul.wrap",
@@ -128,7 +128,6 @@ pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
     "ffma.strict",
     "finf",
     "fnan",
-    "index_get",
 ];
 
 pub(crate) const MODE_WORDS: [&str; 5] = ["wrap", "trap", "checked", "sat", "strict"];
@@ -1329,7 +1328,7 @@ mod tests {
     fn render_operation(operation: &super::SystemOperation) -> String {
         let mut rendered = operation.spelling.to_owned();
         if !operation.regions.is_empty() {
-            rendered.push_str(" [");
+            rendered.push('[');
             rendered.push_str(&operation.regions.join(", "));
             rendered.push(']');
         }
@@ -1390,7 +1389,7 @@ mod tests {
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
-        assert_eq!(OPERATION_FAMILIES.len(), 84);
+        assert_eq!(OPERATION_FAMILIES.len(), 83);
         assert_eq!(
             OPERATION_FAMILIES
                 .iter()

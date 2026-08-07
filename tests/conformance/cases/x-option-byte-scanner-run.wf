@@ -1,4 +1,4 @@
-fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> reads('r), traps {
+fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> reads('r), traps {
   let length: own u64 = len<u8>(deref(input));
   let offset: own u64 = 0_u64;
   loop @scan {
@@ -8,7 +8,7 @@ fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> read
         break @scan;
       }
       False() => {
-        let byte: own u8 = index<u8>(deref(input), offset);
+        let byte: own u8 = deref(input)[offset];
         let found: own Bool = ieq<u8>(byte, needle);
         match found {
           True() => {
@@ -26,12 +26,12 @@ fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> read
 
 fn main() -> own unit allocates(heap), traps {
   let bytes: own buffer<u8> = buffer_new<u8>(6_u64, 0_u8);
-  set index<u8>(bytes, 0_u64) = 10_u8;
-  set index<u8>(bytes, 1_u64) = 20_u8;
-  set index<u8>(bytes, 2_u64) = 30_u8;
-  set index<u8>(bytes, 3_u64) = 40_u8;
-  set index<u8>(bytes, 4_u64) = 50_u8;
-  set index<u8>(bytes, 5_u64) = 60_u8;
+  set bytes[0_u64] = 10_u8;
+  set bytes[1_u64] = 20_u8;
+  set bytes[2_u64] = 30_u8;
+  set bytes[3_u64] = 40_u8;
+  set bytes[4_u64] = 50_u8;
+  set bytes[5_u64] = 60_u8;
   region 'scan_region {
     let view: &'scan_region buffer<u8> = &'scan_region bytes;
     let present: own Option<u64> = find_byte<'scan_region>(input: view, needle: 40_u8);

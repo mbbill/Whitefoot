@@ -7,12 +7,12 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn slices_retain_type_source_and_access_operations() {
-    let source = br#"const bytes: array<u8, 2> = [4_u8, 9_u8];
+    let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn first ['r](values: own slice<'r, u8>) -> own u8 reads('r), traps {
+fn first['r](values: own slice<'r, u8>) -> own u8 reads('r), traps {
   let length: own u64 = len<u8>(values);
   check ieq<u64>(length, 2_u64) else trap "length";
-  return index<u8>(values, 0_u64);
+  return values[0_u64];
 }
 
 fn main() -> own unit traps {
@@ -64,8 +64,8 @@ fn main() -> own unit traps {
 
 #[test]
 fn incoming_slice_reads_require_their_origin_effect() {
-    let source = br#"fn invalid ['r](values: own slice<'r, u8>) -> own u8 pure {
-  return index<u8>(values, 0_u64);
+    let source = br#"fn invalid['r](values: own slice<'r, u8>) -> own u8 pure {
+  return values[0_u64];
 }
 
 fn main() -> own unit pure {
@@ -87,7 +87,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   region 'view {
     let window: own slice<'view, u8> = slice_of<'view, u8>(&'view values);
-    set index<u8>(values, 0_u64) = 1_u8;
+    set values[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -119,7 +119,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     region 'inner {
       let view: own slice<'outer, u8> = slice_of<'outer, u8>(&'outer values);
     }
-    set index<u8>(values, 0_u64) = 1_u8;
+    set values[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -140,7 +140,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
       False() => {
       }
     }
-    set index<u8>(values, 0_u64) = 1_u8;
+    set values[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -154,7 +154,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
   region 'view {
     let view: own slice<'view, u8> = slice_of<'view, u8>(&'view values);
   }
-  set index<u8>(values, 0_u64) = 1_u8;
+  set values[0_u64] = 1_u8;
   return unit;
 }
 "#;
@@ -176,7 +176,7 @@ fn slice_loans_follow_structured_break_region_exits() {
     loop @once {
       break @once;
     }
-    set index<u8>(values, 0_u64) = 1_u8;
+    set values[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -193,7 +193,7 @@ fn slice_loans_follow_structured_break_region_exits() {
       break @once;
     }
   }
-  set index<u8>(values, 0_u64) = 1_u8;
+  set values[0_u64] = 1_u8;
   return unit;
 }
 "#;
@@ -385,7 +385,7 @@ fn slice_views_are_not_set_targets() {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   region 'view {
     let window: own slice<'view, u8> = slice_of<'view, u8>(&'view values);
-    set index<u8>(window, 0_u64) = 1_u8;
+    set window[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -401,7 +401,7 @@ fn slice_views_are_not_set_targets() {
 #[test]
 fn slice_formation_enforces_storage_duration_and_explicit_boundaries() {
     assert_rule(
-        br#"fn invalid ['caller]() -> own unit pure {
+        br#"fn invalid['caller]() -> own unit pure {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   let window: own slice<'caller, u8> = slice_of<'caller, u8>(&'caller values);
   return unit;
@@ -419,7 +419,7 @@ fn main() -> own unit pure {
   value: u8;
 }
 
-fn observe ['r](values: own slice<'r, Item>) -> own unit pure {
+fn observe['r](values: own slice<'r, Item>) -> own unit pure {
   return unit;
 }
 
@@ -430,7 +430,7 @@ fn main() -> own unit pure {
         UnsupportedSemanticFeature::CompositeValues,
     );
     assert_unsupported(
-        br#"fn invalid ['source](values: &'source buffer<u8>) -> own unit pure {
+        br#"fn invalid['source](values: &'source buffer<u8>) -> own unit pure {
   region 'view {
     let window: own slice<'view, u8> = slice_of<'view, u8>(&'view deref(values));
   }
@@ -444,7 +444,7 @@ fn main() -> own unit pure {
         UnsupportedSemanticFeature::RegionsAndBorrows,
     );
     assert_rule(
-        br#"fn invalid ['r](values: own array<u8, 2>) -> own slice<'r, u8> pure {
+        br#"fn invalid['r](values: own array<u8, 2>) -> own slice<'r, u8> pure {
   return slice_of<'r, u8>(&'r values);
 }
 
@@ -479,11 +479,11 @@ fn main() -> own unit pure {
 
 #[test]
 fn returned_slices_keep_signature_ceilings_and_substituted_call_origins() {
-    let source = br#"fn pass ['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+    let source = br#"fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
   return move value;
 }
 
-fn choose ['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
   match take_left {
     True() => {
       return move left;
@@ -500,13 +500,13 @@ fn main() -> own unit traps {
   region 'view {
     let pass_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let passed: own slice<'view, u8> = pass<'view>(value: move pass_source);
-    let passed_value: own u8 = index<u8>(passed, 0_u64);
+    let passed_value: own u8 = passed[0_u64];
     check ieq<u8>(passed_value, 11_u8) else trap "returned slice pass through";
     let left_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let right_source: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
     let take_left: own Bool = False();
     let selected: own slice<'view, u8> = choose<'view>(take_left: take_left, left: move left_source, right: move right_source);
-    let selected_value: own u8 = index<u8>(selected, 0_u64);
+    let selected_value: own u8 = selected[0_u64];
     check ieq<u8>(selected_value, 29_u8) else trap "returned slice choice";
   }
   return unit;
@@ -570,13 +570,13 @@ fn main() -> own unit traps {
 
 #[test]
 fn returned_slice_origins_drive_effects_and_alias_conflicts() {
-    let wrapper = br#"fn pass ['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
+    let wrapper = br#"fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
   return move value;
 }
 
-fn first ['r](value: own slice<'r, u8>) -> own u8 reads('r), traps {
+fn first['r](value: own slice<'r, u8>) -> own u8 reads('r), traps {
   let returned: own slice<'r, u8> = pass<'r>(value: move value);
-  return index<u8>(returned, 0_u64);
+  return returned[0_u64];
 }
 
 fn main() -> own unit pure {
@@ -591,7 +591,7 @@ fn main() -> own unit pure {
     });
 
     assert_rule(
-        br#"fn choose ['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
   match take_left {
     True() => {
       return move left;
@@ -610,7 +610,7 @@ fn main() -> own unit traps {
     let right_view: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
     let take_left: own Bool = True();
     let selected: own slice<'view, u8> = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
-    set index<u8>(right, 0_u64) = 1_u8;
+    set right[0_u64] = 1_u8;
   }
   return unit;
 }
@@ -620,11 +620,11 @@ fn main() -> own unit traps {
     );
 
     assert_rule(
-        br#"fn consume ['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> own unit pure {
+        br#"fn consume['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> own unit pure {
   return unit;
 }
 
-fn wrapper ['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> own unit pure {
+fn wrapper['data, 'write](view: own slice<'data, u8>, output: &uniq 'write buffer<u8>) -> own unit pure {
   return consume<'data, 'write>(view: move view, output: move output);
 }
 
@@ -640,7 +640,7 @@ fn main() -> own unit pure {
 #[test]
 fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
     assert_rule(
-        br#"fn choose ['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
+        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
   let selected: own slice<'r, u8> = match take_left {
     True() => {
       give move left;
@@ -662,7 +662,7 @@ fn main() -> own unit pure {
         },
     );
     assert_rule(
-        br#"fn invalid ['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> &'descriptor slice<'data, u8> pure {
+        br#"fn invalid['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> &'descriptor slice<'data, u8> pure {
   return value;
 }
 
@@ -676,11 +676,11 @@ fn main() -> own unit pure {
         },
     );
 
-    let borrowed_input = br#"fn first ['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
-  return index<u8>(deref(value), 0_u64);
+    let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+  return deref(value)[0_u64];
 }
 
-fn wrapper ['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+fn wrapper['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
   return first<'descriptor, 'data>(value: value);
 }
 

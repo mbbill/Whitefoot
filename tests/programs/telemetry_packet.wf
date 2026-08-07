@@ -1,4 +1,4 @@
-fn store_u32_be ['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) -> own Result<unit, NarrowError> writes('o), traps {
+fn store_u32_be['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) -> own Result<unit, NarrowError> writes('o), traps {
   let first_word: own u32 = ishr.wrap<u32>(value, 24_u32);
   let second_shifted: own u32 = ishr.wrap<u32>(value, 16_u32);
   let second_word: own u32 = iand<u32>(second_shifted, 255_u32);
@@ -12,21 +12,21 @@ fn store_u32_be ['o](out: &uniq 'o buffer<u8>, offset: own u64, value: own u32) 
   let second_offset: own u64 = iadd.wrap<u64>(offset, 1_u64);
   let third_offset: own u64 = iadd.wrap<u64>(offset, 2_u64);
   let fourth_offset: own u64 = iadd.wrap<u64>(offset, 3_u64);
-  set index<u8>(deref(out), offset) = first;
-  set index<u8>(deref(out), second_offset) = second;
-  set index<u8>(deref(out), third_offset) = third;
-  set index<u8>(deref(out), fourth_offset) = fourth;
+  set deref(out)[offset] = first;
+  set deref(out)[second_offset] = second;
+  set deref(out)[third_offset] = third;
+  set deref(out)[fourth_offset] = fourth;
   return Ok(value: unit);
 }
 
-fn load_u32_be ['i](input: &'i buffer<u8>, offset: own u64) -> own u32 reads('i), traps {
+fn load_u32_be['i](input: &'i buffer<u8>, offset: own u64) -> own u32 reads('i), traps {
   let second_offset: own u64 = iadd.wrap<u64>(offset, 1_u64);
   let third_offset: own u64 = iadd.wrap<u64>(offset, 2_u64);
   let fourth_offset: own u64 = iadd.wrap<u64>(offset, 3_u64);
-  let first_byte: own u8 = index<u8>(deref(input), offset);
-  let second_byte: own u8 = index<u8>(deref(input), second_offset);
-  let third_byte: own u8 = index<u8>(deref(input), third_offset);
-  let fourth_byte: own u8 = index<u8>(deref(input), fourth_offset);
+  let first_byte: own u8 = deref(input)[offset];
+  let second_byte: own u8 = deref(input)[second_offset];
+  let third_byte: own u8 = deref(input)[third_offset];
+  let fourth_byte: own u8 = deref(input)[fourth_offset];
   let first: own u32 = cvt<u8, u32>(first_byte);
   let second: own u32 = cvt<u8, u32>(second_byte);
   let third: own u32 = cvt<u8, u32>(third_byte);

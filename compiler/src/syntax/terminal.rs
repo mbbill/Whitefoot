@@ -7,8 +7,8 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 ///
 /// Compound source atoms such as `&uniq` are represented by their two raw
 /// token predicates. The declaration order is the stable dense predicate
-/// index: the v0.17 inventory, the three spellings v0.18 added, then the two
-/// v0.21 added. First grammar-occurrence order is carried by
+/// index: the v0.17 inventory, the three spellings v0.18 added, and the two
+/// v0.21 added, less the `index` spelling v0.22 released to IDENT. First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -125,8 +125,6 @@ pub enum FixedTerminal {
     Move,
     /// `deref`.
     Deref,
-    /// `index`.
-    Index,
     /// `.`.
     Dot,
     /// `pure`.
@@ -154,7 +152,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 69] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 68] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -215,7 +213,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 69] = [
     FixedTerminal::FatArrow,
     FixedTerminal::Move,
     FixedTerminal::Deref,
-    FixedTerminal::Index,
     FixedTerminal::Pure,
     FixedTerminal::Reads,
     FixedTerminal::Writes,
@@ -287,7 +284,6 @@ impl FixedTerminal {
             Self::FatArrow => b"=>",
             Self::Move => b"move",
             Self::Deref => b"deref",
-            Self::Index => b"index",
             Self::Dot => b".",
             Self::Pure => b"pure",
             Self::Reads => b"reads",
@@ -347,21 +343,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 77] = {
-    let mut predicates = [TerminalPredicate::Identifier; 77];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 76] = {
+    let mut predicates = [TerminalPredicate::Identifier; 76];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[69] = TerminalPredicate::Identifier;
-    predicates[70] = TerminalPredicate::TypeIdentifier;
-    predicates[71] = TerminalPredicate::RegionIdentifier;
-    predicates[72] = TerminalPredicate::Label;
-    predicates[73] = TerminalPredicate::OperationName;
-    predicates[74] = TerminalPredicate::Literal;
-    predicates[75] = TerminalPredicate::String;
-    predicates[76] = TerminalPredicate::Digits;
+    predicates[68] = TerminalPredicate::Identifier;
+    predicates[69] = TerminalPredicate::TypeIdentifier;
+    predicates[70] = TerminalPredicate::RegionIdentifier;
+    predicates[71] = TerminalPredicate::Label;
+    predicates[72] = TerminalPredicate::OperationName;
+    predicates[73] = TerminalPredicate::Literal;
+    predicates[74] = TerminalPredicate::String;
+    predicates[75] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -369,14 +365,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 69,
-            Self::TypeIdentifier => 70,
-            Self::RegionIdentifier => 71,
-            Self::Label => 72,
-            Self::OperationName => 73,
-            Self::Literal => 74,
-            Self::String => 75,
-            Self::Digits => 76,
+            Self::Identifier => 68,
+            Self::TypeIdentifier => 69,
+            Self::RegionIdentifier => 70,
+            Self::Label => 71,
+            Self::OperationName => 72,
+            Self::Literal => 73,
+            Self::String => 74,
+            Self::Digits => 75,
         }
     }
 }

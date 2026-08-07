@@ -134,8 +134,8 @@ fn recognize_guard(
     Some((induction, bound))
 }
 
-/// The probe load: `let b = index<u8>(buf, i)` on a direct `u8` buffer
-/// binding declared outside the loop, offset exactly the induction binding.
+/// The probe load: `let b = buf[i];` on a direct `u8` buffer binding
+/// declared outside the loop, offset exactly the induction binding.
 fn recognize_load(
     load: &CheckedStatement,
     induction: BindingId,

@@ -1,4 +1,4 @@
-fn mutate ['r](x: &uniq 'r u64) -> own unit pure {
+fn mutate['r](x: &uniq 'r u64) -> own unit pure {
   return unit;
 }
 

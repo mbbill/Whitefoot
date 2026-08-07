@@ -13,7 +13,7 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
         break @transform;
       }
       False() => {
-        let byte: own u8 = index<u8>(input, offset);
+        let byte: own u8 = input[offset];
         let zero: own Bool = ieq<u8>(byte, 0_u8);
         match zero {
           True() => {
@@ -22,7 +22,7 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
           }
           False() => {
             let transformed: own u8 = iadd.wrap<u8>(byte, 1_u8);
-            set index<u8>(output, offset) = transformed;
+            set output[offset] = transformed;
             set offset = iadd.wrap<u64>(offset, 1_u64);
           }
         }
@@ -38,13 +38,13 @@ fn abandon(result: own Result<buffer<u8>, DecodeError>) -> own unit pure {
 
 fn main() -> own unit allocates(heap), traps {
   let success_input: own buffer<u8> = buffer_new<u8>(3_u64, 1_u8);
-  set index<u8>(success_input, 1_u64) = 4_u8;
+  set success_input[1_u64] = 4_u8;
   let success: own Result<buffer<u8>, DecodeError> = transform(input: move success_input);
   match move success {
     Ok(value: transformed) => {
       let length: own u64 = len<u8>(transformed);
-      let first: own u8 = index<u8>(transformed, 0_u64);
-      let middle: own u8 = index<u8>(transformed, 1_u64);
+      let first: own u8 = transformed[0_u64];
+      let middle: own u8 = transformed[1_u64];
       check ieq<u64>(length, 3_u64) else trap "success length";
       check ieq<u8>(first, 2_u8) else trap "success first byte";
       check ieq<u8>(middle, 5_u8) else trap "success middle byte";
@@ -54,7 +54,7 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let failure_input: own buffer<u8> = buffer_new<u8>(2_u64, 8_u8);
-  set index<u8>(failure_input, 1_u64) = 0_u8;
+  set failure_input[1_u64] = 0_u8;
   let failure: own Result<buffer<u8>, DecodeError> = transform(input: move failure_input);
   match move failure {
     Ok(value: failure_value) => {

@@ -1,6 +1,6 @@
-const sha256_abc_block: array<u32, 16> = [1633837952_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 24_u32];
+const sha256_abc_block: array<u32, 16> =[1633837952_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 0_u32, 24_u32];
 
-const sha256_round_constants: array<u32, 64> = [1116352408_u32, 1899447441_u32, 3049323471_u32, 3921009573_u32, 961987163_u32, 1508970993_u32, 2453635748_u32, 2870763221_u32, 3624381080_u32, 310598401_u32, 607225278_u32, 1426881987_u32, 1925078388_u32, 2162078206_u32, 2614888103_u32, 3248222580_u32, 3835390401_u32, 4022224774_u32, 264347078_u32, 604807628_u32, 770255983_u32, 1249150122_u32, 1555081692_u32, 1996064986_u32, 2554220882_u32, 2821834349_u32, 2952996808_u32, 3210313671_u32, 3336571891_u32, 3584528711_u32, 113926993_u32, 338241895_u32, 666307205_u32, 773529912_u32, 1294757372_u32, 1396182291_u32, 1695183700_u32, 1986661051_u32, 2177026350_u32, 2456956037_u32, 2730485921_u32, 2820302411_u32, 3259730800_u32, 3345764771_u32, 3516065817_u32, 3600352804_u32, 4094571909_u32, 275423344_u32, 430227734_u32, 506948616_u32, 659060556_u32, 883997877_u32, 958139571_u32, 1322822218_u32, 1537002063_u32, 1747873779_u32, 1955562222_u32, 2024104815_u32, 2227730452_u32, 2361852424_u32, 2428436474_u32, 2756734187_u32, 3204031479_u32, 3329325298_u32];
+const sha256_round_constants: array<u32, 64> =[1116352408_u32, 1899447441_u32, 3049323471_u32, 3921009573_u32, 961987163_u32, 1508970993_u32, 2453635748_u32, 2870763221_u32, 3624381080_u32, 310598401_u32, 607225278_u32, 1426881987_u32, 1925078388_u32, 2162078206_u32, 2614888103_u32, 3248222580_u32, 3835390401_u32, 4022224774_u32, 264347078_u32, 604807628_u32, 770255983_u32, 1249150122_u32, 1555081692_u32, 1996064986_u32, 2554220882_u32, 2821834349_u32, 2952996808_u32, 3210313671_u32, 3336571891_u32, 3584528711_u32, 113926993_u32, 338241895_u32, 666307205_u32, 773529912_u32, 1294757372_u32, 1396182291_u32, 1695183700_u32, 1986661051_u32, 2177026350_u32, 2456956037_u32, 2730485921_u32, 2820302411_u32, 3259730800_u32, 3345764771_u32, 3516065817_u32, 3600352804_u32, 4094571909_u32, 275423344_u32, 430227734_u32, 506948616_u32, 659060556_u32, 883997877_u32, 958139571_u32, 1322822218_u32, 1537002063_u32, 1747873779_u32, 1955562222_u32, 2024104815_u32, 2227730452_u32, 2361852424_u32, 2428436474_u32, 2756734187_u32, 3204031479_u32, 3329325298_u32];
 
 fn xor_three(x: own u32, y: own u32, z: own u32) -> own u32 pure {
   let first: own u32 = ixor<u32>(x, y);
@@ -61,8 +61,8 @@ fn sha256_abc_word_zero() -> own u32 traps {
       False() => {
       }
     }
-    let source_word: own u32 = index<u32>(sha256_abc_block, copy_index);
-    set index<u32>(schedule, copy_index) = source_word;
+    let source_word: own u32 = sha256_abc_block[copy_index];
+    set schedule[copy_index] = source_word;
     set copy_index = iadd.wrap<u64>(copy_index, 1_u64);
   }
   let extend_index: own u64 = 16_u64;
@@ -76,19 +76,19 @@ fn sha256_abc_word_zero() -> own u32 traps {
       }
     }
     let index_minus_two: own u64 = isub.wrap<u64>(extend_index, 2_u64);
-    let word_minus_two: own u32 = index<u32>(schedule, index_minus_two);
+    let word_minus_two: own u32 = schedule[index_minus_two];
     let sigma_one: own u32 = sha256_small_one(word: word_minus_two);
     let index_minus_seven: own u64 = isub.wrap<u64>(extend_index, 7_u64);
-    let word_minus_seven: own u32 = index<u32>(schedule, index_minus_seven);
+    let word_minus_seven: own u32 = schedule[index_minus_seven];
     let index_minus_fifteen: own u64 = isub.wrap<u64>(extend_index, 15_u64);
-    let word_minus_fifteen: own u32 = index<u32>(schedule, index_minus_fifteen);
+    let word_minus_fifteen: own u32 = schedule[index_minus_fifteen];
     let sigma_zero: own u32 = sha256_small_zero(word: word_minus_fifteen);
     let index_minus_sixteen: own u64 = isub.wrap<u64>(extend_index, 16_u64);
-    let word_minus_sixteen: own u32 = index<u32>(schedule, index_minus_sixteen);
+    let word_minus_sixteen: own u32 = schedule[index_minus_sixteen];
     let first_sum: own u32 = iadd.wrap<u32>(word_minus_sixteen, sigma_zero);
     let second_sum: own u32 = iadd.wrap<u32>(first_sum, word_minus_seven);
     let extended_word: own u32 = iadd.wrap<u32>(second_sum, sigma_one);
-    set index<u32>(schedule, extend_index) = extended_word;
+    set schedule[extend_index] = extended_word;
     set extend_index = iadd.wrap<u64>(extend_index, 1_u64);
   }
   let a: own u32 = 1779033703_u32;
@@ -111,8 +111,8 @@ fn sha256_abc_word_zero() -> own u32 traps {
     }
     let big_one: own u32 = sha256_big_one(word: e);
     let choose: own u32 = sha256_choose(x: e, y: f, z: g);
-    let constant: own u32 = index<u32>(sha256_round_constants, round);
-    let schedule_word: own u32 = index<u32>(schedule, round);
+    let constant: own u32 = sha256_round_constants[round];
+    let schedule_word: own u32 = schedule[round];
     let temp_one_a: own u32 = iadd.wrap<u32>(h, big_one);
     let temp_one_b: own u32 = iadd.wrap<u32>(temp_one_a, choose);
     let temp_one_c: own u32 = iadd.wrap<u32>(temp_one_b, constant);

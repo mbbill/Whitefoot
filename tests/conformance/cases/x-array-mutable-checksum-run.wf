@@ -10,7 +10,7 @@ fn main() -> own unit traps {
       False() => {
       }
     }
-    set index<u64>(values, cursor) = iadd.wrap<u64>(cursor, 1_u64);
+    set values[cursor] = iadd.wrap<u64>(cursor, 1_u64);
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }
   set cursor = 0_u64;
@@ -23,7 +23,7 @@ fn main() -> own unit traps {
       False() => {
       }
     }
-    let value: own u64 = index<u64>(values, cursor);
+    let value: own u64 = values[cursor];
     set total = iadd.wrap<u64>(total, value);
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }

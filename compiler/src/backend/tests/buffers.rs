@@ -12,9 +12,9 @@ fn replacement() -> own u16 pure {
 
 fn main() -> own unit allocates(heap), traps {
   let values: own buffer<u16> = make(n: 4_u64);
-  set index<u16>(values, 2_u64) = replacement();
+  set values[2_u64] = replacement();
   let length: own u64 = len<u16>(values);
-  let stored: own u16 = index<u16>(values, 2_u64);
+  let stored: own u16 = values[2_u64];
   check ieq<u64>(length, 4_u64) else trap "length drift";
   check ieq<u16>(stored, 9_u16) else trap "store drift";
   return unit;
@@ -112,7 +112,7 @@ fn failing_buffer_set_target_never_evaluates_rhs() {
 
 fn main() -> own unit allocates(heap), traps {
   let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
-  set index<u8>(values, 2_u64) = replacement();
+  set values[2_u64] = replacement();
   return unit;
 }
 "#;
@@ -216,14 +216,14 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
   count: u64;
 }
 
-fn update ['r](pool: &uniq 'r Pool) -> own unit writes('r), traps {
-  set index<u64>(deref(pool).left, 1_u64) = 13_u64;
+fn update['r](pool: &uniq 'r Pool) -> own unit writes('r), traps {
+  set deref(pool).left[1_u64] = 13_u64;
   set deref(pool).count = 1_u64;
   return unit;
 }
 
-fn observe ['r](pool: &'r Pool) -> own u64 reads('r), traps {
-  let value: own u64 = index<u64>(deref(pool).left, 1_u64);
+fn observe['r](pool: &'r Pool) -> own u64 reads('r), traps {
+  let value: own u64 = deref(pool).left[1_u64];
   let count: own u64 = deref(pool).count;
   return iadd.trap<u64>(value, count);
 }
@@ -329,7 +329,7 @@ fn replacement() -> own u16 pure {
 }
 
 fn update(columns: own Columns) -> own Columns traps {
-  set index<u16>(columns.left, 1_u64) = replacement();
+  set columns.left[1_u64] = replacement();
   return move columns;
 }
 
@@ -338,7 +338,7 @@ fn main() -> own unit allocates(heap), traps {
   let right: own buffer<u16> = buffer_new<u16>(2_u64, 0_u16);
   let columns: own Columns = Columns(left: move left, right: move right);
   let updated: own Columns = update(columns: move columns);
-  let value: own u16 = index<u16>(updated.left, 1_u64);
+  let value: own u16 = updated.left[1_u64];
   check ieq<u16>(value, 9_u16) else trap "projected store drift";
   return unit;
 }

@@ -14,9 +14,9 @@ fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
 
 fn main() -> own unit allocates(heap), traps {
   let values: own buffer<u16> = make(n: 4_u64);
-  set index<u16>(values, 2_u64) = 9_u16;
+  set values[2_u64] = 9_u16;
   let length: own u64 = len<u16>(values);
-  let stored: own u16 = index<u16>(values, 2_u64);
+  let stored: own u16 = values[2_u64];
   check ieq<u64>(length, 4_u64) else trap "length drift";
   check ieq<u16>(stored, 9_u16) else trap "store drift";
   return unit;
@@ -132,9 +132,9 @@ fn main() -> own unit allocates(heap), traps {
   let left: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
   let right: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
   let columns: own Columns = Columns(left: move left, right: move right);
-  set index<u64>(columns.left, 2_u64) = 7_u64;
+  set columns.left[2_u64] = 7_u64;
   let length: own u64 = len<u64>(columns.right);
-  let value: own u64 = index<u64>(columns.left, 2_u64);
+  let value: own u64 = columns.left[2_u64];
   check ieq<u64>(length, 4_u64) else trap "length drift";
   check ieq<u64>(value, 7_u64) else trap "value drift";
   return unit;
@@ -248,7 +248,7 @@ fn region_bearing_buffer_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid ['r](value: own buffer<slice<'r, u8>>) -> own unit pure {
+        br#"fn invalid['r](value: own buffer<slice<'r, u8>>) -> own unit pure {
   return unit;
 }
 
@@ -260,7 +260,7 @@ fn main() -> own unit pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid ['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
+        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
   buffer_new<slice<'r, u8>>(1_u64, move value);
   return unit;
 }

@@ -5,9 +5,9 @@ struct HuffmanTable {
   used_symbols: u64;
 }
 
-const code_length_order: array<u8, 19> = [16_u8, 17_u8, 18_u8, 0_u8, 8_u8, 7_u8, 9_u8, 6_u8, 10_u8, 5_u8, 11_u8, 4_u8, 12_u8, 3_u8, 13_u8, 2_u8, 14_u8, 1_u8, 15_u8];
+const code_length_order: array<u8, 19> =[16_u8, 17_u8, 18_u8, 0_u8, 8_u8, 7_u8, 9_u8, 6_u8, 10_u8, 5_u8, 11_u8, 4_u8, 12_u8, 3_u8, 13_u8, 2_u8, 14_u8, 1_u8, 15_u8];
 
-fn decode_length ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, symbol: own u64) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
+fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, symbol: own u64) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
   let before_lengths: own Bool = ilt<u64>(symbol, 257_u64);
   let after_lengths: own Bool = ige<u64>(symbol, 286_u64);
   let invalid_symbol: own Bool = bor<Bool>(before_lengths, after_lengths);
@@ -20,9 +20,9 @@ fn decode_length ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, s
     }
   }
   let length_index: own u64 = isub.wrap<u64>(symbol, 257_u64);
-  let length_base_word: own u16 = index<u16>(length_bases, length_index);
+  let length_base_word: own u16 = length_bases[length_index];
   let length_base: own u64 = cvt<u16, u64>(length_base_word);
-  let length_extra_byte: own u8 = index<u8>(length_extras, length_index);
+  let length_extra_byte: own u8 = length_extras[length_index];
   let length_extra_count: own u32 = cvt<u8, u32>(length_extra_byte);
   let length_extra: own u64 = 0_u64;
   region 'length_extra_call {
@@ -39,7 +39,7 @@ fn decode_length ['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, s
   return Ok(value: copy_length);
 }
 
-fn copy_distance ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>, copy_length: own u64, distance_symbol: own u64) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
+fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>, copy_length: own u64, distance_symbol: own u64) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
   let invalid_distance_symbol: own Bool = ige<u64>(distance_symbol, 30_u64);
   match invalid_distance_symbol {
     True() => {
@@ -49,9 +49,9 @@ fn copy_distance ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
     False() => {
     }
   }
-  let distance_base_word: own u16 = index<u16>(distance_bases, distance_symbol);
+  let distance_base_word: own u16 = distance_bases[distance_symbol];
   let distance_base: own u64 = cvt<u16, u64>(distance_base_word);
-  let distance_extra_byte: own u8 = index<u8>(distance_extras, distance_symbol);
+  let distance_extra_byte: own u8 = distance_extras[distance_symbol];
   let distance_extra_count: own u32 = cvt<u8, u32>(distance_extra_byte);
   let distance_extra: own u64 = 0_u64;
   region 'distance_extra_call {
@@ -83,7 +83,7 @@ fn copy_distance ['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
       }
       False() => {
         let source_index: own u64 = isub.wrap<u64>(deref(state).output_offset, distance);
-        let byte: own u8 = index<u8>(deref(out), source_index);
+        let byte: own u8 = deref(out)[source_index];
         region 'match_emit {
           match emit_byte<'match_emit, 'match_emit>(state: &uniq 'match_emit deref(state), out: &uniq 'match_emit deref(out), value: byte) {
             Ok(value: emitted) => {
@@ -115,7 +115,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         break @count_lengths;
       }
       False() => {
-        let length_byte: own u8 = index<u8>(lengths, symbol);
+        let length_byte: own u8 = lengths[symbol];
         let length: own u32 = cvt<u8, u32>(length_byte);
         let too_long: own Bool = igt<u32>(length, max_bits);
         match too_long {
@@ -130,8 +130,8 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         match present {
           True() => {
             let count_index: own u64 = cvt<u32, u64>(length);
-            let previous_count: own u64 = index<u64>(counts, count_index);
-            set index<u64>(counts, count_index) = iadd.wrap<u64>(previous_count, 1_u64);
+            let previous_count: own u64 = counts[count_index];
+            set counts[count_index] = iadd.wrap<u64>(previous_count, 1_u64);
             set nonzero = iadd.wrap<u64>(nonzero, 1_u64);
             set sole_length = length;
           }
@@ -153,7 +153,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       False() => {
         set left = ishl.wrap<u64>(left, 1_u32);
         let count_index: own u64 = cvt<u32, u64>(length);
-        let count: own u64 = index<u64>(counts, count_index);
+        let count: own u64 = counts[count_index];
         let oversubscribed: own Bool = igt<u64>(count, left);
         match oversubscribed {
           True() => {
@@ -203,8 +203,8 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       }
       False() => {
         let count_index: own u64 = cvt<u32, u64>(length);
-        set index<u64>(offsets, count_index) = offset;
-        let count: own u64 = index<u64>(counts, count_index);
+        set offsets[count_index] = offset;
+        let count: own u64 = counts[count_index];
         set offset = iadd.wrap<u64>(offset, count);
         set length = iadd.wrap<u32>(length, 1_u32);
       }
@@ -218,15 +218,15 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         break @order_symbols;
       }
       False() => {
-        let length_byte: own u8 = index<u8>(lengths, symbol);
+        let length_byte: own u8 = lengths[symbol];
         let symbol_length: own u32 = cvt<u8, u32>(length_byte);
         let present: own Bool = igt<u32>(symbol_length, 0_u32);
         match present {
           True() => {
             let count_index: own u64 = cvt<u32, u64>(symbol_length);
-            let destination: own u64 = index<u64>(offsets, count_index);
-            set index<u64>(symbols, destination) = symbol;
-            set index<u64>(offsets, count_index) = iadd.wrap<u64>(destination, 1_u64);
+            let destination: own u64 = offsets[count_index];
+            set symbols[destination] = symbol;
+            set offsets[count_index] = iadd.wrap<u64>(destination, 1_u64);
           }
           False() => {
           }
@@ -239,7 +239,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
   return Ok(value: move table);
 }
 
-fn decode_table_symbol ['s, 'i, 't](state: &uniq 's InflateState, input: &'i buffer<u8>, table: &'t HuffmanTable) -> own Result<u64, InflateError> reads('s 'i 't), writes('s), traps {
+fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buffer<u8>, table: &'t HuffmanTable) -> own Result<u64, InflateError> reads('s 'i 't), writes('s), traps {
   let empty: own Bool = ieq<u64>(deref(table).used_symbols, 0_u64);
   match empty {
     True() => {
@@ -268,7 +268,7 @@ fn decode_table_symbol ['s, 'i, 't](state: &uniq 's InflateState, input: &'i buf
     }
     set code = ior<u64>(code, bit);
     let count_index: own u64 = cvt<u32, u64>(bit_length);
-    let count: own u64 = index<u64>(deref(table).counts, count_index);
+    let count: own u64 = deref(table).counts[count_index];
     let first_after_count: own u64 = iadd.wrap<u64>(first, count);
     let at_or_after_first: own Bool = ige<u64>(code, first);
     let before_end: own Bool = ilt<u64>(code, first_after_count);
@@ -277,7 +277,7 @@ fn decode_table_symbol ['s, 'i, 't](state: &uniq 's InflateState, input: &'i buf
       True() => {
         let offset: own u64 = isub.wrap<u64>(code, first);
         let ordered: own u64 = iadd.wrap<u64>(symbol_index, offset);
-        set decoded = index<u64>(deref(table).symbols, ordered);
+        set decoded = deref(table).symbols[ordered];
         break @table_code_lengths;
       }
       False() => {

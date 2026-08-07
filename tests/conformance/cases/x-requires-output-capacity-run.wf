@@ -1,4 +1,4 @@
-fn copy_bytes ['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
+fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
   let out_length: own u64 = len<u8>(deref(out));
   let source_length: own u64 = len<u8>(source);
   check ile<u64>(source_length, out_length) else trap "output capacity";
@@ -12,8 +12,8 @@ fn copy_bytes ['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 
         break @copy;
       }
       False() => {
-        let value: own u8 = index<u8>(source, offset);
-        set index<u8>(deref(out), offset) = value;
+        let value: own u8 = source[offset];
+        set deref(out)[offset] = value;
         set offset = iadd.wrap<u64>(offset, 1_u64);
       }
     }
@@ -30,7 +30,7 @@ fn main() -> own unit allocates(heap), traps {
     let written: own u64 = copy_bytes<'copy_region>(out: move destination, source: move source);
     check ieq<u64>(written, length) else trap "copy length";
   }
-  let last: own u8 = index<u8>(output, 3_u64);
+  let last: own u8 = output[3_u64];
   check ieq<u8>(last, 7_u8) else trap "copy content";
   return unit;
 }

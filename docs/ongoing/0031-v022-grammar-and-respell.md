@@ -2,107 +2,78 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` before any compiler edit — item (4)'s mechanical
-  reprint names a tool the repository does not have, and the reprint as
-  specified cannot be performed by one canonical printer (see Blocker)
+- **Status:** `WAITING` — all eight remaining-sequence items are done and the
+  branch gates are green; stopped before merge per the card. Awaiting owner
+  review of the respell packet and the step-4 exact-byte approval.
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice; owner rulings
-  "批" and the N1 version-compat deferral (2026-08-07); the v0.22 delta
+  "批" and the N1 version-compat deferral (2026-08-07); the process ruling
+  (reviewable respell, no emitter) and the conformance repurpose ruling
+  ("改用途"), both 2026-08-07 in `governance/APPROVALS.md`; the v0.22 delta
   `governance/spec-evolution/index-surface-v022-candidate.md` and assembled
-  `kernel-spec-v0.22-candidate.md`
-- **Owner / workspace:** exec-0031 /
-  `/Users/bytedance/do_not_scan/wf-0031-worktree`, branch
+  `kernel-spec-v0.22-candidate.md`.
+- **Owner / workspace:** exec-0031 (second executor, took over at the
+  handback boundary) / `/Users/bytedance/do_not_scan/wf-0031-exec2`, branch
   `task/0031-v022-grammar-and-respell`
-- **Base revision:** 0615f49
-- **Dependency:** none (candidates landed; step-4 exact-byte approval follows
-  this task's evidence, before installation)
+- **Base revision:** ba6c5cf (branch rebased onto the conformance-ruling
+  commit so the cited approval is in-tree)
+- **Dependency:** none (step-4 exact-byte approval follows this task's
+  evidence, before installation)
 
 ## Goal
 
-On one task branch, 0030-style atomic-activation prep for v0.22:
-(1) grammar tables — `index` leaves the fixed atoms (IDENT-eligible),
-pbase loses the index alternative, psuffix gains `"[" atom "]"`, brackets
-join the right-attachment set per O1; (2) delete the index_get catalog row
-and reservation; (3) repoint identity pins to the v0.22 candidate bytes
-(rule count stays 128); (4) respell the corpus mechanically via reprint —
-tests/programs (266 subscript sites + 84 region headers + 31 cvalue
-arrays), tests/conformance (138 sites) with verdicts meaning-unchanged per
-the derived-material rule, plus the one new O5 conformance case (`index`
-as ordinary IDENT); (5) evidence: verifier green on the branch against the
-v0.22 candidate (delta §3 expectations), main untouched and green,
-`make -C compiler check` green; (6) STOP before merge — report the
-candidate SHA-256 from your worktree for the owner's step-4 approval.
-Discoveries outside the candidates stop the task with evidence.
+On one task branch, 0030-style atomic-activation prep for v0.22: grammar
+tables, semantic re-anchoring, identity pins, index_get removal, mechanical
+corpus respell with owner review packet, the repurposed and additive
+conformance cases, and evidence — STOP before merge.
 
 ## Progress
 
-Orientation only; stopped before any compiler or corpus edit. No file
-outside this record is touched on the branch. Items (1)-(3) and (5)-(6) look
-executable as written; item (4) does not, and it sits on the critical path
-for (5)'s `make -C compiler check` evidence, so the task stops here rather
-than building tables whose corpus evidence cannot be produced.
+Complete on the branch at de9ef81; nothing remaining except lead/owner
+review and step-4.
 
-## Blocker
+- 706c9fe (first executor): grammar tables, terminal inventory, FORM-2
+  right-attachment; a5fc13c: the repurposed element-type case per the
+  owner ruling.
+- 2fc016b: semantic re-anchoring (subscript as psuffix, suffix-limit
+  threading, element type derived from the base place, wrong-base anchored
+  per O3, offset stays own u64/Type5, FN-8 psuffix arm, resolution role
+  split), plus 84 discovered-missing `]`-closing SELECT_2 follow rows
+  (1919 -> 2003; without them `table[ordinary]` failed closed — the first
+  generation added the `[`-opening rows only), identity pins to the
+  candidate bytes, and the index_get catalog/reservation removal.
+- de9ef81: mechanical corpus respell (266 program + 133 conformance sites,
+  84 region headers, 31 cvalue arrays, one manifest doc, embedded compiler
+  fixtures), and the additive O5 case `form3-pos-index-ordinary-ident`.
 
-**The canonical printer item (4) directs me to use does not exist.** The
-compiler's canonical machinery is an auditor, not an emitter:
-`compiler/src/syntax/parser/finalize/canonical.rs` exposes exactly one
-public entry, `audit_canonical` (line 447), which computes expected FORM-2
-gap styles and *compares* them against the source bytes through
-`bytes_match` and `gap_matches` (`canonical/format.rs`). Nothing in the
-crate turns a finalized tree back into source text, `whitefootc`'s complete
-option surface is `[--emit-llvm] [-o OUTPUT] SOURCE...` with no format or
-reprint mode, and a repository-wide search finds no formatter in
-`compiler/`, `tools/` (which does not exist), or the standalone Python
-conformance tooling.
+## Evidence
 
-**Even given a printer, the reprint as specified is cross-grammar.** Delta
-§6 says "the canonical printer computes the new spelling from the old
-tree". A canonical printer emits under the grammar its tables carry. After
-item (1) lands, `pbase` no longer has the `index` alternative, so a v0.22
-compiler cannot obtain a v0.21 tree from the existing corpus; before item
-(1) lands, no printer can emit `p[i]` because the subscript `psuffix` does
-not exist. Reading old bytes and writing new spelling needs three pieces —
-a v0.21 parse, a tree transform from the prefix call form to the subscript
-suffix, and a v0.22 emitter — and the delta budgets for one. (Inference,
-not measured: post-change `index<u8>(a, i)` in expression position may
-still parse as an ordinary call to a function named `index`, since the
-respelling makes `index` IDENT-eligible, and would then fail resolution
-rather than parsing; in place position, such as `set index<u8>(a, i) = x;`,
-it cannot parse at all. Either way no subscript-bearing tree results.)
-
-**Footprint, measured on the branch at 0615f49** — hand-editing is both
-forbidden by the card and impractical: 266 `index<` sites in
-`tests/programs/*.wf` and 135 in `tests/conformance/` across 50 files, plus
-84 region-parameter headers and 31 `= [` cvalue arrays. The conformance
-count is 135 here against the delta's 138; the three-site difference is
-unexplained and worth reconciling before any migration runs.
-
-**A fourth item the card's six do not mention.** The semantic checker reads
-indexing as a prefix on the base — `has_fixed(pbase, FixedTerminal::Index)`
-— at five sites across `semantic/check/expressions.rs`,
-`expressions/places.rs`, `expressions/flat_storage.rs`, and
-`check/requires.rs`. Moving the form to a `psuffix` alternative re-shapes
-every one of them, and the per-subscript judgments the delta re-anchors
-(O3) land on those same paths. That is real semantic work beyond "grammar
-tables", and it must land in the same branch or the reprinted corpus cannot
-check.
+- `whitefoot-grammar` on the candidate: 65 productions / 75 decisions /
+  76 terminal predicates; candidate SHA-256
+  `b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8`,
+  128 rules.
+- `make -C compiler check` and `make check` green on the branch; main
+  untouched at ba6c5cf.
+- Conformance verdict comparison, branch vs main baseline (full adapter
+  run): main Pass=364 Fail=1 Skip=14; branch Pass=365 Fail=1 Skip=14 —
+  the one Fail is the same pre-existing `own1-neg-match-move-through-borrow`
+  OWN-5-for-OWN-1 mismatch on both sides, and the +1 Pass is the additive
+  case. No verdict changed meaning.
+- Scratch parse/run matrix (nested offsets `values[order[j]]`, triple
+  chain, deref chain, field-prefixed subscript, set target, literal and
+  IDENT offsets) compiles and runs exit 0; an out-of-bounds variant traps
+  OP-4 with the trap record at the psuffix node.
+- `tests/codegen/` deliberately untouched (preserved holding corpus per
+  its README; no harness consumes it); research experiment bundles stay
+  frozen evidence.
 
 ## Stop condition
 
-Reached. The task resumes when the reprint mechanism is decided: write and
-land a migration path (v0.21 parse + transform + v0.22 emit, whose home,
-lifetime, and deletion condition are a repository-hygiene decision), rule
-that a different mechanism is acceptable, or resequence so the corpus
-respell is its own task behind a printer. Whichever is chosen, the card
-should also state whether the semantic re-anchoring is in this task's
-scope.
+Reached: STOP before merge. The review packet (per-file diffstat, ten
+representative before/after excerpts, no-verdict-meaning-change statement)
+was reported to the lead for the owner. Merge, spec installation, and the
+activation change are outside this task.
 
-## Plan repair (lead, 2026-08-07, owner process ruling)
+## Closure
 
-Blocker resolved: no canonical emitter is built. Item (4) re-scoped — the
-respell may be done by a one-shot scratch script or direct edits; the
-deliverable adds a REVIEW PACKET for the owner (per-file diffstat, ten
-representative before/after samples, and the statement that no conformance
-verdict meaning changed). Item add: the five semantic-checker prefix-index
-sites and O3 psuffix anchoring are IN scope. Reconcile the 135-vs-138
-count before migrating. Authority: APPROVALS.md 2026-08-07 process entry.
+At integration, move this record to `docs/done/` with the landed commits
+and the canonical evidence links above.

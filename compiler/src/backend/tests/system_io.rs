@@ -591,7 +591,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                         False() => {
                         }
                       }
-                      let byte: own u8 = index<u8>(bytes, cursor);
+                      let byte: own u8 = bytes[cursor];
                       let widened: own u64 = cvt<u8, u64>(byte);
                       let scaled: own u64 = imul.wrap<u64>(digest, 31_u64);
                       set digest = iadd.wrap<u64>(scaled, widened);
@@ -651,9 +651,9 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 /// Writes nothing, then the two-byte prefix at offset one.
 pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   let bytes: own buffer<u8> = buffer_new<u8>(4_u64, 119_u8);
-  set index<u8>(bytes, 1_u64) = 120_u8;
-  set index<u8>(bytes, 2_u64) = 121_u8;
-  set index<u8>(bytes, 3_u64) = 122_u8;
+  set bytes[1_u64] = 120_u8;
+  set bytes[2_u64] = 121_u8;
+  set bytes[3_u64] = 122_u8;
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 0_u64) {
@@ -754,8 +754,8 @@ fn an_out_of_range_transfer_traps_before_any_host_action() {
 /// more to standard output.
 const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   let bytes: own buffer<u8> = buffer_new<u8>(3_u64, 65_u8);
-  set index<u8>(bytes, 1_u64) = 66_u8;
-  set index<u8>(bytes, 2_u64) = 67_u8;
+  set bytes[1_u64] = 66_u8;
+  set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {
