@@ -90,3 +90,19 @@ Validation: `make check` green; the simulation's proven/claim/branch
 buckets reproduced by the real checker on utf8parse, the deflate-dynamic
 unit, and sha256; every spec delta through the WORKFLOW language-change
 loop with owner approval per protected-surface rules.
+
+## Phase roll-forward (lead, 2026-08-07 night, owner standing instruction)
+
+The selected slice's spec work is COMPLETE: v0.21 (obligation-discharge
+batch 1) and v0.22 (index surface settlement) are both active with green
+gates. The plan's active work rolls to the implementation ladder already
+registered from the same authority: 0032 (ENT core, in flight) -> 0033
+(fact sources) -> 0034 (discharge flip + claim semantics + owner-reviewed
+corpus migration) -> 0035 (preregistered acceptance run: the real checker
+must reproduce SIMULATION.md's buckets). In parallel, the FLOOR-5 spelling
+batch runs the draft->adversarial-review lane only; any activation records
+delegated lead review in APPROVALS citing the owner's overnight standing
+instruction ("你继续,不要停…都要落地", 2026-08-07) and is presented for
+ratification next session. mcts_mem recording of the discussion's durable
+decisions is queued lead work. Deferred by sequencing discipline: ensures,
+taint gate, range loop, requires-as-goal (dossier §8 order unchanged).
