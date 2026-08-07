@@ -101,3 +101,18 @@ Whichever is chosen also needs a decision about the table generator.
 
 Reached. The task resumes only under a repaired plan item that names the
 mechanism and the generator.
+
+## Plan repair (lead, 2026-08-07, owner ruling "3")
+
+Blocker resolved by owner ruling: atomic activation. Re-scoped goal — on
+the task branch: (1) grammar tables extended by mirroring the else-row
+pattern for `because` (one-shot generator, deleted after use, as fallback);
+(2) verifier green at 65 productions / 77 terminal predicates against the
+generated `kernel-spec-v0.21-candidate.md` (assembled by the drafting
+agent, landing on main first); (3) every identity pin repointed on the
+branch (including the grammar.rs 64/74/75 assertion), 0029-style; (4) STOP
+before merge — deliver the full-document SHA-256 for the owner's step-4
+exact-byte approval; installation and integration only after that entry.
+Main stays 64/74/75 green throughout. Success criterion supersedes the
+original record's; APPROVALS.md 2026-08-07 sequencing amendment is the
+authority.
