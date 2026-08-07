@@ -6,7 +6,7 @@ This is a temporary live coordination record, not execution authority.
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 3 and the owner's
   2026-08-07 exact-byte approval (`governance/APPROVALS.md`)
 - **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
-- **Base revision:** (executor fills at claim)
+- **Base revision:** `bbfb353926dcb3794d5fcea3c5e5976e79c58a02`
 - **Dependency:** task 0028 (terminal: candidate approved)
 
 ## Goal
