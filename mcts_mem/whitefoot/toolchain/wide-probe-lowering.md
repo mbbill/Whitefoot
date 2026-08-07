@@ -1,0 +1,11 @@
+- The lowering recognizes a byte-walk loop form on the checked statements alone — outside-bound exit guard, one guarded `u8` load at the induction binding, a neutral middle whose only observable exits are dominated by equality tests of the loaded byte, and a single-step increment — with no name, source file, or calling context participating.
+- A recognized loop gains a header fast path built on one IR operation (`buffer.probe.skip`): an internally guarded 16-byte probe returning how many upcoming iterations are provably effect-free, after which the induction advances by that count and the header re-probes.
+- Every byte where anything observable can happen — a needle hit, the exit bound, any trap — executes the unchanged scalar body; the probe window is bounded by both the walk's exit bound and the buffer length, and the probe itself carries no trap site and publishes no effect.
+- Recognition failure, an addressed probe input, or any representation mismatch falls back to the ordinary lowering with zero change; acceptance is never consulted or altered by the fast path.
+
+## Facts
+
+- 2026-08-07 (c3e1a0ad) measurement: under the frozen 0022/0023 harness the probe moved the fused scalar shape by wall ratio 1.43 on large and no-match and 1.16 on match-dense, no-match instructions/byte 17.68 to 3.10, and the landed wfgrep now beats the pinned system grep at 1.069/1.071/1.346 on the frozen compute-bound cases; preregistration and raw evidence live in `research/experiments/wide-scan-lowering/`. (sourced)
+- 2026-08-07 rationale: the rival route — restructuring the legal scalar shape so LLVM's own vectorizer widens it — was closed by preregistered witness before implementation: a same-Clang C control shows no early-exit vectorization, and guarded per-byte loads never fuse into wide loads, extending the earlier finding that no legal source form lowers wide past trap guards. (sourced)
+- 2026-08-07 statement: the probe covers only the recognized byte-walk class; the verify subloop and copy loops remain scalar, and widening further shapes is separately authorized future work. (sourced)
+- 2026-08-07 statement: the lane-to-bit reduction assumes a little-endian target for its trailing-zero count, matching every target the backend supports; a big-endian port must revisit the reduction. (code)
