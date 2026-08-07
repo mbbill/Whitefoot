@@ -1,10 +1,13 @@
 # Current Plan
 
-Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
-execution. The previous ACTIVE plan (wide-scan and settlement, tasks
-0026-0029) completed on 2026-08-07: the wide-scan question closed with a
-credited win, v0.20 activated, and the corpus lane reached 364/1/14 with
-the single red case pending one owner ruling carried into this proposal.
+Status: ACTIVE (owner selection 2026-08-06): the obligation-discharge spec
+batch 1 slice ("Selected slice" below) is the active plan. The attribution
+slice recorded above it is PARKED by the same ruling — the owner holds
+wfgrep until the language changes (syntax, trap, proof) land; it returns to
+the outline unharmed. The previous ACTIVE plan (wide-scan and settlement,
+tasks 0026-0029) completed on 2026-08-07: the wide-scan question closed with
+a credited win, v0.20 activated, and the corpus lane reached 364/1/14 with
+the single red case pending one owner ruling carried forward.
 
 Derived from: [Direction Outline revision 15](roadmap.md), items `PERF-1`,
 `CAND-8`, `VERIFY-2`, and `STORE-1`
@@ -59,12 +62,11 @@ The owner's separate obligation-discharge investigation proceeds
 independently in its own records; this plan neither sequences nor depends
 on it.
 
-## Alternative slice for the same owner selection (added 2026-08-06)
+## Selected slice: obligation-discharge spec batch 1 (owner-selected 2026-08-06)
 
 The obligation-discharge research completed its falsifier round; outline
-revision 16 registers it as PROOF-8 with FLOOR-5 as companion. The owner may
-select either the attribution slice above or this slice as the next ACTIVE
-plan; the unselected one returns to the outline unharmed.
+revision 16 registers it as PROOF-8 with FLOOR-5 as companion. The owner
+selected this slice as ACTIVE and parked the attribution slice.
 
 **Slice: obligation-discharge spec batch 1.** Derived from outline revision
 16, items `PROOF-8` (primary), `BOUND-1` (postcondition coordination),
