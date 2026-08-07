@@ -15,7 +15,7 @@ use super::super::model::{
     CheckedConst, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedProjectedDrop,
     CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace, FloatType, IntegerType,
 };
-use super::borrows::{AccessKind, ResolvedPlace};
+use super::borrows::{AccessKind, ReborrowPosition, ResolvedPlace};
 use super::{
     CheckStop, Checker, Constructor, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
 };
@@ -299,7 +299,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
                 loop_depth,
                 place_context,
-                false,
+                ReborrowPosition::Forbidden,
             ),
             Production::Call => self.check_call(function, child, bindings, loop_depth),
             Production::Construct => {
@@ -322,7 +322,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
-            false,
+            ReborrowPosition::Forbidden,
         )
     }
 
@@ -332,7 +332,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        child_reborrow_allowed: bool,
+        own_result: bool,
     ) -> Result<TypedExpression, CheckStop> {
         self.check_atom_in_context(
             function,
@@ -340,7 +340,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
-            child_reborrow_allowed,
+            ReborrowPosition::CallArgument { own_result },
         )
     }
 
@@ -351,7 +351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         place_context: PlaceUseContext,
-        child_reborrow_allowed: bool,
+        reborrow_position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
         if let Some(literal) = self
             .tree
@@ -381,15 +381,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(value);
         }
         if let Some(borrow) = self.tree.first_child_with(node, Production::BorrowExpr)? {
-            return self.check_borrow(
-                borrow,
-                function,
-                bindings,
-                loop_depth,
-                child_reborrow_allowed,
-            );
+            return self.check_borrow(borrow, function, bindings, loop_depth, reborrow_position);
         }
         Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+    }
+
+    /// The `borrow_expr` that is the complete written content of `expression`,
+    /// if any: the position [OWN-14] names for the returned reborrow.
+    pub(super) fn complete_borrow_expression(
+        &self,
+        expression: NodeId,
+    ) -> Result<Option<NodeId>, CheckStop> {
+        let child = self.tree.only_child(expression)?;
+        if self.tree.production(child)? != Production::Atom {
+            return Ok(None);
+        }
+        Ok(self.tree.first_child_with(child, Production::BorrowExpr)?)
     }
 
     fn check_generic_numeric_identity(

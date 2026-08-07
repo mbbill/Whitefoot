@@ -766,3 +766,71 @@ fn scalar_borrow_parameter_effect_rows_are_exact_in_both_directions() {
         SemanticIssueKind::EffectMismatch,
     );
 }
+
+/// [OWN-14] admits the written reborrow as the complete return expression
+/// from a parameter or let-bound holder with preserved mode; the created
+/// borrow then carries the existing [OWN-10]/[OWN-4] region judgments, so a
+/// callee-local region cannot leave through the signature.
+#[test]
+fn returned_reborrows_follow_own14_admission_and_own4_regions() {
+    with_semantics(
+        b"fn passthru ['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a shared returned reborrow of a parameter must check: {outcome:?}");
+            };
+        },
+    );
+    with_semantics(
+        b"fn passthru ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a unique returned reborrow of a parameter must check: {outcome:?}");
+            };
+        },
+    );
+    // [OWN-4]: the returned borrow's local region cannot reach the written
+    // rtype region, in either mode.
+    assert_rule(
+        b"fn leak ['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    return &'s deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own4,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+    assert_rule(
+        b"fn leak ['r0](x: &uniq 'r0 i32) -> &uniq 'r0 i32 pure {\n  region 's {\n    return &uniq 's deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own4,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+}
+
+/// [OWN-14] rejects every written reborrow form outside its two admitted
+/// positions, and a return-position reborrow failing the admission: a bound
+/// reborrow, a mode-downgrading returned reborrow, and a `match`-binder
+/// holder are each the OWN-14 hard error with its restructuring.
+#[test]
+fn non_admitted_reborrow_forms_are_own14_hard_errors() {
+    const RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
+         return it as the complete return expression from a parameter or let-bound holder, \
+         or return the holder itself";
+    assert_rule(
+        b"fn bind ['r](x: &'r i32) -> own unit pure {\n  region 'c {\n    let y: &'c i32 = &'c deref(x);\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own14,
+        SemanticIssueKind::InvalidReborrowPosition {
+            mechanical_fix: RESTRUCTURING,
+        },
+    );
+    assert_rule(
+        b"fn down ['r0](x: &uniq 'r0 i32) -> &'r0 i32 pure {\n  return &'r0 deref(x);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own14,
+        SemanticIssueKind::InvalidReborrowPosition {
+            mechanical_fix: RESTRUCTURING,
+        },
+    );
+    assert_rule(
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn pick ['r](holder: &'r Packet) -> &'r i32 reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n      return &'r deref(payload);\n    }\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own14,
+        SemanticIssueKind::InvalidReborrowPosition {
+            mechanical_fix: RESTRUCTURING,
+        },
+    );
+}

@@ -21,6 +21,29 @@ pub(super) enum BorrowKind {
     Unique,
 }
 
+/// The syntactic position of a `borrow_expr`, which decides the written
+/// reborrow form admitted there: the statement-scoped child in call-argument
+/// position [OWN-6] and the returned reborrow as the complete return
+/// expression [OWN-14]. Every other position rejects every reborrow form.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum ReborrowPosition {
+    /// Not a position OWN-14 admits any written reborrow form in.
+    Forbidden,
+    /// An argument atom of a `call` expression, judged by OWN-6 alone;
+    /// `own_result` carries OWN-6's receiving-result-mode condition.
+    CallArgument {
+        /// Whether the receiving call's result mode is `own` or `unit`.
+        own_result: bool,
+    },
+    /// The complete `expr` of a `return_stmt` [OWN-14].
+    ReturnExpression,
+}
+
+/// [OWN-14]'s exact restructuring for a rejected reborrow form.
+const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
+     return it as the complete return expression from a parameter or let-bound holder, \
+     or return the holder itself";
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ResolvedPlace {
     pub(super) root: DeclarationId,
@@ -259,7 +282,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         function: &FunctionSignature,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        child_reborrow_allowed: bool,
+        position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::BorrowRegion)?;
         let ResolvedTarget::Source {
@@ -284,14 +307,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, crate::FixedTerminal::Deref)? {
             return self.check_child_reborrow(
-                node,
-                place_node,
-                pbase,
-                region,
-                kind,
-                bindings,
-                loop_depth,
-                child_reborrow_allowed,
+                node, place_node, pbase, region, kind, bindings, loop_depth, position,
             );
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
@@ -318,6 +334,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if local.mode != CheckedMode::Own {
+            // A `borrow_expr` whose place roots at a borrow-mode binding is a
+            // reborrow form; outside call-argument position it is OWN-14's
+            // hard error. In argument position the deref-free spelling stays
+            // outside OWN-6's closed written form, an explicit capability gap.
+            if !matches!(position, ReborrowPosition::CallArgument { .. }) {
+                return self.issue_node(
+                    SemanticRule::Own14,
+                    node,
+                    SemanticIssueKind::InvalidReborrowPosition {
+                        mechanical_fix: OWN14_RESTRUCTURING,
+                    },
+                );
+            }
             return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
         }
         if !local.live {
@@ -469,14 +498,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         kind: BorrowKind,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        child_reborrow_allowed: bool,
+        position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
-        if !child_reborrow_allowed {
-            return self.issue_node(
-                SemanticRule::Own6,
-                node,
-                SemanticIssueKind::InvalidChildReborrow,
-            );
+        match position {
+            ReborrowPosition::Forbidden => {
+                return self.issue_node(
+                    SemanticRule::Own14,
+                    node,
+                    SemanticIssueKind::InvalidReborrowPosition {
+                        mechanical_fix: OWN14_RESTRUCTURING,
+                    },
+                );
+            }
+            ReborrowPosition::CallArgument { own_result } if !own_result => {
+                return self.issue_node(
+                    SemanticRule::Own6,
+                    node,
+                    SemanticIssueKind::InvalidChildReborrow,
+                );
+            }
+            ReborrowPosition::CallArgument { .. } | ReborrowPosition::ReturnExpression => {}
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
             return self.issue_node(
@@ -487,29 +528,63 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let region_declaration = self.region_declaration(region)?;
-        if region_declaration.role() != DeclarationRole::LocalRegion
-            || !self.child_region_is_statement_scoped(region_declaration, node)?
-        {
-            return self.issue_node(
-                SemanticRule::Own6,
-                node,
-                SemanticIssueKind::InvalidChildReborrow,
-            );
+        if matches!(position, ReborrowPosition::CallArgument { .. }) {
+            let region_declaration = self.region_declaration(region)?;
+            if region_declaration.role() != DeclarationRole::LocalRegion
+                || !self.child_region_is_statement_scoped(region_declaration, node)?
+            {
+                return self.issue_node(
+                    SemanticRule::Own6,
+                    node,
+                    SemanticIssueKind::InvalidChildReborrow,
+                );
+            }
         }
         let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
         let holder_role = self.declaration_record(holder)?.role();
-        if !matches!(
-            holder_role,
-            DeclarationRole::Parameter | DeclarationRole::Let
-        ) || (kind == BorrowKind::Unique && parent.kind != BorrowKind::Unique)
-            || !self.region_outlives(parent.region, region)?
-        {
-            return self.issue_node(
-                SemanticRule::Own6,
-                node,
-                SemanticIssueKind::InvalidChildReborrow,
-            );
+        match position {
+            ReborrowPosition::Forbidden => unreachable!("rejected above"),
+            ReborrowPosition::CallArgument { .. } => {
+                if !matches!(
+                    holder_role,
+                    DeclarationRole::Parameter | DeclarationRole::Let
+                ) || (kind == BorrowKind::Unique && parent.kind != BorrowKind::Unique)
+                    || !self.region_outlives(parent.region, region)?
+                {
+                    return self.issue_node(
+                        SemanticRule::Own6,
+                        node,
+                        SemanticIssueKind::InvalidChildReborrow,
+                    );
+                }
+            }
+            ReborrowPosition::ReturnExpression => {
+                // [OWN-10]'s borrow-rooted case is the creation obligation and
+                // is defined before OWN-14, so its violation is cited first at
+                // this node [DIAG-1].
+                if !self.region_outlives(parent.region, region)? {
+                    return self.issue_node(
+                        SemanticRule::Own10,
+                        node,
+                        SemanticIssueKind::InvalidBorrowLifetime,
+                    );
+                }
+                // [OWN-14] admission: a parameter or let-bound holder, never a
+                // match binder, and mode preserved in both directions.
+                if !matches!(
+                    holder_role,
+                    DeclarationRole::Parameter | DeclarationRole::Let
+                ) || kind != parent.kind
+                {
+                    return self.issue_node(
+                        SemanticRule::Own14,
+                        node,
+                        SemanticIssueKind::InvalidReborrowPosition {
+                            mechanical_fix: OWN14_RESTRUCTURING,
+                        },
+                    );
+                }
+            }
         }
         let (fields, ty) = self.resolve_struct_path(place_node, local.ty)?;
         let mut place = parent.place.clone();

@@ -13,6 +13,7 @@ use crate::{
 use super::super::model::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType, TrapSite,
 };
+use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use loops::{BreakState, LoopContext};
 
@@ -143,13 +144,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let value = self.check_expression_with_expected(
-                    function,
-                    expression_node,
-                    bindings,
-                    scope.loops.len(),
-                    Some(function.result),
-                )?;
+                // A borrow_expr as the complete return expression is the sole
+                // non-argument position that admits a written reborrow form:
+                // the returned reborrow [OWN-14]. Control leaves the function
+                // before the creating statement ends, so the suspended holder
+                // never resumes and no point observes both usable [OWN-5].
+                let value =
+                    if let Some(borrow) = self.complete_borrow_expression(expression_node)? {
+                        self.check_borrow(
+                            borrow,
+                            function,
+                            bindings,
+                            scope.loops.len(),
+                            ReborrowPosition::ReturnExpression,
+                        )?
+                    } else {
+                        self.check_expression_with_expected(
+                            function,
+                            expression_node,
+                            bindings,
+                            scope.loops.len(),
+                            Some(function.result),
+                        )?
+                    };
                 if value.expression.ty() != function.result {
                     return Err(CheckStop::Issue(SemanticIssue {
                         rule: SemanticRule::Fn1,

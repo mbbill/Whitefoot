@@ -58,6 +58,8 @@ pub enum SemanticRule {
     Own11,
     /// Region substitution and call-boundary loan checks.
     Own12,
+    /// Non-argument reborrow disposition and the returned reborrow.
+    Own14,
     /// Explicit dereference of a borrow holder.
     Type7,
     /// Storage-class and affine replacement restrictions.
@@ -121,6 +123,7 @@ impl SemanticRule {
             Self::Own10 => "OWN-10",
             Self::Own11 => "OWN-11",
             Self::Own12 => "OWN-12",
+            Self::Own14 => "OWN-14",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
             Self::Stor5 => "STOR-5",
@@ -203,6 +206,12 @@ pub enum SemanticIssueKind {
     BorrowConflict,
     /// A written child reborrow does not satisfy OWN-6's closed form.
     InvalidChildReborrow,
+    /// A written reborrow form occurred outside OWN-14's admitted positions,
+    /// or a return-position reborrow failed OWN-14's admission.
+    InvalidReborrowPosition {
+        /// Exact restructuring required by OWN-14.
+        mechanical_fix: &'static str,
+    },
     /// A borrow holder was used without the required explicit dereference.
     MissingDereference {
         /// Exact mechanical repair selected by TYPE-7.
