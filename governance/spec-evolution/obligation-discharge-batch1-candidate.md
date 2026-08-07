@@ -77,22 +77,27 @@ status header, in the v0.20 header conventions.
 > [SYS-9] relations are retained facts with no L0 consumer in this version.
 > Specification delta:
 > numbered rules +8/-0 (CLM-1, CLM-2, ENT-1, ENT-2, ENT-3, ENT-4, ENT-5,
-> ENT-6); sixteen existing rules modified: FORM-2 (claim_stmt is
+> ENT-6); fifteen existing rules modified at sixteen enumerated
+> modification sites: FORM-2 (claim_stmt is
 > line-bearing),
 > FORM-5 (STRING homes), GRAM-4 (claim_stmt production; stmt gains one
-> alternative), GIVE-1 (claim is non-delivering), OP-1 (index_get row;
-> derived reserved sets grow by one; non-consuming place-operand reads
+> alternative), GIVE-1 (claim is non-delivering), OP-1 (two sites: the
+> index_get row with its derived reserved-set growth, and the
+> non-consuming place-operand reads
 > stated for `len`, `slice_of`, and the `index`/`index_get` base), OP-4
 > (rewritten to discharge-or-reject;
 > offset atom fixed as `own u64`), FN-1 (a passed `claim` gains its normal
 > edge in the conservative structural graph),
-> FN-8 (passed fact feeds ENT-3; synthesized boundary adapter), EFF-2 (traps
-> contribution: bounds-checked index out, claim in), SET-1 (no runtime check
+> FN-8 (passed fact feeds ENT-3; synthesized boundary adapter), EFF-2
+> (three sites: the syntactic traps contribution and the target-index
+> clause — bounds-checked index out, claim in — and the canonical
+> example's contributor enumeration), SET-1 (no runtime check
 > in target evaluation), DIAG-1 (claim-name carrier class added to the
 > closed taxonomy), DIAG-2 (discharged disposition; claims always
 > retained), DIAG-3 (claim trap record; index-place row removed), SYS-8
-> (successful-count bounds stated as postconditions, replacing the
-> target-facing sentence in place, and the range-validation cross-reference
+> (two sites: successful-count bounds stated as postconditions, replacing
+> the target-facing sentence in place, and the range-validation
+> cross-reference
 > repointed), SYS-9 (the arg_get index relation and
 > the two host-string length relations stated for the first time). Tokens
 > +2/-0 (`claim`, `because` as exact fixed lowercase grammar atoms; terminal
@@ -586,8 +591,9 @@ of an admitted table operation." This makes [ENT-6]'s fallback
 (`let n: own u64 = len<T>(P);`) well-formed for every affine base by
 stated rule rather than by v0.20's latent reading, and makes the [OP-4]
 index_get non-consuming sentence a restatement rather than a special
-case. With this adoption the candidate total is sixteen modified rules,
-counted in the §1 header and in §7's accounting.
+case. With this adoption the candidate counts fifteen modified rules at
+sixteen enumerated modification sites — this sentence is OP-1's second
+site — in the §1 header and §7's accounting.
 
 **[OP-4]** Complete replacement:
 
@@ -798,8 +804,9 @@ is unchanged. The failing-call companion bound `required > capacity` is
 recorded by the survey and proposed by neither it nor this candidate.
 
 Accounting: this section adds no rule, token, or production; it modifies
-[SYS-8] (two edits) and [SYS-9] (candidate total: sixteen modified rules
-with [FN-1], [DIAG-1], and the adopted second [OP-1] modification, §6) and
+[SYS-8] (two edits) and [SYS-9] (candidate total: fifteen modified rules
+at sixteen modification sites, with [FN-1], [DIAG-1], and the adopted
+second [OP-1] site, §6) and
 extends
 [ENT-3] with source S10.
 
@@ -976,7 +983,8 @@ here explicitly rather than silently:
    (`let n: own u64 = len<T>(P);`) relies on. The one-sentence
    clarification was drafted as the second [OP-1] modification (§6) per the
    reviewer's recommendation and adopted by the owner at the 2026-08-07
-   sitting, closing the latent reading and making sixteen modified rules.
+   sitting, closing the latent reading as OP-1's second modification site
+   (fifteen rules, sixteen sites).
 3. F2 is repaired by both of the review's independent repairs — scope-exit
    kills ordered before joins as edge events, and declaration-anchored term
    identity — not only the mandatory first.

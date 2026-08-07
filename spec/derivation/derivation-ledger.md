@@ -8,8 +8,9 @@ derived, directly or indirectly, from the constitution — or flagged. Statuses:
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
-**Current statistics: 74 derived · 46 existence-only · 0 underived**
-(120 rules in the active v0.20)
+**Current statistics: 80 derived · 48 existence-only · 0 underived**
+(128 rules: 120 in the active v0.20 plus the eight v0.21-candidate
+additions)
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -776,5 +777,49 @@ contradiction, reproduced against the conforming compiler), the live
 `mcts_mem/whitefoot/ownership/no-reborrow` decision node's carded relief
 valve, and the subsumption arguments recorded in the OWN-13 and OWN-14 rows.
 
-The current total is **74 derived · 46 existence-only · 0 underived** across
+The v0.20 total is **74 derived · 46 existence-only · 0 underived** across
 120 rules.
+
+## v0.21 amendment — obligation discharge batch 1 (2026-08-07, candidate stage)
+
+Specification binding:
+`governance/spec-evolution/kernel-spec-v0.21-candidate.md` at SHA-256
+`3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f`
+(count-corrected before approval), assembled from the active v0.20 plus the approved batch-1
+delta (`governance/spec-evolution/obligation-discharge-batch1-candidate.md`:
+owner rulings O1–O16, adversarial-review fixes F1–F11, and the sitting
+adoption of the second OP-1 modification are recorded there). Candidate
+stage: these rows exist ahead of activation so the native `whitefoot-spec`
+gate covers all 128 rule IDs; the `docs/WORKFLOW.md` step-4 exact-byte
+approval and installation as `spec/kernel-spec-v0.21.md` are pending, and
+this binding is restated at activation.
+
+v0.21 adds eight rules — CLM-1, CLM-2, and ENT-1..ENT-6 (rows below) — and
+modifies fifteen existing rules at sixteen enumerated modification sites:
+FORM-2, FORM-5, GRAM-4, GIVE-1, OP-1 (two sites: the `index_get` row and the
+adopted non-consuming place-operand sentence), OP-4 (rewritten to
+discharge-or-reject), FN-1, FN-8, EFF-2 (three sites), SET-1, DIAG-1,
+DIAG-2, DIAG-3, SYS-8 (two sites), and SYS-9 (three stated relations).
+Grammar productions +1 (`claim_stmt`); tokens +2 (`claim`, `because`);
+terminal spellings +2; operation table +1 row (`index_get`); exception
+clauses +0. No existing rule changes derivation status; the modified rows'
+amendment notes are activation work, not candidate work. Evidence grounds:
+`research/investigations/obligation-discharge/` (DOSSIER.md §2/§3/§8,
+SIMULATION.md, PROBE-W1.md rounds 1–2, PROBE-TAINT.md, PROBE-CODEGEN.md,
+SYS-POSTCONDITIONS.md, and CANDIDATE-REVIEW.md with its re-verification),
+the sixteen owner rulings of 2026-08-07, and `governance/APPROVALS.md`'s
+sequencing amendment selecting atomic activation.
+
+| Rule | Feature | Status | Derivation chain | Notes |
+|---|---|---|---|---|
+| CLM-1 | `claim name: e because "text";` — named runtime check, the writer's sole trap-stating statement | 🟡 existence-only | Existence: W3 keystone (no construct may introduce a fact without a proof or an executed runtime check — the SPARK `pragma Assume` door stays structurally closed; obligation-discharge DOSSIER §3, owner/assistant design record 2026-08-05..06) + R4 ladder (the failure path is language-authored and traps loudly with a named record; the writer authors only the predicate and the auditable justification — authorship factoring) + OP-5 lineage (semantics are exactly check-else-trap plus a name, and the executed check is what admits the fact into [ENT-3], so no assumption enters unexecuted). Construct-level evidence: PROBE-W1 rounds 1–2 (16/16 low-effort and adversarial writers steered to honest shapes by the residual-printing loop) and SIMULATION.md (claim consolidation: ~13 claims cover 27 sites across three real programs; the corpus's existing test assertions map onto claims unchanged). Form NOT derived: the name-first spelling, mandatory `because` STRING, per-function name uniqueness outside every TYPE-6 domain, and the reservation exemption are owner-ruled (2026-08-07) without a comparative writer-form experiment. | Awaits: spelling comparison under W1 writers and the ledger tooling that consumes name-plus-predicate identity; fired-claim escalation is a toolchain contract. Redundancy and refutation live in CLM-2. |
+| CLM-2 | Claim lifecycle: required redundancy advisory, refutation hard error, fired-claim escalation | ✅ derived | Version-monotonicity requirement (acceptance may not tighten when the checker strengthens; DOSSIER §2.7 keystone — 'acceptance monotonicity depends on redundant-claim being a warning') -> a provable claim must be a non-rejecting advisory in every later version, never an error. R4 shift-left -> a refuted claim (the predicate's exact negation derived in a non-contradictory state) is a program proven to trap on every execution reaching it, so compile-time rejection is the ladder's exact direction, deliberately enumerated as the lifecycle's one non-monotone edge in [ENT-1] (candidate review F4 forced the exception to be stated rather than implied). W3 -> the advisory channel cannot alter acceptance and the writer cannot suppress refutation. Fired-claim reclassification is a toolchain contract in the ERR-2 edit-list sense, not a language judgment. | Form is judgment semantics with no spelling axis. Advisory channel and encoding are implementation-owned this version; normative advisory bytes deferred (owner ruling 2026-08-07). |
+| ENT-1 | L0 fragment authority: deterministic, spec-pinned, acceptance-bearing, TCB-resident, version-monotone | ✅ derived | W3 determinism (two conforming implementations must derive identical fact states and dispositions — the R0 delta of record: deterministic spec-pinned discharge versus SMT portfolios with timeout/replay instability, DOSSIER §5) + T1 (a wrong discharge compiles a raw out-of-bounds access, so the fragment joins the TCB beside the type and ownership checkers; owner ruling of record — a compiler bug class owned by testing, never language-level hedging, DOSSIER §4.3) + facts-off correctness law (the fragment is acceptance machinery, not an optional optimizer-fact family, and [SCOPE-2] is unchanged because every fact source is check-backed) -> determinism, per-FN-2-instantiation judgment, TCB placement, and the monotonicity law with CLM-2's enumerated refutation exception. | The monotonicity law keeps every later fragment strengthening a pure widening; the refutation carve-out is deliberate (review F4). |
+| ENT-2 | Fragment terms and facts: tracked places, length terms, constants, difference bounds, disequalities | 🟡 existence-only | Existence: the fragment needs one closed fact language at released-spec precision (DOSSIER §4.2: kill rules, congruence, interval arithmetic all become normative text), and SIMULATION.md exercised exactly this L0 strength by hand — 57–59% of non-test bounds sites discharged outright on utf8parse, deflate-dynamic, and sha256, every residual one line. Determinism of the normal form (unique least closure over difference bounds) serves W3. Form NOT derived: the exact cuts — difference bounds only, declaration-anchored byte-identical place identity (review F2 repair), no index-segment places, the review-F5 term-root set — are soundness-hardened by adversarial review but were not comparatively selected against richer abstract domains. | Awaits: the preregistered acceptance run — the real checker must reproduce SIMULATION.md's per-program buckets — which is exactly the experiment the hand-simulation's single-analyst caveat defers to. |
+| ENT-3 | Fact sources S1–S10: branch/match, check, claim, requires substitution, copy/cvt equalities, lengths, constant-offset arithmetic, midpoint family, const-array ranges, boundary counts | ✅ derived | Every source names an executed check, a declared allocation/type/operation contract, or a constant, preserving the W3 keystone (no assume anywhere), and each entered on measured evidence: dominating branch/match facts, allocation-length equality, const-array element ranges, and ±-constant arithmetic are exactly SIMULATION.md's validated L0 inventory on three real programs; S10's boundary count bounds are PROBE-TAINT.md's load-bearing finding (one structural claim in 723 wfgrep lines only because the read_once/host_copy count bounds hold) made normative through the SYS-8/SYS-9 postconditions and carried in the same [QUAL-1] contract trust class as S6's buffer_new length; the comparison-origin single-`let` cut is owner-ruled (2026-08-07) with its measured consequence recorded (the sha256 bucket restatement, review F8). | S4 requires-substitution is fail-closed on any non-comparison substituted shape; the S8 midpoint family is closed-shape and its unsigned arithmetic was verified sound in the adversarial review's surviving-attack record. |
+| ENT-4 | Closure: least fixed point over difference-bound transitivity, disequality strengthening, subsumption; contradiction discharges everything | ✅ derived | Analytic, theorem-backed (the OP-2 div/rem class): given ENT-2's fact language the least closure exists, is unique and finite up to subsumption, and fixes every derivability answer, so the W3 two-implementation law holds by construction; the one-definition form with the reflexive implicit bound is review-forced (F7 removed a second, inequivalent shortest-path definition); contradiction-as-unreachable (every obligation discharged, no claim refuted) keeps CLM-2 refutation meaningful exactly where code is reachable in truth. | The contradictory-state disposition is owner-ruled (2026-08-07); a dedicated unreachable-code diagnostic remains open later work. |
+| ENT-5 | Fact stability: kills by resolved-place overlap and effect-row projection, edge-ordered scope exits, joins, no-induction loop rule | ✅ derived | The kill architecture is the design's central derivation: exact bidirectionally-checked effect rows make the call kill a signature lookup (DOSSIER §2.6 — the analysis that drowns in aliasing elsewhere is modular here), reusing OWN-5/OWN-7 resolved-place overlap and EFF-2 boundary projection rather than inventing alias machinery (R1); the form is adversarially established — review F2 forced scope-exit kills to be edge events ordered before joins, and the surviving-attack record (buffer reassignment, element writes versus length facts, borrow aliasing, writes hidden from rows) is retained in CANDIDATE-REVIEW.md; the no-induction loop rule is the version-pinned L0 floor whose upgrade value SIMULATION.md priced (loop induction discharges ~11 of 13 structural claims), monotone under ENT-1. | TYPE-2's allocation-fixed lengths are what exempt length terms from element-write kills; the empty-join disposition for a break-less loop follows ENT-4's unreachability posture and is flagged for confirmation at the approval sitting. |
+| ENT-6 | Obligations, discharge, residual: index bounds prove-or-reject with a printed one-line residual | ✅ derived | R4 shift-left is the rule itself: an unproven bound becomes a compile-time rejection carrying a rule citation and a pasteable residual instead of a runtime trap, and PROBE-W1 rounds 1–2 measured exactly this loop steering 16/16 writers to honest shapes (the checker-as-teacher argument, DOSSIER §3); P0 through the OP-4 lineage: 'proof means a deterministic checker derivation' was already OP-4 law, and discharge deletes the checked-site cost the simulation quantified (sha256's hottest loop at 5 checks per iteration consolidates under claims; PROBE-CODEGEN.md: the claim shape equals today's fused check shape by construction); the zero-skill fallback — rebind, then claim the printed residual — closes every site by construction after review F5 widened the term roots. | The residual rendering schema (whole obligation, fixed bytes) is owner-ruled (2026-08-07) over the reduced-frontier alternative without a comparative test — this row's one untested residue. |
+
+The current total is **80 derived · 48 existence-only · 0 underived** across
+128 rules (120 active v0.20 rules plus the eight v0.21-candidate additions).
