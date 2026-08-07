@@ -1,5 +1,5 @@
-- Relief was decided per position: an element was forbidden at every site where the checker could reconstruct it and mandatory at every site where it could not, so one construct carried different legal spellings at different sites.
-- A class could be partially relieved, and a writer determined a site's legality by reproducing the checker's derivation there.
+- Relief was decided per position: an element was forbidden at every site where the checker could reconstruct it and mandatory at every site where it could not.
+- One construct carried different legal spellings at different sites, and a class could be partially relieved.
 
 ## Moves
 
