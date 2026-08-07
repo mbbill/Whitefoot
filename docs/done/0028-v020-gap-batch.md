@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `DONE`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 3 and the
   owner's 2026-08-06 batch authorization; exact byte approval still
   required before activation
@@ -47,8 +47,15 @@ exact-approval packet with SHA and delta accounting.
   regional liveness; shared roots unchanged; arm-end resumption
   DEFERRED, blocked on the PROVISIONAL arm-result join). OWN-13 joins
   the modified-rule list; all checks rerun green.
-- **Current/next:** lead review, then the owner's A-vs-B choice and
-  exact-byte approval packet (SHA in the executor report).
+- **Terminal outcome (2026-08-07):** candidate twice revised under lead
+  review (arm-scoped child extension for the fourth witness; accepted-set
+  accounting correction) and exact-approved by the owner ("全批", SHA-256
+  `b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1`;
+  `governance/APPROVALS.md` 2026-08-07, drafted disposition A on both
+  sub-choices). Landed commits `bff71e9`, `75b39de`, `77a2bf3`. Deviation
+  from the registered closure condition: activation is the separately
+  claimed task 0029 rather than this record's tail, so this record closes
+  at approval.
 
 ## Validation, stop, and closure
 
