@@ -32,3 +32,11 @@ acceptance evidence in `research/investigations/obligation-discharge/`.
 Deliverable is evidence, not a language change. A finding that the gate
 does NOT fire on those sites is a successful outcome and must be reported
 as plainly as a finding that it does.
+
+## Ordering constraint (drafter's finding, 2026-08-07)
+
+Do NOT measure the gate before the ENT-5 loop fix is active. The deflate
+path's discharge is currently dominated by the loop-rule defect, so a
+measurement taken now would attribute to provenance what the loop rule
+caused. Sequence: ENT-5 fix active → re-run the acceptance measurement →
+then wire the boundary and measure the gate.
