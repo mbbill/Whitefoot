@@ -6,8 +6,8 @@ fn main() -> own unit pure {
   doc "OWN-6: an unbound borrow is a call-scoped temporary, dead at statement end.";
   let a: own i32 = 5_i32;
   region 'r {
-    bump(n: &uniq 'r a);
-    bump(n: &uniq 'r a);
+    bump<'r>(n: &uniq 'r a);
+    bump<'r>(n: &uniq 'r a);
   }
   return unit;
 }

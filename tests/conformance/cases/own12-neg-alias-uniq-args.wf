@@ -6,7 +6,7 @@ fn main() -> own unit pure {
   doc "OWN-12: two &uniq call arguments over the same place alias - rejected.";
   let x: own i32 = 0_i32;
   region 'r {
-    two(a: &uniq 'r x, b: &uniq 'r x);
+    two<'r>(a: &uniq 'r x, b: &uniq 'r x);
   }
   return unit;
 }
