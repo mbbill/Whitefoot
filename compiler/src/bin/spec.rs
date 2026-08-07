@@ -9,7 +9,7 @@ use whitefoot::{
 };
 
 const APPROVED_CANDIDATE: &[u8] =
-    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.20-candidate.md");
+    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.21-candidate.md");
 const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
 
 fn is_rule_id(text: &str) -> bool {
@@ -145,7 +145,7 @@ mod tests {
     fn active_spec_has_complete_internal_integrity() {
         assert_eq!(
             validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER),
-            Ok(120)
+            Ok(128)
         );
     }
 

@@ -376,6 +376,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     value.effects.union(target_effects),
                 ))
             }
+            Production::ClaimStmt => {
+                self.unsupported(UnsupportedSemanticFeature::ClaimStatement, node)
+            }
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
             Production::BreakStmt => self.check_break(node, bindings, scope),
             Production::RegionStmt => self.check_region(function, node, bindings, counters, scope),

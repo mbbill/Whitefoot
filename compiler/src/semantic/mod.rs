@@ -518,6 +518,9 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
+    /// A CLM-1 claim statement, whose named check and entailment judgments the
+    /// compiler does not implement yet.
+    ClaimStatement,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

@@ -33,6 +33,7 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::ReturnStmt
             | Production::BreakStmt
             | Production::CheckStmt
+            | Production::ClaimStmt
             | Production::GiveStmt
     );
     if fixed {

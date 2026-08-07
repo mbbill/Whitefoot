@@ -274,6 +274,14 @@ fn classify_node(
                 complete_counts,
             )?;
         }
+        Production::ClaimStmt => add_single(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::ClaimName,
+            roles,
+            complete_counts,
+        )?,
         Production::LetStmt => add_single(
             classified,
             owner,
