@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `DONE` (2026-08-07: engine dark-landed, 25 tests, gates green; ENT-5 loop ambiguity reported for next semantic batch)
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
 - **Owner / workspace:** exec-0032 / worktree `/Users/bytedance/do_not_scan/wf-0032`, branch `task/0032-ent-core-engine`
 - **Base revision:** fb7d16a915f5535cd3f1156ce0f150b5e8eacb32
