@@ -30,6 +30,9 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
               break @sentinel;
             }
             False() => {
+              let room: own u64 = len<u8>(bytes);
+              let scan_ok: own Bool = ilt<u64>(offset, room);
+              claim offset_in_bytes: scan_ok because "the sentinel walk stops at the four-byte buffer";
               let byte: own u8 = bytes[offset];
               let intact: own Bool = ieq<u8>(byte, 90_u8);
               match intact {

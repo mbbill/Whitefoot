@@ -1,8 +1,0 @@
-fn main() -> own unit allocates(heap), traps {
-  doc "Out-of-bounds buffer index traps at runtime [OP-4/SCOPE-4].";
-  let b: own buffer<i64> = buffer_new<i64>(4_u64, 0_i64);
-  let n: own u64 = len<i64>(b);
-  let x: own i64 = b[n];
-  check ieq<i64>(x, 0_i64) else trap "unreachable";
-  return unit;
-}

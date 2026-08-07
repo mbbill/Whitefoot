@@ -54,6 +54,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         return exit_status(code: 12_u8);
                       }
                     }
+                    let last_first_room: own u64 = len<u8>(page);
+                    let last_first_ok: own Bool = ilt<u64>(0_u64, last_first_room);
+                    claim last_first_in_page: last_first_ok because "the page buffer holds eight bytes";
                     let last_first: own u8 = page[0_u64];
                     let wrote_prefix: own Bool = ieq<u8>(last_first, 103_u8);
                     match wrote_prefix {
@@ -63,6 +66,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         return exit_status(code: 13_u8);
                       }
                     }
+                    let last_fourth_room: own u64 = len<u8>(page);
+                    let last_fourth_ok: own Bool = ilt<u64>(3_u64, last_fourth_room);
+                    claim last_fourth_in_page: last_fourth_ok because "the page buffer holds eight bytes";
                     let last_fourth: own u8 = page[3_u64];
                     let wrote_end: own Bool = ieq<u8>(last_fourth, 106_u8);
                     match wrote_end {
@@ -72,6 +78,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         return exit_status(code: 14_u8);
                       }
                     }
+                    let carried_room: own u64 = len<u8>(page);
+                    let carried_ok: own Bool = ilt<u64>(4_u64, carried_room);
+                    claim carried_in_page: carried_ok because "the page buffer holds eight bytes";
                     let carried: own u8 = page[4_u64];
                     let untouched: own Bool = ieq<u8>(carried, 99_u8);
                     match untouched {
@@ -81,6 +90,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         return exit_status(code: 15_u8);
                       }
                     }
+                    let carried_last_room: own u64 = len<u8>(page);
+                    let carried_last_ok: own Bool = ilt<u64>(7_u64, carried_last_room);
+                    claim carried_last_in_page: carried_last_ok because "the page buffer holds eight bytes";
                     let carried_last: own u8 = page[7_u64];
                     let untouched_last: own Bool = ieq<u8>(carried_last, 102_u8);
                     match untouched_last {

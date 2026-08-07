@@ -1,6 +1,12 @@
-fn g['r](buf: &'r buffer<i32>, i: own u64) -> own Result<i32, Overflow> reads('r), traps {
-  doc "EFF-2: the propagate-scrutinee index trap is declared; row and body agree.";
-  let r: own i32 = propagate iadd.checked<i32>(deref(buf)[i], 1_i32);
+fn risky_checked(x: own i32) -> own Result<i32, Overflow> traps {
+  doc "A trapping increment behind a Result surface; the row declares traps.";
+  let bumped: own i32 = iadd.trap<i32>(x, 1_i32);
+  return Ok(value: bumped);
+}
+
+fn g(x: own i32) -> own Result<i32, Overflow> traps {
+  doc "EFF-2: the propagate-scrutinee callee trap is declared; row and body agree.";
+  let r: own i32 = propagate risky_checked(x: x);
   return Ok(value: r);
 }
 
