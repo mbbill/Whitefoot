@@ -182,6 +182,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
+        self.check_holder_not_suspended(&local, use_node)?;
         let mut resolved = borrow.place.clone();
         resolved.fields.extend_from_slice(&fields);
         self.check_loan_access(

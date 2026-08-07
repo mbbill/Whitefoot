@@ -834,3 +834,62 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
         },
     );
 }
+
+/// [OWN-13] the borrow-mode payload binder is an arm-scoped child reborrow of
+/// the scrutinee place's root binding: usable within its arm from a `uniq`
+/// root, whose suspension the binder creation establishes; shared roots stay
+/// plain overlapping shared borrows, and a shared binder roots the next
+/// scrutinee in a chain.
+#[test]
+fn arm_scoped_child_reborrows_admit_payload_uses() {
+    with_semantics(
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &uniq 'r Packet = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved: own i32 = deref(payload);\n      }\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a uniq-match payload read through its binder must check: {outcome:?}");
+            };
+        },
+    );
+    with_semantics(
+        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &'r Packet = &'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved: own i32 = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n        let again: own i32 = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a shared root is never suspended and matches again: {outcome:?}");
+            };
+        },
+    );
+    with_semantics(
+        b"enum Inner {\n  Leaf(value: i32);\n}\n\nenum Outer {\n  Wrap(inner: Inner);\n}\n\nfn main() -> own unit pure {\n  let leaf: own Inner = Leaf(value: 7_i32);\n  let packet: own Outer = Wrap(inner: move leaf);\n  region 'r {\n    let holder: &'r Outer = &'r packet;\n    match deref(holder) {\n      Wrap(inner: nested) => {\n        match deref(nested) {\n          Leaf(value: payload) => {\n            let saved: own i32 = deref(payload);\n          }\n        }\n      }\n    }\n  }\n  return unit;\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("a shared binder must root the next scrutinee: {outcome:?}");
+            };
+        },
+    );
+}
+
+/// [OWN-13] a matched-through `uniq` root does not resume within its region:
+/// its post-match use is the OWN-5 suspension rejection on every path, in-arm
+/// use is rejected the same way, and the suspension joins across arms that
+/// did and did not create binders.
+#[test]
+fn suspended_uniq_match_roots_do_not_resume() {
+    // In-arm reuse of the suspended root.
+    assert_rule(
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &uniq 'r Packet = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        match deref(holder) {\n          Data(value: other) => {\n          }\n        }\n      }\n    }\n  }\n  return unit;\n}\n",
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+    // Post-match reuse, joined across a binder-creating and a binder-free arm.
+    assert_rule(
+        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &uniq 'r Packet = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n      }\n      Idle() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+    // A returned reborrow is not created through a suspended holder.
+    assert_rule(
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn peek ['r](holder: &uniq 'r Packet) -> &uniq 'r Packet reads('r) {\n  match deref(holder) {\n    Data(value: payload) => {\n    }\n  }\n  return &uniq 'r deref(holder);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+}

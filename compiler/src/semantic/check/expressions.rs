@@ -519,6 +519,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             },
                         );
                     }
+                    // A suspended holder admits no move, copy, or
+                    // call-transfer of itself [OWN-5, OWN-13]; OWN-1's
+                    // spelling judgments above are defined first and cite
+                    // first at this node [DIAG-1].
+                    self.check_holder_not_suspended(&local, use_node)?;
                     if !copy {
                         bindings
                             .get_mut(&declaration)
@@ -715,6 +720,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if borrow.kind != super::borrows::BorrowKind::Unique {
             return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
         }
+        self.check_holder_not_suspended(&local, node)?;
         let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
         let mut resolved = borrow.place;
         resolved.fields.extend_from_slice(&fields);

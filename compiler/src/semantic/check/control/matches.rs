@@ -341,6 +341,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         borrow,
                         slice: None,
                         slice_loans: Vec::new(),
+                        suspended: false,
                     },
                 )
                 .is_some()
@@ -354,6 +355,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 mode,
                 ty: field.ty,
             });
+        }
+        // Creating the taken arm's binders from a `uniq`-mode root suspends
+        // that root binding [OWN-13, OWN-5]; the binders' own loans carry the
+        // exclusivity for the region remainder. Shared-mode roots stay plain
+        // overlapping shared borrows without suspension.
+        if matches!(mode, CheckedMode::Unique(_))
+            && !binders.is_empty()
+            && let Some(root) = scrutinee.holder
+        {
+            bindings
+                .get_mut(&root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .suspended = true;
         }
         Ok(binders)
     }
@@ -396,10 +410,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let candidate = state
                     .get(key)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                if !joined.same_except_slice_loans(candidate) {
+                if !joined.same_except_region_claims(candidate) {
                     return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
                 }
-                joined.merge_slice_loans_from(candidate);
+                joined.merge_region_claims_from(candidate);
             }
             *bindings
                 .get_mut(key)

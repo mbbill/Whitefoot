@@ -88,6 +88,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     borrow: None,
                     slice: None,
                     slice_loans: Vec::new(),
+                    suspended: false,
                 },
             )
             .is_some()

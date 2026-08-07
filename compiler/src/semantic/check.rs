@@ -126,6 +126,12 @@ struct LocalBinding {
     // Source-owned claims outlive any one slice descriptor and end only with
     // their named data region.
     slice_loans: Vec<SliceLoan>,
+    // A `uniq` holder whose arm-scoped child reborrows a match created
+    // [OWN-13]: its own allowance is withdrawn, and because binder borrows
+    // live to the end of their derived region's block [OWN-4] the holder
+    // does not resume within that region — the binding itself dies at or
+    // before the window's end, so no resumption point exists [OWN-5].
+    suspended: bool,
 }
 
 impl LocalBinding {
@@ -139,18 +145,26 @@ impl LocalBinding {
         self.slice_loans.retain(|loan| loan.region != region);
     }
 
-    fn same_except_slice_loans(&self, other: &Self) -> bool {
+    /// Whether two joined states agree apart from their region-scoped claims
+    /// (slice loans and [OWN-13] suspension), which join by union instead.
+    fn same_except_region_claims(&self, other: &Self) -> bool {
         let mut left = self.clone();
         let mut right = other.clone();
         left.slice_loans.clear();
         right.slice_loans.clear();
+        left.suspended = false;
+        right.suspended = false;
         left == right
     }
 
-    fn merge_slice_loans_from(&mut self, other: &Self) {
+    /// Union of region-scoped claims: a claim established on any joined path
+    /// holds for the region remainder, matching [OWN-4]'s named-region
+    /// liveness of the borrows that carry it.
+    fn merge_region_claims_from(&mut self, other: &Self) {
         for loan in &other.slice_loans {
             self.push_slice_loan(loan.clone());
         }
+        self.suspended |= other.suspended;
     }
 }
 
@@ -534,6 +548,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     borrow: self.parameter_borrow(parameter),
                     slice: self.parameter_slice(parameter),
                     slice_loans: Vec::new(),
+                    suspended: false,
                 },
             );
             parameters.push(CheckedParameter {

@@ -541,6 +541,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
+        // No reborrow is created through a holder [OWN-13] suspended: its
+        // live arm-scoped children's loans overlap every place it reaches,
+        // so the pair would be both usable [OWN-5].
+        self.check_holder_not_suspended(&local, node)?;
         let holder_role = self.declaration_record(holder)?.role();
         match position {
             ReborrowPosition::Forbidden => unreachable!("rejected above"),
@@ -763,6 +767,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok((declaration, local, borrow))
     }
 
+    /// A suspended holder's own allowance is withdrawn: nothing is read,
+    /// written, borrowed, or committed through it while its arm-scoped
+    /// children live, which is the remainder of its region [OWN-5, OWN-13].
+    /// Each position asks after its own earlier-defined judgments so the
+    /// same-node citation keeps DIAG-1's first-definition rank.
+    pub(super) fn check_holder_not_suspended(
+        &self,
+        local: &LocalBinding,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        if local.suspended {
+            return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
+        }
+        Ok(())
+    }
+
     /// [TYPE-7]'s implicit read, asked once by each position that requires a
     /// referent value rather than the holder that reaches it.
     ///
@@ -877,17 +897,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         access: AccessKind,
         node: NodeId,
     ) -> Result<(), CheckStop> {
+        // The place a suspended ancestor's loan does not confiscate: an
+        // access through a holder whose own borrow extends that loan's place
+        // is the arm-scoped child's use, and the child's narrower loan
+        // carries the exclusivity while the ancestor is not usable
+        // [OWN-5, OWN-13].
+        let through_place = through_holder
+            .and_then(|holder| bindings.get(&holder))
+            .and_then(|holder| holder.borrow.as_ref())
+            .map(|borrow| &borrow.place);
         for (declaration, local) in bindings {
             if let Some(loan) = &local.borrow
                 && Some(*declaration) != through_holder
                 && places_overlap(&loan.place, place)
             {
+                let suspended_ancestor = local.suspended
+                    && through_place.is_some_and(|child| {
+                        child.root == loan.place.root
+                            && child.fields.starts_with(&loan.place.fields)
+                    });
                 let conflicts = match access {
                     AccessKind::Read => loan.kind == BorrowKind::Unique,
                     AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
                     AccessKind::SharedBorrow => loan.kind == BorrowKind::Unique,
                 };
-                if conflicts {
+                if conflicts && !suspended_ancestor {
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
