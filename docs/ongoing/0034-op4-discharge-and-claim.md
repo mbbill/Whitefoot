@@ -2,10 +2,10 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0034 / /Users/bytedance/do_not_scan/wf-0034 (branch task/0034-op4-discharge-and-claim)
+- **Base revision:** 8d0e228
 - **Dependency:** 0033, 0031
 
 ## Goal
