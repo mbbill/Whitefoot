@@ -1,11 +1,11 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 14
+Revision: 15
 
 The active language authority is
-[`spec/kernel-spec-v0.19.md`](../spec/kernel-spec-v0.19.md), SHA-256
-`01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398`.
+[`spec/kernel-spec-v0.20.md`](../spec/kernel-spec-v0.20.md), SHA-256
+`b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1`.
 Released numbered specifications are immutable. The current execution proposal
 is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.19]` `[current: safe-Rust compiler]`
+`[current: spec v0.20]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-[v0.19 specification](../spec/kernel-spec-v0.19.md) remains semantic authority.
+[v0.20 specification](../spec/kernel-spec-v0.20.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -273,8 +273,8 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### PERF-1 — Ordinary lowering and baseline code quality
 
-`[current: credited fused-scan win 0.65→0.75]` `[current: attributed latency floor]`
-`[next: check-aware wide-scan lowering question]`
+`[current: check-aware wide probe landed]` `[current: wfgrep beats pinned grep 1.07/1.35]`
+`[next: owner-selected next attributed cause or capability]`
 
 - **Goal:** make ordinary checked source competitive before relying on a new
   proof channel, special writer trick, or project-specific lowering.
@@ -365,9 +365,13 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   reborrows, direct slices, direct own returned slices, and — since task
   0024 — borrow-mode parameters, let-borrows, deref reads/writes, and
   matching through borrowed enums for scalar and enum content on one
-  generalized address machinery. Returned reborrows are a recorded v0.19
-  gap (OWN-6 defines child reborrows only in call-argument position);
-  branch-produced loans and holder-derived slices remain absent.
+  generalized address machinery. v0.20 (activated 2026-08-07, task 0029)
+  adds mode-preserving returned reborrows (OWN-14) and defines borrow-mode
+  match payload binders as arm-scoped child reborrows with region-remainder
+  suspension of a uniq root (OWN-13), closing the recorded OWN-6 gap and
+  the OWN-13/OWN-5 contradiction. Uniq non-copy payload binders and written
+  uniq nested chains remain explicit capability gaps; branch-produced loans
+  and holder-derived slices remain absent.
 - **Missing / next:** choose the smallest missing rule only after a real
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language
@@ -674,17 +678,18 @@ remains as the owner check-in, not as a presumption against the goal.
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
   output path, or a microbenchmark neither renames nor completes the flagship.
-- **Missing / next:** the attributed-cause slice (task 0023, preregistered)
-  credited the fused single-pass scan+match shape: 0.65 → 0.753/0.762 vs
-  grep on scan cases, a 1.160 win on match-dense, landed with gates held.
-  Counter re-attribution names the next floor: both improved shapes
-  saturate at ~3.8 cycles/byte — the serial per-byte step's latency bound
-  against memchr's 16-byte SIMD stride, with the SWAR shape's failure as
-  the minimal witness that no legal source form lowers wide. The next
-  performance question is therefore a check-aware wide-scan LOWERING
-  capability (or the honest finding that it needs a proof mechanism);
-  bounds traps remain secondary (~18% ceiling). Once the next slice passes
-  its
+- **Missing / next:** the latency-floor question is answered (task 0026,
+  preregistered): the lowering emits a check-aware 16-byte probe at
+  recognized byte-walk loop headers — every observable byte, including
+  every trap, still executes the unchanged scalar body — moving no-match
+  instructions/byte 17.68 to 3.10 and lifting wfgrep vs the pinned grep
+  from 0.753/0.762 to 1.069/1.071 (1.346 match-dense): the first full
+  compute-bound win, with trap identity oracle-pinned on hostile bounds.
+  The probe covers only the recognized byte-walk class; the verify subloop
+  and copy loops stay scalar, and bounds traps remain secondary (~18%
+  ceiling). The next slice is owner-selected: widen further shapes, attack
+  the many-small-files host open cost, or resume capability work. Once the
+  next slice passes its
   project-independent controls and same-slice correctness and cost gate, return
   to that exact `wfgrep` checkpoint. Each later slice stops on either the next
   semantic blocker or the first attributed material performance blocker; the

@@ -1,68 +1,57 @@
 # Current Plan
 
-Status: ACTIVE — the owner approved this plan, the 19-item amendment
-bundle, and the v0.20 batch authorization on 2026-08-06 ("都批"). The
-previous milestone (tasks 0023-0025) completed on 2026-08-06.
+Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
+execution. The previous ACTIVE plan (wide-scan and settlement, tasks
+0026-0029) completed on 2026-08-07: the wide-scan question closed with a
+credited win, v0.20 activated, and the corpus lane reached 364/1/14 with
+the single red case pending one owner ruling carried into this proposal.
 
-Derived from: [Direction Outline revision 14](roadmap.md), items `CAND-8`,
-`PERF-1`, `FLOOR-1`, `PROOF-1`, `STORE-1`, and `VERIFY-2`
+Derived from: [Direction Outline revision 15](roadmap.md), items `PERF-1`,
+`CAND-8`, `VERIFY-2`, and `STORE-1`
 
 ## Goal
 
-Answer the measured latency-floor question and finish the corpus: determine
-whether the compiler can lower the trap-carrying byte walk to a wide
-(SIMD/word) stride without weakening any required check — by ordinary
-lowering if legal, by an honest recorded finding naming the missing proof
-or language mechanism if not — and execute the owner's protected-source
-rulings plus the v0.20 gap batch so the conformance lane reaches a fully
-settled state.
+Bank the corpus's final settlement and choose the next attributed
+performance question from measurement rather than assumption: re-profile
+the landed wfgrep — which now beats the pinned system grep on every
+compute-bound frozen case — against both grep and ripgrep, name the next
+primary cause, and cut the next slice from that finding.
 
 ## Work
 
-1. **Check-aware wide-scan lowering slice (PERF-1/FLOOR).** Preregister,
-   then investigate lowering the fused walk to a wide stride: the emitted
-   loop may process W bytes per step only if every required bounds/trap
-   obligation is preserved observably (a trap must still fire at the exact
-   byte and with the exact record). Candidate routes to evaluate honestly:
-   pure lowering transforms on the existing checked IR; a
-   compiler-derived per-block obligation hoist that provably preserves
-   trap identity; or the recorded conclusion that a verified fact family
-   (PROOF-1-class) is required first. A credited win reruns the frozen
-   baseline; a negative names the exact obstruction with a witness.
-2. **Protected-source rulings execution** (on the owner's approval of the
-   19-item bundle): the amendments land with per-case verification; the
-   lane's remaining red becomes exactly the OWN-6-gap cases.
-3. **v0.20 micro spec batch** (on the owner's authorization): OWN-6
-   return-position reborrow disposition, TYPE-7/OWN-1 simultaneous-
-   rejection ordering, and the OWN-1 return-position question if the owner
-   prefers the carve-in over the source edit — drafted, verified, and
-   exact-approved through the specification-change workflow.
-4. **Return and replace**: rerun the baseline after item 1, record, update
-   the outline, and replace this plan (candidates: the traversal-widening
-   proposal with the backing-lifetime decision, or the next attributed
-   cause).
+1. **Final corpus settlement.** On the owner's ruling for
+   `own1-neg-match-move-through-borrow` (recommended: expected rule
+   OWN-1 → OWN-5; the spec's move-through-borrow prohibition is OWN-5
+   text, and the compiler's citation is literally conforming), apply the
+   one-line manifest correction and record the fully settled lane.
+2. **Post-win re-attribution round.** Preregister, then measure the
+   landed wfgrep on the frozen cases against the pinned grep and — as the
+   2x objective's real comparator — ripgrep, with layer-chain attribution
+   naming the next primary cause (candidates the last round left open:
+   the scalar verify subloop, the many-small-files host open cost, the
+   copy loops, process floor).
+3. **Next slice selection.** Present the attributed cause with a
+   preregistered slice proposal (optimization, lowering widening, or
+   capability work such as uniq non-copy payload binders) for the owner's
+   selection; execution enters only through the follow-on ACTIVE plan.
 
 ## Verification
 
-- Item 1 preserves facts-off correctness and every required check; trap
-  identity is oracle-tested (exact byte, exact record) on hostile inputs;
-  §9.1 gates and the wfgrep oracle hold on every accepted change.
-- Items 2-3 touch protected material and specification bytes only under
-  their recorded approvals.
+Frozen-harness discipline unchanged: protocols before numbers, null
+controls, credited wins only on preregistered predictions; item 1 touches
+protected material only under its recorded ruling.
 
 ## Done when
 
-- the wide-scan question has a credited win with a rerun baseline or a
-  recorded negative naming the missing mechanism;
-- the corpus lane is fully settled (green plus only owner-acknowledged
-  open gaps); and
-- this plan is replaced naming the next selection.
+- the corpus lane is fully green with every residual gap owner-ruled;
+- the re-attribution names the next primary cause on the record; and
+- this plan is replaced naming the owner-selected next slice.
 
 ## Not in this stage
 
-- No traversal, parallelism, or new system families; no STORE-2 growth
-  mechanism; no PROOF-1 implementation beyond what item 1's finding
-  explicitly justifies proposing.
+- No parallelism, traversal, or new system families; no speculative
+  optimization without an attributed cause; no spec change beyond the
+  single ruled verdict correction.
 
 ## Parallel research
 

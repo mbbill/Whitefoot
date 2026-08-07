@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `DONE`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 3 and the owner's
   2026-08-07 exact-byte approval (`governance/APPROVALS.md`)
 - **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
@@ -49,3 +49,19 @@ one semantic path, capability by rule; regressions land with each delta;
 cost-shape gates, the wfgrep oracle, and both make gates green and
 unpiped. A divergence between the approved bytes and implementability
 stops the task. Close to done with the final corpus tally.
+
+## Terminal outcome (2026-08-07)
+
+Merged to main at 42a17c6 (spec install 816e42f, OWN-14 6f5a569, OWN-13
+1c15811, DIAG-1 fafd112, settlement 31e8f20), lead-rebased onto the
+wide-probe landing and re-gated green (unpiped EXIT=0; corpus tally
+re-verified 364/1/14 on the rebased tree). Lead ruling recorded: the
+executor-flagged addition of "OWN-14" to three returned-reborrow manifest
+`rules` arrays is derived-material consistency required at activation by
+the machine-checked coverage gate (metadata only; no source, verdict,
+expectation, or status change) and lies within the activation approval.
+Follow-ups: the `own1-neg-match-move-through-borrow` expectation ruling
+(OWN-1 vs OWN-5) carried into the next proposed plan; uniq non-copy
+payload binders and written uniq nested chains remain explicit capability
+gaps. Design record updated at
+mcts_mem/whitefoot/ownership/no-reborrow.md.
