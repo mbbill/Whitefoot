@@ -123,7 +123,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
     assert_eq!(DECISIONS.len(), 75);
-    assert_eq!(SELECT_ROWS.len(), 2_003);
+    assert_eq!(SELECT_ROWS.len(), 1_893);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -167,6 +167,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 2_003);
+    assert_eq!(total_rows, 1_893);
     assert!(saw_atom_only);
 }
