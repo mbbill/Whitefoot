@@ -1,4 +1,4 @@
-- Every unproved D1-critical checkable fact carries a runtime check in every build mode; there is no debug/release semantic divergence.
+- Every D1-critical checkable fact is established by a deterministic derivation, by a writer-stated check that runs in every build mode, or the program is rejected; there is no debug/release semantic divergence. Index bounds obligations follow [[obligation-discharge]]; `.trap` arithmetic still carries its check implicitly.
 - A check is removed only by a deterministic machine-verified proof; a solver may promote performance facts but never licenses elision; nothing writer-stated is trusted unchecked.
 - No writer-accessible syntax removes, weakens, or silences a check; explicit `check` statements are never elided, even when tautological.
 - The active safe-Rust compiler now reaches semantic and ownership checking,

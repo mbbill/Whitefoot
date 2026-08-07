@@ -1,0 +1,22 @@
+- Every partial operation carries a proof obligation; an index obligation is either discharged at its use site from facts a deterministic no-search entailment fragment derives, carried by an explicit writer-stated claim, or the program is rejected.
+- The entailment fragment is normative specification text rather than an optimizer pass: its fact sources, closure, kill rules, and joins fix source acceptance and are versioned with the language (ENT-1).
+- An undischarged obligation is a compile-time rejection whose diagnostic prints the exact residual obligation and the mechanical repair.
+- A claim is a named, justification-bearing runtime check and the only writer-reachable trap source; its passing predicate is available to dominated code, and its violation aborts with a report carrying the claim name.
+- A claim the fragment already proves is a non-rejecting advisory; a claim the fragment refutes is a hard error.
+- A discharged index compiles with no runtime bounds branch in any build mode and contributes no `traps` to its effect row.
+- The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
+
+## Facts
+
+- 2026-08-07 (0ee1125e) measurement: the acceptance run against the frozen pre-implementation simulation — utf8parse held exactly (33 obligations, 22 proven, 2 claims covering 11 sites), sha256 landed one claim over (4 against 3, because a two-sided bound is not expressible as one claim), and the deflate-dynamic unit diverged: 5 of 29 sites proven against 17 of 30 predicted, and 21 claims against about 8. (sourced)
+- 2026-08-07 (0ee1125e) pitfall: the loop rule discards every pre-loop fact in any loop whose body contains a `return` or a `propagate` error edge, because a scope-leaving edge is a kill event and those edges leave the scope of every binding; the identical program discharges with the `return` outside the loop and rejects with it inside. This is the dominant measured cause of the deflate divergence. (code)
+- 2026-08-07 (0ee1125e) pitfall: the three canonical-Huffman sites the design predicted would become recoverable `Err` branches were migrated as aborting claims instead, so malformed compressed input aborts where a value was promised; no provenance gate exists yet to force the branch. (code)
+- 2026-08-07 (1032eb63) measurement: migrating the corpus to the discharge model added 71 claims across 13 programs and 54 across 12 conformance cases, six programs needed none, and no branch restructuring was written anywhere. (code)
+- 2026-08-06 rationale: Result-everywhere — making every fallible operation return a value instead of trapping — was weighed and rejected, because each checker-incompleteness site would force the writer to author an error arm for a condition that is impossible when the code is correct, and a catchable internal error lets a stuck writer swallow a violated invariant at the innermost frame. (sourced)
+- 2026-08-06 rationale: global prove-or-handle — an unproven assertion is always a compile error — was weighed and rejected as global law, because a deterministic no-search checker leaves a large true-but-unprovable residue that would be camouflaged inside genuine fallibility; it is retained as a candidate opt-in partition mode. (sourced)
+- 2026-08-06 rationale: assume-without-check, the shape where a writer-stated fact reaches the prover with no runtime check, was weighed and rejected outright: no construct may introduce a fact without either a proof or an executed runtime check. (sourced)
+- 2026-08-06 rationale: the trap-versus-value classification standard is modal rather than probabilistic — a predicate whose falsity is reachable in a correct program is a value, and one whose falsity means the program's own reasoning is broken is a trap — because probability is unverifiable and a broken environment makes an unlikely failure certain. (sourced)
+
+## Moves
+
+- 2026-08-07 (1032eb63) replaced [[implicit-retained-checks]]: an implicit retained check leaves the trap surface unstated and unauditable, so every unproved obligation must now either derive from stated facts, be carried by a named claim, or reject the program (sourced)
