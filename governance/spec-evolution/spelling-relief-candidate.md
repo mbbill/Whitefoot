@@ -37,7 +37,15 @@ call-spelling anchor extensions that add no site, [ENT-3] S4 and
 [FN-1] scale rather than a characterization defect: S4 fires only on
 "one comparison call", so after C1 no `requires` prologue establishes
 its entry fact and every dependent obligation is rejected under [OP-4]
-(62 corpus files carry `requires` blocks). It also found the one
+(62 canonical `.wf` sources carry `requires` blocks, on two distinct
+bases: 25 on the migration basis — conformance cases, programs, and
+research experiment sources — and 37 in the `tests/codegen/cases`
+holding corpus, which no harness consumes, which task 0031 deliberately
+left unrespelled, and which reconciles with the active specification
+per case at promotion, so its exposure surfaces there rather than at
+migration. The other §5 figures are measured on the migration basis
+alone. A previously circulated figure of 122 was the same set counted
+twice through a worktree mirror). It also found the one
 defect in this candidate's own text: [OP-2] site (g) retained a mandate
 that the FN-2 missing-type-argument judgment applies, after site (f)
 deleted the only sentence defining it — with a third such FN-2 naming
@@ -1294,25 +1302,46 @@ compile-time rejection". The unrepaired batch would therefore reject the
 `requires`-carrying programs it compiles today, exactly as the
 unrepaired [FN-1] graph would have rejected every `if` program.
 
-Measured on the active corpus (2026-08-07; canonical `.wf` sources only,
-excluding `archive/` and the worktree mirror — §5's basis): **62** files
-carry a `requires` block, one block each, and 60 of those blocks end in
-a final `check`. Thirty-nine of the 60 conditions are a direct
-comparison call — 38 `ile`, 1 `ilt` — so after C1 exactly 38 head with
-an infix `<=` and only the single `ilt` keeps a call spelling under O1.
-The remaining 21 are Bool clause atoms whose defining right-hand sides
-are the same comparison family (`ige` `ile` `ieq` `ine` respell;
-`igt` `ilt` do not), so S4's substitution step lands them in the
-identical broken form; the canonical shape is `let permitted: own Bool =
-ieq<i32>(copied, x); check permitted …`, which migrates to `let
-permitted = copied == x; check permitted …`
+Measured on the active corpus (2026-08-07; `.wf` sources excluding
+`archive/` and the worktree mirror). Two bases are stated because they
+differ sharply and only the first sizes this batch's migration.
+
+*Migration basis* — the canonical corpora, excluding `tests/codegen/`,
+which task 0031 records as a preserved holding corpus that no harness
+consumes, that was deliberately not respelled in the v0.22 migration,
+and on whose exclusion §5's other figures (1353 deleted-class type
+arguments, 1748 let annotations) are measured. On that basis **25**
+files carry a `requires` block, one block each, and 23 of those blocks
+end in a final `check`. Three of the 23 conditions are a direct
+comparison call (all `ile`). Nineteen are Bool clause atoms whose
+defining right-hand sides are `ige` 8, `eeq` 3, `igt` 3, `band` 2,
+`ile` 1, `ieq` 1, and `ilt` 1; the twenty-third is a bare parameter in
+the negative case `fn8-neg-requires-non-bool-check.wf`, which exists to
+be rejected and establishes nothing either way. So 13 of the 23 route
+through a comparison C1 respells and are exactly the shape S4 stops
+recognizing, 4 keep a call spelling under O1 (`igt`, `ilt`), and the
+`eeq` and `band` clauses are neither respelled nor S1 origins and are
+untouched. The canonical broken shape is `let permitted: own Bool =
+ieq<i32>(copied, x); check permitted …`, migrating to `let permitted =
+copied == x; check permitted …`
 (`tests/conformance/cases/fn8-neg-requires-user-call.wf`, verified).
-Independently of the final condition, 45 arithmetic lets inside these
-blocks (`imul.wrap` 40, `iadd.wrap` 4, `iadd.trap` 1) respell to infix
-and so break the normalization's termination clause on their own, while
-`ishr.wrap`, `band`, and `len` keep call spellings and do not. (An
-earlier revision of this paragraph reported 122 files on a basis that
-did not exclude the worktree mirror, and so counted every canonical
+Independently of the final condition, 9 arithmetic lets inside these
+blocks (`imul.wrap` 4, `iadd.wrap` 4, `iadd.trap` 1) respell to infix
+and break the normalization's termination clause on their own, while
+`ishr.wrap`, `band`, and `len` keep call spellings and do not.
+
+*Including the holding corpus*, the totals are **62** files, 60 final
+checks, 39 direct comparison conditions (38 `ile`, 1 `ilt`), 21 Bool
+clause atoms, and 45 respelled arithmetic lets. `tests/codegen/`
+contributes the bulk of that — 37 files whose 36 direct `ile`/`ilt`
+conditions are precisely the form S4 stops recognizing — but those
+files do not migrate with this batch: they are reconciled with the
+active spec per case at promotion, so the S4 breakage surfaces there
+rather than in this migration. The smaller figure therefore sizes the
+work this batch does, and the larger one sizes the eventual exposure;
+neither is the whole answer alone. (An earlier revision of this
+paragraph reported 122 files on a basis that excluded neither the
+worktree mirror nor the holding corpus, so it counted every canonical
 source twice; its 82/76/4/2/46 breakdown did not reconcile against
 itself and is withdrawn.) The repair is
 keyed forward, not widened: "one comparison admitted by the
