@@ -2,11 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0036 / `/Users/bytedance/do_not_scan/wf-0036`
+  on branch `task/0036-floor5-grammar-and-migration`
+- **Base revision:** b345e2c
 - **Dependency:** none
 
 ## Goal
