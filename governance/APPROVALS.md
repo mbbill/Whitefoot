@@ -255,3 +255,9 @@ specification or test change.
 - reason: the OP-4 flip's conformance consequences — op4-pos-index repurposed to op4-neg-index-undischarged (+ discharged sibling), op4-trap-index-oob repurposed to clm1-trap-runtime-violation (runtime-trap concern relocated to the claim per the R4 ladder), nine verdict-meaning-preserving lane migrations (incl. the eff2 pair's trap-carrier swap, old carrier inexpressible), runner ACTIVE_SPEC pin advanced to v0.22 with six interim compiler-test annotations pending 0035's independent cases. Adapter 364/1/14 -> 366/1/14; coverage 128/128.
 - boundary: the enumerated cases and manifest rows in task/0034 commit b382cf8.
 - evidence: 0034 report + lead review, per the 2026-08-07 standing overnight delegation.
+
+## 2026-08-07 — approval (FLOOR-5 and the remaining dossier lane)
+- owner: approved in session
+- reason: (1) the FLOOR-5 spelling batch (`governance/spec-evolution/spelling-relief-candidate.md`, READY after three adversarial rounds — 24 rules at 46 sites, 69 productions) approved for activation through the grammar-path + migration cycle; (2) the remaining DOSSIER §8 items all approved as a lane: taint gate (subject-position), counted range loop, requires-as-goal, ensures, deny-claims partition; (3) the taint gate is ADVANCED in priority on the 0035 acceptance evidence (three canonical-Huffman sites became aborting claims where the design demands Err branches, because no gate exists); (4) ENT-5 loop-rule fix drafted pending the owner's word after the written explanation.
+- boundary: drafting and implementation proceed; each spec activation still takes its own exact-byte entry.
+- evidence: owner instruction "从语法到剩下的5个都极其重要。批准了，开始做吧" + "2.提前" (2026-08-07).
