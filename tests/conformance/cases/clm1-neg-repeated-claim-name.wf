@@ -1,0 +1,7 @@
+fn main() -> own unit traps {
+  doc "Claim names are unique per function [CLM-1]; the later of two claims named `held` is a hard error citing CLM-1 at that claim.";
+  let flag: own Bool = True();
+  claim held: flag because "the first statement of this name";
+  claim held: flag because "the second statement of this name";
+  return unit;
+}

@@ -1,0 +1,13 @@
+fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
+  doc "A fact dies at a `set` commit whose resolved target overlaps the resolved place of any support member [ENT-5](a). The executed check bounds `offset`, the later `set` to that same binding kills the bound, and no source re-establishes one for a `set` right-hand side, so the subscript is undischarged [OP-4].";
+  let room: own u64 = len<u8>(b);
+  let offset: own u64 = 0_u64;
+  let inside: own Bool = ilt<u64>(offset, room);
+  check inside else trap "the buffer is empty";
+  set offset = start;
+  return b[offset];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

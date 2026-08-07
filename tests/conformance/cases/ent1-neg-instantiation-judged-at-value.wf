@@ -1,0 +1,10 @@
+fn element<const n: u64>(values: own array<u8, n>) -> own u8 pure {
+  doc "The identical generic body rejects at the instantiation whose value leaves the obligation underivable [ENT-1, OP-4]: at n = 2 the constant offset 2 is not below the array's implicit length, and the judgment is made at the instantiated value rather than symbolically over n.";
+  return values[2_u64];
+}
+
+fn main() -> own unit pure {
+  let narrow: own array<u8, 2> = array_new<u8, 2>(7_u8);
+  let value: own u8 = element<2>(values: move narrow);
+  return unit;
+}
