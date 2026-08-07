@@ -2,9 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` before any compiler edit — item (4)'s mechanical
-  reprint names a tool the repository does not have, and the reprint as
-  specified cannot be performed by one canonical printer (see Blocker)
+- **Status:** `IN PROGRESS`, handed back at a clean boundary. Items (1) and
+  the FORM-2 attachment are done (commit 706c9fe, which deliberately does
+  not build on its own); the semantic re-anchoring, corpus respell, pins,
+  O5 case, and evidence remain. The round-1 printer blocker is resolved by
+  the owner process ruling; one new finding needs an owner call (see
+  Conformance finding).
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice; owner rulings
   "批" and the N1 version-compat deferral (2026-08-07); the v0.22 delta
   `governance/spec-evolution/index-surface-v022-candidate.md` and assembled
@@ -106,3 +109,61 @@ representative before/after samples, and the statement that no conformance
 verdict meaning changed). Item add: the five semantic-checker prefix-index
 sites and O3 psuffix anchoring are IN scope. Reconcile the 135-vs-138
 count before migrating. Authority: APPROVALS.md 2026-08-07 process entry.
+
+## Conformance finding (needs an owner call)
+
+`type5-neg-index-element-type` cannot be respelled meaning-preservingly,
+contradicting delta §6's "no verdict changes meaning". Its whole subject is
+the *stated* element type that SWEEP A2 deletes: the source is
+`return index<u32>(items, 0_u64);` over `items: own buffer<u8>` in a
+function returning `own u32`, expected `{"kind": "reject", "rule":
+"TYPE-5"}`. Respelled it is `return items[0_u64];`, whose type derives as
+u8 from the base — an ordinary return-type mismatch citing another rule,
+not TYPE-5's element-type rule. `runner.py:91` matches the cited rule
+exactly (`v[1] == expect["rule"]`), so the case fails either way, and both
+its in-source doc and its manifest doc describe a deleted rule. Retiring or
+repurposing it needs owner agreement and an approval-ledger entry, so it is
+left untouched. The other seven index-touching cases respell
+meaning-preservingly.
+
+## Count reconciliation (item asked for in the plan repair)
+
+The delta's 138 counts prose, not sites: 135 `index<` occurrences are in
+`tests/conformance/cases/*.wf`, and 3 more sit in `doc` strings in
+`tests/conformance/manifest.jsonl` (one on `op4-pos-index`, two on
+`type5-neg-index-element-type`). Corpus work is therefore 266 program
+sites + 135 conformance sites + 3 manifest doc strings + 84 region headers
++ 31 cvalue arrays.
+
+## Progress
+
+Done and committed (706c9fe): the grammar tables, the terminal inventory,
+and the FORM-2 right-attachment set. Numbers and the row-delta reasoning
+are in that commit message. The tables cannot be verified yet because the
+crate does not build until the semantic sites follow.
+
+Remaining, in order:
+
+1. **Semantic re-anchoring (the hard part).** Five sites read indexing as a
+   pbase prefix — `expressions.rs:51` and `:461`, `expressions/places.rs:291`,
+   `expressions/flat_storage.rs:637`, `check/requires.rs:192`. The v0.22
+   tree has no nested base place: `a[i][j]` is one flat `place` node whose
+   base for each subscript is "this place up to that `psuffix`", which is
+   exactly the undefined-anchor problem ruling O3 fixed by anchoring at the
+   `psuffix` node. The shape that follows: give `check_indexed_place` and
+   the helpers it reaches (`check_dereferenced_buffer_place`, the
+   array/buffer/slice branches in `flat_storage.rs`, `places.rs`,
+   `flat_storage/slices.rs`) a suffix limit, so a place can be checked as
+   "pbase plus the first N psuffixes"; today's callers pass every suffix and
+   the subscript path passes the suffixes before its own. The element type
+   stops being read from a `Type` child and is derived from the base's
+   indexable type. Lowering consumes the resulting checked places and
+   follows.
+2. Corpus respell: a scratch script rewriting `index<T>(place, atom)` to
+   `place[atom]` with a balanced-paren scan so nesting composes
+   (`index<u8>(lens, index<u8>(order, j))` -> `lens[order[j]]`), plus the
+   region-header and cvalue-array attachment ripples.
+3. `index_get` catalog row and reservation removal.
+4. Identity pins to the v0.22 candidate bytes (rule count stays 128).
+5. The O5 conformance case; the finding above resolved by owner call.
+6. Evidence both sides, gates, and the review packet.
