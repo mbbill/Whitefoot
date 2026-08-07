@@ -267,3 +267,9 @@ specification or test change.
 - reason: the loop rule's kill scan considers only kill events on edges that can reach a later iteration head; edges leaving the loop or the function (return, break, propagate's error edge) are excluded, since no later head observes their kills. Lead-accepted drafting detail (O1): the reachability form rather than the enumerated statement-kind form — sound, needs no enumeration, and additionally drops a `set`'s kill when only a return follows. Honest correction of record: this is NOT fully monotone — discharge and redundancy only widen, but a surviving pre-loop fact can newly supply a claim's exact negation, so CLM-2 refutation can newly reject a program that traps on every execution reaching it (ENT-1's already-enumerated non-monotone edge).
 - boundary: the ENT-5 site only; the provenance gate drafted beside it is split out pending measurement.
 - evidence: owner instruction "OK，我同意这个改法，批准了。循环体return回边就这么做吧" (2026-08-07).
+
+## 2026-08-07 — approval (O8 precedent: what discharges a needs-evidence register entry)
+- owner: approved in session ("完全同意")
+- reason: an R3-PROVISIONAL register entry is discharged by argument alone when the deciding criterion is itself mechanically checkable (T1 reconstructibility, T3 uniqueness, T4 class-globality all verify by machine) — a writer-tier experiment there is ceremony. When the criterion is which spelling a writer gets right more often, argument is insufficient and measured data is required. FLOOR-5's three settlements (no-if, prefix arithmetic, the body half of the annotation mandate) fall in the first class. Precedent governs the remaining eleven entries.
+- boundary: register discharge only; no spec rule changes by this entry.
+- evidence: lead proposal + owner instruction "完全同意" (2026-08-07).
