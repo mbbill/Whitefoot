@@ -18,6 +18,10 @@ fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> own u64 reads('r
       False() => {
       }
     }
+    let scan_in_range: own Bool = ilt<u64>(i, source_length);
+    claim byte_in_source: scan_in_range because "the scan walks 0..source_length and breaks at the length";
+    let events_behind: own Bool = ile<u64>(count, i);
+    claim events_behind_scan: events_behind because "each input byte emits at most one output event";
     let byte: own u8 = src[i];
     let in_ground: own Bool = ieq<u8>(state, 0_u8);
     match in_ground {

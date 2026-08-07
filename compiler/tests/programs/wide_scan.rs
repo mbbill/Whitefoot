@@ -16,7 +16,11 @@ use std::os::unix::process::ExitStatusExt;
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
-const ORACLE: &[u8] = br#"fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> own u64 pure {
+  return n;
+}
+
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent: own u64 = 0_u64;
   loop @publish {
@@ -100,6 +104,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       True() => {
         match cvt<u64, u8>(cursor) {
           Ok(value: narrow) => {
+            let first_newline_ok: own Bool = ilt<u64>(count, 64_u64);
+            claim first_newline_in_found: first_newline_ok because "the found log holds every hit of this bounded scan";
             set found[count] = narrow;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
@@ -115,6 +121,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       True() => {
         match cvt<u64, u8>(cursor) {
           Ok(value: narrow_lead) => {
+            let first_lead_ok: own Bool = ilt<u64>(count, 64_u64);
+            claim first_lead_in_found: first_lead_ok because "the found log holds every hit of this bounded scan";
             set found[count] = narrow_lead;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
@@ -127,6 +135,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }
+  let first_sentinel_ok: own Bool = ilt<u64>(count, 64_u64);
+  claim first_sentinel_in_found: first_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 200_u8;
   set count = iadd.wrap<u64>(count, 1_u64);
   let blank: own buffer<u8> = buffer_new<u8>(40_u64, 97_u8);
@@ -145,6 +155,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     let blank_newline: own Bool = ieq<u8>(blank_byte, 10_u8);
     match blank_newline {
       True() => {
+        let blank_newline_ok: own Bool = ilt<u64>(count, 64_u64);
+        claim blank_newline_in_found: blank_newline_ok because "the found log holds every hit of this bounded scan";
         set found[count] = 210_u8;
         set count = iadd.wrap<u64>(count, 1_u64);
       }
@@ -154,6 +166,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     let blank_lead: own Bool = ieq<u8>(blank_byte, mark);
     match blank_lead {
       True() => {
+        let blank_lead_ok: own Bool = ilt<u64>(count, 64_u64);
+        claim blank_lead_in_found: blank_lead_ok because "the found log holds every hit of this bounded scan";
         set found[count] = 211_u8;
         set count = iadd.wrap<u64>(count, 1_u64);
       }
@@ -162,6 +176,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set blank_cursor = iadd.wrap<u64>(blank_cursor, 1_u64);
   }
+  let second_sentinel_ok: own Bool = ilt<u64>(count, 64_u64);
+  claim second_sentinel_in_found: second_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 201_u8;
   set count = iadd.wrap<u64>(count, 1_u64);
   let short_stop: own u64 = 20_u64;
@@ -181,6 +197,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       True() => {
         match cvt<u64, u8>(short_cursor) {
           Ok(value: short_narrow) => {
+            let short_newline_ok: own Bool = ilt<u64>(count, 64_u64);
+            claim short_newline_in_found: short_newline_ok because "the found log holds every hit of this bounded scan";
             set found[count] = short_narrow;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
@@ -196,6 +214,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       True() => {
         match cvt<u64, u8>(short_cursor) {
           Ok(value: short_narrow_lead) => {
+            let short_lead_ok: own Bool = ilt<u64>(count, 64_u64);
+            claim short_lead_in_found: short_lead_ok because "the found log holds every hit of this bounded scan";
             set found[count] = short_narrow_lead;
             set count = iadd.wrap<u64>(count, 1_u64);
           }
@@ -208,6 +228,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     }
     set short_cursor = iadd.wrap<u64>(short_cursor, 1_u64);
   }
+  let third_sentinel_ok: own Bool = ilt<u64>(count, 64_u64);
+  claim third_sentinel_in_found: third_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 202_u8;
   set count = iadd.wrap<u64>(count, 1_u64);
   region 'phase_publish {
@@ -220,7 +242,9 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   }
   match ieq<u8>(selector, 102_u8) {
     True() => {
-      let empty: own buffer<u8> = buffer_new<u8>(0_u64, 0_u8);
+      let empty_length: own u64 = opaque_length(n: 0_u64);
+      let empty: own buffer<u8> = buffer_new<u8>(empty_length, 0_u8);
+      let empty_room: own u64 = len<u8>(empty);
       let empty_bound: own u64 = 5_u64;
       let empty_cursor: own u64 = 0_u64;
       loop @empty_walk {
@@ -232,6 +256,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           False() => {
           }
         }
+        let empty_walk_ok: own Bool = ilt<u64>(empty_cursor, empty_room);
+        claim empty_walk_in_bounds: empty_walk_ok because "this hostile walk deliberately outruns its empty buffer";
         let empty_byte: own u8 = empty[empty_cursor];
         let empty_newline: own Bool = ieq<u8>(empty_byte, 10_u8);
         match empty_newline {
@@ -252,6 +278,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       set field[21_u64] = 88_u8;
       set field[36_u64] = 89_u8;
       let scratch: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+      let field_room: own u64 = len<u8>(field);
       let wall: own u64 = 64_u64;
       let probe: own u64 = 0_u64;
       loop @hostile_walk {
@@ -263,6 +290,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           False() => {
           }
         }
+        let hostile_walk_ok: own Bool = ilt<u64>(probe, field_room);
+        claim hostile_walk_in_bounds: hostile_walk_ok because "this hostile walk deliberately outruns its field";
         let hostile_byte: own u8 = field[probe];
         let hostile_lead: own Bool = ieq<u8>(hostile_byte, mark);
         match hostile_lead {
@@ -312,14 +341,13 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
 /// marker after each walk.
 const PHASE_ONE: &[u8] = &[0, 1, 15, 16, 17, 31, 36, 200, 201, 0, 1, 15, 16, 17, 202];
 
-const RECORD_PREFIX: &str =
-    "{\"rule_id\":\"OP-4\",\"message\":\"\",\"function\":\"main\",\"node_path\":[";
+const RECORD_PREFIX: &str = "{\"rule_id\":\"CLM-1\",\"message\":\"";
 
 fn record(stderr: Vec<u8>) -> String {
     let record = String::from_utf8(stderr).expect("trap record is UTF-8");
     assert!(
         record.starts_with(RECORD_PREFIX),
-        "hostile walk must report its own index site: {record}"
+        "hostile walk must report its own claim site: {record}"
     );
     assert!(record.ends_with("]}\n"));
     assert_eq!(record.lines().count(), 1);
@@ -329,10 +357,15 @@ fn record(stderr: Vec<u8>) -> String {
 #[test]
 fn wide_probe_walks_keep_exact_results_and_exact_trap_identity() {
     let llvm = compile_sources(&[("wide_scan.wf", ORACLE)]);
+    // The three equivalence walks keep the wide probe: their claims sit
+    // inside hit arms, off the skip path. The two hostile walks open every
+    // iteration with a discharging claim — an always-executed retained
+    // check — so the probe correctly refuses to skip over them and they
+    // stay scalar [OP-4, CLM-1].
     assert_eq!(
         llvm.matches("load <16 x i8>").count(),
-        5,
-        "all five recognized walks must carry the wide probe"
+        3,
+        "the equivalence walks carry the wide probe; the claim-guarded hostile walks stay scalar"
     );
     let program = build_program(&llvm);
     let directory = fixture_directory();

@@ -5,6 +5,7 @@ mod matches;
 mod results;
 
 use crate::syntax::NodeId;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationId, DeclarationRole, Production, SemanticCompilerFailure, SemanticIssue,
     SemanticIssueKind, SemanticLocation, SemanticRule, UnsupportedSemanticFeature,
@@ -49,6 +50,9 @@ pub(super) struct ControlCounters<'state> {
     /// kept only to render the owner in a release-attributed EFF-2
     /// diagnostic. Every allocation site pushes exactly one name.
     pub(super) binding_names: &'state mut Vec<String>,
+    /// Claim names already written in this function, for CLM-1's
+    /// per-function uniqueness judgment.
+    pub(super) claim_names: &'state mut Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -377,7 +381,57 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ))
             }
             Production::ClaimStmt => {
-                self.unsupported(UnsupportedSemanticFeature::ClaimStatement, node)
+                let name_token = self
+                    .tree
+                    .direct_token_with(node, TerminalPredicate::Identifier)?
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let name = String::from_utf8(self.tree.token_bytes(name_token)?.to_vec())
+                    .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?;
+                // CLM-1: within one `fn_decl` every claim name is unique;
+                // the later `claim_stmt` node carries the rejection.
+                if counters.claim_names.contains(&name) {
+                    return self.issue_node(
+                        SemanticRule::Clm1,
+                        node,
+                        SemanticIssueKind::DuplicateClaimName { name },
+                    );
+                }
+                counters.claim_names.push(name.clone());
+                let expression_node = self
+                    .tree
+                    .first_child_with(node, Production::Expr)?
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let condition =
+                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+                // The condition judgment is exactly [OP-5]'s, cited as CLM-1
+                // at the selected expression node.
+                if condition.expression.ty() != CheckedType::Bool
+                    || condition.mode != CheckedMode::Own
+                {
+                    return Err(CheckStop::Issue(SemanticIssue {
+                        rule: SemanticRule::Clm1,
+                        location: SemanticLocation::SourceNode(
+                            self.tree.path(node)?.clone(),
+                            self.tree.coordinate(expression_node)?,
+                        ),
+                        kind: SemanticIssueKind::InvalidCheckCondition,
+                    }));
+                }
+                let justification = self.check_message(node)?;
+                Ok(Self::continuing_statement(
+                    CheckedStatement::Claim {
+                        trap: TrapSite {
+                            rule_id: "CLM-1",
+                            message: name.clone(),
+                            function: function.name.clone(),
+                            node_path: self.tree.path(node)?.clone(),
+                        },
+                        name,
+                        justification,
+                        condition: condition.expression,
+                    },
+                    condition.effects.union(EffectSet::TRAPS),
+                ))
             }
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
             Production::BreakStmt => self.check_break(node, bindings, scope),

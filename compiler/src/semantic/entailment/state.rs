@@ -184,6 +184,26 @@ impl ClosedState {
     pub(crate) const fn contradictory(&self) -> bool {
         self.all_derivable
     }
+
+    /// [ENT-4] exact derivability of one normalized relation: a bound by the
+    /// held smaller-or-equal constant, an equality by both zero bounds, a
+    /// disequality by presence or by either strict bound.
+    pub(crate) fn derives(&self, relation: &Relation) -> bool {
+        if self.all_derivable {
+            return true;
+        }
+        match relation {
+            Relation::Bound { left, right, bound } => self.derives_bound(*left, *right, *bound),
+            Relation::Equal { left, right } => {
+                self.derives_bound(*left, *right, 0) && self.derives_bound(*right, *left, 0)
+            }
+            Relation::Distinct { left, right } => {
+                self.distinct.contains(&ordered(*left, *right))
+                    || self.derives_bound(*left, *right, -1)
+                    || self.derives_bound(*right, *left, -1)
+            }
+        }
+    }
 }
 
 /// Computes the [ENT-4] closure of `state` over the registered terms.

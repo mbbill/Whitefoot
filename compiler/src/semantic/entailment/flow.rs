@@ -24,7 +24,10 @@ use super::super::model::{
 };
 use super::state::{FactState, OutcomeFact, Relation, close, join};
 use super::term::{LengthBound, PlaceRoot, PlaceTerm, TermId, TermKind, TermTable, integer_value};
-use super::{EntailmentContext, FunctionEntailment, ObligationOutcome, fragment_type};
+use super::{
+    ClaimDisposition, ClaimOutcome, EntailmentContext, FunctionEntailment, ObligationOutcome,
+    fragment_type,
+};
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
 /// One [OWN-5] resolved place, for the [OWN-7] overlap relation kills use.
@@ -122,6 +125,7 @@ pub(super) fn analyze(
         bindings: Vec::new(),
         terms: TermTable::new(),
         obligations: Vec::new(),
+        claims: Vec::new(),
         scopes: Vec::new(),
         loops: Vec::new(),
         gives: Vec::new(),
@@ -138,6 +142,7 @@ pub(super) fn analyze(
     analyzer.scopes.pop();
     FunctionEntailment {
         obligations: analyzer.obligations,
+        claims: analyzer.claims,
     }
 }
 
@@ -148,6 +153,7 @@ struct Analyzer<'check, 'unit> {
     bindings: Vec<BindingSummary>,
     terms: TermTable,
     obligations: Vec<ObligationOutcome>,
+    claims: Vec<ClaimOutcome>,
     /// Lexical scope stack: the bindings declared in each open block.
     scopes: Vec<Vec<BindingId>>,
     loops: Vec<LoopFrame>,
@@ -887,6 +893,44 @@ impl Analyzer<'_, '_> {
                 self.establish_passed_condition(condition, state);
                 true
             }
+            CheckedStatement::Claim {
+                name,
+                condition,
+                trap,
+                ..
+            } => {
+                self.expression_effects(condition, state);
+                // [CLM-2] is judged at the claim with the state before the
+                // claim's own passed fact: redundancy when the closed state
+                // derives the predicate (a contradictory state derives
+                // everything and never refutes), refutation when the
+                // non-contradictory state derives the exact negation.
+                let disposition = match self.scrutinee_relation(condition, state) {
+                    None => ClaimDisposition::Retained,
+                    Some(relation) => {
+                        let closed = close(state, &self.terms);
+                        if closed.derives(&relation) {
+                            ClaimDisposition::Redundant
+                        } else if closed.derives(&relation.negated()) {
+                            ClaimDisposition::Refuted {
+                                predicate: self.render_relation(&relation),
+                                negation: self.render_relation(&relation.negated()),
+                            }
+                        } else {
+                            ClaimDisposition::Retained
+                        }
+                    }
+                };
+                self.claims.push(ClaimOutcome {
+                    node_path: trap.node_path.clone(),
+                    name: name.clone(),
+                    disposition,
+                });
+                // [ENT-3] S3: the passed predicate holds on the normal
+                // continuation, exactly as S2 establishes a check's.
+                self.establish_passed_condition(condition, state);
+                true
+            }
             CheckedStatement::Return { value, .. } => {
                 self.expression_effects(value, state);
                 false
@@ -1038,6 +1082,9 @@ impl Analyzer<'_, '_> {
                 | CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Check {
+                    condition: value, ..
+                }
+                | CheckedStatement::Claim {
                     condition: value, ..
                 }
                 | CheckedStatement::Give { value, .. } => {
@@ -1243,6 +1290,37 @@ impl Analyzer<'_, '_> {
         Some(Some((field.name.clone(), field.ty)))
     }
 
+    /// Renders one normalized relation for the [CLM-2] refutation diagnostic.
+    fn render_relation(&self, relation: &Relation) -> String {
+        match relation {
+            Relation::Bound { left, right, bound } => format!(
+                "{} - {} <= {bound}",
+                self.render_term(*left),
+                self.render_term(*right)
+            ),
+            Relation::Equal { left, right } => {
+                format!("{} = {}", self.render_term(*left), self.render_term(*right))
+            }
+            Relation::Distinct { left, right } => {
+                format!(
+                    "{} != {}",
+                    self.render_term(*left),
+                    self.render_term(*right)
+                )
+            }
+        }
+    }
+
+    fn render_term(&self, term: TermId) -> String {
+        match self.terms.kind(term) {
+            TermKind::Zero => "0".to_owned(),
+            TermKind::Constant(value) => value.to_string(),
+            TermKind::ConstParameter(_) => "<const parameter>".to_owned(),
+            TermKind::Place(place, _) => self.render_place(place),
+            TermKind::Length(place) => format!("len({})", self.render_place(place)),
+        }
+    }
+
     fn render_expression(&self, expression: &CheckedExpression) -> String {
         match expression {
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) => {
@@ -1258,6 +1336,28 @@ impl Analyzer<'_, '_> {
             }),
             CheckedExpression::DerefAddressed { binding, .. } => {
                 format!("deref({})", self.binding_name(*binding))
+            }
+            CheckedExpression::BoxDeref { value, .. } => {
+                format!("deref({})", self.render_expression(value))
+            }
+            CheckedExpression::ProjectValue {
+                value,
+                nominal,
+                field,
+                ..
+            } => {
+                let field_name = self
+                    .context
+                    .nominals
+                    .get(nominal.0 as usize)
+                    .and_then(|nominal| match &nominal.kind {
+                        CheckedNominalKind::Struct { fields } => {
+                            fields.get(*field as usize).map(|field| field.name.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "?".to_owned());
+                format!("{}.{field_name}", self.render_expression(value))
             }
             CheckedExpression::ArrayIndex { root, offset, .. } => {
                 let base = self.array_root_place(root);

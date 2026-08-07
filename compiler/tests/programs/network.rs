@@ -5,7 +5,8 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
     let llvm = compile_program("ipv4_checksum.wf");
     let checksum = emitted_function(&llvm, "ipv4_checksum");
     let main = emitted_function(&llvm, "main");
-    assert!(checksum.contains("slice.index.cont"));
+    // The discharged slice reads emit no bounds branch; the loop claims are
+    // the retained checks and the element addresses form directly.
     assert!(checksum.contains("getelementptr inbounds i8"));
     assert!(!checksum.contains("call void @free"));
     assert_eq!(main.matches("call i16 @wf_ipv4_checksum").count(), 2);

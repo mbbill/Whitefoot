@@ -69,6 +69,8 @@ pub enum SemanticRule {
     Stor5,
     /// Operation-table row selection.
     Op1,
+    /// Subscript bounds-obligation discharge and offset typing.
+    Op4,
     /// Exact conversion-pair result classification.
     Op6,
     /// Exact `own Bool` explicit-check condition.
@@ -103,6 +105,10 @@ pub enum SemanticRule {
     Eff1,
     /// Exact exhibited-versus-declared effect row.
     Eff2,
+    /// Named runtime claim formation and per-function name uniqueness.
+    Clm1,
+    /// Claim lifecycle: refutation rejection under the entailment fragment.
+    Clm2,
 }
 
 impl SemanticRule {
@@ -129,6 +135,7 @@ impl SemanticRule {
             Self::Stor1 => "STOR-1",
             Self::Stor5 => "STOR-5",
             Self::Op1 => "OP-1",
+            Self::Op4 => "OP-4",
             Self::Op6 => "OP-6",
             Self::Op5 => "OP-5",
             Self::Fn1 => "FN-1",
@@ -146,6 +153,8 @@ impl SemanticRule {
             Self::Give1 => "GIVE-1",
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
+            Self::Clm1 => "CLM-1",
+            Self::Clm2 => "CLM-2",
         }
     }
 
@@ -184,18 +193,21 @@ impl SemanticRule {
             Self::Stor1 => 21,
             Self::Stor5 => 22,
             Self::Op1 => 23,
-            Self::Op5 => 24,
-            Self::Op6 => 25,
-            Self::Fn1 => 26,
-            Self::Fn2 => 27,
-            Self::Fn3 => 28,
-            Self::Fn4 => 29,
-            Self::Fn7 => 30,
-            Self::Fn8 => 31,
-            Self::Eff1 => 32,
-            Self::Eff2 => 33,
-            Self::Err2 => 34,
-            Self::Err3 => 35,
+            Self::Op4 => 24,
+            Self::Op5 => 25,
+            Self::Op6 => 26,
+            Self::Fn1 => 27,
+            Self::Fn2 => 28,
+            Self::Fn3 => 29,
+            Self::Fn4 => 30,
+            Self::Fn7 => 31,
+            Self::Fn8 => 32,
+            Self::Eff1 => 33,
+            Self::Eff2 => 34,
+            Self::Err2 => 35,
+            Self::Err3 => 36,
+            Self::Clm1 => 37,
+            Self::Clm2 => 38,
         }
     }
 }
@@ -207,6 +219,18 @@ pub enum SemanticLocation {
     SourceNode(NodePath, SyntaxCoordinate),
     /// The closed compilation-unit root when no source declaration exists.
     BundleRoot(Vec<BundleSourceExtent>),
+}
+
+/// The [CLM-2] refutation payload: the rejection carries the claim name, the
+/// predicate, and the derived negation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefutedClaimDetail {
+    /// The claim's written name.
+    pub name: String,
+    /// The claim predicate as a normalized relation.
+    pub predicate: String,
+    /// The derived negation.
+    pub negation: String,
 }
 
 /// Structured reason for one semantic rejection.
@@ -282,6 +306,23 @@ pub enum SemanticIssueKind {
     InvalidOperation,
     /// An explicit check condition is not exactly `own Bool`.
     InvalidCheckCondition,
+    /// A later claim in the same function repeats a claim-name spelling.
+    DuplicateClaimName {
+        /// Repeated claim name.
+        name: String,
+    },
+    /// A subscript's bounds obligation is not derivable from the closed fact
+    /// state at its node [OP-4, ENT-6].
+    UndischargedBoundsObligation {
+        /// The exact ENT-6 residual rendering: offset atom, ` < len(`, base
+        /// place, `)`.
+        residual: String,
+        /// The mechanical fix ENT-6 names.
+        mechanical_fix: &'static str,
+    },
+    /// The fact state at a claim derives the exact negation of its predicate
+    /// [CLM-2].
+    RefutedClaim(Box<RefutedClaimDetail>),
     /// A return expression disagrees with the written function result.
     ReturnMismatch,
     /// A returned direct slice may originate outside its signature ceiling.
@@ -519,9 +560,6 @@ pub enum UnsupportedSemanticFeature {
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
     OperationFamily,
-    /// A CLM-1 claim statement, whose named check and entailment judgments the
-    /// compiler does not implement yet.
-    ClaimStatement,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

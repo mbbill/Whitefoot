@@ -33,6 +33,9 @@ fn main() -> own unit allocates(heap), traps {
   let typed_byte: own u8 = typed_bytes[1_u64];
   let typed_word: own i64 = typed_words[2_u64];
   let storage: own buffer<u16> = filled_buffer<u16>(length: 2_u64, value: 19_u16);
+  let storage_room: own u64 = len<u16>(storage);
+  let storage_ok: own Bool = ilt<u64>(1_u64, storage_room);
+  claim storage_sized: storage_ok because "filled_buffer allocates its length argument";
   let stored: own u16 = storage[1_u64];
   check ieq<u8>(small_maximum, 9_u8) else trap "u8 generic maximum";
   check ieq<i64>(signed_maximum, -2_i64) else trap "i64 generic maximum";

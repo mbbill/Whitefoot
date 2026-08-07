@@ -1,4 +1,4 @@
-use super::{compile, compile_and_run, emitted_function};
+use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 /// Counts the stack slots one emitted function declares, and how many of those
 /// declarations sit outside its entry block.
@@ -37,7 +37,9 @@ fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
         "@.wf_const.0 = private unnamed_addr constant [4 x i8] [i8 10, i8 20, i8 30, i8 40]"
     ));
     let main = emitted_function(&llvm, "main");
-    assert!(main.contains("icmp ult i64"));
+    // The constant lookup is discharged [OP-4]: no bounds compare remains;
+    // the retained wf_trap calls belong to the explicit checks.
+    assert!(!main.contains("icmp ult i64"));
     assert!(main.contains("call void @wf_trap"));
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -52,6 +54,8 @@ fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
 }
 
 fn read(values: own array<u16, 4>, offset: own u64) -> own u16 traps {
+  let in_range: own Bool = ilt<u64>(offset, 4_u64);
+  claim offset_in_range: in_range because "main reads offset three of four";
   let value: own u16 = values[offset];
   return value;
 }
@@ -67,13 +71,15 @@ fn main() -> own unit traps {
 "#;
     let llvm = compile(source);
     let read = emitted_function(&llvm, "read");
+    // The claim is the retained runtime check [CLM-1]; the discharged
+    // subscript forms its element address only after the claim's safe edge.
     let bounds = read
         .find("icmp ult i64")
-        .expect("array read must compare its offset with the fixed length");
+        .expect("the claim's comparison must compare the offset with the length");
     let trap = read[bounds..]
         .find("call void @wf_trap")
         .map(|offset| bounds + offset)
-        .expect("array read must retain its OP-4 trap edge");
+        .expect("the claim must retain its CLM-1 trap edge");
     let load = read[trap..]
         .find("getelementptr inbounds [4 x i16]")
         .map(|offset| trap + offset)
@@ -89,10 +95,28 @@ fn main() -> own unit traps {
 }
 
 #[test]
-fn out_of_bounds_array_read_reports_op4_before_abort() {
-    let source = br#"fn main() -> own unit traps {
+fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
+    // Under discharge-or-reject [OP-4] no runtime bounds trap exists: the
+    // underivable obligation rejects at compile time with the exact
+    // [ENT-6] residual.
+    let source = br#"fn main() -> own unit pure {
   let values: own array<u8, 2> = array_new<u8, 2>(7_u8);
   let value: own u8 = values[2_u64];
+  return unit;
+}
+"#;
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-4"));
+    assert!(failure.detail().contains("2_u64 < len(values)"));
+}
+
+#[test]
+fn a_failing_claim_reports_its_clm1_record_before_abort() {
+    // The named claim is the retained runtime check: its trap record cites
+    // CLM-1 and carries the claim name as the message [DIAG-3].
+    let source = br#"fn main() -> own unit traps {
+  let flag: own Bool = False();
+  claim expected_true: flag because "this test wants the trap record";
   return unit;
 }
 "#;
@@ -100,7 +124,7 @@ fn out_of_bounds_array_read_reports_op4_before_abort() {
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
     assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-4\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
+        "{\"rule_id\":\"CLM-1\",\"message\":\"expected_true\",\"function\":\"main\",\"node_path\":["
     ));
     assert!(stderr.ends_with("]}\n"));
     assert_eq!(stderr.lines().count(), 1);
@@ -133,22 +157,21 @@ fn main() -> own unit traps {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    let bounds = main
-        .find("icmp ult i64")
-        .expect("indexed target must retain its bounds check");
-    let target_trap = main[bounds..]
-        .find("call void @wf_trap")
-        .map(|offset| bounds + offset)
-        .expect("indexed target must retain its trap edge");
-    let rhs = main[target_trap..]
+    // The discharged target carries no bounds branch [OP-4]; SET-1's order
+    // remains: the RHS call is emitted after target formation and the store
+    // after the RHS.
+    let rhs = main
         .find("call i8 @wf_replacement")
-        .map(|offset| target_trap + offset)
         .expect("RHS must be emitted after target evaluation");
+    assert!(
+        !main[..rhs].contains("call void @wf_trap"),
+        "no bounds trap edge precedes the RHS"
+    );
     let store = main[rhs..]
         .find("store i8")
         .map(|offset| rhs + offset)
         .expect("array update must store only after the RHS");
-    assert!(bounds < target_trap && target_trap < rhs && rhs < store);
+    assert!(rhs < store);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -157,7 +180,9 @@ fn main() -> own unit traps {
 }
 
 #[test]
-fn failing_indexed_set_target_never_evaluates_rhs() {
+fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
+    // A target whose obligation is underivable cannot reach runtime: the
+    // program rejects at the subscript with the residual [OP-4, ENT-6].
     let source = br#"fn replacement() -> own u8 traps {
   check False() else trap "RHS evaluated";
   return 9_u8;
@@ -169,14 +194,9 @@ fn main() -> own unit traps {
   return unit;
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-4\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert!(!stderr.contains("RHS evaluated"));
-    assert_eq!(stderr.lines().count(), 1);
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-4"));
+    assert!(failure.detail().contains("2_u64 < len(values)"));
 }
 
 #[test]
@@ -200,6 +220,8 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
       False() => {
       }
     }
+    let cursor_ok: own Bool = ilt<u64>(cursor, 8_u64);
+    claim cursor_in_window: cursor_ok because "the rotating cursor wraps at seven";
     let previous: own u64 = window[cursor];
     let mixed: own u64 = ixor<u64>(previous, step);
     set window[cursor] = imul.wrap<u64>(mixed, 1099511628211_u64);
@@ -284,22 +306,19 @@ fn main() -> own unit traps {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
-    let bounds = main
-        .find("icmp ult i64")
-        .expect("projected array target must retain its bounds check");
-    let target_trap = main[bounds..]
-        .find("call void @wf_trap")
-        .map(|offset| bounds + offset)
-        .expect("projected array target must retain its OP-4 trap edge");
-    let rhs = main[target_trap..]
+    // The discharged projected target carries no bounds branch [OP-4].
+    let rhs = main
         .find("call i8 @wf_replacement")
-        .map(|offset| target_trap + offset)
         .expect("RHS must follow projected target evaluation");
+    assert!(
+        !main[..rhs].contains("call void @wf_trap"),
+        "no bounds trap edge precedes the RHS"
+    );
     let rebuild = main[rhs..]
         .find("insertvalue %wf.t")
         .map(|offset| rhs + offset)
         .expect("projected update must rebuild its enclosing structs");
-    assert!(bounds < target_trap && target_trap < rhs && rhs < rebuild);
+    assert!(rhs < rebuild);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

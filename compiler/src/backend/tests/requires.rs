@@ -39,7 +39,9 @@ fn borrowed_output_capacity_prologue_executes_through_the_normal_pipeline() {
     let llvm = compile(OUTPUT_CAPACITY);
     let copy = emitted_function(&llvm, "copy_bytes");
     assert!(copy.contains("br i1"));
-    assert_eq!(copy.matches("icmp ult i64").count(), 2);
+    // The requires compare plus the one claim compare: the discharged
+    // subscripts themselves emit no bounds compares [OP-4].
+    assert_eq!(copy.matches("icmp ult i64").count(), 1);
     assert!(copy.contains("load i8"));
     assert!(copy.contains("store i8"));
     assert_eq!(copy.matches("call void @free").count(), 1);

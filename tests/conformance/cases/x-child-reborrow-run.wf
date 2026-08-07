@@ -2,15 +2,21 @@ struct Counter {
   value: u64;
 }
 
-fn write_byte['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+fn write_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
+  let room: own u64 = len<u8>(deref(out));
+  let first_ok: own Bool = ilt<u64>(0_u64, room);
+  claim first_in_range: first_ok because "callers pass a buffer of at least two bytes";
   set deref(out)[0_u64] = 7_u8;
   return unit;
 }
 
-fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
   region 'byte_child {
     write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
   }
+  let room: own u64 = len<u8>(deref(out));
+  let second_ok: own Bool = ilt<u64>(1_u64, room);
+  claim second_in_range: second_ok because "callers pass a buffer of at least two bytes";
   set deref(out)[1_u64] = 9_u8;
   return unit;
 }

@@ -383,7 +383,19 @@ pub fn compile(
         }
     };
     let checked = match check_semantics(resolved) {
-        SemanticOutcome::Complete(complete) => *complete,
+        SemanticOutcome::Complete(complete) => {
+            // The required non-rejecting [CLM-2] redundancy advisories. The
+            // channel is implementation-owned in this version: one stderr
+            // note per redundant claim, on a developer channel separate from
+            // every mandatory record [DIAG-3].
+            for advisory in &complete.data.claim_advisories {
+                eprintln!(
+                    "advisory [CLM-2]: claim `{}` in `{}` is redundant: the fact state already derives its predicate",
+                    advisory.name, advisory.function
+                );
+            }
+            *complete
+        }
         SemanticOutcome::SourceIssue { issue, .. } => {
             return Err(CompilationFailure::source(
                 CompilationStage::Semantics,

@@ -130,9 +130,7 @@ impl IrAddressed {
             IrType::Address(_)
             | IrType::Array { .. }
             | IrType::Buffer { .. }
-            | IrType::Slice { .. }
-            | IrType::GuardedArrayIndex { .. }
-            | IrType::GuardedBufferIndex { .. } => return None,
+            | IrType::Slice { .. } => return None,
         })
     }
 }
@@ -148,8 +146,6 @@ pub enum IrType {
     Array { element: IrFlatElement, length: u64 },
     Buffer { element: IrFlatElement },
     Slice { element: IrFlatElement },
-    GuardedArrayIndex { length: u64 },
-    GuardedBufferIndex { element: IrFlatElement },
 }
 
 const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, LoweringFailure> {
@@ -661,15 +657,12 @@ pub enum IrOperation {
         value: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
+    /// One discharged source subscript read [OP-4]: the checker has already
+    /// derived the bounds obligation, so no runtime branch is emitted in any
+    /// build mode; the offset is consumed directly.
     ArrayIndex {
         root: IrArrayRoot,
         offset: IrValueId,
-        trap: IrTrapSite,
-        target_domain: IrTargetDomainObligation,
-    },
-    ArrayBoundsCheck {
-        offset: IrValueId,
-        trap: IrTrapSite,
         target_domain: IrTargetDomainObligation,
     },
     InsertArray {
@@ -686,16 +679,10 @@ pub enum IrOperation {
     BufferLength {
         buffer: IrValueId,
     },
+    /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
     BufferIndex {
         buffer: IrValueId,
         offset: IrValueId,
-        trap: IrTrapSite,
-        target_domain: IrTargetDomainObligation,
-    },
-    BufferBoundsCheck {
-        buffer: IrValueId,
-        offset: IrValueId,
-        trap: IrTrapSite,
         target_domain: IrTargetDomainObligation,
     },
     /// One check-aware wide-probe step over a `u8` buffer.
@@ -705,7 +692,7 @@ pub enum IrOperation {
     /// match no needle, but only when `index + 16 <= min(limit, length)`
     /// bounds both the walk's exit guard and every skipped read; otherwise 0.
     /// Every byte at which anything observable can happen — a needle hit,
-    /// the exit bound, or any trap, including a hostile out-of-bounds trap —
+    /// the exit bound, or any retained trap such as a `check` or `claim` —
     /// therefore reaches the unchanged scalar body and its own [DIAG-3]
     /// record. The probe itself never traps and never reports; it reads only
     /// bytes its internal guard proves in bounds.
@@ -724,10 +711,10 @@ pub enum IrOperation {
     SliceLength {
         slice: IrValueId,
     },
+    /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
     SliceIndex {
         slice: IrValueId,
         offset: IrValueId,
-        trap: IrTrapSite,
         target_domain: IrTargetDomainObligation,
     },
     BoxNew {

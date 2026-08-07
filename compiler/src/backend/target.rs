@@ -204,16 +204,12 @@ fn validate_target_obligation(
         }
         IrOperation::BufferIndex { target_domain, .. }
         | IrOperation::SliceIndex { target_domain, .. }
-        | IrOperation::ArrayBoundsCheck { target_domain, .. }
-        | IrOperation::BufferBoundsCheck { target_domain, .. }
             if *target_domain == IrTargetDomainObligation::ElementAddress => {}
         IrOperation::ArrayFill { .. }
         | IrOperation::BufferFill { .. }
         | IrOperation::ArrayIndex { .. }
         | IrOperation::BufferIndex { .. }
-        | IrOperation::SliceIndex { .. }
-        | IrOperation::ArrayBoundsCheck { .. }
-        | IrOperation::BufferBoundsCheck { .. } => {
+        | IrOperation::SliceIndex { .. } => {
             return Err(TargetLayoutFailure::InvalidIr);
         }
         _ => {}
@@ -286,12 +282,7 @@ fn instruction_trap(instruction: &IrInstruction) -> Option<&IrTrapSite> {
             IrOperation::Integer {
                 trap: Some(trap), ..
             }
-            | IrOperation::ArrayIndex { trap, .. }
-            | IrOperation::ArrayBoundsCheck { trap, .. }
             | IrOperation::BufferFill { trap, .. }
-            | IrOperation::BufferIndex { trap, .. }
-            | IrOperation::SliceIndex { trap, .. }
-            | IrOperation::BufferBoundsCheck { trap, .. }
             | IrOperation::SystemCall {
                 trap: Some(trap), ..
             } => Some(trap),
@@ -354,9 +345,6 @@ impl LayoutComputer<'_, '_, '_, '_> {
             IrType::Slice { element } => {
                 self.flat_element(element)?;
                 Ok(Layout { size: 16, align: 8 })
-            }
-            IrType::GuardedArrayIndex { .. } | IrType::GuardedBufferIndex { .. } => {
-                Ok(Layout { size: 8, align: 8 })
             }
         }
     }

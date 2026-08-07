@@ -959,6 +959,16 @@ pub(crate) enum CheckedStatement {
         condition: CheckedExpression,
         trap: TrapSite,
     },
+    /// A named runtime check [CLM-1]: check-else-trap semantics with the
+    /// claim name as the DIAG-3 message. The justification STRING is
+    /// compile-time review data the checked program retains [DIAG-2]; it
+    /// never reaches runtime behavior.
+    Claim {
+        name: String,
+        justification: String,
+        condition: CheckedExpression,
+        trap: TrapSite,
+    },
     Return {
         value: CheckedExpression,
         drops: Vec<CheckedDrop>,
@@ -1163,4 +1173,18 @@ pub(crate) struct CheckedProgramData {
     pub(crate) law_derivations: Vec<CheckedLawDerivation>,
     pub(crate) main: FunctionId,
     pub(crate) entry: CheckedEntryForm,
+    /// The required non-rejecting [CLM-2] redundancy advisories, one per
+    /// claim whose predicate the closed fact state already derives. The
+    /// channel and encoding are implementation-owned in this version; this
+    /// list is the compiler's channel, and the CLI prints it to stderr.
+    pub(crate) claim_advisories: Vec<ClaimAdvisory>,
+}
+
+/// One [CLM-2] redundancy advisory: non-rejecting compile-time review data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimAdvisory {
+    /// The enclosing source function IDENT.
+    pub(crate) function: String,
+    /// The claim's written name.
+    pub(crate) name: String,
 }

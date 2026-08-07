@@ -12,8 +12,10 @@ fn replacement() -> own u16 pure {
 
 fn main() -> own unit allocates(heap), traps {
   let values: own buffer<u16> = make(n: 4_u64);
-  set values[2_u64] = replacement();
   let length: own u64 = len<u16>(values);
+  let room: own Bool = ilt<u64>(2_u64, length);
+  claim sized_by_make: room because "make allocates n slots and main passes four";
+  set values[2_u64] = replacement();
   let stored: own u16 = values[2_u64];
   check ieq<u64>(length, 4_u64) else trap "length drift";
   check ieq<u16>(stored, 9_u16) else trap "store drift";
@@ -22,9 +24,11 @@ fn main() -> own unit allocates(heap), traps {
 "#;
     let llvm = compile(source);
     let main = emitted_function(&llvm, "main");
+    // The discharging claim is the retained runtime check; its trap edge
+    // precedes the RHS, and the discharged target commits one store.
     let guard = main
-        .find("buffer.bounds.cont")
-        .expect("SET-1 must retain an OP-4 buffer guard");
+        .find("call void @wf_trap")
+        .expect("the claim must retain its CLM-1 trap edge");
     let rhs = main
         .find("call i16 @wf_replacement")
         .expect("SET-1 must evaluate its RHS once");
@@ -104,7 +108,9 @@ fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
 }
 
 #[test]
-fn failing_buffer_set_target_never_evaluates_rhs() {
+fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
+    // The allocation-length equality proves 2 < 2 underivable, so the
+    // program rejects at compile time with the residual [OP-4, ENT-6].
     let source = br#"fn replacement() -> own u8 traps {
   check False() else trap "RHS evaluated";
   return 9_u8;
@@ -116,14 +122,9 @@ fn main() -> own unit allocates(heap), traps {
   return unit;
 }
 "#;
-    let output = compile_and_run(&compile(source));
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-4\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert!(!stderr.contains("RHS evaluated"));
-    assert_eq!(stderr.lines().count(), 1);
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-4"));
+    assert!(failure.detail().contains("2_u64 < len(values)"));
 }
 
 #[test]
@@ -216,13 +217,19 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
   count: u64;
 }
 
-fn update['r](pool: &uniq 'r Pool) -> own unit writes('r), traps {
+fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
+  let room: own u64 = len<u64>(deref(pool).left);
+  let ok: own Bool = ilt<u64>(1_u64, room);
+  claim left_sized: ok because "main pools two slots per column";
   set deref(pool).left[1_u64] = 13_u64;
   set deref(pool).count = 1_u64;
   return unit;
 }
 
 fn observe['r](pool: &'r Pool) -> own u64 reads('r), traps {
+  let room: own u64 = len<u64>(deref(pool).left);
+  let ok: own Bool = ilt<u64>(1_u64, room);
+  claim left_sized: ok because "main pools two slots per column";
   let value: own u64 = deref(pool).left[1_u64];
   let count: own u64 = deref(pool).count;
   return iadd.trap<u64>(value, count);
@@ -329,6 +336,9 @@ fn replacement() -> own u16 pure {
 }
 
 fn update(columns: own Columns) -> own Columns traps {
+  let room: own u64 = len<u16>(columns.left);
+  let ok: own Bool = ilt<u64>(1_u64, room);
+  claim left_sized: ok because "main sizes both columns to two slots";
   set columns.left[1_u64] = replacement();
   return move columns;
 }
@@ -338,6 +348,9 @@ fn main() -> own unit allocates(heap), traps {
   let right: own buffer<u16> = buffer_new<u16>(2_u64, 0_u16);
   let columns: own Columns = Columns(left: move left, right: move right);
   let updated: own Columns = update(columns: move columns);
+  let updated_room: own u64 = len<u16>(updated.left);
+  let updated_ok: own Bool = ilt<u64>(1_u64, updated_room);
+  claim updated_sized: updated_ok because "update returns the two-slot columns";
   let value: own u16 = updated.left[1_u64];
   check ieq<u16>(value, 9_u16) else trap "projected store drift";
   return unit;
@@ -345,20 +358,19 @@ fn main() -> own unit allocates(heap), traps {
 "#;
     let llvm = compile(source);
     let update = emitted_function(&llvm, "update");
-    let projection = update
-        .find("extractvalue %wf.t0")
-        .expect("the buffer field must be projected once");
-    assert_eq!(update.matches("extractvalue %wf.t0").count(), 1);
+    // The length read projects the field once for the claim; the discharged
+    // target projects it once more at the store, with no bounds branch.
+    assert_eq!(update.matches("extractvalue %wf.t0").count(), 2);
     let guard = update
-        .find("buffer.bounds.cont")
-        .expect("the projected target must retain OP-4");
+        .find("call void @wf_trap")
+        .expect("the claim must retain its CLM-1 trap edge");
     let rhs = update
         .find("call i16 @wf_replacement")
         .expect("the RHS must execute once");
     let store = update
         .find("store i16")
         .expect("the target must receive one store");
-    assert!(projection < guard && guard < rhs && rhs < store);
+    assert!(guard < rhs && rhs < store);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

@@ -173,14 +173,26 @@ fields, rejects affine replacement under STOR-1, and rechecks target liveness
 after the right-hand side. Semantic success produces the only lowering
 authority. Concrete fixed arrays support
 decimal or earlier-integer lengths, complete `array_new` initialization,
-immutable static const tables, `len`, checked index reads, and target-before-RHS
-checked indexed writes for direct local roots. The IR retains required checks,
-source trap sites, checked set paths, and cleanup. Runtime-length primitive
-buffers use a `{data pointer, u64 length}` value, checked OP-9 byte-size
-multiplication, a separate selected-target domain guard before allocation,
-complete fill initialization, OP-4 reads and target-before-RHS writes,
-cross-function affine transfer, and
-compiler-derived `free` on normal owner exits. Buffer fields retain exact
+immutable static const tables, `len`, discharged index reads, and
+target-before-RHS discharged indexed writes for direct local roots. The IR
+retains required checks, source trap sites, checked set paths, and cleanup.
+Runtime-length primitive buffers use a `{data pointer, u64 length}` value,
+checked OP-9 byte-size multiplication, a separate selected-target domain guard
+before allocation, complete fill initialization, discharged OP-4 reads and
+target-before-RHS writes, cross-function affine transfer, and
+compiler-derived `free` on normal owner exits.
+
+Subscripts follow OP-4 discharge-or-reject: the L0 entailment engine
+(ENT-1..6) derives per-function difference-bound fact states over the
+conservative structural graph, an accepted subscript compiles with no runtime
+bounds branch in any build mode, and an undischarged obligation is a
+compile-time OP-4 rejection carrying the exact ENT-6 residual. `claim` is the
+CLM-1 named runtime check: always retained, judged by the engine for CLM-2
+redundancy (a required non-rejecting advisory, printed to stderr by the
+driver) and refutation (a hard CLM-2 rejection), and its passed predicate is
+an ENT-3 S3 fact source. A failing claim aborts with a DIAG-3 record citing
+CLM-1 and the claim name. Subscripts are not an EFF-2 trap source; `check`,
+`claim`, `.trap` operations, and trapping callees are. Buffer fields retain exact
 projected roots through length, read, and write operations without
 re-evaluating source paths.
 

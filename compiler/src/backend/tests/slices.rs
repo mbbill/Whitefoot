@@ -17,6 +17,8 @@ fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
       False() => {
       }
     }
+    let read_ok: own Bool = ilt<u64>(offset, length);
+    claim offset_in_values: read_ok because "the walk stops at the slice length";
     let byte: own u8 = values[offset];
     let word: own u64 = cvt<u8, u64>(byte);
     set total = iadd.wrap<u64>(total, word);
@@ -49,7 +51,8 @@ fn main() -> own unit allocates(heap), traps {
     let llvm = compile(source);
     let sum = emitted_function(&llvm, "sum");
     let main = emitted_function(&llvm, "main");
-    assert!(sum.contains("slice.index.cont"));
+    // The discharged slice read emits no bounds branch; the claim is the
+    // one retained check and the element address forms directly.
     assert!(sum.contains("getelementptr inbounds i8"));
     assert!(!sum.contains("call void @free"));
     assert_eq!(main.matches("call void @free").count(), 1);
@@ -61,8 +64,11 @@ fn main() -> own unit allocates(heap), traps {
 }
 
 #[test]
-fn slice_index_retains_the_op4_trap_before_address_formation() {
-    let source = br#"fn main() -> own unit traps {
+fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
+    // The slice carries its source array's length, so the constant offset
+    // is refutable at compile time and the program rejects with the
+    // residual [OP-4, ENT-6].
+    let source = br#"fn main() -> own unit pure {
   let bytes: own array<u8, 2> = array_new<u8, 2>(0_u8);
   region 'view {
     let window: own slice<'view, u8> = slice_of<'view, u8>(&'view bytes);
@@ -71,28 +77,9 @@ fn slice_index_retains_the_op4_trap_before_address_formation() {
   return unit;
 }
 "#;
-    let llvm = compile(source);
-    let main = emitted_function(&llvm, "main");
-    let bounds = main
-        .find("icmp ult i64")
-        .expect("slice index must compare against its retained runtime length");
-    let trap = main[bounds..]
-        .find("call void @wf_trap")
-        .map(|offset| bounds + offset)
-        .expect("slice index must retain an OP-4 trap edge");
-    let address = main[trap..]
-        .find("getelementptr inbounds i8")
-        .map(|offset| trap + offset)
-        .expect("slice element address must follow the successful guard");
-    assert!(bounds < trap && trap < address);
-
-    let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"OP-4\",\"message\":\"\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert_eq!(stderr.lines().count(), 1);
+    let failure = compile_rejection(source);
+    assert_eq!(failure.rule_id(), Some("OP-4"));
+    assert!(failure.detail().contains("2_u64 < len(window)"));
 }
 
 #[test]
@@ -119,6 +106,9 @@ fn fixed_view['r]() -> own slice<'r, u8> pure {
 }
 
 fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+  let room: own u64 = len<u8>(deref(value));
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim nonempty: ok because "callers pass a two-byte view";
   return deref(value)[0_u64];
 }
 
@@ -133,15 +123,24 @@ fn main() -> own unit traps {
     }
     let initial: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let passed: own slice<'view, u8> = pass<'view>(value: move initial);
+    let passed_room: own u64 = len<u8>(passed);
+    let passed_ok: own Bool = ilt<u64>(0_u64, passed_room);
+    claim passed_nonempty: passed_ok because "pass returns the two-byte view";
     let pass_value: own u8 = passed[0_u64];
     check ieq<u8>(pass_value, 11_u8) else trap "pass";
     let left_view: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let right_view: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
     let take_left: own Bool = False();
     let selected: own slice<'view, u8> = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
+    let selected_room: own u64 = len<u8>(selected);
+    let selected_ok: own Bool = ilt<u64>(0_u64, selected_room);
+    claim selected_nonempty: selected_ok because "choose returns one two-byte view";
     let selected_value: own u8 = selected[0_u64];
     check ieq<u8>(selected_value, 29_u8) else trap "choice";
     let constant: own slice<'view, u8> = fixed_view<'view>();
+    let constant_room: own u64 = len<u8>(constant);
+    let constant_ok: own Bool = ilt<u64>(1_u64, constant_room);
+    claim constant_sized: constant_ok because "fixed_view returns the two-byte constant view";
     let constant_value: own u8 = constant[1_u64];
     check ieq<u8>(constant_value, 13_u8) else trap "const";
   }

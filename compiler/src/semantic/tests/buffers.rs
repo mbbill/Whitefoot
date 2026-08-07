@@ -14,8 +14,10 @@ fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
 
 fn main() -> own unit allocates(heap), traps {
   let values: own buffer<u16> = make(n: 4_u64);
-  set values[2_u64] = 9_u16;
   let length: own u64 = len<u16>(values);
+  let ok: own Bool = ilt<u64>(2_u64, length);
+  claim sized_by_make: ok because "make allocates n slots and main passes four";
+  set values[2_u64] = 9_u16;
   let stored: own u16 = values[2_u64];
   check ieq<u64>(length, 4_u64) else trap "length drift";
   check ieq<u16>(stored, 9_u16) else trap "store drift";
@@ -47,8 +49,8 @@ fn main() -> own unit allocates(heap), traps {
         ));
 
         let main = &checked.data.functions[1];
-        let CheckedStatement::Set { target, .. } = &main.body[1] else {
-            panic!("second main statement must be indexed SET-1");
+        let CheckedStatement::Set { target, .. } = &main.body[4] else {
+            panic!("the statement after the discharging claim must be indexed SET-1");
         };
         let CheckedSetTarget::BufferIndex(target) = target else {
             panic!("SET-1 target must retain its buffer root and OP-4 check");
@@ -63,14 +65,14 @@ fn main() -> own unit allocates(heap), traps {
             CheckedTargetDomainObligation::ElementAddress
         );
         assert!(matches!(
-            &main.body[2],
+            &main.body[1],
             CheckedStatement::Let {
                 value: CheckedExpression::BufferLength { .. },
                 ..
             }
         ));
         assert!(matches!(
-            &main.body[3],
+            &main.body[5],
             CheckedStatement::Let {
                 value: CheckedExpression::BufferIndex {
                     trap,
@@ -80,7 +82,7 @@ fn main() -> own unit allocates(heap), traps {
                 ..
             } if trap.rule_id == "OP-4"
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[6] else {
+        let CheckedStatement::Return { drops, .. } = &main.body[8] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 1);
@@ -132,6 +134,9 @@ fn main() -> own unit allocates(heap), traps {
   let left: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
   let right: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
   let columns: own Columns = Columns(left: move left, right: move right);
+  let left_room: own u64 = len<u64>(columns.left);
+  let ok: own Bool = ilt<u64>(2_u64, left_room);
+  claim left_sized: ok because "columns.left was allocated with four slots";
   set columns.left[2_u64] = 7_u64;
   let length: own u64 = len<u64>(columns.right);
   let value: own u64 = columns.left[2_u64];
@@ -145,28 +150,28 @@ fn main() -> own unit allocates(heap), traps {
             panic!("struct-of-buffers must check: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let CheckedStatement::Set { target, .. } = &main.body[3] else {
-            panic!("fourth statement must be projected indexed SET-1");
+        let CheckedStatement::Set { target, .. } = &main.body[6] else {
+            panic!("the statement after the discharging claim must be projected indexed SET-1");
         };
         let CheckedSetTarget::BufferIndex(target) = target else {
             panic!("SET-1 must retain a projected buffer root");
         };
         assert_eq!(target.root.fields, [0]);
         assert!(matches!(
-            &main.body[4],
+            &main.body[7],
             CheckedStatement::Let {
                 value: CheckedExpression::BufferLength { root },
                 ..
             } if root.fields == [1]
         ));
         assert!(matches!(
-            &main.body[5],
+            &main.body[8],
             CheckedStatement::Let {
                 value: CheckedExpression::BufferIndex { root, .. },
                 ..
             } if root.fields == [0]
         ));
-        let CheckedStatement::Return { drops, .. } = &main.body[8] else {
+        let CheckedStatement::Return { drops, .. } = &main.body[11] else {
             panic!("main must end in return");
         };
         assert_eq!(drops.len(), 3);

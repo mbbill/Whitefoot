@@ -58,6 +58,10 @@ fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r
       False() => {
       }
     }
+    let scan_ok: own Bool = ilt<u64>(input_index, source_length);
+    claim scan_in_source: scan_ok because "the scan stops at the source length";
+    let writes_behind: own Bool = ile<u64>(output_index, input_index);
+    claim writes_behind_scan: writes_behind because "each consumed byte emits at most one output byte";
     let byte: own u8 = src[input_index];
     let is_percent: own Bool = ieq<u8>(byte, 37_u8);
     let remaining: own u64 = isub.wrap<u64>(source_length, input_index);
@@ -67,7 +71,11 @@ fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r
       True() => {
         let next_index: own u64 = iadd.wrap<u64>(input_index, 1_u64);
         let last_index: own u64 = iadd.wrap<u64>(input_index, 2_u64);
+        let high_ok: own Bool = ilt<u64>(next_index, source_length);
+        claim high_in_source: high_ok because "a candidate escape has two bytes after the percent";
         let high_byte: own u8 = src[next_index];
+        let low_ok: own Bool = ilt<u64>(last_index, source_length);
+        claim low_in_source: low_ok because "a candidate escape has two bytes after the percent";
         let low_byte: own u8 = src[last_index];
         let high_valid: own Bool = is_hex(byte: high_byte);
         let low_valid: own Bool = is_hex(byte: low_byte);

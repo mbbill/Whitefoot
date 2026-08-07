@@ -29,12 +29,8 @@ use crate::{
     IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations,
     IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType, IrValueId, SystemResourceType,
 };
-use buffer::{
-    buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label,
-    buffer_probe_join_label,
-};
+use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
-use slice::slice_index_continue_label;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendFailure {
@@ -625,14 +621,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::ArrayIndex {
                 root,
                 offset,
-                trap,
                 target_domain,
-            } => self.emit_array_index(result, ty, *root, *offset, trap, *target_domain),
-            IrOperation::ArrayBoundsCheck {
-                offset,
-                trap,
-                target_domain,
-            } => self.emit_array_bounds_check(result, ty, *offset, trap, *target_domain),
+            } => self.emit_array_index(result, ty, *root, *offset, *target_domain),
             IrOperation::InsertArray {
                 aggregate,
                 index,
@@ -648,15 +638,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::BufferIndex {
                 buffer,
                 offset,
-                trap,
                 target_domain,
-            } => self.emit_buffer_index(result, ty, *buffer, *offset, trap, *target_domain),
-            IrOperation::BufferBoundsCheck {
-                buffer,
-                offset,
-                trap,
-                target_domain,
-            } => self.emit_buffer_bounds_check(result, ty, *buffer, *offset, trap, *target_domain),
+            } => self.emit_buffer_index(result, ty, *buffer, *offset, *target_domain),
             IrOperation::BufferProbeSkip {
                 buffer,
                 index,
@@ -671,9 +654,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SliceIndex {
                 slice,
                 offset,
-                trap,
                 target_domain,
-            } => self.emit_slice_index(result, ty, *slice, *offset, trap, *target_domain),
+            } => self.emit_slice_index(result, ty, *slice, *offset, *target_domain),
             IrOperation::BoxNew { nominal, value } => {
                 self.emit_box_new(result, ty, *nominal, *value)
             }
@@ -956,8 +938,6 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
         )),
         IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
         IrType::Address(_) => Ok("ptr".to_owned()),
-        IrType::GuardedArrayIndex { .. } => Ok("i64".to_owned()),
-        IrType::GuardedBufferIndex { .. } => Ok("i64".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
             if matches!(nominal.kind(), IrNominalKind::Box { .. }) {
@@ -1086,39 +1066,14 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
             } => label = array_fill_done_label(*result),
             IrInstruction::Define {
                 result,
-                operation: IrOperation::ArrayIndex { .. },
-                ..
-            } => label = array_index_continue_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::ArrayBoundsCheck { .. },
-                ..
-            } => label = array_bounds_continue_label(*result),
-            IrInstruction::Define {
-                result,
                 operation: IrOperation::BufferFill { .. },
                 ..
             } => label = buffer_fill_done_label(*result),
             IrInstruction::Define {
                 result,
-                operation: IrOperation::BufferIndex { .. },
-                ..
-            } => label = buffer_index_continue_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::SliceIndex { .. },
-                ..
-            } => label = slice_index_continue_label(*result),
-            IrInstruction::Define {
-                result,
                 operation: IrOperation::BufferProbeSkip { .. },
                 ..
             } => label = buffer_probe_join_label(*result),
-            IrInstruction::Define {
-                result,
-                operation: IrOperation::BufferBoundsCheck { .. },
-                ..
-            } => label = buffer_bounds_continue_label(*result),
             _ => {}
         }
     }
@@ -1183,22 +1138,6 @@ fn array_fill_body_label(value: IrValueId) -> String {
 
 fn array_fill_done_label(value: IrValueId) -> String {
     format!("array.fill.done.v{}", value.ordinal())
-}
-
-fn array_index_trap_label(value: IrValueId) -> String {
-    format!("array.index.trap.v{}", value.ordinal())
-}
-
-fn array_index_continue_label(value: IrValueId) -> String {
-    format!("array.index.cont.v{}", value.ordinal())
-}
-
-fn array_bounds_trap_label(value: IrValueId) -> String {
-    format!("array.bounds.trap.v{}", value.ordinal())
-}
-
-fn array_bounds_continue_label(value: IrValueId) -> String {
-    format!("array.bounds.cont.v{}", value.ordinal())
 }
 
 fn invalid_tag_label(block: IrBlockId) -> String {

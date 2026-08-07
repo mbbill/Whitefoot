@@ -121,6 +121,13 @@ fn compile(source: &[u8]) -> String {
     compile_sources(&[("test.wf", source)])
 }
 
+/// Compiles a source that must be rejected, returning the failure for rule
+/// and detail assertions.
+fn compile_rejection(source: &[u8]) -> crate::CompilationFailure {
+    let inputs = [SourceInput::new("test.wf", source)];
+    compile_program(&inputs, crate::CompilerLimits::default()).expect_err("source must be rejected")
+}
+
 fn compile_sources(sources: &[(&str, &[u8])]) -> String {
     let inputs = sources
         .iter()

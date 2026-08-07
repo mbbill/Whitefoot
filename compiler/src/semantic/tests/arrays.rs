@@ -212,10 +212,16 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
 
 #[test]
 fn indexed_set_rechecks_type_effect_and_root_liveness() {
-    assert_rule(
+    // A discharged subscript is not an [EFF-2] trap source: the indexed set
+    // with a constant in-range offset is accepted in a `pure` function.
+    with_semantics(
         b"fn main() -> own unit pure {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return unit;\n}\n",
-        SemanticRule::Eff2,
-        SemanticIssueKind::EffectMismatch,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a discharged indexed set must not force a traps row: {outcome:?}"
+            );
+        },
     );
     assert_rule(
         b"fn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return unit;\n}\n",

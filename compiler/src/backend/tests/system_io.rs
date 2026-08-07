@@ -591,6 +591,8 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                         False() => {
                         }
                       }
+                      let fold_ok: own Bool = ilt<u64>(cursor, 8_u64);
+                      claim cursor_in_bytes: fold_ok because "the fold walks 0..8 over the eight-byte buffer";
                       let byte: own u8 = bytes[cursor];
                       let widened: own u64 = cvt<u8, u64>(byte);
                       let scaled: own u64 = imul.wrap<u64>(digest, 31_u64);

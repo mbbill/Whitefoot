@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> own unit writes('r), traps {
+fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> own unit writes('r) {
   let length: own u64 = len<u8>(input);
   let index_value: own u64 = 0_u64;
   let lines: own u64 = 0_u64;

@@ -14,14 +14,16 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
         };
         let fill = &checked.data.functions[0];
         assert!(matches!(fill.parameters[0].mode, CheckedMode::Unique(_)));
-        let CheckedStatement::Loop { body, .. } = &fill.body[1] else {
+        // The migrated fixture pre-binds both column lengths for its claims,
+        // so the loop follows the two length lets and the index let.
+        let CheckedStatement::Loop { body, .. } = &fill.body[3] else {
             panic!("fill must retain its loop");
         };
         let CheckedStatement::Match { arms, .. } = &body[1] else {
             panic!("fill loop must retain its terminating match");
         };
-        let CheckedStatement::Set { target, .. } = &arms[1].body[0] else {
-            panic!("fill must write the left borrowed buffer");
+        let CheckedStatement::Set { target, .. } = &arms[1].body[2] else {
+            panic!("fill must write the left borrowed buffer after its claim");
         };
         assert!(matches!(target, CheckedSetTarget::BufferIndex(_)));
 
@@ -151,12 +153,16 @@ fn main() -> own unit pure {
 
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
-    let source = br#"fn write['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+    let source =
+        br#"fn write['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
+  let room: own u64 = len<u8>(deref(out));
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim has_room: ok because "callers pass a nonempty buffer";
   set deref(out)[0_u64] = 1_u8;
   return unit;
 }
 
-fn proxy['r](out: &uniq 'r buffer<u8>) -> own unit writes('r), traps {
+fn proxy['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
   write<'r>(out: move out);
   return unit;
 }
@@ -186,10 +192,16 @@ fn count['r](pool: &'r Pool) -> own u64 reads('r) {
 }
 
 fn first['r](pool: &'r Pool) -> own u64 reads('r), traps {
+  let room: own u64 = len<u64>(deref(pool).left);
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim left_nonempty: ok because "callers pool at least one element per column";
   return deref(pool).left[0_u64];
 }
 
-fn update['r](pool: &uniq 'r Pool) -> own unit writes('r), traps {
+fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
+  let room: own u64 = len<u64>(deref(pool).right);
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim right_nonempty: ok because "callers pool at least one element per column";
   set deref(pool).right[0_u64] = 9_u64;
   set deref(pool).count = 1_u64;
   return unit;
@@ -219,10 +231,12 @@ fn main() -> own unit pure {
         assert_eq!(fields, &[2]);
         assert!(!consume_root);
 
+        // The subscripting helpers open with a length let, a comparison
+        // let, and the discharging claim; their subscript statements follow.
         let CheckedStatement::Return {
             value: CheckedExpression::BufferIndex { root, .. },
             ..
-        } = &checked.data.functions[1].body[0]
+        } = &checked.data.functions[1].body[3]
         else {
             panic!("borrowed buffer field read must retain its checked root");
         };
@@ -232,7 +246,7 @@ fn main() -> own unit pure {
         let CheckedStatement::Set {
             target: CheckedSetTarget::BufferIndex(target),
             ..
-        } = &update.body[0]
+        } = &update.body[3]
         else {
             panic!("borrowed buffer field write must retain its checked target");
         };
@@ -240,7 +254,7 @@ fn main() -> own unit pure {
         let CheckedStatement::Set {
             target: CheckedSetTarget::Place(target),
             ..
-        } = &update.body[1]
+        } = &update.body[4]
         else {
             panic!("borrowed copy field write must retain its checked target");
         };

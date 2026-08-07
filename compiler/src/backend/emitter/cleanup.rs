@@ -114,8 +114,6 @@ pub(super) fn type_requires_cleanup(
             | IrType::Array { .. }
             | IrType::Slice { .. }
             | IrType::Address(_)
-            | IrType::GuardedArrayIndex { .. }
-            | IrType::GuardedBufferIndex { .. }
             | IrType::Nominal(_) => {}
         }
     }
@@ -258,9 +256,7 @@ fn emit_cleanup_jobs(
                 | IrType::Float { .. }
                 | IrType::Array { .. }
                 | IrType::Slice { .. }
-                | IrType::Address(_)
-                | IrType::GuardedArrayIndex { .. }
-                | IrType::GuardedBufferIndex { .. } => {}
+                | IrType::Address(_) => {}
             },
         }
     }

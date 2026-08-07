@@ -20,6 +20,8 @@ fn make_dynamic_input() -> own buffer<u8> allocates(heap), traps {
         break @fill_dynamic_source;
       }
       False() => {
+        let fill_ok: own Bool = ilt<u64>(index_value, 72_u64);
+        claim fill_in_range: fill_ok because "the fill walks 0..72 and breaks at 72";
         let byte: own u8 = dynamic_input_bytes[index_value];
         set input[index_value] = byte;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
@@ -39,6 +41,8 @@ fn make_dynamic_match_input() -> own buffer<u8> allocates(heap), traps {
         break @fill_dynamic_match_source;
       }
       False() => {
+        let fill_ok: own Bool = ilt<u64>(index_value, 82_u64);
+        claim fill_in_range: fill_ok because "the fill walks 0..82 and breaks at 82";
         let byte: own u8 = dynamic_match_input_bytes[index_value];
         set input[index_value] = byte;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
@@ -58,6 +62,8 @@ fn make_literal_only_dynamic_input() -> own buffer<u8> allocates(heap), traps {
         break @fill_literal_only_dynamic_source;
       }
       False() => {
+        let fill_ok: own Bool = ilt<u64>(index_value, 13_u64);
+        claim fill_in_range: fill_ok because "the fill walks 0..13 and breaks at 13";
         let byte: own u8 = literal_only_dynamic_input_bytes[index_value];
         set input[index_value] = byte;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
@@ -313,6 +319,9 @@ fn main() -> own unit allocates(heap), traps {
         break @check_fixed_match;
       }
       False() => {
+        let fixed_match_room: own u64 = len<u8>(fixed_match_output);
+        let fixed_match_ok: own Bool = ilt<u64>(fixed_match_index, fixed_match_room);
+        claim fixed_match_in_output: fixed_match_ok because "the walk stops at sixteen and the output holds sixteen bytes";
         let fixed_match_byte: own u8 = fixed_match_output[fixed_match_index];
         check ieq<u8>(fixed_match_byte, 97_u8) else trap "fixed overlapping match byte";
         set fixed_match_index = iadd.wrap<u64>(fixed_match_index, 1_u64);
@@ -350,6 +359,9 @@ fn main() -> own unit allocates(heap), traps {
         break @check_fixed_phrase;
       }
       False() => {
+        let fixed_phrase_room: own u64 = len<u8>(fixed_phrase_output);
+        let fixed_phrase_out_ok: own Bool = ilt<u64>(fixed_phrase_index, fixed_phrase_room);
+        claim fixed_phrase_in_output: fixed_phrase_out_ok because "the walk stops at seventeen and the output holds seventeen bytes";
         let fixed_phrase_actual: own u8 = fixed_phrase_output[fixed_phrase_index];
         let fixed_phrase_wanted: own u8 = fixed_phrase_expected[fixed_phrase_index];
         check ieq<u8>(fixed_phrase_actual, fixed_phrase_wanted) else trap "fixed distance-extra byte";
@@ -378,6 +390,9 @@ fn main() -> own unit allocates(heap), traps {
         break @check_dynamic_output;
       }
       False() => {
+        let dynamic_room: own u64 = len<u8>(dynamic_output);
+        let dynamic_out_ok: own Bool = ilt<u64>(dynamic_output_index, dynamic_room);
+        claim dynamic_in_output: dynamic_out_ok because "the walk stops at one hundred and the output holds one hundred bytes";
         let dynamic_actual: own u8 = dynamic_output[dynamic_output_index];
         let dynamic_wanted: own u8 = dynamic_expected_bytes[dynamic_output_index];
         check ieq<u8>(dynamic_actual, dynamic_wanted) else trap "dynamic output byte";
@@ -431,7 +446,12 @@ fn main() -> own unit allocates(heap), traps {
             }
             False() => {
               let output_index: own u64 = iadd.wrap<u64>(dynamic_match_base, dynamic_match_index);
+              let dynamic_match_room: own u64 = len<u8>(dynamic_match_output);
+              let dynamic_match_out_ok: own Bool = ilt<u64>(output_index, dynamic_match_room);
+              claim dynamic_match_in_output: dynamic_match_out_ok because "five hundred output bytes hold every repeated chunk";
               let dynamic_match_actual: own u8 = dynamic_match_output[output_index];
+              let dynamic_match_exp_ok: own Bool = ilt<u64>(dynamic_match_index, 100_u64);
+              claim dynamic_match_in_expected: dynamic_match_exp_ok because "the chunk walk stops at one hundred";
               let dynamic_match_wanted: own u8 = dynamic_expected_bytes[dynamic_match_index];
               check ieq<u8>(dynamic_match_actual, dynamic_match_wanted) else trap "dynamic match output byte";
               set dynamic_match_index = iadd.wrap<u64>(dynamic_match_index, 1_u64);
@@ -451,6 +471,8 @@ fn main() -> own unit allocates(heap), traps {
         break @fill_mixed_block_input;
       }
       False() => {
+        let mixed_fill_ok: own Bool = ilt<u64>(mixed_block_input_index, 78_u64);
+        claim mixed_fill_in_range: mixed_fill_ok because "the fill walks 0..78 and breaks at seventy-eight";
         let mixed_block_input_byte: own u8 = mixed_block_input_bytes[mixed_block_input_index];
         set mixed_block_input[mixed_block_input_index] = mixed_block_input_byte;
         set mixed_block_input_index = iadd.wrap<u64>(mixed_block_input_index, 1_u64);
@@ -477,7 +499,12 @@ fn main() -> own unit allocates(heap), traps {
         break @check_mixed_block_prefix;
       }
       False() => {
+        let mixed_room: own u64 = len<u8>(mixed_block_output);
+        let mixed_out_ok: own Bool = ilt<u64>(mixed_block_index, mixed_room);
+        claim mixed_in_output: mixed_out_ok because "the prefix walk stops at one hundred and the output holds one hundred five bytes";
         let mixed_block_actual: own u8 = mixed_block_output[mixed_block_index];
+        let mixed_exp_ok: own Bool = ilt<u64>(mixed_block_index, 100_u64);
+        claim mixed_in_expected: mixed_exp_ok because "the prefix walk stops at one hundred";
         let mixed_block_wanted: own u8 = dynamic_expected_bytes[mixed_block_index];
         check ieq<u8>(mixed_block_actual, mixed_block_wanted) else trap "mixed block prefix byte";
         set mixed_block_index = iadd.wrap<u64>(mixed_block_index, 1_u64);
@@ -518,6 +545,8 @@ fn main() -> own unit allocates(heap), traps {
         break @fill_dynamic_truncated;
       }
       False() => {
+        let truncated_fill_ok: own Bool = ilt<u64>(dynamic_truncated_index, 10_u64);
+        claim truncated_fill_in_range: truncated_fill_ok because "the fill walks 0..10 and breaks at ten";
         let dynamic_truncated_byte: own u8 = dynamic_input_bytes[dynamic_truncated_index];
         set dynamic_truncated_input[dynamic_truncated_index] = dynamic_truncated_byte;
         set dynamic_truncated_index = iadd.wrap<u64>(dynamic_truncated_index, 1_u64);

@@ -1,5 +1,5 @@
 fn main() -> own unit allocates(heap), traps {
-  doc "A runtime-length buffer is allocated, filled, folded, and released through checked indexed access.";
+  doc "A runtime-length buffer is allocated, filled, folded, and released; loop claims discharge its indexed access.";
   let values: own buffer<u64> = buffer_new<u64>(8_u64, 0_u64);
   let length: own u64 = len<u64>(values);
   let cursor: own u64 = 0_u64;
@@ -11,6 +11,8 @@ fn main() -> own unit allocates(heap), traps {
       False() => {
       }
     }
+    let fill_in_range: own Bool = ilt<u64>(cursor, length);
+    claim fill_cursor_in_range: fill_in_range because "the fill walks 0..length and breaks at length";
     set values[cursor] = iadd.wrap<u64>(cursor, 1_u64);
     set cursor = iadd.wrap<u64>(cursor, 1_u64);
   }
@@ -24,6 +26,8 @@ fn main() -> own unit allocates(heap), traps {
       False() => {
       }
     }
+    let fold_in_range: own Bool = ilt<u64>(cursor, length);
+    claim fold_cursor_in_range: fold_in_range because "the fold walks 0..length and breaks at length";
     let value: own u64 = values[cursor];
     set total = iadd.wrap<u64>(total, value);
     set cursor = iadd.wrap<u64>(cursor, 1_u64);

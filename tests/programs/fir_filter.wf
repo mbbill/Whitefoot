@@ -35,6 +35,8 @@ fn main() -> own unit traps {
         give 0.0_f64;
       }
     }
+    let write_ok: own Bool = ilt<u64>(filter.delay.cursor, 8_u64);
+    claim cursor_in_delay: write_ok because "the ring cursor wraps at seven";
     set filter.delay.samples[filter.delay.cursor] = sample;
     let tap: own u64 = 0_u64;
     let read_cursor: own u64 = filter.delay.cursor;
@@ -48,7 +50,11 @@ fn main() -> own unit traps {
         False() => {
         }
       }
+      let tap_ok: own Bool = ilt<u64>(tap, 8_u64);
+      claim tap_in_taps: tap_ok because "the tap walk stops at the eight-tap count";
       let coefficient: own f64 = filter.taps[tap];
+      let read_ok: own Bool = ilt<u64>(read_cursor, 8_u64);
+      claim read_cursor_in_delay: read_ok because "the ring read cursor wraps at seven";
       let delayed: own f64 = filter.delay.samples[read_cursor];
       let contribution: own f64 = fmul.strict<f64>(coefficient, delayed);
       set output = fadd.strict<f64>(output, contribution);

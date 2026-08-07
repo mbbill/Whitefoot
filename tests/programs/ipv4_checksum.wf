@@ -16,7 +16,11 @@ fn ipv4_checksum['r](header: own slice<'r, u8>) -> own u16 reads('r), traps {
       }
     }
     let low_offset: own u64 = iadd.wrap<u64>(offset, 1_u64);
+    let high_ok: own Bool = ilt<u64>(offset, length);
+    claim high_in_header: high_ok because "the word walk stops at the even header length";
     let high_byte: own u8 = header[offset];
+    let low_ok: own Bool = ilt<u64>(low_offset, length);
+    claim low_in_header: low_ok because "an even header holds the low byte of every word";
     let low_byte: own u8 = header[low_offset];
     let high_word: own u32 = cvt<u8, u32>(high_byte);
     let low_word: own u32 = cvt<u8, u32>(low_byte);
@@ -61,6 +65,8 @@ fn main() -> own unit allocates(heap), traps {
       False() => {
       }
     }
+    let copy_ok: own Bool = ilt<u64>(offset, 20_u64);
+    claim copy_in_header: copy_ok because "the copy walks 0..20 and breaks at twenty";
     let byte: own u8 = ipv4_header[offset];
     set runtime_header[offset] = byte;
     set offset = iadd.wrap<u64>(offset, 1_u64);

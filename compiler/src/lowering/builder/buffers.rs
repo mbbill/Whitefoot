@@ -62,7 +62,6 @@ impl IrBuilder<'_> {
         &mut self,
         root: &CheckedBufferRoot,
         offset: &CheckedExpression,
-        trap: &TrapSite,
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let buffer = self.buffer_root(root)?;
@@ -83,7 +82,6 @@ impl IrBuilder<'_> {
             IrOperation::BufferIndex {
                 buffer,
                 offset,
-                trap: trap.clone().into(),
                 target_domain: target_domain.into(),
             },
         )
@@ -97,8 +95,11 @@ impl IrBuilder<'_> {
     ) -> Result<IrValueId, LoweringFailure> {
         let element = lower_flat_element(target.root.element)?;
         let buffer = self.project_buffer_root(root, &target.root)?;
-        let offset = self.expression(&target.offset)?;
-        if self.value_type(offset)?
+        // The subscript's bounds obligation is discharged at the source
+        // level [OP-4]; the offset is consumed directly with no runtime
+        // branch.
+        let index = self.expression(&target.offset)?;
+        if self.value_type(index)?
             != (IrType::Integer {
                 width: 64,
                 signed: false,
@@ -106,15 +107,6 @@ impl IrBuilder<'_> {
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        let index = self.define(
-            IrType::GuardedBufferIndex { element },
-            IrOperation::BufferBoundsCheck {
-                buffer,
-                offset,
-                trap: target.trap.clone().into(),
-                target_domain: target.target_domain.into(),
-            },
-        )?;
         let value = self.expression(value)?;
         if self.value_type(value)? != element.ty() {
             return Err(LoweringFailure::InvalidCheckedProgram);

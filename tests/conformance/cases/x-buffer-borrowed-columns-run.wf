@@ -3,7 +3,9 @@ struct Columns {
   right: buffer<u64>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> own unit writes('r), traps {
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> own unit reads('r), writes('r), traps {
+  let left_room: own u64 = len<u64>(deref(left));
+  let right_room: own u64 = len<u64>(deref(right));
   let index_value: own u64 = 0_u64;
   loop @fill {
     let done: own Bool = ieq<u64>(index_value, length);
@@ -12,8 +14,12 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
         break @fill;
       }
       False() => {
+        let in_left: own Bool = ilt<u64>(index_value, left_room);
+        claim left_in_range: in_left because "fill walks 0..length and callers size the left column to length";
         set deref(left)[index_value] = index_value;
         let shifted: own u64 = iadd.wrap<u64>(index_value, 10_u64);
+        let in_right: own Bool = ilt<u64>(index_value, right_room);
+        claim right_in_range: in_right because "fill walks 0..length and callers size the right column to length";
         set deref(right)[index_value] = shifted;
         set index_value = iadd.wrap<u64>(index_value, 1_u64);
       }
@@ -23,6 +29,8 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
 }
 
 fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> own u64 reads('r), traps {
+  let left_room: own u64 = len<u64>(deref(left));
+  let right_room: own u64 = len<u64>(deref(right));
   let index_value: own u64 = 0_u64;
   let total: own u64 = 0_u64;
   loop @fold {
@@ -32,7 +40,11 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> o
         break @fold;
       }
       False() => {
+        let in_left: own Bool = ilt<u64>(index_value, left_room);
+        claim left_in_range: in_left because "fold walks 0..length over columns sized to length";
         let left_value: own u64 = deref(left)[index_value];
+        let in_right: own Bool = ilt<u64>(index_value, right_room);
+        claim right_in_range: in_right because "fold walks 0..length over columns sized to length";
         let right_value: own u64 = deref(right)[index_value];
         set total = iadd.wrap<u64>(total, left_value);
         set total = iadd.wrap<u64>(total, right_value);

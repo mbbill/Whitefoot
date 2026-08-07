@@ -44,13 +44,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// Emits a discharged source subscript read [OP-4]: the checker derived
+    /// the bounds obligation, so no compare, branch, or trap is emitted in
+    /// any build mode.
     pub(super) fn emit_array_index(
         &mut self,
         result: IrValueId,
         ty: IrType,
         root: IrArrayRoot,
         offset: IrValueId,
-        trap: &IrTrapSite,
         target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
         if target_domain != IrTargetDomainObligation::ElementAddress {
@@ -75,7 +77,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .ok_or(BackendFailure::InvalidIr)?
                 .ty(),
         };
-        let IrType::Array { element, length } = root_type else {
+        let IrType::Array { element, .. } = root_type else {
             return Err(BackendFailure::InvalidIr);
         };
         if element.ty() != ty {
@@ -84,20 +86,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 
         let array_type = llvm_type(self.program, root_type)?;
         let element_type = llvm_type(self.program, ty)?;
-        let in_range = self.next_temporary()?;
-        let trap_id = self.register_trap(trap)?;
-        writeln!(
-            self.output,
-            "  %{in_range} = icmp ult i64 {}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-            value_name(offset),
-            array_index_continue_label(result),
-            array_index_trap_label(result),
-            array_index_trap_label(result),
-            self.traps[trap_id].len(),
-            array_index_continue_label(result),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-
         let root_pointer = match root {
             IrArrayRoot::Value(value) => {
                 let slot = self.entry_slot(&array_type)?;
@@ -121,45 +109,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    pub(super) fn emit_array_bounds_check(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        offset: IrValueId,
-        trap: &IrTrapSite,
-        target_domain: IrTargetDomainObligation,
-    ) -> Result<(), BackendFailure> {
-        if target_domain != IrTargetDomainObligation::ElementAddress {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let IrType::GuardedArrayIndex { length } = ty else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        if self.function.value_type(offset)
-            != Some(IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let in_range = self.next_temporary()?;
-        let trap_id = self.register_trap(trap)?;
-        writeln!(
-            self.output,
-            "  %{in_range} = icmp ult i64 {}, {length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  {} = add i64 {}, 0",
-            value_name(offset),
-            array_bounds_continue_label(result),
-            array_bounds_trap_label(result),
-            array_bounds_trap_label(result),
-            self.traps[trap_id].len(),
-            array_bounds_continue_label(result),
-            value_name(result),
-            value_name(offset),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
+    /// Emits a discharged source subscript write [OP-4]: the index is the
+    /// plain `u64` offset, already proven in bounds by the checker.
     pub(super) fn emit_array_insertion(
         &mut self,
         result: IrValueId,
@@ -168,12 +119,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: IrValueId,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let IrType::Array { element, length } = ty else {
+        let IrType::Array { element, .. } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
         let element_type = element.ty();
         if self.function.value_type(aggregate) != Some(ty)
-            || self.function.value_type(index) != Some(IrType::GuardedArrayIndex { length })
+            || self.function.value_type(index)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
             || self.function.value_type(value) != Some(element_type)
         {
             return Err(BackendFailure::InvalidIr);

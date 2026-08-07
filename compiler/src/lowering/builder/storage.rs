@@ -43,7 +43,8 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                 }
                 collect_expression(value, bindings);
             }
-            CheckedStatement::Check { condition, .. } => collect_expression(condition, bindings),
+            CheckedStatement::Check { condition, .. }
+            | CheckedStatement::Claim { condition, .. } => collect_expression(condition, bindings),
             CheckedStatement::Match {
                 scrutinee, arms, ..
             }

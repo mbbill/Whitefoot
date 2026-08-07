@@ -589,10 +589,16 @@ fn main() -> own unit allocates(heap), traps {
   let byte: own u8 = bytes[1_u64];
   let word: own i64 = words[2_u64];
   let storage: own buffer<u16> = filled_buffer<u16>(length: 2_u64, value: 9_u16);
+  let storage_room: own u64 = len<u16>(storage);
+  let storage_ok: own Bool = ilt<u64>(1_u64, storage_room);
+  claim storage_sized: storage_ok because "filled_buffer allocates its length argument";
   let buffered: own u16 = storage[1_u64];
   let samples: own array<f32, 2> = filled_float_array<f32, 2>(value: 1.5_f32);
   let sample: own f32 = samples[1_u64];
   let weights: own buffer<f64> = filled_float_buffer<f64>(length: 2_u64, value: 2.5_f64);
+  let weights_room: own u64 = len<f64>(weights);
+  let weights_ok: own Bool = ilt<u64>(1_u64, weights_room);
+  claim weights_sized: weights_ok because "filled_float_buffer allocates its length argument";
   let weight: own f64 = weights[1_u64];
   check ieq<u8>(byte, 7_u8) else trap "generic array";
   check ieq<i64>(word, -5_i64) else trap "generic const array";

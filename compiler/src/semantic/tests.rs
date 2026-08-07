@@ -111,6 +111,47 @@ fn with_semantics<ResultValue>(
     run(check_semantics(resolved))
 }
 
+/// [`with_semantics`] through the test-only dark checker, which retains
+/// every [ENT-6] obligation and [CLM-2] claim disposition instead of
+/// rejecting at the first one, so engine unit tests can observe complete
+/// per-function derivations.
+fn with_semantics_dark<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let inputs = [SourceInput::new("test.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("semantic test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("semantic test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("semantic test source must classify");
+    };
+    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
+        panic!("semantic test source must parse");
+    };
+    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
+        panic!("semantic test derivation must finalize");
+    };
+    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
+        panic!("semantic test source must be canonical");
+    };
+    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
+        panic!("semantic test source must resolve");
+    };
+    run(super::check::check_semantics_dark(resolved))
+}
+
 fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
@@ -131,14 +172,55 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 }
 
 #[test]
-fn a_claim_statement_stops_as_an_unsupported_capability_not_a_rejection() {
+fn a_claim_statement_is_an_accepted_named_runtime_check() {
+    // CLM-1: a conforming claim is accepted and always retained. A
+    // constructed `True()` predicate has no comparison origin, so it is
+    // neither redundant nor refutable [CLM-2].
     let source = br#"fn main() -> own unit traps {
   let flag: own Bool = True();
   claim held: flag because "constructed true";
   return unit;
 }
 "#;
-    assert_unsupported(source, UnsupportedSemanticFeature::ClaimStatement);
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("expected acceptance, got {outcome:?}");
+        };
+        assert!(program.data.claim_advisories.is_empty());
+    });
+}
+
+#[test]
+fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
+    let source = br#"fn main() -> own unit traps {
+  let flag: own Bool = True();
+  claim held: flag because "first";
+  claim held: flag because "second";
+  return unit;
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Clm1,
+        SemanticIssueKind::DuplicateClaimName {
+            name: "held".to_owned(),
+        },
+    );
+}
+
+#[test]
+fn a_non_bool_claim_condition_is_a_clm1_rejection() {
+    let source = br#"fn main() -> own unit traps {
+  let value: own u64 = 3_u64;
+  claim held: value because "not a Bool";
+  return unit;
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Clm1,
+        SemanticIssueKind::InvalidCheckCondition,
+    );
 }
 
 #[test]
@@ -930,7 +1012,7 @@ fn main() -> own unit pure {
 /// the specification bytes for every citable rule.
 #[test]
 fn definition_rank_matches_the_active_specification() {
-    const ALL: [SemanticRule; 36] = [
+    const ALL: [SemanticRule; 39] = [
         SemanticRule::Form5,
         SemanticRule::Form7,
         SemanticRule::Type2,
@@ -950,6 +1032,7 @@ fn definition_rank_matches_the_active_specification() {
         SemanticRule::Stor1,
         SemanticRule::Stor5,
         SemanticRule::Op1,
+        SemanticRule::Op4,
         SemanticRule::Op6,
         SemanticRule::Op5,
         SemanticRule::Fn1,
@@ -967,6 +1050,8 @@ fn definition_rank_matches_the_active_specification() {
         SemanticRule::Give1,
         SemanticRule::Eff1,
         SemanticRule::Eff2,
+        SemanticRule::Clm1,
+        SemanticRule::Clm2,
     ];
     let definition_line = |rule: SemanticRule| {
         let prefix = format!("[{}]", rule.id());

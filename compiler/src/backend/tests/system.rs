@@ -86,6 +86,8 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
         False() => {
         }
       }
+      let sum_ok: own Bool = ilt<u64>(cursor, length);
+      claim cursor_in_bytes: sum_ok because "the sum stops at the copied length";
       let byte: own u8 = bytes[cursor];
       let widened: own u64 = cvt<u8, u64>(byte);
       set total = iadd.wrap<u64>(total, widened);

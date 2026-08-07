@@ -106,13 +106,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// Emits a discharged source subscript read [OP-4]: the checker derived
+    /// the bounds obligation, so no compare, branch, or trap is emitted in
+    /// any build mode.
     pub(super) fn emit_slice_index(
         &mut self,
         result: IrValueId,
         ty: IrType,
         slice: IrValueId,
         offset: IrValueId,
-        trap: &IrTrapSite,
         target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
         if target_domain != IrTargetDomainObligation::ElementAddress {
@@ -132,21 +134,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let descriptor_type = llvm_type(self.program, slice_type)?;
         let element_type = llvm_type(self.program, ty)?;
-        let length = self.next_temporary()?;
-        let in_range = self.next_temporary()?;
         let pointer = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
-        let trap_id = self.register_trap(trap)?;
         writeln!(
             self.output,
-            "  %{length} = extractvalue {descriptor_type} {}, 1\n  %{in_range} = icmp ult i64 {}, %{length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
-            value_name(slice),
-            value_name(offset),
-            slice_index_continue_label(result),
-            slice_index_trap_label(result),
-            slice_index_trap_label(result),
-            self.traps[trap_id].len(),
-            slice_index_continue_label(result),
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
             value_name(slice),
             value_name(offset),
             value_name(result),
@@ -170,12 +162,4 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
-}
-
-fn slice_index_trap_label(value: IrValueId) -> String {
-    format!("slice.index.trap.v{}", value.ordinal())
-}
-
-pub(super) fn slice_index_continue_label(value: IrValueId) -> String {
-    format!("slice.index.cont.v{}", value.ordinal())
 }

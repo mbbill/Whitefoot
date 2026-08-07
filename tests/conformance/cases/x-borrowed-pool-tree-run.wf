@@ -17,7 +17,13 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
       }
       False() => {
         let slot: own u64 = deref(pool).count;
+        let left_room: own u64 = len<u64>(deref(pool).left);
+        let left_ok: own Bool = ilt<u64>(slot, left_room);
+        claim leaf_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
         set deref(pool).left[slot] = 0_u64;
+        let right_room: own u64 = len<u64>(deref(pool).right);
+        let right_ok: own Bool = ilt<u64>(slot, right_room);
+        claim leaf_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
         set deref(pool).right[slot] = 0_u64;
         set deref(pool).count = iadd.trap<u64>(slot, 1_u64);
         set index_value = iadd.trap<u64>(index_value, 1_u64);
@@ -46,7 +52,13 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
               let left_child: own u64 = iadd.trap<u64>(start, doubled);
               let right_child: own u64 = iadd.trap<u64>(left_child, 1_u64);
               let slot: own u64 = deref(pool).count;
+              let left_room: own u64 = len<u64>(deref(pool).left);
+              let left_ok: own Bool = ilt<u64>(slot, left_room);
+              claim parent_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
               set deref(pool).left[slot] = left_child;
+              let right_room: own u64 = len<u64>(deref(pool).right);
+              let right_ok: own Bool = ilt<u64>(slot, right_room);
+              claim parent_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
               set deref(pool).right[slot] = right_child;
               set deref(pool).count = iadd.trap<u64>(slot, 1_u64);
               set parent = iadd.trap<u64>(parent, 1_u64);
@@ -62,6 +74,9 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
 }
 
 fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
+  let left_room: own u64 = len<u64>(deref(pool).left);
+  let left_ok: own Bool = ilt<u64>(root, left_room);
+  claim root_reads_left: left_ok because "build returns indices inside the pool";
   let left_child: own u64 = deref(pool).left[root];
   let leaf: own Bool = ieq<u64>(left_child, 0_u64);
   match leaf {
@@ -71,6 +86,9 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
     False() => {
     }
   }
+  let right_room: own u64 = len<u64>(deref(pool).right);
+  let right_ok: own Bool = ilt<u64>(root, right_room);
+  claim root_reads_right: right_ok because "build returns indices inside the pool";
   let right_child: own u64 = deref(pool).right[root];
   let left_count: own u64 = checksum<'r>(pool: pool, root: left_child);
   let right_count: own u64 = checksum<'r>(pool: pool, root: right_child);

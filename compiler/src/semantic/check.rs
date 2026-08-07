@@ -24,7 +24,7 @@ use super::entailment::{EntailmentCallee, EntailmentContext, analyze_function};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedContract, CheckedExpression,
     CheckedFunction, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
-    CheckedSliceOrigin, CheckedType, FunctionId, NominalId,
+    CheckedSliceOrigin, CheckedType, ClaimAdvisory, FunctionId, NominalId,
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
@@ -332,6 +332,10 @@ enum PreludeType {
 
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+    /// Whether an undischarged obligation or refuted claim rejects [OP-4,
+    /// CLM-2]. Always true outside `check_semantics_dark`, the test-only
+    /// observability hook.
+    reject_entailment: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -363,7 +367,28 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    let result = Checker::new(&resolved).and_then(|mut checker| checker.check_program());
+    check_semantics_with(resolved, true)
+}
+
+/// [`check_semantics`] with the [OP-4]/[CLM-2] entailment rejection disabled,
+/// so unit tests can observe every retained obligation and claim disposition
+/// of one function, not only the first rejecting one. This is a test-only
+/// observability hook, never a compilation mode: acceptance behavior has
+/// exactly one path.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(resolved, false)
+}
+
+fn check_semantics_with<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+    reject_entailment: bool,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    let result =
+        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program());
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
             _resolved: resolved,
@@ -378,9 +403,11 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+        reject_entailment: bool,
     ) -> Result<Self, CheckStop> {
         Ok(Self {
             resolved,
+            reject_entailment,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             nominal_nodes: Vec::new(),
@@ -446,6 +473,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let (conformances, law_derivations) =
             self.check_conformances_and_laws(&items, &functions)?;
+        // The required non-rejecting [CLM-2] redundancy advisories, one per
+        // redundant claim, in function then document order.
+        let mut claim_advisories = Vec::new();
+        for function in &functions {
+            for claim in &function.entailment.claims {
+                if claim.disposition == super::entailment::ClaimDisposition::Redundant {
+                    claim_advisories.push(ClaimAdvisory {
+                        function: function.name.clone(),
+                        name: claim.name.clone(),
+                    });
+                }
+            }
+        }
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
             executable_nominal_count,
@@ -460,6 +500,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             law_derivations,
             main,
             entry,
+            claim_advisories,
         })
     }
 
@@ -584,10 +625,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
 
+        let mut claim_names = Vec::new();
         let mut counters = ControlCounters {
             next_binding: &mut next_binding,
             next_loop: &mut next_loop,
             binding_names: &mut binding_names,
+            claim_names: &mut claim_names,
         };
         let parameter_bindings = bindings.clone();
         let requires = if let Some(node) = self
@@ -709,9 +752,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             body: checked.statements,
             entailment: super::entailment::FunctionEntailment::default(),
         };
-        // The dark [ENT] engine runs behind the accepted path: it computes
-        // the closed fact states and obligation dispositions and retains
-        // them, with zero acceptance impact [ENT-1].
+        // The [ENT] engine is acceptance-bearing [ENT-1]: it computes the
+        // closed fact states, obligation dispositions, and claim lifecycle
+        // dispositions. An undischarged obligation is the [OP-4] rejection
+        // with its residual rendered exactly per [ENT-6]; a refuted claim is
+        // the [CLM-2] rejection. The first offending node in document order
+        // is cited; redundancy advisories never reject and are collected at
+        // the program level.
         if let Some(callees) = callees {
             function.entailment = analyze_function(
                 &function,
@@ -722,7 +769,82 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     binding_names: &binding_names,
                 },
             );
+            if self.reject_entailment {
+                self.entailment_rejection(&function)?;
+            }
         }
         Ok(function)
+    }
+
+    /// Rejects a checked function whose entailment summary contains an
+    /// undischarged bounds obligation [OP-4] or a refuted claim [CLM-2],
+    /// citing the first offending node in document order.
+    fn entailment_rejection(&self, function: &CheckedFunction) -> Result<(), CheckStop> {
+        let obligation = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| !outcome.discharged)
+            .min_by_key(|outcome| outcome.node_path.components());
+        let refuted = function
+            .entailment
+            .claims
+            .iter()
+            .filter_map(|outcome| match &outcome.disposition {
+                super::entailment::ClaimDisposition::Refuted {
+                    predicate,
+                    negation,
+                } => Some((outcome, predicate, negation)),
+                _ => None,
+            })
+            .min_by_key(|(outcome, ..)| outcome.node_path.components());
+        let obligation_first = match (obligation, refuted) {
+            (None, None) => return Ok(()),
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (Some(obligation), Some((claim, ..))) => {
+                obligation.node_path.components() <= claim.node_path.components()
+            }
+        };
+        if obligation_first {
+            let outcome = obligation.ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let residual = outcome
+                .residual
+                .clone()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let node = self
+                .tree
+                .node_with_path(&outcome.node_path)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            return Err(CheckStop::Issue(SemanticIssue {
+                rule: SemanticRule::Op4,
+                location: SemanticLocation::SourceNode(
+                    outcome.node_path.clone(),
+                    self.tree.coordinate(node)?,
+                ),
+                kind: SemanticIssueKind::UndischargedBoundsObligation {
+                    residual,
+                    mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                },
+            }));
+        }
+        let (outcome, predicate, negation) =
+            refuted.ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let node = self
+            .tree
+            .node_with_path(&outcome.node_path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Err(CheckStop::Issue(SemanticIssue {
+            rule: SemanticRule::Clm2,
+            location: SemanticLocation::SourceNode(
+                outcome.node_path.clone(),
+                self.tree.coordinate(node)?,
+            ),
+            kind: SemanticIssueKind::RefutedClaim(Box::new(crate::RefutedClaimDetail {
+                name: outcome.name.clone(),
+                predicate: predicate.clone(),
+                negation: negation.clone(),
+            })),
+        }))
     }
 }

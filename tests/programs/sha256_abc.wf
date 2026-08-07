@@ -61,6 +61,8 @@ fn sha256_abc_word_zero() -> own u32 traps {
       False() => {
       }
     }
+    let copy_in_range: own Bool = ilt<u64>(copy_index, 16_u64);
+    claim copy_index_in_block: copy_in_range because "the copy walks 0..16 and breaks at sixteen";
     let source_word: own u32 = sha256_abc_block[copy_index];
     set schedule[copy_index] = source_word;
     set copy_index = iadd.wrap<u64>(copy_index, 1_u64);
@@ -75,6 +77,10 @@ fn sha256_abc_word_zero() -> own u32 traps {
       False() => {
       }
     }
+    let extend_lower: own Bool = ige<u64>(extend_index, 16_u64);
+    claim extend_index_from_sixteen: extend_lower because "the extension starts at sixteen and only grows";
+    let extend_upper: own Bool = ilt<u64>(extend_index, 64_u64);
+    claim extend_index_in_schedule: extend_upper because "the extension walks 16..64 and breaks at sixty-four";
     let index_minus_two: own u64 = isub.wrap<u64>(extend_index, 2_u64);
     let word_minus_two: own u32 = schedule[index_minus_two];
     let sigma_one: own u32 = sha256_small_one(word: word_minus_two);
@@ -111,6 +117,8 @@ fn sha256_abc_word_zero() -> own u32 traps {
     }
     let big_one: own u32 = sha256_big_one(word: e);
     let choose: own u32 = sha256_choose(x: e, y: f, z: g);
+    let round_in_range: own Bool = ilt<u64>(round, 64_u64);
+    claim round_in_schedule: round_in_range because "the compression walks 0..64 and breaks at sixty-four";
     let constant: own u32 = sha256_round_constants[round];
     let schedule_word: own u32 = schedule[round];
     let temp_one_a: own u32 = iadd.wrap<u32>(h, big_one);

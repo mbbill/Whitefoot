@@ -9,6 +9,8 @@ fn crc32(bytes: own buffer<u8>) -> own u32 traps {
         break @bytes;
       }
       False() => {
+        let in_range: own Bool = ilt<u64>(offset, length);
+        claim offset_in_range: in_range because "the byte walk stops at length";
         let byte: own u8 = bytes[offset];
         let word: own u32 = cvt<u8, u32>(byte);
         set crc = ixor<u32>(crc, word);

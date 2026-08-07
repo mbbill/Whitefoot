@@ -1,4 +1,8 @@
-fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit writes('l 'd), traps {
+fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit reads('l 'd), writes('l 'd), traps requires {
+  let literal_room: own u64 = len<u8>(deref(literal_lengths));
+  let enough_literals: own Bool = ile<u64>(literal_count, literal_room);
+  check enough_literals else trap "literal lengths shorter than literal_count";
+} {
   let is_literal: own Bool = ilt<u64>(position, literal_count);
   match is_literal {
     True() => {
@@ -6,6 +10,9 @@ fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_l
     }
     False() => {
       let distance_index: own u64 = isub.wrap<u64>(position, literal_count);
+      let distance_room: own u64 = len<u8>(deref(distance_lengths));
+      let distance_ok: own Bool = ilt<u64>(distance_index, distance_room);
+      claim distance_position_in_lengths: distance_ok because "callers stop at literal_count plus the distance count";
       set deref(distance_lengths)[distance_index] = value;
     }
   }
@@ -67,6 +74,8 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
         break @read_code_lengths;
       }
       False() => {
+        let order_ok: own Bool = ilt<u64>(code_index, 19_u64);
+        claim code_index_in_order: order_ok because "the header admits at most nineteen code lengths";
         let ordered_symbol_byte: own u8 = code_length_order[code_index];
         let ordered_symbol: own u64 = cvt<u8, u64>(ordered_symbol_byte);
         let length_bits: own u64 = 0_u64;
@@ -82,6 +91,9 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
         }
         match cvt<u64, u8>(length_bits) {
           Ok(value: length) => {
+            let code_room: own u64 = len<u8>(code_lengths);
+            let ordered_ok: own Bool = ilt<u64>(ordered_symbol, code_room);
+            claim ordered_symbol_in_lengths: ordered_ok because "every order entry stays below nineteen";
             set code_lengths[ordered_symbol] = length;
           }
           Err(error: conversion_error) => {
@@ -264,6 +276,9 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
       }
     }
   }
+  let end_room: own u64 = len<u8>(literal_lengths);
+  let end_ok: own Bool = ilt<u64>(256_u64, end_room);
+  claim end_symbol_in_literals: end_ok because "the literal table holds at least 257 lengths";
   let end_length: own u8 = literal_lengths[256_u64];
   let missing_end: own Bool = ieq<u8>(end_length, 0_u8);
   match missing_end {

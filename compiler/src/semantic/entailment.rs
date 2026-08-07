@@ -1,24 +1,25 @@
 //! The L0 entailment fragment [ENT-1..ENT-6]: a closed, deterministic,
 //! search-free derivation system over difference-bound facts.
 //!
-//! This engine runs dark in this slice: [`analyze_function`] computes the
-//! closed fact state along the [FN-1] structural graph and the [ENT-6]
-//! disposition of every bounds obligation, and the checker retains the
-//! summary on the checked function without reading it for acceptance. No
-//! diagnostic, acceptance, or lowering behavior consumes it yet; [OP-4]
-//! discharge behavior is a later slice.
+//! The engine is acceptance-bearing: [`analyze_function`] computes the
+//! closed fact state along the [FN-1] structural graph, the [ENT-6]
+//! disposition of every bounds obligation, and the [CLM-2] lifecycle
+//! disposition of every claim. The checker rejects a function whose
+//! summary contains an undischarged obligation ([OP-4], with the residual
+//! rendered exactly per [ENT-6]) or a refuted claim ([CLM-2]), reports a
+//! non-rejecting redundancy advisory for each redundant claim, and retains
+//! the summary on the checked function [DIAG-2].
 //!
 //! Judgments are per function body [ENT-2]; the [ENT-3] S4 `requires`
 //! relation is the one fact that enters from outside the body, and no fact
 //! crosses a call boundary.
 //!
 //! Implemented fact sources: S1 branch and match facts with both
-//! comparison-origin shapes, S2 check facts, S4 requires facts, S5 copy and
-//! conversion equalities, S6 length facts, S7 constant-offset arithmetic, S9
-//! const-array element ranges, and S10 boundary count facts. S3 (claim facts)
-//! awaits a checked representation of `claim`, which is an unsupported
-//! semantic capability in this compiler; the label S8 is retired, not reused
-//! [ENT-3]. An absent source only under-derives, which is the version-monotone
+//! comparison-origin shapes, S2 check facts, S3 claim facts, S4 requires
+//! facts, S5 copy and conversion equalities, S6 length facts, S7
+//! constant-offset arithmetic, S9 const-array element ranges, and S10
+//! boundary count facts; the label S8 is retired, not reused [ENT-3]. An
+//! absent source only under-derives, which is the version-monotone
 //! direction [ENT-1].
 
 mod flow;
@@ -93,11 +94,43 @@ pub(crate) struct ObligationOutcome {
     pub(crate) residual: Option<String>,
 }
 
-/// Retained dark summary of one function's entailment analysis.
+/// [CLM-2] lifecycle disposition of one claim, judged at its statement node
+/// with the fact state before the claim's own passed fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimDisposition {
+    /// The predicate has no comparison origin, or the state derives neither
+    /// it nor its negation: an ordinary retained runtime check.
+    Retained,
+    /// The closed state derives the predicate: accepted, still executed,
+    /// reported through the required non-rejecting advisory.
+    Redundant,
+    /// The non-contradictory closed state derives the exact negation: a
+    /// compile-time rejection citing CLM-2.
+    Refuted {
+        /// The predicate as a normalized relation.
+        predicate: String,
+        /// The derived negation.
+        negation: String,
+    },
+}
+
+/// [CLM-2] outcome of one claim statement, judged at its node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimOutcome {
+    /// The `claim_stmt` node, by its trap record's path.
+    pub(crate) node_path: NodePath,
+    /// The claim's written name.
+    pub(crate) name: String,
+    pub(crate) disposition: ClaimDisposition,
+}
+
+/// Retained summary of one function's entailment analysis [DIAG-2].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailment {
     /// Bounds obligations in deterministic source walk order.
     pub(crate) obligations: Vec<ObligationOutcome>,
+    /// Claim lifecycle outcomes in deterministic source walk order.
+    pub(crate) claims: Vec<ClaimOutcome>,
 }
 
 /// Computes the L0 entailment analysis of one checked function body.

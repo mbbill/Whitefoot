@@ -431,6 +431,20 @@ impl<'program> IrBuilder<'program> {
                             trap: trap.clone().into(),
                         });
                 }
+                // A claim executes exactly as a check; its trap record
+                // carries rule CLM-1 and the claim name [DIAG-3]. The
+                // justification is compile-time data and lowers to nothing.
+                CheckedStatement::Claim {
+                    condition, trap, ..
+                } => {
+                    let condition = self.expression(condition)?;
+                    self.current_block_mut()?
+                        .instructions
+                        .push(IrInstruction::Check {
+                            condition,
+                            trap: trap.clone().into(),
+                        });
+                }
                 CheckedStatement::Return { value, drops } => {
                     let value = self.expression(value)?;
                     let drops = self.lower_drops(drops)?;
@@ -883,8 +897,8 @@ impl<'program> IrBuilder<'program> {
                 element_type,
                 length,
                 offset,
-                trap,
                 target_domain,
+                ..
             } => {
                 let (root, ty) = self.array_root(root)?;
                 let IrType::Array {
@@ -914,7 +928,6 @@ impl<'program> IrBuilder<'program> {
                     IrOperation::ArrayIndex {
                         root,
                         offset,
-                        trap: trap.clone().into(),
                         target_domain: (*target_domain).into(),
                     },
                 )
@@ -930,9 +943,9 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::BufferIndex {
                 root,
                 offset,
-                trap,
                 target_domain,
-            } => self.lower_buffer_index(root, offset, trap, *target_domain),
+                ..
+            } => self.lower_buffer_index(root, offset, *target_domain),
             CheckedExpression::SliceOf {
                 source, element, ..
             } => self.lower_slice_of(source, *element),
@@ -940,9 +953,9 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::SliceIndex {
                 root,
                 offset,
-                trap,
                 target_domain,
-            } => self.lower_slice_index(root, offset, trap, *target_domain),
+                ..
+            } => self.lower_slice_index(root, offset, *target_domain),
             CheckedExpression::BoxNew { nominal, value } => {
                 let value = self.expression(value)?;
                 let nominal = IrNominalId(nominal.0);
@@ -1132,8 +1145,11 @@ impl<'program> IrBuilder<'program> {
                 {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let offset = self.expression(&target.offset)?;
-                if self.value_type(offset)?
+                // The subscript's bounds obligation is discharged at the
+                // source level [OP-4]; the offset is consumed directly with
+                // no runtime branch.
+                let index = self.expression(&target.offset)?;
+                if self.value_type(index)?
                     != (IrType::Integer {
                         width: 64,
                         signed: false,
@@ -1141,14 +1157,6 @@ impl<'program> IrBuilder<'program> {
                 {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                let index = self.define(
-                    IrType::GuardedArrayIndex { length },
-                    IrOperation::ArrayBoundsCheck {
-                        offset,
-                        trap: target.trap.clone().into(),
-                        target_domain: target.target_domain.into(),
-                    },
-                )?;
                 let value = self.expression(value)?;
                 if self.value_type(value)? != element.ty() {
                     return Err(LoweringFailure::InvalidCheckedProgram);

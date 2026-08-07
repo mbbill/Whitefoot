@@ -13,6 +13,9 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
         break @transform;
       }
       False() => {
+        let input_room: own u64 = len<u8>(input);
+        let read_ok: own Bool = ilt<u64>(offset, input_room);
+        claim offset_in_input: read_ok because "the walk stops at the input length";
         let byte: own u8 = input[offset];
         let zero: own Bool = ieq<u8>(byte, 0_u8);
         match zero {
@@ -22,6 +25,9 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
           }
           False() => {
             let transformed: own u8 = iadd.wrap<u8>(byte, 1_u8);
+            let output_room: own u64 = len<u8>(output);
+            let write_ok: own Bool = ilt<u64>(offset, output_room);
+            claim offset_in_output: write_ok because "the output was allocated with the input length";
             set output[offset] = transformed;
             set offset = iadd.wrap<u64>(offset, 1_u64);
           }
@@ -43,7 +49,11 @@ fn main() -> own unit allocates(heap), traps {
   match move success {
     Ok(value: transformed) => {
       let length: own u64 = len<u8>(transformed);
+      let first_ok: own Bool = ilt<u64>(0_u64, length);
+      claim first_in_transformed: first_ok because "a three-byte input transforms to three bytes";
       let first: own u8 = transformed[0_u64];
+      let middle_ok: own Bool = ilt<u64>(1_u64, length);
+      claim middle_in_transformed: middle_ok because "a three-byte input transforms to three bytes";
       let middle: own u8 = transformed[1_u64];
       check ieq<u64>(length, 3_u64) else trap "success length";
       check ieq<u8>(first, 2_u8) else trap "success first byte";

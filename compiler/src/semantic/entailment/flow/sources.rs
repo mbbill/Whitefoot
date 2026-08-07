@@ -8,12 +8,9 @@
 //! source's stated form contributes nothing, which only under-derives, the
 //! version-monotone direction [ENT-1].
 //!
-//! Implemented here: S1 (through the parent's arm entry), S2, S4, S5, S6, S7,
-//! S9, and S10. S3 (claim facts) has no checked representation yet — a
-//! `claim_stmt` stops as an unsupported semantic capability before the checked
-//! tree exists — so its one clause is written where `check`'s is, ready for
-//! the slice that gives claim statements semantics. The label S8 is retired,
-//! not reused [ENT-3].
+//! Implemented here: S1 (through the parent's arm entry), S2 and S3 (one
+//! shared clause: a passed `check` or `claim` condition), S4, S5, S6, S7,
+//! S9, and S10. The label S8 is retired, not reused [ENT-3].
 
 use std::collections::HashMap;
 
@@ -40,15 +37,12 @@ const BOUNDARY_COUNTS: [(&str, &str, &str); 4] = [
 
 impl Analyzer<'_, '_> {
     // ------------------------------------------------------------------
-    // S2 check facts (and the S3 clause `claim` will share)
+    // S2 check facts and S3 claim facts
     // ------------------------------------------------------------------
 
-    /// [ENT-3] S2: after `check e else trap "…"` whose `e` has comparison
-    /// origin R, R holds on the normal continuation.
-    ///
-    /// S3 states the same establishment for a conforming `claim` whose
-    /// predicate has comparison origin; when claim statements reach the
-    /// checked tree, that arm calls exactly this.
+    /// [ENT-3] S2/S3: after `check e else trap "…"` or `claim n: e because
+    /// "…"` whose `e` has comparison origin R, R holds on the normal
+    /// continuation.
     pub(super) fn establish_passed_condition(
         &mut self,
         condition: &CheckedExpression,

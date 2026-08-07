@@ -8,6 +8,9 @@ fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> reads
         break @scan;
       }
       False() => {
+        let room: own u64 = len<u8>(deref(input));
+        let in_range: own Bool = ilt<u64>(offset, room);
+        claim offset_in_range: in_range because "the scan stops at the buffer length";
         let byte: own u8 = deref(input)[offset];
         let found: own Bool = ieq<u8>(byte, needle);
         match found {

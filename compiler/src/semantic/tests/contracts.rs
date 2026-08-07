@@ -500,6 +500,9 @@ fn positional_region_alpha_equality_includes_slice_type_regions() {
 }
 
 fn read_first['input](bytes: own slice<'input, u8>) -> own u8 reads('input), traps {
+  let room: own u64 = len<u8>(bytes);
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim nonempty: ok because "conforming callers pass a nonempty slice";
   return bytes[0_u64];
 }
 

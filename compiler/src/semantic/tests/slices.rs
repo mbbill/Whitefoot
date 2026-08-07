@@ -149,7 +149,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
         SemanticIssueKind::BorrowConflict,
     );
 
-    let ended_region = br#"fn main() -> own unit traps {
+    let ended_region = br#"fn main() -> own unit pure {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   region 'view {
     let view: own slice<'view, u8> = slice_of<'view, u8>(&'view values);
@@ -185,7 +185,7 @@ fn slice_loans_follow_structured_break_region_exits() {
         SemanticIssueKind::BorrowConflict,
     );
 
-    let ended_on_break = br#"fn main() -> own unit traps {
+    let ended_on_break = br#"fn main() -> own unit pure {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   loop @once {
     region 'view {
@@ -500,12 +500,18 @@ fn main() -> own unit traps {
   region 'view {
     let pass_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let passed: own slice<'view, u8> = pass<'view>(value: move pass_source);
+    let passed_room: own u64 = len<u8>(passed);
+    let passed_ok: own Bool = ilt<u64>(0_u64, passed_room);
+    claim passed_sized: passed_ok because "pass returns the two-byte view of left";
     let passed_value: own u8 = passed[0_u64];
     check ieq<u8>(passed_value, 11_u8) else trap "returned slice pass through";
     let left_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
     let right_source: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
     let take_left: own Bool = False();
     let selected: own slice<'view, u8> = choose<'view>(take_left: take_left, left: move left_source, right: move right_source);
+    let selected_room: own u64 = len<u8>(selected);
+    let selected_ok: own Bool = ilt<u64>(0_u64, selected_room);
+    claim selected_sized: selected_ok because "choose returns one two-byte view";
     let selected_value: own u8 = selected[0_u64];
     check ieq<u8>(selected_value, 29_u8) else trap "returned slice choice";
   }
@@ -553,7 +559,7 @@ fn main() -> own unit traps {
                     ..
                 },
             ..
-        } = &body[7]
+        } = &body[10]
         else {
             panic!("choice call must retain every permitted slice origin");
         };
@@ -576,6 +582,9 @@ fn returned_slice_origins_drive_effects_and_alias_conflicts() {
 
 fn first['r](value: own slice<'r, u8>) -> own u8 reads('r), traps {
   let returned: own slice<'r, u8> = pass<'r>(value: move value);
+  let room: own u64 = len<u8>(returned);
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim nonempty: ok because "pass returns the caller's nonempty view";
   return returned[0_u64];
 }
 
@@ -677,6 +686,9 @@ fn main() -> own unit pure {
     );
 
     let borrowed_input = br#"fn first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
+  let room: own u64 = len<u8>(deref(value));
+  let ok: own Bool = ilt<u64>(0_u64, room);
+  claim nonempty: ok because "callers pass a nonempty view";
   return deref(value)[0_u64];
 }
 

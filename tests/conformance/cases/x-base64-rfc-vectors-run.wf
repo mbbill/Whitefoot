@@ -7,6 +7,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
   let required_covered_input: own u64 = imul.wrap<u64>(required_out_groups, 3_u64);
   check ile<u64>(required_input_length, required_covered_input) else trap "base64 output capacity";
 } {
+  let out_room: own u64 = len<u8>(deref(out));
   let input_length: own u64 = len<u8>(input);
   let input_offset: own u64 = 0_u64;
   let output_offset: own u64 = 0_u64;
@@ -20,8 +21,14 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
       False() => {
         let input_one: own u64 = iadd.wrap<u64>(input_offset, 1_u64);
         let input_two: own u64 = iadd.wrap<u64>(input_offset, 2_u64);
+        let group_zero_ok: own Bool = ilt<u64>(input_offset, input_length);
+        claim group_zero_in_input: group_zero_ok because "a full group leaves at least three input bytes";
         let byte_zero: own u8 = input[input_offset];
+        let group_one_ok: own Bool = ilt<u64>(input_one, input_length);
+        claim group_one_in_input: group_one_ok because "a full group leaves at least three input bytes";
         let byte_one: own u8 = input[input_one];
+        let group_two_ok: own Bool = ilt<u64>(input_two, input_length);
+        claim group_two_in_input: group_two_ok because "a full group leaves at least three input bytes";
         let byte_two: own u8 = input[input_two];
         let word_zero: own u32 = cvt<u8, u32>(byte_zero);
         let word_one: own u32 = cvt<u8, u32>(byte_one);
@@ -41,16 +48,32 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
         let alphabet_two: own u64 = cvt<u32, u64>(sextet_two);
         let sextet_three: own u32 = iand<u32>(combined, 63_u32);
         let alphabet_three: own u64 = cvt<u32, u64>(sextet_three);
+        let alphabet_zero_ok: own Bool = ilt<u64>(alphabet_zero, 64_u64);
+        claim alphabet_zero_in_table: alphabet_zero_ok because "a six-bit mask stays below the table length";
         let encoded_zero: own u8 = b64[alphabet_zero];
+        let alphabet_one_ok: own Bool = ilt<u64>(alphabet_one, 64_u64);
+        claim alphabet_one_in_table: alphabet_one_ok because "a six-bit mask stays below the table length";
         let encoded_one: own u8 = b64[alphabet_one];
+        let alphabet_two_ok: own Bool = ilt<u64>(alphabet_two, 64_u64);
+        claim alphabet_two_in_table: alphabet_two_ok because "a six-bit mask stays below the table length";
         let encoded_two: own u8 = b64[alphabet_two];
+        let alphabet_three_ok: own Bool = ilt<u64>(alphabet_three, 64_u64);
+        claim alphabet_three_in_table: alphabet_three_ok because "a six-bit mask stays below the table length";
         let encoded_three: own u8 = b64[alphabet_three];
         let output_one: own u64 = iadd.wrap<u64>(output_offset, 1_u64);
         let output_two: own u64 = iadd.wrap<u64>(output_offset, 2_u64);
         let output_three: own u64 = iadd.wrap<u64>(output_offset, 3_u64);
+        let group_out_zero_ok: own Bool = ilt<u64>(output_offset, out_room);
+        claim group_out_zero_in_output: group_out_zero_ok because "the requires clause sizes the output for every group";
         set deref(out)[output_offset] = encoded_zero;
+        let group_out_one_ok: own Bool = ilt<u64>(output_one, out_room);
+        claim group_out_one_in_output: group_out_one_ok because "the requires clause sizes the output for every group";
         set deref(out)[output_one] = encoded_one;
+        let group_out_two_ok: own Bool = ilt<u64>(output_two, out_room);
+        claim group_out_two_in_output: group_out_two_ok because "the requires clause sizes the output for every group";
         set deref(out)[output_two] = encoded_two;
+        let group_out_three_ok: own Bool = ilt<u64>(output_three, out_room);
+        claim group_out_three_in_output: group_out_three_ok because "the requires clause sizes the output for every group";
         set deref(out)[output_three] = encoded_three;
         set input_offset = iadd.wrap<u64>(input_offset, 3_u64);
         set output_offset = iadd.wrap<u64>(output_offset, 4_u64);
@@ -61,6 +84,8 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
   let one_byte_tail: own Bool = ieq<u64>(tail_length, 1_u64);
   match one_byte_tail {
     True() => {
+      let tail_one_in_ok: own Bool = ilt<u64>(input_offset, input_length);
+      claim tail_one_in_input: tail_one_in_ok because "a one-byte tail leaves one input byte";
       let tail_one_byte: own u8 = input[input_offset];
       let tail_one_word: own u32 = cvt<u8, u32>(tail_one_byte);
       let tail_one_first_shifted: own u32 = ishr.wrap<u32>(tail_one_word, 2_u32);
@@ -69,14 +94,26 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
       let tail_one_second_shifted: own u32 = ishl.wrap<u32>(tail_one_word, 4_u32);
       let tail_one_second_sextet: own u32 = iand<u32>(tail_one_second_shifted, 63_u32);
       let tail_one_second_index: own u64 = cvt<u32, u64>(tail_one_second_sextet);
+      let tail_one_first_ok: own Bool = ilt<u64>(tail_one_first_index, 64_u64);
+      claim tail_one_first_in_table: tail_one_first_ok because "a six-bit mask stays below the table length";
       let tail_one_first: own u8 = b64[tail_one_first_index];
+      let tail_one_second_ok: own Bool = ilt<u64>(tail_one_second_index, 64_u64);
+      claim tail_one_second_in_table: tail_one_second_ok because "a six-bit mask stays below the table length";
       let tail_one_second: own u8 = b64[tail_one_second_index];
       let tail_one_output_one: own u64 = iadd.wrap<u64>(output_offset, 1_u64);
       let tail_one_output_two: own u64 = iadd.wrap<u64>(output_offset, 2_u64);
       let tail_one_output_three: own u64 = iadd.wrap<u64>(output_offset, 3_u64);
+      let tail_one_out_zero_ok: own Bool = ilt<u64>(output_offset, out_room);
+      claim tail_one_out_zero_in_output: tail_one_out_zero_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[output_offset] = tail_one_first;
+      let tail_one_out_one_ok: own Bool = ilt<u64>(tail_one_output_one, out_room);
+      claim tail_one_out_one_in_output: tail_one_out_one_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[tail_one_output_one] = tail_one_second;
+      let tail_one_out_two_ok: own Bool = ilt<u64>(tail_one_output_two, out_room);
+      claim tail_one_out_two_in_output: tail_one_out_two_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[tail_one_output_two] = 61_u8;
+      let tail_one_out_three_ok: own Bool = ilt<u64>(tail_one_output_three, out_room);
+      claim tail_one_out_three_in_output: tail_one_out_three_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[tail_one_output_three] = 61_u8;
       set output_offset = iadd.wrap<u64>(output_offset, 4_u64);
     }
@@ -87,7 +124,11 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
   match two_byte_tail {
     True() => {
       let tail_two_input_one: own u64 = iadd.wrap<u64>(input_offset, 1_u64);
+      let tail_two_in_zero_ok: own Bool = ilt<u64>(input_offset, input_length);
+      claim tail_two_in_zero_in_input: tail_two_in_zero_ok because "a two-byte tail leaves two input bytes";
       let tail_two_byte_zero: own u8 = input[input_offset];
+      let tail_two_in_one_ok: own Bool = ilt<u64>(tail_two_input_one, input_length);
+      claim tail_two_in_one_in_input: tail_two_in_one_ok because "a two-byte tail leaves two input bytes";
       let tail_two_byte_one: own u8 = input[tail_two_input_one];
       let tail_two_word_zero: own u32 = cvt<u8, u32>(tail_two_byte_zero);
       let tail_two_word_one: own u32 = cvt<u8, u32>(tail_two_byte_one);
@@ -102,15 +143,29 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
       let tail_two_third_shifted: own u32 = ishl.wrap<u32>(tail_two_combined, 2_u32);
       let tail_two_third_sextet: own u32 = iand<u32>(tail_two_third_shifted, 63_u32);
       let tail_two_third_index: own u64 = cvt<u32, u64>(tail_two_third_sextet);
+      let tail_two_first_ok: own Bool = ilt<u64>(tail_two_first_index, 64_u64);
+      claim tail_two_first_in_table: tail_two_first_ok because "a six-bit mask stays below the table length";
       let tail_two_first: own u8 = b64[tail_two_first_index];
+      let tail_two_second_ok: own Bool = ilt<u64>(tail_two_second_index, 64_u64);
+      claim tail_two_second_in_table: tail_two_second_ok because "a six-bit mask stays below the table length";
       let tail_two_second: own u8 = b64[tail_two_second_index];
+      let tail_two_third_ok: own Bool = ilt<u64>(tail_two_third_index, 64_u64);
+      claim tail_two_third_in_table: tail_two_third_ok because "a six-bit mask stays below the table length";
       let tail_two_third: own u8 = b64[tail_two_third_index];
       let tail_two_output_one: own u64 = iadd.wrap<u64>(output_offset, 1_u64);
       let tail_two_output_two: own u64 = iadd.wrap<u64>(output_offset, 2_u64);
       let tail_two_output_three: own u64 = iadd.wrap<u64>(output_offset, 3_u64);
+      let tail_two_out_zero_ok: own Bool = ilt<u64>(output_offset, out_room);
+      claim tail_two_out_zero_in_output: tail_two_out_zero_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[output_offset] = tail_two_first;
+      let tail_two_out_one_ok: own Bool = ilt<u64>(tail_two_output_one, out_room);
+      claim tail_two_out_one_in_output: tail_two_out_one_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[tail_two_output_one] = tail_two_second;
+      let tail_two_out_two_ok: own Bool = ilt<u64>(tail_two_output_two, out_room);
+      claim tail_two_out_two_in_output: tail_two_out_two_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[tail_two_output_two] = tail_two_third;
+      let tail_two_out_three_ok: own Bool = ilt<u64>(tail_two_output_three, out_room);
+      claim tail_two_out_three_in_output: tail_two_out_three_ok because "the requires clause sizes the output for the padded tail";
       set deref(out)[tail_two_output_three] = 61_u8;
       set output_offset = iadd.wrap<u64>(output_offset, 4_u64);
     }

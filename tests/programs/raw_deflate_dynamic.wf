@@ -20,6 +20,8 @@ fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, sy
     }
   }
   let length_index: own u64 = isub.wrap<u64>(symbol, 257_u64);
+  let length_in_tables: own Bool = ilt<u64>(length_index, 29_u64);
+  claim length_symbol_in_tables: length_in_tables because "the symbol guard admits 257..285 and the bor keeps its bounds out of the fact state";
   let length_base_word: own u16 = length_bases[length_index];
   let length_base: own u64 = cvt<u16, u64>(length_base_word);
   let length_extra_byte: own u8 = length_extras[length_index];
@@ -83,6 +85,9 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
       }
       False() => {
         let source_index: own u64 = isub.wrap<u64>(deref(state).output_offset, distance);
+        let history_room: own u64 = len<u8>(deref(out));
+        let source_in_history: own Bool = ilt<u64>(source_index, history_room);
+        claim match_copy_in_history: source_in_history because "the copy reads distance bytes behind the emitted prefix";
         let byte: own u8 = deref(out)[source_index];
         region 'match_emit {
           match emit_byte<'match_emit, 'match_emit>(state: &uniq 'match_emit deref(state), out: &uniq 'match_emit deref(out), value: byte) {
@@ -115,6 +120,9 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         break @count_lengths;
       }
       False() => {
+        let count_lengths_room: own u64 = len<u8>(lengths);
+        let count_symbol_ok: own Bool = ilt<u64>(symbol, count_lengths_room);
+        claim count_symbol_in_lengths: count_symbol_ok because "callers pass symbol_count lengths";
         let length_byte: own u8 = lengths[symbol];
         let length: own u32 = cvt<u8, u32>(length_byte);
         let too_long: own Bool = igt<u32>(length, max_bits);
@@ -130,6 +138,9 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         match present {
           True() => {
             let count_index: own u64 = cvt<u32, u64>(length);
+            let counts_room: own u64 = len<u64>(counts);
+            let count_slot_ok: own Bool = ilt<u64>(count_index, counts_room);
+            claim count_slot_in_counts: count_slot_ok because "the guard keeps every length at most max_bits";
             let previous_count: own u64 = counts[count_index];
             set counts[count_index] = iadd.wrap<u64>(previous_count, 1_u64);
             set nonzero = iadd.wrap<u64>(nonzero, 1_u64);
@@ -153,6 +164,9 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       False() => {
         set left = ishl.wrap<u64>(left, 1_u32);
         let count_index: own u64 = cvt<u32, u64>(length);
+        let validate_room: own u64 = len<u64>(counts);
+        let validate_slot_ok: own Bool = ilt<u64>(count_index, validate_room);
+        claim validate_slot_in_counts: validate_slot_ok because "the walk stops after max_bits lengths";
         let count: own u64 = counts[count_index];
         let oversubscribed: own Bool = igt<u64>(count, left);
         match oversubscribed {
@@ -203,7 +217,13 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       }
       False() => {
         let count_index: own u64 = cvt<u32, u64>(length);
+        let offsets_room: own u64 = len<u64>(offsets);
+        let offsets_slot_ok: own Bool = ilt<u64>(count_index, offsets_room);
+        claim offsets_slot_in_offsets: offsets_slot_ok because "the walk stops after max_bits lengths";
         set offsets[count_index] = offset;
+        let counts_read_room: own u64 = len<u64>(counts);
+        let counts_read_ok: own Bool = ilt<u64>(count_index, counts_read_room);
+        claim offsets_slot_in_counts: counts_read_ok because "both tables hold max_bits plus one slots";
         let count: own u64 = counts[count_index];
         set offset = iadd.wrap<u64>(offset, count);
         set length = iadd.wrap<u32>(length, 1_u32);
@@ -218,13 +238,22 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         break @order_symbols;
       }
       False() => {
+        let order_lengths_room: own u64 = len<u8>(lengths);
+        let order_symbol_ok: own Bool = ilt<u64>(symbol, order_lengths_room);
+        claim order_symbol_in_lengths: order_symbol_ok because "callers pass symbol_count lengths";
         let length_byte: own u8 = lengths[symbol];
         let symbol_length: own u32 = cvt<u8, u32>(length_byte);
         let present: own Bool = igt<u32>(symbol_length, 0_u32);
         match present {
           True() => {
             let count_index: own u64 = cvt<u32, u64>(symbol_length);
+            let order_offsets_room: own u64 = len<u64>(offsets);
+            let order_slot_ok: own Bool = ilt<u64>(count_index, order_offsets_room);
+            claim order_slot_in_offsets: order_slot_ok because "the first pass admitted only lengths at most max_bits";
             let destination: own u64 = offsets[count_index];
+            let order_symbols_room: own u64 = len<u64>(symbols);
+            let destination_ok: own Bool = ilt<u64>(destination, order_symbols_room);
+            claim destination_in_symbols: destination_ok because "the canonical offsets stay below the symbol count";
             set symbols[destination] = symbol;
             set offsets[count_index] = iadd.wrap<u64>(destination, 1_u64);
           }
@@ -268,6 +297,9 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
     }
     set code = ior<u64>(code, bit);
     let count_index: own u64 = cvt<u32, u64>(bit_length);
+    let table_counts_room: own u64 = len<u64>(deref(table).counts);
+    let table_count_ok: own Bool = ilt<u64>(count_index, table_counts_room);
+    claim walk_length_in_counts: table_count_ok because "the walk errors before bit_length passes max_bits";
     let count: own u64 = deref(table).counts[count_index];
     let first_after_count: own u64 = iadd.wrap<u64>(first, count);
     let at_or_after_first: own Bool = ige<u64>(code, first);
@@ -277,6 +309,9 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
       True() => {
         let offset: own u64 = isub.wrap<u64>(code, first);
         let ordered: own u64 = iadd.wrap<u64>(symbol_index, offset);
+        let table_symbols_room: own u64 = len<u64>(deref(table).symbols);
+        let ordered_ok: own Bool = ilt<u64>(ordered, table_symbols_room);
+        claim ordered_in_symbols: ordered_ok because "a canonical table keeps every code offset below its symbol count";
         set decoded = deref(table).symbols[ordered];
         break @table_code_lengths;
       }

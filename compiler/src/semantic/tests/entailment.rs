@@ -1,17 +1,20 @@
-//! Unit tests for the dark L0 entailment engine, one family per [ENT] rule,
+//! Unit tests for the L0 entailment engine, one family per [ENT] rule,
 //! including the adversarial stale-fact and fresh-binding shapes the spec
 //! text was reviewed against.
 //!
-//! Every test observes the engine through the retained obligation
-//! dispositions: acceptance is never affected by this slice.
+//! Derivation tests observe the engine through the retained obligation and
+//! claim dispositions via the test-only dark checker, which skips the
+//! [OP-4]/[CLM-2] rejection so a function's complete summary stays
+//! observable. The rejection behavior itself is tested at the end of this
+//! file through the ordinary acceptance path.
 
-use crate::SemanticOutcome;
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::super::entailment::ObligationOutcome;
-use super::with_semantics;
+use super::super::entailment::{ClaimDisposition, ClaimOutcome, ObligationOutcome};
+use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
-    with_semantics(source, |outcome| {
+    with_semantics_dark(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("entailment test source must check completely: {outcome:?}");
         };
@@ -22,6 +25,21 @@ fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
             .find(|candidate| candidate.name == function)
             .unwrap_or_else(|| panic!("function {function} must exist"));
         function.entailment.obligations.clone()
+    })
+}
+
+fn claims(source: &[u8], function: &str) -> Vec<ClaimOutcome> {
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("entailment test source must check completely: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|candidate| candidate.name == function)
+            .unwrap_or_else(|| panic!("function {function} must exist"));
+        function.entailment.claims.clone()
     })
 }
 
@@ -40,7 +58,7 @@ fn discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
 fn a_dominating_branch_discharges_the_guarded_index_and_not_the_other_arm() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
       return values[i];
@@ -68,7 +86,7 @@ fn a_constant_offset_discharges_against_a_const_array_and_a_too_large_one_report
 
 const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-fn read() -> own u8 traps {
+fn read() -> own u8 pure {
   let inside: own u8 = table[2_u64];
   let outside: own u8 = table[9_u64];
   return inside;
@@ -96,7 +114,7 @@ fn main() -> own unit pure {
 fn a_bool_binding_carries_its_comparison_to_the_match_when_no_kill_intervenes() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let flag: own Bool = ilt<u64>(i, 4_u64);
   match flag {
     True() => {
@@ -119,7 +137,7 @@ fn main() -> own unit pure {
 fn a_set_between_initializer_and_use_invalidates_the_comparison_origin() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let flag: own Bool = ilt<u64>(i, 4_u64);
   set i = iadd.wrap<u64>(i, 1_u64);
   match flag {
@@ -157,7 +175,7 @@ struct Pair {
   other: u64;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
   match ile<u64>(i, p.count) {
     True() => {
       match ilt<u64>(p.count, 4_u64) {
@@ -190,7 +208,7 @@ fn main() -> own unit pure {
 fn disequality_strengthens_a_weak_bound_to_a_strict_one() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ile<u64>(i, 4_u64) {
     True() => {
       match ieq<u64>(i, 4_u64) {
@@ -223,7 +241,7 @@ fn main() -> own unit pure {
 fn a_contradictory_state_discharges_every_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 0_u64) {
     True() => {
       return values[9_u64];
@@ -261,7 +279,7 @@ fn eat(p: own Pair) -> own unit pure {
   return unit;
 }
 
-fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
   match ile<u64>(i, p.count) {
     True() => {
       match ilt<u64>(p.count, 4_u64) {
@@ -304,7 +322,7 @@ struct Pair {
   other: u64;
 }
 
-fn read(values: own array<i32, count>, p: own Pair) -> own i32 traps {
+fn read(values: own array<i32, count>, p: own Pair) -> own i32 pure {
   match ilt<u64>(p.count, 4_u64) {
     True() => {
       set p.other = 9_u64;
@@ -339,7 +357,7 @@ fn bump['w](p: &uniq 'w u64) -> own unit writes('w) {
   return unit;
 }
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
       region 'w {
@@ -372,7 +390,7 @@ fn peek['r](p: &'r u64) -> own u64 reads('r) {
   return deref(p);
 }
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
       region 'r {
@@ -407,7 +425,7 @@ fn a_join_keeps_the_weakest_bound_held_on_every_continuing_arm() {
 
 const count: u64 = 4_u64;
 
-fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> own i32 traps {
+fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 2_u64) {
     True() => {
     }
@@ -441,7 +459,7 @@ fn main() -> own unit pure {
 fn an_arm_that_leaves_by_return_contributes_nothing_to_the_join() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
     }
@@ -470,7 +488,7 @@ fn a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact() {
     // established for the first may attach to it.
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, pick: own Bool) -> own i32 traps {
+fn read(values: own array<i32, count>, pick: own Bool) -> own i32 pure {
   match pick {
     True() => {
       let j: own u64 = 0_u64;
@@ -507,7 +525,7 @@ fn main() -> own unit pure {
 fn a_fact_about_an_outer_binding_survives_a_region_exit() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   region 'a {
     match ilt<u64>(i, 4_u64) {
       True() => {
@@ -539,7 +557,7 @@ fn main() -> own unit pure {
 fn a_break_edge_carries_surviving_facts_to_the_loop_continuation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   loop @l {
     match ilt<u64>(i, 4_u64) {
       True() => {
@@ -568,7 +586,7 @@ fn main() -> own unit pure {
 fn a_kill_before_the_break_edge_leaves_the_continuation_unproved() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   loop @l {
     match ilt<u64>(i, 4_u64) {
       True() => {
@@ -598,7 +616,7 @@ fn main() -> own unit pure {
 fn give_edges_join_at_the_value_match_continuation_with_arm_facts_dead() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let picked: own i32 = match ilt<u64>(i, 4_u64) {
     True() => {
       give values[i];
@@ -647,7 +665,7 @@ fn source(flag: own Bool) -> own Result<u64, Fail> pure {
   }
 }
 
-fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> own Result<i32, Fail> traps {
+fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> own Result<i32, Fail> pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
       let v: own u64 = propagate source(flag: flag);
@@ -679,7 +697,7 @@ fn main() -> own unit pure {
 fn a_loop_body_kill_removes_the_fact_from_every_iteration_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
     }
@@ -717,7 +735,7 @@ fn main() -> own unit pure {
 fn a_kill_free_loop_body_keeps_the_entry_fact_at_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
     }
@@ -755,7 +773,7 @@ struct Holder {
   data: array<u8, count>;
 }
 
-fn read(h: own Holder, i: own u64) -> own u8 traps {
+fn read(h: own Holder, i: own u64) -> own u8 pure {
   return h.data[i];
 }
 
@@ -773,7 +791,7 @@ fn main() -> own unit pure {
 fn a_nested_index_offset_is_no_term_and_renders_its_canonical_bytes() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> own u8 traps {
+fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> own u8 pure {
   match ilt<u64>(j, 4_u64) {
     True() => {
       return lens[order[j]];
@@ -813,7 +831,7 @@ fn from_buffer(values: own array<u8, count>) -> own u8 allocates(heap), traps {
   return values[b[0_u64]];
 }
 
-fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> own u8 reads('r), traps {
+fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> own u8 reads('r) {
   return values[order[0_u64]];
 }
 
@@ -902,7 +920,7 @@ fn main() -> own unit pure {
 fn a_slice_of_carries_its_source_length() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<u8, count>) -> own u8 traps {
+fn read(values: own array<u8, count>) -> own u8 pure {
   region 'view {
     let window: own slice<'view, u8> = slice_of<'view, u8>(&'view values);
     return window[3_u64];
@@ -1015,7 +1033,7 @@ fn main() -> own unit pure {
 fn set_targets_carry_the_same_obligation_in_target_position() {
     let source = br#"const count: u64 = 4_u64;
 
-fn write(values: own array<u16, count>, i: own u64) -> own u16 traps {
+fn write(values: own array<u16, count>, i: own u64) -> own u16 pure {
   match ilt<u64>(i, 4_u64) {
     True() => {
       set values[i] = 9_u16;
@@ -1101,7 +1119,7 @@ fn main() -> own unit pure {
 fn a_literal_a_copy_and_a_total_conversion_carry_the_value_forward() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 traps {
+fn read(values: own array<i32, count>) -> own i32 pure {
   let k: own u64 = 2_u64;
   let j: own u64 = k;
   let narrow: own u16 = 3_u16;
@@ -1128,7 +1146,7 @@ fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     // the `Ok` binder inherits only its own type range.
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, n: own u64) -> own i32 traps {
+fn read(values: own array<i32, count>, n: own u64) -> own i32 pure {
   match ilt<u64>(n, 4_u64) {
     True() => {
       match cvt<u64, u8>(n) {
@@ -1195,7 +1213,7 @@ fn a_wrapping_offset_establishes_only_where_the_range_is_already_proved() {
     // closed state already proves the unwrapped result stays in range.
     let source = br#"const count: u64 = 4_u64;
 
-fn guarded(values: own array<i32, count>, p: own u64) -> own i32 traps {
+fn guarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
   match ilt<u64>(p, 4_u64) {
     True() => {
       match ige<u64>(p, 1_u64) {
@@ -1214,7 +1232,7 @@ fn guarded(values: own array<i32, count>, p: own u64) -> own i32 traps {
   }
 }
 
-fn unguarded(values: own array<i32, count>, p: own u64) -> own i32 traps {
+fn unguarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
   match ilt<u64>(p, 4_u64) {
     True() => {
       let s: own u64 = isub.wrap<u64>(p, 1_u64);
@@ -1246,7 +1264,7 @@ fn main() -> own unit pure {
 fn a_checked_offset_establishes_in_the_ok_arm_only_and_dies_with_its_base() {
     let source = br#"const count: u64 = 4_u64;
 
-fn direct(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn direct(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 3_u64) {
     True() => {
       match iadd.checked<u64>(i, 1_u64) {
@@ -1264,7 +1282,7 @@ fn direct(values: own array<i32, count>, i: own u64) -> own i32 traps {
   }
 }
 
-fn through_binding(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn through_binding(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 3_u64) {
     True() => {
       let outcome: own Result<u64, Overflow> = iadd.checked<u64>(i, 1_u64);
@@ -1283,7 +1301,7 @@ fn through_binding(values: own array<i32, count>, i: own u64) -> own i32 traps {
   }
 }
 
-fn killed(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn killed(values: own array<i32, count>, i: own u64) -> own i32 pure {
   match ilt<u64>(i, 3_u64) {
     True() => {
       let outcome: own Result<u64, Overflow> = iadd.checked<u64>(i, 1_u64);
@@ -1332,12 +1350,12 @@ const inside: array<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
 
 const outside: array<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
 
-fn low(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn low(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let bound: own u64 = inside[i];
   return values[bound];
 }
 
-fn high(values: own array<i32, count>, i: own u64) -> own i32 traps {
+fn high(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let bound: own u64 = outside[i];
   return values[bound];
 }
@@ -1670,4 +1688,195 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         vec![true],
         "the ReadBytes count is at most the capacity actual"
     );
+}
+
+// ---------------------------------------------------------------------
+// [ENT-3] S3 claim facts
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_passed_claim_establishes_its_fact_on_the_continuation() {
+    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
+  let n: own u64 = len<i32>(values);
+  let inside: own Bool = ilt<u64>(i, n);
+  claim in_range: inside because "the caller walks 0..len";
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = obligations(source, "read");
+    assert_eq!(outcomes.len(), 1);
+    assert!(
+        outcomes[0].discharged,
+        "S3: the passed claim predicate discharges the following subscript"
+    );
+    let claim_outcomes = claims(source, "read");
+    assert_eq!(claim_outcomes.len(), 1);
+    assert_eq!(claim_outcomes[0].name, "in_range");
+    assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Retained);
+}
+
+#[test]
+fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
+    let source = br#"fn main() -> own unit traps {
+  let flag: own Bool = True();
+  claim held: flag because "constructed";
+  return unit;
+}
+"#;
+    let claim_outcomes = claims(source, "main");
+    assert_eq!(claim_outcomes.len(), 1);
+    assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Retained);
+}
+
+// ---------------------------------------------------------------------
+// [CLM-2] redundancy and refutation
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_derivable_claim_is_redundant_and_reports_the_advisory_without_rejecting() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+  match ilt<u64>(i, 4_u64) {
+    True() => {
+      claim proven: ilt<u64>(i, 4_u64) because "already branched";
+      return values[i];
+    }
+    False() => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("a redundant claim must not reject, got {outcome:?}");
+        };
+        assert_eq!(program.data.claim_advisories.len(), 1);
+        assert_eq!(program.data.claim_advisories[0].function, "read");
+        assert_eq!(program.data.claim_advisories[0].name, "proven");
+    });
+}
+
+#[test]
+fn a_refuted_claim_is_a_clm2_rejection_with_predicate_and_negation() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+  match ige<u64>(i, 4_u64) {
+    True() => {
+      claim in_range: ilt<u64>(i, 4_u64) because "refuted by the branch";
+      return values[i];
+    }
+    False() => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a refuted claim must reject, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Clm2);
+        let SemanticIssueKind::RefutedClaim(detail) = issue.kind() else {
+            panic!("expected the refutation payload, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.name, "in_range");
+    });
+}
+
+#[test]
+fn a_contradictory_state_never_refutes_a_claim() {
+    // [ENT-4]: after a loop with no break the continuation state is
+    // contradictory; every relation is derivable there, so the claim is
+    // redundant, never rejected. The loop must terminate for the checker's
+    // reachability rules, so it returns from inside.
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
+  match ilt<u64>(i, 0_u64) {
+    True() => {
+      claim absurd: ilt<u64>(i, 4_u64) because "under a false branch";
+      return values[i];
+    }
+    False() => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    // i < 0 is unsatisfiable for u64: the True arm's state is contradictory,
+    // so the claim is redundant there and the subscript discharges.
+    let claim_outcomes = claims(source, "read");
+    assert_eq!(claim_outcomes.len(), 1);
+    assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Redundant);
+    assert_eq!(discharge_flags(source, "read"), vec![true]);
+}
+
+// ---------------------------------------------------------------------
+// [OP-4] discharge-or-reject through the ordinary acceptance path
+// ---------------------------------------------------------------------
+
+#[test]
+fn an_undischarged_subscript_is_an_op4_rejection_with_the_exact_residual() {
+    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> own i32 pure {
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Op4,
+        SemanticIssueKind::UndischargedBoundsObligation {
+            residual: "i < len(values)".to_owned(),
+            mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+        },
+    );
+}
+
+#[test]
+fn a_discharged_program_accepts_and_retains_its_derivations() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>) -> own i32 pure {
+  return values[2_u64];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("a discharged subscript must accept, got {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "read")
+            .expect("read must exist");
+        assert_eq!(function.entailment.obligations.len(), 1);
+        assert!(function.entailment.obligations[0].discharged);
+    });
 }

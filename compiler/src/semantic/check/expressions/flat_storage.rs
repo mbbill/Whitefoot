@@ -382,13 +382,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::TypeMismatch,
             );
         }
+        // A subscript is not an [EFF-2] trap source: an accepted subscript
+        // is discharged [OP-4] and executes no runtime check. The retained
+        // TrapSite carries the psuffix node identity the [ENT-6] obligation
+        // judgment and the [OP-4] rejection cite; it never reaches runtime.
         let trap = TrapSite {
             rule_id: "OP-4",
             message: String::new(),
             function: function.name.clone(),
             node_path: self.tree.path(suffix)?.clone(),
         };
-        let mut effects = offset.effects.union(EffectSet::TRAPS);
+        let mut effects = offset.effects;
         let mut accesses = offset.accesses;
         match &indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -530,13 +534,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::TypeMismatch,
             );
         }
+        // As in the read path: no [EFF-2] trap contribution; the TrapSite
+        // carries only the psuffix node identity for the [ENT-6] judgment.
         let trap = TrapSite {
             rule_id: "OP-4",
             message: String::new(),
             function: function.name.clone(),
             node_path: self.tree.path(suffix)?.clone(),
         };
-        let mut effects = offset.effects.union(EffectSet::TRAPS);
+        let mut effects = offset.effects;
         let (declaration, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
                 let Some(declaration) = array.declaration else {

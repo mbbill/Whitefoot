@@ -117,13 +117,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// Emits a discharged source subscript read [OP-4]: the checker derived
+    /// the bounds obligation, so no compare, branch, or trap is emitted in
+    /// any build mode.
     pub(super) fn emit_buffer_index(
         &mut self,
         result: IrValueId,
         ty: IrType,
         buffer: IrValueId,
         offset: IrValueId,
-        trap: &IrTrapSite,
         target_domain: IrTargetDomainObligation,
     ) -> Result<(), BackendFailure> {
         if target_domain != IrTargetDomainObligation::ElementAddress {
@@ -144,21 +146,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let descriptor_type = llvm_type(self.program, buffer_type)?;
         let element_type = llvm_type(self.program, ty)?;
-        let length = self.next_temporary()?;
-        let in_range = self.next_temporary()?;
         let pointer = self.next_temporary()?;
         let element_pointer = self.next_temporary()?;
-        let trap_id = self.register_trap(trap)?;
         writeln!(
             self.output,
-            "  %{length} = extractvalue {descriptor_type} {}, 1\n  %{in_range} = icmp ult i64 {}, %{length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
-            value_name(buffer),
-            value_name(offset),
-            buffer_index_continue_label(result),
-            buffer_index_trap_label(result),
-            buffer_index_trap_label(result),
-            self.traps[trap_id].len(),
-            buffer_index_continue_label(result),
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
             value_name(buffer),
             value_name(offset),
             value_name(result),
@@ -166,51 +158,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    pub(super) fn emit_buffer_bounds_check(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        buffer: IrValueId,
-        offset: IrValueId,
-        trap: &IrTrapSite,
-        target_domain: IrTargetDomainObligation,
-    ) -> Result<(), BackendFailure> {
-        if target_domain != IrTargetDomainObligation::ElementAddress {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let IrType::GuardedBufferIndex { element } = ty else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        let buffer_type = IrType::Buffer { element };
-        if self.function.value_type(buffer) != Some(buffer_type)
-            || self.function.value_type(offset)
-                != Some(IrType::Integer {
-                    width: 64,
-                    signed: false,
-                })
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let length = self.next_temporary()?;
-        let in_range = self.next_temporary()?;
-        let trap_id = self.register_trap(trap)?;
-        writeln!(
-            self.output,
-            "  %{length} = extractvalue {} {}, 1\n  %{in_range} = icmp ult i64 {}, %{length}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  {} = add i64 {}, 0",
-            llvm_type(self.program, buffer_type)?,
-            value_name(buffer),
-            value_name(offset),
-            buffer_bounds_continue_label(result),
-            buffer_bounds_trap_label(result),
-            buffer_bounds_trap_label(result),
-            self.traps[trap_id].len(),
-            buffer_bounds_continue_label(result),
-            value_name(result),
-            value_name(offset),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
-    }
-
+    /// Emits a discharged source subscript write [OP-4]: the index is the
+    /// plain `u64` offset, already proven in bounds by the checker.
     pub(super) fn emit_buffer_store(
         &mut self,
         buffer: IrValueId,
@@ -221,7 +170,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if self.function.value_type(index) != Some(IrType::GuardedBufferIndex { element })
+        if self.function.value_type(index)
+            != Some(IrType::Integer {
+                width: 64,
+                signed: false,
+            })
             || self.function.value_type(value) != Some(element.ty())
         {
             return Err(BackendFailure::InvalidIr);
@@ -418,18 +371,6 @@ pub(super) fn buffer_fill_done_label(value: IrValueId) -> String {
     format!("buffer.fill.done.v{}", value.ordinal())
 }
 
-pub(super) fn buffer_index_trap_label(value: IrValueId) -> String {
-    format!("buffer.index.trap.v{}", value.ordinal())
-}
-
-pub(super) fn buffer_index_continue_label(value: IrValueId) -> String {
-    format!("buffer.index.cont.v{}", value.ordinal())
-}
-
-pub(super) fn buffer_bounds_trap_label(value: IrValueId) -> String {
-    format!("buffer.bounds.trap.v{}", value.ordinal())
-}
-
 pub(super) fn buffer_probe_room_label(value: IrValueId) -> String {
     format!("buffer.probe.room.v{}", value.ordinal())
 }
@@ -452,8 +393,4 @@ pub(super) fn buffer_probe_zero_label(value: IrValueId) -> String {
 
 pub(super) fn buffer_probe_join_label(value: IrValueId) -> String {
     format!("buffer.probe.join.v{}", value.ordinal())
-}
-
-pub(super) fn buffer_bounds_continue_label(value: IrValueId) -> String {
-    format!("buffer.bounds.cont.v{}", value.ordinal())
 }

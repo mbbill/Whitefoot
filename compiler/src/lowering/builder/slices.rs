@@ -1,6 +1,6 @@
 use crate::semantic::{
     CheckedExpression, CheckedFlatElement, CheckedSliceRoot, CheckedSliceSource,
-    CheckedTargetDomainObligation, TrapSite,
+    CheckedTargetDomainObligation,
 };
 
 use super::*;
@@ -56,7 +56,6 @@ impl IrBuilder<'_> {
         &mut self,
         root: &CheckedSliceRoot,
         offset: &CheckedExpression,
-        trap: &TrapSite,
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let slice = self.slice_root(root)?;
@@ -75,7 +74,6 @@ impl IrBuilder<'_> {
             IrOperation::SliceIndex {
                 slice,
                 offset,
-                trap: trap.clone().into(),
                 target_domain: target_domain.into(),
             },
         )
