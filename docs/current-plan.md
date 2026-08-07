@@ -1,8 +1,8 @@
 # Current Plan
 
-Status: PROPOSED — awaiting owner selection; a proposed plan authorizes no
-execution. The previous ACTIVE plan's milestone (attributed-cause slice and
-general borrows, tasks 0023-0025) completed on 2026-08-06.
+Status: ACTIVE — the owner approved this plan, the 19-item amendment
+bundle, and the v0.20 batch authorization on 2026-08-06 ("都批"). The
+previous milestone (tasks 0023-0025) completed on 2026-08-06.
 
 Derived from: [Direction Outline revision 14](roadmap.md), items `CAND-8`,
 `PERF-1`, `FLOOR-1`, `PROOF-1`, `STORE-1`, and `VERIFY-2`
