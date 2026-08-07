@@ -13,4 +13,5 @@ mod programs {
     mod support;
     mod text;
     mod wfgrep;
+    mod wide_scan;
 }

@@ -29,7 +29,10 @@ use crate::{
     IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations,
     IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType, IrValueId, SystemResourceType,
 };
-use buffer::{buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label};
+use buffer::{
+    buffer_bounds_continue_label, buffer_fill_done_label, buffer_index_continue_label,
+    buffer_probe_join_label,
+};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
 use slice::slice_index_continue_label;
 
@@ -654,6 +657,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 trap,
                 target_domain,
             } => self.emit_buffer_bounds_check(result, ty, *buffer, *offset, trap, *target_domain),
+            IrOperation::BufferProbeSkip {
+                buffer,
+                index,
+                limit,
+                needles,
+            } => self.emit_buffer_probe_skip(result, ty, *buffer, *index, *limit, needles),
             IrOperation::SliceFromArray { array } => self.emit_slice_from_array(result, ty, *array),
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
@@ -1100,6 +1109,11 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock) -> String {
                 operation: IrOperation::SliceIndex { .. },
                 ..
             } => label = slice_index_continue_label(*result),
+            IrInstruction::Define {
+                result,
+                operation: IrOperation::BufferProbeSkip { .. },
+                ..
+            } => label = buffer_probe_join_label(*result),
             IrInstruction::Define {
                 result,
                 operation: IrOperation::BufferBoundsCheck { .. },

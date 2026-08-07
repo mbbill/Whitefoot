@@ -48,6 +48,9 @@ impl IrBuilder<'_> {
             block: exit,
             carried_bindings: carried_bindings.clone(),
         });
+        if backedge_drops.is_empty() {
+            self.emit_probe_skip_if_recognized(id, body, header, &carried_bindings)?;
+        }
         self.lower_statements(body, give_target)?;
         if self.current.is_some() {
             let arguments = self.binding_values(&carried_bindings)?;

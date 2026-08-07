@@ -240,6 +240,129 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// Emits the check-aware wide probe: how many upcoming byte-walk
+    /// iterations are provably no-ops.
+    ///
+    /// The window guard `index + 16 <= min(limit, length)` is internal, so
+    /// the probe reads only bytes it proves in bounds and below the walk's
+    /// exit bound, and it carries no trap: every observable byte — a needle
+    /// hit, the exit bound, or any trap — stays with the unchanged scalar
+    /// body. The lane-to-bit `bitcast` places lane 0 at the least
+    /// significant bit on every supported (little-endian) target, so
+    /// `cttz` yields the count of leading clean bytes.
+    pub(super) fn emit_buffer_probe_skip(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        buffer: IrValueId,
+        index: IrValueId,
+        limit: IrValueId,
+        needles: &[IrValueId],
+    ) -> Result<(), BackendFailure> {
+        let u64_type = IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        let u8_type = IrType::Integer {
+            width: 8,
+            signed: false,
+        };
+        let Some(buffer_type @ IrType::Buffer { element }) = self.function.value_type(buffer)
+        else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if ty != u64_type
+            || element.ty() != u8_type
+            || self.function.value_type(index) != Some(u64_type)
+            || self.function.value_type(limit) != Some(u64_type)
+            || needles.is_empty()
+            || needles.len() > 4
+            || needles
+                .iter()
+                .any(|needle| self.function.value_type(*needle) != Some(u8_type))
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let descriptor_type = llvm_type(self.program, buffer_type)?;
+        self.intrinsics.insert(IntrinsicDeclaration::UnaryWithFlag {
+            name: "llvm.cttz.i16".to_owned(),
+            ty: "i16".to_owned(),
+        });
+        let length = self.next_temporary()?;
+        let tighter = self.next_temporary()?;
+        let window = self.next_temporary()?;
+        let room = self.next_temporary()?;
+        let edge = self.next_temporary()?;
+        let fits = self.next_temporary()?;
+        let pointer = self.next_temporary()?;
+        let address = self.next_temporary()?;
+        let vector = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{length} = extractvalue {descriptor_type} {}, 1\n  %{tighter} = icmp ult i64 {}, %{length}\n  %{window} = select i1 %{tighter}, i64 {}, i64 %{length}\n  %{room} = icmp uge i64 %{window}, 16\n  br i1 %{room}, label %{}, label %{}\n{}:\n  %{edge} = sub i64 %{window}, 16\n  %{fits} = icmp ule i64 {}, %{edge}\n  br i1 %{fits}, label %{}, label %{}\n{}:\n  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{address} = getelementptr inbounds i8, ptr %{pointer}, i64 {}\n  %{vector} = load <16 x i8>, ptr %{address}, align 1",
+            value_name(buffer),
+            value_name(limit),
+            value_name(limit),
+            buffer_probe_room_label(result),
+            buffer_probe_zero_label(result),
+            buffer_probe_room_label(result),
+            value_name(index),
+            buffer_probe_load_label(result),
+            buffer_probe_zero_label(result),
+            buffer_probe_load_label(result),
+            value_name(buffer),
+            value_name(index),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let mut accumulated: Option<String> = None;
+        for needle in needles {
+            let inserted = self.next_temporary()?;
+            let splat = self.next_temporary()?;
+            let equal = self.next_temporary()?;
+            writeln!(
+                self.output,
+                "  %{inserted} = insertelement <16 x i8> poison, i8 {}, i64 0\n  %{splat} = shufflevector <16 x i8> %{inserted}, <16 x i8> poison, <16 x i32> zeroinitializer\n  %{equal} = icmp eq <16 x i8> %{vector}, %{splat}",
+                value_name(*needle),
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            accumulated = Some(match accumulated {
+                None => equal,
+                Some(previous) => {
+                    let combined = self.next_temporary()?;
+                    writeln!(
+                        self.output,
+                        "  %{combined} = or <16 x i1> %{previous}, %{equal}"
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                    combined
+                }
+            });
+        }
+        let mask_lanes = accumulated.ok_or(BackendFailure::InvalidIr)?;
+        let mask = self.next_temporary()?;
+        let none = self.next_temporary()?;
+        let zeros = self.next_temporary()?;
+        let extended = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{mask} = bitcast <16 x i1> %{mask_lanes} to i16\n  %{none} = icmp eq i16 %{mask}, 0\n  br i1 %{none}, label %{}, label %{}\n{}:\n  br label %{}\n{}:\n  %{zeros} = call i16 @llvm.cttz.i16(i16 %{mask}, i1 true)\n  %{extended} = zext i16 %{zeros} to i64\n  br label %{}\n{}:\n  br label %{}\n{}:\n  {} = phi i64 [ 16, %{} ], [ %{extended}, %{} ], [ 0, %{} ]",
+            buffer_probe_clean_label(result),
+            buffer_probe_found_label(result),
+            buffer_probe_clean_label(result),
+            buffer_probe_join_label(result),
+            buffer_probe_found_label(result),
+            buffer_probe_join_label(result),
+            buffer_probe_zero_label(result),
+            buffer_probe_join_label(result),
+            buffer_probe_join_label(result),
+            value_name(result),
+            buffer_probe_clean_label(result),
+            buffer_probe_found_label(result),
+            buffer_probe_zero_label(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
     fn buffer_element_size(&self, element: IrFlatElement) -> Result<u64, BackendFailure> {
         match element {
             IrFlatElement::Unit | IrFlatElement::Bool => Ok(1),
@@ -305,6 +428,30 @@ pub(super) fn buffer_index_continue_label(value: IrValueId) -> String {
 
 pub(super) fn buffer_bounds_trap_label(value: IrValueId) -> String {
     format!("buffer.bounds.trap.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_probe_room_label(value: IrValueId) -> String {
+    format!("buffer.probe.room.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_probe_load_label(value: IrValueId) -> String {
+    format!("buffer.probe.load.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_probe_clean_label(value: IrValueId) -> String {
+    format!("buffer.probe.clean.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_probe_found_label(value: IrValueId) -> String {
+    format!("buffer.probe.found.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_probe_zero_label(value: IrValueId) -> String {
+    format!("buffer.probe.zero.v{}", value.ordinal())
+}
+
+pub(super) fn buffer_probe_join_label(value: IrValueId) -> String {
+    format!("buffer.probe.join.v{}", value.ordinal())
 }
 
 pub(super) fn buffer_bounds_continue_label(value: IrValueId) -> String {

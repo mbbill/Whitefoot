@@ -611,3 +611,63 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
         },
     );
 }
+
+/// The recognized byte-walk loop for the wide-probe tests, with `{MIDDLE}`
+/// and `{STEP}` varied per case.
+fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
+    format!(
+        "fn main() -> own unit allocates(heap), traps {{\n  let data: own buffer<u8> = buffer_new<u8>(64_u64, 97_u8);\n  let mark: own u8 = 88_u8;\n  let seen: own u64 = 0_u64;\n  let stop: own u64 = len<u8>(data);\n  let cursor: own u64 = 0_u64;\n  loop @walk {{\n    let done: own Bool = ige<u64>(cursor, stop);\n    match done {{\n      True() => {{\n        break @walk;\n      }}\n      False() => {{\n      }}\n    }}\n    let byte: own u8 = index<u8>(data, cursor);\n{middle}    set cursor = iadd.wrap<u64>(cursor, {step});\n  }}\n  check ilt<u64>(seen, 1000_u64) else trap \"walk drift\";\n  return unit;\n}}\n"
+    )
+    .into_bytes()
+}
+
+const NEUTRAL_MIDDLE: &str = "    let newline: own Bool = ieq<u8>(byte, 10_u8);\n    match newline {\n      True() => {\n        set seen = iadd.wrap<u64>(seen, 1_u64);\n      }\n      False() => {\n      }\n    }\n    let lead: own Bool = ieq<u8>(byte, mark);\n    match lead {\n      True() => {\n        set seen = iadd.wrap<u64>(seen, 2_u64);\n      }\n      False() => {\n      }\n    }\n";
+
+fn probe_needle_counts(program: &IrProgram<'_, '_, '_>) -> Vec<usize> {
+    program
+        .functions()
+        .iter()
+        .flat_map(IrFunction::blocks)
+        .flat_map(IrBlock::instructions)
+        .filter_map(|instruction| {
+            let IrInstruction::Define {
+                operation: IrOperation::BufferProbeSkip { needles, .. },
+                ..
+            } = instruction
+            else {
+                return None;
+            };
+            Some(needles.len())
+        })
+        .collect()
+}
+
+#[test]
+fn a_recognized_byte_walk_gains_one_wide_probe_with_its_needles() {
+    with_ir(&byte_walk_source(NEUTRAL_MIDDLE, "1_u64"), |program| {
+        assert_eq!(probe_needle_counts(program), vec![2]);
+    });
+}
+
+#[test]
+fn an_effect_on_the_quiet_path_declines_the_wide_probe() {
+    let middle = format!("{NEUTRAL_MIDDLE}    set seen = iadd.wrap<u64>(seen, 1_u64);\n");
+    with_ir(&byte_walk_source(&middle, "1_u64"), |program| {
+        assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
+    });
+}
+
+#[test]
+fn a_non_single_step_increment_declines_the_wide_probe() {
+    with_ir(&byte_walk_source(NEUTRAL_MIDDLE, "2_u64"), |program| {
+        assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
+    });
+}
+
+#[test]
+fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
+    let middle = "    let inner_mark: own u8 = 88_u8;\n    let lead: own Bool = ieq<u8>(byte, inner_mark);\n    match lead {\n      True() => {\n        set seen = iadd.wrap<u64>(seen, 2_u64);\n      }\n      False() => {\n      }\n    }\n";
+    with_ir(&byte_walk_source(middle, "1_u64"), |program| {
+        assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
+    });
+}

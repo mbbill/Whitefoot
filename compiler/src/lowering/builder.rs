@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 mod buffers;
 mod loops;
+mod probe;
 mod results;
 mod slices;
 mod storage;

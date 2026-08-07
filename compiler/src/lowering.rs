@@ -698,6 +698,23 @@ pub enum IrOperation {
         trap: IrTrapSite,
         target_domain: IrTargetDomainObligation,
     },
+    /// One check-aware wide-probe step over a `u8` buffer.
+    ///
+    /// Computes how many upcoming iterations of a recognized byte-walk loop
+    /// are provably no-ops: the count of leading bytes at `index ..` that
+    /// match no needle, but only when `index + 16 <= min(limit, length)`
+    /// bounds both the walk's exit guard and every skipped read; otherwise 0.
+    /// Every byte at which anything observable can happen — a needle hit,
+    /// the exit bound, or any trap, including a hostile out-of-bounds trap —
+    /// therefore reaches the unchanged scalar body and its own [DIAG-3]
+    /// record. The probe itself never traps and never reports; it reads only
+    /// bytes its internal guard proves in bounds.
+    BufferProbeSkip {
+        buffer: IrValueId,
+        index: IrValueId,
+        limit: IrValueId,
+        needles: Vec<IrValueId>,
+    },
     SliceFromArray {
         array: IrArrayRoot,
     },
