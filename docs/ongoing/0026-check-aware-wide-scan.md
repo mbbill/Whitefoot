@@ -5,7 +5,7 @@ This is a temporary live coordination record, not execution authority.
 - **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` Work item 1
 - **Owner / workspace:** executor agent / isolated worktree, lead-reviewed
-- **Base revision:** (executor fills at claim)
+- **Base revision:** `23bb7b06f2769611bf0859b6a3be5bf16e442384`
 
 ## Goal
 
