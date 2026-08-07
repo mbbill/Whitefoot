@@ -45,11 +45,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        if let Some(subscript) = self.last_subscript(&suffixes)? {
+            return self.check_indexed_set_target(
+                function, node, &suffixes, subscript, bindings, loop_depth,
+            );
+        }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
             return self.check_dereferenced_set_target(node, pbase, bindings);
-        }
-        if self.has_fixed(pbase, FixedTerminal::Index)? {
-            return self.check_indexed_set_target(function, node, pbase, bindings, loop_depth);
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -91,7 +94,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
 
-        let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         if local.mode != CheckedMode::Own {
             return self.issue_node(
                 SemanticRule::Set1,
@@ -191,13 +194,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Resolves a run of field-selection suffixes over one starting type.
+    /// Callers pass the suffix chain to walk — every suffix for a whole
+    /// place, or the chain before a subscript for that subscript's base. A
+    /// subscript suffix inside the walked run selects through a composite
+    /// element value, which this version does not implement.
     pub(super) fn resolve_struct_path(
         &self,
-        node: NodeId,
+        suffixes: &[NodeId],
         mut ty: CheckedType,
     ) -> Result<(Vec<u32>, CheckedType), CheckStop> {
         let mut fields = Vec::new();
-        for suffix in self.tree.children_with(node, Production::Psuffix)? {
+        for &suffix in suffixes {
+            if self.subscript_offset(suffix)?.is_some() {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
+            }
             let name = self
                 .deferred_use_at(suffix, DeferredUseRole::ProjectedField)?
                 .spelling();
@@ -455,11 +466,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        if let Some(subscript) = self.last_subscript(&suffixes)? {
+            return self.check_index_use(
+                function, use_node, node, &suffixes, subscript, bindings, options,
+            );
+        }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
             return self.check_dereferenced_place_use(use_node, node, pbase, bindings, options);
-        }
-        if self.has_fixed(pbase, FixedTerminal::Index)? {
-            return self.check_index_use(function, use_node, node, pbase, bindings, options);
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -484,11 +498,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
                 if local.mode != CheckedMode::Own {
-                    if !self
-                        .tree
-                        .children_with(node, Production::Psuffix)?
-                        .is_empty()
-                    {
+                    if !suffixes.is_empty() {
                         return self.issue_node(
                             SemanticRule::Type7,
                             use_node,
@@ -552,7 +562,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         accesses: Vec::new(),
                     });
                 }
-                let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
+                let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
                 let copy = self.is_copy_type(ty)?;
                 if options.explicit_move && copy {
                     return self.issue_node(
@@ -670,11 +680,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !self
-                    .tree
-                    .children_with(node, Production::Psuffix)?
-                    .is_empty()
-                {
+                if !suffixes.is_empty() {
                     return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
                 }
                 let constant = self
@@ -721,7 +727,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(SemanticRule::Own5, node, SemanticIssueKind::BorrowConflict);
         }
         self.check_holder_not_suspended(&local, node)?;
-        let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
+        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let mut resolved = borrow.place;
         resolved.fields.extend_from_slice(&fields);
         self.check_loan_access(

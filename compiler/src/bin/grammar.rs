@@ -341,8 +341,8 @@ mod tests {
         let report =
             verify_candidate(ACTIVE_KERNEL_SPEC_BYTES).expect("active grammar must verify");
         assert_eq!(report.productions, 65);
-        assert_eq!(report.decisions, 74);
-        assert_eq!(report.terminals, 77);
+        assert_eq!(report.decisions, 75);
+        assert_eq!(report.terminals, 76);
     }
 
     #[test]

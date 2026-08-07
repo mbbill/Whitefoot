@@ -12,11 +12,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         pbase: NodeId,
+        base_suffixes: &[NodeId],
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
-        let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
+        let (fields, ty) = self.resolve_struct_path(base_suffixes, local.ty)?;
         match ty {
             CheckedType::Buffer { element } => {
                 let mut resolved = borrow.place.clone();

@@ -133,7 +133,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         };
         self.check_direct_slice_borrow_lifetime(function, region, owner, borrow, loop_depth)?;
-        let indexed = self.check_indexed_place(place_node, bindings)?;
+        let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+        let indexed = self.check_indexed_place(place_node, bindings, &suffixes, place_node)?;
         if indexed.element_type() != element_type {
             return self.issue_node(
                 SemanticRule::Type5,

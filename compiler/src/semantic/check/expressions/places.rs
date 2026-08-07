@@ -150,7 +150,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
-        let (fields, ty) = self.resolve_struct_path(node, local.ty)?;
+        let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let copy = self.is_copy_type(ty)?;
         if !copy {
             if options.explicit_move {
@@ -288,9 +289,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 inner
             }
         } else {
-            if self.has_fixed(pbase, FixedTerminal::Index)?
-                || !self.tree.children(pbase)?.is_empty()
-            {
+            if !self.tree.children(pbase)?.is_empty() {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, pbase);
             }
             let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
@@ -340,6 +339,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
 
         for suffix in self.tree.children_with(node, Production::Psuffix)? {
+            // A subscript selects a composite element value, which this
+            // version does not implement for explicit deref chains.
+            if self.subscript_offset(suffix)?.is_some() {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
+            }
             if place.holder_pending {
                 return self.issue_node(
                     SemanticRule::Type7,
