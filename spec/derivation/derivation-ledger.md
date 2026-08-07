@@ -823,3 +823,13 @@ sequencing amendment selecting atomic activation.
 
 The current total is **80 derived · 48 existence-only · 0 underived** across
 128 rules (120 active v0.20 rules plus the eight v0.21-candidate additions).
+
+## v0.22 amendment — index surface settlement (2026-08-07, activated)
+
+Binding: `spec/kernel-spec-v0.22.md`, SHA-256
+`b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8`,
+128 rules; no rows added or removed. ENT-3's S8 midpoint source is PARKED
+(zero corpus demand; monotone re-add when a real site appears) and ENT-1's
+removal prohibition is scoped to checker strengthening per the owner's
+version-compatibility deferral. Statistics unchanged: 80 derived · 48
+existence-only · 0 underived.

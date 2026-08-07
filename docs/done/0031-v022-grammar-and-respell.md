@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — all eight remaining-sequence items are done and the
+- **Status:** `DONE` (2026-08-07: v0.22 activated; verifier 65/75/76; adapter 365/1/14; merged)
   branch gates are green; stopped before merge per the card. Awaiting owner
   review of the respell packet and the step-4 exact-byte approval.
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice; owner rulings

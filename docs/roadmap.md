@@ -1,11 +1,11 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 17 (v0.21 activation: obligation-discharge batch 1 installed as the active language authority)
+Revision: 18 (v0.22 activation: index surface settlement installed as the active language authority)
 
 The active language authority is
-[`spec/kernel-spec-v0.21.md`](../spec/kernel-spec-v0.21.md), SHA-256
-`3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f`.
+[`spec/kernel-spec-v0.22.md`](../spec/kernel-spec-v0.22.md), SHA-256
+`b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8`.
 Released numbered specifications are immutable. The current execution proposal
 is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.21]` `[current: safe-Rust compiler]`
+`[current: spec v0.22]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-[v0.21 specification](../spec/kernel-spec-v0.21.md) remains semantic authority.
+[v0.22 specification](../spec/kernel-spec-v0.22.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
