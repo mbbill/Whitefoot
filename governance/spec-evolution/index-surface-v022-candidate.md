@@ -49,9 +49,11 @@ leaves the derived reserved sets and becomes an ordinary IDENT.
 > well-defined for chains where the flat `place` production gives `a[i][j]`
 > one place node. Additionally strikes fact source S8 (the midpoint
 > family) from [ENT-3] as an owner-approved residue re-decision: zero
-> corpus sites write the shape, the label is retired unreused, and the
-> amended [ENT-1] law names deliberate source removal as a specification
-> re-decision distinct from checker strengthening, restorable monotonically
+> corpus sites write the shape, the label is retired unreused, and
+> [ENT-1]'s removal prohibition is scoped to checker strengthening —
+> cross-version compatibility promises are deferred wholesale (owner
+> ruling 2026-08-07), and version amendments are governed by the ordinary
+> workflow — leaving restoration a later version's free monotone addition
 > the day a program writes the shape. Specification delta: numbered rules
 > +0/-0; twenty existing rules modified at twenty-five verbatim-anchored
 > modification sites (a site is one contiguous verbatim-anchored
@@ -73,8 +75,7 @@ leaves the derived reserved sets and becomes an ordinary IDENT.
 > requires), EFF-2 (accepted target subscript), DIAG-1 (subscript offset
 > in the attribution row), DIAG-2 (source subscript disposition; the
 > retained derivation named per `psuffix` node), ENT-1 (the monotonicity
-> law scoped to checker strengthening, with deliberate source removal
-> named as an owner-approved re-decision), ENT-2
+> law scoped to checker strengthening), ENT-2
 > (no subscript segment in tracked places), ENT-3 (two sites: S9
 > respelled; S8 struck with its label retired), ENT-6
 > (two sites: obligation attachment at the subscript's `psuffix` node;
@@ -91,8 +92,9 @@ leaves the derived reserved sets and becomes an ordinary IDENT.
 > spelling classes — `index` and `index_get` as ordinary IDENTs — and
 > narrows by exactly one measured-empty class: a program whose discharge
 > relied on the struck S8 midpoint facts (zero sites in either corpus,
-> measured 2026-08-07), an owner-approved re-decision under the amended
-> [ENT-1] law, never checker behavior. Every program spelling the old
+> measured 2026-08-07) — an ordinary version amendment under the
+> workflow, outside [ENT-1]'s checker-strengthening law. Every program
+> spelling the old
 > forms is
 > respelled mechanically by canonical reprint [FORM-1], including the
 > attachment ripple the FORM-2 modification fixes. Selection ground:
@@ -300,7 +302,8 @@ subscript is `discharged` at its `psuffix` node" — naming the node keeps
 the per-node derivation retention well-defined for chains, where one
 place node carries several subscripts (review V1).
 
-**[ENT-1]** (discovered knock-on of the S8 strike; §7 note N1.) The law
+**[ENT-1]** (discovered knock-on of the S8 strike; ruled per §7 N1 — the
+minimal scoping only, no procedural clause.) The law
 sentence "a later specification version may add fact sources and closure
 rules and may remove none, so checker strengthening never converts a
 discharged obligation into an undischarged one and never converts a claim
@@ -310,12 +313,13 @@ becomes "a later specification version may add fact sources and closure
 rules, and checker strengthening removes none, so it never converts a
 discharged obligation into an undischarged one and never converts a claim
 into a redundancy-ground rejection — a claim the stronger fragment proves
-becomes a [CLM-2] advisory in every later version, never an error. A
-deliberate fact-source removal is not checker strengthening: it is an
-owner-approved specification re-decision through the language-change
-loop, recorded with its measured acceptance impact." Without this
-scoping, the S8 strike would contradict the installed law's "may remove
-none" as literally read.
+becomes a [CLM-2] advisory in every later version, never an error."
+Without this scoping the S8 strike would contradict the installed law's
+"may remove none" as literally read; with it, the guarantee writers rely
+on (checker strengthening never rejects their programs) is unchanged, and
+what a later specification version may amend is governed by the ordinary
+workflow like every other rule — cross-version compatibility promises are
+deferred wholesale (owner ruling 2026-08-07).
 
 **[ENT-2]** "formed with any number of `psuffix` field selections and
 `deref` wrappings and no `index` segment" becomes "formed with any number
@@ -338,7 +342,7 @@ midpoint is imported folklore not corpus demand, and it was the sole
 source keyed to a multi-statement shape rather than one node plus a path
 condition). One sentence is appended after the S10 bullet: "The label S8
 is retired, not reused: its midpoint family was struck as an
-owner-approved re-decision [ENT-1] and may return as a later version's
+owner-approved version amendment and may return as a later version's
 monotone addition the day a corpus program writes the shape." [ENT-4]'s
 reflexive implicit bound `t - t <= 0` is retained on its own ground — it
 serves derivability generally (equal-term instantiation, derived
@@ -381,7 +385,9 @@ facts would newly reject — measured at zero sites in both corpora
 (2026-08-07; the only shift-by-one sites are a CRC bit fold and a
 pool-tree bound, neither in the three-let shape, and no binary search
 exists), so the narrowing is real in kind and empty in fact, performed as
-the owner-approved re-decision the amended [ENT-1] law names. Every other
+an ordinary version amendment under the workflow; the scoped [ENT-1] law
+binds checker strengthening only, and this honest per-batch accounting is
+batch convention, not law. Every other
 judgment — bounds obligation, offset typing, discharge, kills, residuals,
 dispositions — is spelling-transported, not changed.
 Every existing program that spells `index<…>(…)`, a region-parameter
@@ -456,18 +462,17 @@ review at 186bde5):
   shape-keyed source; restoration is a later version's free monotone
   addition the day a corpus program writes the shape (§4 ENT-3).
 
-Discovered knock-on, drafted rather than silent (owner eyes at hash
-time):
+Discovered knock-on, now ruled:
 
-- N1 — the S8 strike collides with [ENT-1]'s installed law as literally
-  read ("may add fact sources and closure rules and may remove none").
-  Drafted resolution: the minimal ENT-1 amendment in §4 scopes the
-  removal prohibition to checker strengthening and names deliberate
-  source removal as an owner-approved specification re-decision recorded
-  with its measured acceptance impact. Without some such edit, v0.22
-  would violate its own base text; with it, the monotonicity guarantee
-  writers rely on (checker upgrades never reject their programs) is
-  unchanged in substance.
+- N1 — ruled (owner, 2026-08-07): version compatibility is deferred
+  wholesale — the language makes no cross-version compatibility promises
+  at this stage. The minimal resolution stands: [ENT-1]'s removal
+  prohibition is scoped to checker strengthening (§4), and the initially
+  drafted procedural sentence ("deliberate source removal is an
+  owner-approved re-decision recorded with measured acceptance impact")
+  is dropped — spec-version amendments are already governed by the
+  ordinary workflow and need no special clause; the honest
+  acceptance-delta accounting stays in §5 as batch convention, not law.
 
 No other contradiction between the ruled items and v0.21 was found:
 every collision (the OP-4 restatement of `index_get`, the OP-1
