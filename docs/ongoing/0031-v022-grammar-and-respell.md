@@ -2,13 +2,15 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice; owner rulings
   "批" and the N1 version-compat deferral (2026-08-07); the v0.22 delta
   `governance/spec-evolution/index-surface-v022-candidate.md` and assembled
   `kernel-spec-v0.22-candidate.md`
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0031 /
+  `/Users/bytedance/do_not_scan/wf-0031-worktree`, branch
+  `task/0031-v022-grammar-and-respell`
+- **Base revision:** 0615f49
 - **Dependency:** none (candidates landed; step-4 exact-byte approval follows
   this task's evidence, before installation)
 
