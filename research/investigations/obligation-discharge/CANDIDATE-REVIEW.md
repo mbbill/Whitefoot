@@ -453,3 +453,228 @@ terms plus the unordered scope-exit/join interaction let a stale fact
 attach to a fresh same-spelled binding and discharge an out-of-bounds
 index; fix by ordering kills before joins on scope-exit edges and anchoring
 term identity to declaration events.
+
+---
+
+# Re-verify (2026-08-07, targeted; candidate at commit f38a99e, 944 lines)
+
+Scope: targeted re-verification of the applied fixes for F2–F8 (plus F9 and
+the F11 batch as encountered), per lead direction. Not a full re-review.
+
+## F2 — CLOSED (re-attacked, both repairs verified independent)
+
+The revision applies both proposed repairs. ENT-5 now reads "Scope exits
+are edge events: kills (c) and (d) apply on every edge leaving the scope,
+before any join at that edge's target is taken — mirroring [STOR-3]'s
+edge-carried releases — so no arm-local or block-local fact survives its
+scope into a join under any reading", and the join clause samples each arm
+state "taken after that edge's scope-exit kills and then closed". ENT-2 now
+anchors term identity: "Two places are the same term exactly when their
+root `pbase` IDENTs resolve to the same declaration event [TYPE-6, DIAG-1]
+and their canonical source spellings [FORM-2] are byte-identical; a fresh
+binding legally reusing an expired spelling [TYPE-6] is therefore a
+distinct term".
+
+Re-attack attempts, all blocked:
+
+- **Original counterexample** (arm-local `let x` facts + fresh `x` after
+  the match): blocked twice over. Kill (d) fires on each arm exit edge
+  before the join, so the fact never reaches the continuation; and even if
+  it did, the fresh `x` is a distinct declaration event, hence a distinct
+  term, and no fact links the new term to the dead one (S5 at
+  `let x = n;` relates only new-x and n), so no transitive chain reaches
+  the stale bound.
+- **Break edges**: a fact about a loop-local binding flowing on a `break`
+  edge to the loop-continuation join — the break edge leaves the binding's
+  scope, kill (d) is an edge event on it, applied before that join. Dead.
+- **Give edges**: a value_match arm's `give` edge leaves the arm scope;
+  the "every edge leaving the scope" phrasing covers it identically.
+- **Propagate early-return edges**: the `Err` edge leaves the function (no
+  continuation state to poison); the normal continuation is now explicitly
+  "subject to the initializer call's own kill events (b) and (c)".
+- **Nested regions / multi-scope exits**: "region exit [OWN-3] included",
+  and the per-scope phrasing applies once per scope a single edge leaves.
+- **Legitimate-derivation regression check**: facts about outer-rooted
+  terms established inside an arm (support scopes not exited) correctly
+  survive the arm exit edge into the join — the both-arms case still
+  works, so the repair does not over-kill.
+
+Verdict: the counterexample and every variant tried fail against either
+repair alone; the revision lands both. CLOSED.
+
+## F3 — CLOSED (constructive flow verified single-outcome)
+
+ENT-3 now defines the state constructively (establishment, forward flow,
+edge-placed kills with scope-exit kills before joins, ENT-5 joins and loop
+rule, ENT-4 closure of the result) and demotes dominance: "Dominated
+straight-line establishment is a consequence of this construction, not a
+second definition." A fact established separately in every arm now has one
+outcome: each arm exit edge carries it (its support was not scope-killed),
+the join keeps the weakest common bound, and it is present at the
+continuation in every conforming implementation. Direction check: the
+constructive state is a superset of the old dominance-only reading
+(straight-line dominated facts flow trivially; merge points only add), and
+every added fact holds on all incoming paths from executed sources, so the
+resolution is sound and matches the join reading SIMULATION.md assumed —
+no acceptance covered by the original finding changes in an unintended
+direction. I also verified the "join of closed states is closed" claim the
+join rule relies on: the pointwise-weakest of two difference-bound-closed
+states satisfies the triangle rule (max distributes over the sums), and
+rule (2) adds nothing new post-join because any pair with a common
+disequality and a common zero bound already carried the strengthened bound
+in each component state. Residual informal uses of "dominating/dominated"
+remain at four spots (header source list, CLM-1, ENT-6, OP-4) — all are
+now consequence-language over straight-line establishment, not a second
+definition; acceptable as prose. CLOSED.
+
+## F7 — CLOSED (one definition; reflexivity restored)
+
+ENT-4 now states "This least closure is the one definition" and the
+shortest-path sentence is gone (grep for "shortest" over the candidate: no
+hits; the §1 header now says "one least-fixed-point difference-bound
+closure"). ENT-2's implicit facts gain "every term t carries the reflexive
+bound `t - t <= 0`". The S8 same-term derivation is restored: with lo and
+hi the same term t, `lo <= hi` is the implicit `t - t <= 0`, so the
+midpoint facts establish. Side-effect check: reflexive bounds compose to
+no-ops under rule (1) and do not mask contradiction detection (rule (3)
+keeps the smaller constant, so a derivable `t - t <= -1` still wins over
+the implicit 0). CLOSED.
+
+## F4 — CLOSED, one editorial residue
+
+ENT-1 now states the law scoped, with refutation as "the lifecycle's one
+deliberate non-monotone edge; no other judgment of this family may tighten
+acceptance across versions", and CLM-2 opens by naming that edge. The §1
+header describes the lifecycle as "version-monotone in the redundancy
+direction" and names the refutation edge. **Residue (editorial, fix before
+approval):** the header's closing sentence (lines 106–107) survived
+unscoped — "checker strengthening may only convert claims to advisories
+and undischarged obligations to discharged ones" — still asserting the
+absolute the same paragraph disclaims earlier. These bytes become the
+v0.21 status header; append "with [CLM-2] refutation as the one enumerated
+exception" (or equivalent). Semantics correct; one sentence of bytes is
+not.
+
+## F5 — CLOSED for the finding's classes, one adjacent residue
+
+ENT-2's term roots are widened exactly as proposed: "any `let_stmt`
+binding (whichever of the three right-hand forms — ordinary, `propagate`,
+or `value_match` — the statement selects), a `param`, a requires-clause
+local, any match binder regardless of its [OWN-13]-derived mode, or a
+named const". The counterexample now discharges: a propagate-bound buffer
+is tracked, `len(buf)` is a length term, and the ENT-6 fallback closes the
+site. I checked the widened roots against the kill rules: binder-rooted
+places resolve through OWN-13's child-reborrow resolution so kills (a)/(b)
+fire on aliasing writes, and binder facts die at arm exit under the F2
+edge rule — no soundness regression. With v0's flat-element rule (TYPE-2:
+no array-of-array elements) every legal index base is now term-formable.
+**Adjacent residue (editorial):** ENT-6's "that fallback always closes
+discharge" still overreaches for an *offset* atom that is itself an inline
+`index` place (legal: GRAM-9 offsets are atoms, atoms include places,
+places may be index-rooted). A non-term offset leaves the relation
+underivable and no claim can state it; the actual fix is rebinding the
+offset through an ordinary let and indexing with the binding. One sentence
+("an offset that is not a term is first rebound through an ordinary
+`let`") makes the sentence true.
+
+## F6 — CLOSED (both knock-ons landed; accounting verified)
+
+FN-1 is now a §6 entry quoting the exact v0.20 edge-enumeration sentence
+(verified verbatim against the base) and adding "or `claim`"; DIAG-1 gains
+the claim-name carrier class, cross-referenced from CLM-1. Accounting
+recounted independently: §6 lists thirteen entries (FORM-2, FORM-5,
+GRAM-4, GIVE-1, OP-1, OP-4, FN-1, FN-8, EFF-2, SET-1, DIAG-1, DIAG-2,
+DIAG-3) plus §7's SYS-8 and SYS-9 = **fifteen**, matching the header's
+"fifteen existing rules modified" and its itemized list, and §7's
+"candidate total: fifteen modified rules" line. §12's completeness claim
+now enumerates the three caught collisions. **Nit (editorial):** the
+DIAG-1 entry states the added sentence but not its insertion point within
+DIAG-1's carrier paragraphs; every other §6 entry gives a before/after
+anchor, and the full-document generation will need one.
+
+## F8 — CLOSED (buckets restated consistently)
+
+§9 sha256 now reads "add 4 claims — the loop-head pair `16 <=
+extend_index` and `extend_index < 64` ... plus two others (hottest loop: 5
+checks/iteration -> 2 claim checks at L0)", and §10 requires "4 claims
+covering 8 sites" with an explicit note that SIMULATION.md's frozen "3
+claims" row counts the conjoined claim once where ruling O11 requires two.
+Arithmetic checked: 1 conjoined + 2 others = 3 becomes 2 + 2 = 4; hot-loop
+5 -> 2 is the split pair. Leaving SIMULATION.md unedited is correct
+(frozen research; editing evidence to match a later rule is the exact
+regenerate-to-go-green breach standing law forbids). CLOSED.
+
+## Bonus checks
+
+- **F9 — CLOSED**: a second SYS-8 edit repoints the range-validation
+  cross-reference ("traps as the operation-internal contract check
+  retained by [OP-4] [ERR-4]"), and the header records it.
+- **F11 batch — all ten applied**: OWN-7 cited for overlap in ENT-2 and
+  kills (a)/(b); empty break-join defined (see choice 1 below); propagate
+  continuation subject to kills (b)/(c); S6 slice_of gains "for a tracked
+  P"; S8's `2_T` replaced by "the literal two of the concrete type T";
+  per-instantiation judgment stated in ENT-1; index_get row position fixed
+  (appended last) with the place operand stated non-consuming; CLM-2
+  defines non-comparison predicates as neither redundant nor refutable;
+  CLM-1 states the reserved-name asymmetry as chosen; S1/S7/S8/S10 origin
+  conditions reworded to "no [ENT-5] kill event applies to a fact
+  supported by ...". "coordination pending" phrasing is gone.
+
+## Revision-pass notes — position on the five recorded choices
+
+1. **Empty-join value = contradictory all-derivable state** (owner
+   sitting). **AGREE — recommend adopting.** The continuation of a
+   break-less loop is unreachable in truth (v0 loops exit only via `break`
+   naming their label; FN-1's extra edge is deliberately conservative for
+   reachability only), and this is exactly the already-ruled O8 posture
+   for unreachable-in-truth states: discharge everything, refute nothing.
+   The alternative (empty fact state) would demand claims after the loop
+   that can never execute — dead checks as review noise. It is also the
+   algebraically forced choice: the join over zero states is the join
+   identity, so anything else breaks join associativity on edge cases.
+2. **len/slice_of/index-base non-consuming clarification as a sixteenth
+   modified rule** (owner sitting). **AGREE — recommend landing it in this
+   batch.** ENT-6's fallback (`let n: own u64 = len<T>(P);`) is now
+   load-bearing normative machinery at every migration site, and it rests
+   on a reading v0.20 never states: OWN-1 literally makes a bare affine
+   place operand a hard error, and FN-8's non-consuming sentence is
+   requires-scoped. Strictly read, the batch's own mechanical fix is
+   ill-formed for exactly the affine bases (buffer, array) it exists to
+   serve. One sentence in OP-1 (place operands of `len`, `slice_of`,
+   `index_get`, and the `index` base are non-consuming reads [OWN-1])
+   closes it cheaply and pre-empts the next review or a second
+   implementation finding the same hole.
+3. **F2 fixed by both repairs, not only the mandatory one.** AGREE — each
+   repair independently blocks the counterexample (verified above), and
+   belt-and-braces is proportionate for machinery whose wrong derivation
+   compiles a raw out-of-bounds access into the TCB's blind spot.
+4. **sha256 restated to 4 claims; SIMULATION.md left frozen.** AGREE —
+   editing frozen evidence to match a later rule is the
+   regenerate-to-go-green breach; explaining the divergence at the two
+   consumption points (§9, §10) is the correct mechanism.
+5. **F4 worded as absolute redundancy-monotonicity plus refutation as the
+   enumerated tightening edge; advisory alternative not taken.** AGREE
+   with the direction — it matches DOSSIER §2.7's deliberate lifecycle
+   ("checker upgrade refutes a claim → hard error") and the shift-left
+   goal; a claim proven false on every reaching execution is a defect, and
+   an advisory would knowingly ship a guaranteed trap. The only remaining
+   defect is the unscoped header sentence recorded under F4 above.
+
+## Re-verify verdict
+
+| finding | verdict |
+|---|---|
+| F2 | CLOSED (both repairs verified; re-attack variants all blocked) |
+| F3 | CLOSED (single-outcome verified; join-closure claim checked) |
+| F4 | CLOSED — one editorial residue: unscoped header sentence (lines 106–107) |
+| F5 | CLOSED for the finding's classes — one editorial residue: "always closes" vs inline-index offsets |
+| F6 | CLOSED (fifteen-count verified independently) |
+| F7 | CLOSED (one definition; reflexivity restored; no side effects) |
+| F8 | CLOSED (4-claim restatement arithmetically consistent) |
+| F9 | CLOSED (cross-reference repointed) |
+| F11 | all ten applied |
+
+No new soundness or acceptance-changing finding surfaced during re-attack.
+Remaining work is three editorial items (F4 header sentence, F5 offset
+caveat, F6 DIAG-1 insertion anchor) plus the two owner-sitting choices,
+on both of which this review recommends adoption as recorded above.
