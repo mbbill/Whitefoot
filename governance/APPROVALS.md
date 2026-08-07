@@ -225,3 +225,9 @@ specification or test change.
 - reason: WORKFLOW step-4 exact-byte approval of the v0.21 specification batch: `governance/spec-evolution/kernel-spec-v0.21-candidate.md` at SHA-256 `3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f` — 128 rules (CLM-1/2, ENT-1..6 added; fifteen rules modified at sixteen sites), obligation-discharge batch 1, grammar path verified 65/74/77 on task/0030 with main at 64/74/75.
 - boundary: those exact candidate bytes for activation as `spec/kernel-spec-v0.21.md`; integration of task/0030-grammar-path-extension.
 - evidence: owner instruction "approved" (2026-08-07) after the step-4 presentation.
+
+## 2026-08-07 — approval (process simplification)
+- owner: approved in session
+- reason: corpus/test migration rules relaxed — edits (scripted or manual) are permitted; the owner reviews the result, same treatment as spec bytes. Standing simplification going forward: spec changes and test changes both go to owner review; no canonical-emitter tooling is built for migration at this stage. Existing law unchanged: conformance verdict meanings never shift silently.
+- boundary: task 0031 item (4) re-scoped to reviewable respell; future respell batches inherit this process.
+- evidence: owner instruction "算了，把规矩放宽一点。可以改，但改完了要给我看，我审批…未来spec和测试都是给我review就好了" (2026-08-07).

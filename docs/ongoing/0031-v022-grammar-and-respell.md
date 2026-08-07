@@ -96,3 +96,13 @@ that a different mechanism is acceptable, or resequence so the corpus
 respell is its own task behind a printer. Whichever is chosen, the card
 should also state whether the semantic re-anchoring is in this task's
 scope.
+
+## Plan repair (lead, 2026-08-07, owner process ruling)
+
+Blocker resolved: no canonical emitter is built. Item (4) re-scoped — the
+respell may be done by a one-shot scratch script or direct edits; the
+deliverable adds a REVIEW PACKET for the owner (per-file diffstat, ten
+representative before/after samples, and the statement that no conformance
+verdict meaning changed). Item add: the five semantic-checker prefix-index
+sites and O3 psuffix anchoring are IN scope. Reconcile the 135-vs-138
+count before migrating. Authority: APPROVALS.md 2026-08-07 process entry.
