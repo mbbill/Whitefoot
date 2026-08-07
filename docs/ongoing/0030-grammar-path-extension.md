@@ -2,13 +2,15 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** `ACTIVE` `docs/current-plan.md` selected slice items 1 and 3,
   and the owner's 2026-08-07 approval of
   `governance/spec-evolution/obligation-discharge-batch1-candidate.md`
   (`governance/APPROVALS.md`)
-- **Owner / workspace:** unclaimed / to be filled at claim
-- **Base revision:** to be filled at claim
+- **Owner / workspace:** exec-0030 /
+  `/Users/bytedance/do_not_scan/wf-0030-worktree`, branch
+  `task/0030-grammar-path-extension`
+- **Base revision:** d459b49
 - **Dependency:** none (candidate approved; this task gates v0.21 candidate
   generation per ruling O1)
 
