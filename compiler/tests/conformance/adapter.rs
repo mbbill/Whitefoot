@@ -250,18 +250,18 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "BLOCKED, not scoped out: 9 runnable cases do not reach their declared verdict \
-            through this compiler, in two causes. 4 await the pending v0.20 micro \
-            specification batch: three returned-reborrow cases v0.19's OWN-6 does not \
-            settle outside call-argument position, and one whose expectation over-specifies \
-            the implementation-defined order between a simultaneously established TYPE-7 \
-            and OWN-1. 5 are protected-source defects the task-0027 amendment bundle \
-            reached but did not close, each reported open with its unmasked cause: three \
-            incomplete compilation units stopping at FN-7, one second bare affine return \
-            the approved one-token repair did not name, and one OWN-5 borrow conflict that \
-            contradicts its own declared intent. Run `make conformance-run` for the \
-            complete tally; the per-case history is docs/done/0025-attribution-divergences.md \
-            and docs/done/0024-general-borrow-parameters.md."]
+#[ignore = "BLOCKED, not scoped out: 1 runnable case does not reach its declared verdict \
+            through this compiler. own1-neg-match-move-through-borrow expects OWN-1 for \
+            `match move deref(holder)`, but the compiler cites OWN-5, whose active text \
+            owns the move-through-borrow ban; the case awaits a separate owner ruling on \
+            the expected citation and is deliberately untouched until then. The v0.20 \
+            activation settled the other five: the three returned-reborrow cases under \
+            OWN-14's admission, the TYPE-7/OWN-1 same-node order under DIAG-1's \
+            first-definition rank, and the uniq-match payload case under OWN-13's \
+            arm-scoped child reborrow. Run `make conformance-run` for the complete \
+            tally; the per-case history is docs/done/0025-attribution-divergences.md, \
+            docs/done/0024-general-borrow-parameters.md, and \
+            docs/done/0029-v020-activation.md."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(
