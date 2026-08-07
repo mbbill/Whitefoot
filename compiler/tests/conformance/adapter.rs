@@ -250,15 +250,18 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 }
 
 #[test]
-#[ignore = "BLOCKED, not scoped out: 25 pre-existing runnable cases do not reach their \
-            declared verdict through this compiler, in three remaining causes. 9 stop as \
-            unsupported on the general scalar/enum borrow-parameter capability (task \
-            0021's A/B showed the system-type capability it delivered gates none of \
-            them; next-plan candidate). 15 are rule-attribution divergences under \
-            investigation (tasks 0019/0020 findings). 1 awaits a protected-source owner \
-            ruling (gram5 region argument). Run `make conformance-run` for the complete \
-            tally; the bucket history is docs/done/0014-first-slice-conformance-execution.md \
-            and docs/done/0019/0020."]
+#[ignore = "BLOCKED, not scoped out: 9 runnable cases do not reach their declared verdict \
+            through this compiler, in two causes. 4 await the pending v0.20 micro \
+            specification batch: three returned-reborrow cases v0.19's OWN-6 does not \
+            settle outside call-argument position, and one whose expectation over-specifies \
+            the implementation-defined order between a simultaneously established TYPE-7 \
+            and OWN-1. 5 are protected-source defects the task-0027 amendment bundle \
+            reached but did not close, each reported open with its unmasked cause: three \
+            incomplete compilation units stopping at FN-7, one second bare affine return \
+            the approved one-token repair did not name, and one OWN-5 borrow conflict that \
+            contradicts its own declared intent. Run `make conformance-run` for the \
+            complete tally; the per-case history is docs/done/0025-attribution-divergences.md \
+            and docs/done/0024-general-borrow-parameters.md."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(
