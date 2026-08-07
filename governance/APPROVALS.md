@@ -261,3 +261,9 @@ specification or test change.
 - reason: (1) the FLOOR-5 spelling batch (`governance/spec-evolution/spelling-relief-candidate.md`, READY after three adversarial rounds — 24 rules at 46 sites, 69 productions) approved for activation through the grammar-path + migration cycle; (2) the remaining DOSSIER §8 items all approved as a lane: taint gate (subject-position), counted range loop, requires-as-goal, ensures, deny-claims partition; (3) the taint gate is ADVANCED in priority on the 0035 acceptance evidence (three canonical-Huffman sites became aborting claims where the design demands Err branches, because no gate exists); (4) ENT-5 loop-rule fix drafted pending the owner's word after the written explanation.
 - boundary: drafting and implementation proceed; each spec activation still takes its own exact-byte entry.
 - evidence: owner instruction "从语法到剩下的5个都极其重要。批准了，开始做吧" + "2.提前" (2026-08-07).
+
+## 2026-08-07 — approval (ENT-5 loop-rule fix)
+- owner: approved in session after the written explanation
+- reason: the loop rule's kill scan considers only kill events on edges that can reach a later iteration head; edges leaving the loop or the function (return, break, propagate's error edge) are excluded, since no later head observes their kills. Lead-accepted drafting detail (O1): the reachability form rather than the enumerated statement-kind form — sound, needs no enumeration, and additionally drops a `set`'s kill when only a return follows. Honest correction of record: this is NOT fully monotone — discharge and redundancy only widen, but a surviving pre-loop fact can newly supply a claim's exact negation, so CLM-2 refutation can newly reject a program that traps on every execution reaching it (ENT-1's already-enumerated non-monotone edge).
+- boundary: the ENT-5 site only; the provenance gate drafted beside it is split out pending measurement.
+- evidence: owner instruction "OK，我同意这个改法，批准了。循环体return回边就这么做吧" (2026-08-07).
