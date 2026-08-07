@@ -106,3 +106,20 @@ instruction ("你继续,不要停…都要落地", 2026-08-07) and is presented 
 ratification next session. mcts_mem recording of the discussion's durable
 decisions is queued lead work. Deferred by sequencing discipline: ensures,
 taint gate, range loop, requires-as-goal (dossier §8 order unchanged).
+
+## Queued after FLOOR-5 (owner-approved 2026-08-07)
+
+1. **Arithmetic-mode dissolution (DOSSIER §2.9).** `+trap` and the other
+   `.trap` rows are the implicit-retained-check mechanism that caller-side
+   discharge replaced for indexes, surviving under a spelling: an unnamed,
+   unjustified, un-ledgered trap outside CLM-2's lifecycle and outside the
+   provenance gate. Bare `+` becomes the goal-carrying form; `+wrap` and
+   `+sat` stay (different total functions); `.checked` collapses into the
+   branch. Corpus footprint measured: 59 `.trap` sites (47 `iadd.trap`,
+   5 `imul`, 4 `isub`, 3 assorted, one of them an invalid-spelling
+   fixture) against 334 `.wrap`. Precondition, to be measured before
+   drafting: how many sites are SIGNED addition, whose overflow predicate
+   is disjunctive and therefore needs either two claims or a restructure.
+   Sequenced after FLOOR-5 so the spelling batch carries no semantics.
+2. **ENT boolean-composition precision (O11 correction).** See the
+   research note; drafted alongside the approved ENT-5 loop fix.
