@@ -5,7 +5,7 @@ struct Pair {
 
 fn pass_pair(item: own Pair) -> own Pair pure {
   doc "OWN-1: an own affine place in return position is contextually moved exactly once.";
-  return item;
+  return move item;
 }
 
 fn pass_box(holder: own box<i32>) -> own box<i32> pure {

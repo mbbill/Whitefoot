@@ -1,4 +1,4 @@
-fn f(x: own i32) -> own i32 reads('r), reads('s) {
+fn f ['r, 's](x: own i32) -> own i32 reads('r), reads('s) {
   doc "Two separate reads effects duplicate the reads kind [EFF-1]; canonical is reads('r 's).";
   return x;
 }
