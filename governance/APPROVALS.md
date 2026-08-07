@@ -219,3 +219,9 @@ specification or test change.
 - reason: ruling on the task-0030 blocker (retired staged-grammar mechanism): option 3, atomic activation — the compiler grammar-path extension, the v0.21 full-document candidate, and every identity pin move together on one reviewed task branch; the verifier shows 65/77 green on the branch and 64/74/75 on main until merge. Amends ruling O1's "extension before candidate generation" to "concurrent on the activation branch". Table data by mirroring the else-row pattern for because (claim_stmt is grammar-isomorphic to check_stmt), with a one-shot generator deleted after use as fallback. No staged dual-contract rebuild.
 - boundary: task 0030 re-scoped accordingly; step-4 exact-byte approval of the v0.21 candidate remains a separate owner entry before installation.
 - evidence: owner instruction "嗯，3" (2026-08-07) after the three-option presentation.
+
+## 2026-08-07 — approval (exact byte)
+- owner: approved in session
+- reason: WORKFLOW step-4 exact-byte approval of the v0.21 specification batch: `governance/spec-evolution/kernel-spec-v0.21-candidate.md` at SHA-256 `3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f` — 128 rules (CLM-1/2, ENT-1..6 added; fifteen rules modified at sixteen sites), obligation-discharge batch 1, grammar path verified 65/74/77 on task/0030 with main at 64/74/75.
+- boundary: those exact candidate bytes for activation as `spec/kernel-spec-v0.21.md`; integration of task/0030-grammar-path-extension.
+- evidence: owner instruction "approved" (2026-08-07) after the step-4 presentation.
