@@ -24,6 +24,22 @@ ordering rule for simultaneously established post-resolution rejections
 determinism law. Hostile-review the draft before presenting; verifier;
 exact-approval packet with SHA and delta accounting.
 
+## Progress
+
+- **Completed:** candidate drafted at
+  `governance/spec-evolution/kernel-spec-v0.20-candidate.md` (full v0.19
+  text + batch): new OWN-14 (non-argument reborrow disposition; returned
+  reborrow admitted, recommended disposition A), amended OWN-5/OWN-6/OWN-9
+  cross-references, amended DIAG-1 same-node citation rank (first-defined
+  rule). Ledger rows and candidate-stage amendment section added. Native
+  checks green: `whitefoot-grammar` grammar-preserving (64/74/75),
+  `validate_spec_integrity` Ok(120) on candidate+ledger via a spec.rs
+  test, both gates green unpiped. The explicit-rejection alternative
+  (disposition B) is worked out in the executor report for the owner's
+  choice; no protected byte was edited.
+- **Current/next:** lead review, then the owner's A-vs-B choice and
+  exact-byte approval packet (SHA in the executor report).
+
 ## Validation, stop, and closure
 
 Grammar-preserving verifier green; META-5 header complete (delta AND

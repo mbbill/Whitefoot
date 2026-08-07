@@ -150,6 +150,16 @@ mod tests {
     }
 
     #[test]
+    fn v020_candidate_has_complete_internal_integrity() {
+        let candidate =
+            include_str!("../../../governance/spec-evolution/kernel-spec-v0.20-candidate.md");
+        assert_eq!(
+            validate_spec_integrity(candidate, DERIVATION_LEDGER),
+            Ok(120)
+        );
+    }
+
+    #[test]
     fn unknown_references_and_missing_ledger_rows_fail() {
         let spec = "Specification delta: test\nSelection ground: test\n[X-1] See [X-2].\n";
         let errors = validate_spec_integrity(spec, "").expect_err("invalid spec must fail");
