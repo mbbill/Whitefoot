@@ -2,9 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` (2026-08-07: the round-1 blocker is ruled; waiting on the
-  drafter's fixed delta before re-assembling the candidate. Read-only
-  preparation meanwhile.)
+- **Status:** `WAITING` — handed back 2026-08-07 at a clean boundary, before any
+  compiler file was touched. Nothing is half-built: the branch holds only the
+  assembled candidate and this record, and `make check` exits 0. A successor
+  takes over from the hand-back brief below. This is earlier than the
+  pre-authorized "grammar path + pins green" boundary; the reason is in the
+  brief.
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
   2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's
@@ -120,6 +123,81 @@ checked IR is compiler-internal, so this is not desugaring in the spec's sense.
   it reproduces v0.22's existing tables byte-for-byte first, then extend. The
   reviewer's `infix_tail`/`infix` name-mismatch carry-forward is a property of
   that generator, so it is a first-class test of it.
+
+## Hand-back brief
+
+Read this section and the two above it; the rest is history.
+
+**Why the hand-back is here rather than at "grammar path + pins green".** The
+generator that ruling 2 makes a hard gate is an iterative build — reproducing
+530 nodes, 364 select atoms, and 2003 select rows byte-for-byte means many
+diff-and-adjust cycles against the committed table, each one cheap on its own
+and expensive in aggregate. Starting it with the budget left would have
+produced a half-built generator that a successor must first understand and then
+probably discard, which is worse than a clean hand-off. The fixed delta had
+also not landed, so the extension target was still unknown. Everything below is
+work a successor would otherwise have to redo.
+
+**1. The single most valuable finding: `if`/`value_if` is cheap.**
+`CheckedEnumType` already has a `Bool` variant and
+`check/control/matches.rs:193` already builds a Bool `MatchDescriptor`, so both
+new source forms check into the *existing* checked Bool-match statements.
+Entailment, lowering, cleanup, drops, and backend need no change, and ENT-3 S1
+plus the ENT-5 join come out isomorphic for free. The lead approved this on
+2026-08-07: GRAM-1's 1:1 production-to-node law governs the source tree, while
+DIAG-2 makes the checked program private compiler state, so two source
+constructs sharing one checked form is an implementation choice, not
+source-visible desugaring.
+
+**2. Its two approval conditions.** (a) Every diagnostic and DIAG-3 path must
+resolve to the `if` source node — **verified, not assumed**: `issue_node`
+(`check/support.rs:121`) takes a source `NodeId` and resolves it through
+`self.tree.path(node)`; every `TrapSite` is built in the checker the same way
+(`control.rs:268`); and `grep -c NodePath` over `compiler/src/lowering` and
+`compiler/src/backend` returns **0**, so nothing downstream can override the
+location. Pass the `if_stmt` node for the empty-else and flattening
+rejections, the condition `expr` node for a condition failure, and the
+scrutinee `expr` node for a Bool-scrutinee `match`. (b) Pin it with negative
+conformance cases asserting both the cited rule and that the citation lands on
+the `if` construct: `gram6-neg-bool-scrutinee-match`, `gram6-neg-empty-else`,
+`gram6-neg-unflattened-else-if` (citation at the *nested* `if_stmt`, per the
+candidate), plus `give1-neg-empty-delivery-set` at the `let_stmt` node.
+
+**3. Grammar source map — includes a non-obvious trap.** The 65 productions do
+not all live in fenced EBNF blocks. 61 do: GRAM-2 has 26, GRAM-3 has 5, GRAM-4
+has 18, GRAM-5 has 12. The remaining **four are written inline in prose** with
+backticks — `const` in [CONST-1], `cvalue` in [CONST-2], and `effects` and
+`effect` in [EFF-1]. That is why the verifier's frontend contract hashes the
+prose ranges `[CONST-1]`..`## 5. Ownership` and `[EFF-1]`..`[EFF-2]` rather
+than code blocks, and it maps exactly onto the `RuleOwner` enum. A generator
+that scrapes only fenced blocks silently produces 61 productions.
+
+**4. Generator plan (ruling 2).** Build in scratch, delete after use, per 0030
+and 0031 precedent. Milestones: parse the EBNF above into node trees; reproduce
+`PRODUCTIONS`, `PRODUCTION_ROOTS`, `PRODUCTION_OWNERS`; then `GRAMMAR_NODES`
+(530) and the children/terminal arenas; then `DECISIONS` (75), `SELECT_ATOMS`
+(364), and `SELECT_ROWS` (2003) with provenance. Gate: byte-identical to the
+committed `generated.rs` before extending. Then extend to 69 productions and
++21 fixed terminals (76 -> 97 predicates; `TerminalSet`'s u128 still fits).
+Treat the `infix_tail` production / `infix` node-kind name mismatch as a
+first-class test of the generator — every other pair shares a name. Note that
+byte-for-byte reproduction proves agreement on the v0.22 grammar, not
+completeness of the extended tables; the migrated corpus parse is the
+completeness oracle, which is the control that was missing when 84 follow rows
+went missing in 0031's predecessor.
+
+**5. Candidate assembly is a solved problem.** The round-1 assembler applied 57
+verbatim anchors, each asserted to occur exactly once, and its output verified
+at 128 rules and 20 sections with the frontend contract changing only in the
+`[FORM-1]` section. Re-assembling from the fixed delta is the same mechanical
+exercise; the round-1 candidate at
+`9ca13585dca6668bec9c1b4c219cbb5fc94559bcc29f67d04d52bbb61af5eef4` is
+superseded by the fixed delta and should be regenerated, not patched.
+
+**6. Do not redo.** The blocker below is ruled (FN-4's premise is re-keyed to
+the operand-derived selected type; TYPE-5's retained-argument class is not
+touched, so review finding F3 stays closed). The GRAM-1 shape-kind deviation
+below is accepted and is being folded into the delta as a proper site.
 
 ## Blocker (round 1 — RULED, retained for history)
 
