@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `ONGOING` (claimed 2026-08-07)
+- **Status:** `DONE` (2026-08-07: acceptance measured — utf8parse and sha256 held, deflate diverged 5/29 vs 17/30 predicted; ENT-5 loop rule isolated as dominant cause; 20 conformance cases added, annotations 36->30)
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
 - **Owner / workspace:** exec-0035 / /Users/bytedance/do_not_scan/wf-0035 (branch task/0035-ent-acceptance-run)
 - **Base revision:** 9fa3d6d
