@@ -648,7 +648,7 @@ bounds checks." becomes "The final statement has exactly [OP-5] semantics;
 its passed fact enters the function body's entry fact state exactly as
 [ENT-3] source S4 fixes."
 
-**[EFF-2]** Two edits. In the syntactic contribution: "exhibit `traps` iff
+**[EFF-2]** Three edits. In the syntactic contribution: "exhibit `traps` iff
 either contains any `.trap` op, `check`, a bounds-checked `index`, or a call
 to any operation or function whose effect row includes `traps` (even if
 later proven away)" becomes "exhibit `traps` iff either contains any `.trap`
@@ -659,7 +659,15 @@ contribute normally, and every bounds-checked target `index` syntactically
 exhibits `traps` even when its runtime check is later proof-eliminated."
 becomes "Effects exhibited while evaluating the target and right-hand side
 contribute normally; an accepted target `index` is discharged [OP-4] and
-contributes no `traps`."
+contributes no `traps`." In the canonical-example paragraph (the paragraph
+beginning "Canonically, a nongeneric function whose only parameter is
+`own ReadFile`…"): "Its declaration contains no call, no `check`, no
+bounds-checked `index`, and no other syntactic effect occurrence" becomes
+"Its declaration contains no call, no `check`, no `claim`, and no other
+syntactic effect occurrence" — an assembly-discovered consequential edit
+(D1, 2026-08-07): the example's contributor enumeration must match the
+amended contributor list, and neither the original delta nor the review
+enumerated it.
 
 **[SET-1]** "…at each `index<T>(base, offset)`, `base` is evaluated before
 `offset`, and its retained [OP-4] bounds check executes before evaluation
