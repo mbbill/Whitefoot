@@ -243,3 +243,9 @@ specification or test change.
 - reason: WORKFLOW step-4 exact-byte approval of `governance/spec-evolution/kernel-spec-v0.22-candidate.md` at SHA-256 `b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8` — index surface settlement (subscript psuffix, element-type derivation, index_get removal, S8 parked, ENT-1 scoping), 128 rules. Review packet accepted: 137 files, corpus respell verdict-meaning-preserving (adapter 364/1/14 -> 365/1/14, same single pre-existing fail), repurposed + additive cases per rulings, `=[` cvalue attachment accepted as-ruled (revisit at FLOOR-5). Lead spot-checks: hash both sides, utf8parse zero old-form sites, patterns.md clean.
 - boundary: those exact bytes installed as `spec/kernel-spec-v0.22.md`; integration of task/0031-v022-grammar-and-respell.
 - evidence: owner instruction "帮我过一下好了" (2026-08-07) after the packet presentation.
+
+## 2026-08-07 — standing overnight delegation
+- owner: granted in session before sleeping
+- reason: full decision delegation to the lead for the night — reviews (including 0034's corpus-migration diff and any executor deliverable), integration, and sequencing proceed without owner stops; nothing blocks awaiting owner input. Owner ratifies or fixes forward after waking.
+- boundary: the active implementation ladder (0033-0035) and its integration; spec ACTIVATIONS remain out of scope for the night (FLOOR-5 stays frozen at READY for an awake review).
+- evidence: owner instruction "别停了，一直跑吧，你帮我决定。别block了…如果真有问题的话到时候再修" (2026-08-07).
