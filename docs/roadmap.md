@@ -1,7 +1,8 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 15
+Revision: 16 (adds PROOF-8 obligation-discharge semantics and FLOOR-5
+spelling relief, both research-complete on 2026-08-06 evidence)
 
 The active language authority is
 [`spec/kernel-spec-v0.20.md`](../spec/kernel-spec-v0.20.md), SHA-256
@@ -201,6 +202,36 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [DEFLATE design handoff](../research/experiments/zlib-core-kernels/DESIGN-HANDOFF.md) ·
   [proof-guided autotuning](ideas.md#proof-guided-autotuning).
 
+### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
+
+`[research: complete]` `[next: spec proposal]`
+
+- **Goal:** replace implicit trap sites with explicit machine-tracked
+  obligations. Every partial operation and `requires` becomes a proof goal;
+  each call site discharges it statically, or by a `claim` (named,
+  justification-carrying runtime check — the sole trap source), or by a
+  branch (mandatory when an externally-derived value sits in the
+  constrained-subject position); callees compile in one uncheck form.
+  Result and trap decouple: Result models expected outcomes, trap is the
+  checker's runtime backstop at its provability frontier.
+- **Current:** design frozen and all four registered falsifiers executed
+  green on 2026-08-06: hand-simulation over three native programs (57–59%
+  of obligations proven at v0.17-strength entailment, every residual one
+  line), two writer-behavior probes (16/16 honest shapes under hostile and
+  perf-gate pressure), taint probe on wfgrep under real v0.18+ boundaries
+  (zero saturation, one structural claim in 723 lines), codegen parity
+  (claim shape equals today's check shape; backend already elides
+  induction-friendly checks).
+- **Missing / next:** spec batches per the dossier's §8 entry-point order —
+  first slice: claim construct, normative L0 entailment fragment, OP-4
+  caller-side discharge with `index` total form; boundary count-bound
+  postconditions coordinate with BOUND-1's SYS rules.
+- **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
+  [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
+  [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
+  [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
+  [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md).
+
 ## Verification and compiler trust
 
 Serves W3, T1, and T2: current claims must survive independent, hostile, and
@@ -349,6 +380,26 @@ and every slower-but-accepted divergence becomes a measured finding.
 - **Missing / next:** measure repair-to-green on real project failures and turn
   repeated confusion into a diagnostic or teaching defect.
 - **Facts:** v0.17 `DIAG-*` · [honest limitation](why-whitefoot.md#part-vi-what-it-does-not-beat-and-what-is-not-yet-known).
+
+### FLOOR-5 — Spelling rule and surface relief
+
+`[research: complete]` `[next: spec batch after PROOF-8 slice 1]`
+
+- **Goal:** every surface byte carries a decision the checker cannot
+  reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
+  globality, plus no-optionality); relieve ceremony strictly per grammar
+  class while boundaries stay fully explicit.
+- **Current:** rule agreed and the full v0.20 surface sweep recorded:
+  whole-class deletions (value-op type args, `index` type, body-let
+  annotations, Bool-match arm ceremony → `if`/mandatory `else if`
+  flattening, all auto-migratable by the canonical printer), whole-class
+  keeps (literal suffixes, loop labels, the three named-argument
+  disciplines, signatures), per-operation respellings (precedence-free
+  infix — safe exactly because GRAM-9 ANF is retained), ANF relaxation
+  deferred indefinitely.
+- **Missing / next:** one spelling batch (deletions + respellings), native
+  grammar-verifier pass, mechanical corpus migration in the same change.
+- **Facts:** [sweep](../research/investigations/spelling-relief/SWEEP.md).
 
 ## Storage, ownership, and representation
 

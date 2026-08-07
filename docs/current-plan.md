@@ -58,3 +58,33 @@ protected material only under its recorded ruling.
 The owner's separate obligation-discharge investigation proceeds
 independently in its own records; this plan neither sequences nor depends
 on it.
+
+## Alternative slice for the same owner selection (added 2026-08-06)
+
+The obligation-discharge research completed its falsifier round; outline
+revision 16 registers it as PROOF-8 with FLOOR-5 as companion. The owner may
+select either the attribution slice above or this slice as the next ACTIVE
+plan; the unselected one returns to the outline unharmed.
+
+**Slice: obligation-discharge spec batch 1.** Derived from outline revision
+16, items `PROOF-8` (primary), `BOUND-1` (postcondition coordination),
+`FLOOR-5` (sequenced after, not in, this slice).
+
+1. Draft the claim construct grammar (named check + `because` string;
+   DIAG-3 record carries the claim name) and verify with the native grammar
+   verifier.
+2. Write the normative L0 entailment fragment: path-sensitive dominating
+   facts, linear arithmetic, allocation-length equality, const-element
+   ranges, effect-row-driven kill rules; redundant-claim-is-warning as the
+   version-monotonicity rule.
+3. OP-4 caller-side discharge with `index` total form; FN-8 foreign-entry
+   preserved as synthesized boundary adapters.
+4. State the SYS count-bound postconditions with the BOUND-1 owner.
+5. Conformance cases and corpus updates land in the same batch per the
+   derived-material rule; the three-program simulation's classifications
+   serve as the acceptance sample.
+
+Validation: `make check` green; the simulation's proven/claim/branch
+buckets reproduced by the real checker on utf8parse, the deflate-dynamic
+unit, and sha256; every spec delta through the WORKFLOW language-change
+loop with owner approval per protected-surface rules.
