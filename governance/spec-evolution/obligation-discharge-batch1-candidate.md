@@ -1,6 +1,7 @@
 # Obligation-discharge batch 1 — specification-change candidate
 
-Status: CANDIDATE, DRAFT (2026-08-06). Non-authoritative. This document is the
+Status: CANDIDATE, DRAFT (2026-08-06; owner rulings of 2026-08-07 applied,
+§12). Non-authoritative. This document is the
 complete batch-1 delta of the obligation-discharge design against the exact
 text of `spec/kernel-spec-v0.20.md`. It authorizes nothing: per
 `docs/WORKFLOW.md`, activation requires owner approval of exact bytes, and per
@@ -11,22 +12,25 @@ the claim construct, the normative L0 entailment fragment, and caller-side
 discharge for OP-4 index bounds — plus, folded in on lead direction
 2026-08-06, the count-bound core of item 4 as Section D (§7): the SYS
 count-bound postconditions surveyed by `SYS-POSTCONDITIONS.md` (commit
-a926f13), with coordination with the BOUND-1 owner pending. Everything else
+a926f13), riding in this batch per ruling O15 with final wording settled at
+the approval sitting with the BOUND-1 owner. Everything else
 in that dossier — arithmetic-mode dissolution, requires-as-goal, ensures, the
 taint gate, counted range loops, partitions and ledger tooling — is
 deliberately out of this batch (§11).
 
 Base: `spec/kernel-spec-v0.20.md` (REVIEW CANDIDATE v0.20 bytes as of
-2026-08-06). Target version number and canonical candidate path are an owner
-choice (open question O1); this file deliberately does not occupy
-`kernel-spec-v0.21-candidate.md`.
+2026-08-06). Per ruling O1 the target version is v0.21, and the
+full-document candidate at `kernel-spec-v0.21-candidate.md` is generated
+from this delta after the compiler grammar-path extension (§3 sequencing).
+An independent adversarial review is in flight and may produce a second
+revision pass before formal approval.
 
 ## 1. Proposed version-header paragraph
 
 The following paragraph is drafted for the eventual numbered candidate's
 status header, in the v0.20 header conventions.
 
-> Status: REVIEW CANDIDATE vNEXT (2026-08-06; obligation-discharge batch 1:
+> Status: REVIEW CANDIDATE v0.21 (2026-08-07; obligation-discharge batch 1:
 > the claim statement, the normative L0 entailment fragment, and caller-side
 > discharge of index bounds). Adds one named runtime-check statement —
 > `claim name: e because "text";` — whose semantics are exactly [OP-5]'s
@@ -47,7 +51,9 @@ status header, in the v0.20 header conventions.
 > Rewrites [OP-4]: a source `index` compiles with no runtime bounds check
 > exactly when the fragment discharges its bounds obligation at that node,
 > and an undischarged index is a compile-time rejection whose diagnostic
-> prints the residual obligation; the total read form `index_get` returning
+> prints the residual obligation; the index offset atom's exact type is
+> fixed as `own u64`, stating for the first time a rule prior text left
+> unstated; the total read form `index_get` returning
 > `Option<T>` is added to the operation table; the [SYS-8] range-validation
 > trap is unchanged as an operation-internal contract check. [FN-8]'s
 > foreign-entry execution is restated as one toolchain-synthesized boundary
@@ -63,7 +69,8 @@ status header, in the v0.20 header conventions.
 > line-bearing),
 > FORM-5 (STRING homes), GRAM-4 (claim_stmt production; stmt gains one
 > alternative), GIVE-1 (claim is non-delivering), OP-1 (index_get row;
-> derived reserved sets grow by one), OP-4 (rewritten to discharge-or-reject),
+> derived reserved sets grow by one), OP-4 (rewritten to discharge-or-reject;
+> offset atom fixed as `own u64`),
 > FN-8 (passed fact feeds ENT-3; synthesized boundary adapter), EFF-2 (traps
 > contribution: bounds-checked index out, claim in), SET-1 (no runtime check
 > in target evaluation), DIAG-2 (discharged disposition; claims always
@@ -80,10 +87,12 @@ status header, in the v0.20 header conventions.
 > cross-reference names either renumbered section). The accepted-program set
 > changes in both directions and this transition is deliberately non-monotone
 > (§8): it grows by claim statements and `index_get` calls, and it shrinks by
-> exactly four classes — an `index` whose bounds obligation the fragment does
+> five classes — an `index` whose bounds obligation the fragment does
 > not discharge, an effect row whose `traps` was exhibited only by
-> bounds-checked indexes, a declaration spelled `index_get`, and identifiers
-> spelled `claim` or `because`. From this version forward the [ENT-1]
+> bounds-checked indexes, a declaration spelled `index_get`, identifiers
+> spelled `claim` or `because`, and an `index` whose offset atom is not
+> exact `own u64` (the newly stated typing rule). From this version forward
+> the [ENT-1]
 > monotonicity law governs: checker strengthening may only convert claims to
 > advisories and undischarged obligations to discharged ones. Selection
 > ground: evidence-selected — SIMULATION.md (L0 discharges 57–59% of
@@ -205,7 +214,8 @@ compile time. A claim whose trap record any execution produces is thereby
 demonstrated not to be a necessary truth; surfacing fired claims for
 reclassification is a toolchain contract in the [ERR-2] edit-list sense, not
 a language judgment. Advisory channel and encoding are implementation-owned
-in this version (open question O5).
+in this version until ledger tooling lands (ruling O5, §12); the advisory
+itself is required to exist.
 
 ## 5. New rules — the L0 entailment fragment
 
@@ -349,7 +359,7 @@ The sources are:
   declared element values, vlo <= x and x <= vhi are established at the
   binding. The index's own bounds obligation [ENT-6] is judged separately
   and is unaffected. Deeper const shapes establish nothing in this version.
-- S10 (boundary count facts; Section D, §7, coordination pending). For a
+- S10 (boundary count facts; Section D, §7). For a
   `match_stmt` or `value_match` whose scrutinee is directly a call to
   `read_once`, `write_once`, `host_copy_bytes`, or `host_copy_utf8`
   [SYS-2, SYS-8], or a bare IDENT naming a `let` binding of the call's
@@ -431,7 +441,10 @@ terms or constants; an operand that is not a term or constant leaves the
 relation underivable, never ill-formed. This version attaches exactly one
 obligation family: for every source `index<T>(P, i)` place — read, write,
 and [SET-1] target position alike — the bounds obligation `i < len(P)`,
-normalized `i - len(P) <= -1`, at the `index` node. The obligation is
+normalized `i - len(P) <= -1`, at the `index` node, where `i` is the offset
+atom whose exact type [OP-4] fixes as `own u64`, so both sides are
+u64-typed and the relation is over their mathematical values. The
+obligation is
 discharged exactly when the closed fact state at that node derives it
 [ENT-4, ENT-5]. An undischarged obligation is the [OP-4] rejection; its
 diagnostic renders the residual as exactly: the offset atom's canonical
@@ -486,7 +499,11 @@ positional operands [GRAM-11].
 > dominating branch establishing it [ENT-3]. Discharge is a deterministic
 > checker derivation [ENT-1]; a solver result never participates. `index`
 > applies to `array<T, N>`, `slice<'r, T>`, and `buffer<T>` places; a
-> `buffer<T>` obligation is over the runtime length term. An `index` in a
+> `buffer<T>` obligation is over the runtime length term. The offset atom
+> has exact value mode and type `own u64`; after the [TYPE-7] implicit-read
+> exclusivity, any other offset mode or type is a hard error citing OP-4 at
+> the offset `atom` node, with `SourceCoordinate` equal to that atom's
+> complete checked half-open source extent. An `index` in a
 > [SET-1] target forms the selected place without reading its stored value;
 > its base and offset are evaluated during target evaluation, and its
 > discharge judgment is identical in target position. A successful bounds
@@ -560,12 +577,13 @@ validation judged under [OP-4]'s retained operation-internal semantics."
 source index has no runtime check and produces no trap record.) The message
 paragraph gains: "For a [CLM-1] claim, `rule_id` is `CLM-1` and `message` is
 the claim's exact IDENT spelling; the justification STRING is compile-time
-data and does not appear in the record." (Alternative encoding is open
-question O3.)
+data and does not appear in the record." (Ruled O3: the four-field schema
+is kept; an operand-value DIAG-3 amendment is queued with ledger tooling,
+not this batch.)
 
 **[SYS-8], [SYS-9]** — modified by Section D; exact deltas in §7.
 
-## 7. Section D — SYS count-bound postconditions (coordination with BOUND-1 owner pending)
+## 7. Section D — SYS count-bound postconditions (rides in this batch per ruling O15)
 
 Basis: `research/investigations/obligation-discharge/SYS-POSTCONDITIONS.md`
 (commit a926f13; survey of the count-returning [SYS-2] operations in v0.20).
@@ -583,10 +601,11 @@ already binds an operation's complete outcome set to its semantic ID, and
 [SYS-12]'s retained-redirection fact is the exact stylistic precedent for a
 checker-visible fact stated as prose plus [DIAG-2] retention.
 
-This section's wording is drafting material in the survey's proposed
-sentences: final text is settled at approval in coordination with the owner
-of the in-flight BOUND-1 system-capability work, which owns the SYS-family
-surface. Two rules are modified.
+Ruling O15 (§12): Section D rides in this batch, and the [SYS-8] sentence is
+replaced in place. This section's wording remains drafting material in the
+survey's proposed sentences: final text is settled at the approval sitting
+in coordination with the owner of the in-flight BOUND-1 system-capability
+work, which owns the SYS-family surface. Two rules are modified.
 
 **[SYS-8] modification.** In the "Buffer and cursor disposition is exact."
 paragraph, the sentence "A target returning a count outside the validated
@@ -652,7 +671,10 @@ declared `traps` was exhibited only by bounds-checked indexes — now a
 declared-but-unexhibited [EFF-2] rejection until the row is corrected or a
 claim restores the category; (3) any declaration spelled `index_get`
 ([FORM-3] via the derived reserved set); (4) any identifier spelled `claim`
-or `because`. The transition is deliberately non-monotone — it is the
+or `because`; (5) any program whose index offset atom is not exact
+`own u64` — the ruling-O9 sentence states a rule v0.20 left unstated, and
+is expected to formalize implemented behavior (verified at implementation
+time). The transition is deliberately non-monotone — it is the
 design's one-time dissolution of implicit bounds checks into explicit,
 named, reviewable discharge — and the [ENT-1]/[CLM-2] monotonicity law
 governs every subsequent version. The current `tests/programs/` corpus
@@ -693,6 +715,9 @@ branch-shaped in the corpus (no edit).
   `percent_decode.wf`, and the rest) were not classified by the simulation;
   migration requires a per-program pass, and this candidate makes no bucket
   claim about them.
+- The [OP-4] offset-typing sentence (ruling O9) is expected to require no
+  corpus edit: it states the operand type the implemented compiler already
+  uses, which the implementation pass confirms.
 
 Conformance corpus: bounds-trap expectations for source `index` sites become
 either discharged-accept expectations or CLM-1 claim-trap expectations;
@@ -725,84 +750,62 @@ Per DOSSIER §8 ordering: arithmetic `.trap`/`.checked` mode dissolution
 unchanged), `ensures`, the taint/subject-position gate and signature
 provenance column, counted range loops, loop induction, struct/witness
 invariants, partition policies and ledger tooling, and any warning-bytes
-normalization. Within Section D's own area, also out: cross-call-congruence
+normalization. Also out per ruling O7: any `check` deprecation and any
+test-assertion migration to claims — deferred to the FLOOR-5 spelling
+batch. Within Section D's own area, also out: cross-call-congruence
 consumption of the three [SYS-9] relations, any lower-bound fact source,
-and the failing-call `required > capacity` companion bound. Each needs its
-own candidate and evidence.
+and the failing-call `required > capacity` companion bound. The operand-
+value DIAG-3 amendment is queued with ledger tooling (ruling O3). Each
+needs its own candidate and evidence.
 
-## 12. Open questions requiring owner ruling
+## 12. Resolved rulings (owner, 2026-08-07)
 
-- O1. Version number and path: does this batch become
-  `kernel-spec-v0.21-candidate.md` (path currently unoccupied), and does the
-  owner want the full-document candidate produced from this delta before or
-  after the compiler grammar-path extension (§3 sequencing)?
-- O2. Total-form spelling: `index_get` (proposed: dotless IDENT-domain table
-  op, zero token changes, OP-7-consistent since totality is not a mode axis)
-  vs `index.get` (requires adding `get` to FORM-3/GRAM-1's closed OPNAME
-  suffix set: token change, reserved mode-word `get`, wider blast radius) vs
-  a different spelling.
-- O3. Claim trap-record bytes: proposed `rule_id` `"CLM-1"` and `message` =
-  claim name, keeping the four-field DIAG-3 schema byte-stable. Alternative:
-  a fifth `"claim"` field carrying the name with `message` carrying the
-  justification. The dossier's "operand values in the record" (§2.3) is not
-  representable in the current schema at all; carrying operand values is a
-  larger DIAG-3 amendment this candidate does not draft.
-- O4. Rule-family naming and placement: CLM/ENT names, one new §18 with the
-  worked example and meta-rules renumbered to §19/§20 (proposed) vs folding
-  claim rules into the OP family beside OP-5.
-- O5. Advisory (warning) status: this is the language's first non-rejecting
-  required diagnostic. Proposed: required to exist, channel and encoding
-  implementation-owned until ledger tooling lands. Alternatives: fully
-  normative bytes now, or downgrade to recommended.
-- O6. Claim-name discipline: per-function uniqueness outside every TYPE-6
-  domain and outside OP-1's reservation inventory (proposed) vs unit-wide
-  uniqueness or reservation coverage.
-- O7. `check` beside `claim`: batch 1 keeps OP-5 and FN-8's final check
-  unchanged; the dossier's end-state has claim as the sole trap source. Is a
-  deprecation trajectory for bare `check` wanted, and should test assertions
-  migrate to claims now or later?
-- O8. Contradictory (unreachable-in-truth) fact states: proposed
-  discharge-everything / refute-nothing / redundancy-advisory [ENT-4].
-  Alternative: a dedicated unreachable-code diagnostic.
-- O9. Index-offset operand typing: this candidate expresses the obligation
-  over the offset's mathematical value and changes no operand-typing rule; I
-  found no v0.20 rule fixing the offset's exact required type (the `index`
-  production types only the element). If a rule fixes it elsewhere, [ENT-6]
-  should cite it; if not, is fixing it (presumably u64) wanted in this batch?
-- O10. Midpoint-family scope: exactly the two defining shapes of S8
+All sixteen questions raised by the 2026-08-06 draft were ruled on
+2026-08-07; every ruling selects the draft's proposed option unless noted.
+The rulings are applied throughout this document.
+
+- O1 — Ruled: target version v0.21; the full-document candidate at
+  `kernel-spec-v0.21-candidate.md` is generated from this delta after the
+  compiler grammar-path extension (§3 sequencing).
+- O2 — Ruled: `index_get`, dotless IDENT-domain table operation; no OPNAME
+  suffix change.
+- O3 — Ruled: four-field DIAG-3 schema, `rule_id` `"CLM-1"`, `message` =
+  claim name; the operand-value DIAG-3 amendment is queued with ledger
+  tooling, not this batch.
+- O4 — Ruled: CLM/ENT family names and the new §18 placement with §19/§20
+  renumbering, as drafted.
+- O5 — Ruled: the redundancy advisory is required to exist; channel and
+  encoding are implementation-owned until ledger tooling lands.
+- O6 — Ruled: per-function claim-name uniqueness, outside every TYPE-6
+  domain and outside OP-1's reservation inventory, as drafted.
+- O7 — Ruled: `check` kept unchanged in this batch; deprecation and
+  test-assertion migration are deferred to the FLOOR-5 spelling batch.
+- O8 — Ruled: contradictory states discharge every obligation and refute no
+  claim, as drafted [ENT-4].
+- O9 — Ruled: the offset-typing fix lands in this batch — the offset atom
+  is exact `own u64`, stated in the [OP-4] replacement text (§6) and cited
+  from [ENT-6].
+- O10 — Ruled: the S8 midpoint family is exactly the two defining shapes
   (`ishr.wrap` by literal 1; `idiv.trap` by literal 2), unsigned T only.
-  Confirm this closed list, or name additional shapes now.
-- O11. Comparison-origin indirection: exactly one `let` step, no
-  `band`/`bor`/`bnot` composition (proposed L0 cut). Confirm.
-- O12. Boundary adapters: batch 1 preserves FN-8 trap semantics at gated
-  entries; the dossier's §2.8 error-protocol return for foreign callers is
-  deferred to the requires-as-goal batch. Confirm the deferral.
-- O13. EFF-2 row churn (§8 class 2, §9) is a deliberate consequence of
-  removing index `traps` in this batch rather than deferring that clause
-  until arithmetic dissolution. Confirm.
-- O14. Residual rendering: the fixed whole-obligation schema of [ENT-6]
-  (proposed) vs a reduced-frontier residual (rendering the nearest missing
-  difference bound after transitive reduction), which is more informative
-  but requires a canonical-frontier selection rule this candidate does not
-  draft.
-- O15. Section D coordination: the exact [SYS-8]/[SYS-9] wording is settled
-  at approval with the BOUND-1 owner. Two sub-choices inside it: whether
-  the consolidated [SYS-8] paragraph replaces the target-facing sentence in
-  place (the survey's proposal, adopted in §7) or is added beside it; and
-  whether Section D rides in this batch's candidate at all or lands as its
-  own coordinated candidate on the BOUND-1 critical path.
-- O16. Section D scope inside this batch: the three [SYS-9] relations are
-  proposed as normative retained facts with no L0 consumer (§7). Confirm
-  landing them now versus deferring the (c)-class rows until cross-call
-  congruence exists; and confirm that no lower-bound fact source (the
-  guarded `capacity > 0 ∧ ReadBytes(count) ⇒ count > 0`) is wanted in this
-  batch.
+- O11 — Ruled: comparison-origin indirection is exactly one `let` step; no
+  `band`/`bor`/`bnot` composition at L0.
+- O12 — Ruled: boundary adapters preserve FN-8 trap semantics; the dossier
+  §2.8 error protocol waits for the requires-as-goal batch.
+- O13 — Ruled: the EFF-2 row churn (§8 class 2, §9) is accepted as part of
+  this batch's migration.
+- O14 — Ruled: the fixed whole-obligation residual schema of [ENT-6], as
+  drafted.
+- O15 — Ruled: Section D rides in this batch; the [SYS-8] sentence is
+  replaced in place; final wording is settled at the approval sitting with
+  the BOUND-1 owner.
+- O16 — Ruled: the three [SYS-9] relations land now as retained facts with
+  no L0 consumer; no lower-bound fact source in this batch.
 
 No genuine contradiction between DOSSIER §8 items 1–3 plus Section D and
 v0.20 was found during drafting: every collision (OP-4's implicit checks,
 EFF-2's index clause, DIAG-3's index row, SET-1's target-trap sentence,
 FN-8's check-elision sentence, SYS-8's target-facing sentence) is a
-deliberate, enumerated modification above rather than an ambiguity. The
-nearest tensions are O3 (dossier wants operand values in the trap record;
-DIAG-3's fixed schema has no home for them) and O9 (offset typing unstated
-in the studied text).
+deliberate, enumerated modification above rather than an ambiguity. The two
+tensions the draft flagged are both closed by ruling: O3's operand-value
+record amendment is queued with ledger tooling, and O9's previously
+unstated offset typing is now stated in [OP-4].
