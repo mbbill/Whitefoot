@@ -2,10 +2,10 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `ONGOING` (claimed 2026-08-07)
 - **Authority:** `ACTIVE` docs/current-plan.md selected slice; batch-1/v0.22 candidates and rulings in governance/
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0035 / /Users/bytedance/do_not_scan/wf-0035 (branch task/0035-ent-acceptance-run)
+- **Base revision:** 9fa3d6d
 - **Dependency:** 0034
 
 ## Goal
