@@ -8,7 +8,7 @@ fn main() -> own unit pure {
   match Some(value: first_atom_0001) {
     None() => {
     }
-    Some(value: value) => {
+    Some(value: payload) => {
     }
   }
   return unit;

@@ -8,8 +8,8 @@ fn main() -> own unit pure {
   region 'r {
     let holder: &uniq 'r Packet = &uniq 'r packet;
     match deref(holder) {
-      Data(value: value) => {
-        let saved: own i32 = deref(value);
+      Data(value: payload) => {
+        let saved: own i32 = deref(payload);
       }
     }
   }
