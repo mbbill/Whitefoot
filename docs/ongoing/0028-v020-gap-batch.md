@@ -37,6 +37,16 @@ exact-approval packet with SHA and delta accounting.
   test, both gates green unpiped. The explicit-rejection alternative
   (disposition B) is worked out in the executor report for the owner's
   choice; no protected byte was edited.
+- **Completed (extension after lead finding):** rebased onto main
+  (0027 landed); the fourth affected case
+  `own13-pos-uniq-match-payloads` — v0.19's OWN-13/OWN-5 binder
+  contradiction, reproduced (OWN-5 BorrowConflict at `deref(payload)`) —
+  is closed in the candidate by defining the borrow-mode payload binder
+  as OWN-13's arm-scoped child reborrow (uniq root suspended, with
+  non-resumption inside its region falling out of OWN-4's existing
+  regional liveness; shared roots unchanged; arm-end resumption
+  DEFERRED, blocked on the PROVISIONAL arm-result join). OWN-13 joins
+  the modified-rule list; all checks rerun green.
 - **Current/next:** lead review, then the owner's A-vs-B choice and
   exact-byte approval packet (SHA in the executor report).
 
