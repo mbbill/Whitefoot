@@ -237,3 +237,9 @@ specification or test change.
 - reason: `type5-neg-index-element-type` repurposed — v0.22 deletes stated index element types, making the tested error unspellable; the case becomes a positive pin of the new element-type derivation (`items[0_u64]` binds u8). Same concern, stronger form (R4: check-time rejection promoted to unrepresentable).
 - boundary: that one case source + manifest row, within task 0031.
 - evidence: owner instruction "改用途" (2026-08-07).
+
+## 2026-08-07 — approval (exact byte, v0.22)
+- owner: review delegated to lead ("帮我过一下好了"); lead verified and approved
+- reason: WORKFLOW step-4 exact-byte approval of `governance/spec-evolution/kernel-spec-v0.22-candidate.md` at SHA-256 `b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8` — index surface settlement (subscript psuffix, element-type derivation, index_get removal, S8 parked, ENT-1 scoping), 128 rules. Review packet accepted: 137 files, corpus respell verdict-meaning-preserving (adapter 364/1/14 -> 365/1/14, same single pre-existing fail), repurposed + additive cases per rulings, `=[` cvalue attachment accepted as-ruled (revisit at FLOOR-5). Lead spot-checks: hash both sides, utf8parse zero old-form sites, patterns.md clean.
+- boundary: those exact bytes installed as `spec/kernel-spec-v0.22.md`; integration of task/0031-v022-grammar-and-respell.
+- evidence: owner instruction "帮我过一下好了" (2026-08-07) after the packet presentation.
