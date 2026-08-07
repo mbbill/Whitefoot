@@ -678,3 +678,309 @@ No new soundness or acceptance-changing finding surfaced during re-attack.
 Remaining work is three editorial items (F4 header sentence, F5 offset
 caveat, F6 DIAG-1 insertion anchor) plus the two owner-sitting choices,
 on both of which this review recommends adoption as recorded above.
+
+---
+
+# v0.22 review (2026-08-07; index-surface candidate at a5e1cdb, against installed spec/kernel-spec-v0.21.md)
+
+Part 1 is the targeted adversarial pass on
+`governance/spec-evolution/index-surface-v022-candidate.md`; Part 2 is the
+first application of the standing residue-hunt axis over the v0.21 surface
+plus this candidate's additions. Finding IDs continue as V* (v0.22) and
+R* (residue).
+
+## Part 1 — targeted adversarial pass
+
+### Anchors and accounting — verified, one definitional wobble
+
+All **21 quoted anchors** were checked verbatim against
+`spec/kernel-spec-v0.21.md` by exact string search: every one matches
+exactly once (FORM-2 ×2, GRAM-5 ×2, GRAM-6, GRAM-9, SET-1 ×2, CONST-2,
+OWN-7, OP-1 ×2, OP-4, FN-8, EFF-2, DIAG-1, DIAG-2, ENT-2, ENT-3, ENT-6
+×2). The **sixteen modified rules** are exactly the sixteen the header
+itemizes. The **nineteen sites** reproduce only as the header itemizes
+them per rule (SET-1, OP-1, ENT-6 at two each, the rest at one); no single
+definition of "site" yields 19 — contiguous paragraphs give 18 (ENT-6's
+two edits share one paragraph), edited sentences give 20 (FORM-2 edits
+two), verbatim anchors give 21. Editorial: define "site" or replace the
+number with the stable anchor count.
+
+**Completeness** (the axis that caught F6 last time): an exhaustive sweep
+of every construct-level `index`/`index_get` occurrence in v0.21 maps each
+one to the sixteen rules or the register note — lines 179 (GRAM-5), 183
+(GRAM-6), 191 (GRAM-9), 232/236 (SET-1), 242 (CONST-2), 264 (OWN-7), 360/
+364 (OP-1), 386 (OP-4), 486 (FN-8), 506 (EFF-2), 573 (DIAG-1), 652
+(DIAG-2), 1012 (ENT-2), 1038 (S9), 1051 (ENT-6 ×2), line 34 (the
+R3-PROVISIONAL register entry, covered by the candidate's register
+reduction), line 3 (the frozen v0.21 status header, correctly untouched),
+and English-usage-only lines 282 ("arena-index-pool") and 962 ("expose,
+index, or mix"). The §19 worked example contains no index spelling and no
+bracket, so no EX-1 respell is owed. No missed rule.
+
+### V1 (acceptance-changing spec-craft, must fix — via O3): the drafted
+rejection/obligation anchor is undefined for non-final subscripts
+
+**Candidate text:** "at the place node formed by that subscript suffix"
+(OP-4 rewrite, twice, and ENT-6), glossed in O3 as "the innermost place
+node whose final suffix is the subscript".
+
+**Attack.** Under the new grammar a place is one flat production —
+`place := pbase psuffix*` — so `a[i][j]` derives **one** place node with
+three children (pbase `a`, psuffix `[i]`, psuffix `[j]`); there is no
+intermediate place node for `a[i]` (GRAM-1's 1:1 production-to-node
+mapping; the offset atoms `i`, `j` are their own nodes, the prefix chain
+is not). For the inner subscript `[i]`, no place node has `[i]` as its
+final suffix — the drafted anchor selects nothing; for the chain's two
+bounds obligations, both would collapse onto the single place node,
+breaking DIAG-2's "retains its exact [ENT-4] derivation **for that
+node**", leaving the residual choice at a two-rejection node ambiguous,
+and giving the wrong-base error at an inner subscript no defined
+location. Under the old grammar each nested `index` was its own pbase
+node, so v0.21 had per-subscript identity for free; the respelling loses
+it exactly where the drafted anchor pretends to keep it.
+
+**Fix.** Rule O3 to its listed alternative: anchor at the subscript's
+`psuffix` node (a real node with its own extent, one per subscript), and
+align the three dependents — the undischarged rejection, the wrong-base
+error, and ENT-6's obligation attachment ("at that subscript `psuffix`
+node"). DIAG-2's per-node derivation retention is then well-defined for
+chains.
+
+### V2 — LL(2) argument attacked and survived
+
+What was tried, per the lead's list plus variants:
+
+- **Follow set of a complete place.** Enumerated every context a `place`
+  can occupy in v0.21: atom positions (followed by `,` `)` `;` `{`
+  `else` `because` and, newly, `]`), set targets (`=`), deref interiors
+  (`)`), borrow operands, scrutinees, claim/check conditions. No
+  production places `[` after a complete place — region_params follow a
+  declaring `fn` IDENT or a generics `>` (declaration positions, no place
+  decision live), and cvalue `[` follows `=`, `,`, or `[` inside
+  `const_decl` (no place decision live). So the `psuffix*` decision's
+  consuming rows (`.`-IDENT, `[`-first(atom)) are disjoint from every
+  exit-continuation row. 
+- **Generic argument lists**: at an expr decision, (IDENT, `[`) selects
+  atom→place-with-subscript while call rows are (IDENT, `<`) and (IDENT,
+  `(`) — two-token disjoint; targs interiors contain no `[`.
+- **Nested subscripts**: `a[b[i]]` and `a[b][i]` are distinct token
+  streams, each parsed deterministically (inside an offset atom the inner
+  place's own `psuffix*` consumes `[` greedily; `]` selects neither arm
+  and exits) — matching the candidate's O4 posture.
+- **Attachment (O1) interaction**: attachment sets are byte-format rules
+  applied after parsing; token streams are unchanged, so the O1 choice
+  cannot create a parse ambiguity in any direction.
+
+No ambiguity found; the candidate's §2 argument is correct (its
+parenthetical omits the `fn f<T> ['r](` generics case, but the conclusion
+covers it — cosmetic).
+
+### V3 — spelling-transport verified; exactly two semantic deltas, both
+flagged
+
+Side-by-side of the OP-4 rewrite against v0.21's paragraph: every
+sentence is byte-transported except (a) the element-type derivation
+sentence, which is the ruled A2 item itself (the deleted targ's
+information moves to a stated derivation; "declared-type selection that
+types a field suffix" is the right analogy and imports no inference), and
+(b) the wrong-base hard error (O7, assessed below). The `index_get`
+sentences leave with the operation. The ENT anchor moves (ENT-2, S9,
+ENT-6) carry no drift — S9's `own T` annotation still states the element
+type at the binding, so the fact family is unchanged. SET-1's
+restatement is equivalent: "base place evaluated before its offset atom"
+plus the retained "from its base outward" reproduces the old nested
+order (a, i, j for `a[i][j]`). The claim "narrows semantically nowhere"
+holds for the respelled program set; programs whose old spelling wrote a
+*wrong* element type simply lose the wrong byte along with the right
+one, which is the deletion working as ruled.
+
+### V4 (editorial): §6's measured footprint is wrong in both ripple counts
+
+Re-measured 2026-08-07: subscript sites **266** (`tests/programs/*.wf`)
+and **138** (`tests/conformance/`) match, `index_get` nowhere matches. But
+region-parameter headers are **84**, not 88 (` ['` over both corpora's
+`.wf`, and the unfiltered count is also 84); and cvalue arrays are
+**31**, not 40 — the 40 comes from an unfiltered grep counting nine
+`= [` lines in `tests/conformance/runner.py` and `test_runner.py`, which
+are Python list literals that do not reprint. A governance candidate's
+"Measured footprint" must measure canonical sources only.
+
+### V5 (editorial): two unenumerated attachment-ripple classes
+
+(1) The installed spec's own bytes: the [SYS-2] signature block spells
+nine ` ['` region-parameter headers (`fn args_count ['a](…` …), and under
+O1 the canonical `fn_sig` rendering changes; the full-document v0.22
+candidate must either respell that block or state that record notation is
+exempt from FORM-2 attachment — §6 enumerates neither. (2) The `, [`
+boundary: with `[` right-attaching, a nested cvalue array renders
+`],[` after a comma; the corpus has zero such sites today (measured), but
+the class is real and the ripple enumeration should name it so the
+printer change is reviewed against it.
+
+### V6 (editorial): OWN-6/OWN-13/OWN-14 bracket metanotation now collides
+with live syntax
+
+v0.21 writes reborrow forms as `&uniq 'c deref(h)[suffix]` (and
+`resolved(child) = resolved(h) ++ suffix`), where `[suffix]` is
+metanotation for an appended suffix chain. Once `p[i]` is real syntax,
+`deref(h)[suffix]` reads as a subscript whose offset is a binding named
+`suffix`. No semantic effect, but the same batch should restate the
+metanotation ("`deref(h)` followed by any written suffix chain") in
+OWN-6/OWN-14 (and OWN-13's `++` gloss) or the v0.22 full document
+inherits a genuinely misreadable normative sentence.
+
+### O1–O7 recommendations
+
+- **O1 (attachment fork): adopt `[` into the right-attachment set.** A
+  mandatory `p [i]` defeats the readability ground the respelling stands
+  on, META-2 rightly forbids a per-context set, and the ripple is
+  printer-mechanical — but land it with the corrected counts (84 + 31)
+  and the V5 enumeration.
+- **O2 (register): adopt the settlement reading.** SWEEP's four-test
+  verdict is exactly the validation the R3-PROVISIONAL register demands;
+  re-entering the new spelling as fresh-provisional would make every
+  respelling self-perpetuating in the register. The surviving "deref
+  prefix places" half stays provisional, which the candidate gets right.
+- **O3 (rejection-node identity): reject the drafted anchor, adopt the
+  `psuffix`-node alternative** — see V1; the drafted option is undefined
+  for chains.
+- **O4 (nested subscripts): confirm no tightening.** Mirrors v0.21;
+  ENT-6's rebinding sentence already prices the no-term offset;
+  tightening grammar here would be semantics riding a spelling batch.
+- **O5 (released spellings): confirm no soft-reservation.** A soft
+  reservation would be a third naming state the language has nowhere
+  else; the derived sets exist so reservation follows the table
+  mechanically. Add one conformance case using `index` as an ordinary
+  binding to pin the release.
+- **O6 (verifier sequencing): confirm the batch-1 shape.** §3 correctly
+  records fail-closed expectations and defers exact counts to the
+  grammar-path task.
+- **O7 (wrong-base attribution): keep the sentence.** It is a legitimate
+  statement of existing behavior's attribution, not new semantics: a
+  non-indexable base was never accepted under v0.21 (OP-4's applies-to
+  list gave it no meaning; SCOPE-2 accepts only what every rule
+  satisfies), so the sentence changes no program's acceptance — it pins
+  which rule and node an already-mandatory rejection cites, exactly the
+  class of the ruled batch-1 O9 offset-typing sentence, and the batch
+  deleting the redundant element type is the right moment to pin it
+  (wrong-base confusion becomes likelier at exactly these sites). One
+  adjustment: its drafted location inherits V1; re-anchor per O3, and
+  consider the base place node rather than the subscript node — the
+  defect is the base's type, and the offset-typing error already anchors
+  at the offset atom, so base-side symmetry reads best.
+
+## Part 2 — residue hunt (first application of the standing axis)
+
+Method: for each construct on the v0.21 surface plus this candidate's
+additions, the four questions — (1) re-derivable from the kernel today,
+(2) native need vs imported habit, (3) what family the justification
+licenses and whether it is bounded, (4) one mechanism per concern.
+
+### R1 (residue) — ENT-3 S8, the midpoint family
+
+**Fails question 1 and strains 2 and 3.** Corpus evidence (measured
+2026-08-07): zero sites in `tests/programs/` and `tests/conformance/`
+match the three-let shape — the only shift-by-one sites are a CRC bit
+fold (`crc >> 1`) and a pool-tree loop bound (`half = width >> 1` with no
+`isub.wrap(hi, lo)` and no `iadd.wrap(lo, half)`), and no binary search
+exists in either corpus; the `idiv.trap(_, 2)` alternative shape appears
+nowhere. SIMULATION.md lists "halving" in its L0 capability description
+but names no site that demanded it. So the kernel, asked today, answers
+the midpoint with one claim per site (the same relocate-and-price posture
+the dossier assigns to loop facts) — we would not invent a bespoke
+three-statement shape matcher for a shape no program writes. On question
+2, the overflow-safe midpoint is cross-language folklore (the canonical
+Java binary-search bug), imported in anticipation rather than demanded by
+this corpus. On question 3, shape-keyed fact sources invite accretion,
+and the asymmetry shows it: the manifestly more-demanded shape for this
+corpus's future (the `irem` remainder bound `r < n` — ring buffers, hash
+tables) is absent while midpoint is present, i.e. selection tracked
+anticipation, not need. It also grazes the project's own taste rule
+("by grammar and semantic rule, never by … source shape") — S8 is
+normative source-shape-keyed semantics, the only ENT-3 source keyed to a
+multi-statement pattern rather than one node plus a path condition.
+Soundness is untouched (the family was verified exact in the original
+review); this is a residue verdict. **Recommendation:** strike S8 from
+the next fragment revision or park it until a corpus program writes the
+shape; ENT-1's monotone versioning exists precisely so it can be re-added
+for free the day binary search lands. (Precedent: `index_get` survived
+four passes on soundness grounds and fell to exactly this question.)
+
+### R2 (residue, tracked) — S2 check-facts beside S3 claim-facts
+
+Fails question 4: `check` and `claim` are two spellings of one
+trap-check concern, both fact sources, differing only in name and
+lifecycle. Already owner-acknowledged (batch-1 ruling O7 defers `check`
+deprecation to the FLOOR-5 spelling batch); recorded here so FLOOR-5
+inherits it as the standing duplicate rather than rediscovering it.
+
+### R3 (residue, low) — the three SYS-9 relations with no L0 consumer
+
+Fail question 1 as of today: normative retained facts whose only stated
+effect is "fail-closed retention plus review value" until cross-call
+congruence exists. The SYS-12 precedent is weaker than it looks — its
+retained redirection fact names the exact future consumer it fails
+closed against (a cross-resource reordering fact), while these three
+name none. Owner-ruled (O16) and cheap, so keep — but the pattern to
+watch is "normative facts landed ahead of any consumer"; the residue
+axis should re-ask question 1 of these rows when cross-call congruence
+is next scoped.
+
+### Constructs examined and passed
+
+- **`because` justification string** — passes 1 (the untrusted-writer
+  authorship factoring demands auditable prose at the assertion site;
+  today's consumer is the human reviewer, which is real), 2 (SPARK's
+  workflow is prior art but the mandate derives from W3's own frame), 3
+  (branches need no string — the written else is their justification;
+  bounded), 4 (per-assertion data, distinct from declaration `doc`).
+- **Claim name discipline** — passes; the dual identity with `node_path`
+  is two stability classes (edit-stable vs positional), not duplication.
+- **CLM-2's three verdicts** — all forced (redundancy-advisory is the
+  monotonicity keystone; refutation is the ruled shift-left edge;
+  fired-claim escalation is toolchain, not language). Question 3 note:
+  the advisory family will grow by the dossier's dead-else lint
+  (§4.1c); enumerable, bounded.
+- **ENT-3 S1, S4, S5, S6, S7, S9, S10 and implicit type ranges** — each
+  is either structurally forced (S1/S4/S5/S6) or anchored to a named
+  probe demand (S7 cursor arithmetic and S9 const tables in
+  SIMULATION.md; S10 in PROBE-TAINT.md; type ranges in the u8-table
+  prediction). Only S8 lacks a demand (R1).
+- **Boundary adapters** — forced by the kernel (foreign entries have no
+  call site, so someone must run the prologue); trap semantics
+  unchanged; noted that gated FFI is a stubbed path today, but the
+  sentence restates an existing FN-8 obligation rather than adding
+  machinery.
+- **SYS count postconditions (the four S10 bounds)** — pass;
+  PROBE-TAINT promoted them to load-bearing before they were drafted.
+- **v0.22's subscript respelling** — passes: imported idiom on its face,
+  but the R3 register held the old prefix form as explicitly
+  provisional pending exactly this validation, and SWEEP's four tests
+  are the evidence form the register demands.
+- **v0.22's element-type deletion** — passes, with the doctrine line
+  worth recording: redundancy **with transposition risk** stays
+  (GRAM-8/GRAM-11 names guard reorderable same-typed slots); redundancy
+  with a unique reconstruction carries zero check value and goes (one
+  possible T per site). Future deletion candidates should be tested on
+  that line, not on "redundant" alone.
+- **v0.22's index_get removal** — the precedent this axis is built on;
+  the rationale of record ("the washing branch is the kernel's total
+  access") is the question-1 answer verbatim.
+
+## v0.22 review verdict
+
+Part 1: the candidate is in good shape — all 21 anchors verbatim, rule
+accounting correct, completeness sweep clean, LL(2) solid, transport
+faithful. One must-fix before approval: **V1/O3** (per-subscript node
+identity; adopt the psuffix-node alternative and re-anchor OP-4's two
+errors and ENT-6's attachment). Three editorial: V4 (correct the
+84/31 footprint), V5 (SYS-2 block and `,[` ripple classes), V6
+(reborrow metanotation), plus the site-count definition nit. O1, O2,
+O4, O5, O6 recommended as drafted; O7 keep with the V1 re-anchor.
+
+Part 2: three residue findings — **R1 (S8 midpoint family, recommend
+strike-or-park)**, R2 (check-beside-claim, tracked to FLOOR-5), R3
+(SYS-9 no-consumer rows, keep but named as the pattern to watch). The
+axis's first sweep found exactly one construct in the S8 position —
+machinery justified by an anticipated program rather than a written
+one — which is the `index_get` failure mode recurring one layer deeper.
