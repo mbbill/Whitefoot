@@ -4011,3 +4011,150 @@ No conformance verdict moved. No manifest row was touched.
   re-anchor this section, and the base-revision figures above were measured
   against `726df7f8`, not against current `main` (which reads 572/3 for the lib
   and carries a different pinned set).
+
+## Round 23 (exec-uninfix, 2026-08-08) — EX-1's drifted copy, and the requires-clause `eeq` pincer
+
+Two parts, one commit and one measurement-only result. Base `0a47553e`.
+
+### Part 1 — EX-1 is normative bytes, and the case was one word off
+
+**Normative, established rather than inferred.** [EX-1] lives in a section
+titled "Worked example (**normative bytes**)" and its rule text reads "The
+following complete program is byte-exact canonical form". [SCOPE-2] accepts a
+program iff it satisfies every rule in the document, and EX-1 is a rule. The
+digest pin in the delta's §7 is a consequence, not the evidence.
+
+**The case was a verbatim copy, not a superset.** Measured: block 694 bytes /
+34 lines, case 690 bytes / 34 lines, two functions each, and `difflib` reports
+exactly one changed line — `doc "… returning from arms …"` against the block's
+`"… returning from branches …"`, a 4-byte difference that is precisely
+`branches` minus `arms`. **The brief's premise that the case "continues with a
+second function the spec's block does not contain" is wrong**, and it matters,
+because it was the reason given for why the two could not simply be diffed.
+They diff cleanly.
+
+The **superset the brief was thinking of is a different case**:
+`run-ex1-value-match.wf` extends `main` with a `sign_of` call and a match over
+its result, names no EX-1 in its `rules` list, and is documented as
+"EX-1-**class** program". It is not required to track the block and must not be
+pinned to it.
+
+Which side was wrong: the block. `sign_of` returns from the **branches** of an
+`if`/`else` chain after GRAM-6 replaced the Bool `match`; "arms" is the v0.22
+word. Fixed by extracting the block and writing the case from it, so the case
+is now byte-identical rather than merely edited toward it.
+
+**The drift entered at candidate assembly (`265aeb7`), not at migration.**
+`git log -S` shows the block has read "branches" since the candidate was
+assembled and never read "arms"; the case has read "arms" since before v0.23.
+The corpus migration (`f9efe0d`) rewrote the case's spellings and left the doc,
+**correctly** — the tool never touches STRING interiors, by design. Nothing
+could have caught this except a comparison, and there is none.
+
+### A checker is possible, and cheap — reported, not built
+
+The brief said not to invent one. It is worth recording that the honest answer
+is not "nothing cheap can check it":
+
+| what it needs | verified |
+|---|---|
+| where the block is | the fenced block after the exact sentence `[EX-1] The following complete program is byte-exact canonical form:` — the **only** fenced block in §19 |
+| which case claims verbatim status | derivable from the manifest: exactly **one** row names `EX-1` in `rules` (`ex1-pos-worked-example`), so no filename is hard-coded |
+| anything else | no — the comparison is byte equality |
+
+Both halves are already in memory: the spec as `ACTIVE_KERNEL_SPEC_TEXT`
+(`compiler/src/spec.rs`) and the case at
+`compiler/src/resolution/tests.rs:1175` through `include_bytes!`. No new
+plumbing.
+
+Its limits, stated so the check is not oversold: it pins the **copy to the
+block**, not the block to reality, and it must not be extended to
+`run-ex1-value-match`, whose whole point is to differ.
+
+### Part 2 — the clause pincer, measured on six spellings
+
+Task #22's claim tested directly with `whitefootc --emit-llvm`, sources under
+`do_not_scan/eeq/`. **Not disposed** — the disposition is the lead's.
+
+| # | spelling in the `requires` clause | verdict |
+|---|---|---|
+| a | `eeq(left, right)`, `own` params | **OWN-1** `BareAffineUse` |
+| b | `eeq(move left, move right)` | **FN-8** `InvalidRequires` |
+| c | `let l = left; let r = right; eeq(l, r)` | **FN-8** `InvalidRequires` |
+| d | `eeq(deref(left), deref(right))`, `&'r` params | **OWN-1** `BareAffineUse` |
+| e | same with `&uniq 'r` params | **OWN-1** `BareAffineUse` |
+| f | a `const` operand of that enum type | **GRAM-3** — a constructor is not a `cvalue` [CONST-2], and a nominal enum is not const-eligible either |
+
+**Control**: `fn8-pos-requires-eeq.wf` — the same clause shape over a *tag-only*
+enum — exits 0. So a clause does admit `eeq`; these six rejections are about the
+payload, not about `eeq`-in-a-clause.
+
+**No spelling reaches OP-1.** The claim holds for every form I could construct.
+It is not a proof over all forms, and it is not stated as one.
+
+**The pincer, exactly.** OWN-1 fires because `eeq`'s operands are consuming —
+they are not in OP-1's closed non-consuming list (`len`, `slice_of`'s viewed
+place, a subscript base) — and a payload-carrying enum is affine. FN-8 then
+rejects the only escape, in its own words: "User-function calls, construction,
+**`move`**, borrowing, subscripting, mutation, control flow, allocation, and any
+trapping operation are rejected citing FN-8".
+
+### A live diagnostic defect, independent of the disposition
+
+**OWN-1's `mechanical_fix` in a requires clause is advice the enclosing
+construct forbids.** Measurement (a) emits `mechanical_fix: "write `move p` for
+the affine place"`; measurement (b) is that exact repair, and it is rejected by
+FN-8. A writer who follows the compiler's own suggestion is sent from one hard
+error to another, and there is no third spelling — d, e, and f close the
+remaining routes. This is not about the conformance case and does not go away
+whichever way the case is disposed.
+
+### What the lead and owner have to choose between
+
+The case's manifest subject is "A requires clause cannot widen `eeq` to
+payload-carrying enums", expected verdict `reject OP-1`. Measured, a clause
+**does** reject it — but never through OP-1. Two readings, and the choice is not
+mine:
+
+1. **The verdict is wrong, the case is real.** Re-key it to OWN-1. But then its
+   subject is affine operands, which the `own1-*` family already covers, and the
+   `eeq`-widening claim is no longer what it tests — the subject-shifted class
+   from the sweep.
+2. **The case is unreachable.** OP-1's payload-enum rejection cannot be
+   exercised from a clause at all, so the case as written has no legal form.
+
+**The OP-1 content is not at risk either way.** The sibling
+`op1-neg-eeq-payload-enum` reaches OP-1 from a *function body* by moving both
+operands — the exact repair a clause forbids — so the domain rejection is
+covered. What the clause case would add over the sibling is only "a clause
+cannot widen the domain", which is measured true and delivered by two other
+rules.
+
+### Gates
+
+`make -C compiler check` and the adapter, at `0a47553e` and at `eb03951`:
+
+| | baseline | after |
+|---|---|---|
+| `make -C compiler check` | exit 2, lib 572 passed / 3 failed | exit 2, lib 572 passed / 3 failed |
+| failure set by name | three | **identical**, both directions |
+| conformance adapter | Pass=387 Fail=2 Skip=13 | Pass=387 Fail=2 Skip=13, same two names |
+
+The adapter's two are `fn8-neg-requires-eeq-payload-enum` (this round's part 2,
+deliberately left failing) and `own3-pos-outlives-store` (the A3 counterexample).
+
+### Two doc-staleness items routed to the sweep's disposition, not touched
+
+- `run-ex1-value-match.wf:8` — `doc "… returning from arms (return-position
+  **match**)."` over a body that is an `if`/`else` chain with no match in it.
+- `manifest.jsonl:172` — `ex1-pos-worked-example`'s doc cites "**§16** worked
+  example". EX-1 is §19 in v0.22 *and* in the candidate, so the reference is
+  stale from an older version and is not v0.23 drift.
+
+### A correction to round 22's own hand-back
+
+Round 22 told the lead that `grep -c` ignores `-o`. **That is GNU grep's
+behaviour, not this machine's.** Measured here on a file containing `aa aa aa`:
+`-c` → 1, `-oc` → **3**, `-o | wc -l` → 3, under ugrep 7.5.0. The same flags
+mean opposite things in the two greps and neither errors, which is worse than
+either single reading. `grep -o … | wc -l` is the portable form.
