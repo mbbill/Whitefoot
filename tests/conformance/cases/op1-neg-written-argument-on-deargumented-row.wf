@@ -1,0 +1,13 @@
+enum OneEq {
+  OneFirst();
+  OneSecond();
+}
+
+fn main() -> own unit traps {
+  doc "A1 deletes the written type argument from every row outside the retained-argument class, so writing one on eeq is an invalid operation [OP-1]. The operands are a tag-only enum, which is exactly the domain eeq accepts, so the written argument is the only violation: with operands the row rejects, the operand-domain violation cites OP-1 with the same kind and the written argument is no longer what the case tests.";
+  let left = OneFirst();
+  let right = OneSecond();
+  let same = eeq<OneEq>(left, right);
+  check same else trap "unequal";
+  return unit;
+}

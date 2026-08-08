@@ -1,0 +1,12 @@
+fn guarded(value: own u8) -> own unit traps requires {
+  let converted = cvt<u8, i8>(value);
+  let ok = ige(value, 0_u8);
+  check ok else trap "value must be nonnegative";
+} {
+  doc "A requirement local is a fresh own copy value [FN-8], and after the v0.23 annotation deletion only the derived type can say so. The row is the same in both directions and the operand is the same: cvt<u8, i64> is total and derives a copy i64, which the clause admits, while cvt<u8, i8> is partial and derives Result, which it does not. The gate therefore reads the derived type, not the row spelling.";
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
