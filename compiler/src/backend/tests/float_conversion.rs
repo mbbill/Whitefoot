@@ -323,14 +323,16 @@ fn emit_success_case(
     } else {
         format!("1_{}", destination_type.spelling)
     };
+    // [OP-1] `ieq` respelled to `==`; `feq` keeps its name, so the two
+    // destinations no longer share one call shape.
     let equality = if destination_type.kind == NumericKind::Float {
-        "feq"
+        format!("feq(success_value{conversion}, {destination_value})")
     } else {
-        "ieq"
+        format!("success_value{conversion} == {destination_value}")
     };
     writeln!(
         source,
-        "  let success{conversion}: own Result<{destination}, NarrowError> = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      check {equality}<{destination}>(success_value{conversion}, {destination_value}) else trap \"partial success value {conversion}\";\n    }}\n    Err(error: success_error{conversion}) => {{\n      check False() else trap \"partial success became error {conversion}\";\n    }}\n  }}",
+        "  let success{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      check {equality} else trap \"partial success value {conversion}\";\n    }}\n    Err(error: success_error{conversion}) => {{\n      check False() else trap \"partial success became error {conversion}\";\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
@@ -366,7 +368,7 @@ fn emit_failure_case(
     };
     writeln!(
         source,
-        "  let failure{conversion}: own Result<{destination}, NarrowError> = cvt<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      check False() else trap \"inexact conversion succeeded {conversion}\";\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
+        "  let failure{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      check False() else trap \"inexact conversion succeeded {conversion}\";\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
