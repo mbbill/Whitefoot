@@ -839,11 +839,20 @@ fn a_break_label_must_lexically_enclose_the_break() {
     });
 }
 
+/// Whether a family is spelled as an operator rather than as a callee name.
+///
+/// [OP-7] respelled twenty rows, and an operator token is never a declaration,
+/// callee IDENT, or OPNAME [OP-1], so the two halves of the inventory now
+/// resolve by different mechanisms and cannot be asserted together.
+fn is_operator_family(spelling: &str) -> bool {
+    !spelling.as_bytes()[0].is_ascii_alphabetic()
+}
+
 #[test]
 fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
     let source = br#"fn main() -> own unit pure {
-  let sum = 1_i32 +wrap 2_i32;
-  let equal = sum == 3_i32;
+  let negated = ineg.trap(1_i32);
+  let smaller = imin(negated, 2_i32);
   return unit;
 }
 "#;
@@ -851,13 +860,52 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("closed operations must resolve: {outcome:?}");
         };
-        for spelling in ["iadd.wrap", "ieq"] {
+        for spelling in ["ineg.trap", "imin"] {
             let usage = resolved
                 .lexical_uses()
                 .iter()
                 .find(|usage| usage.spelling() == spelling)
                 .unwrap_or_else(|| panic!("missing operation use {spelling}"));
             assert!(matches!(usage.target(), ResolvedTarget::Operation(_)));
+        }
+    });
+}
+
+/// [OP-1] "infix resolution consults no name domain, and an operator token is
+/// never a declaration, callee IDENT, or OPNAME". The respelling therefore did
+/// not move these rows to a different name — it took them out of the name
+/// domain entirely, which is a property worth a gate of its own.
+#[test]
+fn a_respelled_family_produces_no_lexical_use_at_all() {
+    let source = br#"fn main() -> own unit pure {
+  let sum = 1_i32 +wrap 2_i32;
+  let equal = sum == 3_i32;
+  let named = imin(sum, 3_i32);
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("infix operations must resolve: {outcome:?}");
+        };
+        let operations: Vec<_> = resolved
+            .lexical_uses()
+            .iter()
+            .filter(|usage| matches!(usage.target(), ResolvedTarget::Operation(_)))
+            .collect();
+        // The named row in the same function is the control: it proves the
+        // filter finds operation uses at all, so the two infix rows being
+        // absent is the property and not an empty search.
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].spelling(), "imin");
+        for operator in ["+wrap", "=="] {
+            assert!(
+                !resolved
+                    .lexical_uses()
+                    .iter()
+                    .any(|usage| usage.spelling() == operator),
+                "a respelled family must produce no lexical use: {operator}"
+            );
         }
     });
 }
@@ -1481,30 +1529,45 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
 
 #[test]
 fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
+    // The callee path now covers the families that keep a name; the twenty
+    // [OP-7] respelled to operators reach their row by operator token and are
+    // covered by `a_respelled_family_produces_no_lexical_use_at_all`. The two
+    // halves are counted here so that a family silently leaving one for the
+    // other cannot pass unnoticed.
+    let named: Vec<_> = OPERATION_FAMILIES
+        .iter()
+        .enumerate()
+        .filter(|(_, spelling)| !is_operator_family(spelling))
+        .collect();
+    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 20);
+
     let mut source = String::from("fn main() -> own unit pure {\n");
-    for operation in OPERATION_FAMILIES {
+    for (_, operation) in &named {
         source.push_str("  ");
         source.push_str(operation);
-        source.push_str("<i32>(1_i32);\n");
+        source.push_str("(1_i32);\n");
     }
     source.push_str("}\n");
 
     with_one_resolution(source.as_bytes(), |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("every closed OP-1 family must resolve: {outcome:?}");
+            panic!("every named OP-1 family must resolve: {outcome:?}");
         };
         let operations: Vec<_> = resolved
             .lexical_uses()
             .iter()
             .filter(|usage| matches!(usage.target(), ResolvedTarget::Operation(_)))
             .collect();
-        assert_eq!(operations.len(), OPERATION_FAMILIES.len());
-        for (ordinal, operation) in operations.into_iter().enumerate() {
-            let ResolvedTarget::Operation(id) = operation.target() else {
+        assert_eq!(operations.len(), named.len());
+        // The identity check is against the family's own position in the
+        // inventory, not against the order it happens to be written in, so
+        // filtering the source cannot make the ordinals agree by accident.
+        for (usage, (index, spelling)) in operations.into_iter().zip(named.iter()) {
+            let ResolvedTarget::Operation(id) = usage.target() else {
                 unreachable!();
             };
-            assert_eq!(usize::from(id.ordinal()), ordinal);
-            assert_eq!(operation.spelling(), OPERATION_FAMILIES[ordinal]);
+            assert_eq!(usize::from(id.ordinal()), *index);
+            assert_eq!(usage.spelling(), **spelling);
         }
     });
 }
