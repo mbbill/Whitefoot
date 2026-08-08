@@ -330,6 +330,19 @@ instead of restating them.
   documented limit decays silently as the thing around it changes; an asserted
   one fails when it stops being true. When a check cannot see some class by
   construction, write that inability as a test.
+- **A check must say what a green run does NOT mean, and name what owns the
+  rest.** A reader meeting a new check reasonably assumes it covers the problem
+  it was built for. The declared-verdict diff carries all three
+  migration-damage classes on the function itself — one already caught by the
+  adapter, one reached by nothing verdict-based, one it owns — because without
+  that, a green run reads as "the migration broke nothing", and that reading is
+  wrong in the direction that has actually cost this project cases.
+- **Do not collapse a sequence of corrections into one tidy entry.** Three
+  successive corrections to one ruling stayed visible in the approval ledger,
+  and the third was found by a reader whose objection attached to the
+  *reasoning* of the first. A single clean entry states the conclusion and
+  discards what could be checked; the sequence is what makes a ledger auditable
+  rather than merely filed.
 - **Read exit codes from `$?` directly, never through a pipe.** `make check |
   tail` reports the status of `tail`; a red gate has been committed here that
   way. Write `make check; echo "exit=$?"`.
