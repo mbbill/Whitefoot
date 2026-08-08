@@ -407,3 +407,11 @@ ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba29532
   The verification is mechanical — run the compiler on the unmigrated file and compare the citation to the manifest — so this is a measurement per case, not a judgement per case.
 - boundary: those 20 cases and their manifest rows; the other 400 migrate normally.
 - evidence: exec-0038's `--check` run over all 420 files (400 parse and render), and its verification that all 20 are manifest `reject` rows rather than an inference from filenames.
+
+## 2026-08-08 — ruling (reject-err2-nonexhaustive: change of witness)
+- owner: lead ruling under the standing delegation; owner ratification pending
+- reason: the case records ERR-2 (match exhaustiveness) and now cites a different rule. Its scrutinee is Bool, and under v0.23 a Bool-scrutinee match is rejected by GRAM-6 before exhaustiveness is ever consulted, so ERR-2's concern cannot be reached through a Bool match at all. RULED: RESTATE with a source ENUM scrutinee — a user enum whose match omits a variant — and verify it cites ERR-2 again. This is a change of WITNESS rather than of spelling, and therefore a larger step than the seven annotation deletions, but the concern, the rule and the verdict are unchanged; the Bool scrutinee was only a convenient witness. Leaving it would mean the case still rejects, still passes its must-reject check, and ERR-2 loses its negative coverage silently — the failure mode this batch has been eliminating case by case. If other ERR-2 negative cases exist that is a bonus, not a substitute: coverage attributed to this case must not vanish without a replacement.
+  SECOND CASE, no action: `type5-neg-match-non-enum.wf` has a scalar scrutinee, so GRAM-6 never applies and TYPE-5 still fires as recorded. Leave it.
+  NOTE ON HOW BOTH WERE FOUND: both parse and fail semantically, so no parse-based sweep could surface them. Only the mandatory zero-surviving-Bool-match assertion did, which is the argument for having required an assertion rather than a report.
+- boundary: that one case's source and manifest row.
+- evidence: exec-0038's assertion run over migrated output, with the citation observed rather than inferred.
