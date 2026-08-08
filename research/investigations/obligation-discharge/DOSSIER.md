@@ -205,6 +205,71 @@ claim adjacent to its sole use compiles to today's fused check (hardware
 overflow flag, single bounds compare), byte-for-byte cost parity — otherwise
 the design regresses P0 on hot paths.
 
+**Amendment 2026-08-08 (measured): "all uniform" is false, and the overflow
+family is outside the L0 fragment's vocabulary.** The paragraph above lists
+`iadd` overflow, `idiv` zero, `index` bounds, and `buffer_new` size as one
+uniform discharge story. [ENT-2]'s term definition in the active spec
+(`grep -n "A term is exactly one of" spec/kernel-spec-v0.22.md` → one hit,
+line 1012) admits exactly four term forms: a tracked place, a length term
+`len(P)`, a constant, and the zero term Z. **There is no arithmetic term.**
+[ENT-1]'s atomic fact is one difference bound `t1 - t2 <= c` or one
+disequality `t1 != t2` (line 1014). So the four goals split, and the split is
+a property of the fragment rather than of how hard each goal is:
+
+- `index` bounds, `i < len(p)`: a difference bound between two admitted terms.
+  This is the working case, and it is why OP-4 discharge succeeds.
+- `idiv` zero divisor, `b != 0`: exactly ENT's disequality form, with the
+  constant folding through Z. Expressible and dischargeable.
+- `iadd`/`isub`/`imul` overflow, `a + b <= max(T)`: requires the compound
+  term `a + b`, which ENT-2 admits nowhere. **Not expressible as an atomic
+  fact at all** — for signed and unsigned alike.
+- `idiv` overflow (`min(T) / -1`) and every signed overflow predicate are
+  additionally disjunctive, which the fragment has no connective for.
+
+This retires the precondition the plan queued for this item ("how many sites
+are SIGNED addition, whose overflow predicate is disjunctive"). Signedness is
+not the discriminator: **45 signed, 44 unsigned, 6 with the type argument
+already deleted**, and neither group's goal is expressible. Measured on
+`main` at `a831d35`, archive excluded per project law:
+
+```
+git ls-files '*.wf' | grep -v '^archive/' | xargs grep -oh '\b[a-z]*\.trap<i[0-9]*>' | wc -l   # 45
+git ls-files '*.wf' | grep -v '^archive/' | xargs grep -oh '\b[a-z]*\.trap<u[0-9]*>' | wc -l   # 44
+git ls-files '*.wf' | grep -v '^archive/' | xargs grep -oh '\.trap' | wc -l                    # 96, in 43 files
+git ls-files '*.wf' | grep -v '^archive/' | xargs grep -oh '\.wrap' | wc -l                    # 1026
+```
+
+**The plan's recorded footprint was wrong in both figures**, and both in the
+same direction: it recorded 59 `.trap` against 334 `.wrap`, where the live
+tree carries 96 against 1026. Neither recorded figure matches the live tree
+or the conformance corpus alone (62/127), so neither is a scoping difference.
+The 772 occurrences a whole-tree count returns include 676 under
+`archive/toolchains`, which no active source may depend on.
+
+**Proportionality, which points the same way.** The real programs have
+already voted for `.wrap`: `research/experiments` carries 228 `.wrap` against
+30 `.trap`, and `tests/programs` 214 against 4. 62 of the 96 live trap sites
+are conformance cases — material this project already migrates mechanically.
+So the dissolution's writer burden lands almost entirely on the corpus, and
+its benefit to real programs is doctrinal rather than practical.
+
+**Consequence for sequencing.** The item splits, and the overflow half must
+not be drafted as a spelling batch:
+
+- The zero-divisor and bounds families can carry a goal with real discharge
+  support today.
+- The overflow family can only ship as *a claim at every site* — 96 named,
+  justified, ledgered claims replacing 96 anonymous unledgered traps, proving
+  none of them. That trade is defensible on the §1 doctrine (a claim is
+  inside CLM-2's lifecycle and the provenance gate; `.trap` is outside both)
+  but it is not the "discharged like any call" story this section told, and
+  presenting it as one would overstate what the checker can do.
+- The alternative is an [ENT-1]-monotone fragment extension admitting a
+  bounded arithmetic term, which the law explicitly permits ("a later
+  specification version may add fact sources and closure rules") and which
+  has precedent in the same rule's own deferral of loop induction. That is a
+  semantics change of its own size, not a rider.
+
 ### 2.10 What Result becomes
 
 Result returns to plain data modeling of expected outcomes (ERR-4's value

@@ -115,11 +115,29 @@ taint gate, range loop, requires-as-goal (dossier §8 order unchanged).
    unjustified, un-ledgered trap outside CLM-2's lifecycle and outside the
    provenance gate. Bare `+` becomes the goal-carrying form; `+wrap` and
    `+sat` stay (different total functions); `.checked` collapses into the
-   branch. Corpus footprint measured: 59 `.trap` sites (47 `iadd.trap`,
-   5 `imul`, 4 `isub`, 3 assorted, one of them an invalid-spelling
-   fixture) against 334 `.wrap`. Precondition, to be measured before
-   drafting: how many sites are SIGNED addition, whose overflow predicate
-   is disjunctive and therefore needs either two claims or a restructure.
-   Sequenced after FLOOR-5 so the spelling batch carries no semantics.
+   branch. Sequenced after FLOOR-5 so the spelling batch carries no
+   semantics.
+
+   **Precondition measured 2026-08-08, and it splits the item (lead
+   ruling, pending ratification).** The two footprint figures recorded
+   here were both wrong and both low — the live tree (archive excluded)
+   carries **96 `.trap` in 43 files against 1026 `.wrap`**, not 59
+   against 334; a whole-tree count returns 772 only because 676 sit
+   under `archive/toolchains`, which no active source may depend on.
+   The signedness question this line queued is **moot**: 45 signed, 44
+   unsigned, 6 already type-argument-free, and neither group's goal is
+   expressible, because [ENT-2] admits exactly four term forms — a
+   tracked place, `len(P)`, a constant, and Z — and **no arithmetic
+   term**, so `a + b <= max(T)` is not an atomic fact at all. The
+   zero-divisor goal `b != 0` and the bounds goal `i < len(p)` are both
+   expressible; the whole overflow family is not. Therefore the
+   overflow half is NOT drafted as part of this item: it either ships as
+   a claim at every one of the 96 sites, proving none, or it waits for
+   an [ENT-1]-monotone fragment extension admitting a bounded
+   arithmetic term. Proportionality points the same way — the real
+   programs already use `.wrap` (228 vs 30 in `research/experiments`,
+   214 vs 4 in `tests/programs`), so 62 of the 96 sites are conformance
+   cases. Full measurement, commands, and consequence in the
+   obligation-discharge dossier's §2.9 amendment.
 2. **ENT boolean-composition precision (O11 correction).** See the
    research note; drafted alongside the approved ENT-5 loop fix.
