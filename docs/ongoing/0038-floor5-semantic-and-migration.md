@@ -3837,3 +3837,177 @@ brief gave — commit after every sub-step — exists for exactly this, and the
 differential-measurement habit is what collides with it: measuring the before
 column requires moving the working tree, so the after state must be committed
 *first*. Nothing was lost beyond the rework.
+
+## Round 22 (exec-uninfix, 2026-08-08) — the owner cancels the infix comparisons
+
+Round number 22 rather than 16 because this workspace is based on `726df7f8`,
+whose copy of this record stops at round 15; `main` has since reached 21. The
+section is written to land above the highest number on the integration branch
+rather than to fit this copy, and integration re-anchors it.
+
+Four commits, `726df7f8..ddd12559`:
+
+| commit | what it is |
+|---|---|
+| `1c891417` | the candidate and its delta amended |
+| `36b3271f` | the one rewriter gains the class, and loses four respells |
+| `fdc5f0ef` | the corpus and the embedded fixtures migrated |
+| `ddd12559` | lexer, tables, catalog, tests, digests |
+
+### The decision, and what it changed in the delta
+
+All six integer comparisons keep their named calls. Arithmetic infix is
+untouched, so the batch's spelling rule becomes a grammar class — arithmetic is
+infix, comparison is a call — rather than the four-of-six subset the owner
+rejected.
+
+**This is the first repair in the delta's history to remove sites.** Two
+replacements become byte-identical to v0.22 and therefore stop being
+modifications at all: [GRAM-1]'s compound-token sentence (the set stays at two,
+`->` and `=>`) and [ENT-3] S1's comparison-origin clause (the six named
+comparisons are exactly v0.22's enumeration). Verified by diffing each line
+against `spec/kernel-spec-v0.22.md` rather than by reading. The totals go
+**64 → 62 sites across the same 34 rules**, operator terminal spellings
+**20 → 16**, and `DotlessOperationNames`/`ReservedLowerNames` back to their
+exact v0.22 membership — so R2 is **discharged rather than deferred**, and the
+R2 widening the delta recorded (four names becoming writer-reusable) dies.
+Productions stay at 69: `infix_op` loses four alternatives, not a production.
+
+§2's `expr` EBNF block and [EX-1]'s program block move for the first time in
+this document's history. New MD5s recorded in §7:
+`c08dbb71b541f5770fff5a249010343d` and `bf6fad0113ea2036aab6ab6c156d8941`.
+The `stmt` block is still `00f6095415ba43440367b87d94f06a3e`.
+
+Candidate SHA-256 is now
+`5037bd852adc3c1fc623e1b6e1c9b4c209b9cdc927fb2cb3fdf445ac81d791fd`, re-pinned
+in `compiler/src/spec.rs`, `spec/derivation/derivation-ledger.md`, and
+`tests/conformance/runner.py`.
+
+### What the brief got wrong, recomputed
+
+- **"the candidate names `ieq`/`ine`/`ile`/`ige` at roughly 189 places".** It
+  names them at **6** — the candidate had already respelled them away. The
+  delta document names them 44 times. Neither figure is near 189, and I could
+  not reconstruct a basis that produces it.
+  `grep -coP '\b(ieq|ine|ile|ige)\b' governance/spec-evolution/kernel-spec-v0.23-candidate.md`
+- **"532 sites across 169 `.wf` files".** Right to the digit, and one of the
+  532 is a `==` inside a `doc` string in
+  `tests/codegen/cases/bounds/dominating-guard/07-wrong-comparator-negative.wf`
+  — a STRING interior, not a token, in a frozen v0.22 corpus. The migration
+  target is therefore **531 across 168 files**: `==` 429, `>=` 50, `<=` 45,
+  `!=` 7.
+  `git grep -o -F -e ' == ' -- 'tests/conformance/*.wf' 'tests/programs/*.wf' | wc -l`
+- **"ERR-2, DIAG-1, DIAG-3, FN-4, FN-8 … have sites that mention comparison
+  infix".** None of them does. Every one of those sites is about arithmetic
+  infix or about `if`, and all five are unchanged by the cancellation. The
+  sites that did mention it were GRAM-1, GRAM-5, OP-1 (i) and (iii), OP-2 (c),
+  OP-7, ENT-3 S1 and S4, and EX-1.
+- **The step order is not executable as written.** Step 3 (lexer and tables)
+  before step 4 (corpus) leaves the migration tool unable to read `!=`, because
+  `!` is a raw lexical defect the moment the compound token goes. The order run
+  was tool → corpus → compiler, and the reason is recorded in `rewrite.rs`.
+
+### The reverse migration, and the three things it was not
+
+`COMPARISON_UNSPELL` is a class in `whitefoot-migrate`, reached from the same
+pre-pass as every other class, so the `.wf` corpus and the Rust-embedded
+fixtures share one implementation. Unlike every other class it has no callee
+token to key on, so the operator is the anchor and both operands are recovered
+by walking the atom forms [GRAM-9] admits — place suffixes, a `deref(…)` group,
+`move`, and a borrow prefix. A statement keyword is not one of those forms,
+which is the boundary a keyword blacklist would have got wrong and which is
+asserted in `check`, `if`, and `return` position. The operator is matched on
+its **bytes**, not on one token kind, so the class survives the lexer
+reverting: `==`, `<=`, and `>=` then arrive as two byte-adjacent punctuation
+tokens, and [FORM-2]'s mandatory spacing is what makes that reading
+unambiguous. `!=` has no such fallback and its unit coverage is retired with a
+recorded reason rather than left to rot.
+
+Separately, `ieq`/`ine`/`ile`/`ige` move from `INFIX_RESPELL` to
+`DEARGUMENTED`, so the tool's v0.22 → v0.23 direction now produces
+`ieq(a, b)`. That direction stays live for the frozen corpora.
+
+Three findings the run produced that are not the mechanical rewrite:
+
+1. **`semantic/tests/slices.rs`'s `slice_of` case is a fixture whose subject IS
+   its written type argument.** The tool would have deleted it and left a
+   source that checks clean — the `derivation.rs:224` class exactly. It gains a
+   `migrate: keep` marker. It is newer than the last `--rust` pass, which is
+   why no marker was there; the marker window is the literal's line plus three,
+   and the first placement missed by one line, which the tool reported.
+2. **`semantic/tests/requires.rs` had two fixtures written ABOUT the infix
+   comparison** — an admitted infix clause computation, and a subscript reached
+   only through the infix tail's own atom. Re-spelling them as calls would have
+   left two tests passing while testing nothing, so both are re-keyed to
+   arithmetic infix (`a *wrap 2_u64`, `a +wrap xs[1_u64]`). `assert_rule` pins
+   rule and kind, so the re-key cannot silently change what fires.
+3. **`syntax/parser/tests.rs`'s prefix-selection fixture is deliberately
+   compressed non-canonical**, and the canonical re-render flattened it — 30/30
+   lines changed for one comparison, the one outlier in the changed/total
+   ratios the tool reports. That file and `semantic/tests/infix.rs` were
+   reverted and given the tool's own rewrite applied to the operand pair alone,
+   so both diffs are line for line.
+
+Eight conformance negatives cannot render at all — they are deliberately
+non-deriving sources — and carry no comparison, so they are untouched. Nine
+template and fragment fixtures are unreachable by the tool for the reasons
+round 13 recorded; each carries the same rewrite, derived from the tool's
+output shape on real corpus files and verified by the backend tests that
+execute them.
+
+### One file that had never been migrated
+
+`tests/programs/raw_deflate_boundary.wf` landed on `main` earlier the same day
+in **v0.22 spelling** and had never been through the migration. The whole-file
+tool migrated all of it. That is beyond this task's scope and is reported
+rather than hidden; leaving it would have left a `.wf` file in the migration
+basis that cannot derive under the active grammar.
+
+It was not invisible — it was hidden behind the lib failure. `cargo test` stops
+at the first failing target, so at `726df7f8` the integration targets never ran
+and two `programs::raw_deflate` tests were failing unobserved. Both pass now.
+The canonical-corpus underived count falls **21 → 20** for the same reason.
+
+**The general point, for whoever reads the pinned failure table:** that table
+covers the lib only, and while the lib is red every integration target is
+unmeasured. `--no-fail-fast` is what makes them visible.
+
+### Validation, exit codes read from `$?` directly
+
+| gate | at `726df7f8` | at `ddd12559` |
+|---|---|---|
+| `make -C compiler check` | exit 2, lib 569 passed / 6 failed | exit 2, lib 569 passed / 6 failed |
+| failure set by name | the pinned six | **identical, both directions** |
+| conformance adapter | Pass=384 Fail=4 Skip=14 | Pass=384 Fail=4 Skip=14, same four names |
+| `make check` | exit 2 | exit 2; Python stages green (18 structure tests, 128/128 rules) |
+| `whitefoot-grammar-tables --check` | green | green — the committed tables are the amended candidate's |
+| `whitefoot-grammar` | exit 1, "candidate changes the lexer or source grammar" | exit 1, same message |
+
+The grammar verifier's exit 1 is the documented fail-closed result for a
+grammar-extending candidate and is **not** a regression: the same message comes
+back from the pre-amendment candidate bytes, run at this branch's tip. The
+check that actually verifies this change is the table generator's `--check`.
+
+`cargo test --all-targets --no-fail-fast`, both revisions, since the lib
+failure hides everything after it:
+
+- new failures on the branch: **none**
+- cleared: `programs::raw_deflate::each_boundary_and_decode_outcome_reaches_its_own_status`
+  and `programs::raw_deflate::the_boundary_driver_decodes_a_file_read_through_the_system_path`
+- still failing, both revisions: `every_canonical_corpus_file_re_renders_to_itself`
+  (20 underived, was 21) and `tests::recorded_chain_ends_at_the_embedded_specification`
+  (activation-gated by the definition of done)
+
+No conformance verdict moved. No manifest row was touched.
+
+### Left for the lead
+
+- **`ex1-pos-worked-example.wf` does not match [EX-1]'s normative bytes**, and
+  did not at `726df7f8` either: the case's `doc` says "returning from arms"
+  where EX-1 says "returning from branches". A case whose whole job is to
+  assert EX-1 verbatim is one word off. Pre-existing, outside this scope, and
+  it will bite the byte approval.
+- **This workspace's copy of this record lacks rounds 16–21.** The rebase must
+  re-anchor this section, and the base-revision figures above were measured
+  against `726df7f8`, not against current `main` (which reads 572/3 for the lib
+  and carries a different pinned set).
