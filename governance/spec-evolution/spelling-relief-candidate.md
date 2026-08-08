@@ -19,6 +19,24 @@ deferral free (§6). No EBNF moved: §2's two blocks and [EX-1]'s program
 block re-hash to the MD5s §7 records, so the 69-production count and the
 derived tables are unchanged by this amendment.
 
+Amended again 2026-08-08 (owner decision — **the infix comparison
+spellings are cancelled**). The candidate respelled `==`, `!=`, `<=`,
+`>=` as infix while `ilt` and `igt` stayed named calls under O1; the
+owner rejected that four-of-six asymmetry and resolved it by removal,
+so **all six integer comparisons are named calls again** and the
+batch's spelling rule becomes a grammar class — arithmetic is infix,
+comparison is a call. Arithmetic infix is untouched. This is the first
+repair in this document's history to *remove* sites: [GRAM-1]'s
+compound-token sentence and [ENT-3] S1's comparison-origin clause both
+become byte-identical to v0.22, taking the totals from 64 to **62
+sites across the same 34 rules**, the operator terminal spellings from
+20 to **16**, and `DotlessOperationNames`/`ReservedLowerNames` back to
+their exact v0.22 membership. R2 is discharged rather than deferred and
+O1's subject changes (§6). §2's `expr` EBNF block and [EX-1]'s program
+block move for the first time; both new MD5s are recorded in §7. The
+69-production count is unchanged — `infix_op` loses four alternatives,
+not a production.
+
 Sweep completeness (2026-08-07, prose-sweep repair). The 46-site revision
 covered the rules this batch *modifies* but not every rule whose normative
 prose *uses* a respelled operation, so fifteen sites were missing. The
@@ -85,11 +103,13 @@ Two structural findings remain surfaced up front:
 
 - Bare `<` and `>` comparisons collide with call type arguments at
   strong-LL(2)'s two-token horizon (`(IDENT, "<")` begins both `a < b`
-  and `f<T>(…)`), and both bytes sit in FORM-2's attachment sets. C1
-  ships with `==` `!=` `<=` `>=` infix and `ilt`/`igt` as named calls;
-  the fork is O1, with the rejected alternative's cost now stated
-  accurately per the review (call-targs-only introducer — small, not
-  "every generic call and type").
+  and `f<T>(…)`), and both bytes sit in FORM-2's attachment sets. That
+  collision drove the batch to ship four of the six comparisons infix
+  and leave `ilt`/`igt` as named calls, and the owner's cancellation of
+  2026-08-08 removes it from this batch entirely: **C1 respells
+  arithmetic only, and no comparison is infix**, so `<` and `>` keep
+  exactly their v0.22 roles and nothing in these bytes depends on the
+  fork's resolution (O1, §6).
 - A3 removes GIVE-1's declared-type anchor. Per review R3 and ruling O4,
   the replacement — the derived common delivery type — ships as a
   fully-worked rule (complete GIVE-1 replacement in §3), covering the
@@ -100,7 +120,7 @@ Two structural findings remain surfaced up front:
 
 > Status: REVIEW CANDIDATE vNEXT (2026-08-07; FLOOR-5 spelling relief:
 > value-op type-argument deletion, body-let annotation deletion,
-> `if`/`else` for Bool conditionals, infix arithmetic and comparison
+> `if`/`else` for Bool conditionals, infix arithmetic
 > spellings). Deletes the written type argument from every table
 > operation outside the closed retained-argument class — the operand
 > atoms are typed, so the selected type is uniquely reconstructed per
@@ -132,32 +152,33 @@ Two structural findings remain surfaced up front:
 > canonical layout is
 > multi-line with `} else {` and `} else if … {` join lines, governed
 > solely by [FORM-2]'s dedicated `if` sentence, no one-line form.
-> Respells the hottest integer table operations as infix with modes as
+> Respells the hottest integer arithmetic table operations as infix
+> with modes as
 > operator suffixes — bare `+` `-` `*` `/` `%` carry the trapping-mode
-> semantics unchanged, `+wrap`-class suffixed operators carry
-> wrap/checked/sat, and `==` `!=` `<=` `>=` respell the four nonstrict
-> comparisons — one constant spelling per operation as today, no
+> semantics unchanged and `+wrap`-class suffixed operators carry
+> wrap/checked/sat — one constant spelling per operation as today, no
 > precedence table because [GRAM-9] ANF admits exactly one operation
 > per expression, and the `expr` grammar left-factored so the decision
-> is strong-LL at one token after the shared atom prefix. `ilt` and
-> `igt` remain named calls (O1). The `if` continuation is an enumerated
+> is strong-LL at one token after the shared atom prefix. All six
+> integer comparisons keep their named calls, so the spelling rule is
+> a grammar class — arithmetic is infix, comparison is a call — rather
+> than a subset of the comparisons. The `if` continuation is an enumerated
 > [ENT-5] merge point in the same CFG idiom as `match`, with the empty
 > join defined as the contradictory state for both, so branch facts
 > join exactly as the match
 > spelling joins today. Specification delta: numbered rules +0/-0;
-> thirty-four existing rules modified at sixty-four verbatim-anchored
+> thirty-four existing rules modified at sixty-two verbatim-anchored
 > modification sites (a site is one contiguous verbatim-anchored
 > replacement; every site in this candidate is anchored — no prose
 > sweeps. The count is of anchor/replacement pairs in §3, not of delta
-> line items: a reviewer counting the pairs reaches sixty-four, and a
+> line items: a reviewer counting the pairs reaches sixty-two, and a
 > site whose replacement edits several sentences of one contiguous
 > paragraph — [OP-2] (b) two, [OP-2] (g) three, [ENT-3] S4 two,
 > [DIAG-3] two — is still one site):
 > FORM-2 (block-bearing list; the sole-governance `if`
 > rendering sentence; value-if prefix line), FORM-3 (the OPNAME
-> example respelled to a surviving OPNAME), GRAM-1 (four sites: six
-> compound
-> tokens; operator-form munch with the minus/arrow/literal
+> example respelled to a surviving OPNAME), GRAM-1 (three sites:
+> operator-form munch with the minus/arrow/literal
 > disambiguation; the shape-kind enumeration gains the operator form;
 > the `infix` node-kind sentence), GRAM-4
 > (annotation-free `let_stmt`; `if_stmt` and `value_if`), GRAM-5
@@ -183,8 +204,9 @@ Two structural findings remain surfaced up front:
 > token; `ModeWords` derived from both suffix carriers; the
 > reservation rule's `let_stmt` kind list gains the value-if let),
 > OP-2 (seven
-> sites: the three arithmetic and one comparison semantics paragraphs
-> respelled infix; the negation paragraph de-argumented; the div/rem
+> sites: the three arithmetic semantics paragraphs
+> respelled infix; the comparison and negation paragraphs
+> de-argumented; the div/rem
 > mode clause named off the deleted `.trap`/`.checked` spellings;
 > operand-derived selected type replaces the explicit-argument
 > judgment, binary and negation paragraphs), OP-4 (the subscript
@@ -214,9 +236,10 @@ Two structural findings remain surfaced up front:
 > DIAG-3 (bare-operator overflow record, with the `node_path`
 > enumeration above it admitting the `infix` node), ENT-2 (value_if
 > joins the
-> term-root forms), ENT-3 (seven sites: S1 origin and establishment;
-> S4 re-keyed so a requires prologue spelled infix still establishes
-> its entry fact; S5/S6/S7/S9 respells), ENT-5 (the branch-continuation join in the
+> term-root forms), ENT-3 (six sites: S1 establishment;
+> S4's normalization re-keyed so a requires prologue carrying infix
+> arithmetic still establishes its entry fact, its firing sentence
+> byte-identical; S5/S6/S7/S9 respells), ENT-5 (the branch-continuation join in the
 > CFG idiom, with the empty join defined for `match` and `if` alike),
 > ENT-6
 > (fallback respelled), EX-1 (complete worked-example rewrite) — plus
@@ -225,11 +248,12 @@ Two structural findings remain surfaced up front:
 > mandate's body half, precedent question O8). Tokens: +1 exact fixed
 > lowercase atom (`if`) — `else` is already an exact fixed atom in
 > v0.22's `check_stmt` and gains a second grammatical position, not a
-> new token or terminal spelling; +20 operator terminal spellings
-> (`+ - * / %`, `== != <= >=`, and eleven suffixed operator forms);
-> operation-table op-column respells 20 spellings, shrinking
-> `DotlessOperationNames` and `ReservedLowerNames` by the four dotless
-> comparisons `ieq` `ine` `ile` `ige`; grammar productions +4
+> new token or terminal spelling; +16 operator terminal spellings
+> (`+ - * / %` and eleven suffixed operator forms);
+> operation-table op-column respells 16 spellings, every one of them a
+> dotted OPNAME, so `DotlessOperationNames` and `ReservedLowerNames`
+> keep exactly their v0.22 membership and no name is freed for writer
+> reuse; grammar productions +4
 > (`if_stmt`, `value_if`, `infix_tail`, `infix_op`; total 69 — the
 > `infix` node kind is carried by `infix_tail`'s 1:1 mapping, not a
 > phantom production),
@@ -296,7 +320,6 @@ infix_op       := "+" | "+wrap" | "+checked" | "+sat"
                 | "-" | "-wrap" | "-checked" | "-sat"
                 | "*" | "*wrap" | "*checked" | "*sat"
                 | "/" | "/checked" | "%" | "%checked"
-                | "==" | "!=" | "<=" | ">="
 ```
 
 `infix_tail` maps 1:1 to the `infix` node kind: a selected tail forms
@@ -311,9 +334,10 @@ required for user-generic calls, system-operation region arguments, and
 the retained-argument operations; forbidden elsewhere.
 
 Token formation [GRAM-1]: `if` and `else` are exact fixed lowercase
-atoms (auto-excluded from IDENT by [FORM-3]). The compound-token set
-grows from two to six: `->`, `=>`, `==`, `!=`, `<=`, `>=`; a lone `!`
-remains a raw lexical defect (it exists only inside `!=`). An operator
+atoms (auto-excluded from IDENT by [FORM-3]). The compound-token set is
+unchanged at two, `->` and `=>`, and `!` remains no token at all: the
+four compound comparisons the earlier revision added die with the
+comparison respelling. An operator
 form starts with `+`, `*`, `/`, or `%`, or with a `-` that is
 immediately followed by neither a decimal digit (numeric form,
 unchanged) nor `>` (the `->` compound, unchanged), and continues through
@@ -326,24 +350,18 @@ against — gains `operator form` beside the seven it lists, because a
 suffixed operator is neither a lower word (it does not start `[a-z]`),
 nor punctuation (`+`, `*`, `/`, `%` are not v0.22 punctuation bytes at
 all, and no punctuation form carries a letter suffix), nor an
-operation-name form (no dot). The four compound comparisons `==`, `!=`,
-`<=`, `>=` are not operator forms; they take the existing exact
-punctuation shape kind as compound punctuation tokens. Canonical spacing: no operator token
+operation-name form (no dot). Canonical spacing: no operator token
 joins either FORM-2 attachment set, so every infix operator renders with
 one space on each side, keeping `a - 1_u64` (operator) and `-1_u64`
 (literal) lexically distinct in canonical bytes. The O5 attachment
-closure extends to all four compound comparisons: `=` is in neither
-attachment set (so `==` cannot arise by attachment), `!` is not a v0.22
-byte at all (so `!=` cannot), and although `<` is in the left set and
-`>` in the right set, no grammar position places `=` immediately after
-either — every `>`-then-`=` position is separated by one space because
-`=` is in neither set — so `<=` and `>=` cannot arise by attachment.
+question does not arise for any comparison byte, because this version
+introduces none: `=`, `!`, `<`, and `>` keep exactly their v0.22
+lexical roles.
 
-This closure is stated over **this version's twenty operator
+This closure is stated over **this version's sixteen operator
 spellings** and is not inherited by a later one (O1 condition 3, §6).
 `<` remains in FORM-2's left attachment set and `>` in its right set,
-untouched by this batch, and both bytes are held reserved against any
-other use while O1's deferral stands. A version admitting them as infix
+untouched by this batch. A version admitting comparisons as infix
 operators must re-run the attachment argument for the pairs that
 becomes possible — it does not follow from the sentences above, which
 quantify over the operator set this version defines.
@@ -355,10 +373,12 @@ two facts the document already states normatively — no new convention
 is introduced, and none is needed:
 
 - Canonical source renders every infix operator with exactly one space
-  on each side [FORM-2], so *unspaced* arithmetic or comparison is
-  never canonical source: [OP-2]'s `a+b`, `a-b`, `a*b` and its result
-  relations `a=b`, `a≠b`, `a<b`, `a<=b`, `a>b`, `a>=b`, and [FN-4]'s
-  `x+y`, `2^K-1`, and `MAX-1` are all mathematical by their bytes.
+  on each side [FORM-2], so *unspaced* arithmetic is never canonical
+  source: [OP-2]'s `a+b`, `a-b`, `a*b` and [FN-4]'s `x+y`, `2^K-1`, and
+  `MAX-1` are all mathematical by their bytes. [OP-2]'s result
+  relations `a=b`, `a≠b`, `a<b`, `a<=b`, `a>b`, `a>=b` need no rule at
+  all after the comparison cancellation: none of those bytes is a
+  source operator in this version.
 - Canonical source admits exactly one operation per expression
   [GRAM-9], so a *spaced* relation carrying an arithmetic operator
   together with a relational one is never canonical source either,
@@ -420,12 +440,20 @@ re-run after the prose-sweep repair (same day, script recreated and
 deleted): no production text moved — the repair edits normative prose
 only — so the seven rows are unchanged and pass again, and the
 previously unlisted `stmt` decision was added and passes, giving eight.
-Two further traces were run because the repair puts an infix expression
-in two positions [EX-1] did not exercise: [FN-4]'s repaired discharge
+One further trace was run because the repair puts an infix expression
+in a position [EX-1] did not exercise: [FN-4]'s repaired discharge
 body `return p0 +sat p1;` (`return` takes `expr`; the deciding token
 after the complete atom `p0` is the operator form `+sat`; FOLLOW is
-`;`) and [EX-1]'s existing `check v == 42_i32 else trap "…";` (FOLLOW
-is `else`, already in the drafted FOLLOW set). Both parse. Verifier
+`;`). It parses. After the owner's comparison cancellation
+(2026-08-08) the scratch script was **not** re-run: `infix_op` loses
+four alternatives and no other production text moves, so every
+`SELECT_2` row either shrinks or is unchanged, and the native grammar
+verifier — which reuses the compiler's own lexer and parser, and is the
+check of record — was run against the amended candidate instead. The
+`check … else` trace is retired with the infix comparison
+that motivated it — no comparison reaches an `expr` position as an
+infix expression any more — but `else` stays in FOLLOW(`expr`) because
+`check_stmt` still writes it there. Verifier
 expectations: fail-closed against the v0.22 tables (grammar-extending),
 recorded at proposal; post-extension, productions 65 + 4 = 69; exact
 terminal counts established by the grammar-path task.
@@ -463,9 +491,7 @@ field-access argument are byte-identical; the suffix set is unchanged
 because `ineg`, `iabs`, the shifts, and the float `.strict` family all
 keep dotted spellings.)
 
-**[GRAM-1]** Four sites. As §2's token-formation paragraph: "`->` and `=>` are the
-two compound punctuation tokens." becomes "`->`, `=>`, `==`, `!=`,
-`<=`, and `>=` are the six compound punctuation tokens."; the
+**[GRAM-1]** Three sites. As §2's token-formation paragraph: the
 operator-form clause is added after the numeric-form clause exactly as
 §2 states it; the shape-kind enumeration "Raw formation gives every
 token exactly one context-free shape kind: lower word, upper word,
@@ -479,7 +505,7 @@ node-mapping sentence is added: "`infix_tail` maps to the
 complete `expr` — the atom and the tail — so the 1:1
 production-to-node mapping is preserved by the factored recognition."
 
-The third site is not editorial. Adding an operator form to the maximal-
+The second site is not editorial. Adding an operator form to the maximal-
 form list without adding it here leaves the enumeration false for every
 operator token, and that enumeration is what the two sentences after it
 are written against: terminal membership "visits every formed token"
@@ -803,14 +829,16 @@ to select the applicable row within the resolved family." becomes
 retained-argument operations [TYPE-5], the written arguments, to
 select the applicable row within the resolved family." (review NEW-2 —
 the same keyed-on-the-deleted-argument defect class as F10, one rule
-upstream of the OP-7/OP-8 fixes). (i) The table's op column respells twenty
+upstream of the OP-7/OP-8 fixes). (i) The table's op column respells sixteen
 spellings in place: `iadd.wrap isub.wrap imul.wrap` become
 `+wrap -wrap *wrap`; `iadd.trap isub.trap imul.trap` become `+ - *`;
 `iadd.checked isub.checked imul.checked` become `+checked -checked
 *checked`; `idiv.trap irem.trap` become `/ %`; `idiv.checked
 irem.checked` become `/checked %checked`; `iadd.sat isub.sat imul.sat`
-become `+sat -sat *sat`; `ieq ine ile ige` become `== != <= >=`; `ilt`
-and `igt` keep their spellings (O1). (ii) After the operation-family
+become `+sat -sat *sat`. The six integer comparisons `ieq ine ilt ile
+igt ige` keep their named spellings: respelling four of the six was the
+asymmetry the owner rejected, and the rule that replaces it is a
+grammar class — arithmetic is infix, comparison is a call. (ii) After the operation-family
 resolution sentence: "An `infix_op` token resolves to its exactly
 spelled operation by the operator table row; infix resolution consults
 no name domain, and an operator token is never a declaration, callee
@@ -825,9 +853,10 @@ anchor takes the whole sentence including its trailing set, which a
 prefix anchor left stranded as a second "in this version" clause — so
 the reservation set is derived from both
 suffix carriers (review R1), not from whichever rows happen to be
-respelled. Derived-set consequence: `ieq` `ine` `ile` `ige` leave
-`DotlessOperationNames` and therefore `ReservedLowerNames`;
-`ilt`/`igt` remain members. (iv) The reservation rule's declaration
+respelled. Derived-set consequence: none. Every respelled row is a
+dotted OPNAME and therefore was never a member, so
+`DotlessOperationNames` and `ReservedLowerNames` have exactly their
+v0.22 membership, the six integer comparisons included. (iv) The reservation rule's declaration
 list "every `let_stmt` IDENT, including ordinary, propagate,
 value-match, and requires-block lets" becomes "every `let_stmt` IDENT,
 including ordinary, propagate, value-match, value-if, and
@@ -865,27 +894,24 @@ are the first and third of the paragraph.
 
 (c) The comparison paragraph's opening "For `ieq<T>`, `ine<T>`,
 `ilt<T>`, `ile<T>`, `igt<T>`, and `ige<T>`, both operands denote their
-mathematical values in the selected T." becomes "For `a == b`, `a !=
-b`, `ilt(a, b)`, `a <= b`, `igt(a, b)`, and `a >= b`, both operands
-denote their mathematical values in the selected T." — the operand
-order in the existing result sentence ("`True()` exactly when `a=b`,
-`a≠b`, `a<b`, `a<=b`, `a>b`, or `a>=b`") is positional, so the
-respelled list must keep the same six positions, and the O1 asymmetry
-(`ilt`/`igt` named, the four nonstrict comparisons infix) is visible
-here exactly as it is in [EX-1]. Its remaining sentences — signed and
-unsigned ordering, the same-exact-T requirement, and totality/purity
-over `own Bool` — are byte-identical. The replacement does bind `a` and
-`b`, which the v0.22 sentence left free even though the result sentence
-below it uses them. This paragraph is where the metanotation question
-[O9, ruled] is sharpest and, on the ruling, where it answers itself:
-the byte-identical result sentence reads "`True()` exactly when `a=b`,
-`a≠b`, `a<b`, `a<=b`, `a>b`, or `a>=b`" — mathematical relations one
-sentence below the source spellings `a == b`, `a != b`, `a <= b`, `a
->= b` — and the two are distinguished by [FORM-2]'s mandatory
-one-space-each-side rendering, which makes every unspaced form
-non-source by construction. The result sentence is therefore left
-byte-identical, and this paragraph is the convention's clearest
-demonstration rather than a counterexample to it (§2 drafting note).
+mathematical values in the selected T." becomes "For `ieq(a, b)`,
+`ine(a, b)`, `ilt(a, b)`, `ile(a, b)`, `igt(a, b)`, and `ige(a, b)`,
+both operands denote their mathematical values in the selected T." —
+the operand order in the existing result sentence ("`True()` exactly
+when `a=b`, `a≠b`, `a<b`, `a<=b`, `a>b`, or `a>=b`") is positional, so
+the de-argumented list must keep the same six positions. This is a
+deleted-class edit only: none of the six is respelled, so the whole
+family reads as calls, the way [EX-1] now spells it. Its remaining
+sentences — signed and unsigned ordering, the same-exact-T requirement,
+and totality/purity over `own Bool` — are byte-identical. The
+replacement does bind `a` and `b`, which the v0.22 sentence left free
+even though the result sentence below it uses them, and which the call
+form needs in order to write its operands at all. The metanotation
+question [O9, ruled] does not arise in this paragraph after the
+comparison cancellation: the result sentence's `a=b`, `a≠b`, `a<b`,
+`a<=b`, `a>b`, `a>=b` are mathematical relations with no source
+operator anywhere near them, so it stays byte-identical for the
+simplest possible reason (§2 drafting note).
 
 (d) The negation paragraph's opening "For `ineg.wrap<T>(a)`,
 `ineg.trap<T>(a)`, and `ineg.checked<T>(a)`, T is one signed member of
@@ -1026,11 +1052,11 @@ cleared with the other `Prior:` paragraphs below.)
 
 **[OP-7]** Three sites. One sentence appended: "A respelled operation's
 operator token is its one constant spelling — bare operators carry the
-trapping-overflow mode, suffixed operators carry `wrap`, `checked`,
-and `sat`, and the four nonstrict comparisons are `==` `!=` `<=` `>=`
-— under exactly the same one-spelling-per-operation discipline; the
-`i`-prefix convention continues to govern the operations that keep
-named spellings." "Signedness-parametric lowering keyed on the
+trapping-overflow mode and suffixed operators carry `wrap`, `checked`,
+and `sat` — under exactly the same one-spelling-per-operation
+discipline; the `i`-prefix convention continues to govern the
+operations that keep named spellings, the six integer comparisons
+included." "Signedness-parametric lowering keyed on the
 explicit type argument (`ishr` is `ashr` for signed T and `lshr` for
 unsigned T; `imin` is `smin` or `umin`)" becomes
 "Signedness-parametric lowering keyed on the operand-derived selected
@@ -1319,11 +1345,10 @@ byte-identical.
 "(whichever of the four right-hand forms — ordinary, `propagate`,
 `value_match`, or `value_if` — the statement selects)".
 
-**[ENT-3]** Seven sites. S1's origin clause "it is a call to one of
-`ieq`, `ine`, `ilt`, `ile`, `igt`, `ige` [OP-2] whose two operands are
-each a term or constant" becomes "it is an infix comparison `==`,
-`!=`, `<=`, `>=`, or a call to `ilt` or `igt` [OP-2], whose two
-operands are each a term or constant". S1's establishment sentence
+**[ENT-3]** Six sites. S1's origin clause is byte-identical: the six
+comparisons keep their named call spellings, so the shape (a) it
+enumerates is exactly v0.22's and no site arises there. S1's
+establishment sentence
 "For a `match_stmt` or `value_match` whose scrutinee has comparison
 origin R, R is established at the `True()` arm's entry and R's exact
 negation at the `False()` arm's entry." becomes "For an `if_stmt` or
@@ -1341,9 +1366,10 @@ over such a place — read as the length term len(P) — that relation is
 established at body entry." become "replace every requires-clause local
 by its unique defining right-hand side, repeatedly, until only
 parameters, named consts, literals, and admitted table-operation calls
-and infix spellings remain. When the result is one comparison admitted
-by the comparison-origin shape (a) whose operands after substitution are
-each a term over parameters or named consts, a constant, or a call
+and infix spellings remain. When the result is one comparison call
+admitted by the comparison-origin shape (a) whose operands after
+substitution are each a term over parameters or named consts, a
+constant, or a call
 `len(P)` over such a place — read as the length term len(P) — that
 relation is established at body entry." (one contiguous site; it
 subsumes the `len<T>(P)` respell the previous revision anchored alone).
@@ -1368,70 +1394,71 @@ becomes "For `let x = c[i];`" (x's derived type is the element type).
 S4 is the load-bearing member of the seventh pattern and the one site in
 this repair whose omission would have been an unlisted *narrowing*, in
 the [FN-1] class rather than the [OP-4]/[SYS-13] characterization class.
-Both of its defects name the deleted construct in words: the
-normalization terminates on "admitted table-operation **calls**", and
-the rule fires only "When the result is one comparison **call**". C1
-respells `ieq` `ine` `ile` `ige` as `==` `!=` `<=` `>=`, and this
-batch's own [FN-8] site deliberately admits "an ANF [GRAM-9] call to, or
-infix spelling of" an operation-table row inside a `requires` block. So
-after the batch a requires prologue normally reduces to a form S4 can
-neither terminate on nor recognize; S4 establishes nothing at body
-entry; every obligation that depended on the prologue fact goes
-undischarged; and [OP-4] makes an undischarged subscript obligation "a
-compile-time rejection". The unrepaired batch would therefore reject the
+Its defect names the deleted construct in words: the normalization
+terminates only on "admitted table-operation **calls**". This batch's
+own [FN-8] site deliberately admits "an ANF [GRAM-9] call to, or infix
+spelling of" an operation-table row inside a `requires` block, so an
+arithmetic let in a prologue reaches a form the normalization cannot
+terminate on; S4 then establishes nothing at body entry; every
+obligation that depended on the prologue fact goes undischarged; and
+[OP-4] makes an undischarged subscript obligation "a compile-time
+rejection". The unrepaired batch would therefore reject the
 `requires`-carrying programs it compiles today, exactly as the
 unrepaired [FN-1] graph would have rejected every `if` program.
 
-Measured on the active corpus (2026-08-07; `.wf` sources excluding
-`archive/` and the worktree mirror). Two bases are stated because they
+**The comparison cancellation halves this defect and does not remove
+it.** S4's *firing* sentence — "When the result is one comparison
+call" — was broken by C1's four respelled comparisons and is now
+byte-identical to v0.22 again, because all six comparisons keep their
+named call spellings. Its *termination* clause is still broken, by
+arithmetic alone, and the repair is still owed. The recognition half of
+the earlier revision's argument is withdrawn with the respelling that
+caused it; the termination half stands on its own measurement below.
+
+Measured on the migrated corpus (2026-08-08, at this branch's tip;
+`.wf` sources excluding `archive/`). Two bases are stated because they
 differ sharply and only the first sizes this batch's migration.
 
 *Migration basis* — the corpora maintained at the active spec version,
 `tests/conformance` and `tests/programs`, which is §5's basis and the
-scope this batch migrates. On that basis **22**
-files carry a `requires` block, one block each, and 20 of those blocks
-end in a final `check`. Two of the 20 conditions are a direct
-comparison call (both `ile`). Seventeen are Bool clause atoms whose
-defining right-hand sides are `ige` 8, `eeq` 3, `igt` 3,
-`ile` 1, `ieq` 1, and `ilt` 1; the twentieth is a bare parameter in
-the negative case `fn8-neg-requires-non-bool-check.wf`, which exists to
-be rejected and establishes nothing either way. So 12 of the 20 route
-through a comparison C1 respells and are exactly the shape S4 stops
-recognizing, 4 keep a call spelling under O1 (`igt`, `ilt`), and the
-`eeq` clauses are neither respelled nor S1 origins and are
-untouched. The canonical broken shape is `let permitted: own Bool =
-ieq<i32>(copied, x); check permitted …`, migrating to `let permitted =
-copied == x; check permitted …`
-(`tests/conformance/cases/fn8-neg-requires-user-call.wf`, verified).
-Independently of the final condition, 3 arithmetic lets inside these
-blocks (`imul.wrap`, `iadd.wrap`, `iadd.trap`, one each) respell to
-infix and break the normalization's termination clause on their own,
-while `ishr.wrap`, `band`, and `len` keep call spellings and do not.
+scope this batch migrates. On that basis **23**
+files carry a `requires` block, one block each, and 21 of those blocks
+end in a final `check`. **Three** of the 23 blocks carry an infix
+arithmetic operator — `+wrap` in `fn8-neg-requires-set.wf`, bare `+`
+in `fn8-neg-requires-trapping-op.wf`, and `*wrap` in
+`x-base64-rfc-vectors-run.wf` — and those three are exactly the shape
+the unrepaired termination clause stops reducing. No block carries an
+infix comparison after the cancellation, and every final condition is
+either a comparison call, an `eeq` clause atom, or the bare parameter
+of the negative case `fn8-neg-requires-non-bool-check.wf`, which exists
+to be rejected and establishes nothing either way. `ishr.wrap`, `band`,
+`eeq`, and `len` keep call spellings and never reached the clause.
 
 ```
 git ls-files 'tests/conformance/*.wf' 'tests/programs/*.wf' \
-  | xargs grep -l 'requires {' | wc -l          # 22
+  | xargs grep -l 'requires {' | wc -l          # 23
 ```
 
 *Outside the migration basis*, the two frozen corpora carry 40 more
 `requires` blocks — 37 in `tests/codegen/` and 3 in
-`research/experiments/` — for 62 repository-wide. The
-`tests/codegen/` share is the sharper shape: 36 of its 37 conditions
-are a direct `ile`/`ilt` comparison call, precisely the form S4 stops
-recognizing. Those files do not migrate with this batch and are
-reconciled with the active spec per case at promotion, so the S4
-breakage surfaces there rather than here. The 22 sizes this batch's
-work; the 62 sizes the eventual exposure. (Two earlier revisions of
+`research/experiments/` — for 63 repository-wide. Those files do not
+migrate with this batch and are reconciled with the active spec per
+case at promotion, so whatever they owe surfaces there rather than
+here. Their comparison conditions no longer owe anything: after the
+cancellation a `tests/codegen/` `ile`/`ilt` condition is spelled the
+same before and after the batch. The 23 sizes this batch's
+work; the 63 sizes the eventual exposure. (Three earlier revisions of
 this paragraph are withdrawn: one reported 122 files, counting every
 source twice through the worktree mirror, with an 82/76/4/2/46
-breakdown that did not reconcile against itself; the other reported 25
+breakdown that did not reconcile against itself; one reported 25
 on a basis that wrongly included `research/experiments`, which is
-frozen evidence and not on the active spec — see §5.) The repair is
-keyed forward, not widened: "one comparison admitted by the
+frozen evidence and not on the active spec — see §5; and one sized the
+defect at 12 of 20 blocks through the four respelled comparisons, which
+the owner's cancellation deleted.) The repair is
+keyed forward, not widened: "one comparison call admitted by the
 comparison-origin shape (a)" delegates the spelling question to (a),
-which this batch's S1 site already rewrites to admit exactly the four
-infix comparisons plus `ilt`/`igt`, so the admitted set is unchanged and
-no new origin becomes derivable.
+which this batch leaves byte-identical, so the admitted set is
+unchanged and no new origin becomes derivable.
 
 **[ENT-5]** One site. Before "The continuation of a `loop_stmt` is the
 join over the states on its `break` edges", insert: "At the
@@ -1460,13 +1487,15 @@ binding `len(P)` followed by one `claim` on, or `if` over, the
 admitted comparison [CLM-1, ENT-3]".
 
 **[EX-1]** Complete replacement of the worked-example program bytes
-(canonical under every rule of this batch; the O1 asymmetry is
-deliberately visible in `sign_of`'s first branch). These bytes are
-canonical **for this version's operator set** and are not closed
-against a later one (O1 condition 3, §6): `if ilt(x, 0_i32)` beside
-`else if x == 0_i32` is precisely the asymmetry O1's deferred mechanism
-removes, so the version admitting `<` and `>` as infix re-cuts this
-example rather than inheriting it. The amendment of 2026-08-08 leaves
+(canonical under every rule of this batch). Both conditionals are
+comparison calls and the one infix expression is arithmetic, which is
+the class rule the owner's cancellation put in place: `if ilt(x,
+0_i32)` beside `else if ieq(x, 0_i32)` reads uniformly, and the
+asymmetry the earlier revision made deliberately visible here no longer
+exists to display. These bytes are canonical **for this version's
+operator set** and are not closed against a later one (O1 condition 3,
+§6): a version that admits comparisons as infix re-cuts this example
+rather than inheriting it. The amendment of 2026-08-08 leaves
 these bytes unmoved — `Neg()`, `Zero()` and `Pos()` construct a
 non-generic source enum, and `Ok(value: w)`/`Err(error: e)` are `arm`
 patterns, which carry no `targs` child:
@@ -1482,7 +1511,7 @@ fn sign_of(x: own i32) -> own Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
   if ilt(x, 0_i32) {
     return Neg();
-  } else if x == 0_i32 {
+  } else if ieq(x, 0_i32) {
     return Zero();
   } else {
     return Pos();
@@ -1502,7 +1531,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check v == 42_i32 else trap "arithmetic drift";
+    check ieq(v, 42_i32) else trap "arithmetic drift";
   }
   return unit;
 }
@@ -1528,9 +1557,10 @@ under FORM-1 — migrated mechanically (§5). Widening: the error classes
 that lived only in deleted bytes die with them (a wrong let annotation,
 a wrong or missing value-op type argument — unwritable states now,
 including `give`s that agreed with each other against a wrong
-annotation); separately, `ieq` `ine` `ile` `ige` leave
-`ReservedLowerNames` and become writer-reusable declaration spellings
-(R2). Narrowings: (1) a Bool-scrutinee `match` is rejected
+annotation). `ReservedLowerNames` is unchanged: every respelled row is
+a dotted OPNAME, so no name is freed for reuse and the R2 widening the
+earlier revision recorded — the four dotless comparisons leaving the
+set — dies with the comparison respelling. Narrowings: (1) a Bool-scrutinee `match` is rejected
 (spell `if`) — the
 type-driven one-form-per-class rule T3 requires; (2) a value
 initializer with an empty delivery set — every arm or branch leaves by
@@ -1604,15 +1634,16 @@ unreachable and every `if` program rejected. [OWN-5]'s slice-valued
 join prohibition is rekeyed to the derived delivery type and extended
 to `value_if`, so it rejects exactly the programs it rejects today —
 unrepaired it was a *widening*, admitting in the `if` spelling a join
-v0.22 rejects in the `match` spelling. [ENT-3] S4 is re-keyed so a
-`requires` prologue whose comparison is spelled infix still establishes
-its entry fact, so exactly the same obligations discharge — unrepaired
-it was a narrowing on the [FN-1] scale, because S4 fires only on "one
-comparison call" while C1 makes the four nonstrict comparisons infix
-and [FN-8] admits them there, leaving every dependent subscript
-obligation undischarged and rejected under [OP-4] across the 22
-files this batch migrates, and across the 40 more in the two frozen
-corpora when those are promoted (§3). [OP-2]'s negation judgment
+v0.22 rejects in the `match` spelling. [ENT-3] S4's normalization is
+re-keyed so a `requires` prologue carrying an infix arithmetic let
+still reduces and still establishes its entry fact, so exactly the same
+obligations discharge — unrepaired it was a narrowing on the [FN-1]
+scale, because the normalization terminates only on "admitted
+table-operation calls" while C1 makes arithmetic infix and [FN-8]
+admits it there, leaving every dependent subscript obligation
+undischarged and rejected under [OP-4] across the three prologues that
+carry one (§3). S4's firing sentence needs no repair after the owner's
+comparison cancellation and is byte-identical to v0.22. [OP-2]'s negation judgment
 (site (g)) drops the FN-2 missing-type-argument mandate along with the
 argument it quantified over — unrepaired it was a total narrowing of
 the negation family, rejecting every `ineg.wrap`, `ineg.trap`, and
@@ -1894,10 +1925,14 @@ and are left exactly as they were verified — they carry no `(`.
   ```
   BASIS | PREP | grep -oE 'True\(\) *=>' | wc -l
   ```
-- Infix respells: **886** measured at execution, against **378**
-  add/sub/mul/div/rem plus **519** `== != <= >=` by this regex; **207**
-  `ilt`/`igt` sites keep named calls under O1, losing only their type
-  arguments.
+- Infix respells: **378** add/sub/mul/div/rem sites by this regex. The
+  **726** comparison sites — 519 `ieq`/`ine`/`ile`/`ige` and 207
+  `ilt`/`igt` — are **not** respelled after the owner's cancellation of
+  2026-08-08; all six comparisons keep their named calls and lose only
+  their type arguments, so every one of the 726 belongs to the
+  deleted-class figure above and none to this one. The earlier
+  revision's **886** infix total is withdrawn with the four spellings
+  that produced it.
 
   ```
   BASIS | PREP | grep -oE \
@@ -1913,10 +1948,23 @@ and are left exactly as they were verified — they carry no `(`.
   (both spellings have zero string-literal occurrences at that
   revision). Six other figures reproduce to the digit, so the basis is
   certain; the residual is recorded rather than smoothed over. The
-  `ilt`/`igt` figure moves most, **56 to 207**, because the added
-  conformance cases exercise the two retained comparisons heavily —
-  O1's cost is roughly four times what the settled figure implied,
-  which is the one place this correction bears on an open ruling.
+  comparison figure moving **56 to 207** for `ilt`/`igt` was the one
+  place the correction bore on an open ruling; the cancellation retires
+  that ruling and with it the asymmetry the figure priced.
+
+  The reverse migration this cancellation owes is measured on the
+  already-migrated corpus rather than on the v0.22 basis, because the
+  infix comparisons exist only there: **531** infix comparison sites
+  across **168** files — `==` 429, `>=` 50, `<=` 45, `!=` 7 — all in
+  the migration basis. One further `==` lives in a `doc` string in
+  `tests/codegen/cases/bounds/dominating-guard/07-wrong-comparator-negative.wf`;
+  it is a STRING interior, not a token, and the tool never reaches it.
+
+  ```
+  git grep -o -F -e ' == ' -- 'tests/conformance/*.wf' 'tests/programs/*.wf' \
+    | wc -l                                            # 429
+  git grep -l -P ' (==|!=|<=|>=) ' -- '*.wf' ':!archive' | wc -l   # 169, incl. the doc-string file
+  ```
 - `check` statements: **406** — untouched (C3 open, O2); 389 when
   settled.
 
@@ -1991,12 +2039,12 @@ A4, C1 as revised; C3 deferred (O2, reviewer-verified on all three
 grounds); O3 uniform annotation-free requires lets (reviewer-recommended
 on the T2 ground: the boundary fact is the final check, not the
 scaffolding); O5 the `=[` attachment stands closed (reviewer-verified:
-`=` is in neither attachment set, `==` cannot arise by attachment,
-extended by this repair to `<=`, `>=`, and `!=`) — **closed over this
+`=` is in neither attachment set) — **closed over this
 version's operator set only**, per O1 condition 3: the verification
-enumerates the twenty spellings [GRAM-5] admits, so admitting `<` or
-`>` as operators re-opens it and it must be re-run rather than
-inherited; O7
+enumerates the sixteen spellings [GRAM-5] admits, so admitting a
+comparison operator re-opens it and it must be re-run rather than
+inherited. The comparison half of that verification — `==`, `!=`,
+`<=`, `>=` — is retired with the spellings the owner cancelled; O7
 the empty then-block admitted with the asymmetry stated in ERR-2.
 
 O9 — arithmetic metanotation versus the new operator tokens — is ruled
@@ -2006,8 +2054,9 @@ arithmetic occurrence byte-identical; no whole-document metanotation
 change is owed. The reason is recorded as a drafting note in §2, and
 the record differs in one respect from the ruling as first stated. The
 ruling's ground was that mathematical relations are written unspaced
-with single symbols while source spellings are spaced — true of
-[OP-2]'s comparison paragraph, but **false of the [ENT] fragment**,
+with single symbols while source spellings are spaced — which was true
+of [OP-2]'s comparison paragraph while that paragraph was spelled
+infix, but **false of the [ENT] fragment**,
 which writes its mathematical relations spaced throughout (`a - b <=
 c`, `p + k <= max(T)`, `b - a <= -c - 1`). A spacing rule alone would
 therefore have misread the largest body of collision-prone notation in
@@ -2028,25 +2077,31 @@ rendering together with [GRAM-9]'s one-operation-per-expression rule,
 and the second half is what does the work: it rules out any relation
 carrying both an arithmetic and a relational operator. The [ENT]
 fragment's `a - b <= c` and `p + k <= max(T)` are discriminated as
-metanotation *because* `<=` and `-` cannot co-occur in one source
-expression. That argument is about the shape of a relation, not about
-which bytes are operators, so it does not weaken when `<` and `>` join
-the set — but the *enumeration* behind "every backticked arithmetic
-occurrence except three, on two lines" was run against this version's
-twenty spellings. Admitting `<` and `>` adds two spellings to the sweep
-alphabet, so the enumeration is re-run in that version rather than
-inherited from this one. The rule survives; the count is not
-transferable.
+metanotation *because* a relational operator and `-` cannot co-occur in
+one source expression. That argument is about the shape of a relation,
+not about which bytes are operators, so it does not weaken when
+comparison bytes join the set — but the *enumeration* behind "every
+backticked arithmetic occurrence except three, on two lines" was run
+against this version's sixteen spellings. Admitting comparisons adds
+spellings to the sweep alphabet, so the enumeration is re-run in that
+version rather than inherited from this one. The rule survives; the
+count is not transferable.
 
-O1 — bare `<`/`>` infix — is **ruled, and deferred to the next version
-for batch hygiene** (owner, 2026-08-08: "同意推迟"). It is recorded here
-as a settled *mechanism* awaiting a version to land in, not as a
-settled retention of the named-call spelling, and the difference is
-the whole point of the entry: the reason `ilt` and `igt` are still
-named calls in these bytes is that the change does not belong in this
-batch, not that the fork was decided in favour of names.
+O1 — infix comparison spelling — is **closed for this batch by owner
+decision (2026-08-08): all six integer comparisons keep their named
+calls.** The entry's earlier subject was bare `<`/`>` infix, deferred
+for batch hygiene while `==`, `!=`, `<=`, `>=` shipped infix; the owner
+rejected that four-of-six split and resolved it by removal rather than
+by completion, so the batch's class rule is now that arithmetic is
+infix and comparison is a call — a grammar class rather than a subset.
+There is no asymmetry left in these bytes to explain or to price, and
+the deferral no longer carries a visible cost. What remains open is a
+different and larger question for a later version — whether comparisons
+should be infix at all, and if so with what spelling for `<` and `>` —
+and it is not deferred here so much as untouched.
 
-What was ruled. The zero-marker form is achievable by factoring one
+What was ruled about the mechanism, retained because it is the analysis
+that version inherits. The zero-marker form is achievable by factoring one
 level deeper — consume `<` first, then decide on the two tokens after
 it, since a `targ` is always followed by `,` or `>` while a comparison
 operand is always followed by FOLLOW(`expr`) = {`;`, `else`, `because`,
@@ -2063,32 +2118,27 @@ the marker.
 Why it is not folded in here. It restructures `expr`, amends [GRAM-1]'s
 node-kind law, introduces the first position-sensitive [FORM-2] rule,
 and makes `>` a lexer invariant — which invalidates this batch's
-approved 69-production count and reopens the O1/O5/O9/R2/EX-1
-dispositions. FLOOR-5 lands as approved and `<`/`>` infix opens the
-next version.
+approved 69-production count and reopens the O5/O9/EX-1 dispositions.
+FLOOR-5 lands as approved and any comparison-infix question opens a
+later version.
 
-**Four binding conditions, so the deferral costs nothing.** They are
-recorded as conditions on *these bytes*, not as future intentions:
+**Three binding conditions, so a later version pays no entry cost.**
+They are recorded as conditions on *these bytes*, not as future
+intentions:
 
-1. O1 reads "mechanism ruled, deferred for batch hygiene", never as
-   settled retention. That is this entry.
-2. `<` and `>` stay **reserved against any other use**. This candidate
-   adds twenty operator terminal spellings and deliberately no bare `<`
-   and no bare `>` (§2); neither byte may be spent on another construct
-   — not as a marker, a bracket, a delimiter, or a shape kind — while
-   the deferral stands.
-3. [FORM-2]'s attachment sets, O5, O9, and [EX-1]'s bytes are **not
+1. `<` and `>` stay **reserved against any other use**. This candidate
+   adds sixteen operator terminal spellings and deliberately no bare
+   `<` and no bare `>` (§2); neither byte may be spent on another
+   construct — not as a marker, a bracket, a delimiter, or a shape kind.
+2. [FORM-2]'s attachment sets, O5, O9, and [EX-1]'s bytes are **not
    closed in any form presuming no operator will ever join those sets**.
    Each is annotated below with the version-scoped form it is closed at.
-4. The corpus migration ships as a **scripted, re-runnable transform**
-   (§5), because the next version re-runs it rather than re-doing it.
-   A one-shot hand migration would make the deferral expensive, which
-   is exactly the cost the deferral was ruled to avoid.
-
-The `ilt`/`igt` cost of the deferral, re-measured on this revision's
-basis: **207** sites, not the 56 this entry carried through several
-revisions (§5's staleness correction). The asymmetry stays visible in
-[EX-1].
+3. The corpus migration ships as a **scripted, re-runnable transform**
+   (§5), because a later version re-runs it rather than re-doing it.
+   A one-shot hand migration would make any later spelling change
+   expensive, which is exactly the cost these conditions exist to avoid.
+   The cancellation itself was carried out that way: the reverse
+   transform is a class in the same tool, not a second rewriter (§5).
 
 Open (owner ruling needed; drafted with the recommended option):
 
@@ -2119,11 +2169,16 @@ have owners):
   O6's `.trap`/`.checked` dissolution batch; the OP-1 `ModeWords`
   sentence (§3) keeps the reservation set derived from both carriers
   meanwhile.
-- R2 — the comparison family is split by a lexer constraint (`== != <=
-  >=` infix; `ilt`/`igt` named), the batch's one piece of
-  implementation-shaped surface; discharge path is O1's revisit
-  condition. The reservation consequence is recorded: `ieq`-class
-  names become writer-reusable while `ilt`/`igt` stay reserved.
+- R2 — **discharged by the owner's cancellation of 2026-08-08 rather
+  than deferred.** The finding was that the comparison family was split
+  by a lexer constraint (`== != <= >=` infix; `ilt`/`igt` named), which
+  made it the batch's one piece of implementation-shaped surface. All
+  six comparisons are named calls again, so the family is not split, no
+  reservation consequence follows, and there is nothing left to
+  discharge. It is retained here as a record of what the finding cost
+  to ignore: it was raised as residue, carried through several
+  revisions as an accepted cost, and was in the end the thing the owner
+  refused.
 - R3 — the derived delivery type is the batch's only new machinery;
   it ships fully worked (GIVE-1, ENT-2, ENT-5, F4, F5) and its cost
   is recorded as proportionate to A3's 2003 deleted annotations (§5).
@@ -2202,14 +2257,17 @@ Patterns swept, each over the complete file:
      on prelude `Bool`", and the node kinds written in words rather
      than as productions ("a `let`-initializer `match`", "each arm
      delivers");
-   - **the call spelling itself.** C1 respells ten operation families
-     as infix, so every sentence that says an operation is reached by
-     a "call" *in words* — "admitted table-operation calls", "one
-     comparison call", "the operation `call` for a table-operation
-     contract check" — names a form those operations no longer have.
-     This class is invisible to patterns 1 and 2, which look for
-     operation *spellings*, and it is where the sweep's one remaining
-     narrowing lived ([ENT-3] S4).
+   - **the call spelling itself.** C1 respells the integer arithmetic
+     operations as infix, so every sentence that says an operation is
+     reached by a "call" *in words* — "admitted table-operation calls",
+     "the operation `call` for a table-operation contract check" —
+     names a form those operations no longer have. This class is
+     invisible to patterns 1 and 2, which look for operation
+     *spellings*, and it is where the sweep's one remaining narrowing
+     lived ([ENT-3] S4). One member of the class, S4's "one comparison
+     call", left it when the owner cancelled the comparison
+     respelling: comparisons are still reached by a call, so that
+     phrase is true again.
 
    Every hit was classified against the site list. Two probe failures
    are recorded so the next reviewer does not repeat them: searching
@@ -2220,7 +2278,7 @@ Patterns swept, each over the complete file:
    the call spelling at all.
 
 Fifteen new sites, all verbatim-anchored and each anchor verified to
-occur exactly once in the active file: FORM-3 1, GRAM-1 1 (its fourth),
+occur exactly once in the active file: FORM-3 1, GRAM-1 1 (its last),
 OWN-5 1, STOR-2 1, STOR-5 1, OP-1 1 (its fifth), OP-2 5, OP-9 1, FN-1
 1, FN-4 2. Of these, thirteen were reported by the assembling executor
 and two — FN-1's control graph and OWN-5's slice join — were found only
@@ -2244,15 +2302,15 @@ document) and an A4 defect (it names only the `match` spelling, the
 
 The two anchor extensions, both in the call-spelling class and neither
 adding a site. [ENT-3] S4 is the one pattern-7 find that *is* an
-unlisted narrowing, in the [FN-1] class: it normalizes to "admitted
-table-operation calls" and fires only on "one comparison call", so
-after C1 the `requires` prologue this batch's own [FN-8] site admits
-reduces to a form S4 cannot recognize, no entry fact is established,
+unlisted narrowing, in the [FN-1] class: it normalizes only to
+"admitted table-operation calls", so after C1 a `requires` prologue
+carrying the infix arithmetic this batch's own [FN-8] site admits
+reduces to a form S4 cannot terminate on, no entry fact is established,
 and [OP-4] turns the resulting undischarged obligations into
-compile-time rejections across the 22 files carrying
-`requires` blocks that this batch migrates — §5's basis — and across
-the 40 more in the two frozen corpora at their
-promotion (§3). [DIAG-3]'s `node_path` enumeration names "the operation
+compile-time rejections. Three of the 23 `requires` blocks in §5's
+basis carry such a let. Its firing half — "one comparison call" — was
+also broken while the four nonstrict comparisons shipped infix, and is
+whole again after the owner's cancellation (§3). [DIAG-3]'s `node_path` enumeration names "the operation
 `call` for a table-operation contract check" two sentences above this
 batch's own clause placing a bare `/` or `%` violation at its `infix`
 node. A third call-spelling correction, [DIAG-1]'s "the rule selected
@@ -2335,20 +2393,30 @@ measurement rather than as a preference.
 Recount after the amendment, re-derived rather than carried: the
 amendment edits replacement text **inside** the existing [TYPE-5] site
 and adds none, exactly as the three pattern-7 corrections do
-([ENT-3] S4, [DIAG-3], [DIAG-1]). TYPE-5 stays 1 and the totals stay
-64/34. §1's version-header paragraph also gains a sentence; it is the
+([ENT-3] S4, [DIAG-3], [DIAG-1]). TYPE-5 stays 1. §1's version-header
+paragraph also gains a sentence; it is the
 proposed header rather than a §3 anchor/replacement pair, so it has
 never been counted as a site and is not one now.
 
-Recount, independently: FORM-2 3, FORM-3 1, GRAM-1 4, GRAM-4 1, GRAM-5
+Recount after the owner's comparison cancellation (2026-08-08), which
+is the first repair in this document's history to *remove* sites rather
+than add or absorb them. Two sites disappear because their replacement
+becomes byte-identical to v0.22: [GRAM-1]'s compound-token sentence
+(the set stays at two, `->` and `=>`) and [ENT-3] S1's comparison-origin
+clause (the six named comparisons are exactly v0.22's enumeration). No
+rule leaves the list — GRAM-1 keeps three sites and ENT-3 six — so the
+rule count is unchanged.
+
+Recount, independently: FORM-2 3, FORM-3 1, GRAM-1 3, GRAM-4 1, GRAM-5
 1, GRAM-6 1, GRAM-7 1, GIVE-1 1, GRAM-9 2, TYPE-5 1, OWN-5 1, OWN-13 1,
 STOR-2 1,
 STOR-5 1, OP-1 5, OP-2 7, OP-4 1, OP-7 3, OP-8 2, OP-9 1, FN-1 1, FN-4
 2, FN-8
 3, EFF-2 1, ERR-2 1, ERR-3 1, DIAG-1 3, DIAG-3 1, SYS-13 1, ENT-2 1,
-ENT-3 7,
-ENT-5 1, ENT-6 1, EX-1 1 = **64 sites across 34 rules**, reconciling
-against the previous 61/31 as exactly the three pattern-7 sites
+ENT-3 6,
+ENT-5 1, ENT-6 1, EX-1 1 = **62 sites across 34 rules**, reconciling
+against the previous 64/34 as exactly the two sites the cancellation
+retires, against 61/31 as the three pattern-7 sites
 ([OP-4], [SYS-13], [OWN-13]) and their three rules, and against the
 original 46/24 as those plus the fifteen sites and seven rules of the
 prose sweep. The count is of
@@ -2356,18 +2424,22 @@ anchor/replacement pairs in §3, not of delta line items: a site is one
 contiguous verbatim-anchored replacement however many sentences it
 edits, so [OP-2] (b) — two edited sentences of one paragraph — [OP-2]
 (g) — three — [ENT-3] S4 — two — and [DIAG-3] — two — are one site
-each, and a reviewer counting pairs reaches 64. Three pattern-7
+each, and a reviewer counting pairs reaches 62. Three pattern-7
 corrections deliberately do *not* raise the count, because each widens
 an anchor or edits replacement text inside a site the batch already
-had: [ENT-3] S4 (ENT-3 stays 7), [DIAG-3]'s `node_path` enumeration
+had: [ENT-3] S4, [DIAG-3]'s `node_path` enumeration
 (DIAG-3 stays 1), and [DIAG-1]'s FN-2 citation sentence (DIAG-1 stays
-3). Productions remain 65 + 4 = 69 and no production text moved:
-§2's two EBNF blocks are byte-identical through this repair, MD5
+3). Productions remain 65 + 4 = 69: the cancellation deletes four
+alternatives from `infix_op` and no production. §2's `stmt` block is
+byte-identical through every repair including this one, MD5
 00f6095415ba43440367b87d94f06a3e (`stmt`/`let_stmt`/`if_stmt`/
-`value_if`) and cfd44788e1b76e4017271f8e639f2308 (`expr`/`infix_tail`/
-`infix_op`), re-verified after this revision's edits and recorded so the
-next revision can re-check the property mechanically. [EX-1]'s program
-block is likewise unmoved (MD5 814fdabade0cea99e3879bd5fdc6f892). The
+`value_if`); its `expr` block moves for the first time here, from
+cfd44788e1b76e4017271f8e639f2308 to
+c08dbb71b541f5770fff5a249010343d (`expr`/`infix_tail`/`infix_op`),
+recorded so the next revision can re-check the property mechanically.
+[EX-1]'s program block moves with the two conditionals it respells,
+from 814fdabade0cea99e3879bd5fdc6f892 to
+bf6fad0113ea2036aab6ab6c156d8941. The
 four retentions (FN-8's clause lets, OP-8's
 `fneg(finf<T>())`, GRAM-5's `call := callee targs? …`, and GRAM-6's
 subscript sentence) are still excluded from the total.
