@@ -1,19 +1,40 @@
 # 0037 — deflate driver through a real system boundary
 
-This is a temporary live coordination record, not execution authority.
+This is frozen coordination history, not authority and not a roadmap.
 
-- **Status:** `WAITING` — driver delivered; the measurement waits on the
-  ENT-5 loop-fix activation
+- **Status:** `PARKED` — the driver deliverable is complete and landed; the
+  measurement half is carried forward as planned task 0041 rather than held
+  open here, because its dependency is an activation that has not happened.
 - **Authority:** owner approval 2026-08-07 (provenance gate advanced in
   priority); the held candidate
   `governance/spec-evolution/provenance-gate-candidate.md`
-- **Owner / workspace:** `exec-deflate-driver` /
-  `/Users/bytedance/do_not_scan/wf0037`, branch
-  `task/0037-deflate-boundary-driver`
-- **Base revision:** `407abde51707d903fe9f3ea1bf45ab6775ac6018`
-- **Dependency:** none for the driver itself, which is done; the
-  measurement depends on the ENT-5 loop fix being active, and the
-  provenance gate's activation depends on that measurement
+- **Outcome:** a `command fn main` in `tests/programs/raw_deflate_boundary.wf`
+  reads the compressed stream through the SYS read path and decodes it via
+  `decode_dynamic`, so the decoder's table indices now carry external
+  provenance and the provenance gate has live instances for the first time.
+  Distinct exit statuses cover short read, empty input, oversized input, a
+  decode `Err(InflateError)`, and a closed standard-output pipe. No compiler
+  defect surfaced; the two rejections met were both correct behaviour — an
+  `[OWN-6]` on a single-region reborrow inside a `match` arm, which needs the
+  nested form, and `[OWN-1] MoveOfCopy` on an `InflateError`.
+- **Validation:** `make -C compiler check` exit 0 before and after (lib
+  523/0; programs 28 -> 30, the two added cases) and `make check` exit 0. The
+  run decodes corpus fixture `stock-zlib-l6-default-strategy-text` to 5036
+  bytes, `cmp`-identical to the recorded oracle; a FIFO delivering the same
+  150 bytes in chunks of 37, 54 and 59 reaches the identical output, proving
+  the read loop accumulates across short reads rather than assuming one full
+  read. The `programs 28` before-figure was independently reproduced by the
+  lead on `main`.
+- **Canonical evidence:** the run detail, the structural choice, and the
+  brief corrections are in the sections below; the reborrow shape is recorded
+  as a pitfall in the design tree under the child-reborrow node.
+- **Why PARKED rather than DONE:** the card's goal names the measurement, and
+  the measurement was deliberately not taken. The driver makes it possible;
+  the ordering constraint below forbids taking it against a compiler that
+  still implements the defective ENT-5 loop rule, since the result would
+  attribute to provenance what the loop rule caused.
+- **Follow-up:** `docs/planned/0041-provenance-gate-measurement.md` carries
+  the measurement, dependent on the ENT-5 loop-fix activation.
 
 ## Goal
 
