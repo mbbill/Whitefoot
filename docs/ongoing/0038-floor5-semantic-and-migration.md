@@ -4158,3 +4158,88 @@ behaviour, not this machine's.** Measured here on a file containing `aa aa aa`:
 `-c` → 1, `-oc` → **3**, `-o | wc -l` → 3, under ugrep 7.5.0. The same flags
 mean opposite things in the two greps and neither errors, which is worse than
 either single reading. `grep -o … | wc -l` is the portable form.
+
+## Round 24 (exec-uninfix, 2026-08-08) — task #22 disposed, on a sibling nobody had compared it to
+
+Continues round 23's measurements. One commit, `4555e61`, plus a disposition
+that needs an authority I do not have.
+
+### The measurement that decides it
+
+Round 23 established that no spelling of `eeq` over a payload-carrying enum
+reaches OP-1 inside a `requires` clause. That left three candidate
+dispositions. **A fourth measurement collapses them to one**, and it is a case
+that was sitting beside the subject the whole time:
+
+`tests/conformance/cases/fn8-neg-requires-eeq-integer.wf` is the *same clause,
+the same shape, the same bare operands* — `let same = eeq(left, right);` — over
+`own u32` parameters, and it reaches **OP-1 `InvalidOperation`** (measured
+directly with `whitefootc`). It reaches OP-1 precisely because `u32` is a copy
+type, so no OWN-1 candidate forms and the domain judgment is the first thing
+that can fail.
+
+**So the concern is already covered in exactly the disputed position.** "A
+requires clause does not widen `eeq`'s domain" is asserted, reachably, by the
+integer sibling. The payload-enum case is a second instance of the same concern
+that cannot be reached, for a reason independent of the concern itself.
+
+### Disposition: retire it. The other two options are refuted by measurement.
+
+- **Restate outside the clause** — refuted for the reason the brief already
+  gave: it duplicates `op1-neg-eeq-payload-enum` and adds nothing.
+- **Restate onto the requires-subset boundary** — refuted by measurement.
+  `eeq(move left, move right)` over `own u32` parameters rejects FN-8
+  identically, so the `move` prohibition is **type-independent** and a
+  payload-carrying enum would be decorative in such a case. The boundary
+  deserves a case; it does not deserve *this* case's operands.
+- **Retire it** — the concern is covered in position by the integer sibling,
+  and the payload variant is unreachable. Nothing is lost.
+
+The manifest citation is **not** restated to OWN-1, per the ruling: OWN-1 firing
+there is a consequence of A1 deleting the type argument, not the case's subject.
+
+**I have not carried the retirement out.** Removing existing conformance
+material takes owner agreement and an approval-ledger entry (`CLAUDE.md`,
+Specification and test integrity), and this is a removal. The case, its manifest
+row, and its verdict are untouched, so the adapter still reports it failing and
+the red is still visible. What is delivered is the decision and its evidence.
+
+### What was added instead, which is free and closes a real hole
+
+`fn8-neg-requires-move-operand` — FN-8's prohibition list names "User-function
+calls, construction, `move`, borrowing, subscripting, mutation, control flow,
+allocation, and any trapping operation", and the corpus carried negatives for
+user calls, mutation, control flow, and trapping operations. **`move` had
+none.**
+
+The case is a one-token differential and the control is what makes it evidence:
+
+| source in the clause | verdict |
+|---|---|
+| `let same = ieq(left, right);` | **accepted, exit 0** |
+| `let same = ieq(move left, move right);` | **FN-8** `InvalidRequires` |
+
+The operation, the domain, and the clause shape are all legal in both, so the
+moved operand is provably the sole violation rather than the one that fired
+first. That is the property the payload-enum case could never have: it carried
+two violations at once.
+
+### Gates
+
+| | round 23 tip `2d56bb8` | after `4555e61` |
+|---|---|---|
+| `make -C compiler check` | exit 2, lib 572 / 3 | exit 2, lib 572 / 3, same three names |
+| conformance adapter | Pass=387 Fail=2 Skip=13 | **Pass=388** Fail=2 Skip=13, same two names |
+| `make check` Python stages | — | 18 structure tests OK; 128/128 rules covered |
+| negative exercises | `-44` | **`-45`** |
+
+The `-44 → -45` move is the point of the addition, and it is the packet's §1.1
+metric improving by one real negative rather than by a rule merely being named.
+
+### One thing observed and deliberately not chased
+
+`eeq(move flag, True())` inside a clause rejects **FORM-3** at the `True` token,
+not GRAM-9. A construct in an atom position is GRAM-9's subject elsewhere, so
+the citation looks surprising. It is outside this task, it is recorded here only
+so the next reader does not have to rediscover it, and **it is not measured
+beyond that one observation** — no claim is made about which rule is correct.
