@@ -734,7 +734,7 @@ fn forward(value: own i32) -> own Result<Pair, StepError> pure {
 }
 
 fn direct(error: own StepError) -> own Result<Pair, StepError> pure {
-  let accepted = propagate Err(error: error);
+  let accepted = propagate Err<i32, StepError>(error: error);
   let pair = Pair(value: accepted);
   return Ok<Pair, StepError>(value: move pair);
 }

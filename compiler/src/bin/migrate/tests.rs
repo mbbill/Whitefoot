@@ -241,3 +241,35 @@ fn only_reject_rows_citing_a_form_rule_are_excluded() {
     named.sort_unstable();
     assert_eq!(named, ["layout"]);
 }
+
+/// [GIVE-1] a value initializer's `give` is a third position where a bare
+/// prelude constructor needs the arguments its binder's annotation carries.
+/// The direct rule never reached it, because the constructor sits inside an
+/// arm rather than after the `=`.
+#[test]
+fn a_delivered_constructor_takes_the_binder_annotation_arguments() {
+    let source = b"fn choose(b: own Bool) -> own Result<u64, u64> pure {\n  let result: own Result<u64, u64> = match b {\n    True() => {\n      give Ok(value: 1_u64);\n    }\n    False() => {\n      give Err(error: 2_u64);\n    }\n  }\n  return move result;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("give Ok<u64, u64>(value: 1_u64);"), "{out}");
+    assert!(out.contains("give Err<u64, u64>(error: 2_u64);"), "{out}");
+}
+
+/// [ERR-3] the propagated position is the one whose arguments come from two
+/// places: the Ok half is the binder's annotation and the error half is the
+/// function's declared result error, so neither source alone is enough.
+#[test]
+fn a_propagated_constructor_joins_the_annotation_and_the_result_error() {
+    let source = b"enum StepError {\n  Failed();\n}\n\nstruct Pair {\n  value: i32;\n}\n\nfn direct(error: own StepError) -> own Result<Pair, StepError> pure {\n  let accepted: own i32 = propagate Err(error: error);\n  let pair: own Pair = Pair(value: accepted);\n  return Ok(value: move pair);\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(
+        out.contains("propagate Err<i32, StepError>(error: error);"),
+        "{out}"
+    );
+    // The control: the returned constructor in the same function still takes
+    // both of its arguments from the signature, so the two rules are not
+    // reading each other's source.
+    assert!(
+        out.contains("return Ok<Pair, StepError>(value: move pair);"),
+        "{out}"
+    );
+}

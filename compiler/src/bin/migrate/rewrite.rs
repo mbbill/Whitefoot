@@ -195,7 +195,9 @@ pub(crate) fn pre_pass(
             index = consumed;
             continue;
         }
-        if let Some(consumed) = annotated_let(source, &tokens, index, &mut edits, &mut counts)? {
+        if let Some(consumed) =
+            annotated_let(source, &tokens, index, result_type, &mut edits, &mut counts)?
+        {
             index = consumed;
             continue;
         }
@@ -228,6 +230,7 @@ fn annotated_let(
     source: &[u8],
     tokens: &[OwnedLexeme],
     index: usize,
+    result: Option<(usize, usize)>,
     edits: &mut Vec<Edit>,
     counts: &mut Counts,
 ) -> Result<Option<usize>, String> {
@@ -256,7 +259,140 @@ fn annotated_let(
     });
     counts.annotations += 1;
     write_constructor_arguments(source, tokens, equal, annotation, edits, counts);
+    write_delivered_constructor_arguments(source, tokens, equal, annotation, edits, counts);
+    write_propagated_constructor_arguments(
+        source, tokens, equal, annotation, result, edits, counts,
+    );
     Ok(Some(equal + 1))
+}
+
+/// [GIVE-1] a bare prelude constructor inside a value initializer's `give`.
+///
+/// The binder's annotation is the delivered type, so every `give Ok(..)` in the
+/// initializer needs exactly the arguments [`write_constructor_arguments`]
+/// gives a directly assigned one. The constructor sits inside an arm rather
+/// than after the `=`, which is why the direct rule never reached it.
+fn write_delivered_constructor_arguments(
+    source: &[u8],
+    tokens: &[OwnedLexeme],
+    equal: usize,
+    annotation: Option<&[u8]>,
+    edits: &mut Vec<Edit>,
+    counts: &mut Counts,
+) {
+    let Some(arguments) = annotation.and_then(prelude_arguments) else {
+        return;
+    };
+    let Some(end) = initializer_end(tokens, equal) else {
+        return;
+    };
+    for offset in equal + 1..end {
+        if bytes(source, tokens, offset) != b"give" {
+            continue;
+        }
+        if let Some(callee) = bare_prelude_constructor(source, tokens, offset + 1) {
+            edits.push(Edit {
+                start: callee.end,
+                end: callee.end,
+                replacement: arguments.to_vec(),
+            });
+            counts.constructors += 1;
+        }
+    }
+}
+
+/// [ERR-3] a bare prelude constructor propagated into a binder.
+///
+/// `let x: own T = propagate Err(error: e);` inside a function returning
+/// `Result<_, E>` needs `Err<T, E>`: the Ok half is the binder's annotation and
+/// the error half is the function's declared result error. This is the one
+/// position whose arguments come from two places, which is why it is separate
+/// from the annotation-copying rules above.
+fn write_propagated_constructor_arguments(
+    source: &[u8],
+    tokens: &[OwnedLexeme],
+    equal: usize,
+    annotation: Option<&[u8]>,
+    result: Option<(usize, usize)>,
+    edits: &mut Vec<Edit>,
+    counts: &mut Counts,
+) {
+    if bytes(source, tokens, equal + 1) != b"propagate" {
+        return;
+    }
+    let Some(callee) = bare_prelude_constructor(source, tokens, equal + 2) else {
+        return;
+    };
+    let (Some(ok), Some((start, end))) = (annotation, result) else {
+        counts.bare_constructors += 1;
+        return;
+    };
+    let Some(error) = prelude_arguments(&source[start..end]).and_then(error_argument) else {
+        counts.bare_constructors += 1;
+        return;
+    };
+    let mut written = b"<".to_vec();
+    written.extend_from_slice(ok);
+    written.extend_from_slice(b", ");
+    written.extend_from_slice(error);
+    written.push(b'>');
+    edits.push(Edit {
+        start: callee.end,
+        end: callee.end,
+        replacement: written,
+    });
+    counts.constructors += 1;
+}
+
+/// The error half of a written `<T, E>` argument group.
+fn error_argument(arguments: &[u8]) -> Option<&[u8]> {
+    let inner = arguments.get(1..arguments.len().checked_sub(1)?)?;
+    let mut depth = 0_i32;
+    for (offset, byte) in inner.iter().enumerate() {
+        match byte {
+            b'<' => depth += 1,
+            b'>' => depth -= 1,
+            b',' if depth == 0 => {
+                return inner.get(offset + 1..).map(|rest| {
+                    let skipped = rest.iter().take_while(|byte| **byte == b' ').count();
+                    &rest[skipped..]
+                });
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The prelude constructor at `index`, when it is written without arguments.
+fn bare_prelude_constructor(
+    source: &[u8],
+    tokens: &[OwnedLexeme],
+    index: usize,
+) -> Option<OwnedLexeme> {
+    let callee = *tokens.get(index)?;
+    if callee.kind != Some(TokenKind::UpperWordForm) {
+        return None;
+    }
+    if !PRELUDE_CONSTRUCTORS.contains(&&source[callee.start..callee.end]) {
+        return None;
+    }
+    (tokens.get(index + 1)?.kind == Some(TokenKind::LeftParen)).then_some(callee)
+}
+
+/// The token index just past a `let` initializer that opens a block.
+///
+/// A value initializer's extent is its brace group; a plain expression has
+/// none, and returns `None` because it holds no `give`.
+fn initializer_end(tokens: &[OwnedLexeme], equal: usize) -> Option<usize> {
+    let brace = tokens
+        .iter()
+        .enumerate()
+        .skip(equal + 1)
+        .take_while(|(_, token)| token.kind != Some(TokenKind::Semicolon))
+        .find(|(_, token)| token.kind == Some(TokenKind::LeftBrace))
+        .map(|(offset, _)| offset)?;
+    group_end(tokens, brace, TokenKind::LeftBrace, TokenKind::RightBrace)
 }
 
 /// The `=` that ends a `let` binder, skipping any inside its written type.
