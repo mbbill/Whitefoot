@@ -130,11 +130,21 @@ taint gate, range loop, requires-as-goal (dossier §8 order unchanged).
    tracked place, `len(P)`, a constant, and Z — and **no arithmetic
    term**, so `a + b <= max(T)` is not an atomic fact at all. The
    zero-divisor goal `b != 0` and the bounds goal `i < len(p)` are both
-   expressible; the whole overflow family is not. Therefore the
-   overflow half is NOT drafted as part of this item: it either ships as
-   a claim at every one of the 96 sites, proving none, or it waits for
-   an [ENT-1]-monotone fragment extension admitting a bounded
-   arithmetic term. Proportionality points the same way — the real
+   expressible.
+
+   **Corrected the same day, before action:** the overflow family does
+   not fail uniformly — it splits by **operand shape**. Of 89 extracted
+   sites, **59 have a literal second operand, 3 are single-operand, and
+   27 have two non-constant operands.** A literal operand collapses the
+   goal into today's fragment: `a + c <= max(T)` is `a - Z <= max(T) - c`,
+   the exact shape [ENT-1]'s own constant-folding sentence fixes, and a
+   loop counter with `i < len(p)` in scope discharges it by the same
+   transitive closure OP-4 already uses. So the bulk of the loop and
+   offset arithmetic can carry a real discharge with **no fragment
+   extension**, and only the 27 accumulator-shaped sites take a claim —
+   correctly, since nothing in those programs bounds the accumulator and
+   no closure rule could. On this evidence an arithmetic-term extension
+   buys almost nothing and is not drafted. Proportionality points the same way — the real
    programs already use `.wrap` (228 vs 30 in `research/experiments`,
    214 vs 4 in `tests/programs`), so 62 of the 96 sites are conformance
    cases. Full measurement, commands, and consequence in the

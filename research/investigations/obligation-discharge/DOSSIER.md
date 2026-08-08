@@ -253,22 +253,62 @@ are conformance cases — material this project already migrates mechanically.
 So the dissolution's writer burden lands almost entirely on the corpus, and
 its benefit to real programs is doctrinal rather than practical.
 
-**Consequence for sequencing.** The item splits, and the overflow half must
-not be drafted as a spelling batch:
+**Correction, same day, before any of the above was acted on.** The paragraph
+above concluded that the whole overflow family needs a fragment extension.
+That is measured false for two thirds of the sites, and the error was reading
+the goal `a + b <= max(T)` as if both operands were always variable. What the
+live sites actually write is overwhelmingly `iadd.trap<u64>(i, 1_u64)` — a
+place and a **literal**:
 
-- The zero-divisor and bounds families can carry a goal with real discharge
-  support today.
-- The overflow family can only ship as *a claim at every site* — 96 named,
-  justified, ledgered claims replacing 96 anonymous unledgered traps, proving
-  none of them. That trade is defensible on the §1 doctrine (a claim is
-  inside CLM-2's lifecycle and the provenance gate; `.trap` is outside both)
-  but it is not the "discharged like any call" story this section told, and
-  presenting it as one would overstate what the checker can do.
-- The alternative is an [ENT-1]-monotone fragment extension admitting a
-  bounded arithmetic term, which the law explicitly permits ("a later
-  specification version may add fact sources and closure rules") and which
-  has precedent in the same rule's own deferral of loop induction. That is a
-  semantics change of its own size, not a rider.
+```
+git ls-files '*.wf' | grep -v '^archive/' \
+  | xargs grep -oh '[a-z_]*\.trap<[a-z0-9]*>([^)]*)' > sites.txt   # 89 of the 96
+grep -c ', *[0-9][0-9_]*_[iu][0-9]*)' sites.txt                    # 59 literal operand
+grep -vc ',' sites.txt                                             # 3 single-operand
+```
+
+89 of the 96 extract with that pattern (it stops at the first `)`, so a nested
+call operand is missed — the 7-site gap is a limit of the measurement, not a
+third class). Of the 89: **59 have a literal second operand, 3 are
+single-operand, and 27 have two non-constant operands.**
+
+**A constant operand collapses the goal into today's fragment.** For `a + c`
+with c a literal, `a + c <= max(T)` is exactly `a - Z <= max(T) - c`, an
+atomic difference bound over the existing term `a` — and [ENT-1]'s own
+normalization sentence already fixes this shape ("A constant operand folds
+through Z: `a <= 7` is `a - Z <= 7`"). The same holds for `a * c` as
+`a - Z <= floor(max(T) / c)` and for `a - c` against min(T) as
+`Z - a <= c - min(T)`. The checker folds the constant when it builds the
+goal; that is deterministic arithmetic at goal construction, not a new term
+form and not a fragment extension.
+
+Expressible is not yet discharged, but the common case discharges by plain
+transitive closure: a loop counter with `i < len(p)` in scope, plus the
+implicit `len(p) - Z <= max(u64)`, gives `i - Z <= max(u64) - 1`, which is
+the goal for `i + 1`. That is the same closure OP-4 already relies on.
+
+**Consequence for sequencing, corrected.** The item splits by operand shape,
+not by signedness or by family:
+
+- The zero-divisor goal `b != 0` and the bounds goal are expressible, as
+  before.
+- **The constant-operand overflow sites — 59 of 89 measured, the bulk of the
+  loop and offset arithmetic — are expressible in today's fragment and
+  dischargeable by existing closure.** This half of the dissolution can carry
+  the "discharged like any call" story honestly, with no extension.
+- The 27 two-non-constant-operand sites take a claim, and reading them
+  suggests that is the correct outcome rather than a shortfall: they are
+  accumulator patterns (`iadd.trap<i32>(sum, i)`, `(total, i)`, `(a, b)`) and
+  tree-size sums whose operands nothing in the program bounds. Their overflow
+  genuinely can occur, so no fragment could prove them, and a named
+  justification-bearing claim is exactly the honest form.
+- **An [ENT-1]-monotone arithmetic-term extension therefore looks like it buys
+  almost nothing** and should not be drafted on this evidence. It would serve
+  only the 27, whose predicates are unbounded for reasons no closure rule
+  reaches. The law permits such an extension ("a later specification version
+  may add fact sources and closure rules"), with precedent in the same rule's
+  deferral of loop induction; the point here is that the measurement does not
+  ask for it.
 
 ### 2.10 What Result becomes
 
