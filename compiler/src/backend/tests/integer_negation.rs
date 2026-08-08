@@ -60,7 +60,7 @@ fn executes_every_negation_mode_for_every_signed_width() {
 #[test]
 fn trapping_minimum_reports_the_mandatory_op2_record() {
     let source = br#"fn main() -> own unit traps {
-  let negated: own i8 = ineg.trap<i8>(-128_i8);
+  let negated = ineg.trap(-128_i8);
   return unit;
 }
 "#;

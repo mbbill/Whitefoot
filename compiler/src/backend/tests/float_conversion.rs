@@ -72,28 +72,28 @@ const NUMERIC_TYPES: [NumericType; 10] = [
 #[test]
 fn every_total_conversion_with_a_float_endpoint_executes() {
     let source = br#"fn main() -> own unit traps {
-  let i8_f32: own f32 = cvt<i8, f32>(-8_i8);
-  check feq<f32>(i8_f32, -8.0_f32) else trap "i8 to f32";
-  let i16_f32: own f32 = cvt<i16, f32>(32767_i16);
-  check feq<f32>(i16_f32, 32767.0_f32) else trap "i16 to f32";
-  let u8_f32: own f32 = cvt<u8, f32>(8_u8);
-  check feq<f32>(u8_f32, 8.0_f32) else trap "u8 to f32";
-  let u16_f32: own f32 = cvt<u16, f32>(65535_u16);
-  check feq<f32>(u16_f32, 65535.0_f32) else trap "u16 to f32";
-  let i8_f64: own f64 = cvt<i8, f64>(-8_i8);
-  check feq<f64>(i8_f64, -8.0_f64) else trap "i8 to f64";
-  let i16_f64: own f64 = cvt<i16, f64>(-16_i16);
-  check feq<f64>(i16_f64, -16.0_f64) else trap "i16 to f64";
-  let i32_f64: own f64 = cvt<i32, f64>(2147483647_i32);
-  check feq<f64>(i32_f64, 2147483647.0_f64) else trap "i32 to f64";
-  let u8_f64: own f64 = cvt<u8, f64>(8_u8);
-  check feq<f64>(u8_f64, 8.0_f64) else trap "u8 to f64";
-  let u16_f64: own f64 = cvt<u16, f64>(16_u16);
-  check feq<f64>(u16_f64, 16.0_f64) else trap "u16 to f64";
-  let u32_f64: own f64 = cvt<u32, f64>(4294967295_u32);
-  check feq<f64>(u32_f64, 4294967295.0_f64) else trap "u32 to f64";
-  let f32_f64: own f64 = cvt<f32, f64>(1.5_f32);
-  check feq<f64>(f32_f64, 1.5_f64) else trap "f32 to f64";
+  let i8_f32 = cvt<i8, f32>(-8_i8);
+  check feq(i8_f32, -8.0_f32) else trap "i8 to f32";
+  let i16_f32 = cvt<i16, f32>(32767_i16);
+  check feq(i16_f32, 32767.0_f32) else trap "i16 to f32";
+  let u8_f32 = cvt<u8, f32>(8_u8);
+  check feq(u8_f32, 8.0_f32) else trap "u8 to f32";
+  let u16_f32 = cvt<u16, f32>(65535_u16);
+  check feq(u16_f32, 65535.0_f32) else trap "u16 to f32";
+  let i8_f64 = cvt<i8, f64>(-8_i8);
+  check feq(i8_f64, -8.0_f64) else trap "i8 to f64";
+  let i16_f64 = cvt<i16, f64>(-16_i16);
+  check feq(i16_f64, -16.0_f64) else trap "i16 to f64";
+  let i32_f64 = cvt<i32, f64>(2147483647_i32);
+  check feq(i32_f64, 2147483647.0_f64) else trap "i32 to f64";
+  let u8_f64 = cvt<u8, f64>(8_u8);
+  check feq(u8_f64, 8.0_f64) else trap "u8 to f64";
+  let u16_f64 = cvt<u16, f64>(16_u16);
+  check feq(u16_f64, 16.0_f64) else trap "u16 to f64";
+  let u32_f64 = cvt<u32, f64>(4294967295_u32);
+  check feq(u32_f64, 4294967295.0_f64) else trap "u32 to f64";
+  let f32_f64 = cvt<f32, f64>(1.5_f32);
+  check feq(f32_f64, 1.5_f64) else trap "f32 to f64";
   return unit;
 }
 "#;
@@ -167,29 +167,29 @@ fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure(
 #[test]
 fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
     let source = br#"fn power_f32(exponent: own u32) -> own f32 pure {
-  let value: own f32 = 1.0_f32;
-  let counter: own u32 = 0_u32;
+  let value = 1.0_f32;
+  let counter = 0_u32;
   loop @powers {
-    let done: own Bool = ieq<u32>(counter, exponent);
+    let done = counter == exponent;
     if done {
       break @powers;
     }
-    set value = fmul.strict<f32>(value, 2.0_f32);
-    set counter = iadd.wrap<u32>(counter, 1_u32);
+    set value = fmul.strict(value, 2.0_f32);
+    set counter = counter +wrap 1_u32;
   }
   return value;
 }
 
 fn power_f64(exponent: own u32) -> own f64 pure {
-  let value: own f64 = 1.0_f64;
-  let counter: own u32 = 0_u32;
+  let value = 1.0_f64;
+  let counter = 0_u32;
   loop @powers {
-    let done: own Bool = ieq<u32>(counter, exponent);
+    let done = counter == exponent;
     if done {
       break @powers;
     }
-    set value = fmul.strict<f64>(value, 2.0_f64);
-    set counter = iadd.wrap<u32>(counter, 1_u32);
+    set value = fmul.strict(value, 2.0_f64);
+    set counter = counter +wrap 1_u32;
   }
   return value;
 }
@@ -239,24 +239,24 @@ fn reject_f64_u64(value: own f64) -> own unit traps {
 }
 
 fn main() -> own unit traps {
-  let i32_boundary: own f32 = power_f32(exponent: 31_u32);
+  let i32_boundary = power_f32(exponent: 31_u32);
   reject_f32_i32(value: i32_boundary);
-  let u32_boundary: own f32 = power_f32(exponent: 32_u32);
+  let u32_boundary = power_f32(exponent: 32_u32);
   reject_f32_u32(value: u32_boundary);
-  let i64_boundary: own f64 = power_f64(exponent: 63_u32);
+  let i64_boundary = power_f64(exponent: 63_u32);
   reject_f64_i64(value: i64_boundary);
-  let u64_boundary: own f64 = power_f64(exponent: 64_u32);
+  let u64_boundary = power_f64(exponent: 64_u32);
   reject_f64_u64(value: u64_boundary);
-  let nan_f32: own f32 = fnan<f32>();
+  let nan_f32 = fnan<f32>();
   reject_f32_i32(value: nan_f32);
-  let infinity_f32: own f32 = finf<f32>();
+  let infinity_f32 = finf<f32>();
   reject_f32_i32(value: infinity_f32);
-  let infinity_f64: own f64 = finf<f64>();
-  let negative_infinity: own f64 = fneg<f64>(infinity_f64);
+  let infinity_f64 = finf<f64>();
+  let negative_infinity = fneg(infinity_f64);
   reject_f64_u64(value: negative_infinity);
-  let two_to_52: own f64 = power_f64(exponent: 52_u32);
-  let one_ulp: own f64 = fdiv.strict<f64>(1.0_f64, two_to_52);
-  let not_f32: own f64 = fadd.strict<f64>(1.0_f64, one_ulp);
+  let two_to_52 = power_f64(exponent: 52_u32);
+  let one_ulp = fdiv.strict(1.0_f64, two_to_52);
+  let not_f32 = fadd.strict(1.0_f64, one_ulp);
   match cvt<f64, f32>(not_f32) {
     Ok(value: rounded) => {
       check False() else trap "inexact f64 to f32 succeeded";
@@ -264,28 +264,28 @@ fn main() -> own unit traps {
     Err(error: narrow) => {
     }
   }
-  let nan_f64: own f64 = fnan<f64>();
+  let nan_f64 = fnan<f64>();
   match cvt<f64, f32>(nan_f64) {
     Ok(value: narrow_nan) => {
-      check fne<f32>(narrow_nan, narrow_nan) else trap "narrow NaN";
+      check fne(narrow_nan, narrow_nan) else trap "narrow NaN";
     }
     Err(error: narrow_error) => {
       check False() else trap "NaN conversion failed";
     }
   }
-  let narrowable_infinity: own f64 = finf<f64>();
+  let narrowable_infinity = finf<f64>();
   match cvt<f64, f32>(narrowable_infinity) {
     Ok(value: narrow_infinity) => {
-      let expected_infinity: own f32 = finf<f32>();
-      check feq<f32>(narrow_infinity, expected_infinity) else trap "narrow infinity";
+      let expected_infinity = finf<f32>();
+      check feq(narrow_infinity, expected_infinity) else trap "narrow infinity";
     }
     Err(error: infinity_error) => {
       check False() else trap "infinity conversion failed";
     }
   }
-  let narrow_nan_source: own f32 = fnan<f32>();
-  let wide_nan: own f64 = cvt<f32, f64>(narrow_nan_source);
-  check fne<f64>(wide_nan, wide_nan) else trap "wide NaN";
+  let narrow_nan_source = fnan<f32>();
+  let wide_nan = cvt<f32, f64>(narrow_nan_source);
+  check fne(wide_nan, wide_nan) else trap "wide NaN";
   return unit;
 }
 "#;

@@ -307,12 +307,12 @@ fn emitted_drop_ids(function: &str) -> Vec<u32> {
 #[test]
 fn emitted_module_retains_checks_and_avoids_undefined_overflow_flags() {
     let source = br#"fn add(x: own i32, y: own i32) -> own i32 traps {
-  return iadd.trap<i32>(x, y);
+  return x + y;
 }
 
 fn main() -> own unit traps {
-  let answer: own i32 = add(x: 40_i32, y: 2_i32);
-  check ieq<i32>(answer, 42_i32) else trap "wrong answer";
+  let answer = add(x: 40_i32, y: 2_i32);
+  check answer == 42_i32 else trap "wrong answer";
   return unit;
 }
 "#;
@@ -338,14 +338,14 @@ enum Payload {
 }
 
 fn main() -> own unit pure {
-  let flag: own Flag = On();
+  let flag = On();
   match flag {
     Off() => {
     }
     On() => {
     }
   }
-  let payload: own Payload = Value(number: 42_i32);
+  let payload = Value(number: 42_i32);
   match payload {
     Empty() => {
     }
@@ -385,20 +385,20 @@ enum Holder {
 }
 
 fn make() -> own Cell pure {
-  let cell: own Cell = Cell(value: 1_i32);
+  let cell = Cell(value: 1_i32);
   return move cell;
 }
 
 fn cleanup() -> own unit pure {
   make();
-  let first: own Cell = Cell(value: 2_i32);
-  let second: own Cell = Cell(value: 3_i32);
-  let selected: own Cell = Cell(value: 4_i32);
-  let inner_sibling: own Cell = Cell(value: 5_i32);
-  let inner: own Inner = Inner(selected: move selected, sibling: move inner_sibling);
-  let outer_sibling: own Cell = Cell(value: 6_i32);
-  let outer: own Outer = Outer(inner: move inner, sibling: move outer_sibling);
-  let taken: own Cell = move outer.inner.selected;
+  let first = Cell(value: 2_i32);
+  let second = Cell(value: 3_i32);
+  let selected = Cell(value: 4_i32);
+  let inner_sibling = Cell(value: 5_i32);
+  let inner = Inner(selected: move selected, sibling: move inner_sibling);
+  let outer_sibling = Cell(value: 6_i32);
+  let outer = Outer(inner: move inner, sibling: move outer_sibling);
+  let taken = move outer.inner.selected;
   return unit;
 }
 
@@ -409,8 +409,8 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> own i32 pure {
     Empty() => {
     }
   }
-  let selected: own i32 = if flag {
-    let temporary: own Cell = Cell(value: 7_i32);
+  let selected = if flag {
+    let temporary = Cell(value: 7_i32);
     give 1_i32;
   } else {
     give 0_i32;
@@ -420,9 +420,9 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> own i32 pure {
 
 fn main() -> own unit pure {
   cleanup();
-  let cell: own Cell = Cell(value: 8_i32);
-  let holder: own Holder = Held(cell: move cell);
-  let flag: own Bool = True();
+  let cell = Cell(value: 8_i32);
+  let holder = Held(cell: move cell);
+  let flag = True();
   cleanup_match(value: move holder, flag: flag);
   return unit;
 }
@@ -458,10 +458,10 @@ struct Outer {
 }
 
 fn main() -> own unit traps {
-  let number: own i32 = 1_i32;
-  let inner: own Inner = Inner(value: 2_i32);
-  let outer: own Outer = Outer(inner: move inner, other: 7_i32);
-  let flag: own Bool = True();
+  let number = 1_i32;
+  let inner = Inner(value: 2_i32);
+  let outer = Outer(inner: move inner, other: 7_i32);
+  let flag = True();
   if flag {
     set number = 42_i32;
     set outer.inner.value = number;
@@ -469,19 +469,19 @@ fn main() -> own unit traps {
     set number = 9_i32;
     set outer.inner.value = number;
   }
-  let observed: own i32 = outer.inner.value;
-  check ieq<i32>(observed, 42_i32) else trap "nested set failed";
-  let preserved: own i32 = outer.other;
-  check ieq<i32>(preserved, 7_i32) else trap "sibling changed";
-  let selected: own i32 = if flag {
+  let observed = outer.inner.value;
+  check observed == 42_i32 else trap "nested set failed";
+  let preserved = outer.other;
+  check preserved == 7_i32 else trap "sibling changed";
+  let selected = if flag {
     set number = 43_i32;
     give number;
   } else {
     set number = 10_i32;
     give number;
   }
-  check ieq<i32>(selected, 43_i32) else trap "value match result failed";
-  check ieq<i32>(number, 43_i32) else trap "value match set failed";
+  check selected == 43_i32 else trap "value match result failed";
+  check number == 43_i32 else trap "value match set failed";
   return unit;
 }
 "#;
@@ -709,35 +709,35 @@ struct Envelope {
 }
 
 fn step(value: own i32) -> own Result<i32, StepError> pure {
-  if ilt<i32>(value, 0_i32) {
-    let error: own StepError = Failed();
-    return Err(error: error);
+  if ilt(value, 0_i32) {
+    let error = Failed();
+    return Err<i32, StepError>(error: error);
   } else {
-    return Ok(value: value);
+    return Ok<i32, StepError>(value: value);
   }
 }
 
 fn forward(value: own i32) -> own Result<i64, StepError> pure {
-  let result: own Result<i32, StepError> = step(value: value);
-  let accepted: own i32 = propagate result;
-  return Ok(value: 42_i64);
+  let result = step(value: value);
+  let accepted = propagate result;
+  return Ok<i64, StepError>(value: 42_i64);
 }
 
 fn forward_field(value: own i32) -> own Result<i64, StepError> pure {
-  let result: own Result<i32, StepError> = step(value: value);
-  let residue: own Pair = Pair(left: 1_i32, right: 2_i32);
-  let envelope: own Envelope = Envelope(result: move result, residue: move residue);
-  let accepted: own i32 = propagate envelope.result;
-  return Ok(value: 42_i64);
+  let result = step(value: value);
+  let residue = Pair(left: 1_i32, right: 2_i32);
+  let envelope = Envelope(result: move result, residue: move residue);
+  let accepted = propagate envelope.result;
+  return Ok<i64, StepError>(value: 42_i64);
 }
 
 fn make_pair() -> own Result<Pair, StepError> pure {
-  let pair: own Pair = Pair(left: 20_i32, right: 22_i32);
-  return Ok(value: move pair);
+  let pair = Pair(left: 20_i32, right: 22_i32);
+  return Ok<Pair, StepError>(value: move pair);
 }
 
 fn main() -> own unit traps {
-  let arithmetic_result: own Result<i32, Overflow> = iadd.checked<i32>(2147483647_i32, 1_i32);
+  let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
       check False() else trap "checked overflow took Ok";
@@ -745,7 +745,7 @@ fn main() -> own unit traps {
     Err(error: overflow) => {
     }
   }
-  let subtract_result: own Result<u8, Overflow> = isub.checked<u8>(0_u8, 1_u8);
+  let subtract_result = 0_u8 -checked 1_u8;
   match move subtract_result {
     Ok(value: difference) => {
       check False() else trap "checked underflow took Ok";
@@ -753,25 +753,25 @@ fn main() -> own unit traps {
     Err(error: underflow) => {
     }
   }
-  let multiply_result: own Result<i16, Overflow> = imul.checked<i16>(6_i16, 7_i16);
+  let multiply_result = 6_i16 *checked 7_i16;
   match move multiply_result {
     Ok(value: product) => {
-      check ieq<i16>(product, 42_i16) else trap "checked product drift";
+      check product == 42_i16 else trap "checked product drift";
     }
     Err(error: product_error) => {
       check False() else trap "checked product took Err";
     }
   }
-  let success: own Result<i64, StepError> = forward(value: 7_i32);
+  let success = forward(value: 7_i32);
   match move success {
     Ok(value: answer) => {
-      check ieq<i64>(answer, 42_i64) else trap "propagated Ok payload drift";
+      check answer == 42_i64 else trap "propagated Ok payload drift";
     }
     Err(error: failure_error) => {
       check False() else trap "unexpected propagated Err";
     }
   }
-  let failure: own Result<i64, StepError> = forward(value: -1_i32);
+  let failure = forward(value: -1_i32);
   match move failure {
     Ok(value: unexpected) => {
       check False() else trap "propagated Err became Ok";
@@ -779,16 +779,16 @@ fn main() -> own unit traps {
     Err(error: forwarded_error) => {
     }
   }
-  let field_success: own Result<i64, StepError> = forward_field(value: 7_i32);
+  let field_success = forward_field(value: 7_i32);
   match move field_success {
     Ok(value: field_answer) => {
-      check ieq<i64>(field_answer, 42_i64) else trap "field propagation drift";
+      check field_answer == 42_i64 else trap "field propagation drift";
     }
     Err(error: field_failure) => {
       check False() else trap "unexpected field propagation error";
     }
   }
-  let field_failure: own Result<i64, StepError> = forward_field(value: -1_i32);
+  let field_failure = forward_field(value: -1_i32);
   match move field_failure {
     Ok(value: field_unexpected) => {
       check False() else trap "field propagation lost Err";
@@ -796,11 +796,11 @@ fn main() -> own unit traps {
     Err(error: field_forwarded_error) => {
     }
   }
-  let pair_result: own Result<Pair, StepError> = make_pair();
+  let pair_result = make_pair();
   match move pair_result {
     Ok(value: pair) => {
-      let total: own i32 = iadd.wrap<i32>(pair.left, pair.right);
-      check ieq<i32>(total, 42_i32) else trap "aggregate Result payload drift";
+      let total = pair.left +wrap pair.right;
+      check total == 42_i32 else trap "aggregate Result payload drift";
     }
     Err(error: pair_error) => {
       check False() else trap "unexpected aggregate Result error";
@@ -838,21 +838,21 @@ fn main() -> own unit traps {
 #[test]
 fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
     let source = br#"fn main() -> own unit traps {
-  let outer: own i32 = 0_i32;
+  let outer = 0_i32;
   loop @outer_loop {
-    set outer = iadd.wrap<i32>(outer, 1_i32);
-    let inner: own i32 = 0_i32;
+    set outer = outer +wrap 1_i32;
+    let inner = 0_i32;
     loop @inner_loop {
-      if ige<i32>(outer, 3_i32) {
+      if outer >= 3_i32 {
         break @outer_loop;
       }
-      if ige<i32>(inner, 2_i32) {
+      if inner >= 2_i32 {
         break @inner_loop;
       }
-      set inner = iadd.wrap<i32>(inner, 1_i32);
+      set inner = inner +wrap 1_i32;
     }
   }
-  check ieq<i32>(outer, 3_i32) else trap "wrong outer exit";
+  check outer == 3_i32 else trap "wrong outer exit";
   return unit;
 }
 "#;
@@ -900,29 +900,29 @@ fn compiler_independent_nominal_data_cases_execute_through_host_llvm() {
 #[test]
 fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign() {
     let source = br#"fn main() -> own unit traps {
-  let aw: own i8 = iadd.wrap<i8>(127_i8, 1_i8);
-  let sw: own u8 = isub.wrap<u8>(0_u8, 1_u8);
-  let mw: own u16 = imul.wrap<u16>(65535_u16, 2_u16);
-  let ast: own i16 = iadd.trap<i16>(-10_i16, 3_i16);
-  let aut: own u16 = iadd.trap<u16>(10_u16, 3_u16);
-  let sst: own i32 = isub.trap<i32>(10_i32, 3_i32);
-  let sut: own u32 = isub.trap<u32>(10_u32, 3_u32);
-  let mst: own i64 = imul.trap<i64>(6_i64, 7_i64);
-  let mut: own u64 = imul.trap<u64>(6_u64, 7_u64);
-  check ieq<i8>(aw, -128_i8) else trap "signed add wrap drift";
-  check ieq<u8>(sw, 255_u8) else trap "unsigned subtract wrap drift";
-  check ieq<u16>(mw, 65534_u16) else trap "unsigned multiply wrap drift";
-  check ieq<i16>(ast, -7_i16) else trap "signed add trap drift";
-  check ieq<u16>(aut, 13_u16) else trap "unsigned add trap drift";
-  check ieq<i32>(sst, 7_i32) else trap "signed subtract trap drift";
-  check ieq<u32>(sut, 7_u32) else trap "unsigned subtract trap drift";
-  check ieq<i64>(mst, 42_i64) else trap "signed multiply trap drift";
-  check ieq<u64>(mut, 42_u64) else trap "unsigned multiply trap drift";
-  check ine<i32>(1_i32, 2_i32) else trap "ine drift";
-  check ilt<i32>(-1_i32, 0_i32) else trap "signed ilt drift";
-  check ile<u32>(1_u32, 1_u32) else trap "unsigned ile drift";
-  check igt<i32>(1_i32, -1_i32) else trap "signed igt drift";
-  check ige<u32>(1_u32, 1_u32) else trap "unsigned ige drift";
+  let aw = 127_i8 +wrap 1_i8;
+  let sw = 0_u8 -wrap 1_u8;
+  let mw = 65535_u16 *wrap 2_u16;
+  let ast = -10_i16 + 3_i16;
+  let aut = 10_u16 + 3_u16;
+  let sst = 10_i32 - 3_i32;
+  let sut = 10_u32 - 3_u32;
+  let mst = 6_i64 * 7_i64;
+  let mut = 6_u64 * 7_u64;
+  check aw == -128_i8 else trap "signed add wrap drift";
+  check sw == 255_u8 else trap "unsigned subtract wrap drift";
+  check mw == 65534_u16 else trap "unsigned multiply wrap drift";
+  check ast == -7_i16 else trap "signed add trap drift";
+  check aut == 13_u16 else trap "unsigned add trap drift";
+  check sst == 7_i32 else trap "signed subtract trap drift";
+  check sut == 7_u32 else trap "unsigned subtract trap drift";
+  check mst == 42_i64 else trap "signed multiply trap drift";
+  check mut == 42_u64 else trap "unsigned multiply trap drift";
+  check 1_i32 != 2_i32 else trap "ine drift";
+  check ilt(-1_i32, 0_i32) else trap "signed ilt drift";
+  check 1_u32 <= 1_u32 else trap "unsigned ile drift";
+  check igt(1_i32, -1_i32) else trap "signed igt drift";
+  check 1_u32 >= 1_u32 else trap "unsigned ige drift";
   return unit;
 }
 "#;
@@ -939,7 +939,7 @@ fn unit_is_a_first_class_parameter_result_and_local() {
 }
 
 fn main() -> own unit pure {
-  let value: own unit = identity(value: unit);
+  let value = identity(value: unit);
   return value;
 }
 "#;
@@ -965,7 +965,7 @@ fn explicit_check_failure_emits_the_exact_mandatory_record_shape() {
 #[test]
 fn integer_overflow_reports_op2_before_abort() {
     let source = br#"fn main() -> own unit traps {
-  let overflow: own i8 = iadd.trap<i8>(127_i8, 1_i8);
+  let overflow = 127_i8 + 1_i8;
   return unit;
 }
 "#;
@@ -987,17 +987,17 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
     // does, the check has to run.
     let source = br#"fn main() -> own unit traps {
   doc "A mixing chain the host optimizer cannot fold feeds one required check.";
-  let step: own u64 = 0_u64;
-  let state: own u64 = 14695981039346656037_u64;
+  let step = 0_u64;
+  let state = 14695981039346656037_u64;
   loop @mix {
-    if ige<u64>(step, 4096_u64) {
+    if step >= 4096_u64 {
       break @mix;
     }
-    let mixed: own u64 = ixor<u64>(state, step);
-    set state = imul.wrap<u64>(mixed, 1099511628211_u64);
-    set step = iadd.trap<u64>(step, 1_u64);
+    let mixed = ixor(state, step);
+    set state = mixed *wrap 1099511628211_u64;
+    set step = step + 1_u64;
   }
-  check ieq<u64>(state, 1_u64) else trap "mixing chain drift";
+  check state == 1_u64 else trap "mixing chain drift";
   return unit;
 }
 "#;

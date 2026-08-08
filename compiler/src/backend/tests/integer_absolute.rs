@@ -59,7 +59,7 @@ fn executes_every_absolute_mode_for_every_signed_width() {
 #[test]
 fn trapping_minimum_reports_the_mandatory_op2_record() {
     let source = br#"fn main() -> own unit traps {
-  let magnitude: own i8 = iabs.trap<i8>(-128_i8);
+  let magnitude = iabs.trap(-128_i8);
   return unit;
 }
 "#;

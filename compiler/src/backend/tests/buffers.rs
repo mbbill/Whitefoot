@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
     let source = br#"fn make(n: own u64) -> own buffer<u16> allocates(heap), traps {
-  return buffer_new<u16>(n, 3_u16);
+  return buffer_new(n, 3_u16);
 }
 
 fn replacement() -> own u16 pure {
@@ -11,14 +11,14 @@ fn replacement() -> own u16 pure {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u16> = make(n: 4_u64);
-  let length: own u64 = len<u16>(values);
-  let room: own Bool = ilt<u64>(2_u64, length);
+  let values = make(n: 4_u64);
+  let length = len(values);
+  let room = ilt(2_u64, length);
   claim sized_by_make: room because "make allocates n slots and main passes four";
   set values[2_u64] = replacement();
-  let stored: own u16 = values[2_u64];
-  check ieq<u64>(length, 4_u64) else trap "length drift";
-  check ieq<u16>(stored, 9_u16) else trap "store drift";
+  let stored = values[2_u64];
+  check length == 4_u64 else trap "length drift";
+  check stored == 9_u16 else trap "store drift";
   return unit;
 }
 "#;
@@ -48,7 +48,7 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn op9_overflow_traps_before_allocation() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u64> = buffer_new<u64>(18446744073709551615_u64, 0_u64);
+  let values = buffer_new(18446744073709551615_u64, 0_u64);
   return unit;
 }
 "#;
@@ -77,7 +77,7 @@ fn op9_overflow_traps_before_allocation() {
 #[test]
 fn target_domain_failure_aborts_before_allocation_without_a_language_record() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(18446744073709551615_u64, 0_u8);
+  let values = buffer_new(18446744073709551615_u64, 0_u8);
   return unit;
 }
 "#;
@@ -117,7 +117,7 @@ fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+  let values = buffer_new(2_u64, 0_u8);
   set values[2_u64] = replacement();
   return unit;
 }
@@ -130,9 +130,9 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn empty_buffer_has_zero_length_and_a_normal_free() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(0_u64, 7_u8);
-  let length: own u64 = len<u8>(values);
-  check ieq<u64>(length, 0_u64) else trap "length drift";
+  let values = buffer_new(0_u64, 7_u8);
+  let length = len(values);
+  check length == 0_u64 else trap "length drift";
   return unit;
 }
 "#;
@@ -145,20 +145,20 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
 #[test]
 fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
     let source = br#"fn cleanup(flag: own Bool) -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+  let values = buffer_new(2_u64, 0_u8);
   if flag {
     return unit;
   }
   loop @done {
-    let scratch: own buffer<u16> = buffer_new<u16>(1_u64, 0_u16);
+    let scratch = buffer_new(1_u64, 0_u16);
     break @done;
   }
   return unit;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let true_value: own Bool = True();
-  let false_value: own Bool = False();
+  let true_value = True();
+  let false_value = False();
   cleanup(flag: true_value);
   cleanup(flag: false_value);
   return unit;
@@ -214,8 +214,8 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
 }
 
 fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
-  let room: own u64 = len<u64>(deref(pool).left);
-  let ok: own Bool = ilt<u64>(1_u64, room);
+  let room = len(deref(pool).left);
+  let ok = ilt(1_u64, room);
   claim left_sized: ok because "main pools two slots per column";
   set deref(pool).left[1_u64] = 13_u64;
   set deref(pool).count = 1_u64;
@@ -223,27 +223,27 @@ fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
 }
 
 fn observe['r](pool: &'r Pool) -> own u64 reads('r), traps {
-  let room: own u64 = len<u64>(deref(pool).left);
-  let ok: own Bool = ilt<u64>(1_u64, room);
+  let room = len(deref(pool).left);
+  let ok = ilt(1_u64, room);
   claim left_sized: ok because "main pools two slots per column";
-  let value: own u64 = deref(pool).left[1_u64];
-  let count: own u64 = deref(pool).count;
-  return iadd.trap<u64>(value, count);
+  let value = deref(pool).left[1_u64];
+  let count = deref(pool).count;
+  return value + count;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let left: own buffer<u64> = buffer_new<u64>(2_u64, 0_u64);
-  let right: own buffer<u64> = buffer_new<u64>(2_u64, 0_u64);
-  let pool: own Pool = Pool(left: move left, right: move right, count: 0_u64);
-  let apply: own Bool = True();
+  let left = buffer_new(2_u64, 0_u64);
+  let right = buffer_new(2_u64, 0_u64);
+  let pool = Pool(left: move left, right: move right, count: 0_u64);
+  let apply = True();
   if apply {
     region 'write {
       update<'write>(pool: &uniq 'write pool);
     }
   }
   region 'read {
-    let observed: own u64 = observe<'read>(pool: &'read pool);
-    check ieq<u64>(observed, 14_u64) else trap "borrowed struct update drift";
+    let observed = observe<'read>(pool: &'read pool);
+    check observed == 14_u64 else trap "borrowed struct update drift";
   }
   return unit;
 }
@@ -328,23 +328,23 @@ fn replacement() -> own u16 pure {
 }
 
 fn update(columns: own Columns) -> own Columns traps {
-  let room: own u64 = len<u16>(columns.left);
-  let ok: own Bool = ilt<u64>(1_u64, room);
+  let room = len(columns.left);
+  let ok = ilt(1_u64, room);
   claim left_sized: ok because "main sizes both columns to two slots";
   set columns.left[1_u64] = replacement();
   return move columns;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let left: own buffer<u16> = buffer_new<u16>(2_u64, 0_u16);
-  let right: own buffer<u16> = buffer_new<u16>(2_u64, 0_u16);
-  let columns: own Columns = Columns(left: move left, right: move right);
-  let updated: own Columns = update(columns: move columns);
-  let updated_room: own u64 = len<u16>(updated.left);
-  let updated_ok: own Bool = ilt<u64>(1_u64, updated_room);
+  let left = buffer_new(2_u64, 0_u16);
+  let right = buffer_new(2_u64, 0_u16);
+  let columns = Columns(left: move left, right: move right);
+  let updated = update(columns: move columns);
+  let updated_room = len(updated.left);
+  let updated_ok = ilt(1_u64, updated_room);
   claim updated_sized: updated_ok because "update returns the two-slot columns";
-  let value: own u16 = updated.left[1_u64];
-  check ieq<u16>(value, 9_u16) else trap "projected store drift";
+  let value = updated.left[1_u64];
+  check value == 9_u16 else trap "projected store drift";
   return unit;
 }
 "#;
@@ -384,12 +384,12 @@ struct Owner {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let first: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let second: own buffer<u16> = buffer_new<u16>(1_u64, 0_u16);
-  let pair: own Pair = Pair(first: move first, second: move second);
-  let prefix: own buffer<u32> = buffer_new<u32>(1_u64, 0_u32);
-  let suffix: own buffer<u64> = buffer_new<u64>(1_u64, 0_u64);
-  let owner: own Owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
+  let first = buffer_new(1_u64, 0_u8);
+  let second = buffer_new(1_u64, 0_u16);
+  let pair = Pair(first: move first, second: move second);
+  let prefix = buffer_new(1_u64, 0_u32);
+  let suffix = buffer_new(1_u64, 0_u64);
+  let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
   return unit;
 }
 "#;
@@ -420,13 +420,13 @@ fn take(owner: own Owner) -> own buffer<u8> pure {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let first: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let second: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let pair: own Pair = Pair(first: move first, second: move second);
-  let prefix: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let suffix: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own Owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
-  let retained: own buffer<u8> = take(owner: move owner);
+  let first = buffer_new(1_u64, 0_u8);
+  let second = buffer_new(1_u64, 0_u8);
+  let pair = Pair(first: move first, second: move second);
+  let prefix = buffer_new(1_u64, 0_u8);
+  let suffix = buffer_new(1_u64, 0_u8);
+  let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
+  let retained = take(owner: move owner);
   return unit;
 }
 "#;

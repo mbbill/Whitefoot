@@ -5,41 +5,41 @@ fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
     let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
 fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
-  let offset: own u64 = 0_u64;
-  let total: own u64 = 0_u64;
-  let length: own u64 = len<u8>(values);
+  let offset = 0_u64;
+  let total = 0_u64;
+  let length = len(values);
   loop @items {
-    let done: own Bool = ieq<u64>(offset, length);
+    let done = offset == length;
     if done {
       break @items;
     }
-    let read_ok: own Bool = ilt<u64>(offset, length);
+    let read_ok = ilt(offset, length);
     claim offset_in_values: read_ok because "the walk stops at the slice length";
-    let byte: own u8 = values[offset];
-    let word: own u64 = cvt<u8, u64>(byte);
-    set total = iadd.wrap<u64>(total, word);
-    set offset = iadd.wrap<u64>(offset, 1_u64);
+    let byte = values[offset];
+    let word = cvt<u8, u64>(byte);
+    set total = total +wrap word;
+    set offset = offset +wrap 1_u64;
   }
   return total;
 }
 
 fn main() -> own unit allocates(heap), traps {
   region 'static_view {
-    let view: own slice<'static_view, u8> = slice_of<'static_view, u8>(&'static_view bytes);
-    let total: own u64 = sum<'static_view>(values: move view);
-    check ieq<u64>(total, 10_u64) else trap "array slice";
+    let view = slice_of(&'static_view bytes);
+    let total = sum<'static_view>(values: move view);
+    check total == 10_u64 else trap "array slice";
   }
-  let local: own array<u8, 4> = array_new<u8, 4>(3_u8);
+  let local = array_new<u8, 4>(3_u8);
   region 'local_view {
-    let view: own slice<'local_view, u8> = slice_of<'local_view, u8>(&'local_view local);
-    let total: own u64 = sum<'local_view>(values: move view);
-    check ieq<u64>(total, 12_u64) else trap "local array slice";
+    let view = slice_of(&'local_view local);
+    let total = sum<'local_view>(values: move view);
+    check total == 12_u64 else trap "local array slice";
   }
-  let runtime: own buffer<u8> = buffer_new<u8>(4_u64, 2_u8);
+  let runtime = buffer_new(4_u64, 2_u8);
   region 'runtime_view {
-    let view: own slice<'runtime_view, u8> = slice_of<'runtime_view, u8>(&'runtime_view runtime);
-    let total: own u64 = sum<'runtime_view>(values: move view);
-    check ieq<u64>(total, 8_u64) else trap "buffer slice";
+    let view = slice_of(&'runtime_view runtime);
+    let total = sum<'runtime_view>(values: move view);
+    check total == 8_u64 else trap "buffer slice";
   }
   return unit;
 }
@@ -65,10 +65,10 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
     // is refutable at compile time and the program rejects with the
     // residual [OP-4, ENT-6].
     let source = br#"fn main() -> own unit pure {
-  let bytes: own array<u8, 2> = array_new<u8, 2>(0_u8);
+  let bytes = array_new<u8, 2>(0_u8);
   region 'view {
-    let window: own slice<'view, u8> = slice_of<'view, u8>(&'view bytes);
-    let value: own u8 = window[2_u64];
+    let window = slice_of(&'view bytes);
+    let value = window[2_u64];
   }
   return unit;
 }
@@ -95,47 +95,47 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
 }
 
 fn fixed_view['r]() -> own slice<'r, u8> pure {
-  return slice_of<'r, u8>(&'r fixed);
+  return slice_of(&'r fixed);
 }
 
 fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> own u8 reads('descriptor 'data), traps {
-  let room: own u64 = len<u8>(deref(value));
-  let ok: own Bool = ilt<u64>(0_u64, room);
+  let room = len(deref(value));
+  let ok = ilt(0_u64, room);
   claim nonempty: ok because "callers pass a two-byte view";
   return deref(value)[0_u64];
 }
 
 fn main() -> own unit traps {
-  let left: own array<u8, 2> = array_new<u8, 2>(11_u8);
-  let right: own array<u8, 2> = array_new<u8, 2>(29_u8);
+  let left = array_new<u8, 2>(11_u8);
+  let right = array_new<u8, 2>(29_u8);
   region 'view {
-    let borrowed_source: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
+    let borrowed_source = slice_of(&'view left);
     region 'descriptor {
-      let borrowed_value: own u8 = borrowed_first<'descriptor, 'view>(value: &'descriptor borrowed_source);
-      check ieq<u8>(borrowed_value, 11_u8) else trap "borrowed";
+      let borrowed_value = borrowed_first<'descriptor, 'view>(value: &'descriptor borrowed_source);
+      check borrowed_value == 11_u8 else trap "borrowed";
     }
-    let initial: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
-    let passed: own slice<'view, u8> = pass<'view>(value: move initial);
-    let passed_room: own u64 = len<u8>(passed);
-    let passed_ok: own Bool = ilt<u64>(0_u64, passed_room);
+    let initial = slice_of(&'view left);
+    let passed = pass<'view>(value: move initial);
+    let passed_room = len(passed);
+    let passed_ok = ilt(0_u64, passed_room);
     claim passed_nonempty: passed_ok because "pass returns the two-byte view";
-    let pass_value: own u8 = passed[0_u64];
-    check ieq<u8>(pass_value, 11_u8) else trap "pass";
-    let left_view: own slice<'view, u8> = slice_of<'view, u8>(&'view left);
-    let right_view: own slice<'view, u8> = slice_of<'view, u8>(&'view right);
-    let take_left: own Bool = False();
-    let selected: own slice<'view, u8> = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
-    let selected_room: own u64 = len<u8>(selected);
-    let selected_ok: own Bool = ilt<u64>(0_u64, selected_room);
+    let pass_value = passed[0_u64];
+    check pass_value == 11_u8 else trap "pass";
+    let left_view = slice_of(&'view left);
+    let right_view = slice_of(&'view right);
+    let take_left = False();
+    let selected = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
+    let selected_room = len(selected);
+    let selected_ok = ilt(0_u64, selected_room);
     claim selected_nonempty: selected_ok because "choose returns one two-byte view";
-    let selected_value: own u8 = selected[0_u64];
-    check ieq<u8>(selected_value, 29_u8) else trap "choice";
-    let constant: own slice<'view, u8> = fixed_view<'view>();
-    let constant_room: own u64 = len<u8>(constant);
-    let constant_ok: own Bool = ilt<u64>(1_u64, constant_room);
+    let selected_value = selected[0_u64];
+    check selected_value == 29_u8 else trap "choice";
+    let constant = fixed_view<'view>();
+    let constant_room = len(constant);
+    let constant_ok = ilt(1_u64, constant_room);
     claim constant_sized: constant_ok because "fixed_view returns the two-byte constant view";
-    let constant_value: own u8 = constant[1_u64];
-    check ieq<u8>(constant_value, 13_u8) else trap "const";
+    let constant_value = constant[1_u64];
+    check constant_value == 13_u8 else trap "const";
   }
   return unit;
 }

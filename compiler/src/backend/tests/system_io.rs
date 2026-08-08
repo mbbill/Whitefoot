@@ -148,12 +148,12 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
               region 'p {
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
-                    let bytes: own buffer<u8> = buffer_new<u8>(64_u64, 0_u8);
+                    let bytes = buffer_new(64_u64, 0_u8);
                     region 'f {
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 0_u64, capacity: 64_u64) {
                           ReadBytes(count: n) => {
-                            let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(n);
+                            let narrowed = cvt<u64, u8>(n);
                             match narrowed {
                               Ok(value: code) => {
                                 return exit_status(code: code);
@@ -352,17 +352,17 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
               region 'p {
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
-                    let bytes: own buffer<u8> = buffer_new<u8>(3_u64, 0_u8);
-                    let total: own u64 = 0_u64;
-                    let chunks: own u64 = 0_u64;
-                    let failed: own Bool = False();
+                    let bytes = buffer_new(3_u64, 0_u8);
+                    let total = 0_u64;
+                    let chunks = 0_u64;
+                    let failed = False();
                     loop @drain {
                       region 'f {
                         region 'd {
                           match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 0_u64, capacity: 3_u64) {
                             ReadBytes(count: n) => {
-                              set total = iadd.wrap<u64>(total, n);
-                              set chunks = iadd.wrap<u64>(chunks, 1_u64);
+                              set total = total +wrap n;
+                              set chunks = chunks +wrap 1_u64;
                             }
                             ReadEnd() => {
                               break @drain;
@@ -378,9 +378,9 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                     if failed {
                       return exit_status(code: 202_u8);
                     }
-                    let scaled: own u64 = imul.wrap<u64>(total, 10_u64);
-                    let mixed: own u64 = iadd.wrap<u64>(scaled, chunks);
-                    let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(mixed);
+                    let scaled = total *wrap 10_u64;
+                    let mixed = scaled +wrap chunks;
+                    let narrowed = cvt<u64, u8>(mixed);
                     match narrowed {
                       Ok(value: code) => {
                         return exit_status(code: code);
@@ -451,8 +451,8 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
               region 'p {
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
-                    let bytes: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
-                    let vacant: own u64 = 0_u64;
+                    let bytes = buffer_new(8_u64, 0_u8);
+                    let vacant = 0_u64;
                     region 'f {
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 0_u64, capacity: 0_u64) {
@@ -468,7 +468,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                         }
                       }
                     }
-                    if ieq<u64>(vacant, 0_u64) {
+                    if vacant == 0_u64 {
                     } else {
                       return exit_status(code: 212_u8);
                     }
@@ -476,7 +476,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                       region 'e {
                         match read_once<'g, 'e>(file: &uniq 'g file, destination: &uniq 'e bytes, offset: 0_u64, capacity: 8_u64) {
                           ReadBytes(count: n) => {
-                            let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(n);
+                            let narrowed = cvt<u64, u8>(n);
                             match narrowed {
                               Ok(value: code) => {
                                 return exit_status(code: code);
@@ -552,12 +552,12 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
               region 'p {
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
-                    let bytes: own buffer<u8> = buffer_new<u8>(8_u64, 7_u8);
+                    let bytes = buffer_new(8_u64, 7_u8);
                     region 'f {
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 2_u64, capacity: 3_u64) {
                           ReadBytes(count: n) => {
-                            if ieq<u64>(n, 3_u64) {
+                            if n == 3_u64 {
                             } else {
                               return exit_status(code: 250_u8);
                             }
@@ -571,22 +571,22 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                         }
                       }
                     }
-                    let digest: own u64 = 0_u64;
-                    let cursor: own u64 = 0_u64;
+                    let digest = 0_u64;
+                    let cursor = 0_u64;
                     loop @fold {
-                      if ieq<u64>(cursor, 8_u64) {
+                      if cursor == 8_u64 {
                         break @fold;
                       }
-                      let fold_ok: own Bool = ilt<u64>(cursor, 8_u64);
+                      let fold_ok = ilt(cursor, 8_u64);
                       claim cursor_in_bytes: fold_ok because "the fold walks 0..8 over the eight-byte buffer";
-                      let byte: own u8 = bytes[cursor];
-                      let widened: own u64 = cvt<u8, u64>(byte);
-                      let scaled: own u64 = imul.wrap<u64>(digest, 31_u64);
-                      set digest = iadd.wrap<u64>(scaled, widened);
-                      set cursor = iadd.wrap<u64>(cursor, 1_u64);
+                      let byte = bytes[cursor];
+                      let widened = cvt<u8, u64>(byte);
+                      let scaled = digest *wrap 31_u64;
+                      set digest = scaled +wrap widened;
+                      set cursor = cursor +wrap 1_u64;
                     }
-                    let masked: own u64 = iand<u64>(digest, 255_u64);
-                    let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(masked);
+                    let masked = iand(digest, 255_u64);
+                    let narrowed = cvt<u64, u8>(masked);
                     match narrowed {
                       Ok(value: code) => {
                         return exit_status(code: code);
@@ -638,7 +638,7 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 
 /// Writes nothing, then the two-byte prefix at offset one.
 pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(4_u64, 119_u8);
+  let bytes = buffer_new(4_u64, 119_u8);
   set bytes[1_u64] = 120_u8;
   set bytes[2_u64] = 121_u8;
   set bytes[3_u64] = 122_u8;
@@ -646,7 +646,7 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 0_u64) {
         Ok(value: written) => {
-          if ieq<u64>(written, 0_u64) {
+          if written == 0_u64 {
           } else {
             return exit_status(code: 210_u8);
           }
@@ -661,7 +661,7 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
     region 't {
       match write_once<'p, 't>(output: &uniq 'p out, source: &'t bytes, offset: 1_u64, count: 2_u64) {
         Ok(value: written) => {
-          let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(written);
+          let narrowed = cvt<u64, u8>(written);
           match narrowed {
             Ok(value: code) => {
               return exit_status(code: code);
@@ -698,7 +698,7 @@ fn write_once_publishes_exactly_the_requested_range_and_reports_its_count() {
 
 /// Requests a range that runs past the end of its source buffer.
 const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(4_u64, 65_u8);
+  let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 1_u64, count: 8_u64) {
@@ -738,7 +738,7 @@ fn an_out_of_range_transfer_traps_before_any_host_action() {
 /// Publishes one byte to standard output, one to standard error, then one
 /// more to standard output.
 const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(3_u64, 65_u8);
+  let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
@@ -850,14 +850,14 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
               region 'p {
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
-                    let bytes: own buffer<u8> = buffer_new<u8>(4096_u64, 0_u8);
-                    let total: own u64 = 0_u64;
+                    let bytes = buffer_new(4096_u64, 0_u8);
+                    let total = 0_u64;
                     loop @drain {
                       region 'f {
                         region 'd {
                           match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 0_u64, capacity: 4096_u64) {
                             ReadBytes(count: n) => {
-                              set total = iadd.wrap<u64>(total, n);
+                              set total = total +wrap n;
                             }
                             ReadEnd() => {
                               break @drain;
@@ -873,8 +873,8 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                       region 's {
                         match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {
                           Ok(value: written) => {
-                            let masked: own u64 = iand<u64>(total, 255_u64);
-                            let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(masked);
+                            let masked = iand(total, 255_u64);
+                            let narrowed = cvt<u64, u8>(masked);
                             match narrowed {
                               Ok(value: code) => {
                                 return exit_status(code: code);
@@ -1018,11 +1018,11 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 /// directory, copies the file to standard output through a reused buffer,
 /// echoes the argument to standard error, and returns a command code.
 const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let echo: own buffer<u8> = buffer_new<u8>(64_u64, 0_u8);
-  let name_length: own u64 = 0_u64;
+  let echo = buffer_new(64_u64, 0_u8);
+  let name_length = 0_u64;
   region 'a {
-    let arguments: own u64 = args_count<'a>(args: &'a args);
-    if ieq<u64>(arguments, 2_u64) {
+    let arguments = args_count<'a>(args: &'a args);
+    if arguments == 2_u64 {
     } else {
       return exit_status(code: 2_u8);
     }
@@ -1062,11 +1062,11 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
               region 'p {
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
-                    let page: own buffer<u8> = buffer_new<u8>(16_u64, 0_u8);
-                    let total: own u64 = 0_u64;
-                    let failed: own u8 = 0_u8;
+                    let page = buffer_new(16_u64, 0_u8);
+                    let total = 0_u64;
+                    let failed = 0_u8;
                     loop @copy {
-                      let chunk: own u64 = 0_u64;
+                      let chunk = 0_u64;
                       region 'f {
                         region 'g {
                           match read_once<'f, 'g>(file: &uniq 'f file, destination: &uniq 'g page, offset: 0_u64, capacity: 16_u64) {
@@ -1087,7 +1087,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                         region 's {
                           match write_once<'o, 's>(output: &uniq 'o out, source: &'s page, offset: 0_u64, count: chunk) {
                             Ok(value: written) => {
-                              set total = iadd.wrap<u64>(total, written);
+                              set total = total +wrap written;
                             }
                             Err(error: problem) => {
                               set failed = 9_u8;
@@ -1097,7 +1097,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                         }
                       }
                     }
-                    if ieq<u8>(failed, 0_u8) {
+                    if failed == 0_u8 {
                     } else {
                       return exit_status(code: failed);
                     }
@@ -1105,8 +1105,8 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                       region 'y {
                         match write_once<'x, 'y>(output: &uniq 'x err, source: &'y echo, offset: 0_u64, count: name_length) {
                           Ok(value: written) => {
-                            let masked: own u64 = iand<u64>(total, 255_u64);
-                            let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(masked);
+                            let masked = iand(total, 255_u64);
+                            let narrowed = cvt<u64, u8>(masked);
                             match narrowed {
                               Ok(value: code) => {
                                 return exit_status(code: code);

@@ -54,18 +54,18 @@ fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
 }
 
 fn read(values: own array<u16, 4>, offset: own u64) -> own u16 traps {
-  let in_range: own Bool = ilt<u64>(offset, 4_u64);
+  let in_range = ilt(offset, 4_u64);
   claim offset_in_range: in_range because "main reads offset three of four";
-  let value: own u16 = values[offset];
+  let value = values[offset];
   return value;
 }
 
 fn main() -> own unit traps {
-  let values: own array<u16, 4> = make();
-  let length: own u64 = len<u16>(values);
-  check ieq<u64>(length, 4_u64) else trap "length drift";
-  let value: own u16 = read(values: move values, offset: 3_u64);
-  check ieq<u16>(value, 42_u16) else trap "fill drift";
+  let values = make();
+  let length = len(values);
+  check length == 4_u64 else trap "length drift";
+  let value = read(values: move values, offset: 3_u64);
+  check value == 42_u16 else trap "fill drift";
   return unit;
 }
 "#;
@@ -100,8 +100,8 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
     // underivable obligation rejects at compile time with the exact
     // [ENT-6] residual.
     let source = br#"fn main() -> own unit pure {
-  let values: own array<u8, 2> = array_new<u8, 2>(7_u8);
-  let value: own u8 = values[2_u64];
+  let values = array_new<u8, 2>(7_u8);
+  let value = values[2_u64];
   return unit;
 }
 "#;
@@ -115,7 +115,7 @@ fn a_failing_claim_reports_its_clm1_record_before_abort() {
     // The named claim is the retained runtime check: its trap record cites
     // CLM-1 and carries the claim name as the message [DIAG-3].
     let source = br#"fn main() -> own unit traps {
-  let flag: own Bool = False();
+  let flag = False();
   claim expected_true: flag because "this test wants the trap record";
   return unit;
 }
@@ -148,10 +148,10 @@ fn indexed_set_checks_before_rhs_and_updates_the_array() {
 }
 
 fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
+  let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = replacement();
-  let stored: own u8 = values[1_u64];
-  check ieq<u8>(stored, 9_u8) else trap "set drift";
+  let stored = values[1_u64];
+  check stored == 9_u8 else trap "set drift";
   return unit;
 }
 "#;
@@ -189,7 +189,7 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
 }
 
 fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
+  let values = array_new<u8, 2>(0_u8);
   set values[2_u64] = replacement();
   return unit;
 }
@@ -208,31 +208,31 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     // 64-byte slots is about 25 MB, against a default 8 MB limit.
     let source = br#"fn main() -> own unit traps {
   doc "A long loop reads and writes one fixed array through a rotating index.";
-  let window: own array<u64, 8> = array_new<u64, 8>(1_u64);
-  let step: own u64 = 0_u64;
-  let cursor: own u64 = 0_u64;
-  let total: own u64 = 0_u64;
+  let window = array_new<u64, 8>(1_u64);
+  let step = 0_u64;
+  let cursor = 0_u64;
+  let total = 0_u64;
   loop @stream {
-    if ige<u64>(step, 200000_u64) {
+    if step >= 200000_u64 {
       break @stream;
     }
-    let cursor_ok: own Bool = ilt<u64>(cursor, 8_u64);
+    let cursor_ok = ilt(cursor, 8_u64);
     claim cursor_in_window: cursor_ok because "the rotating cursor wraps at seven";
-    let previous: own u64 = window[cursor];
-    let mixed: own u64 = ixor<u64>(previous, step);
-    set window[cursor] = imul.wrap<u64>(mixed, 1099511628211_u64);
-    set total = iadd.wrap<u64>(total, previous);
-    let at_end: own Bool = ieq<u64>(cursor, 7_u64);
-    let next_cursor: own u64 = if at_end {
+    let previous = window[cursor];
+    let mixed = ixor(previous, step);
+    set window[cursor] = mixed *wrap 1099511628211_u64;
+    set total = total +wrap previous;
+    let at_end = cursor == 7_u64;
+    let next_cursor = if at_end {
       give 0_u64;
     } else {
-      give iadd.wrap<u64>(cursor, 1_u64);
+      give cursor +wrap 1_u64;
     }
     set cursor = next_cursor;
-    set step = iadd.trap<u64>(step, 1_u64);
+    set step = step + 1_u64;
   }
-  check ieq<u64>(step, 200000_u64) else trap "stream length drift";
-  check ieq<u64>(cursor, 0_u64) else trap "stream cursor drift";
+  check step == 200000_u64 else trap "stream length drift";
+  check cursor == 0_u64 else trap "stream cursor drift";
   return unit;
 }
 "#;
@@ -286,14 +286,14 @@ fn replacement() -> own u8 traps {
 }
 
 fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  let inner: own Inner = Inner(values: move values, sibling: 77_u16);
-  let outer: own Outer = Outer(prefix: 123_u32, inner: move inner);
+  let values = array_new<u8, 2>(0_u8);
+  let inner = Inner(values: move values, sibling: 77_u16);
+  let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
-  let stored: own u8 = outer.inner.values[1_u64];
-  check ieq<u8>(stored, 9_u8) else trap "array update";
-  check ieq<u16>(outer.inner.sibling, 77_u16) else trap "inner sibling";
-  check ieq<u32>(outer.prefix, 123_u32) else trap "outer sibling";
+  let stored = outer.inner.values[1_u64];
+  check stored == 9_u8 else trap "array update";
+  check outer.inner.sibling == 77_u16 else trap "inner sibling";
+  check outer.prefix == 123_u32 else trap "outer sibling";
   return unit;
 }
 "#;

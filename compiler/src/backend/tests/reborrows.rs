@@ -52,11 +52,11 @@ fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
 }
 
 fn main() -> own unit traps {
-  let a: own i32 = 0_i32;
+  let a = 0_i32;
   region 'r {
     bump<'r>(n: &uniq 'r a);
   }
-  check ieq<i32>(a, 42_i32) else trap "callee write lost";
+  check a == 42_i32 else trap "callee write lost";
   return unit;
 }
 "#,

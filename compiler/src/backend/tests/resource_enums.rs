@@ -21,28 +21,28 @@ fn consume(owner: own Owner) -> own unit traps {
     Empty() => {
     }
     Full(value: pair) => {
-      let room: own u64 = len<u8>(pair.left);
-      let ok: own Bool = ilt<u64>(0_u64, room);
+      let room = len(pair.left);
+      let ok = ilt(0_u64, room);
       claim payload_nonempty: ok because "the transferred pair holds one byte per column";
-      let byte: own u8 = pair.left[0_u64];
-      check ieq<u8>(byte, 11_u8) else trap "transferred payload drift";
+      let byte = pair.left[0_u64];
+      check byte == 11_u8 else trap "transferred payload drift";
     }
   }
   return unit;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let abandoned_left: own buffer<u8> = buffer_new<u8>(1_u64, 7_u8);
-  let abandoned_right: own buffer<u8> = buffer_new<u8>(1_u64, 9_u8);
-  let abandoned_pair: own PairBuffers = PairBuffers(left: move abandoned_left, right: move abandoned_right);
-  let abandoned: own Owner = Full(value: move abandoned_pair);
+  let abandoned_left = buffer_new(1_u64, 7_u8);
+  let abandoned_right = buffer_new(1_u64, 9_u8);
+  let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
+  let abandoned = Full(value: move abandoned_pair);
   abandon(owner: move abandoned);
-  let empty: own Owner = Empty();
+  let empty = Empty();
   abandon(owner: move empty);
-  let consumed_left: own buffer<u8> = buffer_new<u8>(1_u64, 11_u8);
-  let consumed_right: own buffer<u8> = buffer_new<u8>(1_u64, 13_u8);
-  let consumed_pair: own PairBuffers = PairBuffers(left: move consumed_left, right: move consumed_right);
-  let consumed: own Owner = Full(value: move consumed_pair);
+  let consumed_left = buffer_new(1_u64, 11_u8);
+  let consumed_right = buffer_new(1_u64, 13_u8);
+  let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
+  let consumed = Full(value: move consumed_pair);
   consume(owner: move consumed);
   return unit;
 }
@@ -124,24 +124,24 @@ fn consume(value: own Option<buffer<u8>>) -> own unit traps {
       check False() else trap "Some became None";
     }
     Some(value: bytes) => {
-      let room: own u64 = len<u8>(bytes);
-      let ok: own Bool = ilt<u64>(0_u64, room);
+      let room = len(bytes);
+      let ok = ilt(0_u64, room);
       claim payload_nonempty: ok because "the transferred buffer holds one byte";
-      let byte: own u8 = bytes[0_u64];
-      check ieq<u8>(byte, 17_u8) else trap "Some payload drift";
+      let byte = bytes[0_u64];
+      check byte == 17_u8 else trap "Some payload drift";
     }
   }
   return unit;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let abandoned_bytes: own buffer<u8> = buffer_new<u8>(1_u64, 5_u8);
-  let abandoned_some: own Option<buffer<u8>> = Some(value: move abandoned_bytes);
+  let abandoned_bytes = buffer_new(1_u64, 5_u8);
+  let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);
-  let abandoned_none: own Option<buffer<u8>> = None();
+  let abandoned_none = None<buffer<u8>>();
   abandon(value: move abandoned_none);
-  let consumed_bytes: own buffer<u8> = buffer_new<u8>(1_u64, 17_u8);
-  let consumed_some: own Option<buffer<u8>> = Some(value: move consumed_bytes);
+  let consumed_bytes = buffer_new(1_u64, 17_u8);
+  let consumed_some = Some<buffer<u8>>(value: move consumed_bytes);
   consume(value: move consumed_some);
   return unit;
 }

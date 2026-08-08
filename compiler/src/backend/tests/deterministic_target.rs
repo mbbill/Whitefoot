@@ -375,8 +375,8 @@ const RELEASES_ONE_DIRECTORY: &[u8] =
 const READS_ITS_ARGUMENTS: &[u8] =
     br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
   region 'a {
-    let total: own u64 = args_count<'a>(args: &'a args);
-    let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(total);
+    let total = args_count<'a>(args: &'a args);
+    let narrowed = cvt<u64, u8>(total);
     match narrowed {
       Ok(value: code) => {
         return exit_status(code: code);
@@ -394,14 +394,14 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
     br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(3_u64, 65_u8);
+  let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 3_u64) {
         Ok(value: written) => {
-          let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(written);
+          let narrowed = cvt<u64, u8>(written);
           match narrowed {
             Ok(value: code) => {
               return exit_status(code: code);

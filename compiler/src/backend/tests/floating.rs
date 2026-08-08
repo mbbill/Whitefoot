@@ -94,11 +94,11 @@ fn float_constants_work_in_aggregates_arrays_and_buffers() {
 const values: array<f32, 2> =[1.5_f32, 2.5_f32];
 
 fn main() -> own unit allocates(heap), traps {
-  let sample: own Sample = Sample(value: values[0_u64]);
-  let storage: own buffer<f32> = buffer_new<f32>(2_u64, 0.0_f32);
+  let sample = Sample(value: values[0_u64]);
+  let storage = buffer_new(2_u64, 0.0_f32);
   set storage[1_u64] = sample.value;
-  let loaded: own f32 = storage[1_u64];
-  check feq<f32>(loaded, 1.5_f32) else trap "float storage";
+  let loaded = storage[1_u64];
+  check feq(loaded, 1.5_f32) else trap "float storage";
   return unit;
 }
 "#;

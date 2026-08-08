@@ -47,60 +47,60 @@ $BSWAP  return unit;
 #[test]
 fn executes_the_remaining_integer_family_and_defined_edges() {
     let source = br#"fn main() -> own unit traps {
-  let anded: own u8 = iand<u8>(240_u8, 15_u8);
-  check ieq<u8>(anded, 0_u8) else trap "iand";
-  let ored: own u8 = ior<u8>(240_u8, 15_u8);
-  check ieq<u8>(ored, 255_u8) else trap "ior";
-  let xored: own u8 = ixor<u8>(240_u8, 15_u8);
-  check ieq<u8>(xored, 255_u8) else trap "ixor";
-  let inverted: own u8 = inot<u8>(0_u8);
-  check ieq<u8>(inverted, 255_u8) else trap "inot";
-  let shifted_wrap: own u8 = ishl.wrap<u8>(1_u8, 9_u32);
-  check ieq<u8>(shifted_wrap, 2_u8) else trap "ishl.wrap";
-  let right_signed: own i8 = ishr.wrap<i8>(-4_i8, 1_u32);
-  check ieq<i8>(right_signed, -2_i8) else trap "ishr.wrap";
-  let shifted_trap: own u8 = ishl.trap<u8>(1_u8, 7_u32);
-  check ieq<u8>(shifted_trap, 128_u8) else trap "ishl.trap";
-  let right_trap: own u8 = ishr.trap<u8>(128_u8, 7_u32);
-  check ieq<u8>(right_trap, 1_u8) else trap "ishr.trap";
-  let rotated_left: own u8 = irotl<u8>(1_u8, 1_u32);
-  check ieq<u8>(rotated_left, 2_u8) else trap "irotl";
-  let rotated_right: own u8 = irotr<u8>(1_u8, 1_u32);
-  check ieq<u8>(rotated_right, 128_u8) else trap "irotr";
-  let population: own u32 = ipopcount<u8>(240_u8);
-  check ieq<u32>(population, 4_u32) else trap "ipopcount";
-  let leading: own u32 = iclz<u8>(1_u8);
-  check ieq<u32>(leading, 7_u32) else trap "iclz";
-  let trailing: own u32 = ictz<u8>(0_u8);
-  check ieq<u32>(trailing, 8_u32) else trap "ictz";
-  let swapped: own u16 = ibswap<u16>(4660_u16);
-  check ieq<u16>(swapped, 13330_u16) else trap "ibswap";
-  let high_unsigned: own u8 = imulhi<u8>(255_u8, 2_u8);
-  check ieq<u8>(high_unsigned, 1_u8) else trap "imulhi unsigned";
-  let high_signed: own i8 = imulhi<i8>(-128_i8, 2_i8);
-  check ieq<i8>(high_signed, -1_i8) else trap "imulhi signed";
-  let add_unsigned: own u8 = iadd.sat<u8>(250_u8, 10_u8);
-  check ieq<u8>(add_unsigned, 255_u8) else trap "iadd.sat unsigned";
-  let add_signed: own i8 = iadd.sat<i8>(120_i8, 20_i8);
-  check ieq<i8>(add_signed, 127_i8) else trap "iadd.sat signed";
-  let subtract_unsigned: own u8 = isub.sat<u8>(1_u8, 2_u8);
-  check ieq<u8>(subtract_unsigned, 0_u8) else trap "isub.sat unsigned";
-  let subtract_signed: own i8 = isub.sat<i8>(-120_i8, 20_i8);
-  check ieq<i8>(subtract_signed, -128_i8) else trap "isub.sat signed";
-  let multiply_unsigned: own u8 = imul.sat<u8>(20_u8, 20_u8);
-  check ieq<u8>(multiply_unsigned, 255_u8) else trap "imul.sat unsigned";
-  let multiply_high: own i8 = imul.sat<i8>(20_i8, 20_i8);
-  check ieq<i8>(multiply_high, 127_i8) else trap "imul.sat signed high";
-  let multiply_low: own i8 = imul.sat<i8>(-20_i8, 20_i8);
-  check ieq<i8>(multiply_low, -128_i8) else trap "imul.sat signed low";
-  let minimum: own i8 = imin<i8>(-2_i8, 1_i8);
-  check ieq<i8>(minimum, -2_i8) else trap "imin signed";
-  let maximum: own u8 = imax<u8>(254_u8, 1_u8);
-  check ieq<u8>(maximum, 254_u8) else trap "imax unsigned";
-  let quotient: own i32 = idiv.trap<i32>(9_i32, 2_i32);
-  check ieq<i32>(quotient, 4_i32) else trap "idiv.trap";
-  let remainder: own i32 = irem.trap<i32>(9_i32, 2_i32);
-  check ieq<i32>(remainder, 1_i32) else trap "irem.trap";
+  let anded = iand(240_u8, 15_u8);
+  check anded == 0_u8 else trap "iand";
+  let ored = ior(240_u8, 15_u8);
+  check ored == 255_u8 else trap "ior";
+  let xored = ixor(240_u8, 15_u8);
+  check xored == 255_u8 else trap "ixor";
+  let inverted = inot(0_u8);
+  check inverted == 255_u8 else trap "inot";
+  let shifted_wrap = ishl.wrap(1_u8, 9_u32);
+  check shifted_wrap == 2_u8 else trap "ishl.wrap";
+  let right_signed = ishr.wrap(-4_i8, 1_u32);
+  check right_signed == -2_i8 else trap "ishr.wrap";
+  let shifted_trap = ishl.trap(1_u8, 7_u32);
+  check shifted_trap == 128_u8 else trap "ishl.trap";
+  let right_trap = ishr.trap(128_u8, 7_u32);
+  check right_trap == 1_u8 else trap "ishr.trap";
+  let rotated_left = irotl(1_u8, 1_u32);
+  check rotated_left == 2_u8 else trap "irotl";
+  let rotated_right = irotr(1_u8, 1_u32);
+  check rotated_right == 128_u8 else trap "irotr";
+  let population = ipopcount(240_u8);
+  check population == 4_u32 else trap "ipopcount";
+  let leading = iclz(1_u8);
+  check leading == 7_u32 else trap "iclz";
+  let trailing = ictz(0_u8);
+  check trailing == 8_u32 else trap "ictz";
+  let swapped = ibswap(4660_u16);
+  check swapped == 13330_u16 else trap "ibswap";
+  let high_unsigned = imulhi(255_u8, 2_u8);
+  check high_unsigned == 1_u8 else trap "imulhi unsigned";
+  let high_signed = imulhi(-128_i8, 2_i8);
+  check high_signed == -1_i8 else trap "imulhi signed";
+  let add_unsigned = 250_u8 +sat 10_u8;
+  check add_unsigned == 255_u8 else trap "iadd.sat unsigned";
+  let add_signed = 120_i8 +sat 20_i8;
+  check add_signed == 127_i8 else trap "iadd.sat signed";
+  let subtract_unsigned = 1_u8 -sat 2_u8;
+  check subtract_unsigned == 0_u8 else trap "isub.sat unsigned";
+  let subtract_signed = -120_i8 -sat 20_i8;
+  check subtract_signed == -128_i8 else trap "isub.sat signed";
+  let multiply_unsigned = 20_u8 *sat 20_u8;
+  check multiply_unsigned == 255_u8 else trap "imul.sat unsigned";
+  let multiply_high = 20_i8 *sat 20_i8;
+  check multiply_high == 127_i8 else trap "imul.sat signed high";
+  let multiply_low = -20_i8 *sat 20_i8;
+  check multiply_low == -128_i8 else trap "imul.sat signed low";
+  let minimum = imin(-2_i8, 1_i8);
+  check minimum == -2_i8 else trap "imin signed";
+  let maximum = imax(254_u8, 1_u8);
+  check maximum == 254_u8 else trap "imax unsigned";
+  let quotient = 9_i32 / 2_i32;
+  check quotient == 4_i32 else trap "idiv.trap";
+  let remainder = 9_i32 % 2_i32;
+  check remainder == 1_i32 else trap "irem.trap";
   return unit;
 }
 "#;
@@ -136,7 +136,7 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
 #[test]
 fn trapping_shift_reports_op8_before_executing_an_invalid_shift() {
     let source = br#"fn main() -> own unit traps {
-  let shifted: own u8 = ishl.trap<u8>(1_u8, 8_u32);
+  let shifted = ishl.trap(1_u8, 8_u32);
   return unit;
 }
 "#;
@@ -154,7 +154,7 @@ fn trapping_shift_reports_op8_before_executing_an_invalid_shift() {
 #[test]
 fn trapping_division_checks_zero_before_the_partial_instruction() {
     let source = br#"fn main() -> own unit traps {
-  let quotient: own i32 = idiv.trap<i32>(1_i32, 0_i32);
+  let quotient = 1_i32 / 0_i32;
   return unit;
 }
 "#;

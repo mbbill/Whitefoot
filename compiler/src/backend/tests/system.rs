@@ -63,10 +63,10 @@ pub(super) fn with_ir<ResultValue>(
 /// Reads one argument's bytes and returns their wrapping sum as the status.
 const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u64 allocates(heap), traps {
   region 'v {
-    let length: own u64 = host_bytes_len<'v>(value: &'v value);
-    let bytes: own buffer<u8> = buffer_new<u8>(length, 0_u8);
+    let length = host_bytes_len<'v>(value: &'v value);
+    let bytes = buffer_new(length, 0_u8);
     region 'd {
-      let copied: own Result<u64, CopyError> = host_copy_bytes<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, offset: 0_u64, capacity: length);
+      let copied = host_copy_bytes<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, offset: 0_u64, capacity: length);
       match move copied {
         Ok(value: count) => {
         }
@@ -75,19 +75,19 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
         }
       }
     }
-    let total: own u64 = 0_u64;
-    let cursor: own u64 = 0_u64;
+    let total = 0_u64;
+    let cursor = 0_u64;
     loop @sum {
-      let done: own Bool = ieq<u64>(cursor, length);
+      let done = cursor == length;
       if done {
         break @sum;
       }
-      let sum_ok: own Bool = ilt<u64>(cursor, length);
+      let sum_ok = ilt(cursor, length);
       claim cursor_in_bytes: sum_ok because "the sum stops at the copied length";
-      let byte: own u8 = bytes[cursor];
-      let widened: own u64 = cvt<u8, u64>(byte);
-      set total = iadd.wrap<u64>(total, widened);
-      set cursor = iadd.wrap<u64>(cursor, 1_u64);
+      let byte = bytes[cursor];
+      let widened = cvt<u8, u64>(byte);
+      set total = total +wrap widened;
+      set cursor = cursor +wrap 1_u64;
     }
     return total;
   }
@@ -97,8 +97,8 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
-        let total: own u64 = checksum(value: move text);
-        let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(total);
+        let total = checksum(value: move text);
+        let narrowed = cvt<u64, u8>(total);
         match narrowed {
           Ok(value: code) => {
             return exit_status(code: code);
@@ -121,14 +121,14 @@ fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
     // Only the lease operations: no buffer, no copy, no text route.
     let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
   region 'a {
-    let total: own u64 = args_count<'a>(args: &'a args);
+    let total = args_count<'a>(args: &'a args);
     match arg_get<'a>(args: &'a args, position: total) {
       Ok(value: text) => {
         region 'v {
-          let length: own u64 = host_bytes_len<'v>(value: &'v text);
+          let length = host_bytes_len<'v>(value: &'v text);
           match relative_path(value: move text) {
             Ok(value: path) => {
-              let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(length);
+              let narrowed = cvt<u64, u8>(length);
               match narrowed {
                 Ok(value: code) => {
                   return exit_status(code: code);
@@ -208,8 +208,8 @@ fn a_non_utf8_argument_round_trips_its_exact_bytes() {
 fn args_count_reports_the_complete_invocation_vector() {
     let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
   region 'a {
-    let total: own u64 = args_count<'a>(args: &'a args);
-    let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(total);
+    let total = args_count<'a>(args: &'a args);
+    let narrowed = cvt<u64, u8>(total);
     match narrowed {
       Ok(value: code) => {
         return exit_status(code: code);
@@ -286,7 +286,7 @@ fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
         region 'v {
           match host_utf8_len<'v>(value: &'v text) {
             Ok(value: length) => {
-              let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(length);
+              let narrowed = cvt<u64, u8>(length);
               match narrowed {
                 Ok(value: code) => {
                   return exit_status(code: code);
@@ -340,7 +340,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
-        let bytes: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
+        let bytes = buffer_new(2_u64, 7_u8);
         region 'v {
           region 'd {
             match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 0_u64, capacity: 2_u64) {
@@ -350,9 +350,9 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
               Err(error: problem) => {
                 match move problem {
                   CopyTooSmall(required: needed) => {
-                    let untouched: own u8 = bytes[0_u64];
-                    if ieq<u8>(untouched, 7_u8) {
-                      let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(needed);
+                    let untouched = bytes[0_u64];
+                    if untouched == 7_u8 {
+                      let narrowed = cvt<u64, u8>(needed);
                       match narrowed {
                         Ok(value: code) => {
                           return exit_status(code: code);
@@ -398,7 +398,7 @@ fn an_out_of_range_copy_traps_with_its_own_record_before_any_write() {
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
-        let bytes: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
+        let bytes = buffer_new(2_u64, 7_u8);
         region 'v {
           region 'd {
             match host_copy_bytes<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, offset: 1_u64, capacity: 4_u64) {
@@ -499,7 +499,7 @@ fn the_unlabelled_entry_wrapper_is_unchanged() {
 fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
     let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
   region 'a {
-    let total: own u64 = args_count<'a>(args: &'a args);
+    let total = args_count<'a>(args: &'a args);
     return exit_status(code: 0_u8);
   }
 }
@@ -562,7 +562,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
     let source = br#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);
+  let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {
