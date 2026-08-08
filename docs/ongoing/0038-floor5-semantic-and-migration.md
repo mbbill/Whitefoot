@@ -144,14 +144,33 @@ regardless of whether the total went up or down.
 |---|---|
 | `spec::tests::path_and_version_label_agree` | activation-gated |
 | `spec::tests::computed_identity_is_the_approved_digest` | activation-gated |
-| `driver::…::compiler_independent_negative_cases_keep_their_semantic_rule` | the citation-by-callee-class defect |
+| `driver::…::compiler_independent_negative_cases_keep_their_semantic_rule` | its case's violation died with the deleted bytes — NOT a citation defect |
 | `semantic::tests::result_construction_…` | shares `x-give-result-aggregate`'s cause |
 | `semantic::tests::borrows::general_borrows_…` | capability gap, `RegionsAndBorrows` |
 | `semantic::tests::slices::slice_value_matches_…` | capability gap, `OwnershipJoin` |
 
 Conformance adapter alongside it: **Pass=383 Fail=5 Skip=14**, the five being
-`own3-pos-outlives-store`, `x-give-result-aggregate`, `fn2-neg-eeq-implicit-type`,
-`fn8-neg-requires-eeq-payload-enum`, `own5-neg-slice-value-match`.
+`own3-pos-outlives-store` (capability gap, `RegionsAndBorrows`),
+`x-give-result-aggregate` (a positive wrongly rejected TYPE-5),
+`fn2-neg-eeq-implicit-type` (**its violation died with the deleted bytes**),
+`fn8-neg-requires-eeq-payload-enum` (may have no legal v0.23 spelling in a
+requires clause), `own5-neg-slice-value-match` (capability gap,
+`OwnershipJoin`, and it is hiding a negative).
+
+**Correction, 2026-08-08, same day.** This table first attributed
+`driver::…::compiler_independent_negative_cases_…` to the
+citation-by-callee-class defect, and by implication `fn2-neg-eeq-implicit-type`
+with it. **Both are wrong and the correction matters more than a normal one**,
+because this table is the reference for telling a real regression from an
+expected failure: an entry pointing at a cause that cannot produce it makes the
+next reader either wait for a fix that will never clear it, or read a genuine
+change as expected. Measured: `fn2-neg-implicit-instantiation.wf` now reads
+`let a = 40_i32 + 2_i32;` and exits 0, and `fn2-neg-eeq-implicit-type`'s
+`return eeq(left, right);` exits 0 — the migration respelled both violations out
+of existence, so no citation fix can reach either. Both belong to round 8's
+finding-2 class. The `pending` reason on that manifest row is therefore stale
+twice over: the FN-2 diagnostic path now exists, and the case still cannot
+reject.
 
 No known-failures file, no gate exception, no machinery — a list in the live
 record that dies with the record. Adding a mechanism that lets a red gate pass
