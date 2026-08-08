@@ -2,13 +2,15 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 9. Round 8's finding 4 is
-  **closed**: infix is checked at every one of [GRAM-5]'s eleven expression
-  positions (`90781eb`, `bfbe43c`, `435ccb4`), and the adapter's failures fall
-  52 → 28. Round 8's findings 1–3 still need their rulings. **One new blocker**:
-  the 13 remaining `InvalidCanonicalTree` failures are all requires-block cases
-  with a separate cause — the deleted v0.23 `let` annotation — and fixing it
-  needs a design choice this unit did not own. See "Round 9".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 10. Round 9's blocker is
+  **closed**: the requires-block `let` has a legal v0.23 form again, and the
+  same pass now admits the infix spelling [FN-8] requires (`8838150`,
+  `8ccd4d8`, `7e80d92`). The adapter's failures fall 28 → 16 with nothing newly
+  failing. Round 8's findings 1–3 still need their rulings. **One new finding**:
+  deleting the `Type` child also deleted the only enforcement of [FN-8]'s "own
+  **copy** value", which is reachable through `array_new` and the `checked`
+  arithmetic rows; the fix is one place but the ruling as written does not
+  authorize it. See "Round 10".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
@@ -1781,3 +1783,187 @@ that resolved `iadd.wrap` by name no longer do. That is correct and
 expected — infix resolution ([OP-1] (ii)) is what clears them — but it
 means the catalog and the infix resolution path want to land together, and
 a bare failure count will look worse before it looks better.
+
+## Round 10 (exec-0038k, 2026-08-08) — the requires-block `let`, and a second defect in the same pass
+
+Three commits. The adapter's failures fall 28 → 16 with **no case newly
+failing**. Round 9's blocker is closed. One finding is reported rather than
+absorbed: the authorized change removes a rejection the lead ruling did not
+know was riding on the deleted annotation.
+
+### The four controls, re-run rather than inherited
+
+Sources in `/Users/bytedance/do_not_scan/wf0038-r9-controls`, each a complete
+program, driven by `whitefootc --emit-llvm -o /dev/null <file>; echo "exit=$?"`.
+Round 9's claims reproduce exactly:
+
+| control | before | after |
+|---|---|---|
+| `let ok = ilt(a, 8_u64);` | `Semantics/Compiler: InvalidCanonicalTree`, exit 1 | exit 0 |
+| `let ok: own Bool = ilt(a, 8_u64);` | `Parsing/Source [GRAM-4]`, exit 1 | `Parsing/Source [GRAM-4]`, exit 1 |
+| `check a <= 8_u64 else trap …` | exit 0 | exit 0 |
+| `check ilt(a, 8_u64) else trap …` | exit 0 | exit 0 |
+
+The middle row is unchanged on purpose: A3 deleted the annotation from the
+grammar, so the annotated spelling must stay a parse error.
+
+### The failing set was 13, and the brief misnamed one of them
+
+`grep "^  Fail " | grep -c InvalidCanonicalTree` over the adapter's own output
+gives 13, and the names match round 9's list with one correction: the member
+case is **`fn3-neg-requires-member`**, expecting `FN-3`. There is no
+`fn8-neg-requires-member` — no such case file and no such manifest id. The
+count also reads better as eight `fn8-*-requires-*` (five `neg`, three `pos`)
+than seven.
+
+### `8838150` — the authorized change
+
+`validate_requires_let` no longer reads a `Mode` or a `Type` child. Both
+grounds hold in the v0.23 candidate at line 498:
+
+```
+$ grep -n "each let introduces a fresh clause-local" \
+    governance/spec-evolution/kernel-spec-v0.23-candidate.md
+498:… Its scope initially contains only the function parameters; each let
+    introduces a fresh clause-local own copy value visible to later clause
+    statements, and clause locals are not visible in the body. …
+```
+
+The mode needs no derivation because that sentence fixes it and no other mode
+is spellable. The type needs none *for shape* because [TYPE-5] derives it in
+`check_statement`, which runs on the very next line of `check_requires`.
+
+**A correction to the brief's framing.** The early FN-8 structural pass the
+spec describes is not this function — it is `check_requires_blocks` in
+`compiler/src/resolution/engine/admission.rs`, which runs during resolution and
+already reads neither annotation. `requires.rs::validate_requires_*` is a
+later, semantic-subset pass. This matters because it is why the two rejected
+approaches were never the only options, and why "stop requiring the children"
+does not touch shape enforcement at all.
+
+### `8ccd4d8` — a second defect the brief did not anticipate
+
+With the annotation no longer demanded, the migrated corpus still failed: the
+subset pass admitted only `Production::Call`, and v0.23's [FN-8] admits "an ANF
+[GRAM-9] call to, **or infix spelling of**, a non-trapping, total
+operation-table row". So `let permitted = x >= 0_i32;` — the exact form the
+corpus now uses — was rejected `FN-8/InvalidRequires`.
+
+The worse half was in the check position, which appeared to work. An `expr` is
+`atom infix_tail?`, so `validate_requires_condition` found the expression's own
+`atom`, validated it, and returned — never reading the operator row or the
+right operand. Measured, not argued:
+
+```
+$ git checkout 8838150 -- compiler/src/semantic/check/requires.rs   # then rebuild
+$ whitefootc --emit-llvm -o /dev/null p6-infix-right-subscript.wf; echo "exit=$?"
+exit=0
+$ git checkout HEAD -- compiler/src/semantic/check/requires.rs      # then rebuild
+$ whitefootc --emit-llvm -o /dev/null p6-infix-right-subscript.wf; echo "exit=$?"
+whitefootc: Semantics/Source [FN-8]: … kind: InvalidRequires
+exit=1
+```
+
+That source is `check a <= xs[1_u64] else trap …` — a subscript, which [FN-8]
+rejects by name. Admission asks the same `CheckedIntegerOperation::traps`
+(`compiler/src/semantic/model.rs:412`) the ordinary checker asks, because the
+bare `+ - * / %` forms carry the trapping mode with **no `.trap` suffix** and
+the existing spelling filter cannot see them. Sharing that predicate avoids a
+second reading of the operator table.
+
+### What the two passes still reject
+
+Probed, not inferred. Resolution's shape pass: a non-final or repeated `check`
+(`p4`, two checks → `Resolution/Source [FN-8] RequiresShape(InvalidEntry)`), a
+`let` after the `check` (`p5`, same), an empty or all-`let` block
+(`MissingFinalCheck`), and any entry that is not an ordinary `let` or a `check`
+— a `doc`, a `set`, a `return`, a `propagate_let_rhs`, a `value_match`. The
+semantic subset pass: a user-function call, a `*.trap` row,
+`buffer_new`/`box_new`/`arena_new`, a trapping infix operator (`p2` →
+`FN-8/InvalidRequires`), a `move` or borrow operand, a subscripted place in any
+operand, and a bare-atom initializer (`p3`, `let candidate = x;` →
+`FN-8/InvalidRequires`) — an initializer is a computation, so an atom is not one.
+
+### Negative cases: none flipped
+
+Every negative in the family still rejects. Five left the failure set by
+reaching their recorded rule and kind — `fn3-neg-requires-member` (FN-3),
+`fn8-neg-requires-eeq-integer` (OP-1), `-missing-traps` (EFF-2),
+`-trapping-op` (FN-8), `-user-call` (FN-8) — and the seven already passing
+(`-doc-only-clause`, `-control`, `-local-in-body`, `-no-check`,
+`-non-bool-check`, `-set`, `form3-neg-requires-binding`) are absent from the
+after set too. The set diff arrived empty in both directions of the gate and
+the adapter.
+
+`fn8-neg-requires-eeq-payload-enum` is the one of the 13 that did not clear.
+It no longer fails internally — it now **rejects**, citing `OWN-1
+BareAffineUse` where the manifest wants `OP-1`. That is not this pass: its
+sibling `op1-neg-eeq-payload-enum`, which has no requires block at all, reaches
+the identical `Reject(Some("OWN-1"))` and was already failing before this
+round. Same pre-existing OP-1/OWN-1 precedence defect, outside this scope.
+
+### Measured before/after
+
+```
+$ make -C compiler check; echo "exit=$?"
+before  exit=2   test result: FAILED. 308 passed; 262 failed
+after   exit=2   test result: FAILED. 318 passed; 253 failed
+```
+
+Nine tests newly pass (three `backend::tests::requires::*`, four
+`semantic::tests::requires::*`, `base64::compiler_independent_base64_rfc_vectors_execute`,
+`contracts::protected_fn3_rejections_keep_their_rule`), one is new here, and the
+failure-set diff shows **nothing newly failing**. The gate is red before and
+after for the pre-existing reason: the lib failures are unmigrated inline Rust
+fixtures under `compiler/src`, which is task M3c, not this task.
+
+```
+$ cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
+before  Pass=359  Fail=28  Skip=14
+after   Pass=371  Fail=16  Skip=14
+```
+
+`make check` exits 2 on the same compiler target; every other step passes,
+including `coverage (kernel-spec-v0.23-candidate.md): 128/128 rules covered`.
+
+### Finding — the copy-value restriction now has no enforcement
+
+Reported, not worked around. Before A3, `validate_requires_let` read the
+written type and rejected a clause `let` whose type was not a copy type:
+
+```rust
+if !self.is_copy_type(self.parse_type(ty)?)? { return self.invalid_requires(entry); }
+```
+
+Removing the `Type` child removes that rejection, and nothing replaced it —
+yet [FN-8] still says the clause local is an "own **copy** value". The
+restriction is reachable, so this is a live spec/compiler discrepancy rather
+than a dead branch. Two reproductions, both exit 0 at `7e80d92`:
+
+```
+$ whitefootc --emit-llvm -o /dev/null p1-noncopy-array.wf; echo "exit=$?"   # let xs = array_new<i32, 4>(0_i32);
+exit=0
+$ whitefootc --emit-llvm -o /dev/null p7-checked-result.wf; echo "exit=$?"  # let raised = x +checked 1_i32;
+exit=0
+```
+
+`array<i32,4>` is non-copy by `is_copy_type`
+(`compiler/src/semantic/check/nominals.rs:90`), and `Result<i32, Overflow>` is
+non-copy because `CheckedNominal::is_copy` (`model.rs:288`) holds only for
+enums whose every variant is fieldless. The reachable rows are `array_new` and
+the `checked` arithmetic and partial-`cvt` families; `slice_of` is not one —
+it needs a borrow operand, which `validate_requires_atom` rejects, and a region
+that a clause has no way to bring into scope (`p8` → `OWN-3 UnresolvedUse`).
+
+No conformance case covers a non-copy clause local, so nothing flipped and no
+protected material weakened — which is exactly why this needs saying out loud
+rather than showing up as a number.
+
+**Why this was not fixed here.** The ruling's premise was that the pass "does
+not need a type", and both listed alternatives were rejected. Neither rejection
+actually blocks the fix: `check_statement` already derives and installs the
+binding's type on the next line, so the restriction can be asserted on the type
+ordinary checking produced — no reordering of the shape pass, no second
+derivation. That is a one-place change, but where the assertion sits and which
+diagnostic wins are the lead's call, and the ruling as written does not
+authorize it. Recommend it as the next slice.
