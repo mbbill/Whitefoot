@@ -721,18 +721,18 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         12,
         &[(
             "WriteZero",
-            "if ieq<u32>(c, 0_u32) {\n  if ieq<u8>(o, 0_u8) {\n    return exit_status(code: 120_u8);\n  } else {\n    return exit_status(code: 121_u8);\n  }\n} else {\n  return exit_status(code: 122_u8);\n}",
+            "if c == 0_u32 {\n  if o == 0_u8 {\n    return exit_status(code: 120_u8);\n  } else {\n    return exit_status(code: 121_u8);\n  }\n} else {\n  return exit_status(code: 122_u8);\n}",
         )],
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
         r#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {{
-  let bytes: own buffer<u8> = buffer_new<u8>(2_u64, 119_u8);
+  let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region 's {{
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 2_u64) {{
         Ok(value: written) => {{
-          let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(written);
+          let narrowed = cvt<u64, u8>(written);
           match narrowed {{
             Ok(value: code) => {{
               return exit_status(code: code);

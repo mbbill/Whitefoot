@@ -238,7 +238,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
         &[
             (
                 "NotFound",
-                "if ieq<u32>(c, 2_u32) {\n  if ieq<u8>(o, 1_u8) {\n    return exit_status(code: 100_u8);\n  } else {\n    return exit_status(code: 101_u8);\n  }\n} else {\n  return exit_status(code: 102_u8);\n}",
+                "if c == 2_u32 {\n  if o == 1_u8 {\n    return exit_status(code: 100_u8);\n  } else {\n    return exit_status(code: 101_u8);\n  }\n} else {\n  return exit_status(code: 102_u8);\n}",
             ),
             ("PermissionDenied", "return exit_status(code: 110_u8);"),
             ("NotDirectory", "return exit_status(code: 111_u8);"),
@@ -798,14 +798,14 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
     );
     let source = format!(
         r#"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {{
-  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);
-  let attempts: own u64 = 0_u64;
-  let status: own u8 = 44_u8;
+  let bytes = buffer_new(1_u64, 65_u8);
+  let attempts = 0_u64;
+  let status = 44_u8;
   loop @publish {{
-    if ige<u64>(attempts, 200000_u64) {{
+    if attempts >= 200000_u64 {{
       break @publish;
     }}
-    set attempts = iadd.wrap<u64>(attempts, 1_u64);
+    set attempts = attempts +wrap 1_u64;
     region 'o {{
       region 's {{
         match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {{
