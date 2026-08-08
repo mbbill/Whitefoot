@@ -167,6 +167,68 @@ impl SemanticRule {
         }
     }
 
+    /// The first rule in the active specification's definition order.
+    #[cfg(test)]
+    pub(crate) const FIRST: Self = Self::Form5;
+
+    /// The rule defined immediately after this one, or `None` for the last.
+    ///
+    /// This is the enumeration of the semantic rules, and it exists so that a
+    /// checked set over them cannot silently omit one. The match is exhaustive,
+    /// so a new variant does not compile until it is given a position here and
+    /// a rank in [`Self::definition_rank`] — two matches that
+    /// `definition_rank_matches_the_active_specification` then checks against
+    /// each other, since walking this chain must yield the ranks 0, 1, 2, … in
+    /// order. `SemanticRule::Gram6` was omitted from that check's
+    /// hand-maintained list until 2026-08-08, which is the omission this makes
+    /// impossible rather than merely unlikely.
+    #[cfg(test)]
+    pub(crate) const fn next_in_definition_order(self) -> Option<Self> {
+        Some(match self {
+            Self::Form5 => Self::Form7,
+            Self::Form7 => Self::Gram6,
+            Self::Gram6 => Self::Give1,
+            Self::Give1 => Self::Gram8,
+            Self::Gram8 => Self::Gram10,
+            Self::Gram10 => Self::Gram11,
+            Self::Gram11 => Self::Type2,
+            Self::Type2 => Self::Type5,
+            Self::Type5 => Self::Type6,
+            Self::Type6 => Self::Type7,
+            Self::Type7 => Self::Set1,
+            Self::Set1 => Self::Const1,
+            Self::Const1 => Self::Const2,
+            Self::Const2 => Self::Own1,
+            Self::Own1 => Self::Own4,
+            Self::Own4 => Self::Own5,
+            Self::Own5 => Self::Own6,
+            Self::Own6 => Self::Own10,
+            Self::Own10 => Self::Own11,
+            Self::Own11 => Self::Own12,
+            Self::Own12 => Self::Own14,
+            Self::Own14 => Self::Stor1,
+            Self::Stor1 => Self::Stor5,
+            Self::Stor5 => Self::Op1,
+            Self::Op1 => Self::Op4,
+            Self::Op4 => Self::Op5,
+            Self::Op5 => Self::Op6,
+            Self::Op6 => Self::Fn1,
+            Self::Fn1 => Self::Fn2,
+            Self::Fn2 => Self::Fn3,
+            Self::Fn3 => Self::Fn4,
+            Self::Fn4 => Self::Fn7,
+            Self::Fn7 => Self::Fn8,
+            Self::Fn8 => Self::Eff1,
+            Self::Eff1 => Self::Eff2,
+            Self::Eff2 => Self::Err2,
+            Self::Err2 => Self::Err3,
+            Self::Err3 => Self::Sys2,
+            Self::Sys2 => Self::Clm1,
+            Self::Clm1 => Self::Clm2,
+            Self::Clm2 => return None,
+        })
+    }
+
     /// [DIAG-1] same-node citation rank: this rule's definition position in
     /// the active kernel specification. Simultaneously established
     /// post-resolution rejections whose offending premise is the same use of

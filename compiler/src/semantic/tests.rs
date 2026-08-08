@@ -1084,50 +1084,40 @@ fn main() -> own unit pure {
 /// [DIAG-1] the same-node citation rank is the rules' definition order in
 /// the active specification; `SemanticRule::definition_rank` must agree with
 /// the specification bytes for every citable rule.
+///
+/// The set under check is **walked from the enum**, not listed here. Both
+/// `next_in_definition_order` and `definition_rank` are exhaustive matches, so
+/// a new variant does not compile until it appears in each; this test then
+/// makes the two check each other, since walking the chain must yield the
+/// ranks 0, 1, 2, … in order. A hand-maintained list stood here until
+/// 2026-08-08 and silently omitted `Gram6`, reporting every rule verified
+/// while one was not.
 #[test]
 fn definition_rank_matches_the_active_specification() {
-    const ALL: [SemanticRule; 40] = [
-        SemanticRule::Form5,
-        SemanticRule::Form7,
-        SemanticRule::Type2,
-        SemanticRule::Const1,
-        SemanticRule::Const2,
-        SemanticRule::Type5,
-        SemanticRule::Set1,
-        SemanticRule::Own1,
-        SemanticRule::Own4,
-        SemanticRule::Own5,
-        SemanticRule::Own6,
-        SemanticRule::Own10,
-        SemanticRule::Own11,
-        SemanticRule::Own12,
-        SemanticRule::Own14,
-        SemanticRule::Type7,
-        SemanticRule::Stor1,
-        SemanticRule::Stor5,
-        SemanticRule::Op1,
-        SemanticRule::Op4,
-        SemanticRule::Op6,
-        SemanticRule::Op5,
-        SemanticRule::Fn1,
-        SemanticRule::Fn2,
-        SemanticRule::Fn3,
-        SemanticRule::Fn4,
-        SemanticRule::Fn7,
-        SemanticRule::Fn8,
-        SemanticRule::Gram11,
-        SemanticRule::Gram8,
-        SemanticRule::Gram10,
-        SemanticRule::Type6,
-        SemanticRule::Err2,
-        SemanticRule::Err3,
-        SemanticRule::Give1,
-        SemanticRule::Eff1,
-        SemanticRule::Eff2,
-        SemanticRule::Sys2,
-        SemanticRule::Clm1,
-        SemanticRule::Clm2,
-    ];
+    let mut all = Vec::new();
+    let mut rule = Some(SemanticRule::FIRST);
+    while let Some(current) = rule {
+        assert!(
+            !all.contains(&current),
+            "the definition-order chain revisits {}",
+            current.id()
+        );
+        all.push(current);
+        rule = current.next_in_definition_order();
+    }
+
+    // The chain and the rank table are separate exhaustive matches; this is
+    // where they are made to agree, so neither can drift alone.
+    for (position, rule) in all.iter().enumerate() {
+        assert_eq!(
+            rule.definition_rank(),
+            position,
+            "{} sits at chain position {position} but ranks {}",
+            rule.id(),
+            rule.definition_rank()
+        );
+    }
+
     let definition_line = |rule: SemanticRule| {
         let prefix = format!("[{}]", rule.id());
         ACTIVE_KERNEL_SPEC_TEXT
@@ -1135,17 +1125,11 @@ fn definition_rank_matches_the_active_specification() {
             .position(|line| line.starts_with(&prefix))
             .unwrap_or_else(|| panic!("no definition line for {}", rule.id()))
     };
-    let mut ranks: Vec<usize> = ALL.iter().map(|rule| rule.definition_rank()).collect();
-    ranks.sort_unstable();
-    ranks.dedup();
-    assert_eq!(ranks.len(), ALL.len(), "ranks must be unique");
-    let mut by_rank = ALL;
-    by_rank.sort_unstable_by_key(|rule| rule.definition_rank());
-    let mut by_specification = ALL;
-    by_specification.sort_unstable_by_key(|rule| definition_line(*rule));
-    for (ranked, specified) in by_rank.iter().zip(&by_specification) {
+    let mut by_specification = all.clone();
+    by_specification.sort_by_key(|rule| definition_line(*rule));
+    for (walked, specified) in all.iter().zip(&by_specification) {
         assert_eq!(
-            ranked.id(),
+            walked.id(),
             specified.id(),
             "definition_rank disagrees with the active specification order"
         );
