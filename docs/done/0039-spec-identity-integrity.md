@@ -2,7 +2,7 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — all five steps landed on the branch, both gates
+- **Status:** `DONE` (2026-08-07: tautologies removed, digest computed and gated, 14-link approval chain, archive integrity in make check, two-path verifier; C1b deviation ruled)
   green, rebased onto 041e02d. Held for lead review of one deviation: C1b
   keeps `ACTIVE_KERNEL_SPEC_HASH` a recorded constant checked against a
   runtime-computed digest, instead of making the constant itself a const-fn

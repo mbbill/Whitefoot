@@ -337,3 +337,9 @@ ARCHIVE-SPEC: v0.5 f41128b7e5cc7ecad1447ee0b45bdd3004d681c5048a08a5edc1d5fd0b8aa
 ARCHIVE-SPEC: v0.6 95ae3e1eec48109e1c55c65c2a3e3ddecccd6192c30c0d034e5b7931f10e535e
 ARCHIVE-SPEC: v0.7 212a2224d9d69ed58b0cb4cb3e8137572e2f06c6e1326698b1c6793ff0f04481
 ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8
+
+## 2026-08-07 — condition interpretation (computed digest, C1b)
+- owner: lead ruling under the standing delegation; owner ratification pending
+- reason: the stable-filename approval names a "computed SHA-256 digest" as a condition of adoption. Task 0039 implemented the const-fn form, measured it, and found it costs ~12s of constant evaluation PER CRATE (library build 1s -> 12s, compiler gate ~40s -> 87s) because a `const` is re-evaluated in every crate that reads it, and it requires `#![allow(long_running_const_eval)]` in five crate roots. The condition is satisfied in substance by the shipped form: the digest is computed from the embedded bytes at runtime (~1ms) and the `whitefoot-spec` gate plus a unit test reject any disagreement with the recorded constant, so an activation that installs a specification without moving the identity fails immediately. What the literal form would add is only that the constant is not transcribed at activation; what it costs is a permanent doubling of the gate. The condition's wording is therefore read as "the digest is verified by computation against the recorded value at every gate run", not "the constant is itself a compile-time computation".
+- boundary: C1b's implementation only; every other condition of the stable-filename approval stands unchanged.
+- evidence: task 0039's measurement, recorded in `docs/done/0039-spec-identity-integrity.md`.
