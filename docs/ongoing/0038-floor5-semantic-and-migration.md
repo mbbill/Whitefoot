@@ -2408,6 +2408,97 @@ authorize it. Recommend it as the next slice.
 
 
 
+
+## Round 20 (exec-0038n, 2026-08-08) — SYS-2 made representable, and what the coverage metric actually counts
+
+One commit. Library **572 passed / 3 failed**, unchanged; adapter **386/2/13 →
+387/2/13**; coverage **128/128, 0 uncovered**, negatives **44 → 45**.
+
+### What the coverage metric counts — the measurement, not an argument
+
+`tests/conformance/runner.py`:
+
+```python
+tagged |= set(c["rules"])          # every rule NAMED in any case's rules list
+by_case  = tagged & rules
+annotated = {a["rule"] for a in annots} & rules
+covered  = by_case | annotated
+```
+
+**A rule counts as covered when any case merely names it in its `rules` list.**
+Not when a case's expected verdict cites it, not when any case would fail if the
+rule stopped being enforced, and with no notion of a rule's separate content
+pieces. Measured against the corpus at this commit:
+
+| | |
+|---|---|
+| rules in the specification | 128 |
+| reported covered | **128** — 110 by case, 30 by annotation |
+| with a positive exercise | 109 |
+| with a negative citing them | **45** |
+| **covered with no negative case at all** | **83** |
+| covered with neither a positive nor a negative | **19** |
+
+The runner already computes the positive and negative sets — it prints them as
+`[+109/-45]` — but `covered` requires neither.
+
+**The consequence, stated the way the packet needs it.** A positive case fails
+if a rule wrongly *rejects*; a negative case fails if a rule stops *rejecting*.
+So for the 83 rules with no negative, **a rule that silently stopped rejecting
+would not be caught by this corpus**, and the figure "128/128 rules covered, 0
+uncovered" does not distinguish that from a rule with a real negative.
+
+**A fair qualification, because the number is not a defect count.** Many of the
+83 have no negative *form* — GRAM-1 through GRAM-5 are grammar productions
+exercised positively, the DIAG-* rules constrain diagnostic shape, EX-1 is a
+worked example. "No negative" is not "untested" for those. The honest claim is
+about what the *metric* asserts, not that 83 rules are unguarded: **the number
+counts naming, and a reader is entitled to know that before treating it as
+coverage.**
+
+This is the second instance of the shape the wrong-kind FN-2 gap showed: the
+metric is **per-rule, not per-content-piece**, so a rule with several distinct
+violations counts as covered on the strength of any one of them.
+
+### `5397bcb` — SYS-2 made representable
+
+[DIAG-1]'s third clause could not be obeyed: `SemanticRule` had no `Sys2`
+variant anywhere in `compiler/src`, so the correct citation was unrepresentable
+rather than merely unused, and the system class cited TYPE-5.
+
+**The rank is the part that could not be chosen freely.** `definition_rank` is
+machine-checked against the active specification's definition order, so SYS-2's
+rank is fixed by where the candidate defines it — line 769, between ERR-3 and
+CLM-1, which is **rank 38**; CLM-1 and CLM-2 shift up by one. The check passing
+is the evidence the rank is right rather than merely unique.
+
+The citation then moves at the three argument-list sites in
+`system_call_region_arguments` — absent, wrong count, wrong kind — exactly as the
+callee-class fix moved the other two classes in round 15.
+
+`sys2-neg-wrong-region-arg-count` gives SYS-2 its first negative, with a control:
+two region arguments where `args_count` declares one rejects
+`Semantics/Source [SYS-2]`; the same source with one exits 0.
+
+### One thing found in passing, not fixed
+
+`SemanticRule::Gram6` **has a `definition_rank` but is absent from the rank
+test's `ALL` array**, so its rank is unverified against the specification while
+every other variant's is checked. Forty variants have ranks; thirty-nine were
+checked, now forty with SYS-2 added. GRAM-6 is the v0.23 conditional rule, so
+this is most likely an omission from when it was introduced rather than a
+decision. Reported rather than changed: adding it to the array is a one-line
+change but it is a check gaining a subject, which is the lead's call.
+
+### Validation
+
+- `make check`: exit 2 at the compiler step, lib **572 passed / 3 failed** — the
+  two activation-gated spec checks and the `RegionsAndBorrows` capability gap.
+- Adapter **Pass=387 Fail=2 Skip=13**: `own3-pos-outlives-store` and
+  `fn8-neg-requires-eeq-payload-enum`.
+- `definition_rank_matches_the_active_specification` passes with 40 variants.
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt --check` exit 0.
+- Manifest: 402 case rows, all parse.
 ## Round 19 (exec-0038n, 2026-08-08) — the emptied-case sweep
 
 Read-only over the corpus, pinned at `40fe986`. **One new emptied case beyond
