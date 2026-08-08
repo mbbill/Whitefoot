@@ -272,6 +272,13 @@ fn main() -> own unit pure {
     });
 }
 
+/// The first two are wrong-kind arguments on a **user-generic call**, so
+/// [DIAG-1] gives them to FN-2: "the cited rule is the rule selected by the
+/// callee's class". They recorded TYPE-5 while the compiler chose its rule
+/// from the kind of argument problem instead of the callee, and they move with
+/// the 2026-08-08 ruling that settled the question — TYPE-5 governs whether an
+/// argument's type matches its parameter, not the argument list itself. The
+/// third is CONST-1's own violation and is unaffected.
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
     assert_rule(
@@ -284,7 +291,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRule::Type5,
+        SemanticRule::Fn2,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
@@ -297,7 +304,7 @@ fn main() -> own unit pure {
   return unit;
 }
 "#,
-        SemanticRule::Type5,
+        SemanticRule::Fn2,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(

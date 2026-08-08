@@ -304,6 +304,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
+    /// The written type pair of `cvt` and `reinterpret`, two of the closed
+    /// retained-argument rows.
+    ///
+    /// [DIAG-1] selects the cited rule by the callee's class rather than by
+    /// the kind of argument problem: a table operation cites what [OP-2]
+    /// selects and never FN-2, which belongs to a user-generic call. [TYPE-5]
+    /// is what mandates these arguments, so their absence is its violation —
+    /// the same reading [`Self::retained_operation_type_argument`] already
+    /// applies to `finf` and `fnan`.
     fn numeric_type_arguments(
         &self,
         node: NodeId,
@@ -313,7 +322,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Targs)?
             .ok_or_else(|| {
-                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
+                self.issue_value(
+                    SemanticRule::Type5,
+                    node,
+                    SemanticIssueKind::InvalidOperation,
+                )
             })?;
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let [source, destination] = arguments.as_slice() else {

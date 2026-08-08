@@ -183,6 +183,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// The written type, const, and region arguments of a user-generic call.
+    ///
+    /// [DIAG-1] selects the cited rule by the callee's class rather than by
+    /// the kind of argument problem, and for a user-generic call that rule is
+    /// FN-2 — "a missing, wrong-kind, wrong-count, or wrong-domain argument".
+    /// TYPE-5 governs whether an argument's *type* matches its parameter, one
+    /// step later and at the offending atom; it does not own the argument list
+    /// itself.
     fn call_region_arguments(
         &self,
         node: NodeId,
@@ -192,7 +200,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if signature.region_parameters.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::TypeMismatch);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let generic_count = signature.substitution.len();
@@ -200,7 +208,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .checked_add(signature.region_parameters.len())
             .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         if arguments.len() != expected {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Fn2, node, SemanticIssueKind::TypeMismatch);
         }
         arguments
             .into_iter()
@@ -213,7 +221,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         class: DeclarationClass::Region,
                     } => Ok(declaration),
                     _ => self.issue_node(
-                        SemanticRule::Type5,
+                        SemanticRule::Fn2,
                         argument,
                         SemanticIssueKind::TypeMismatch,
                     ),

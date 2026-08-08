@@ -415,16 +415,18 @@ fn main() -> own unit pure {
 /// longer a name at all and reaches OP-1 at resolution before either shape can
 /// be judged. The concerns survive on the rows that still have names: a call
 /// missing the arguments its row mandates, and one written with named
-/// arguments. Neither expectation is changed.
+/// arguments.
 #[test]
 fn operation_call_shapes_keep_their_exact_rule_owners() {
-    // A retained-argument row [TYPE-5] with its mandatory arguments absent.
-    // This is the shape that still earns FN-2, and it is one of the witnesses
-    // that must move if the tracked FN-2/[DIAG-1] citation question is settled
-    // the other way — which is what a second witness is for.
+    // A retained-argument row with its mandatory arguments absent. This was
+    // recorded as FN-2 and flagged then as a witness that would move if the
+    // citation question were settled the other way; it was, so it did.
+    // [DIAG-1] gives a table operation the rule [OP-2] selects and never FN-2,
+    // and [TYPE-5] is what mandates these arguments, so their absence is its
+    // violation — the reading `finf`/`fnan` already carried.
     assert_rule(
         b"fn main() -> own unit pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return unit;\n}\n",
-        SemanticRule::Fn2,
+        SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
@@ -434,6 +436,53 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
             callee: "imin".to_owned(),
             declared_parameters: Vec::new(),
         },
+    );
+}
+
+/// [DIAG-1] "The cited rule is the rule selected by the callee's class": FN-2
+/// for a user-generic call, and for a table operation the rule [OP-2] selects.
+/// The compiler used to choose from the *kind* of argument problem instead, so
+/// it was wrong in both directions at once — a table operation missing its
+/// mandatory arguments cited FN-2, and a user-generic call missing or
+/// miscounting its arguments cited TYPE-5.
+///
+/// One argument problem is held fixed across the two classes so that only the
+/// callee varies: each pair below is the same failure, so the rule must follow
+/// the callee and nothing else.
+#[test]
+fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
+    // Missing the arguments the callee's class mandates.
+    assert_rule(
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> own T pure {\n  return move value;\n}\n\nfn main() -> own unit pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return unit;\n}\n",
+        SemanticRule::Fn2,
+        SemanticIssueKind::TypeMismatch,
+    );
+    assert_rule(
+        b"fn main() -> own unit pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return unit;\n}\n",
+        SemanticRule::Type5,
+        SemanticIssueKind::InvalidOperation,
+    );
+
+    // A wrong-count argument list, the same failure on both classes.
+    assert_rule(
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> own T pure {\n  return move value;\n}\n\nfn main() -> own unit pure {\n  let a = Held(v: 1_i32);\n  let b = pick<Held, Held>(value: move a);\n  return unit;\n}\n",
+        SemanticRule::Fn2,
+        SemanticIssueKind::TypeMismatch,
+    );
+    assert_rule(
+        b"fn main() -> own unit pure {\n  let value = 4_i32;\n  let narrowed = cvt<i32>(value);\n  return unit;\n}\n",
+        SemanticRule::Op1,
+        SemanticIssueKind::InvalidOperation,
+    );
+
+    // A generic nominal's construct is a third class: [TYPE-5] owns its
+    // written arguments, and it shares the argument-list reader with the
+    // user-generic call, so it is the control that the rule is not simply
+    // keyed on that reader.
+    assert_rule(
+        b"struct Pair<T> {\n  v: T;\n}\n\nfn main() -> own unit pure {\n  let p = Pair(v: 1_i32);\n  return unit;\n}\n",
+        SemanticRule::Type5,
+        SemanticIssueKind::TypeMismatch,
     );
 }
 

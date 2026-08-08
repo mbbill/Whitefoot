@@ -105,11 +105,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         self.reject_region_bearing_storage_operation_argument(node, "array_new", function, 2, 0)?;
+        // [DIAG-1] a table operation cites the rule [OP-2] selects, never FN-2,
+        // which belongs to a user-generic call; [TYPE-5] mandates `array_new`'s
+        // element and length, so their absence is its violation.
         let targs = self
             .tree
             .first_child_with(node, Production::Targs)?
             .ok_or_else(|| {
-                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
+                self.issue_value(
+                    SemanticRule::Type5,
+                    node,
+                    SemanticIssueKind::InvalidOperation,
+                )
             })?;
         let targs = self.tree.children_with(targs, Production::Targ)?;
         let [element_arg, length_arg] = targs.as_slice() else {

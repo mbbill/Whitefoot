@@ -516,7 +516,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         template: &FunctionTemplate,
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
-        self.generic_substitution(node, &template.generic_parameters, caller, true)
+        // [DIAG-1] a user-generic call's argument list is FN-2's.
+        self.generic_substitution(
+            node,
+            &template.generic_parameters,
+            caller,
+            true,
+            SemanticRule::Fn2,
+        )
     }
 
     pub(super) fn nominal_generic_substitution(
@@ -525,15 +532,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         parameters: &[GenericParameter],
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
-        self.generic_substitution(node, parameters, caller, false)
+        // [TYPE-5] a generic nominal's construct writes that nominal's
+        // arguments, and their absence or a wrong count is TYPE-5's own
+        // violation, "at the complete `construct`".
+        self.generic_substitution(node, parameters, caller, false, SemanticRule::Type5)
     }
 
+    /// One argument list, read for two callee classes.
+    ///
+    /// [DIAG-1] selects the cited rule by the callee's class rather than by
+    /// the kind of argument problem, and these two classes differ: a
+    /// user-generic call cites FN-2, a generic nominal's construct cites
+    /// TYPE-5. The rule therefore arrives from the caller that knows its own
+    /// class, instead of being chosen here from the shape of the failure.
     fn generic_substitution(
         &self,
         node: NodeId,
         parameters: &[GenericParameter],
         caller: &GenericSubstitution,
         allow_trailing_regions: bool,
+        argument_rule: SemanticRule,
     ) -> Result<GenericSubstitution, CheckStop> {
         if parameters.is_empty() {
             if !allow_trailing_regions
@@ -542,18 +560,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .first_child_with(node, Production::Targs)?
                     .is_some()
             {
-                return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(argument_rule, node, SemanticIssueKind::TypeMismatch);
             }
             return Ok(GenericSubstitution::default());
         }
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(argument_rule, node, SemanticIssueKind::TypeMismatch);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if (allow_trailing_regions && arguments.len() < parameters.len())
             || (!allow_trailing_regions && arguments.len() != parameters.len())
         {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(argument_rule, node, SemanticIssueKind::TypeMismatch);
         }
         for argument in arguments.iter().take(parameters.len()) {
             self.reject_region_bearing_generic_argument(*argument, caller)?;
@@ -564,7 +582,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 GenericParameter::Type { bound, .. } => {
                     let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
                         return self.issue_node(
-                            SemanticRule::Type5,
+                            argument_rule,
                             argument,
                             SemanticIssueKind::TypeMismatch,
                         );
@@ -592,7 +610,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let Some(value) = self.tree.first_child_with(argument, Production::Const)?
                     else {
                         return self.issue_node(
-                            SemanticRule::Type5,
+                            argument_rule,
                             argument,
                             SemanticIssueKind::TypeMismatch,
                         );
