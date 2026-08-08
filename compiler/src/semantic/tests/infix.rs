@@ -6,7 +6,7 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::model::{
     CheckedExpression, CheckedIntegerOperation, CheckedStatement, CheckedType, IntegerType,
 };
-use super::{assert_rule_at, with_semantics};
+use super::{assert_rule, assert_rule_at, with_semantics};
 
 /// The operation and selected type of the one integer operation in `main`.
 fn sole_operation(source: &[u8]) -> (CheckedIntegerOperation, CheckedType) {
@@ -125,4 +125,233 @@ fn bare_arithmetic_contributes_the_traps_effect() {
         assert_eq!(issue.rule(), SemanticRule::Eff2);
         assert_eq!(issue.kind(), &SemanticIssueKind::EffectMismatch);
     });
+}
+
+/// [GRAM-5]'s complete set of positions taking a bare `expr`, enumerated from
+/// the grammar rather than from whichever tests happened to fail: the `if_stmt`
+/// and `value_if` conditions, `ordinary_let_rhs`, `propagate_let_rhs`,
+/// `set_stmt`, `return_stmt`, `check_stmt`, `claim_stmt`, `give_stmt`, and the
+/// `match_stmt` and `value_match` scrutinees. `expr_stmt := call ";"` takes a
+/// `call`, so infix cannot be written there and it is deliberately absent.
+///
+/// Each source writes one infix over `a` and `b` at the named position and
+/// binds the second operand with the exact line [`DISAGREEING_OPERAND`]
+/// rewrites, which is what turns every entry into its own negative case.
+const EXPRESSION_POSITIONS: [(&str, &str); 11] = [
+    (
+        "ordinary_let_rhs",
+        "fn main() -> own unit traps {
+  let a = 6_u64;
+  let b = 7_u64;
+  let c = a + b;
+  return unit;
+}
+",
+    ),
+    (
+        "propagate_let_rhs",
+        "fn step(a: own u64) -> own Result<u64, Overflow> pure {
+  let b = 7_u64;
+  let c = propagate a +checked b;
+  return Ok<u64, Overflow>(value: c);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+",
+    ),
+    (
+        "set_stmt",
+        "fn main() -> own unit traps {
+  let a = 6_u64;
+  let b = 7_u64;
+  set a = a + b;
+  return unit;
+}
+",
+    ),
+    (
+        "return_stmt",
+        "fn add(a: own u64) -> own u64 traps {
+  let b = 7_u64;
+  return a + b;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+",
+    ),
+    (
+        "check_stmt",
+        "fn main() -> own unit traps {
+  let a = 6_u64;
+  let b = 7_u64;
+  check a <= b else trap \"six is at most seven\";
+  return unit;
+}
+",
+    ),
+    (
+        "claim_stmt",
+        "fn main() -> own unit traps {
+  let a = 6_u64;
+  let b = 7_u64;
+  claim ordered: a <= b because \"six is at most seven\";
+  return unit;
+}
+",
+    ),
+    (
+        "give_stmt",
+        "fn main() -> own unit traps {
+  let a = 6_u64;
+  let b = 7_u64;
+  let f = True();
+  let c = if f {
+    give a + b;
+  } else {
+    give a;
+  }
+  return unit;
+}
+",
+    ),
+    (
+        "match_stmt scrutinee",
+        "fn main() -> own unit pure {
+  let a = 6_u64;
+  let b = 7_u64;
+  match a +checked b {
+    Ok(value: v) => {
+      return unit;
+    }
+    Err(error: e) => {
+      return unit;
+    }
+  }
+}
+",
+    ),
+    (
+        "value_match scrutinee",
+        "fn main() -> own unit pure {
+  let a = 6_u64;
+  let b = 7_u64;
+  let c = match a +checked b {
+    Ok(value: v) => {
+      give 1_u64;
+    }
+    Err(error: e) => {
+      give 2_u64;
+    }
+  }
+  return unit;
+}
+",
+    ),
+    (
+        "if_stmt condition",
+        "fn main() -> own unit pure {
+  let a = 6_u64;
+  let b = 7_u64;
+  if a <= b {
+    return unit;
+  }
+  return unit;
+}
+",
+    ),
+    (
+        "value_if condition",
+        "fn main() -> own unit pure {
+  let a = 6_u64;
+  let b = 7_u64;
+  let c = if a <= b {
+    give 1_u64;
+  } else {
+    give 2_u64;
+  }
+  return unit;
+}
+",
+    ),
+];
+
+/// The second operand's binding, and the disagreeing type that replaces it.
+const AGREEING_OPERAND: &str = "let b = 7_u64;";
+const DISAGREEING_OPERAND: &str = "let b = 7_i32;";
+
+/// Every [GRAM-5] position that admits an infix expression checks one, and
+/// none of them fails the tree.
+///
+/// The `return_stmt` entry is the regression: two `return`-position structural
+/// queries read the `expr` node with `only_child`, and `expr := atom
+/// infix_tail?` is the one alternative with two children, so every infix
+/// return reported `InvalidCanonicalTree` — an internal compiler failure where
+/// a source rejection or an accepted program is required.
+#[test]
+fn infix_is_checked_at_every_expression_position() {
+    for (position, source) in EXPRESSION_POSITIONS {
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "infix in {position} position must check: {outcome:?}",
+            );
+        });
+    }
+}
+
+/// [OP-2]'s operand judgment runs at every position, not only in the `let`
+/// initializer.
+///
+/// A position that merely stopped failing the tree could still be skipping the
+/// judgment, so each source is rewritten to disagree on its second operand and
+/// must report TYPE-5 at exactly that operand — the same citation the `let`
+/// path produces. A position that did not check the infix cannot produce it.
+#[test]
+fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
+    for (position, source) in EXPRESSION_POSITIONS {
+        assert_eq!(
+            source.matches(AGREEING_OPERAND).count(),
+            1,
+            "{position} must bind its second operand with the rewritten line",
+        );
+        let disagreeing = source.replace(AGREEING_OPERAND, DISAGREEING_OPERAND);
+        assert_rule_at(disagreeing.as_bytes(), SemanticRule::Type5, "b");
+    }
+}
+
+/// The `return` position has two structural queries, reached under
+/// complementary conditions, and each broke on infix independently.
+///
+/// [TYPE-7]'s implicit read runs only for an `own` result — the table's
+/// `return_stmt` entry covers it. [OWN-14]'s returned reborrow runs only for a
+/// borrow result, so it needs a borrow-returning function; an infix can never
+/// produce a borrow, which makes this an FN-1 rejection rather than an accepted
+/// program, and reporting it as a compiler failure was the defect. The control
+/// is the same function returning a plain non-borrow atom: it cites FN-1 too,
+/// so the infix path is held to the citation the position already produced.
+#[test]
+fn an_infix_returned_from_a_borrow_result_is_an_fn1_rejection() {
+    let infix = br#"fn pick['r](x: &'r u64, a: own u64) -> &'r u64 reads('r), traps {
+  let b = 7_u64;
+  return a + b;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_rule(infix, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
+    let plain = br#"fn pick['r](x: &'r u64, a: own u64) -> &'r u64 reads('r), traps {
+  return a;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_rule(plain, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
 }
