@@ -2,22 +2,42 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 11. Round 9's blocker is
-  **closed**: the requires-block `let` has a legal v0.23 form again, the same
-  pass admits the infix spelling [FN-8] requires (`8838150`, `8ccd4d8`,
-  `7e80d92`), and round 10's copy-gate finding is **closed** by judging
-  [FN-8]'s "own copy value" on the derived type (`2ccbf4a`, `96735a5`), now
-  with corpus coverage (`6b0dd43`). The adapter goes 28 → 16 failures and holds
-  there, passes 359 → 372, with nothing newly failing at any step. Round 8's
-  findings 1–3 still need their rulings. One case is deliberately left failing
-  and is not this task's: `fn8-neg-requires-eeq-payload-enum` shares the
-  pre-existing OP-1/OWN-1 precedence defect with `op1-neg-eeq-payload-enum`.
-  See "Round 10" and "Round 11".
+- **Status:** `IN PROGRESS` — 2026-08-08, rounds 9 through 12, two of them on
+  parallel branches now integrated here. Round 9's blocker is **closed**: the
+  requires-block `let` has a legal v0.23 form again, the same pass admits the
+  infix spelling [FN-8] requires (`8838150`, `8ccd4d8`, `7e80d92`), and round
+  10's copy-gate finding is **closed** by judging [FN-8]'s "own copy value" on
+  the derived type (`2ccbf4a`, `96735a5`), now with corpus coverage
+  (`6b0dd43`). Round 8's findings 1–3 and finding 4's cause are **closed** by
+  round 12: ten dispositions carried out, five cases restated so their recorded
+  rule fires again, two citations moved, two needing nothing after the
+  branch-scope compiler fix. Each branch measured 28 → 16 and 28 → 19 failures
+  alone; the composed figure is measured after this integration rather than
+  inferred from the two.
+  **Two cases remain deliberately failing, each for a recorded reason.**
+  `fn2-neg-eeq-implicit-type` cannot be restated: [DIAG-1] requires FN-2 at the
+  `call` node for a user-generic call while the compiler cites TYPE-5 for
+  missing, wrong-count and wrong-kind arguments alike — a spec/compiler
+  discrepancy that stops the affected work.
+  `fn8-neg-requires-eeq-payload-enum` was earlier read as sharing an OP-1/OWN-1
+  **precedence defect** with `op1-neg-eeq-payload-enum`; **round 12 refuted that
+  reading** with a four-cell affinity matrix, so no ordering defect exists. Its
+  open question is different and sharper: FN-8's subset pass rejects a `move`
+  operand in a requires clause, so `eeq` on a payload-carrying enum may have no
+  legal v0.23 spelling there at all. That pair of rejections is to be measured
+  before the case is disposed. See "Round 9" through "Round 12".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
 - **Owner / workspace:** exec-0038j (round 9) / `/Users/bytedance/do_not_scan/wf0038-r9`
-  on branch `task/0038-floor5-semantic-and-migration`
+  on branch `task/0038-floor5-semantic-and-migration`; exec-0038k (round 10) /
+  `/Users/bytedance/do_not_scan/wf0038-r10` on branch
+  `task/0038-conformance-dispositions`, based on round 9's tip `efb5242`
+  (resolved from `git log`, not relayed). The two branches are disjoint in
+  files: round 10 touches `compiler/src/resolution/`,
+  `compiler/src/bin/migrate/`, six case files, and five manifest rows (two
+  verdicts, three docs), none of which is a requires-block case. Integration
+  order does not matter.
 - **Base revision:** 55ff3ff (main), already the merge base; no rebase was owed
   — verified, not assumed: `git merge-base HEAD main` equals main's tip
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
@@ -247,6 +267,238 @@ path's TYPE-5 derivation item rather than to this unit.
 - `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt --check` exit 0.
 - The three activation-gated checks remain red by the definition of done above,
   and nothing was written to make them green.
+
+## Round 12 (exec-0038m, 2026-08-08) — round 8's findings 1-3 disposed; one blocker
+
+*Renumbered from "round 10" at integration: this unit ran on a parallel branch
+and chose the next number it could see, which rounds 10 and 11 on the sibling
+branch had already taken. Its own commits and evidence are unchanged. The
+identity was likewise `exec-0038k` on both branches and is distinguished here.*
+
+Four commits. Nine of the ten cases round 8 left are resolved and none newly
+fails; the tenth is refused with a reproduction rather than written to match
+the compiler.
+
+**The count is TEN, not nine.** Recomputed from the adapter's own list rather
+than from the brief: the 28 baseline failures are 13 requires-block cases (the
+sibling branch's defect), the 10 disposed here, and 5 outside this scope.
+Finding 1 is one case, finding 2 is two, finding 3 is six, finding 4 is one.
+
+```
+$ grep -c "^  Fail " base-adapter.log
+28
+```
+
+### `f22951f` — two findings had one cause, and it was a compiler defect
+
+`ScopeBuild` opened a lexical scope for `loop_stmt`, `region_stmt`, and `arm`,
+and **nothing for `if_stmt` or `value_if`**, so every branch `let` declared into
+the enclosing block. The migration turned 260 Bool matches into conditionals,
+which is why this surfaced now.
+
+[GRAM-4] is why this construct is the exception — it hangs both `stmt*`
+sequences off one node, so a walk keyed on child productions cannot separate
+them:
+
+```
+$ grep -n '^if_stmt     :=' governance/spec-evolution/kernel-spec-v0.23-candidate.md
+153:if_stmt     := "if" expr "{" stmt* "}" ("else" (if_stmt | "{" stmt* "}"))?
+```
+
+[TYPE-6] admits both rejected programs verbatim, and still forbids the shadow:
+
+```
+$ grep -n 'Disjoint expired lexical scopes may reuse' …v0.23-candidate.md
+239:… A nested lexical declaration may not shadow an entry live at that
+    declaration. … Disjoint expired lexical scopes may reuse an ordinary value
+    or label spelling …
+```
+
+Four sources, two of them controls. Sibling branches reusing a spelling, and a
+branch binder followed by the same spelling in the enclosing block, both now
+resolve. The **`match`-arm spelling of the first program** — separate
+productions, same program — must reach the same answer and does. A branch
+binder shadowing a **live** enclosing binder must still be rejected, and is:
+per-branch scopes could easily have hidden it. With the fix reverted and the
+test kept it fails on the first source, so it discriminates.
+
+This closes finding 4 and **dissolves one member of finding 3**:
+
+| case | brief said | actually needed |
+|---|---|---|
+| `ent5-pos-join-keeps-common-bound` | fix the cause | fixed; compiles, exit 0 |
+| `ent2-neg-expired-spelling-inherits-nothing` | restate OP-4 → TYPE-6 | **refused**; cites its recorded OP-4 again, row unchanged |
+
+Writing that TYPE-6 row would have recorded a compiler defect as a normative
+expectation. This is the whole point of verifying the citation against the
+specification instead of against the compiler.
+
+### `c899b83` — finding 1, and the class closed by rule
+
+`form2-neg-noncanonical-ws` keeps the migrated line with its four-space
+indentation restored, and rejects the recorded verdict:
+
+```
+$ ./compiler/target/debug/whitefootc --emit-llvm \
+    tests/conformance/cases/form2-neg-noncanonical-ws.wf ; echo "exit=$?"
+CanonicalSource/Source [FORM-2]: CanonicalIssue { … }
+exit=1
+$ grep -n 'Every nonempty physical line begins with exactly two ASCII spaces' …
+60:Every nonempty physical line begins with exactly two ASCII spaces for each
+   enclosing brace block.
+```
+
+Round 8's "leave it unmigrated" disposition does not hold: unmigrated it cites
+GRAM-4, because a v0.22 annotation is itself a v0.23 grammar error.
+
+**The exclusion is now derived from the manifest by rule.** §2 "Canonical form"
+is exactly FORM-1 through FORM-7 plus the LEX-1 policy rule no case can assert,
+so a case whose required verdict cites a `FORM-*` rule is a case about bytes.
+**Measured: 16 of the 401 case files, not the one the brief guessed.**
+
+```
+$ for f in tests/conformance/cases/*.wf; do whitefoot-migrate --check "$f"; …
+total=401 kept=16 changed=0 unchanged=377 refused=8
+```
+
+One invocation per file so the exit code is read from `$?`, never through a
+pipe. The rule covers all 12 FORM-family members of the retired 20-name hand
+list, adds the one it missed, and adds the three FORM-7 cases — which rendering
+does preserve, since terminal interiors keep their bytes, but whose subject is
+still a literal's spelling. Splitting the family to spare them would be a
+per-rule hand list again, which is the defect. The other 8 of the old 20 are
+refused because they do not parse, which needs no list at all.
+
+### `6a4b916` — findings 2 and 3, per case
+
+Every verdict observed by running the case; no verdict predicted.
+
+| case | recorded | observed after | disposition |
+|---|---|---|---|
+| `x-typ-bool-cmp-result-as-int` | TYPE-5 | TYPE-5 | source restated, row unchanged |
+| `type7-neg-implicit-read` | TYPE-7 | TYPE-7 | source restated, row unchanged |
+| `x-typ-match-foreign-variant` | TYPE-6 | TYPE-6 | source restated, row unchanged |
+| `op1-neg-eeq-payload-enum` | OP-1 | OP-1 | source restated, row unchanged |
+| `own1-neg-match-move-through-borrow` | OWN-1 | OWN-5 | **row moved**, source unchanged |
+| `x-match-give1-wrong-type` | TYPE-5 | GIVE-1 | **row moved**, source restated |
+| `ent2-neg-expired-spelling-inherits-nothing` | OP-4 | OP-4 | nothing needed |
+| `fn2-neg-eeq-implicit-type` | FN-2 | accepts | **refused, blocked** |
+
+The spec text behind each, by `grep -n` on the candidate:
+
+- **220** [TYPE-5] "the right-hand side of `set p = e;` must produce exactly
+  `own T` … a different right-hand-side mode or type is a hard error citing
+  TYPE-5". A binder's type is now its initializer's, so nothing can disagree
+  there; a `set` target's type still comes from a written declaration. The case
+  commits `a == b` to a written `i32` field.
+- **243** [TYPE-7] "A borrow-mode or box/arena binding used where a value of its
+  referent type T is expected is a hard error citing TYPE-7". A declared
+  parameter type is still such a position, so the case passes the borrow to
+  `takes(value: p)`.
+- **196** [GRAM-6] "a `match` whose scrutinee has type `Bool` is a hard error
+  citing GRAM-6 at the scrutinee `expr` node". That is why the Bool scrutinee
+  had to go; the case now matches a source enum against a prelude `Some` arm and
+  earns TYPE-6 `ForeignMatchVariant`.
+- **259** [OWN-1] "tag-only enums (every variant nullary …) copy on use; all
+  other values … are affine". A payload-carrying enum is affine, so the deleted
+  type argument left bare operands earning OWN-1 first. Moving both operands
+  restores OP-1's domain judgment.
+- **267** [OWN-5] "Content reached through any borrow may never be moved: `move`
+  requires a place rooted at an own-mode binding." OWN-1 defines when a move is
+  legal and never states this. The row was wrong before the migration — it is
+  main's single red case.
+- **200** [GIVE-1] "a delivering `give` whose exact mode or type differs from an
+  earlier delivering `give` of the same initializer is a hard error citing
+  GIVE-1 at the later `give_stmt`". The recorded 2026-08-08 amendment already
+  ruled this rewrite; its `traps` row, which the compiler cited as EFF-2, is
+  leftover incidental content.
+
+**Where this diverges from the brief, and why.** The brief ruled three of these
+as manifest citation changes: TYPE-7 → FN-1, TYPE-6 → GRAM-6, OP-1 → OWN-1. In
+each the compiler's citation is literally conforming — FN-1 at **424** does own
+an unreachable statement, and `type7-neg-implicit-read`'s trailing `return
+unit;` genuinely is one. But in each the cited violation is *incidental or
+earlier-firing* while the case's own concern is still expressible in v0.23, so
+moving the row would have deleted that concern's negative coverage silently —
+the failure mode this batch exists to remove, and the case the ruling of record
+already covers ("restate minimally so the recorded rule fires again, keeping the
+witness where possible"). The two rows that did move are the two whose concern
+genuinely died with the deleted bytes.
+
+### Blocker — the FN-2 diagnostic path cites TYPE-5
+
+`fn2-neg-eeq-implicit-type` is **unchanged and still accepts**. It writes
+`eeq(left, right)` bare on a tag-only enum, which v0.23 makes legal by design.
+
+FN-2 (**426**) does retain negative content, so this is not the specification
+finding the brief said to stop on. Its two surviving classes are the region-free
+`targ` requirement — already covered by two live passing cases, so restating
+onto it adds nothing — and "instantiation arguments are always explicit", which
+is this case's own concern. Reaching that is blocked:
+
+```
+$ grep -n "The cited rule is the rule selected by the callee's class" …
+658:… [FN-2] for a user-generic call … a missing, wrong-kind, wrong-count, or
+    wrong-domain argument … uses `SourceNode` at the `call` node and that
+    node's complete source extent.
+```
+
+Three reproductions on `fn identity<T: Int>(value: own T)`, with the correct
+call as the control:
+
+```
+identity<i32>(value: 1_i32)       exit 0                     — control
+identity(value: 1_i32)            [TYPE-5] at the call node  — want FN-2
+identity<i32, i64>(value: 1_i32)  [TYPE-5] at the call node  — want FN-2
+identity<7>(value: 1_i32)         [TYPE-5] at the `targ`     — want FN-2 at the call
+```
+
+So user generics work, and every FN-2 argument defect is cited TYPE-5, one of
+them at the wrong node. This is the gap already recorded as the `pending` reason
+on `fn2-neg-implicit-instantiation` ("does not yet implement … its FN-2
+diagnostic path"), now with a reproduction. A spec/compiler discrepancy stops
+the affected work, so nothing was written for this case.
+
+### Also found, outside this scope and not touched
+
+- **Three more positive cases reject after the migration**, the same class as
+  finding 4 and not in the ten: `x-give-result-aggregate` (want Run, reaches
+  TYPE-5 `TypeMismatch`), `fn1-pos-returned-slice-inputs-run` and
+  `fn1-pos-returned-slice-const-run` (want Run, reach FN-2 `InvalidOperation`).
+  Main's lane has one red case, so these are migration-caused and presumed
+  defects by the same ruling. The branch-scope fix does not clear them.
+- **`every_canonical_corpus_file_re_renders_to_itself` is red, before and after
+  this round**, and not one of the three activation-gated checks. It asserts
+  `underived.is_empty()`, which the standing ruling that 20 cases stay at v0.22
+  makes unreachable. Measured both ways: before this round 420 files as 399
+  round-tripped / 0 non-canonical / **21** underived; after, 399 / 1 / **20** —
+  strictly better, since the FORM-2 restatement now derives. Its
+  `DELIBERATELY_NONCANONICAL` is also still a two-name hand list, so the gate
+  cannot pass until whoever owns it reconciles the two rulings. Not changed
+  here: rewriting a gate's assertion to make it green is exactly what an
+  executor may not do.
+
+### Validation
+
+- `make -C compiler check`: **exit 2** before and after (`$?`, not through a
+  pipe), lib **308 → 309 passed**, **262 → 262 failed with a byte-identical
+  failing set** (`diff` of the two sorted name lists is empty). The one added
+  pass is the new resolver test.
+- `make check`: **exit 2** before and after, failing at the same compiler step.
+  Earlier stages pass: spec append-only, spec archive integrity at 23, corpus
+  structure 18/18, conformance coverage **128/128 rules, 0 uncovered** —
+  unchanged by the two moved citations.
+- `cargo fmt --check` exit 0; `cargo clippy --all-targets -D warnings` exit 0.
+- **Adapter: 359/28/14 → 368/19/14**, in two measured steps. The scope fix alone
+  gives 361/26/14 (`ent2`, `ent5` leave). The case work gives 368/19/14
+  (`form2-neg-noncanonical-ws`, `op1-neg-eeq-payload-enum`,
+  `own1-neg-match-move-through-borrow`, `type7-neg-implicit-read`,
+  `x-match-give1-wrong-type`, `x-typ-bool-cmp-result-as-int`,
+  `x-typ-match-foreign-variant` leave). **Nine left, zero arrived**, by set
+  `diff` rather than by count. The 19 remaining are the 13 requires-block cases,
+  `fn2-neg-eeq-implicit-type`, and the 5 out-of-scope failures.
+- The three activation-gated checks remain red by the definition of done, and
+  nothing was written to make them green.
 
 ## Round 8 (exec-0038g, 2026-08-08) — M3b ran; four things need a ruling
 
