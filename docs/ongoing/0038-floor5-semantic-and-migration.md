@@ -2,7 +2,9 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `WAITING` — 2026-08-07 round 1, handed back at a clean boundary:
+  the front end is complete and green, the semantic path and migration are
+  not started, and four conformance verdicts need a ruling (below).
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   fixed delta `governance/spec-evolution/spelling-relief-candidate.md`
 - **Owner / workspace:** exec-0038 / `/Users/bytedance/do_not_scan/wf-0038-exec`
@@ -107,6 +109,141 @@ here rather than worked around.
   rules candidate-stage pinning a recognized state with exactly three
   checks left red until the owner's activation commit.
 
-## Progress
+## Progress (round 1, exec-0038, 2026-08-07 — handed back at a clean boundary)
 
-Claimed at f80840d; branch rebased; candidate re-keyed to the current delta.
+**Landed.** The front end is complete and green for the v0.23 grammar; the
+semantic path and the corpus migration are not started.
+
+1. `cacfa26` — claim, with the three brief corrections above.
+2. `7f2da74` — the lexer operator form. `TokenKind` gains `OperatorForm`
+   and the four compound comparisons; `scanner.rs` dispatch gains `==`,
+   `!=`, `<=`, `>=` ahead of their single-byte prefixes and one
+   `b'+' | b'-' | b'*' | b'/' | b'%'` arm after the existing `->`,
+   negative-numeric and comment-prefix guards; `operator_form` takes the
+   maximal `[a-z]*` suffix. `classifier.rs` admits exactly the sixteen
+   `infix_op` rows via a new `FixedTerminal::is_operator_form`, and a
+   suffix outside that list is a terminal-membership rejection owned by
+   the new `TerminalIssueOwner::Gram1` — a source issue, not a compiler
+   failure. A lone `!` stays a raw lexical defect.
+3. `1cbafea` — [OP-1] site (i)'s twenty op-column respellings in
+   `resolution/catalog.rs`, plus (iii)'s derived-set consequence and the
+   syntax-fixture migration.
+
+**The two tests that asserted operator tokens do not form were rewritten,
+not deleted**, and three positive tests were added:
+`operator_forms_take_their_maximal_lowercase_suffix`,
+`compound_punctuation_beats_its_single_byte_prefixes`, and
+`operator_suffix_membership_admits_exactly_the_infix_op_list` (which
+carries the `/sat` and `%sat` near misses). The single-byte enumeration in
+`every_single_top_level_byte_has_a_controlled_lossless_outcome` gains the
+five operator bytes and still excludes `!`.
+
+**Round 4's predicted parser risk does not materialize — verified, not
+assumed.** A probe (added, read, removed) shows `let b = a + a;` derives an
+`Expr` node with two children whose extent is the complete `a + a`, with
+`InfixTail` and `InfixOp` beneath it; `if`/`else` and a `value_if` also
+derive. The compiler's node kinds *are* `Production`s and `Expr` already
+wrapped every expression in v0.22, so the "`infix` node must span the
+complete `expr`" requirement is already met and no parser change is owed.
+`syntax::` is wholly green (67 tests).
+
+**Gate states, exit codes read from `$?` with no pipe.**
+
+- `make -C compiler check`: **exit 2** — lib 256 passed / 271 failed.
+- `make check`: **exit 2**; its earlier stages pass (repository invariants,
+  spec append-only, spec archive integrity at 23, conformance plumbing OK)
+  and it fails at the compiler stage on the same 271.
+- `whitefoot-grammar CANDIDATE CANDIDATE`: **exit 0** — **69 productions,
+  84 decisions, 97 terminal predicates**, against the corrected bytes.
+- `cargo test --bin whitefoot-grammar-tables`: **ok** — the tables still
+  derive from the candidate after the [OP-1] (iii) repair, which is the
+  expected result because that repair moves prose, not EBNF.
+- `make conformance-run`: **exit 2** — adapter **Pass=116 Fail=271
+  Skip=14** against main's 386/1/14.
+- The three activation-gated checks are exactly the predicted three and
+  nothing else: `spec::tests::path_and_version_label_agree`,
+  `spec::tests::computed_identity_is_the_approved_digest`, and
+  `whitefoot-spec`'s `recorded_chain_ends_at_the_embedded_specification`.
+  `recorded_identity_is_the_computed_identity` **passes**, which is the
+  independent check that the re-keyed digest is right.
+
+**Migration figures re-measured, not trusted** (Python `re` with a true
+lookbehind, on the 420-file basis, string literals blanked). Basis 420;
+deleted-class type arguments **1588**; retained-class **102**; let
+annotations **2003**; `True()` arms **262**; four-comparison sites
+**519**; `ilt`/`igt` **207**; `check` statements **406** — all reproduce
+the card exactly. Arithmetic respells reproduce **378** by the delta's own
+`name<` command; counting `name(` as well gives **379**, and the single
+extra site is the finding below.
+
+## Verdict-meaning breaks found — these need a ruling before migration
+
+The task forbids changing any verdict's meaning and says to stop out and
+list any case that would. Four do. None is mechanically migratable.
+
+1. **`fn2-neg-implicit-instantiation`** — the extra arithmetic site above.
+   Its whole body is `let a: own i32 = iadd.trap(40_i32, 2_i32);` and it
+   asserts reject FN-2 for *a table operation with no explicit
+   instantiation argument*. After A1 no table operation carries a written
+   type argument at all, and [OP-2] (g)'s own analysis records that
+   "FN-2's missing-type-argument judgment goes with the written argument
+   it was about". The premise is deleted, so the migrated bytes
+   (`let a = 40_i32 + 2_i32;`) are a **valid program** — the verdict
+   inverts. FN-2 still governs *user* generics, so the case can be
+   re-expressed onto a user-generic callee, but that changes its subject
+   and is an owner/lead decision, not an executor's.
+2. **`x-typ-bool-cmp-result-as-int`** — asserts reject TYPE-5 for binding
+   a Bool comparison result to an `own i32` let. A3 deletes the let
+   annotation, so the disagreement it tests has no spelling and
+   `let v = a == b;` simply derives `own Bool`. Verdict inverts.
+3. **`x-match-give1-wrong-type`** — asserts reject TYPE-5 because a
+   `give` does not deliver "the let's declared mode type". The new
+   [GIVE-1] derives the type *from* the delivery set, so this premise is
+   gone; the nearest surviving clause is disagreement between two
+   delivering `give`s, which is a different rejection needing a rewritten
+   case.
+4. **`gram9-neg-nested-call`** — `imul.wrap<i32>(iadd.wrap<i32>(…), …)`.
+   GRAM-9 still rejects a non-atom infix operand, but there is no
+   parenthesization surface in which to spell a nested infix, so the case
+   needs re-expression (for example a retained `ilt(…)` call in an infix
+   operand position) rather than a substitution.
+
+The other nine cases the scan flagged are safe: `op1-neg-ieq-bool` and
+`op1-neg-ineg-unsigned` reject on operand domain, which [OP-2] (f) and (g)
+preserve word for word after the argument is dropped.
+
+## Successor brief
+
+Rounds 1–5 of 0036 and this round are discharged; do not re-derive them.
+The front end is done. What remains, in order:
+
+1. **FORM-2 for `if_stmt`/`value_if` — the one structural blocker, and it
+   is bigger than the round-2 brief implies.** `is_block_bearing` needs
+   the two productions, but the model underneath cannot hold them:
+   `NodeRecord` carries a single `body_open`/`body_close` pair and
+   `finalize/engine.rs:479` assigns it from the *last* `{` and `}` the
+   node owns, so an `if_stmt` owning a then-block and an else-block keeps
+   only the else-block's braces. Two brace pairs per node is a real
+   change to `topology.rs`, `engine.rs`, `canonical.rs`'s `inside_body`
+   at line 575, and `format.rs`. The `} else {` join line then follows the
+   `RequiresBlock` precedent at `format.rs:165`, which is already the one
+   production exempted from the break-after-close rule. Do this first:
+   the corpus migration's FORM-2 canonical audit cannot run without it.
+2. **The semantic path**, unchanged from the card: TYPE-5 derivation,
+   [OP-2] operand-derived row selection reported at the second operand
+   atom, [GIVE-1]'s contract inversion in `check/control.rs`'s `check_let`
+   and `matches.rs`, `if_stmt`/`value_if` into the existing checked
+   Bool-match, GRAM-6's three rejections, and FN-4's re-keyed premise.
+   0036's site map is still accurate.
+3. **The corpus migration** on the figures above, plus the compiler's own
+   inline fixtures — note the 271 lib failures are Rust test sources under
+   `compiler/src`, a body separate from the 420 `.wf` files.
+4. The four new conformance cases, then the review packet.
+
+**One caution earned this round.** Respelling the catalog in isolation
+converted nine passing tests into failing ones, because tests that build
+source *from* the catalog now emit `+wrap(a, b)` as a callee and cases
+that resolved `iadd.wrap` by name no longer do. That is correct and
+expected — infix resolution ([OP-1] (ii)) is what clears them — but it
+means the catalog and the infix resolution path want to land together, and
+a bare failure count will look worse before it looks better.
