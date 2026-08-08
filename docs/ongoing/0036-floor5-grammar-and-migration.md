@@ -2,19 +2,24 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — 2026-08-07 round 3, handed back at a clean boundary.
-  The reproduction gate is discharged and the lead's ruling on it is
-  implemented and landed on the branch: the generator is in-repo wired to a
-  gate check, and the v0.22 tables are canonical (7f68c71).
-  `make -C compiler check` exits 0. The candidate re-assembly and the table
-  extension are NOT started; the successor brief says why and what is left.
+- **Status:** `WAITING` — 2026-08-07 round 5, handed back at a clean boundary.
+  The candidate is re-assembled from the current 64-site delta at SHA-256
+  `935b9538df69f6f6289e8a6c99004db45a1f5e1865929c4b7cc1ced861bec9d2`, the
+  tables are regenerated from it and machine-checked, the terminal inventory is
+  76 -> 97, and the identity pins name the candidate path. Both gates are RED
+  at the predicted corpus boundary and every failure is classified below.
+  **One blocker needs a ruling before this branch can go further:** task 0039's
+  spec-identity machinery and this task's ruled candidate-stage pinning are
+  structurally incompatible, and neither can be reconciled without an owner
+  action. See "Round-5 blocker".
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
   2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's
   discharge premise, expand this task to full atomic activation, and sequence
   re-assembly after the fixed delta
-- **Owner / workspace:** exec-0036 / `/Users/bytedance/do_not_scan/wf-0036`
-  on branch `task/0036-floor5-grammar-and-migration`
+- **Owner / workspace (round 5):** exec-0036d /
+  `/Users/bytedance/do_not_scan/wf-0036c` on branch
+  `task/0036-floor5-grammar-and-migration`, rebased onto main at 21c7e26
 - **Base revision:** b345e2c
 - **Dependency:** none
 
@@ -61,7 +66,9 @@ Discoveries outside the candidate stop the task with evidence. If the expanded
 scope proves too large to finish reliably, hand back at a clean boundary as
 0031's first executor did.
 
-## Progress
+## Progress (round 1 — SUPERSEDED by round 5, retained for history)
+
+Its `9ca13585…` bytes and its site count are both superseded; see "Round 5".
 
 Step 1 only. `governance/spec-evolution/kernel-spec-v0.23-candidate.md` is
 assembled from `spec/kernel-spec-v0.22.md` by a scratch script (deleted after
@@ -197,6 +204,266 @@ components the lead asked to see enumerated:
 `SELECT_ROWS` 2003 -> 1893 and the count pin moved with it, as it does for
 every grammar change. The third component will move the count again; report it
 as its own number rather than netting it against these two.
+
+## Round 4 (2026-08-07) — superseded bytes, retained findings
+
+Round 4 assembled a candidate from the delta at 1a41eed (31 rules, 61 sites)
+at `9135ac6c…`, extended the tables, and repointed the pins. Those bytes are
+superseded: the delta has since moved to 34 rules at 64 sites. Round 5
+regenerated rather than patched, and the round-4 commits are not in this
+branch's history (old tip `6bd069d`, reachable if the reasoning is wanted).
+
+Three round-4 findings survive and were not re-derived.
+
+- **The `infix_tail`/`infix` carry-forward does not fire in the generator.**
+  `GrammarNodeKind` is EBNF structure (`Production`, `Terminal`, `Sequence`,
+  `Choice`, `Group`, `Optional`, `Repeat*`), not a core-tree node kind, and
+  `Production` carries no name string anywhere in the compiler — DIAG-1 node
+  identity is by ordinal. The name mismatch lands in the parser's tree
+  construction, where an `infix` node must span the complete `expr`. That is
+  0038's, not a generator risk.
+- **The [OP-2] (g) defect round 4 reported is now carried by the delta**, with
+  its repair and the seventh sweep pattern. Round 5 applies the repaired text.
+- **The lexer gap is not the mechanical add it looks like.** The candidate
+  makes a bad operator suffix a terminal-membership rejection while a lone `!`
+  stays a raw lexical defect, so it needs its own negative cases and DIAG-1
+  attribution review.
+
+## Round 5 (2026-08-07) — re-assembled, tables extended, one blocker
+
+**Candidate.** `governance/spec-evolution/kernel-spec-v0.23-candidate.md` is
+regenerated from `spec/kernel-spec-v0.22.md` plus the current delta by a
+scratch script (do_not_scan, deleted after use). SHA-256
+`935b9538df69f6f6289e8a6c99004db45a1f5e1865929c4b7cc1ced861bec9d2`.
+
+74 verbatim anchors implement all **64 sites across all 34 rules**, each
+asserted to occur exactly once and all matching on the first run; 74 rather
+than 64 because ten sites are one contiguous delta site spanning several
+sentences or table rows. The per-rule site counts reproduce the delta's header
+claim exactly. Where the delta states a replacement as a blockquote or fenced
+block, the script read those bytes out of the delta rather than transcribing
+them, so the largest replacements cannot carry a transcription error.
+
+Self-verified on the output: **128 rules** unchanged and distinct, **20
+sections** unchanged, and of the verifier's three frontend-contract ranges only
+`[FORM-1]`..`## 4. Types` changes, **22819B -> 26904B**, with
+`[CONST-1]`..`## 5. Ownership` (1966B) and `[EFF-1]`..`[EFF-2]` (1789B)
+**byte-identical** — exactly what the delta predicts. No normative text retains
+a deleted-class type argument or a `let` annotation; the three surviving
+`ineg.wrap<T>` spellings sit in the frozen v0.14 `Prior:` paragraph the delta
+clears as history. (Round 4 reported the baseline range as 22808B; 22819B is
+what the verifier's own line-start rule measures on the unchanged v0.22 file,
+and round 1 measured the same.)
+
+**Cross-checked against round 4's superseded bytes.** Exactly nine lines
+differ, and each is an accounted delta change: the status header, the three
+new seventh-pattern sites [OWN-13] [OP-4] [SYS-13], the repaired [OP-2] (g),
+the [DIAG-1] closing citation re-keyed to the callee's class, the extended
+[DIAG-3] and [ENT-3] S4 anchors, and [OP-1] (iii). Nothing else moved.
+
+**One assembled sentence reads badly and was left literal.** [OP-1] (iii)'s
+anchor is a prefix of the `ModeWords` sentence, so applying it literally leaves
+the original tail standing and the result says "in this version" twice: "…
+together with the operator-form suffixes of [GRAM-1]; in this version the two
+carriers share one closed set; in this version it equals `{wrap, trap, checked,
+sat, strict}`." Round 4 silently smoothed this to ", `{wrap, trap, checked,
+sat, strict}`." and did not report it — the same unrecorded-repair shape round 4
+itself caught round 1 committing at [OP-2] (g). Round 5 applied the delta
+literally and reports it instead. The delta's anchor or its replacement needs
+one more byte of drafting before these bytes go to approval; smoothing it here
+would be an unrecorded editorial change to normative text.
+
+**Tables.** 65 -> **69 productions**, regenerated from the candidate and
+installed. The derivation gate inside `make -C compiler check` passes against
+v0.23 (exit 0), so "the committed tables are the tables the specification's
+grammar implies" holds for the new grammar.
+
+| table | v0.22 | v0.23 | delta |
+|---|---|---|---|
+| PRODUCTIONS | 65 | 69 | +4 |
+| GRAMMAR_CHILDREN | 465 | 522 | +57 |
+| GRAMMAR_TERMINALS | 232 | 263 | +31 |
+| GRAMMAR_NODES | 530 | 591 | +61 |
+| DECISIONS | 75 | 84 | +9 |
+| SELECT_ATOMS | 361 | 415 | +54 |
+| SELECT_ROWS | 1893 | 3264 | **+1371** |
+| DIAGNOSTIC_ORDER | 76 | 97 | +21 |
+
+**The third diff component, as its own number.** The v0.23 grammar **adds 1371
+SELECT rows**, 1893 -> 3264. Not netted against the two components 7f68c71
+landed:
+
+| component | effect |
+|---|---|
+| 70 grammar-underivable predicate pairs dropped, 27 decisions | landed 7f68c71 |
+| 57 provenance corrections | landed 7f68c71 |
+| rows the v0.23 grammar adds | **+1371** (this round) |
+
+Independently reproduced: these table numbers match round 4's exactly, derived
+from a candidate that differs from round 4's in nine lines of normative prose.
+That is the expected result — none of the nine touches the EBNF — and it is a
+real cross-check on the generator rather than a coincidence.
+
+**Terminals.** 76 -> **97 predicates**, 68 -> **89 fixed spellings**: `if` plus
+the twenty `infix_op` operator spellings, and no `&&`, `||`, bare `<` or bare
+`>`. Verified against the candidate's own `infix_op` block, not transcribed on
+trust. `ALL_FIXED_TERMINALS` order is the fixed subsequence of the derived
+`DIAGNOSTIC_ORDER`; that rule was confirmed by **reproducing v0.22's committed
+68-entry array from v0.22's committed `DIAGNOSTIC_ORDER`** before being used
+for v0.23. `TerminalSet`'s u128 still holds 97.
+
+**One real defect found and fixed, not classified away.** `TerminalPredicate::
+index()` hard-coded the eight external predicates at 68..75, the old fixed
+count. Growing the fixed inventory to 89 made `Fixed(Minus)` (declaration index
+73) collide with `Literal` (73), so one bit decoded as two predicates and
+`membership_set_retains_noncompeting_overlap` failed with
+`[Fixed(Unit), Fixed(Minus), Literal]` for a two-element set. The indices now
+run 89..96. This was mine, it was a genuine terminal-inventory defect, and it
+is repaired rather than reported as expected breakage.
+
+**Pins name the candidate, never `spec/`.** Installing into `spec/` is the
+activation step and needs the owner's step-4 exact-byte approval, which has not
+been given. `compiler/src/spec.rs` (version, path, `include_str!`, digest),
+`compiler/src/bin/spec.rs`'s `include_bytes!`, `compiler/src/bin/grammar.rs`'s
+triple 65/75/76 -> **69/84/97**, `compiler/src/syntax/grammar/tests.rs`'s count
+pins, `tests/conformance/runner.py` (path and digest), and
+`spec/derivation/derivation-ledger.md` (a v0.23 candidate-stage entry following
+the v0.21 entry's wording). `docs/roadmap.md` is deliberately not repointed:
+the active-authority line moves at activation, which 1e23d03 shows the lead
+doing in the same commit as the `spec/` repoint.
+
+Two pin classes moved that no earlier brief listed, both ordinary version
+maintenance. `qualification.rs` carries three `ACTIVE_KERNEL_SPEC_VERSION !=`
+rows that have moved at every bump since v0.19 (`git log -L` confirms
+v0.19 -> v0.20 -> v0.21 -> v0.22); left at v0.22 they fail command-entry
+qualification for ten backend and driver tests. And the conformance runner's
+three sandbox builders created `spec/` and wrote the active specification into
+it by basename, an assumption the candidate path falsifies; they now create the
+active specification's own parent. The lookalike-authority test keeps its decoy
+in `spec/`, which makes it a slightly stronger control, not a weaker one.
+
+## Round-5 blocker — candidate-stage pinning and task 0039 are incompatible
+
+**This needs a ruling and is the reason the round hands back here.** Task 0039
+landed spec-identity machinery that assumes the compiler's active specification
+is an installed, owner-approved file under `spec/`. This task's ruled shape —
+pin at the candidate, do not install — cannot satisfy it. Three checks fail,
+and none is a migration failure that 0038 will clear:
+
+| check | what it asserts | why the candidate stage cannot satisfy it |
+|---|---|---|
+| `spec::tests::path_and_version_label_agree` | `ACTIVE_KERNEL_SPEC_PATH == format!("spec/kernel-spec-{VERSION}.md")` | the candidate path is not under `spec/` |
+| `spec::tests::computed_identity_is_the_approved_digest` | the embedded bytes hash to the digest the owner approved | the owner has not approved `935b9538…` |
+| `whitefoot-spec` `recorded_chain_ends_at_the_embedded_specification` | `governance/APPROVALS.md`'s `ACTIVE-SPEC:` chain ends at the embedded specification | the chain ends at v0.22; adding a v0.23 link would record an activation the owner has not granted, and `spec-archive-integrity` would then demand `spec/kernel-spec-v0.23.md` exist |
+
+Exact failure text for the third: `the chain ends at v0.22 but the active
+version is v0.23`, `the chain ends at v0.22 but the specification is titled
+v0.23`, `the chain records b133b793… for v0.22, but its bytes hash to
+935b9538…`.
+
+None was touched. Weakening any of them, or writing an `ACTIVE-SPEC: v0.23`
+line into the approval record, would be a governance breach: the first two are
+0039's deliberate controls and the third would fabricate an owner approval.
+`spec-archive-integrity` itself still passes — 23 recorded specifications hash
+as recorded — precisely because the chain was left alone.
+
+The choice is the owner's and the lead's, not an executor's. The shapes
+available are: (a) approve these bytes and activate, which makes all three
+green by installing into `spec/` and adding the chain link; (b) rule that
+candidate-stage pinning is a recognized state and adapt 0039's three checks to
+admit exactly the two exact forms, which keeps their strength but is a change
+to governance controls another task just landed; or (c) rule that the compiler
+never pins a candidate, which unwinds this task's step-4 shape and means the
+tables cannot be committed until activation. This branch implements the ruled
+shape and stops.
+
+## Round-5 gate states, exit codes read directly
+
+Read from `$?` without a pipe.
+
+- `make -C compiler check` **before** any round-5 compiler change: **exit 0**
+  (with the re-assembled candidate already committed).
+- `make -C compiler check` **after**: **exit 2**. `cargo fmt --all -- --check`
+  and `cargo clippy --all-targets -D warnings` both exit **0**; the lib tests
+  are **253 passed, 270 failed**.
+- `make check` (repository): **exit 2**. Its earlier stages pass —
+  repository invariants, spec append-only, spec archive integrity (23
+  specifications), and the conformance plumbing tests (18 OK) — and it fails at
+  the compiler stage on the same 270.
+- `cargo test --bin whitefoot-grammar-tables`: **exit 0**, the derivation check
+  against v0.23. This is the round's load-bearing verification.
+- `cargo test --bin whitefoot-grammar`: **exit 0** (8 tests).
+- `whitefoot-grammar CANDIDATE CANDIDATE`: **exit 0** —
+  **69 productions, 84 decisions, 97 terminal predicates**. Run in the
+  two-argument form task 0039 introduced. Against the v0.22 baseline the
+  verifier correctly refuses (`candidate changes the lexer or source grammar of
+  the baseline`), which is the fail-closed result the delta's §2 predicts for a
+  grammar-extending batch.
+
+**All 270 lib failures classified. None is a table, terminal, or derivation
+failure.**
+
+| class | count | owner |
+|---|---|---|
+| v0.22-spelled test sources under the v0.23 grammar | 266 | 0038 |
+| operation catalog still carries v0.22 spellings | 1 | next unit |
+| lexer cannot form the operator tokens | 1 | next unit |
+| spec identity (the blocker above) | 2 | owner/lead ruling |
+
+Plus one `whitefoot-spec` bin failure, the third spec-identity check, for three
+spec-identity failures in total.
+
+The 266 are one failure mode with a direct reproduction. `let a: own i32 =
+40_i32;` is rejected at the `:` citing GRAM-4 with `ExpectedTerminals(
+TerminalSet(65536))` — bit 16 is `FixedTerminal::Equal`, the `=` that A3's
+annotation deletion now puts there. The positive control matters as much:
+`let a = 40_i32;` and `if ilt(a, 50_i32) { … }` both **parse** under the new
+tables and fail later at unimplemented semantics (`InvalidCanonicalTree`,
+`InvalidFinalizedTree`), so the extended grammar accepts the new forms rather
+than merely rejecting the old ones.
+
+`resolution::catalog::tests::catalogs_match_independent_extraction_from_exact`
+is evidence, not breakage. Its extraction side reads the active specification's
+op column and returns `["+wrap", "-wrap", "*wrap", "+", "-", "*", "+checked",
+…, "==", "!=", "ilt", "<=", "igt", ">=", …]` — exactly the respelling [OP-1]
+site (i) specifies, O1 asymmetry included. The compiler's hand-written catalog
+is the stale side, so this failure independently confirms the op-column
+respell landed correctly in these candidate bytes.
+
+## Round-5 successor brief
+
+Rounds 1–5 are discharged; do not re-derive them. Base yourself on this branch.
+
+1. **Get the round-5 blocker ruled.** Nothing else on this branch can reach a
+   green gate until the candidate-stage pinning question is settled, and the
+   answer decides whether the next step is activation or an adaptation of
+   0039's checks.
+2. **The lexer's operator form** — the one non-corpus gap. `TokenKind` gains
+   `OperatorForm` plus the four compound comparisons;
+   `compiler/src/lexer/scanner.rs:51`'s dispatch gains `==`, `!=`, `<=`, `>=`
+   ahead of the single-byte `=`/`<`/`>` arms, the `+ * / %` starts, and the
+   `-`-not-followed-by-digit-or-`>` case (the existing `b'-'` guards at lines
+   59 and 62 are the precedent); `compiler/src/syntax/classifier.rs:106` gains
+   the matching arms, where `FixedTerminal::from_spelling` already does the
+   work. Not a mechanical add: see the round-4 finding above.
+3. **The operation catalog respell** in `compiler/src/resolution/catalog.rs` —
+   the independent extraction already returns the right answer.
+4. **The corpus migration (0038)** — 266 failures, one failure mode.
+5. **Fix [OP-1] (iii)'s anchor in the delta** before these bytes go to
+   approval, and decide whether the doubled clause is the drafter's or the
+   assembler's to resolve.
+
+**Two consequences for the lead.** Two other candidates are drafted against
+v0.22 and sit on a superseded base:
+`governance/spec-evolution/provenance-gate-candidate.md` and
+`governance/spec-evolution/ent5-loop-fix-v024-candidate.md`. And the generator
+derives tables for exactly one grammar at a time, so pointing it at a future
+candidate means moving the `ebnf.rs` fenced count first, which transiently reds
+the `--check` comparison against the active specification.
+
+**One trap that survives.** Byte-for-byte agreement between the tables and the
+EBNF proves they agree; it never proves the extended tables are *complete*. The
+migrated corpus parse remains the completeness oracle, and it has not run.
 
 ## 0031's defect, recorded where it will be found
 
