@@ -20,6 +20,10 @@ name = "whitefoot-grammar-tables"
 path = "src/bin/grammar_tables/main.rs"
 
 [[bin]]
+name = "whitefoot-migrate"
+path = "src/bin/migrate/main.rs"
+
+[[bin]]
 name = "whitefootc"
 path = "src/bin/whitefootc.rs"
 
