@@ -482,6 +482,10 @@ fn args_count(args: own u64) -> own u64 pure {
   return args;
 }
 
+fn keeper(value: own HostString) -> own unit pure {
+  return unit;
+}
+
 fn main() -> own unit pure {
   let x = args_count(args: 0_u64);
   let s = HostString();
@@ -906,6 +910,15 @@ fn main() -> own unit pure {
     });
 }
 
+/// Three roles moved position under v0.23 and the fixture follows them rather
+/// than the assertions moving. `TypeRegion` came only from a `let` annotation
+/// that A3 deletes, so it now rides a signature-borne `slice<'v, i32>`, which
+/// [TYPE-5] keeps written. `OperationCallee` is the OPNAME form specifically
+/// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
+/// fixture's only operation call was `iadd.wrap`, one of the twenty rows
+/// [OP-7] respelled — an operator token is never a callee, so a respelled row
+/// produces no lexical use at all. It rides `ineg.trap`, a dotted row that
+/// keeps its name.
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
     let source = br#"contract Bound {
@@ -943,12 +956,17 @@ fn user<T: Bound, const n: i32>['call](arg: &'call T) -> &'call T reads('call) {
   return arg;
 }
 
+fn viewer['v](values: own slice<'v, i32>) -> own unit reads('v) {
+  return unit;
+}
+
 fn numeric<T: Int>() -> own T pure {
   return 0_T;
 }
 
 fn main() -> own unit traps {
   let ordinary = 1_i32 +wrap two;
+  let smaller = ineg.trap(ordinary);
   let made = Package<i32, one>(items: ordinary);
   set deref(made).items = ordinary;
   region 'r {
