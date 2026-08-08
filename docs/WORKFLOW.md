@@ -319,6 +319,17 @@ instead of restating them.
   no error from either. A scope estimate built on any of this propagates into a
   brief as fact: one such figure was off by more than an order of magnitude and
   nobody could reconstruct its basis afterwards.
+- **A test that never runs and a test that passes are indistinguishable by the
+  result line — only the count separates them.** Four tests appended after a
+  `__main__` guard were never collected and the suite still printed `OK`; what
+  caught it was the count sitting at 18 where 22 was expected. Whenever you add
+  tests, check that the reported count moved by the number you added. This
+  happened while building a check whose entire purpose was catching that family,
+  so being the person looking for it is no protection.
+- **Assert a limit rather than documenting it, where the limit is checkable.** A
+  documented limit decays silently as the thing around it changes; an asserted
+  one fails when it stops being true. When a check cannot see some class by
+  construction, write that inability as a test.
 - **Read exit codes from `$?` directly, never through a pipe.** `make check |
   tail` reports the status of `tail`; a red gate has been committed here that
   way. Write `make check; echo "exit=$?"`.
