@@ -285,3 +285,33 @@ specification or test change.
 - reason: the law amendment drafted at `governance/spec-evolution/stable-spec-filename-proposal.md` is approved — the active specification moves to the stable path `spec/kernel-spec.md`, edited directly on task branches, with the superseded bytes archived flat at `spec/kernel-spec-vN.md` at each activation. All eight mandatory amendments from the adversarial judgment are conditions of adoption: flat archive (no `spec/released/`), computed SHA-256 digest, chained `ACTIVE-SPEC:` approval record, landed-state archive-integrity gate in `make check`, two-path grammar verifier, linear activation only (no `-X ours`/`-X theirs` on the specification), archive-creates-or-fails, and the status word inside the approved bytes. The law text in `CLAUDE.md`/`AGENTS.md` and `docs/WORKFLOW.md` is amended so that the ARCHIVED versioned specifications remain absolutely immutable and hook-enforced, while the active file at the stable path is mutable by design with its integrity carried by the digest chain and the archive gate rather than by the filename.
 - boundary: the switchover rides the first small activation with no EBNF change (the approved ENT-5 loop-rule fix), never a standalone commit and never the FLOOR-5/v0.23 activation, which proceeds unchanged. Task 0039's prerequisites land and go green first.
 - evidence: owner instruction "批" (2026-08-07) after the drafted proposal and the four-lens adversarial judgment.
+
+## Activation chain
+
+One line per specification activation, in order, so the active identity is a
+recorded fact rather than a constant someone remembered to move. The format is
+exact: `ACTIVE-SPEC: <version> <sha256-installed> <sha256-superseded>`, with
+`-` where no earlier version was approved by exact bytes. `whitefoot-spec`
+parses these and refuses to build a specification whose installed bytes,
+version label, or predecessor disagree with the chain, so an activation that
+forgets a line, or writes the wrong digest into one, fails the gate.
+
+These lines add no approval. Every digest below is the exact-byte value the
+owner already approved in an entry above; the chain begins at v0.9 because
+that is where exact-byte approval began. A new activation appends its line in
+the same change that installs the specification.
+
+ACTIVE-SPEC: v0.9 bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68 -
+ACTIVE-SPEC: v0.10 71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9 bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68
+ACTIVE-SPEC: v0.11 050e110c8c5eb3143c9d3f54968a9df9125f1d4b5991f527b8a15938a4292fbc 71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9
+ACTIVE-SPEC: v0.12 e2d5566379891454c090e037bd45c5f1a8df90ba23506a0f83ce9aaa03b41463 050e110c8c5eb3143c9d3f54968a9df9125f1d4b5991f527b8a15938a4292fbc
+ACTIVE-SPEC: v0.13 ed93cc43a6a224725f813b1adfc4c19fbb64dc5ab294b25d924392d2959b77cd e2d5566379891454c090e037bd45c5f1a8df90ba23506a0f83ce9aaa03b41463
+ACTIVE-SPEC: v0.14 31c09313363304f405c8db1191d1982e3625b86788bf953ec3bb169648466e9f ed93cc43a6a224725f813b1adfc4c19fbb64dc5ab294b25d924392d2959b77cd
+ACTIVE-SPEC: v0.15 3c924095b2c21f123b7137556f72dbe87275838682c1965e6caf399dd24d13bd 31c09313363304f405c8db1191d1982e3625b86788bf953ec3bb169648466e9f
+ACTIVE-SPEC: v0.16 f93264fb4df6994a408e1327c6e8643c34b4aea55fba4b1a0b3dab3501ceb942 3c924095b2c21f123b7137556f72dbe87275838682c1965e6caf399dd24d13bd
+ACTIVE-SPEC: v0.17 19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93 f93264fb4df6994a408e1327c6e8643c34b4aea55fba4b1a0b3dab3501ceb942
+ACTIVE-SPEC: v0.18 307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28 19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93
+ACTIVE-SPEC: v0.19 01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398 307a758e41366531c71dc8736bddc466054dbeba37f6e6db13f0859787711a28
+ACTIVE-SPEC: v0.20 b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1 01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398
+ACTIVE-SPEC: v0.21 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1
+ACTIVE-SPEC: v0.22 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f
