@@ -2,8 +2,18 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08, rounds 9 through 12, two of them on
-  parallel branches now integrated here. Round 9's blocker is **closed**: the
+- **Status:** `IN PROGRESS` — 2026-08-08, rounds 9 through 14. Rounds 13 and 14
+  are M3c on `task/0038-m3c-inline-fixtures`, awaiting integration: the inline
+  fixtures are migrated, `slice_of` no longer demands the arguments A1 deletes,
+  and the six ruled residuals are carried out. The library gate is **568 passed
+  / 7 failed**, from 319 / 253 at M3c's base, and the adapter is **383 / 5 /
+  14**, with nothing newly failing at any step. `slice_of` cleared both
+  `fn1-pos-returned-slice-*-run` as well, confirming the shared root by
+  measurement. Of the seven remaining, two are activation-gated and five are
+  owned elsewhere — see "Round 14"'s closing table. One new finding:
+  `slice_of_keeps_nonflat_element_arguments_in_the_op1_domain` has no v0.23
+  expression, with four probes and their controls recorded.
+- **Status (rounds 9–12):** Round 9's blocker is **closed**: the
   requires-block `let` has a legal v0.23 form again, the same pass admits the
   infix spelling [FN-8] requires (`8838150`, `8ccd4d8`, `7e80d92`), and round
   10's copy-gate finding is **closed** by judging [FN-8]'s "own copy value" on
@@ -2336,6 +2346,164 @@ derivation. That is a one-place change, but where the assertion sits and which
 diagnostic wins are the lead's call, and the ruling as written does not
 authorize it. Recommend it as the next slice.
 
+
+## Round 14 (exec-0038n, 2026-08-08) — the rebase, `slice_of`, and the six ruled restatements
+
+Five commits on top of round 13, on `task/0038-m3c-inline-fixtures` rebased
+onto the trunk. The library gate goes **537 passed / 36 failed → 568 / 7** and
+the adapter **381/7/14 → 383/5/14**, with **nothing newly failing at any
+step**. Exit codes read from `$?`, never through a pipe.
+
+### The rebase, and the one prediction it falsified
+
+`8dc6a50` was verified reachable from the trunk and **not** reachable from
+round 13's base before it was trusted. Two conflicts, both resolved by keeping
+both sides: `migrate/main.rs` (the conformance unit's `mod manifest` beside
+this unit's `mod embedded`) and the record's status block.
+
+Post-rebase, before any work: lib **537 / 36**, set diff **3 cleared, 0
+arrived**. The prediction was that all fourteen branch-scope tests would
+clear. **Ten did not** — and they had not stayed put, they *moved*:
+
+```
+Resolution [TYPE-6] DeclarationCollision  ->  Semantics [FN-2] InvalidOperation
+at tests/programs/wfgrep.wf:196
+  let view = slice_of(&'report_prefix error_prefix);
+```
+
+`wfgrep.wf` uses `slice_of` twelve times, so those ten were **stacked behind
+both defects** and could never have cleared from the scope fix alone. The two
+diagnoses are the same defect; round 13's accounting of which tests it blocked
+was wrong, and the correction is that `slice_of` blocked **23**, not 13.
+
+**Two mechanisms for one idea now sit side by side** and should be looked at
+together at some point: `manifest::SurfaceFormCases` holds back a conformance
+case whose subject is its byte format, and `embedded.rs`'s `migrate: keep`
+marker holds back a Rust-embedded fixture whose subject is its surface form.
+They key off different things — a case list versus a comment at the site — so
+this is not duplicated logic, but it is one concept with two homes.
+
+### `b36f7a8` — `slice_of` derives what it used to demand
+
+[TYPE-5] names the retained-argument class exactly and `slice_of` is not a
+member. `check_slice_of` required a `Targs` node and cited FN-2 when it was
+absent — which [DIAG-1] reserves for a user-generic call and never for a table
+operation.
+
+**The fix is a deletion, not new machinery.** Both facts were already derived
+and then merely re-checked against the written form: the region was read at
+`borrow_region` and compared for equality, the element was read from
+`check_indexed_place` and compared for equality. Removing the written
+arguments removes both comparisons. Each fact now has one source instead of
+two that had to agree. A written argument becomes the rejection citing OP-1,
+the footing `derivation.rs` already pins for `imin`.
+
+| | before | after |
+|---|---|---|
+| `slice_of(&'v data)` | FN-2 | **exit 0** |
+| `slice_of<'v, u8>(&'v data)` | exit 0 | **OP-1** |
+| `len(data)` | exit 0 | exit 0 — de-argumenting was never broken in general |
+
+**The shared-root hypothesis is confirmed by measurement, not inherited.** The
+adapter's `fn1-pos-returned-slice-inputs-run` and
+`fn1-pos-returned-slice-const-run` both clear from this one fix, nothing newly
+failing: **381/7/14 → 383/5/14**. Two independent routes — fixture migration
+and the conformance lane — reached one cause and one fix closes both.
+
+**It did not resolve the FN-2/[DIAG-1] question and did not touch it.**
+`fn2-neg-eeq-implicit-type` still fails, so the general citation-by-callee-class
+rule is unchanged; this removed one wrong FN-2 *site*, not the rule.
+
+`consuming_a_projection_respects_loans_of_residual_fields` and its four
+`format!` templates landed here, as ruled — a fixture migration with no
+passing test to verify it is what this batch has been avoiding.
+
+**One limitation, and it costs a test.** The derived-element OP-1 branch could
+not be shown reachable. Four probes — a non-copy struct element, a generic
+element, a nested array element, and an `array_new` of a struct — are each
+rejected earlier by TYPE-2 or OP-1 on the array type itself, and **in every
+case a control with the `slice_of` line deleted fails identically**. So
+`array<T,N>` and `buffer<T>` already require a flat `T` and the element
+reaching `slice_of` is flat by construction. The branch is kept because a
+source rejection is the correct outcome if it ever is reachable, but it
+carries no test, and `slice_of_keeps_nonflat_element_arguments_in_the_op1_domain`
+is **left failing and reported** rather than restated onto a violation that
+cannot be expressed. The first fixture attempted for it passed for the wrong
+reason until the control caught it.
+
+### `b6e89d5`, `b21285e`, `b7cdcfb` — the six ruled restatements
+
+No expectation is edited anywhere in this group.
+
+**(d1) `operation_call_shapes_keep_their_exact_rule_owners`.** Both shapes were
+carried on `iadd.wrap`, which [OP-7] moved out of the callee-name inventory, so
+it reaches OP-1 at resolution before either shape can be judged. Measured
+which shapes still earn the recorded rules rather than guessing: `cvt(value)`
+— a retained-argument row with its mandatory arguments absent — earns FN-2
+InvalidOperation, and `imin(left: …, right: …)` earns GRAM-11
+InvalidNamedArguments. Both rows keep their callee name. The FN-2 assertion is
+one of the witnesses that must move if the citation question is settled the
+other way, which is what a second witness is for.
+
+**(d4) `region_bearing_buffer_content_rejects_under_stor5`.** Its first
+assertion — the written `buffer<slice>` parameter type — was never affected and
+is untouched. Its second carried the violation in `buffer_new`'s written
+element, which A1 deletes [OP-9]; a region-bearing fill is then caught by the
+flat-element requirement citing OP-1 before STOR-5 is reached. **[STOR-5] names
+`box_new` and `arena_new` — not `buffer_new` — as the derived-content path it
+owns**, and `box_new` derives its content from its operand [STOR-2, OP-2], so
+the assertion moves there. Observed: `box_new(move value)` over a slice reports
+`Semantics/Source [STOR-5]` at the operand atom the rule names, same
+`RegionBearingStorage` kind and mechanical fix. Worth a ruling of its own: for
+`buffer_new` the concern is now enforced by OP-1 rather than STOR-5, which is a
+stricter gate but a different rule than the one recorded.
+
+**(e1) `complete_role_fixture_…`.** `TypeRegion` came only from a deleted `let`
+annotation and now rides a signature-borne `slice<'v, i32>`, the position
+[TYPE-5] keeps written. **Fixing that exposed a second loss the first was
+masking**: `OperationCallee` is the OPNAME form specifically — `roles.rs:468`
+keys it on `TerminalPredicate::OperationName` — and the fixture's only
+operation call was `iadd.wrap`, a respelled row that produces no lexical use
+at all. It now rides `ineg.trap`, a dotted row that keeps its name. Both losses
+were found by running the test, not by reading it.
+
+**(e2) `system_lookalike_…`.** `LexicalUseRole::Type` for `HostString` came
+only from `let s: own HostString = …`; the `Construct` use survives the
+annotation deletion and the `Type` use does not. A signature produces it —
+`fn keeper(value: own HostString)` — so **the escape hatch was not needed and
+the role model is intact**.
+
+**(f) the two `OPERATION_FAMILIES` tests.** Re-scoped into two properties.
+`every_distinct_op1_family_resolves_through_the_normal_callee_path` runs over
+the families that keep a name and asserts the split is exactly 83 − 20, so a
+family silently crossing halves cannot pass unnoticed; its identity check is
+against each family's own position in the inventory rather than the order it
+is written in, so filtering the source cannot make the ordinals agree by
+accident. `a_respelled_family_produces_no_lexical_use_at_all` is new and states
+the property the respelling introduced, with a named row in the same function
+as its control so that the two infix rows being absent is the property and not
+an empty search. `dotless_and_dotted_operations_…` keeps its subject — one
+dotted, one dotless — on `ineg.trap` and `imin`.
+
+### The seven that remain, each owned elsewhere
+
+| test | owner |
+|---|---|
+| `driver::…::compiler_independent_negative_cases_…` | (d2) — symptom of the FN-2/[DIAG-1] discrepancy |
+| `semantic::…::result_construction_…` | (d3) — folded into `x-give-result-aggregate` |
+| `semantic::…::borrows::general_borrows_…` | (c) — `Unsupported { RegionsAndBorrows }` |
+| `semantic::…::slices::slice_value_matches_…` | (c) — `Unsupported { OwnershipJoin }`, and it is hiding a negative |
+| `semantic::…::slices::slice_of_keeps_nonflat_element_arguments_…` | this round's reported finding: the violation has no v0.23 expression |
+| `spec::tests` ×2 | activation-gated by the definition of done |
+
+### Validation
+
+- `make -C compiler check`: **exit 2**, lib **568 passed / 7 failed**, from
+  537 / 36 at the rebase and 319 / 253 at round 13's base.
+- Adapter **383 / 5 / 14**, identical set before and after the six
+  restatements; no conformance case or manifest row was touched at any point.
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt --check` exit 0.
+- Nothing newly failing at any of the five steps.
 ## Round 13 (exec-0038n, 2026-08-08) — M3c: the compiler's inline fixtures
 
 Twelve commits on `task/0038-m3c-inline-fixtures`, based on `d89af13`
