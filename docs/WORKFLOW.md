@@ -468,8 +468,14 @@ explicit owner reordering names the semantic gap it unlocks.
 
    ```sh
    cargo run --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
+     spec/kernel-spec-vACTIVE.md \
      governance/spec-evolution/kernel-spec-vN-candidate.md
    ```
+
+   Both paths are read at run time, and the first is the baseline the candidate
+   must preserve. Name the active specification explicitly: the verifier does
+   not compare against a compiled-in copy, so it keeps saying something after
+   the candidate is installed.
 
    When performance is part of the selection ground, produce the cheapest
    non-authoritative feasibility evidence available before exact approval. If

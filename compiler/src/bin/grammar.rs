@@ -4,11 +4,10 @@ use std::fmt;
 use std::path::Path;
 
 use whitefoot::{
-    ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ALL_FIXED_TERMINALS,
-    ALL_TERMINAL_PREDICATES, GrammarNodeKind, LexLimits, LexOutcome, LookaheadPredicate,
-    ParseLimits, ParseOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, TerminalPredicate, classify_terminals, diagnostic_terminal_order,
-    grammar_node, lex, parse, productions,
+    ACTIVE_KERNEL_SPEC_HASH, ALL_FIXED_TERMINALS, ALL_TERMINAL_PREDICATES, GrammarNodeKind,
+    LexLimits, LexOutcome, LookaheadPredicate, ParseLimits, ParseOutcome, SourceBundle,
+    SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, TerminalPredicate,
+    classify_terminals, diagnostic_terminal_order, grammar_node, lex, parse, productions,
 };
 
 /// The unlabelled entry and the canonical complete command-entry header
@@ -24,10 +23,12 @@ const FRONTEND_SECTIONS: [(&str, &str); 3] = [
     ("[EFF-1]", "[EFF-2]"),
 ];
 
+const USAGE: &str = "usage: whitefoot-grammar PATH-TO-BASELINE PATH-TO-CANDIDATE";
+
 #[derive(Debug)]
 enum VerifyError {
     Invocation(&'static str),
-    Read(std::io::Error),
+    Read(String, std::io::Error),
     NonUtf8,
     MissingSection(&'static str),
     ChangedFrontendContract,
@@ -39,13 +40,16 @@ impl fmt::Display for VerifyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Invocation(message) => formatter.write_str(message),
-            Self::Read(error) => write!(formatter, "cannot read candidate: {error}"),
-            Self::NonUtf8 => formatter.write_str("candidate is not UTF-8"),
+            Self::Read(path, error) => write!(formatter, "cannot read {path}: {error}"),
+            Self::NonUtf8 => formatter.write_str("a specification is not UTF-8"),
             Self::MissingSection(marker) => {
-                write!(formatter, "candidate is missing frontend section {marker}")
+                write!(
+                    formatter,
+                    "a specification is missing frontend section {marker}"
+                )
             }
             Self::ChangedFrontendContract => formatter.write_str(
-                "candidate changes the lexer or source grammar of the active specification; a structural change must first extend the native grammar path",
+                "candidate changes the lexer or source grammar of the baseline; a structural change must first extend the native grammar path",
             ),
             Self::InvalidCompilerGrammar(message) => {
                 write!(formatter, "compiler grammar data is inconsistent: {message}")
@@ -69,21 +73,24 @@ fn main() {
 fn run() -> Result<(), VerifyError> {
     let mut arguments = std::env::args_os();
     let _program = arguments.next();
-    let candidate = arguments.next().ok_or(VerifyError::Invocation(
-        "usage: whitefoot-grammar PATH-TO-CANDIDATE",
-    ))?;
-    if arguments.next().is_some() {
-        return Err(VerifyError::Invocation(
-            "usage: whitefoot-grammar PATH-TO-CANDIDATE",
-        ));
-    }
-    let bytes = std::fs::read(Path::new(&candidate)).map_err(VerifyError::Read)?;
-    let report = verify_candidate(&bytes)?;
+    let (Some(baseline), Some(candidate), None) =
+        (arguments.next(), arguments.next(), arguments.next())
+    else {
+        return Err(VerifyError::Invocation(USAGE));
+    };
+    let baseline = read_specification(&baseline)?;
+    let candidate = read_specification(&candidate)?;
+    let report = verify_candidate(&baseline, &candidate)?;
     println!(
         "grammar-preserving candidate verified by the active compiler: {} productions, {} decisions, {} terminal predicates",
         report.productions, report.decisions, report.terminals
     );
     Ok(())
+}
+
+fn read_specification(path: &std::ffi::OsStr) -> Result<Vec<u8>, VerifyError> {
+    let path = Path::new(path);
+    std::fs::read(path).map_err(|error| VerifyError::Read(path.display().to_string(), error))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,8 +100,15 @@ struct VerifyReport {
     terminals: usize,
 }
 
-fn verify_candidate(candidate: &[u8]) -> Result<VerifyReport, VerifyError> {
-    if frontend_contract(candidate)? != frontend_contract(ACTIVE_KERNEL_SPEC_BYTES)? {
+/// Check that `candidate` keeps `baseline`'s frontend contract, then that the
+/// compiler's own grammar data is consistent and parses.
+///
+/// Both specifications are arguments because the interesting comparison is
+/// between two files chosen at the call site. Comparing against the compiled-in
+/// active bytes made the check vacuous the moment a candidate was installed as
+/// the active specification, which is exactly when the workflow reruns it.
+fn verify_candidate(baseline: &[u8], candidate: &[u8]) -> Result<VerifyReport, VerifyError> {
+    if frontend_contract(candidate)? != frontend_contract(baseline)? {
         return Err(VerifyError::ChangedFrontendContract);
     }
     let report = verify_compiler_grammar()?;
@@ -334,22 +348,48 @@ fn run_parser_probe(probe: &[u8]) -> Result<(), VerifyError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ACTIVE_KERNEL_SPEC_BYTES, VerifyError, verify_candidate};
+    use super::{VerifyError, run_parser_probes, verify_candidate, verify_compiler_grammar};
+    use whitefoot::ACTIVE_KERNEL_SPEC_BYTES;
 
+    /// The compiler's own grammar data, checked directly. This used to run
+    /// through `verify_candidate(ACTIVE, ACTIVE)`, whose contract comparison
+    /// could not fail; the counts and the probes were always the real content.
     #[test]
-    fn exact_active_frontend_contract_verifies() {
-        let report =
-            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES).expect("active grammar must verify");
+    fn active_compiler_grammar_is_consistent() {
+        let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
         assert_eq!(report.productions, 65);
         assert_eq!(report.decisions, 75);
         assert_eq!(report.terminals, 76);
+        run_parser_probes().expect("the compiler must parse its own probes");
     }
 
     #[test]
     fn prose_outside_the_frontend_contract_may_change() {
         let mut proposal = ACTIVE_KERNEL_SPEC_BYTES.to_vec();
         proposal.extend_from_slice(b"\nSemantic-only proposal text.\n");
-        verify_candidate(&proposal).expect("semantic-only text must preserve the grammar");
+        verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, &proposal)
+            .expect("semantic-only text must preserve the grammar");
+    }
+
+    /// The comparison is between the two arguments, not against the compiled-in
+    /// active bytes. Two files sharing a frontend contract the active
+    /// specification does not have must verify against each other, and the
+    /// active specification must then fail against that baseline.
+    #[test]
+    fn the_baseline_argument_is_the_one_compared() {
+        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
+        let changed = active.replacen(
+            "return_stmt := \"return\" expr \";\"",
+            "return_stmt := \"return\" atom \";\"",
+            1,
+        );
+        assert_ne!(changed, active);
+        verify_candidate(changed.as_bytes(), changed.as_bytes())
+            .expect("a candidate matching its own baseline must verify");
+        assert!(matches!(
+            verify_candidate(changed.as_bytes(), ACTIVE_KERNEL_SPEC_BYTES),
+            Err(VerifyError::ChangedFrontendContract)
+        ));
     }
 
     #[test]
@@ -361,7 +401,7 @@ mod tests {
             1,
         );
         assert!(matches!(
-            verify_candidate(changed.as_bytes()),
+            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)
         ));
     }
@@ -376,7 +416,7 @@ mod tests {
         );
         assert_ne!(changed, active);
         assert!(matches!(
-            verify_candidate(changed.as_bytes()),
+            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)
         ));
     }
@@ -391,7 +431,7 @@ mod tests {
         );
         assert_ne!(changed, active);
         assert!(matches!(
-            verify_candidate(changed.as_bytes()),
+            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)
         ));
     }
@@ -405,7 +445,7 @@ mod tests {
             1,
         );
         assert!(matches!(
-            verify_candidate(changed.as_bytes()),
+            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)
         ));
     }
@@ -419,7 +459,7 @@ mod tests {
             1,
         );
         assert!(matches!(
-            verify_candidate(changed.as_bytes()),
+            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, changed.as_bytes()),
             Err(VerifyError::ChangedFrontendContract)
         ));
     }

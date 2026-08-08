@@ -34,13 +34,16 @@ proposal, run the native verifier through this compiler:
 
 ```sh
 cargo run --bin whitefoot-grammar -- \
+  ../spec/kernel-spec-vACTIVE.md \
   ../governance/spec-evolution/kernel-spec-vN-candidate.md
 ```
 
-It verifies that a grammar-preserving proposal keeps the active
+It verifies that a grammar-preserving proposal keeps the baseline
 specification's complete canonical-format, lexer, and grammar contract
 byte-for-byte, checks the committed terminal inventory and every strong-LL(2)
-decision, and runs the real lexer and parser over the active tables. A
+decision, and runs the real lexer and parser over the active tables. Both
+specifications are arguments read at run time: comparing against a compiled-in
+copy of the active bytes said nothing once the candidate became that copy. A
 proposal that changes that frontend contract fails closed: a structural change
 must first extend this same native path rather than reviving an independent
 grammar engine.
