@@ -4,7 +4,9 @@ use super::super::{
     CanonicalCompilerFailure, CanonicalLimit, CanonicalLimits, CanonicalLocation, CanonicalOutcome,
     CanonicalResourceFailure, FinalizeOutcome, audit_canonical, finalize,
 };
-use super::support::{CANONICAL_LIMITS, FINALIZE_LIMITS, reaches_canonical_syntax, with_parsed};
+use super::support::{
+    CANONICAL_LIMITS, FINALIZE_LIMITS, reaches_canonical_syntax, rendered_bytes, with_parsed,
+};
 
 fn audit_source(
     source: &[u8],
@@ -280,8 +282,12 @@ fn canonical_audit_resource_edges_are_explicit_and_deterministic() {
 }
 
 /// Asserts that a source is canonical and that no single-byte trivia edit is.
+///
+/// The renderer is held to the same fixtures: canonical bytes must render to
+/// themselves, so every layout rule pinned here is pinned in both directions.
 fn only_these_trivia_bytes_render(canonical: &[u8]) {
     assert!(reaches_canonical_syntax(canonical));
+    assert_eq!(rendered_bytes(canonical).as_deref(), Some(canonical));
     let trivia_positions: Vec<_> = canonical
         .iter()
         .enumerate()
@@ -304,6 +310,18 @@ fn only_these_trivia_bytes_render(canonical: &[u8]) {
             b' '
         };
         assert!(!reaches_canonical_syntax(&replaced));
+
+        // Whatever a mutation derives, rendering it lands on canonical bytes
+        // and stays there. A mutation that keeps the token stream renders back
+        // to `canonical`; one that changes it renders that other program. The
+        // fixed point is what holds for both, so it is what is asserted.
+        for mutation in [&removed, &duplicated, &replaced] {
+            let Some(rendered) = rendered_bytes(mutation) else {
+                continue;
+            };
+            assert!(reaches_canonical_syntax(&rendered));
+            assert_eq!(rendered_bytes(&rendered).as_ref(), Some(&rendered));
+        }
     }
 }
 
@@ -327,6 +345,67 @@ fn the_command_entry_header_renders_from_form2_without_amendment() {
     // mutation sweep is the reject side: no other trivia spelling renders.
     assert!(COMMAND_ENTRY.starts_with(COMMAND_ENTRY_HEADER));
     only_these_trivia_bytes_render(COMMAND_ENTRY);
+}
+
+/// The property the corpus migration rests on: a transform may produce any
+/// layout it likes as long as the bytes parse, because rendering makes them
+/// canonical. Each pair below holds the token stream fixed and varies only
+/// trivia, so the rendered bytes must be the canonical spelling of that same
+/// program rather than some other one.
+#[test]
+fn rendering_normalizes_any_parseable_layout_onto_canonical_bytes() {
+    for (sloppy, canonical) in [
+        // No trivia at all where FORM-2 requires a break.
+        (
+            b"fn main() -> own unit pure {}".as_slice(),
+            b"fn main() -> own unit pure {\n}\n".as_slice(),
+        ),
+        // Leading trivia, which no canonical source carries.
+        (
+            b" fn main() -> own unit pure {\n}\n".as_slice(),
+            b"fn main() -> own unit pure {\n}\n".as_slice(),
+        ),
+        // A missing final newline.
+        (
+            b"fn main() -> own unit pure {\n}".as_slice(),
+            b"fn main() -> own unit pure {\n}\n".as_slice(),
+        ),
+        // Wrong indentation and a run of blank lines inside a body.
+        (
+            b"fn main() -> own unit pure {\n\n\n        let value = 2_i32;\n   return unit;\n}\n"
+                .as_slice(),
+            b"fn main() -> own unit pure {\n  let value = 2_i32;\n  return unit;\n}\n".as_slice(),
+        ),
+        // Two top-level items run together; FORM-2 separates them by a blank
+        // line, which no amount of local spacing repair would supply.
+        (
+            b"const first: i32 = 1_i32;\nconst second: i32 = 2_i32;\n".as_slice(),
+            b"const first: i32 = 1_i32;\n\nconst second: i32 = 2_i32;\n".as_slice(),
+        ),
+        // The join line, emitted rather than recognized. A migration writing
+        // `if`/`else` from a `match` produces the close and the `else` with no
+        // idea they share a line; the renderer is what puts them there.
+        (
+            b"fn main() -> own unit traps {\nlet flag = True();\nif flag {\ncheck flag else trap \"then\";\n}\nelse\n{\ncheck flag else trap \"else\";\n}\nreturn unit;\n}\n".as_slice(),
+            b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  } else {\n    check flag else trap \"else\";\n  }\n  return unit;\n}\n".as_slice(),
+        ),
+        // A flattened `else if` chain, likewise joined by the renderer.
+        (
+            b"fn main() -> own unit traps {\nlet flag = True();\nif flag {\ncheck flag else trap \"a\";\n} else if flag {\ncheck flag else trap \"b\";\n} else {\ncheck flag else trap \"c\";\n}\nreturn unit;\n}\n".as_slice(),
+            b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"a\";\n  } else if flag {\n    check flag else trap \"b\";\n  } else {\n    check flag else trap \"c\";\n  }\n  return unit;\n}\n".as_slice(),
+        ),
+    ] {
+        assert!(!reaches_canonical_syntax(sloppy));
+        assert_eq!(rendered_bytes(sloppy).as_deref(), Some(canonical));
+        assert!(reaches_canonical_syntax(canonical));
+    }
+}
+
+/// A source holding no item is one newline, from the emitter side too.
+#[test]
+fn an_item_free_source_renders_as_one_newline() {
+    assert_eq!(rendered_bytes(b"").as_deref(), Some(b"\n".as_slice()));
+    assert_eq!(rendered_bytes(b"\n\n\n").as_deref(), Some(b"\n".as_slice()));
 }
 
 /// FORM-2's join line. `if_stmt` and `value_if` are the only productions

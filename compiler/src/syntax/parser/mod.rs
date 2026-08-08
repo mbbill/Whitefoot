@@ -9,7 +9,8 @@ pub use finalize::{
     BundleSourceExtent, CanonicalCompilerFailure, CanonicalIssue, CanonicalLimit, CanonicalLimits,
     CanonicalLocation, CanonicalOutcome, CanonicalResourceFailure, CanonicalStorage,
     CanonicalSyntaxUnit, FinalizeCompilerFailure, FinalizeLimit, FinalizeLimits, FinalizeOutcome,
-    FinalizeResourceFailure, FinalizeStorage, FinalizedBundle, NodePath, audit_canonical, finalize,
+    FinalizeResourceFailure, FinalizeStorage, FinalizedBundle, NodePath, RenderOutcome,
+    RenderedSource, audit_canonical, finalize, render_canonical,
 };
 pub use outcome::{
     ExpectedTerminals, ParseCompilerFailure, ParseInvocationFailure, ParseLimit, ParseLimits,

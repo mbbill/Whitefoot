@@ -79,6 +79,49 @@ pub(super) fn source_offsets(classified: &ClassifiedBundle<'_, '_>) -> Vec<usize
     classified.source_offsets.clone()
 }
 
+/// Renders one source's canonical bytes, or `None` when it reaches no tree.
+///
+/// Rendering is defined on any source that parses, canonical or not, which is
+/// what makes it usable for migration: the input need only be well-formed.
+pub(super) fn rendered_bytes(source: &[u8]) -> Option<Vec<u8>> {
+    let inputs = [SourceInput::new("generated.wf", source)];
+    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+        panic!("generated source envelope must remain valid");
+    };
+    let lexed = match lex(&bundle, LEX_LIMITS) {
+        LexOutcome::Complete(lexed) => lexed,
+        LexOutcome::SourceIssue(_) => return None,
+        other => panic!("generated source must not hit a non-source lex outcome: {other:?}"),
+    };
+    let classified = match classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) {
+        TerminalOutcome::Complete(classified) => classified,
+        TerminalOutcome::SourceIssue(_) => return None,
+        other => panic!("generated source must not hit a non-source terminal outcome: {other:?}"),
+    };
+    let parsed = match parse(&classified, PARSE_LIMITS) {
+        ParseOutcome::Complete(parsed) => parsed,
+        ParseOutcome::SourceIssue(_) => return None,
+        other => panic!("generated source must not hit a non-source parse outcome: {other:?}"),
+    };
+    let finalized = match super::super::finalize(parsed, FINALIZE_LIMITS) {
+        super::super::FinalizeOutcome::Complete(finalized) => finalized,
+        other => panic!("trusted generated derivation must finalize: {other:?}"),
+    };
+    match super::super::render_canonical(&finalized, CANONICAL_LIMITS) {
+        super::super::RenderOutcome::Complete(sources) => {
+            let [rendered] = <[_; 1]>::try_from(sources).expect("one input renders one source");
+            Some(rendered.bytes)
+        }
+        other => panic!("a finalized tree must render: {other:?}"),
+    }
+}
+
 pub(super) fn reaches_canonical_syntax(source: &[u8]) -> bool {
     let inputs = [SourceInput::new("generated.wf", source)];
     let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {

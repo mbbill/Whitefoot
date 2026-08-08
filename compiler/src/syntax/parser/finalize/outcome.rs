@@ -279,6 +279,8 @@ pub enum CanonicalStorage {
     Gaps,
     /// One diagnostic node path.
     NodePath,
+    /// Rendered canonical bytes for one source.
+    RenderedSource,
 }
 
 /// A canonical-source audit resource failure, never a source verdict.
@@ -354,6 +356,31 @@ impl<'classified, 'lexed, 'source> CanonicalSyntaxUnit<'classified, 'lexed, 'sou
     pub fn root_extent(&self) -> &[BundleSourceExtent] {
         &self.finalized.topology.source_extents
     }
+}
+
+/// One source's exact canonical bytes, as the renderer emits them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RenderedSource {
+    /// Bundle identity of the rendered source.
+    pub source: SourceId,
+    /// Exact FORM-2 bytes the finalized tree denotes.
+    pub bytes: Vec<u8>,
+}
+
+/// Failure-atomic result of tree-driven FORM-2 rendering.
+///
+/// Rendering has no source verdict. The auditor asks whether given bytes are
+/// canonical and can answer no; the renderer is handed a finalized tree and
+/// emits the bytes that tree denotes, so it either produces them or hits a
+/// ceiling or a broken invariant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RenderOutcome {
+    /// Exact canonical bytes for every source in bundle order.
+    Complete(Vec<RenderedSource>),
+    /// Explicit ceilings or host storage prevented complete rendering.
+    ResourceFailure(CanonicalResourceFailure),
+    /// A trusted finalized-tree or renderer invariant failed.
+    CompilerFailure(CanonicalCompilerFailure),
 }
 
 /// Failure-atomic result of the tree-driven FORM-2 audit.

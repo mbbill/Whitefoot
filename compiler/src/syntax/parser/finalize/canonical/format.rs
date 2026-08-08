@@ -265,6 +265,60 @@ pub(super) fn bytes_match(
     Ok(actual.iter().copied().eq(expected))
 }
 
+/// The exact canonical bytes of one terminal gap: newlines, then spaces.
+///
+/// Every FORM-2 gap has this shape, so one value describes it completely. The
+/// auditor compares source bytes against it and the renderer emits it, which is
+/// what keeps the two from drifting: there is one rule, not two that agree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct CanonicalGap {
+    newlines: usize,
+    spaces: usize,
+}
+
+impl CanonicalGap {
+    /// Yields the gap's bytes in order.
+    pub(super) fn bytes(self) -> impl Iterator<Item = u8> {
+        core::iter::repeat_n(b'\n', self.newlines).chain(core::iter::repeat_n(b' ', self.spaces))
+    }
+
+    /// Returns the gap's byte length.
+    pub(super) fn len(self) -> Result<usize, Stop> {
+        self.newlines
+            .checked_add(self.spaces)
+            .ok_or_else(|| CanonicalCompilerFailure::CounterOverflow.into())
+    }
+}
+
+/// Computes the canonical gap a terminal boundary must carry.
+pub(super) fn canonical_gap(
+    style: GapStyle,
+    depth: u32,
+    left: Option<TerminalPredicate>,
+    right: Option<TerminalPredicate>,
+) -> Result<CanonicalGap, Stop> {
+    Ok(match style {
+        GapStyle::Inline => {
+            let space = matches!((left, right), (Some(left), Some(right)) if !left_attaches(left) && !right_attaches(right));
+            CanonicalGap {
+                newlines: 0,
+                spaces: usize::from(space),
+            }
+        }
+        GapStyle::Break => CanonicalGap {
+            newlines: 1,
+            spaces: usize::try_from(depth)
+                .ok()
+                .and_then(|value| value.checked_mul(2))
+                .ok_or(CanonicalCompilerFailure::CounterOverflow)?,
+        },
+        GapStyle::Blank => CanonicalGap {
+            newlines: 2,
+            spaces: 0,
+        },
+    })
+}
+
 pub(super) fn gap_matches(
     actual: &[u8],
     style: GapStyle,
@@ -273,40 +327,9 @@ pub(super) fn gap_matches(
     right: Option<TerminalPredicate>,
     work: &mut AuditWork,
 ) -> Result<(bool, u64), Stop> {
-    let (matches, expected_len) = match style {
-        GapStyle::Inline => {
-            let space = matches!((left, right), (Some(left), Some(right)) if !left_attaches(left) && !right_attaches(right));
-            let expected_len = usize::from(space);
-            (
-                bytes_match(
-                    actual,
-                    core::iter::once(b' ').take(expected_len),
-                    expected_len,
-                    work,
-                )?,
-                expected_len,
-            )
-        }
-        GapStyle::Break => {
-            let spaces = usize::try_from(depth)
-                .ok()
-                .and_then(|value| value.checked_mul(2))
-                .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
-            let length = spaces
-                .checked_add(1)
-                .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
-            (
-                bytes_match(
-                    actual,
-                    core::iter::once(b'\n').chain(core::iter::repeat_n(b' ', spaces)),
-                    length,
-                    work,
-                )?,
-                length,
-            )
-        }
-        GapStyle::Blank => (bytes_match(actual, (*b"\n\n").into_iter(), 2, work)?, 2),
-    };
+    let gap = canonical_gap(style, depth, left, right)?;
+    let expected_len = gap.len()?;
+    let matches = bytes_match(actual, gap.bytes(), expected_len, work)?;
     let expected_len =
         u64::try_from(expected_len).map_err(|_| CanonicalCompilerFailure::CounterOverflow)?;
     Ok((matches, expected_len))

@@ -1,4 +1,5 @@
 mod format;
+mod render;
 
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{ByteOffset, SourceId};
@@ -6,6 +7,7 @@ use crate::{ByteOffset, SourceId};
 use crate::syntax::parser::{DerivationElement, SyntaxCoordinate};
 
 use self::format::{GapStyle, build_gap_styles, bytes_match, gap_matches};
+pub use self::render::render_canonical;
 use super::outcome::{
     CanonicalCompilerFailure, CanonicalIssue, CanonicalLimit, CanonicalLimits, CanonicalLocation,
     CanonicalOutcome, CanonicalResourceFailure, CanonicalStorage, CanonicalSyntaxUnit,

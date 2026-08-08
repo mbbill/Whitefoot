@@ -27,8 +27,8 @@ pub use parser::{
     CanonicalSyntaxUnit, ExpectedTerminals, FinalizeCompilerFailure, FinalizeLimit, FinalizeLimits,
     FinalizeOutcome, FinalizeResourceFailure, FinalizeStorage, FinalizedBundle, NodePath,
     ParseCompilerFailure, ParseInvocationFailure, ParseLimit, ParseLimits, ParseOutcome,
-    ParseResourceFailure, ParseStorage, ParsedBundle, SyntaxCoordinate, SyntaxIssue, SyntaxRule,
-    audit_canonical, finalize, parse,
+    ParseResourceFailure, ParseStorage, ParsedBundle, RenderOutcome, RenderedSource,
+    SyntaxCoordinate, SyntaxIssue, SyntaxRule, audit_canonical, finalize, parse, render_canonical,
 };
 
 pub(crate) use entry_form::unit_program_kind;

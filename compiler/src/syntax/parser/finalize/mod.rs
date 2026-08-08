@@ -4,13 +4,14 @@ mod outcome;
 mod shape;
 pub(crate) mod topology;
 
-pub use canonical::audit_canonical;
+pub use canonical::{audit_canonical, render_canonical};
 pub use engine::finalize;
 pub use outcome::{
     BundleSourceExtent, CanonicalCompilerFailure, CanonicalIssue, CanonicalLimit, CanonicalLimits,
     CanonicalLocation, CanonicalOutcome, CanonicalResourceFailure, CanonicalStorage,
     CanonicalSyntaxUnit, FinalizeCompilerFailure, FinalizeLimit, FinalizeLimits, FinalizeOutcome,
-    FinalizeResourceFailure, FinalizeStorage, FinalizedBundle, NodePath,
+    FinalizeResourceFailure, FinalizeStorage, FinalizedBundle, NodePath, RenderOutcome,
+    RenderedSource,
 };
 
 #[cfg(test)]
