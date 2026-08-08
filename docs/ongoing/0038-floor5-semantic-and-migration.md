@@ -976,6 +976,44 @@ must rule on the 20: migrate them textually with no render, leave them at
 v0.22 spelling with a recorded reason, or restate each case against v0.23.
 The choice is a protected-evidence decision, not an executor's.
 
+### M3a, second half (landed `60476ef`) — and where the prelude class really is
+
+Three more classes: [OP-1]'s respells, the de-argumented rows, and the
+returned prelude constructors. Respelling **reorders** rather than renames —
+`iadd.wrap<i32>(x, y)` becomes `x +wrap y` — and [GRAM-9] is what makes that
+a textual transform at all, because the operands are atoms. Respelling is
+asked before de-argumenting, since it subsumes it for the rows it covers.
+
+**The round-5 brief put the prelude class in the wrong place, and the
+measurement says so.** It recorded that a constructor takes its arguments
+from the `let` annotation A3 deletes. Over the corpus that describes **1 of
+107** uses: **98 are returned**, 2 given, 2 passed as arguments. The
+arguments therefore come from the enclosing function's declared result type
+— which A3 does not delete, and which the pre-pass reads textually with no
+inference at all. The `let` rule alone wrote **1** constructor; adding the
+returned rule writes **99**.
+
+**First trustworthy per-class figures**, produced by the compiler's own
+lexer over the 400 corpus files that parse — every earlier figure in this
+batch, mine included, was a regex estimate:
+
+| Class | Measured | Brief |
+| --- | --- | --- |
+| A3 `let` annotations | **1992** | 2003 |
+| C1 respells | **886** | 897 (378 + 519) |
+| A1 argument lists | **691** | — |
+| prelude constructors written | **99** (0 left bare) | 101 of 103 |
+| files changed | 312 of 400 | — |
+
+The 691 and the 886 **reconcile the brief's 1588 written arguments**: 1577
+of them are deleted by these two classes together, because a respelled row
+carries its argument away with the call form it dissolves. That is a units
+mismatch in the old figure, not an error in it.
+
+Remaining: A4, the Bool matches. It is the one class that reshapes a tree
+rather than respelling tokens, so the renderer cannot rescue a mistake in
+it; the algorithm is the one already proven by hand on 105 inline fixtures.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the
