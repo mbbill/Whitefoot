@@ -2409,6 +2409,56 @@ authorize it. Recommend it as the next slice.
 
 
 
+## Round 21 (exec-0038n, 2026-08-08) — the rank check made unskippable
+
+One commit. Library **572 passed / 3 failed**, unchanged; coverage 128/128.
+
+### Part 1: GRAM-6's rank was correct
+
+Adding `Gram6` to the checked set **passes**. Its rank was right all along, so
+the omission was benign for this instance — but the hole was real, and a check
+that reports every rule verified while one is not is worse for that rule than
+no check at all, because it converts an unknown into a false assurance.
+
+### Part 2: the set is now walked from the enum
+
+The checked set comes from `next_in_definition_order`, an exhaustive match,
+rather than a hand-maintained array. There are now two exhaustive matches over
+the rules — that one and `definition_rank` — and the test makes them **check
+each other**: walking the chain must yield the ranks 0, 1, 2, … in order. A new
+variant does not compile until it appears in both, and appearing in both is
+exactly what being checked means.
+
+`definition_rank` is unchanged and stays `pub const fn`, because
+`borrows.rs` and `control/results.rs` use it in const assertions. The chain is
+a second ordered source for that reason rather than a replacement.
+
+**Measured both ways, because a check that cannot fail is the thing this slice
+exists to remove:**
+
+| deliberate break | result |
+|---|---|
+| `Sys2`'s rank changed 38 → 7 | test fails: "SYS-2 sits at chain position 38 but ranks 7" |
+| `Sys2` dropped from the chain | **compile error**: `non-exhaustive patterns: SemanticRule::Sys2 not covered` |
+
+The second is the guarantee in the compiler's own words.
+
+`FIRST` and `next_in_definition_order` are `#[cfg(test)]`: their only purpose is
+to make a check's set complete, and without the gate `-D warnings` fails the
+production build on dead code. The compiler's demand therefore arrives when the
+tests compile — inside `make check`, which is the gate that would catch a new
+variant either way. Stated rather than left implicit, because it is the one
+respect in which the guarantee is narrower than "any build".
+
+### One process note, since it cost a cycle
+
+Probing the check meant deliberately breaking the source and restoring it with
+`git checkout --`, which **also reverted an uncommitted improvement** made
+after the commit the probe restored to. The lint then failed for a reason
+unrelated to the probe. The habit that avoids it: commit the improvement
+*before* probing, not merely before the probe's revert — a restore is only as
+precise as the commit it restores to.
+
 ## Round 20 (exec-0038n, 2026-08-08) — SYS-2 made representable, and what the coverage metric actually counts
 
 One commit. Library **572 passed / 3 failed**, unchanged; adapter **386/2/13 →
