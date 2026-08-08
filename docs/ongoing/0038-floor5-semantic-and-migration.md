@@ -4394,3 +4394,85 @@ should stop being described as a pattern and start being described as the norm.
 
 Left to the lead: whether §1.3 gains it. No rule byte, no pass, and no
 diagnostic was changed in this round.
+
+## Round 27 (exec-uninfix, 2026-08-08) — three gaps closed, and a figure I attributed to myself that was never mine
+
+Two commits, `8e19e2f` and `561df37`, on `956a9f1`. Three additions; no existing
+case, row, or verdict touched.
+
+### The three, each a one-token differential with a compiling control
+
+| case | control | subject |
+|---|---|---|
+| `op1-neg-written-argument-on-deargumented-row` | `eeq(l, r)` over a tag-only enum → **exit 0** | `eeq<OneEq>(l, r)` → **OP-1** `InvalidOperation` |
+| `fn8-neg-requires-noncopy-cvt-local` | `cvt<u8, i64>` in a clause → **exit 0** | `cvt<u8, i8>` → **FN-8** `InvalidRequires` |
+| `fn2-neg-wrong-kind-instantiation-argument` | `pick<Held>(…)` → **exit 0** | `pick<4>(…)` → **FN-2** `TypeMismatch` |
+
+The masking the brief warned about is **measured, not assumed**: `eeq(l, r)` and
+`eeq<u32>(l, r)` over `u32` both reject OP-1 with the same kind, differing only
+in the coordinate's span. So a written-argument case built on operands the row
+rejects tests the domain violation instead, and the reasoning is in the case's
+doc where the next reader will meet it.
+
+The `cvt` pair is the one that documents something no other case does: same row
+family, same operand, one token varied, and the verdicts diverge **only** through
+the derived type's copy-ness. That is the gate reading the derived type rather
+than the row spelling, which is exactly what A3 left it no other way to do.
+
+### The correction: I attributed a coverage move to my own case, and it was not mine
+
+Round 24 says `fn8-neg-requires-move-operand` moved the negative-exercise count
+`-44 → -45`, and its commit message says so too. **Both are wrong**, and the
+lead repeated the claim back approvingly, so it had started to travel.
+
+Measured, by extracting the manifest at four revisions and diffing the negative
+rule sets:
+
+| revision | rows | distinct rules in the negative set |
+|---|---|---|
+| `ddd1255` (my compiler commit, no move case) | 402 | **44** |
+| `4555e61` (after adding the move case) | 403 | **45** |
+| `773b17b` (main's equivalent, **no** move case) | 402 | **45** |
+
+The rule that joined between `ddd1255` and `4555e61` was **SYS-2**, not FN-8 —
+and it joined on main's path too, from `009a54b` ("semantic: make SYS-2
+representable, cited, and negatively covered"), which reached my branch through
+the rebase in between. FN-8 already had **seven** reject carriers at `ddd1255`,
+so my case could not have moved the count under any reading.
+
+**What made it look causal was that the two changes rode the same rebase.** I
+compared a figure before my commit with a figure after it, and the interval
+contained someone else's work. The general form is the one the lead recorded
+this morning about extraction methods, in the time dimension: **a before/after
+around your own change is only evidence if nothing else landed in between.**
+
+### What the correction buys, which is more than it costs
+
+The three additions in this round move coverage by **exactly zero** — `128/128,
+[+109/-45]` measured on a detached worktree at `956a9f1` against this tree. That
+is not a defect in them. `neg` in `tests/conformance/runner.py` is a set of
+**rule ids**, so a rule with one negative cannot gain from another however much
+content it covers.
+
+So closing three genuine content-piece gaps changes nothing a reviewer reads,
+which **demonstrates** the packet's §1.1 instead of restating it. Had my
+attribution stood, §1.1 would have carried an example of the metric working.
+
+### Two hazards found while doing it, neither acted on
+
+**The OP-1 case is destroyed by `whitefoot-migrate` if it is ever re-run.** Shown
+rather than predicted: the tool rewrites `eeq<OneEq>(left, right)` to
+`eeq(left, right)` — the case's violation deleted, leaving a source that
+compiles clean and a case that passes while testing nothing. That is §1.2's
+"emptied" class reproduced live. The only hold-back mechanism for a `.wf` case
+keys on a `FORM-*` verdict (`migrate/manifest.rs`), and this case cites OP-1; the
+`migrate: keep` marker is Rust-embedded-fixture only. **General form: any
+negative case whose violation is a construct the migration deletes cannot
+survive the migration**, which is what emptied `fn2-pos-explicit-instantiation`
+and `type5-pos-explicit`. No mechanism proposed here; reported.
+
+**Two of the three new cases will read as false positives to task #38's sweep.**
+Their docs name the control — `cvt<u8, i64>` and `pick<Held>` — which the body
+deliberately does not contain, because naming the control is what makes a
+one-token differential legible. #38's tell is "a doc naming a construct its body
+lacks", and it cannot distinguish a stale reference from a deliberate one.
