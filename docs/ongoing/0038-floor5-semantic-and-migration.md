@@ -2406,6 +2406,134 @@ authorize it. Recommend it as the next slice.
 
 
 
+
+## Round 18 (exec-0038n, 2026-08-08) — the give/propagate positions, OWN-5's ordering, and the A3 sweep
+
+Three commits. The library gate goes **570 passed / 5 failed → 572 / 3** and the
+adapter **384/4/13 → 386/2/13**. Nothing newly failing, and no acceptance lost
+anywhere — measured rather than argued.
+
+### `59ee50e` — the tool learns the two positions it never had
+
+[TYPE-5] mandates written prelude-constructor arguments in **every** position;
+the tool wrote them in two, an annotated `let` and a `return`. Constructors in a
+`give` or a `propagate` were therefore left bare by the migration and are now
+illegal. Fixing the two live sites without teaching the tool would leave a
+re-run to re-break them, which is why both land together.
+
+The two positions are not the same rule:
+
+- A **`give`** inside a value initializer takes exactly what a directly assigned
+  constructor takes — the binder's annotation is the delivered type. The direct
+  rule missed it only because the constructor sits inside an arm rather than
+  after the `=`.
+- A **`propagate`** is the one position whose arguments come from two places.
+  `let x: own T = propagate Err(error: e);` in a function returning
+  `Result<_, E>` needs `Err<T, E>`: the Ok half from the annotation, the error
+  half from the declared result. Neither source alone is enough, which is why
+  `result_type` is now threaded into `annotated_let` beside its existing use.
+
+Verified against the **pre-migration bytes** of both live sites, which is the
+input the tool should have handled the first time, and both migrate to sources
+that compile at exit 0. The live sites are then repaired with exactly those
+bytes rather than hand-derived spellings.
+
+### `9f9cbb5` — OWN-5 is judged before the join, and the rule keeps one home
+
+[OWN-5]'s slice-valued-delivery prohibition was judged in `check_let`, one step
+after the branch-state join that runs inside `check_match` and `check_if`.
+`join_states` stops with `Unsupported { OwnershipJoin }` whenever two branches
+leave their bindings in states differing by more than region claims — which is
+exactly what a slice-valued join looks like when written on purpose — so a
+capability stop stood in front of a source rejection.
+
+| | before | after |
+|---|---|---|
+| both branches move the **same** binding | OWN-5 | OWN-5 |
+| branches move **different** bindings | `Unsupported` | **OWN-5** |
+
+The rejection moves to the delivery site and the later copy is **deleted rather
+than duplicated**, so the rule is judged once.
+
+**One consequence beyond the reported case**, stated rather than left to be
+found: a slice delivery in borrow mode previously reached the RegionsAndBorrows
+stop first and now reaches OWN-5, because the prohibition holds whatever the
+mode. Same masking, same place.
+
+**Acceptance is unchanged, and this was the ruling's condition.** Every one of
+the 421 corpus and program sources was run through the parent binary and this
+one, comparing exit code and cited rule:
+
+```
+exactly one verdict changed
+  own5-neg-slice-value-match   Unsupported { OwnershipJoin }  ->  [OWN-5]
+cases that compiled before and fail now: none
+```
+
+A stale expectation surfaced with the mask and is brought to the delta:
+`slice_value_matches_…` asserted v0.22's "a match statement whose arms" where
+v0.23 extends the prohibition to `value_if` and the fix names both forms. Rule
+and kind unchanged; only the mechanical fix's prose follows, and that assertion
+had never reached it because the join stopped first.
+
+### The A3 counterexample sweep — the answer is one, and it is the known one
+
+A3's premise is that a binder's mode and type are exactly what its right-hand
+side produces. `own3-pos-outlives-store` is a counterexample: its annotation
+named `'s` while its right-hand side named `'r`. The question is whether the
+400-file migration ran over others.
+
+**Regions**, the class that can differ silently, since Whitefoot has no coercion
+and a type or mode mismatch was already a v0.22 rejection:
+
+```
+annotated `let` bindings scanned:       1954
+  ...whose annotation names a region:     68
+  ...naming a region the RHS does not:     1
+      tests/conformance/cases/own3-pos-outlives-store.wf:6
+      let q: &'s i32 = &'r a;
+```
+
+Fifty-seven further sites where the two region sets merely *differ* were
+examined and are not counterexamples: in every one the annotation names no
+region at all and the right-hand side's region is a **call's region argument**
+whose result type is region-free — `let total: own u64 = args_count<'a>(args:
+&'a args);`. The annotation is correct there and the deletion is sound.
+
+**Mode and type**, the other half of the question, checked directly rather than
+by argument. An annotation naming a mode or type its RHS did not produce could
+only survive in a case *expected to reject*, since a positive case would have
+been a v0.22 rejection itself. Every rejection-expecting case was run:
+
+```
+conformance cases expecting a rejection:      197
+  ...that now compile clean (violation gone):   0
+```
+
+**So the sweep's answer is: exactly one counterexample corpus-wide, and it is
+the one already found.** A3's premise holds everywhere else the migration
+touched. The single site remains a real question for the candidate's §5 — v0.23
+removes the ability to state a destination region for a local binding, and the
+accepted-set account lists three deliberate narrowings without it — but it is a
+question about one construct, not about 1954 deletions.
+
+### What this sweep does *not* cover
+
+It finds a case whose **violation** the migration deleted, because such a case
+fails loudly. It cannot find a **positive** case whose subject the migration
+deleted, because that case stays green — round 17's
+`fn2-pos-explicit-instantiation` is one, found by reading rather than by any
+gate. That class is still open and is the sweep worth running next.
+
+### Validation
+
+- `make check`: exit 2 at the compiler step, lib **572 passed / 3 failed** — the
+  two activation-gated spec checks and the `RegionsAndBorrows` capability gap.
+- Adapter **Pass=386 Fail=2 Skip=13**: `own3-pos-outlives-store` and
+  `fn8-neg-requires-eeq-payload-enum`.
+- Conformance coverage **128/128 rules, 0 uncovered**.
+- Migration tool: **31 tests pass**.
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt` applied.
 ## Round 17 (exec-0038n, 2026-08-08) — the `fn2` residue disposed, and two things the enumeration found
 
 One commit. The library gate goes **569 passed / 6 failed → 570 / 5** and the
