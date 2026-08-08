@@ -51,7 +51,26 @@ pub(crate) enum State {
     /// Carries a v0.22 spelling the pre-pass rewrote, but the result could not
     /// be written back. The reason is the report's whole point.
     Blocked { reason: String },
+    /// Held back by a [`KEEP_MARKER`] at the site, because the fixture's own
+    /// surface form is what its test asserts about.
+    Kept,
 }
+
+/// The comment that holds a fixture back.
+///
+/// A fixture whose subject is its own surface form — a Bool `match` under a
+/// [GRAM-6] rejection, a forbidden form under detection — is destroyed rather
+/// than migrated by a spelling rewrite, and the destruction is silent because
+/// the test keeps compiling. The marker records that decision at the site so a
+/// later run cannot undo it, and it must carry the reason after it.
+const KEEP_MARKER: &[u8] = b"migrate: keep";
+
+/// How far above a literal the marker may sit.
+///
+/// A fixture is often nested a couple of call lines deep inside the assertion
+/// that reads it, so the marker goes on the statement rather than on the
+/// literal's own line.
+const KEEP_WINDOW_LINES: usize = 3;
 
 /// Migrates every embedded fixture in one Rust source.
 ///
@@ -76,6 +95,13 @@ pub(crate) fn migrate_rust(source: &[u8], path: &Path) -> Result<(Vec<u8>, Vec<O
             .iter()
             .filter(|byte| **byte == b'\n')
             .count();
+        if is_kept(source, literal.content_start) {
+            outcomes.push(Outcome {
+                line,
+                state: State::Kept,
+            });
+            continue;
+        }
         match migrate_fixture(&decoded, path) {
             FixtureOutcome::NotAFixture => continue,
             FixtureOutcome::Blocked(reason) => {
@@ -154,6 +180,29 @@ fn migrate_fixture(decoded: &[u8], path: &Path) -> FixtureOutcome {
         Ok(bytes) => FixtureOutcome::Migrated { bytes, counts },
         Err(reason) => FixtureOutcome::Blocked(reason),
     }
+}
+
+/// Whether a [`KEEP_MARKER`] governs the literal whose content starts here.
+///
+/// The window is the literal's own line plus the [`KEEP_WINDOW_LINES`] above
+/// it, so the marker can sit on the assertion that reads the fixture.
+fn is_kept(source: &[u8], content_start: usize) -> bool {
+    let mut window_start = content_start;
+    for _ in 0..=KEEP_WINDOW_LINES {
+        match source[..window_start]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+        {
+            Some(newline) => window_start = newline,
+            None => {
+                window_start = 0;
+                break;
+            }
+        }
+    }
+    source[window_start..content_start]
+        .windows(KEEP_MARKER.len())
+        .any(|window| window == KEEP_MARKER)
 }
 
 /// Lines that differ between two versions of a fixture, and the new line count.
@@ -415,7 +464,64 @@ fn encode(bytes: &[u8], form: Form) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Form, decode, encode, literals};
+    use super::{Form, State, decode, encode, literals, migrate_rust};
+
+    /// The one Rust source shape this module is built for: a fixture inside a
+    /// test, held back or not by the marker above it.
+    fn rust_with(marker: &str, fixture: &str) -> Vec<u8> {
+        format!("#[test]\nfn a_test() {{\n{marker}    let source = br#\"{fixture}\"#;\n}}\n")
+            .into_bytes()
+    }
+
+    fn outcome_states(source: &[u8]) -> Vec<&'static str> {
+        let (_, outcomes) =
+            migrate_rust(source, std::path::Path::new("test.rs")).expect("migrates");
+        outcomes
+            .iter()
+            .map(|outcome| match outcome.state {
+                State::Migrated { .. } => "migrated",
+                State::Blocked { .. } => "blocked",
+                State::Kept => "kept",
+            })
+            .collect()
+    }
+
+    const ANNOTATED: &str =
+        "fn main() -> own unit pure {\n  let value: own u64 = 1_u64;\n  return unit;\n}\n";
+
+    /// Both halves in one test, because a marker that is never read and a
+    /// marker that is always read look identical from the migrated side.
+    #[test]
+    fn the_marker_holds_a_fixture_back_and_its_absence_does_not() {
+        let unmarked = rust_with("", ANNOTATED);
+        assert_eq!(outcome_states(&unmarked), ["migrated"]);
+        let (rewritten, _) = migrate_rust(&unmarked, std::path::Path::new("test.rs")).expect("ok");
+        assert!(
+            String::from_utf8_lossy(&rewritten).contains("let value = 1_u64;"),
+            "{}",
+            String::from_utf8_lossy(&rewritten)
+        );
+
+        let marked = rust_with("    // migrate: keep — a reason.\n", ANNOTATED);
+        assert_eq!(outcome_states(&marked), ["kept"]);
+        let (untouched, _) = migrate_rust(&marked, std::path::Path::new("test.rs")).expect("ok");
+        assert_eq!(untouched, marked);
+    }
+
+    /// The marker reaches over the assertion lines a fixture is usually nested
+    /// inside, and no further.
+    #[test]
+    fn the_marker_window_covers_the_nesting_lines_but_stops() {
+        let inside = format!(
+            "// migrate: keep — a reason.\nassert_eq!(\n  read(\n    br#\"{ANNOTATED}\"#\n  ),\n  1\n);\n"
+        );
+        assert_eq!(outcome_states(inside.as_bytes()), ["kept"]);
+
+        let too_far = format!(
+            "// migrate: keep — a reason.\nassert_eq!(\n  read(\n    outer(\n      br#\"{ANNOTATED}\"#\n    )\n  ),\n  1\n);\n"
+        );
+        assert_eq!(outcome_states(too_far.as_bytes()), ["migrated"]);
+    }
 
     fn located(source: &[u8]) -> Vec<String> {
         literals(source)

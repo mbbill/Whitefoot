@@ -18,6 +18,9 @@ fn assert_checks(source: &[u8]) {
 
 #[test]
 fn a_bool_scrutinee_match_is_a_gram6_rejection_at_the_scrutinee() {
+    // migrate: keep — the Bool `match` is this test's whole subject, and the
+    // migration rewrites it into the `if` [GRAM-6] demands, leaving a source
+    // that checks clean and an assertion that no longer asserts anything.
     let source = br#"fn main() -> own unit pure {
   let flag = True();
   match flag {

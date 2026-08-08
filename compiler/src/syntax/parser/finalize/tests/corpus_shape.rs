@@ -231,6 +231,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     // A Bool `match`, and the enum `match` that keeps its spelling.
     assert_eq!(
         forbidden_forms(
+            // migrate: keep — this control *is* the form under detection.
             b"fn main() -> own unit pure {\n  let b = True();\n  match b {\n    True() => {\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n"
         ),
         Some(Forbidden {

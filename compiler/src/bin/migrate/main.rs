@@ -161,6 +161,7 @@ fn run_rust(options: &Options) -> Result<(), String> {
     let mut changed = 0_usize;
     let mut migrated_fixtures = 0_usize;
     let mut blocked = 0_usize;
+    let mut kept = 0_usize;
     let mut counts = rewrite::Counts::default();
     for path in &options.sources {
         let original = std::fs::read(path)
@@ -185,6 +186,10 @@ fn run_rust(options: &Options) -> Result<(), String> {
                     blocked += 1;
                     println!("BLOCKED  {location}  {reason}");
                 }
+                embedded::State::Kept => {
+                    kept += 1;
+                    println!("kept     {location}  held back by the site's marker");
+                }
             }
         }
         if rewritten != original {
@@ -196,7 +201,7 @@ fn run_rust(options: &Options) -> Result<(), String> {
         }
     }
     println!(
-        "{} rust file(s), {changed} changed; {migrated_fixtures} fixture(s) migrated, {blocked} blocked; {}",
+        "{} rust file(s), {changed} changed; {migrated_fixtures} fixture(s) migrated, {kept} kept, {blocked} blocked; {}",
         options.sources.len(),
         counts.summary()
     );
