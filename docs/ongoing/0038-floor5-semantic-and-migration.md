@@ -2,18 +2,17 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — 2026-08-08 round 4. The round-3 blocker is ruled and
-  the ruling is **applied**: the delta is amended, the candidate re-assembled
-  at SHA-256 `ab257aa6…`, and all three pins re-keyed. The front end stays
-  complete and green for v0.23. The semantic path, the corpus migration and
-  the conformance work are **not started** — they are one atomic batch and
-  round 4 handed back at the boundary rather than opening it. See "Round 4".
+- **Status:** `WAITING` — 2026-08-08 round 5. The **canonical renderer and its
+  corpus gate are landed** (`bcb639f`) — items 1 and 2 of the 2026-08-08
+  renderer ruling. The migration tool, the semantic path and the conformance
+  work are **not started**; they remain one atomic batch, and round 5 handed
+  back at the renderer boundary rather than opening it. See "Round 5".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
-  (`governance/APPROVALS.md`); the amended delta
-  `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038b (round 4) / `/Users/bytedance/do_not_scan/wf0038-exec`
+  (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
+  amended delta `governance/spec-evolution/spelling-relief-candidate.md`
+- **Owner / workspace:** exec-0038d (round 5) / `/Users/bytedance/do_not_scan/wf0038-r5`
   on branch `task/0036-floor5-grammar-and-migration`
-- **Base revision:** 879c503 (main), branch rebased onto it, 16 commits, clean
+- **Base revision:** fb80bb1 (main), branch rebased onto it, 19 commits, clean
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -632,6 +631,139 @@ that makes the bytes canonical by construction. That is both far cheaper than
 a layout-exact textual transform and the only form that satisfies O1's
 binding condition 4, because the next version re-runs it rather than re-doing
 it.
+
+## Round 5 (exec-0038d, 2026-08-08) — the renderer and its gate; handed back at that boundary
+
+One commit, `bcb639f`. It discharges items 1 and 2 of the 2026-08-08 canonical
+renderer ruling. Item 3, the migration tool, is not started.
+
+**The renderer shares the auditor's rules rather than matching them.** The
+ruling's condition was that the two agree by sharing code. The gap descriptor
+is factored out of `gap_matches` into `canonical_gap(style, depth, left,
+right) -> CanonicalGap`, where `CanonicalGap` is `{newlines, spaces}` — every
+FORM-2 gap has that shape. The auditor compares source bytes against it and
+`render.rs` emits it, so there is one layout rule with two consumers, not two
+implementations. `build_gap_styles` is reused unchanged.
+
+**Rendering has no source verdict**, and that asymmetry is deliberate:
+`audit_canonical` asks whether given bytes are canonical and can answer no,
+while `render_canonical` is handed a finalized tree and produces the bytes that
+tree denotes, so `RenderOutcome` carries only `Complete`, `ResourceFailure`
+and `CompilerFailure`. It borrows the bundle rather than consuming it, because
+it publishes no capability.
+
+**The gate**, per the hygiene rule that a tool ships attached to a caller:
+`compiler/tests/canonical_corpus.rs` runs inside `make check` and holds every
+corpus file to FORM-2 — a canonical file re-renders to itself, a deliberately
+non-canonical one renders to different bytes, and whatever goes in, what comes
+out is canonical and idempotent. The last clause is the one the migration
+rests on, so it is asserted for every file rather than only the canonical ones.
+
+**118 of the 420 corpus files round-trip byte-exactly today.** The other 302
+carry v0.22 spellings and do not derive under the v0.23 grammar, which is what
+the migration fixes. That 118 is a real byte-exact control on the renderer
+available before any migration, which is what the round-4 brief asked for; the
+round-4 brief's expectation of a ~420-file control before migration does not
+hold on this branch, because the v0.23 grammar is what the un-migrated corpus
+fails to parse.
+
+**The deliberately non-canonical class is two, not one**, enumerated from the
+manifest as the round-4 brief instructed: `form2-neg-noncanonical-ws` and
+`x-form-form2-tab-indent`, both `expect.rule == FORM-2`. They are named in the
+gate rather than skipped by pattern so a third cannot appear unnoticed.
+
+**Gate states, exit codes read from `$?` with no pipe.**
+
+- `make -C compiler check`: **exit 2** — lib **259 passed / 271 failed**.
+- `make check`: **exit 2**; earlier stages pass (repository invariants, spec
+  append-only, spec archive integrity at 23, conformance plumbing OK).
+- `make conformance-run`: **exit 2** — adapter **Pass=116 Fail=271 Skip=14**
+  against main's 386/1/14, unchanged.
+- `whitefoot-grammar` against the amended candidate: **exit 0** — **69
+  productions, 84 decisions, 97 terminal predicates**, unchanged.
+- `cargo fmt --check`, `clippy --all-targets -D warnings`, `cargo doc`: **0**.
+
+**The lib failure SET is byte-identical to round 4's** — `comm` against
+`/Users/bytedance/do_not_scan/wf0038-baseline-failures.txt` shows zero added
+and zero removed. Passing moved 257 → 259, which is exactly the two new
+renderer tests. The candidate digest and all three pins were recomputed rather
+than relayed and hold at `ab257aa6…`, including the 32-byte array in
+`spec.rs`.
+
+**One consequence for the definition of done, reported rather than absorbed.**
+The new corpus gate is a *fourth* check that is red until the migration lands,
+where the ruling names three. It does not change the observable gate state
+today: `cargo test --all-targets` stops at the failing lib target, so the
+integration test does not run under `make check` yet and the failure set is
+unchanged. It becomes active the moment the lib goes green, which is the
+migration's completeness oracle and is where it belongs. The branch's finish
+line is still "green except the three activation-gated checks" — the fourth
+closes with the batch, not with the owner's approval.
+
+### Three measurements that de-risk the migration tool
+
+Cheap here, expensive for a successor to rediscover.
+
+1. **The 20-spelling rename map is derivable, not hard-coded.** Extracting the
+   [OP-1] op column from v0.22 and from the candidate by the method
+   `catalog.rs`'s own `extract_operation_families` test uses gives 83 rows
+   each, row-aligned, differing in exactly **20** cells — the twenty
+   respellings, `iadd.wrap → +wrap` through `imul.sat → *sat`. The migration
+   tool should zip the two specifications rather than carry a table, which is
+   the same discipline `whitefoot-grammar-tables` already follows.
+2. **The infix respell is mechanically total.** Of the **897** respell sites
+   (378 arithmetic + 519 comparison, reproducing the delta's figures exactly),
+   exactly **one** has an operand that is not a GRAM-9 `atom`:
+   `gram9-neg-nested-call.wf:3`, which is already ruling (4)'s subject. Every
+   other operand is an IDENT, a place, a literal, or a negative literal.
+3. **`deref(...)` is a place, so it is a legal infix operand.** `pbase :=
+   IDENT | "deref" "(" place ")"`. A naive "does an operand contain `(`" scan
+   reports **33** non-atom operands; 32 of them are `deref(p)` or
+   `deref(p).field` and are fine. Do not treat that scan's output as a
+   blocker list.
+
+### Why round 5 stops here
+
+The renderer is what everything else was keyed to, and it is complete,
+self-verifying against 118 real files, and green on its own terms. The
+migration tool is the next unit and is large: five transform classes over
+~3800 sites, of which the Bool-match-to-`if`/`else` flattening is the only one
+needing real structure rather than token rewriting. Starting it with the
+budget left would have produced a half-built tool that a successor must first
+understand and then probably discard — the shape rounds 2 and 4 of 0036 both
+named. The render pass makes that tool much smaller than it looks: the
+pre-pass may emit any layout that parses, so it never computes a byte of
+spacing or indentation.
+
+## Successor brief (round 5)
+
+Rounds 1–4 and the renderer are discharged; do not re-derive them, and in
+particular do not re-assemble the candidate, re-measure the nine figures, or
+rebuild the renderer. Base is `task/0036-floor5-grammar-and-migration` rebased
+onto main `fb80bb1`.
+
+1. **The migration tool**, a bin under `compiler/src/bin/` (O1 binding
+   condition 4: it ships re-runnable, because the `<`/`>` version re-runs it).
+   Shape: lex the v0.22 source with the compiler's own lexer, rewrite the
+   token stream, emit it with any spacing at all, then parse and
+   `render_canonical`. Five classes: A1's deleted-class type arguments (1588),
+   A3's let annotations (2003), A4's Bool matches to `if`/`else` with
+   mandatory else-if flattening (262), C1's infix respells (378 + 519, with
+   207 `ilt`/`igt` losing only their arguments), and the prelude-construction
+   class (103, of which 101 rewrite and 2 stay bare). A3 and the prelude class
+   are coupled: the written type argument at the `let` RHS site comes from the
+   annotation A3 deletes, so capture it before dropping it.
+2. **MANDATORY** (2026-08-08 ruling): assert zero surviving Bool-scrutinee
+   matches rather than trusting the parse — a missed one is a GRAM-6
+   rejection, i.e. a silent verdict change. Assert the 103/101/2 prelude split
+   the same way.
+3. **The semantic path**, unchanged from the round-4 brief.
+4. The four repurposed and four new conformance cases, then the review packet.
+
+The corpus gate is the migration's oracle and needs no separate evidence: when
+`compiler/tests/canonical_corpus.rs` reports 418 round-tripped, 2 deliberately
+non-canonical and 0 underived, every corpus file parses under v0.23 and is
+canonical by construction.
 
 ## Successor brief (round 4)
 
