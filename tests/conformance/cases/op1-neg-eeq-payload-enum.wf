@@ -4,7 +4,8 @@ enum PayloadEq {
 }
 
 fn compare(left: own PayloadEq, right: own PayloadEq) -> own Bool pure {
-  return eeq(left, right);
+  doc "eeq is defined only over a tag-only enum type, so selecting it for an enum with a payload variant is an invalid operation [OP-1]; the operands are moved so OWN-1 forms no candidate first.";
+  return eeq(move left, move right);
 }
 
 fn main() -> own unit pure {

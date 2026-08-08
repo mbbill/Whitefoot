@@ -1,10 +1,15 @@
+enum Signal {
+  Ready();
+  Busy();
+}
+
 fn main() -> own unit pure {
-  doc "A match on a Bool with a Some arm names a variant outside the scrutinee enum [TYPE-6].";
-  let b = True();
-  match b {
+  doc "An arm naming a variant outside the scrutinee enum resolves in the constructor domain but is foreign to the matched nominal [TYPE-6].";
+  let s = Ready();
+  match s {
     Some(value: v) => {
     }
-    None() => {
+    Busy() => {
     }
   }
   return unit;

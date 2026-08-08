@@ -1,7 +1,12 @@
+struct Holder {
+  value: i32;
+}
+
 fn main() -> own unit pure {
-  doc "Binding a Bool comparison result to an own i32 let is a type mismatch [TYPE-5].";
+  doc "Committing a Bool comparison result to a place whose written type is i32 crosses the arithmetic and enum layers and is an exact-type mismatch [TYPE-5].";
   let a = 1_i32;
   let b = 2_i32;
-  let v = a == b;
+  let h = Holder(value: 0_i32);
+  set h.value = a == b;
   return unit;
 }
