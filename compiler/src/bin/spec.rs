@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use whitefoot::{
     ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH,
-    ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION,
+    ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, computed_active_spec_hash,
 };
 
 const APPROVED_CANDIDATE: &[u8] =
@@ -106,6 +106,10 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
 fn main() {
     if ACTIVE_KERNEL_SPEC_BYTES != APPROVED_CANDIDATE {
         eprintln!("{ACTIVE_KERNEL_SPEC_PATH} differs from the approved candidate");
+        std::process::exit(1);
+    }
+    if ACTIVE_KERNEL_SPEC_HASH != computed_active_spec_hash() {
+        eprintln!("{ACTIVE_KERNEL_SPEC_PATH} does not hash to the recorded active identity");
         std::process::exit(1);
     }
     let rule_count = match validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER) {
