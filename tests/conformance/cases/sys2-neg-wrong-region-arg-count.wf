@@ -1,0 +1,7 @@
+command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  doc "SYS-2 assigns a system operation's written region arguments to its own rule, so stating two where the row declares one is a region-argument arity mismatch [SYS-2, TYPE-5, DIAG-1].";
+  region 'a {
+    let count = args_count<'a, 'a>(args: &'a args);
+  }
+  return exit_status(code: 0_u8);
+}

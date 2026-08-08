@@ -107,6 +107,11 @@ pub enum SemanticRule {
     Eff1,
     /// Exact exhibited-versus-declared effect row.
     Eff2,
+    /// The system inventory, and the region arguments a system operation's
+    /// call site must state. [TYPE-5] assigns the written arguments by callee
+    /// class — "region arguments for system operations [SYS-2]" — so this rule
+    /// owns that argument list exactly as FN-2 owns a user generic's.
+    Sys2,
     /// Named runtime claim formation and per-function name uniqueness.
     Clm1,
     /// Claim lifecycle: refutation rejection under the entailment fragment.
@@ -156,6 +161,7 @@ impl SemanticRule {
             Self::Give1 => "GIVE-1",
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
+            Self::Sys2 => "SYS-2",
             Self::Clm1 => "CLM-1",
             Self::Clm2 => "CLM-2",
         }
@@ -210,8 +216,9 @@ impl SemanticRule {
             Self::Eff2 => 35,
             Self::Err2 => 36,
             Self::Err3 => 37,
-            Self::Clm1 => 38,
-            Self::Clm2 => 39,
+            Self::Sys2 => 38,
+            Self::Clm1 => 39,
+            Self::Clm2 => 40,
         }
     }
 }

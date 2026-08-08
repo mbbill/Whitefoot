@@ -172,6 +172,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
+    /// The written region arguments of a system operation's call.
+    ///
+    /// [DIAG-1] selects the cited rule by the callee's class, and [TYPE-5]
+    /// names the three classes: "type, region, and const arguments for user
+    /// generics [FN-2]; region arguments for system operations [SYS-2]; and,
+    /// for exactly the retained-argument table operations … the written
+    /// arguments their rows fix". This is the system class, so its argument
+    /// list is SYS-2's — the third clause, which had no representable rule
+    /// until 2026-08-08 and therefore cited TYPE-5.
     fn system_call_region_arguments(
         &self,
         node: NodeId,
@@ -181,11 +190,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if operation.regions.is_empty() {
                 return Ok(Vec::new());
             }
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         if arguments.len() != operation.regions.len() {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
+            return self.issue_node(SemanticRule::Sys2, node, SemanticIssueKind::TypeMismatch);
         }
         arguments
             .into_iter()
@@ -197,7 +206,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         class: DeclarationClass::Region,
                     } => Ok(declaration),
                     _ => self.issue_node(
-                        SemanticRule::Type5,
+                        SemanticRule::Sys2,
                         argument,
                         SemanticIssueKind::TypeMismatch,
                     ),

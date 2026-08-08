@@ -1086,7 +1086,7 @@ fn main() -> own unit pure {
 /// the specification bytes for every citable rule.
 #[test]
 fn definition_rank_matches_the_active_specification() {
-    const ALL: [SemanticRule; 39] = [
+    const ALL: [SemanticRule; 40] = [
         SemanticRule::Form5,
         SemanticRule::Form7,
         SemanticRule::Type2,
@@ -1124,6 +1124,7 @@ fn definition_rank_matches_the_active_specification() {
         SemanticRule::Give1,
         SemanticRule::Eff1,
         SemanticRule::Eff2,
+        SemanticRule::Sys2,
         SemanticRule::Clm1,
         SemanticRule::Clm2,
     ];
