@@ -884,6 +884,56 @@ The guard on function checking became the invariant it was really
 protecting: no *source* nominal instance is discovered while checking a
 function.
 
+### The derived-nominal sweep (2026-08-08) — COMPLETE, and it finds no third site
+
+Two members of this class were found by tripping over them, so this
+enumerates it instead. **The enumeration is complete, not best-effort**, and
+it is complete because it runs from a closed set: every intern table is a
+field of `struct Checker`, so enumerating the 25 fields enumerates the
+tables. 94 fallible lookup sites across `semantic/` were then classified.
+
+**The criterion is sharper than "the key is a derived type".** What exposes
+a table is *what the interning pass keys off*:
+
+- keyed off a written **TYPE** — A3 deletes the annotation, the key loses
+  its only source, and the lookup misses. **Exposed.**
+- keyed off a written **CALL** or **DECLARATION** — A3 deletes neither, so
+  the interning pass still sees it. **Immune.**
+
+By that criterion the 25 fields partition exactly:
+
+| Table | Key | Verdict |
+| --- | --- | --- |
+| `box_nominals` | `CheckedType` | **Exposed** — handled, defers (`4e68436`) |
+| `prelude_nominals` | `PreludeType` | **Exposed** — handled, defers (`3af8478`) |
+| `system_nominals` | `u8` | Immune — interned from the call |
+| 7 `*_by_declaration` maps, `constants` | `DeclarationId` | Immune — a declaration the resolver produced; A3 deletes no declarations |
+| 12 index-keyed `Vec`s | allocated id / index | Immune — a miss is an internal inconsistency, unreachable from source spelling |
+| `pending_nominals`, `resolved`, `tree`, `reject_entailment` | — | not intern tables |
+
+**`system_nominals` is the instructive one.** Its key *is* a derived value,
+so the crude criterion would have flagged it. It is immune because
+`nominal_instances.rs:305-312` walks every `call` node and interns every
+system parameter and result type from the operation catalog — keyed off the
+call, which A3 does not touch. Verified empirically: an annotation-free
+system program with `args_count`, `cvt` and `exit_status` compiles. The same
+pre-pass has `ensure_conversion_result` for `cvt`, which is why `cvt`'s
+`Result` never had the defect while the checked arithmetic rows did — in
+v0.22 their `Result` was named by the annotation and by nothing else.
+
+**Residual non-deferring sites over a derived key, and why each is outside
+the class:** `types.rs:164`, `:190`, `:199` look up `box<T>`, `Option<T>`
+and `Result<T, E>` while parsing a **written type node**, so the key has a
+written source that A3 does not delete — signature and field types survive
+it. They were left alone rather than made to defer, because deferring would
+convert a genuine internal-inconsistency detector into a silent repair for
+no benefit the class needs.
+
+**Result: exactly two tables were ever exposed, both are handled, and there
+is no third.** The `prelude_nominal` deferral is also a general safety net:
+any prelude instance a future derived type names now interns on demand,
+whatever produces it.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the
