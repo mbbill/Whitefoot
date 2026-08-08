@@ -134,3 +134,53 @@ fn a_returned_constructor_with_a_plain_result_stays_bare() {
     let out = migrated(source);
     assert!(out.contains("let held = None<u64>();"), "{out}");
 }
+
+/// [GRAM-6] the Bool match becomes `if`, and its arms' own braces become the
+/// conditional's — the reshape the renderer cannot rescue if it is wrong.
+#[test]
+fn a_bool_match_becomes_an_if_with_both_branches() {
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      check flag else trap \"then\";\n    }\n    False() => {\n      check flag else trap \"else\";\n    }\n  }\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("if flag {"), "{out}");
+    assert!(out.contains("} else {"), "{out}");
+    assert!(!out.contains("match"), "{out}");
+}
+
+/// [ERR-2] an empty alternative is spelled by the else-free `if`, because
+/// GRAM-6 rejects the empty `else`.
+#[test]
+fn an_empty_false_arm_becomes_the_else_free_if() {
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      check flag else trap \"then\";\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("if flag {"), "{out}");
+    // `check ... else trap` also spells `else`, so the join line is the test.
+    assert!(!out.contains("} else {"), "{out}");
+}
+
+/// [ERR-2]'s asymmetry: the empty then-block is admitted where the empty
+/// else is not, so this one keeps both branches.
+#[test]
+fn an_empty_true_arm_keeps_the_empty_then_block() {
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n    }\n    False() => {\n      check flag else trap \"else\";\n    }\n  }\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("if flag {"), "{out}");
+    assert!(out.contains("} else {"), "{out}");
+}
+
+/// [GRAM-6] an `else` block holding exactly one conditional must flatten.
+#[test]
+fn a_nested_match_in_the_false_arm_flattens_to_else_if() {
+    let source = b"fn main() -> own unit traps {\n  let flag: own Bool = True();\n  let other: own Bool = False();\n  match flag {\n    True() => {\n      check flag else trap \"a\";\n    }\n    False() => {\n      match other {\n        True() => {\n          check flag else trap \"b\";\n        }\n        False() => {\n          check flag else trap \"c\";\n        }\n      }\n    }\n  }\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("} else if other {"), "{out}");
+}
+
+/// A value initializer's `else` is mandatory by grammar, so an empty one is
+/// kept rather than dropped — dropping it would demote it to a statement.
+#[test]
+fn a_value_match_keeps_its_else_even_when_empty() {
+    let source = b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let picked: own i32 = match flag {\n    True() => {\n      give 1_i32;\n    }\n    False() => {\n      give 2_i32;\n    }\n  }\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("let picked = if flag {"), "{out}");
+    assert!(out.contains("} else {"), "{out}");
+}

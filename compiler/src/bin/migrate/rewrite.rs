@@ -24,6 +24,10 @@ pub(crate) struct Counts {
     pub(crate) respelled: usize,
     /// [TYPE-5] written type arguments deleted from a de-argumented row.
     pub(crate) arguments: usize,
+    /// [GRAM-6] Bool matches rewritten as `if`.
+    pub(crate) conditionals: usize,
+    /// [GRAM-6] else blocks flattened to `else if`.
+    pub(crate) flattened: usize,
     /// Prelude constructors given the arguments the annotation carried.
     pub(crate) constructors: usize,
     /// Prelude constructors left bare because no annotation supplied a type.
@@ -35,18 +39,22 @@ impl Counts {
         self.annotations += other.annotations;
         self.respelled += other.respelled;
         self.arguments += other.arguments;
+        self.conditionals += other.conditionals;
+        self.flattened += other.flattened;
         self.constructors += other.constructors;
         self.bare_constructors += other.bare_constructors;
     }
 
     pub(crate) fn summary(&self) -> String {
         format!(
-            "{} annotation(s), {} respell(s), {} argument list(s), {} constructor(s) written, {} left bare",
+            "{} annotation(s), {} respell(s), {} argument list(s), {} constructor(s) written, {} left bare, {} conditional(s) ({} flattened)",
             self.annotations,
             self.respelled,
             self.arguments,
             self.constructors,
-            self.bare_constructors
+            self.bare_constructors,
+            self.conditionals,
+            self.flattened
         )
     }
 }
@@ -189,6 +197,14 @@ pub(crate) fn pre_pass(
         }
         if let Some(consumed) = annotated_let(source, &tokens, index, &mut edits, &mut counts)? {
             index = consumed;
+            continue;
+        }
+        if let Some(consumed) = bool_match(source, &tokens, index, &mut edits, &mut counts)? {
+            // Deliberately not skipping the arms: a nested Bool match inside
+            // them is found by continuing through them, and its edits fall
+            // strictly inside this one's.
+            let _ = consumed;
+            index += 1;
             continue;
         }
         // [OP-1] the operation call classes. Respelling subsumes
@@ -552,4 +568,175 @@ fn returned_constructor(
     });
     counts.constructors += 1;
     Some(index + 2)
+}
+
+/// [GRAM-6] a Bool-scrutinee `match` becomes `if`/`else`.
+///
+/// This is the one class that reshapes rather than respells, and on the token
+/// stream the reshape is small because layout is not its problem: the arms'
+/// own braces become the `if`'s, so only the match's outer braces and the two
+/// arm headers move.
+///
+/// ```text
+/// match S { True() => { A } False() => { B } }  ->  if S { A } else { B }
+/// ```
+fn bool_match(
+    source: &[u8],
+    tokens: &[OwnedLexeme],
+    index: usize,
+    edits: &mut Vec<Edit>,
+    counts: &mut Counts,
+) -> Result<Option<usize>, String> {
+    if bytes(source, tokens, index) != b"match" {
+        return Ok(None);
+    }
+    let open = tokens
+        .iter()
+        .enumerate()
+        .skip(index)
+        .find(|(_, token)| token.kind == Some(TokenKind::LeftBrace))
+        .map(|(offset, _)| offset)
+        .ok_or_else(|| "a `match` reached no `{`".to_owned())?;
+    let close = group_end(tokens, open, TokenKind::LeftBrace, TokenKind::RightBrace)
+        .ok_or_else(|| "a `match` reached no `}`".to_owned())?;
+    let Some(first) = arm(source, tokens, open + 1) else {
+        return Ok(None);
+    };
+    let Some(second) = arm(source, tokens, first.close + 1) else {
+        return Ok(None);
+    };
+    if second.close + 1 != close {
+        return Ok(None);
+    }
+    // Every Bool match in the corpus writes `True` first; a `False`-first one
+    // would need its bodies exchanged, so it is reported rather than guessed.
+    if !(first.is_true && !second.is_true) {
+        if second.is_true && !first.is_true {
+            return Err(
+                "a Bool `match` writes `False` first; exchange its arms by hand".to_owned(),
+            );
+        }
+        return Ok(None);
+    }
+    // A value initializer's `else` is mandatory by grammar, so an empty one is
+    // kept: dropping it would silently demote the initializer to a statement.
+    let value_position = index
+        .checked_sub(1)
+        .and_then(|previous| tokens.get(previous))
+        .is_some_and(|previous| previous.kind == Some(TokenKind::Equal));
+    let alternative_is_empty = second.open + 1 == second.close;
+
+    edits.push(Edit {
+        start: tokens[index].start,
+        end: tokens[index].end,
+        replacement: b"if".to_vec(),
+    });
+    edits.push(Edit {
+        start: tokens[open].start,
+        end: tokens[open].end,
+        replacement: Vec::new(),
+    });
+    edits.push(Edit {
+        start: tokens[first.header].start,
+        end: tokens[first.arrow].end,
+        replacement: Vec::new(),
+    });
+    if alternative_is_empty && !value_position {
+        // [ERR-2] the else-free `if` is the one spelling of the empty
+        // alternative, and GRAM-6 rejects the empty `else`.
+        edits.push(Edit {
+            start: tokens[second.header].start,
+            end: tokens[second.close].end,
+            replacement: Vec::new(),
+        });
+    } else {
+        edits.push(Edit {
+            start: tokens[second.header].start,
+            end: tokens[second.arrow].end,
+            replacement: b"else".to_vec(),
+        });
+        // [GRAM-6] an `else` block holding exactly one `if` must flatten to
+        // `else if`, so the block's own braces go.
+        if sole_nested_match(source, tokens, second.open, second.close) {
+            edits.push(Edit {
+                start: tokens[second.open].start,
+                end: tokens[second.open].end,
+                replacement: Vec::new(),
+            });
+            edits.push(Edit {
+                start: tokens[second.close].start,
+                end: tokens[second.close].end,
+                replacement: Vec::new(),
+            });
+            counts.flattened += 1;
+        }
+    }
+    edits.push(Edit {
+        start: tokens[close].start,
+        end: tokens[close].end,
+        replacement: Vec::new(),
+    });
+    counts.conditionals += 1;
+    Ok(Some(close + 1))
+}
+
+/// One `True()`/`False()` arm, located by its header tokens.
+struct Arm {
+    is_true: bool,
+    header: usize,
+    arrow: usize,
+    open: usize,
+    close: usize,
+}
+
+fn arm(source: &[u8], tokens: &[OwnedLexeme], index: usize) -> Option<Arm> {
+    let name = tokens.get(index)?;
+    if name.kind != Some(TokenKind::UpperWordForm) {
+        return None;
+    }
+    let is_true = match &source[name.start..name.end] {
+        b"True" => true,
+        b"False" => false,
+        _ => return None,
+    };
+    if tokens.get(index + 1)?.kind != Some(TokenKind::LeftParen)
+        || tokens.get(index + 2)?.kind != Some(TokenKind::RightParen)
+        || tokens.get(index + 3)?.kind != Some(TokenKind::FatArrow)
+        || tokens.get(index + 4)?.kind != Some(TokenKind::LeftBrace)
+    {
+        return None;
+    }
+    let close = group_end(
+        tokens,
+        index + 4,
+        TokenKind::LeftBrace,
+        TokenKind::RightBrace,
+    )?;
+    Some(Arm {
+        is_true,
+        header: index,
+        arrow: index + 3,
+        open: index + 4,
+        close,
+    })
+}
+
+/// Whether a block holds exactly one `match` and nothing else, which is the
+/// shape [GRAM-6] requires flattened once it becomes an `if`.
+fn sole_nested_match(source: &[u8], tokens: &[OwnedLexeme], open: usize, close: usize) -> bool {
+    if bytes(source, tokens, open + 1) != b"match" {
+        return false;
+    }
+    tokens
+        .get(open + 1)
+        .and_then(|_| {
+            let brace = tokens
+                .iter()
+                .enumerate()
+                .skip(open + 1)
+                .find(|(_, token)| token.kind == Some(TokenKind::LeftBrace))
+                .map(|(offset, _)| offset)?;
+            group_end(tokens, brace, TokenKind::LeftBrace, TokenKind::RightBrace)
+        })
+        .is_some_and(|nested_close| nested_close + 1 == close)
 }
