@@ -164,6 +164,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !all_paths_deliver {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
+            self.reject_slice_valued_delivery(
+                node,
+                local_give_context.as_ref().and_then(GiveContext::delivered),
+            )?;
             self.join_states(&base_keys, &give_states, node, bindings)?;
         } else {
             self.join_states(&base_keys, &normal_states, node, bindings)?;
@@ -361,6 +365,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !all_paths_deliver {
                 return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
             }
+            self.reject_slice_valued_delivery(
+                node,
+                local_give_context.as_ref().and_then(GiveContext::delivered),
+            )?;
             self.join_states(&base_keys, &give_states, node, bindings)?;
         } else {
             self.join_states(&base_keys, &normal_states, node, bindings)?;
@@ -653,6 +661,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect(),
             },
         )
+    }
+
+    /// [OWN-5] a slice-valued delivery is prohibited outright, whatever its
+    /// mode and whatever the arms do to their bindings.
+    ///
+    /// It is judged here, before [`Self::join_states`], because the join is a
+    /// capability limit and a capability stop must never stand in front of a
+    /// source rejection. Judged after it, this rejection was unreachable for
+    /// exactly the sources that matter — arms delivering *different* bindings,
+    /// which is what a slice-valued join looks like when it is written on
+    /// purpose.
+    fn reject_slice_valued_delivery(
+        &self,
+        node: NodeId,
+        delivered: Option<(CheckedMode, CheckedType)>,
+    ) -> Result<(), CheckStop> {
+        if matches!(delivered, Some((_, CheckedType::Slice { .. }))) {
+            return self.issue_node(
+                SemanticRule::Own5,
+                node,
+                SemanticIssueKind::SliceValueMatch {
+                    mechanical_fix: "use a match or if statement whose branches return the slice directly, or call helpers with direct slice results",
+                },
+            );
+        }
+        Ok(())
     }
 
     pub(super) fn join_states(

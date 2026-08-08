@@ -690,7 +690,12 @@ fn main() -> own unit pure {
 "#,
         SemanticRule::Own5,
         SemanticIssueKind::SliceValueMatch {
-            mechanical_fix: "use a match statement whose arms return the slice directly, or call helpers with direct slice results",
+            // v0.22 wording said "a match statement whose arms"; v0.23 extends
+            // the prohibition to `value_if`, so the fix names both forms. The
+            // rule and the kind are unchanged — only the mechanical fix's
+            // prose follows the delta, and this assertion never reached it
+            // before because the ownership join stopped first.
+            mechanical_fix: "use a match or if statement whose branches return the slice directly, or call helpers with direct slice results",
         },
     );
     assert_rule(

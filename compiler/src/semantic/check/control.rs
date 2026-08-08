@@ -520,15 +520,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self
                     .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, initializer);
             }
-            if matches!(expected, CheckedType::Slice { .. }) {
-                return self.issue_node(
-                    SemanticRule::Own5,
-                    initializer,
-                    SemanticIssueKind::SliceValueMatch {
-                        mechanical_fix: "use a match or if statement whose branches return the slice directly, or call helpers with direct slice results",
-                    },
-                );
-            }
+            // [OWN-5]'s slice-valued-delivery prohibition used to be judged
+            // here, one step too late: the branch-state join runs inside the
+            // checkers above and stopped with a capability limit before this
+            // rejection could be reached. It now lives at the delivery site,
+            // in `reject_slice_valued_delivery`, so the rule has one home and
+            // no capability stop stands in front of it.
             if matched.can_continue
                 && bindings
                     .insert(
