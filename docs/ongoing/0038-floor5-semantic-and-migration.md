@@ -2480,6 +2480,41 @@ callee-class fix moved the other two classes in round 15.
 two region arguments where `args_count` declares one rejects
 `Semantics/Source [SYS-2]`; the same source with one exits 0.
 
+### The [DIAG-1] rank insertion, measured rather than reasoned about
+
+Inserting a rule into the definition rank is an observable behaviour surface,
+not bookkeeping: [DIAG-1] settles simultaneous rejections by citing the
+established rule whose definition appears first, so a new rank can change which
+rule wins for a program violating two at once. Every one of the 422 corpus and
+program sources was run through the pre-change binary and this one, comparing
+exit code and cited rule:
+
+```
+exactly one verdict changed
+  sys2-neg-wrong-region-arg-count   [TYPE-5]  ->  [SYS-2]
+existing verdicts moved:            none
+cases that compiled before and fail now: none
+```
+
+The one change is the new case itself, which is the intended effect.
+
+**Why nothing else moved, offered as the mechanism rather than as luck.** The
+simultaneity rule bites only where two rules are established at the same node.
+The citation moved at three sites inside `system_call_region_arguments`, and
+that function returns on the first rejection, so it cannot co-establish with
+another rule at its node in the current implementation. That is consistent with
+the measurement and with the code, but it is not an audit of every simultaneity
+site — the differential is the evidence, and the mechanism is the explanation
+for it.
+
+**On where the rank lives, since it was asked explicitly: the enum's
+declaration order is NOT load-bearing.** `definition_rank` is an explicit match
+returning a literal per variant, and
+`definition_rank_matches_the_active_specification` checks that those literals
+sort in the same order as the rules' definition lines in the active
+specification. The variant was placed next to its rank neighbours in the enum
+for readability only; moving it elsewhere in the enum would change nothing.
+
 ### One thing found in passing, not fixed
 
 `SemanticRule::Gram6` **has a `definition_rank` but is absent from the rank
