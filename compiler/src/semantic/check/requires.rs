@@ -7,7 +7,7 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
-use super::super::model::CheckedStatement;
+use super::super::model::{BindingId, CheckedStatement};
 use super::{
     CheckStop, Checker, ControlCounters, ControlScope, EffectSet, FunctionSignature, LocalBinding,
 };
@@ -49,12 +49,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             }
             effects = effects.union(checked.effects);
+            // The clause local's copy judgment waits for `check_statement`
+            // because [FN-8] describes a derived property: the local is an
+            // "own copy value", and after the v0.23 annotation deletion the
+            // type comes from the [TYPE-5] derivation just performed. Reading
+            // the checker's own answer keeps one derivation; the earlier
+            // subset pass still reports a malformed clause first.
+            if let CheckedStatement::Let { binding, .. } = &checked.statement {
+                self.validate_requires_copy_local(entry, *binding, bindings)?;
+            }
             statements.push(checked.statement);
         }
         Ok(CheckedRequires {
             statements,
             effects,
         })
+    }
+
+    /// Holds a clause local to [FN-8]'s "own copy value", judged on the type
+    /// the checker derived for it.
+    ///
+    /// The mode half of that phrase needs no check — the grammar admits no
+    /// written mode and [FN-8] fixes it — but the copy half is a real
+    /// restriction that the deleted annotation used to carry. The admitted-row
+    /// filter does not imply it: `array_new` and the `checked` arithmetic rows
+    /// are pure, total and non-trapping, and yield an `array<T, N>` and a
+    /// `Result<T, Overflow>` respectively.
+    fn validate_requires_copy_local(
+        &self,
+        entry: NodeId,
+        binding: BindingId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(), CheckStop> {
+        let local = bindings
+            .values()
+            .find(|local| local.binding == binding)
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if !self.is_copy_type(local.ty)? {
+            return self.invalid_requires(entry);
+        }
+        Ok(())
     }
 
     fn validate_requires_statement(
