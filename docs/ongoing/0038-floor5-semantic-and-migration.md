@@ -382,6 +382,51 @@ candidate digest `a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b291
 with **257 passed / 271 failed**, the failure set captured for `comm`
 diffing.
 
+### Expectation sweep (exec-0038, 2026-08-07) — COMPLETE, and it found a second hole
+
+The lead ruled (a) and asked for the generalization to be applied
+exhaustively before the migration: enumerate every consumer of an expected
+type and say what supplies it after A3. Done, and **the sweep is complete
+rather than a sample**, because the positions are enumerable from the
+grammar rather than found by search.
+
+**Why it is complete.** `check_atom` takes no expectation, and under
+[GRAM-9] a `construct` is not an `atom` — `atom := literal | "move" place |
+place | borrow_expr`. So a construction can only appear as a complete
+`expr`, and the `expr` positions are exactly the five below. There is no
+sixth place for this class of failure to hide.
+
+| consumer | site | supplier after A3 | |
+|---|---|---|---|
+| `return_stmt` | `control.rs:167` | `function.result` [FN-1] | **survives** |
+| `set_stmt` | `control.rs:348` | `target.ty()` [SET-1] | **survives** |
+| `propagate_let_rhs` | `results.rs:47` | built from the let's expectation; [ERR-3] derives the payload from the callee signature | plumbing, not a hole |
+| `ordinary_let_rhs` | `control.rs:560` | the deleted annotation | **REMOVED** |
+| `give_stmt` | `control.rs:307` | `GiveContext.expected`, itself the deleted annotation | **REMOVED** |
+
+**The `give` row is new and no brief names it.** Under the rewritten
+[GIVE-1] the delivery set derives the binding's type, so the *first*
+delivering `give` has no expectation by construction — the same hole as
+the `let`, in a second position. Sites, on the migration basis:
+
+```
+BASIS | PREP | grep -oE '[^A-Za-z0-9_](give|return)\s+(Some|None|Ok|Err)\('
+```
+
+- `let` RHS: **1** (`tests/programs/generic_nominals.wf:86`)
+- `give`: **2** (`tests/conformance/cases/x-give-result-aggregate.wf:4,7`)
+- `return`: **98** — supplier survives, untouched
+- `set`: **0**
+
+**This is why the sweep had to precede the amendment.** Drafting from the
+original finding alone would have covered `let` only; `give` would have
+surfaced during migration and forced a *second* re-key of the candidate
+and all three digest pins. The amendment must cover both positions in one
+pass. The ruled repair already does, since making the prelude variant
+constructors carry written arguments mandatorily removes the dependence on
+an expectation in every position at once — which is the argument for
+making it mandatory rather than optional-where-needed.
+
 ### Sequencing consequence: the rejections and the migration are one batch
 
 Measured while looking for a unit that could proceed around the blocker:
