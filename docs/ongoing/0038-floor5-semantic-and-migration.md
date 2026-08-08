@@ -2405,6 +2405,110 @@ authorize it. Recommend it as the next slice.
 
 
 
+
+## Round 17 (exec-0038n, 2026-08-08) — the `fn2` residue disposed, and two things the enumeration found
+
+One commit. The library gate goes **569 passed / 6 failed → 570 / 5** and the
+adapter holds at **384/4** with Skip 14 → 13. Nothing newly failing.
+
+### The enumeration, which is the precondition and not a formality
+
+FN-2's negative content and its live carriers, checked rather than assumed:
+
+| piece | live carrier |
+|---|---|
+| missing instantiation argument on a user generic | `fn2-neg-eeq-implicit-type` (repurposed), rejects FN-2 |
+| wrong region-argument count on a user function | `type5-neg-wrong-region-arg-count`, rejects FN-2 |
+| region-bearing generic type argument | `fn2-neg-function-region-bearing-targ`, `fn2-neg-nominal-region-bearing-targ` |
+
+`fn2-neg-implicit-instantiation` carries **none** of them. Its own content — "a
+generic *op* used with no explicit instantiation argument" — is not FN-2's
+content at all under v0.23, because a table operation carries no written
+argument and [DIAG-1] gives it the rule [OP-2] selects. So the case is not
+redundant but **dead**, and retiring it drops nothing. Both the case file and
+its manifest row go: the manifest has no `retired` status, and every row pairs
+with a file (402 rows → 401).
+
+### The cascade, and the second witness earning its keep
+
+`driver.rs`'s hard-coded negative table embedded the retired case, so that entry
+goes with it — it names a case that no longer exists, rather than being an
+assertion dropped on its own.
+
+**With the dead entry gone, the driver test failed on the next one.**
+`x-match-give1-wrong-type`: the table said TYPE-5, the manifest said GIVE-1, and
+the compiler said GIVE-1. The M3b dispositions ruling (d) moved that citation
+TYPE-5 → GIVE-1 with the source unchanged; the manifest was updated then and
+this witness was not. **That desync is exactly what a duplicated expectation
+exists to catch, and it had been sitting undetected behind the dead entry
+failing in front of it.**
+
+All 21 entries were then checked three ways — driver rule, manifest rule, and
+the compiler's actual verdict — rather than only the one that happened to fail.
+Exactly one disagreed. It is corrected by hand against the ruling and never
+derived from the manifest, because deriving it would destroy what it is for.
+
+### Two findings the enumeration surfaced, neither disposed here
+
+**1. A piece of FN-2 negative content has no conformance coverage at all.** A
+**wrong-kind** instantiation argument — a const where the parameter declares a
+type, or the reverse — is FN-2's under [DIAG-1] ("a missing, wrong-kind,
+wrong-count, or wrong-domain argument"), and is observed to reject:
+
+```
+fn marker<T>() -> own unit pure { return unit; }
+  marker<4>();     ->  Semantics/Source [FN-2], kind TypeMismatch
+```
+
+The only thing covering it is the library test
+`generic_argument_kinds_and_const_parameter_types_are_checked`. A lib test is
+not conformance coverage, and the coverage gate counts FN-2 as covered on the
+strength of the four carriers above. Candidate work for M4.
+
+**2. `fn2-pos-explicit-instantiation` PASSES while testing nothing, and no gate
+can see it.** Its whole subject is that explicit instantiation arguments are
+written and monomorphized; A1 respelled them out of its source, which now reads
+
+```
+let a = 40_i32 + 2_i32;
+let b = a *wrap 1_i32;
+```
+
+with **no instantiation argument anywhere**, while its doc still claims "Generic
+ops are instantiated with explicit type arguments [FN-2]". It is the same class
+as the case retired above — content the migration deleted — but **green**, so
+the pinned failure set cannot surface it and neither can the adapter. This is
+the hazard the batch has been guarding against all week, in its invisible form.
+
+A restatement is verified and ready, preserving its `run` expectation and its
+subject by moving it to a user generic, which still writes and monomorphizes
+explicit arguments:
+
+```
+let a = Held(v: 42_i32);
+let b = pick<Held>(value: move a);
+check b.v == 42_i32 else trap "mono drift";
+```
+
+observed to exit 0. Not applied: it is a protected conformance case and the
+disposition is the owner's, not this unit's.
+
+**The general point is worth more than either case.** Both were found by asking
+what a case's content *is* now, not by watching a gate. A migration that deletes
+a construct silently empties every case whose subject was that construct, and
+half of those cases go green rather than red. Nothing in the repository looks
+for a case that passes without exercising its own concern.
+
+### Validation
+
+- `make check`: **exit 2** at the compiler step, lib **570 passed / 5 failed**;
+  the driver test clears and nothing else moves.
+- Conformance coverage **128/128 rules, 0 uncovered** — FN-2 keeps four live
+  carriers after the retirement.
+- Adapter **Pass=384 Fail=4 Skip=13**, the one fewer skip being the retired
+  case. The four are `own3-pos-outlives-store`, `x-give-result-aggregate`,
+  `fn8-neg-requires-eeq-payload-enum`, `own5-neg-slice-value-match`.
+- `cargo fmt` applied; the manifest's six non-JSON lines remain pre-existing.
 ## Round 16 (exec-0038n, 2026-08-08) — the three remaining adapter failures, diagnosed
 
 No compiler or corpus change: this round is diagnosis, as scoped. Each cause is
