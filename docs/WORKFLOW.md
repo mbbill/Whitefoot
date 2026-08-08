@@ -308,6 +308,30 @@ instead of restating them.
   leaving a green row, and it can launder a compiler defect into normative
   expectation.
 
+### One writer per worktree
+
+An executor's worktree has exactly one writer: that executor. Nobody commits
+into it, rebases the branch checked out in it, or resets it while the executor
+is live — not to rescue uncommitted work, not to integrate, not to fix a
+message.
+
+The reason is not tidiness. Every diagnostic an executor uses to check its own
+state means something different when a second writer exists, and it cannot tell
+the two apart: a `grep` returning pre-fix source, a `UU` in `git status`, and
+its own commit ids going unreachable read exactly like "my work was reverted and
+a merge is stuck" when they are in fact a concurrent rebase in progress. The
+natural repair from that reading — re-applying a fix on top of itself, or
+reverting the other writer's commit — destroys real work to rescue work that
+was never lost. Both practices above assume single-writer, and telling the
+executor afterwards does not close the window, because the race lives between
+the action and the message.
+
+If an idle executor is holding verified-but-uncommitted work, either **stop the
+agent first and then operate on the tree**, or **take the diff out and land it
+on your own branch**, leaving theirs untouched. Integration follows the same
+rule: rebase and merge from a worktree you own, never from one an executor is
+sitting in.
+
 ## Project gates
 
 Every selected project milestone passes four gates:
