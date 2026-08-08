@@ -2,24 +2,24 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — 2026-08-07 round 5, handed back at a clean boundary.
-  The candidate is re-assembled from the current 64-site delta at SHA-256
-  `935b9538df69f6f6289e8a6c99004db45a1f5e1865929c4b7cc1ced861bec9d2`, the
-  tables are regenerated from it and machine-checked, the terminal inventory is
-  76 -> 97, and the identity pins name the candidate path. Both gates are RED
-  at the predicted corpus boundary and every failure is classified below.
-  **One blocker needs a ruling before this branch can go further:** task 0039's
-  spec-identity machinery and this task's ruled candidate-stage pinning are
-  structurally incompatible, and neither can be reconciled without an owner
-  action. See "Round-5 blocker".
+- **Status:** `WAITING` — 2026-08-07 round 6. The candidate is re-assembled
+  from the corrected 64-site delta at SHA-256
+  `a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`, the
+  tables are derived from it and machine-checked, the terminal inventory is
+  76 -> 97, and the identity pins name the candidate path. The grammar path is
+  complete. Both gates are RED at the predicted corpus boundary; every failure
+  is classified below, and the three that are **not** 0038's are the
+  activation-gated spec-identity checks the lead has ruled are correct to be
+  red on an unapproved specification. See "Definition of done for this branch".
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
   2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's
   discharge premise, expand this task to full atomic activation, and sequence
-  re-assembly after the fixed delta
-- **Owner / workspace (round 5):** exec-0036d /
-  `/Users/bytedance/do_not_scan/wf-0036c` on branch
-  `task/0036-floor5-grammar-and-migration`, rebased onto main at 21c7e26
+  re-assembly after the fixed delta; and the lead's 2026-08-07 ruling that the
+  three spec-identity checks are activation-gated by design
+- **Owner / workspace (rounds 5–6):** exec-0036d /
+  `/Users/bytedance/do_not_scan/wf-0036e` on branch
+  `task/0036-floor5-grammar-and-migration`, rebased onto main at f80840d
 - **Base revision:** b345e2c
 - **Dependency:** none
 
@@ -204,6 +204,89 @@ components the lead asked to see enumerated:
 `SELECT_ROWS` 2003 -> 1893 and the count pin moved with it, as it does for
 every grammar change. The third component will move the count again; report it
 as its own number rather than netting it against these two.
+
+## Definition of done for this branch (lead ruling, 2026-08-07)
+
+**The three spec-identity checks are activation-gated by design.** A branch
+carrying a specification the owner has not approved is legitimately red on
+them, and that is the checks working: the identity of the active specification
+cannot be true of bytes no one has approved. They are a defect neither in task
+0039 nor in this task's candidate-stage pinning, and they are **not** to be
+silenced, weakened, or made green by writing an `ACTIVE-SPEC:` line.
+
+The branch's finish line is therefore **green except exactly these three, each
+failing for the reason named**:
+
+| check | fails because |
+|---|---|
+| `spec::tests::path_and_version_label_agree` | the pin names the candidate path, not `spec/kernel-spec-v0.23.md` |
+| `spec::tests::computed_identity_is_the_approved_digest` | the embedded bytes hash to a digest the owner has not approved |
+| `whitefoot-spec` `tests::recorded_chain_ends_at_the_embedded_specification` | the `ACTIVE-SPEC:` chain ends at v0.22 |
+
+The **activation commit closes all three at once**: install the approved bytes
+at `spec/kernel-spec-v0.23.md`, repoint the pins there, and append the
+`ACTIVE-SPEC:` line. Anyone reading these three later should read them as the
+gate that is still waiting for owner approval, never as breakage to fix.
+
+## Round 6 (2026-08-07) — re-assembled from the corrected delta
+
+The lead repaired [OP-1] (iii) in the delta (main, 32e2af4): the anchor now
+takes the whole `ModeWords` sentence including its trailing
+`{wrap, trap, checked, sat, strict}`, which the prefix anchor had left stranded
+as a second "in this version" clause. Round 6 re-assembled from that delta
+rather than editing the round-5 bytes.
+
+**Candidate SHA-256
+`a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`.**
+Same shape as round 5 and re-verified rather than assumed: 74 verbatim anchors,
+**64 sites across 34 rules**, each asserted exactly once and all matching first
+run; **128 rules**, **20 sections**.
+
+The assembled [OP-1] (iii) sentence now reads once:
+
+> Let `ModeWords` be exactly the suffix alternatives in FORM-3's active OPNAME
+> formation rule together with the operator-form suffixes of [GRAM-1]; in this
+> version the two carriers share one closed set, `{wrap, trap, checked, sat,
+> strict}`.
+
+**The whole-file difference from the round-5 candidate is exactly one line** —
+the `ModeWords`/`DotlessOperationNames` paragraph. That is also the round's
+control on the assembler itself: the round-5 script had been deleted, so round 6
+rebuilt it, and a faithful rebuild landing on a one-line diff is what says the
+rebuild is faithful.
+
+**The derived tables are byte-identical to round 5's**, re-derived and compared
+rather than assumed — the delta's change is normative prose in [OP-1] and moves
+no EBNF. So the 69/84/97 triple, the +1371 SELECT rows, the 76 -> 97 terminals,
+and the whole table decomposition stand exactly as round 5 reported them. Only
+the three digest pins moved: `compiler/src/spec.rs`,
+`tests/conformance/runner.py`, and the ledger's v0.23 binding.
+
+**Gate states, exit codes read directly from `$?` without a pipe.**
+
+- `cargo test --bin whitefoot-grammar-tables` (the derivation check against
+  v0.23): **exit 0**.
+- `whitefoot-grammar CANDIDATE CANDIDATE`: **exit 0** — **69 productions, 84
+  decisions, 97 terminal predicates**.
+- `cargo fmt --all -- --check`: **exit 0**. `cargo clippy --all-targets -D
+  warnings`: **exit 0**.
+- `make -C compiler check`: **exit 2**, lib tests **253 passed, 270 failed** —
+  the same count and the same classification as round 5.
+- `make check`: **exit 2**, failing at the compiler stage after passing
+  repository invariants, spec append-only, spec archive integrity (23
+  specifications), and the 18 conformance plumbing tests.
+
+The failure classification is unchanged: 266 v0.22-spelled sources under the
+v0.23 grammar (0038), 1 stale operation catalog, 1 lexer gap, and the three
+activation-gated spec-identity checks above. None is a table, terminal, or
+derivation failure.
+
+**Workspace note.** Round 5's worktree `/Users/bytedance/do_not_scan/wf-0036c`
+was removed between rounds and this branch was re-homed to
+`/Users/bytedance/do_not_scan/wf-0038-exec` while task 0038 sits unclaimed in
+`docs/planned/`. Round 6 therefore worked in a separate detached worktree,
+`/Users/bytedance/do_not_scan/wf-0036e`, rather than committing inside another
+task's workspace. The branch ref needs one fast-forward to pick this round up.
 
 ## Round 4 (2026-08-07) — superseded bytes, retained findings
 

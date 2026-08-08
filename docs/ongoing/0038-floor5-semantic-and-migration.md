@@ -87,27 +87,60 @@ approval record: writing one to make a gate green is forbidden.
 
 ## Claim corrections (exec-0038, 2026-08-07)
 
-Three facts in the brief above do not hold as written and are corrected
-here rather than worked around.
+Three facts in the handoff paragraph above did not hold as written when
+this task was claimed. The lead has since repaired that paragraph on main
+(`6b1dd18`), so it now reads correctly; what follows is the record of what
+was found, not a live complaint.
 
-- **Branch tip `b0da5f8` does not exist** in this repository
+- **Branch tip `b0da5f8` did not exist** in this repository
   (`git cat-file -t` fatal). The real tip of
   `task/0036-floor5-grammar-and-migration` was `2ec8248`, carrying exactly
   the three described commits; the reflog shows `b0da5f8` was never a
-  value of this ref. Taken over at `2ec8248` and rebased onto main
-  `f80840d`.
-- **The candidate hash is neither cited value.** The committed candidate
+  value of this ref. Taken over at `2ec8248`.
+- **The candidate hash was neither cited value.** The committed candidate
   hashed to `935b9538…` — round 5's own reported bytes — not the
-  `bde4a9ef…` the brief cites as pinned. It was also *stale*: it was
-  assembled before main's `32e2af4` extended the [OP-1] (iii) anchor, so
-  it still carried the doubled "in this version" clause round 5 reported
-  and left literal. Re-applying the delta's corrected (iii) replacement,
-  which is the only delta change since assembly, gives
-  `a92b4513…`. That is the current-delta assembly and what the pins now
-  name; no other byte moved.
+  `bde4a9ef…` the card then cited, which matches no commit in this
+  repository. It was also *stale*: assembled before main's `32e2af4`
+  extended the [OP-1] (iii) anchor, so it still carried the doubled "in
+  this version" clause round 5 reported and left literal. Applying the
+  delta's corrected (iii) replacement — the only delta change since
+  assembly — gives `a92b4513…`.
 - **The round-5 blocker is settled by the definition of done above**, which
   rules candidate-stage pinning a recognized state with exactly three
   checks left red until the owner's activation commit.
+
+## Candidate bytes reconciled with 0036 round 6 (exec-0038, 2026-08-07)
+
+The lead directed this branch to take exec-0036d's round-6 commit
+(`5c12646`, reachable only from the tag `0036-round6-candidate`) for the
+corrected candidate and the three digest pins. **Recomputed rather than
+relayed, that commit's four substantive files are byte-identical to what
+this branch already carried**, so nothing was owed:
+
+| file | tag vs this branch |
+|---|---|
+| `governance/spec-evolution/kernel-spec-v0.23-candidate.md` | identical |
+| `compiler/src/spec.rs` | identical |
+| `tests/conformance/runner.py` | identical |
+| `spec/derivation/derivation-ledger.md` | identical |
+
+Only `docs/ongoing/0036-floor5-grammar-and-migration.md` differed, and it
+is imported here verbatim from the tag so 0036's round-6 history survives
+the tag's deletion.
+
+**This is a real independent cross-check, not a coincidence.** Round 6
+re-assembled the whole candidate from the corrected delta by script; this
+task reached the same bytes by applying the single corrected (iii) anchor
+to the round-5 assembly. Two different methods, one digest —
+`a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`,
+recomputed with `shasum -a 256` from this worktree and from the git object
+at HEAD. That is stronger evidence for the bytes than either method alone.
+
+One process note against this branch: the candidate fix and its three pins
+landed inside the lexer commit rather than as their own commit, which is
+why a reader diffing `cacfa26` alone sees the unfixed bytes. The content is
+correct and verified; the commit boundary was not as clean as it should
+have been.
 
 ## Progress (round 1, exec-0038, 2026-08-07 — handed back at a clean boundary)
 
