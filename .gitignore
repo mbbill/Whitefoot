@@ -32,6 +32,10 @@ experiments/frequency-study/results/raw/
 *.rlib
 *.exe
 *.dSYM/
+# `whitefootc` names its executable `a.out` when no `-o` is given, the cc
+# convention, so compiling a scratch program from the repository root drops
+# one here. It reached a commit once that way.
+a.out
 *.profraw
 *.profdata
 target/
