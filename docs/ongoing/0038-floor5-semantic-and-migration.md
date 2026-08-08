@@ -1103,6 +1103,30 @@ by the tool because neither is a well-formed two-armed Bool match:
 Both sit outside the 20 because both *parse*; they fail semantically, so no
 parse-based sweep would have surfaced them. Only the assertion did.
 
+### M3b's two structural assertions — where they must live (measured, not guessed)
+
+The 2026-08-08 instruction is to assert, on the migrated **trees** rather
+than the text, that no `else` block holds exactly one `if_stmt` (the
+unflattened form GRAM-6 forbids) and that no Bool-scrutinee `match`
+survives. Both are right, and neither can live in the migration tool.
+
+`FinalizedTopology` is `pub(crate)` and `FinalizedBundle::topology` is
+`pub(crate)`, so **a bin cannot reach the tree at all** — a bin is a
+separate crate and sees only `pub`. The same rules out
+`compiler/tests/canonical_corpus.rs`, which is an integration test and
+therefore also a separate crate. The assertions must be a **lib unit test**
+under `compiler/src/`, which is better anyway: it makes them a standing
+gate in `make check` rather than a one-shot check inside a tool nobody runs
+again.
+
+The text-level version was run and is recorded above; it found the two
+survivors. The structural version subsumes it and is the one to land.
+
+Note the assertions are not redundant with the checker even though GRAM-6
+rejects both forms: a migrated file that fails earlier for another reason
+never reaches the checker, so the rejection would not fire and the defect
+would sit unnoticed in the corpus.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the
