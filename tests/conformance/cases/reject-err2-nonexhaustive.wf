@@ -4,10 +4,13 @@ enum Sign {
   Pos();
 }
 
-fn bad(x: own i32) -> own Sign pure {
-  match ilt<i32>(x, 0_i32) {
-    True() => {
-      return Neg();
+fn bad(s: own Sign) -> own u64 pure {
+  match s {
+    Neg() => {
+      return 1_u64;
+    }
+    Zero() => {
+      return 2_u64;
     }
   }
 }
