@@ -71,6 +71,12 @@ pub enum TokenKind {
     LabelForm,
     /// A dotted operation-name shape with one closed mode suffix.
     OperationNameForm,
+    /// An arithmetic operator byte carrying a maximal lowercase mode suffix.
+    ///
+    /// The suffix is retained exactly as written, including one the closed
+    /// `infix_op` list does not admit; rejecting it is terminal membership's
+    /// decision, not formation's.
+    OperatorForm,
     /// A decimal numeric candidate retained for later literal checking.
     NumberForm,
     /// A string with a lexically valid raw body and escape structure.
@@ -105,6 +111,14 @@ pub enum TokenKind {
     ThinArrow,
     /// `=>`.
     FatArrow,
+    /// `==`.
+    EqualEqual,
+    /// `!=`.
+    BangEqual,
+    /// `<=`.
+    LessEqual,
+    /// `>=`.
+    GreaterEqual,
     /// `&`.
     Ampersand,
 }

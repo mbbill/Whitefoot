@@ -103,6 +103,13 @@ fn membership(token: Token<'_>) -> Option<TerminalSet> {
             }
             valid
         }
+        TokenKind::OperatorForm => match FixedTerminal::from_spelling(spelling) {
+            Some(terminal) if terminal.is_operator_form() => {
+                set.insert(TerminalPredicate::Fixed(terminal));
+                true
+            }
+            _ => false,
+        },
         TokenKind::LeftParen => fixed(&mut set, FixedTerminal::LeftParen, spelling),
         TokenKind::RightParen => fixed(&mut set, FixedTerminal::RightParen, spelling),
         TokenKind::LeftBrace => fixed(&mut set, FixedTerminal::LeftBrace, spelling),
@@ -118,6 +125,10 @@ fn membership(token: Token<'_>) -> Option<TerminalSet> {
         TokenKind::Equal => fixed(&mut set, FixedTerminal::Equal, spelling),
         TokenKind::ThinArrow => fixed(&mut set, FixedTerminal::ThinArrow, spelling),
         TokenKind::FatArrow => fixed(&mut set, FixedTerminal::FatArrow, spelling),
+        TokenKind::EqualEqual => fixed(&mut set, FixedTerminal::EqualEqual, spelling),
+        TokenKind::BangEqual => fixed(&mut set, FixedTerminal::BangEqual, spelling),
+        TokenKind::LessEqual => fixed(&mut set, FixedTerminal::LessEqual, spelling),
+        TokenKind::GreaterEqual => fixed(&mut set, FixedTerminal::GreaterEqual, spelling),
         TokenKind::Ampersand => fixed(&mut set, FixedTerminal::Ampersand, spelling),
     };
     (valid_shape && !set.is_empty()).then_some(set)
@@ -194,10 +205,15 @@ pub fn classify_terminals<'lexed, 'source>(
                 continue;
             };
             let Some(terminals) = membership(*token) else {
-                if token.kind() == TokenKind::NumberForm {
+                let owner = match token.kind() {
+                    TokenKind::NumberForm => Some(TerminalIssueOwner::Form5),
+                    TokenKind::OperatorForm => Some(TerminalIssueOwner::Gram1),
+                    _ => None,
+                };
+                if let Some(owner) = owner {
                     return TerminalOutcome::SourceIssue(TerminalIssue {
                         token: token.id(),
-                        owner: TerminalIssueOwner::Form5,
+                        owner,
                     });
                 }
                 return TerminalOutcome::CompilerFailure(invalid_token(*token));

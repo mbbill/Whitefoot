@@ -394,6 +394,33 @@ impl FixedTerminal {
             .find(|terminal| terminal.spelling() == spelling)
     }
 
+    /// Reports whether this is one of the sixteen GRAM-1 operator forms.
+    ///
+    /// The four compound comparisons are excluded: they are compound
+    /// punctuation, not operator forms, and carry no mode suffix.
+    #[must_use]
+    pub const fn is_operator_form(self) -> bool {
+        matches!(
+            self,
+            Self::Plus
+                | Self::PlusWrap
+                | Self::PlusChecked
+                | Self::PlusSat
+                | Self::Minus
+                | Self::MinusWrap
+                | Self::MinusChecked
+                | Self::MinusSat
+                | Self::Star
+                | Self::StarWrap
+                | Self::StarChecked
+                | Self::StarSat
+                | Self::Slash
+                | Self::SlashChecked
+                | Self::Percent
+                | Self::PercentChecked
+        )
+    }
+
     const fn index(self) -> u8 {
         self as u8
     }

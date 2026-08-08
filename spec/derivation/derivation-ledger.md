@@ -838,7 +838,7 @@ existence-only · 0 underived.
 
 Specification binding:
 `governance/spec-evolution/kernel-spec-v0.23-candidate.md` at SHA-256
-`935b9538df69f6f6289e8a6c99004db45a1f5e1865929c4b7cc1ced861bec9d2`, assembled
+`a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`, assembled
 from the active v0.22 plus the approved FLOOR-5 delta
 (`governance/spec-evolution/spelling-relief-candidate.md`: SWEEP rows A1, A3,
 A4, and C1, with the owner rulings and adversarial-review fixes recorded

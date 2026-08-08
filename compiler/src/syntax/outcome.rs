@@ -98,6 +98,8 @@ pub enum TerminalCompilerFailure {
 pub enum TerminalIssueOwner {
     /// FORM-5 literal spelling membership.
     Form5,
+    /// GRAM-1 operator-form suffix membership.
+    Gram1,
 }
 
 impl TerminalIssueOwner {
@@ -106,6 +108,7 @@ impl TerminalIssueOwner {
     pub const fn id(self) -> &'static str {
         match self {
             Self::Form5 => "FORM-5",
+            Self::Gram1 => "GRAM-1",
         }
     }
 }

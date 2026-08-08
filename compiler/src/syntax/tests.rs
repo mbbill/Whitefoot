@@ -138,6 +138,78 @@ fn unit_retains_fixed_and_literal_memberships() {
 }
 
 #[test]
+fn operator_suffix_membership_admits_exactly_the_infix_op_list() {
+    for spelling in [
+        b"+".as_slice(),
+        b"+wrap",
+        b"+checked",
+        b"+sat",
+        b"-",
+        b"-wrap",
+        b"-checked",
+        b"-sat",
+        b"*",
+        b"*wrap",
+        b"*checked",
+        b"*sat",
+        b"/",
+        b"/checked",
+        b"%",
+        b"%checked",
+    ] {
+        let inputs = [SourceInput::new("operator.wf", spelling)];
+        let Ok(bundle) = source_bundle(&inputs) else {
+            panic!("test source bundle must be constructible");
+        };
+        let Ok(lexed) = lexed(&bundle) else {
+            panic!("operator form must lex");
+        };
+        let TerminalOutcome::Complete(_) = classify_terminals(
+            &lexed,
+            ACTIVE_KERNEL_SPEC_HASH,
+            TerminalLimits { max_tokens: 1 },
+        ) else {
+            panic!("{spelling:?} is an infix_op row and must pass membership");
+        };
+    }
+
+    // A suffix outside the closed list forms one token and is rejected by
+    // membership, not by formation, and the whole operator is the span.
+    // `/sat` and `%sat` are the near misses: the mode word is admissible on
+    // other carriers but no division or remainder row carries it.
+    for spelling in [
+        b"+strict".as_slice(),
+        b"+trap",
+        b"-foo",
+        b"*x",
+        b"/sat",
+        b"%sat",
+        b"/wrap",
+    ] {
+        let inputs = [SourceInput::new("operator.wf", spelling)];
+        let Ok(bundle) = source_bundle(&inputs) else {
+            panic!("test source bundle must be constructible");
+        };
+        let Ok(lexed) = lexed(&bundle) else {
+            panic!("a bad operator suffix must still form one token");
+        };
+        let TerminalOutcome::SourceIssue(issue) = classify_terminals(
+            &lexed,
+            ACTIVE_KERNEL_SPEC_HASH,
+            TerminalLimits { max_tokens: 1 },
+        ) else {
+            panic!("{spelling:?} must fail terminal membership");
+        };
+        assert_eq!(issue.owner(), TerminalIssueOwner::Gram1);
+        assert_eq!(issue.token().start().value(), 0);
+        assert_eq!(
+            issue.token().end().value(),
+            u64::try_from(spelling.len()).unwrap_or(u64::MAX)
+        );
+    }
+}
+
+#[test]
 fn malformed_numeric_membership_stops_at_first_source_then_byte() {
     let inputs = [
         SourceInput::new("first.wf", b"x 1e+ 2_T"),

@@ -63,6 +63,18 @@ impl<'bytes> Scanner<'bytes> {
             b'=' if self.bytes.get(start + 1) == Some(&b'>') => {
                 self.fixed(start, 2, RawKind::Token(TokenKind::FatArrow))
             }
+            b'=' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::EqualEqual))
+            }
+            b'!' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::BangEqual))
+            }
+            b'<' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::LessEqual))
+            }
+            b'>' if self.bytes.get(start + 1) == Some(&b'=') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::GreaterEqual))
+            }
             b'/' if matches!(self.bytes.get(start + 1), Some(b'/' | b'*')) => {
                 return Err(RawIssue {
                     start,
@@ -70,6 +82,7 @@ impl<'bytes> Scanner<'bytes> {
                     kind: SourceIssueKind::CommentPrefix,
                 });
             }
+            b'+' | b'-' | b'*' | b'/' | b'%' => self.operator_form(start),
             b'"' => self.string(start)?,
             b'(' => self.fixed(start, 1, RawKind::Token(TokenKind::LeftParen)),
             b')' => self.fixed(start, 1, RawKind::Token(TokenKind::RightParen)),
@@ -142,6 +155,21 @@ impl<'bytes> Scanner<'bytes> {
             } else {
                 TokenKind::LowerWordForm
             }),
+        }
+    }
+
+    /// Forms one operator token: the operator byte and its maximal `[a-z]*`
+    /// suffix.
+    ///
+    /// The suffix is taken whole even when it is not one of `wrap`, `checked`,
+    /// or `sat`, so that `a +foo b` reports one badly suffixed operator rather
+    /// than an operator followed by a place named `foo`. The `->` and negative
+    /// numeric guards on `b'-'` run before this arm.
+    fn operator_form(&self, start: usize) -> RawLexeme {
+        RawLexeme {
+            start,
+            end: take_while(self.bytes, start + 1, u8::is_ascii_lowercase),
+            kind: RawKind::Token(TokenKind::OperatorForm),
         }
     }
 

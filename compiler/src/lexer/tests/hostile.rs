@@ -32,7 +32,11 @@ fn invalid_bytes_and_comment_markers_fail_without_a_partial_tape() {
 fn active_spec_pre_tree_defects_use_the_exact_specified_spans() {
     assert_eq!(issue(b"// comment"), (SourceIssueKind::CommentPrefix, 0, 2));
     assert_eq!(issue(b"/* comment"), (SourceIssueKind::CommentPrefix, 0, 2));
-    assert_eq!(issue(b"/"), (SourceIssueKind::UnexpectedByte, 0, 1));
+    // `/` now forms an operator token, so the comment-prefix guard is what
+    // still decides `//` and `/*`. A lone `!` remains a raw lexical defect:
+    // it exists only inside the `!=` compound.
+    assert_eq!(issue(b"!"), (SourceIssueKind::UnexpectedByte, 0, 1));
+    assert_eq!(issue(b"a ! b"), (SourceIssueKind::UnexpectedByte, 2, 3));
     assert_eq!(issue(b"\0"), (SourceIssueKind::InvalidSourceByte, 0, 1));
     assert_eq!(issue(b"\x7f"), (SourceIssueKind::InvalidSourceByte, 0, 1));
 
@@ -184,6 +188,8 @@ fn every_single_top_level_byte_has_a_controlled_lossless_outcome() {
     for byte in 0_u8..=u8::MAX {
         let bytes = [byte];
         let source = bundle(&[("byte.wf", &bytes)]);
+        // The five operator bytes each form a suffix-free operator token on
+        // their own; a lone `!` does not, because it exists only inside `!=`.
         let expected_complete = byte.is_ascii_alphanumeric()
             || matches!(
                 byte,
@@ -202,6 +208,11 @@ fn every_single_top_level_byte_has_a_controlled_lossless_outcome() {
                     | b'.'
                     | b'='
                     | b'&'
+                    | b'+'
+                    | b'-'
+                    | b'*'
+                    | b'/'
+                    | b'%'
             );
         match (expected_complete, crate::lex(&source, generous_limits())) {
             (true, LexOutcome::Complete(lexed)) => {

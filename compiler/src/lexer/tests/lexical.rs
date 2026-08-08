@@ -50,6 +50,69 @@ fn recognizes_every_shape_without_keyword_or_operation_resolution() {
 }
 
 #[test]
+fn operator_forms_take_their_maximal_lowercase_suffix() {
+    let observed = observed(b"a +wrap b - 1_u64 c *sat d %checked e /f\n");
+    let tokens: Vec<_> = observed
+        .iter()
+        .filter(|(_, label)| label.starts_with("token:"))
+        .map(|(bytes, label)| (bytes.clone(), label.clone()))
+        .collect();
+    assert_eq!(
+        tokens,
+        [
+            (b"a".to_vec(), "token:LowerWordForm".into()),
+            (b"+wrap".to_vec(), "token:OperatorForm".into()),
+            (b"b".to_vec(), "token:LowerWordForm".into()),
+            // `-` before a space is an operator; `-1_u64` stays one number.
+            (b"-".to_vec(), "token:OperatorForm".into()),
+            (b"1_u64".to_vec(), "token:NumberForm".into()),
+            (b"c".to_vec(), "token:LowerWordForm".into()),
+            (b"*sat".to_vec(), "token:OperatorForm".into()),
+            (b"d".to_vec(), "token:LowerWordForm".into()),
+            (b"%checked".to_vec(), "token:OperatorForm".into()),
+            (b"e".to_vec(), "token:LowerWordForm".into()),
+            // The suffix is maximal even when no `infix_op` row admits it, so
+            // membership rather than formation rejects `/f`.
+            (b"/f".to_vec(), "token:OperatorForm".into()),
+        ]
+    );
+}
+
+#[test]
+fn compound_punctuation_beats_its_single_byte_prefixes() {
+    let observed = observed(b"a == b != c <= d >= e -> f => g < h > i = j\n");
+    let tokens: Vec<_> = observed
+        .iter()
+        .filter(|(_, label)| label.starts_with("token:"))
+        .map(|(_, label)| label.clone())
+        .collect();
+    assert_eq!(
+        tokens,
+        [
+            "token:LowerWordForm",
+            "token:EqualEqual",
+            "token:LowerWordForm",
+            "token:BangEqual",
+            "token:LowerWordForm",
+            "token:LessEqual",
+            "token:LowerWordForm",
+            "token:GreaterEqual",
+            "token:LowerWordForm",
+            "token:ThinArrow",
+            "token:LowerWordForm",
+            "token:FatArrow",
+            "token:LowerWordForm",
+            "token:LeftAngle",
+            "token:LowerWordForm",
+            "token:RightAngle",
+            "token:LowerWordForm",
+            "token:Equal",
+            "token:LowerWordForm",
+        ]
+    );
+}
+
+#[test]
 fn dotted_mode_boundary_is_exact_and_dotless_ops_remain_words() {
     let observed = observed(b"p.wrap p.wrapx p.checked_more foo.checked iadd\n");
     let tokens: Vec<_> = observed
