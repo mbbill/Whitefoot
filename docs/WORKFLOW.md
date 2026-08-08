@@ -268,6 +268,46 @@ An executor's loop is fixed:
    integration branch. Review challenges relevance, proportionality, and
    sequencing as well as technical soundness.
 
+### Evidence discipline for executors and reviewers
+
+These are standing rules, learned by paying for each one. They apply to every
+report, record, brief, and approval entry, and a brief may cite this section
+instead of restating them.
+
+- **Say what you ran, on both sides.** A claim backed by a differential
+  reproduction — the same source at the parent revision and at the fix, both
+  rebuilt — is evidence. A claim backed by prose is a guess that reads
+  identically in a report. Where a probe failed to isolate what you intended,
+  write **"not measured"** rather than reasoning to a verdict; that phrase is
+  worth more than the paragraph it replaces.
+- **A retraction needs measurement too.** Walking a claim back without running
+  anything is the same error as making it, and it is harder to catch because it
+  sounds careful. Ask of a retraction what you would ask of the original.
+- **Differential measurement moves the working tree**, which is how an
+  uncommitted, already-verified fix was destroyed. Prefer a throwaway
+  `git worktree add --detach` for the other side; it costs one compile and
+  touches nothing. When taking the cheaper in-place path, commit the after
+  state before checking out the before.
+- **Never write an identifier you did not resolve.** Commit ids, short hashes,
+  and digests are recomputed with `git rev-parse --short=8` or the hashing tool
+  before they are written, in prose as much as in tables. A brief names a
+  **branch**, never a commit id, so the reader resolves the tip and cannot
+  inherit a stale or invented one. Every count carries the command that
+  reproduces it, and no figure is copied forward without re-measuring.
+- **Read exit codes from `$?` directly, never through a pipe.** `make check |
+  tail` reports the status of `tail`; a red gate has been committed here that
+  way. Write `make check; echo "exit=$?"`.
+- **Relaying converts a claim into an authority.** A peer's report is not
+  evidence. Forward the reproduced half with its command and mark the rest
+  unverified; never restate a peer's finding as a specification, a ruling, or an
+  approval-ledger fact.
+- **Ask whether a cited rule is the subject or an accident.** When a test or
+  case changes which rule rejects it, determine whether the new citation is the
+  rule the specification assigns to the violation that remains, or merely the
+  one that happened to fire first. Recording the latter deletes coverage while
+  leaving a green row, and it can launder a compiler defect into normative
+  expectation.
+
 ## Project gates
 
 Every selected project milestone passes four gates:
