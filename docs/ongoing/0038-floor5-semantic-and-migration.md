@@ -2,17 +2,21 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — 2026-08-08 round 5. The **canonical renderer and its
-  corpus gate are landed** (`bcb639f`) — items 1 and 2 of the 2026-08-08
-  renderer ruling. The migration tool, the semantic path and the conformance
-  work are **not started**; they remain one atomic batch, and round 5 handed
-  back at the renderer boundary rather than opening it. See "Round 5".
+- **Status:** `BLOCKED` — 2026-08-08 round 6. The **TYPE-5 and GIVE-1
+  derivation is landed** (`9931e0f`) and the **OP-2 operand-derived row
+  selection is landed** (`9eed20a`). A **new blocker stops the rest of M1**:
+  after A3 deletes the annotation, `box_new(v)` has no interning site for its
+  box nominal, reproduced below with a distinguishing control. It is the same
+  shape as round 3's `None()` blocker and, like it, its likely repair moves
+  candidate bytes. See "Round 6".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038d (round 5) / `/Users/bytedance/do_not_scan/wf0038-r5`
-  on branch `task/0036-floor5-grammar-and-migration`
-- **Base revision:** fb80bb1 (main), branch rebased onto it, 19 commits, clean
+- **Owner / workspace:** exec-0038e (round 6) / `/Users/bytedance/do_not_scan/wf0038-r6`
+  on branch `task/0038-floor5-semantic-and-migration`, branched from
+  `task/0036-floor5-grammar-and-migration` at `12d9eb2` because a live
+  worktree still held that branch (see "Round 6")
+- **Base revision:** fb80bb1 (main), already an ancestor; no rebase was owed
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -734,6 +738,198 @@ understand and then probably discard — the shape rounds 2 and 4 of 0036 both
 named. The render pass makes that tool much smaller than it looks: the
 pre-pass may emit any layout that parses, so it never computes a byte of
 spacing or indentation.
+
+## Round 6 (exec-0038e, 2026-08-08) — M1's semantic path, and a blocker that stops it
+
+Two commits. M1's TYPE-5/GIVE-1 half is complete and cost nothing; its OP-2
+half is complete and is coupled to the fixture migration; its FN-4 item is
+**not started**, because the blocker below sits in front of it.
+
+**Two claims in the round-5 brief did not hold and were corrected before
+work started.** Branch tip `f7c8b19` **does not exist** in this repository
+(`git cat-file -t` fatal); the real tip of
+`task/0036-floor5-grammar-and-migration` is `12d9eb2`, carrying exactly the
+described renderer commit. And a worktree **did** hold that branch —
+`/Users/bytedance/do_not_scan/wf0038-r5`, clean and at the tip. It was left
+alone rather than removed, so this round branched
+`task/0038-floor5-semantic-and-migration` from `12d9eb2` and worked in its
+own worktree. **The branch already contained main's tip `fb80bb1` as the
+merge base, so no rebase was owed** — verified, not assumed. The candidate
+still hashes to `ab257aa65874c4e6de167189b97cf706b5ca0045ccab86fdb54da83e2ba613da`,
+recomputed here with `shasum -a 256`.
+
+### `9931e0f` — TYPE-5 and GIVE-1 derivation
+
+The inversion the round-3 brief described, and it is as small as that brief
+said. `check_let` stops reading the `Mode` and `Type` children and each arm
+takes what its right-hand side produces; `check_propagate_let` derives the
+binder from the operand's own Ok payload instead of checking against the
+annotation; `GiveContext` carries a `Cell` holding the mode and type the
+first delivering `give` produced, later `give`s must agree exactly, and an
+empty delivery set rejects at the `let_stmt` node.
+
+**One consequence no brief predicted: it empties the expectation channel.**
+After the amendment the only reader of an expected type in the whole
+expression checker was `check_construct`, which used it to name the prelude
+generic nominal. Now that the variant constructors write their arguments,
+nothing reads it, so `check_expression_with_expected` and
+`check_consuming_expression_with_expected` are gone and the `expected`
+parameter is off `check_expression_in_context` and `check_construct`. The
+three call sites that passed one — `return`, `set`, `give` — all re-checked
+the result immediately afterwards, so no judgment was lost. This is round
+4's finding 2 arriving in the code: [TYPE-6] already forbade the channel.
+
+The propagate pre-pass in `nominal_instances.rs` that interned a `Result`
+instance from the let's written annotation is deleted with it: that instance
+is the callee's and its signature already interned it.
+
+**Eight regressions**, `semantic::tests::derivation`, all v0.23-spelled,
+including `let absent = None<buffer<u8>>();` — the round-3 blocker's own
+witness, which had no legal spelling before the amendment. Lib went
+**259 -> 267 passed / 271 failed**, and the failure SET is byte-identical to
+`/Users/bytedance/do_not_scan/wf0038-baseline-failures.txt`: zero added,
+zero removed.
+
+### `9eed20a` — OP-2 operand-derived row selection
+
+The first operand's exact type is the selection; every later operand is held
+to the row's argument type for it, so "both operands must have one identical
+exact type" falls out and cites TYPE-5 at the second operand atom. A written
+type argument now cites **OP-1** — the judgment inverted, since v0.22 cited
+FN-2 for its *absence*.
+
+The same inversion covers the whole deleted class, which is wider than the
+integer rows: Bool operations, enum equality, the float rows, `len`,
+`box_new`, and `buffer_new`. **`buffer_new(n, v)` is the one row that
+selects from its *second* operand** — its first is the u64 element count —
+which is worth knowing before touching it. `cvt`, `reinterpret`,
+`array_new` and `arena_new` are the retained class and are untouched, and
+`finf`/`fnan` are nullary, so they keep a written result type and are the
+one float row that still reads one.
+
+**A required check was nearly lost and is restored, not dropped.** [STOR-5]'s
+box-content judgment rode on the written referent type. It now tests the
+*derived* referent and cites the operand that supplied it. A directly
+slice-typed operand is the only path a region can take into box content:
+struct fields and enum payloads are held to STOR-5 at their own
+declarations, and `CheckedFlatElement` cannot be a slice, so no array,
+buffer, or nominal referent can smuggle one in. Six more regressions, two of
+them pinned to the exact cited bytes rather than the rule alone, because
+[OP-2] and [STOR-5] each name *which* operand they land on.
+
+**This half is coupled to the fixture migration, and that is new
+information.** The round-5 brief expected M1 to land without breaking the
+compiler's inline fixtures because it does not touch the Bool matches. It
+breaks **14** of them anyway. Every one fails with `Op1 / InvalidOperation`
+on a v0.22-spelled source that still writes `len<u8>(...)`, `ieq<i32>(...)`
+or `box_new<slice<'r, u8>>(...)` — the new written-argument rejection
+meeting un-migrated fixtures, one cause and no other. So OP-2 is coupled to
+the inline-fixture migration exactly as GRAM-6 is coupled to the 87
+`True() =>` arms, and M1 and M2 are less separable than the batch plan
+assumes. Diffed as a set, not counted: those 14 are the only additions and
+there are zero removals.
+
+Lib after both commits: **259 passed / 285 failed**.
+
+### The blocker: `box_new` loses the supply for its box nominal
+
+**This needs an owner/lead ruling, it is the same shape as round 3's
+`None()` blocker, and its likely repair moves the candidate bytes and all
+three digest pins.**
+
+`CheckedNominalKind::Box` instances are interned by exactly one site,
+`ensure_nominal_type_head` in `nominal_instances.rs`, and only from a
+**written `box<T>` type**. Checking is `&self`, so `check_box_new` can only
+look the instance up — it cannot intern one. In v0.22 the supply was the let
+annotation, `let owner: own box<u64> = box_new<u64>(value);`. A3 deletes it
+and [STOR-2] derives the referent from `v`, so a purely local box has no
+`box<T>` spelling anywhere in the unit and the lookup fails.
+
+Reproduction, with a control that distinguishes the claimed cause — the two
+programs contain byte-identical `box_new(41_u64)` calls:
+
+```
+# A — box<u64> named nowhere
+fn main() -> own unit allocates(heap) {
+  let owner = box_new(41_u64);
+  let loaded = deref(owner);
+  return unit;
+}
+whitefootc: Semantics/Compiler: InvalidResolution
+
+# B — the same call, plus a signature that names box<u64>
+fn take(b: own box<u64>) -> own unit pure { return unit; }
+fn main() -> own unit allocates(heap) {
+  let owner = box_new(41_u64);
+  take(b: move owner);
+  return unit;
+}
+(exit 0, no output)
+```
+
+A is a **compiler failure**, not a source rejection, which is the shape the
+workflow says must never be reported as invalid source.
+
+**Measured scope, on the 420-file basis** (string literals blanked, PCRE
+lookbehind, cross-checked with Python `re`): **4** corpus files call
+`box_new`; of those, **2** would be left with no surviving `box<T>` spelling
+because their only one is the annotation A3 deletes —
+`tests/conformance/cases/stor2-pos-box-new.wf` and
+`tests/conformance/cases/stor3-pos-box-drop-region.wf`. The count is small;
+the rule is not, because after A3 `let b = box_new(v);` has no legal
+spelling in a unit that does not otherwise mention `box<T>`.
+
+**Why an executor cannot settle it.** The repairs are a language or
+architecture choice:
+
+- (a) `box_new` joins [TYPE-5]'s retained-argument class, as the prelude
+  variant constructors just did, on the same stated ground — spelling
+  becomes `box_new<u64>(value)`. This **moves the delta**, so it re-keys
+  `ab257aa6…` and all three pins, and it is in tension with [STOR-2]'s
+  amended "`box_new(v)` returns `own box<T>` for `v`'s exact type T", which
+  would also have to move.
+- (b) Intern box nominals lazily during checking. This is the only repair
+  that keeps the spelling the candidate already fixed, and it is a real
+  change to the checker's `&self` discipline, not a local fix.
+- (c) A pre-pass that derives `box_new` operand types before checking. It
+  works for a literal operand and not in general, because the operand's type
+  can come from a binding whose own type is derived. It does not close the
+  gap.
+
+**Neither (a) nor (b) is an executor's call**, and unlike round 3 there is a
+second candidate repair that does *not* move normative bytes, so the choice
+is genuinely open.
+
+**What the ruling does not gate.** Both landed commits stand on their own and
+neither depends on the answer: `box_new`'s lookup failure is reachable today
+only from sources that are already un-migrated, and the 14 red fixtures are
+the migration's, not the blocker's.
+
+### Why round 6 stops here
+
+FN-4's re-keyed premise is the only M1 item left, and it sits behind this
+blocker in the same file. Opening M2 or M3 instead would mean starting the
+atomic batch while a language question about one of its five transform
+classes is open — the shape rounds 3 and 5 both refused. The honest boundary
+is here, with the semantic path's two large halves landed, verified, and
+regression-pinned, and one reproduced question in front of the rest.
+
+## Successor brief (round 6)
+
+Rounds 1–6 are discharged; do not re-derive them, re-assemble the candidate,
+re-measure the nine figures, rebuild the renderer, or redo the TYPE-5,
+GIVE-1 or OP-2 derivations. Base is
+`task/0038-floor5-semantic-and-migration` at `9eed20a`.
+
+1. **Get the `box_new` blocker ruled** before touching M1's remainder.
+2. **FN-4's re-keyed premise** at `calls.rs` and `catalog.rs` — the only M1
+   item left.
+3. **M2 and M3 are more coupled than the batch plan assumes.** The 14 red
+   fixtures are already OP-2's, and GRAM-6 adds the 87 `True() =>` arms on
+   top, so the compiler's inline fixtures want migrating as one unit rather
+   than twice. The migration tool should cover `compiler/src` fixtures and
+   the 420-file corpus with the same transforms.
+4. Then the conformance cases and the review packet, unchanged.
 
 ## Successor brief (round 5)
 
