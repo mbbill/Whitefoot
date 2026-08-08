@@ -354,3 +354,10 @@ ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba29532
   In every case the executor verifies the ruling against the migrated bytes before writing, and reports rather than proceeds if a ruling does not hold.
 - boundary: those four cases and their manifest rows.
 - evidence: exec-0038's round-1 report; lead verification of the FORM-2 brace-pair finding at `compiler/src/syntax/parser/finalize/engine.rs:479-484`.
+
+## 2026-08-08 — ruling amendment (x-match-give1-wrong-type surface)
+- owner: lead ruling under the standing delegation; owner ratification pending
+- reason: the 2026-08-08 ruling said to rewrite `x-match-give1-wrong-type` so that two arms delivering different types reject under GIVE-1. Verified against the real bytes by the executor, that fails: the case's scrutinee is `ilt(...)`, which is Bool, and the candidate's GRAM-6 makes a Bool-scrutinee `match` a hard error citing GRAM-6 at the scrutinee node — so the rewrite would assert GIVE-1 and earn GRAM-6, failing its own citation. AMENDED: keep the `match` form and give it a genuine ENUM scrutinee, so GRAM-6 forms no candidate and GIVE-1 genuinely owns the rejection. Rejected alternative: rewriting it as a `value_if`, which is the natural migration of these bytes but drops GIVE-1 agreement coverage in the match form entirely — the four new cases all sit on `if`, so match-form coverage would otherwise vanish from the corpus.
+- ALSO MANDATED, from the same finding: the migration must ASSERT zero surviving Bool-scrutinee matches rather than rely on the parse. All 262 `True()`-arm matches become `if`/`else`; a missed one does not fail to parse — it becomes a GRAM-6 rejection, which is a SILENT verdict change.
+- boundary: that one case's surface, plus the migration assertion.
+- evidence: executor verification against the migrated bytes; the same executor confirmed all nine migration figures by two independent methods and resolved the 378/379 discrepancy to the unique argument-free table-op call site.
