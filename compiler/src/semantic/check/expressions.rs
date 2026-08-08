@@ -460,11 +460,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The `borrow_expr` that is the complete written content of `expression`,
     /// if any: the position [OWN-14] names for the returned reborrow.
+    ///
+    /// An infix expression is a fresh operation result rather than a written
+    /// borrow, so it answers `None` like any other non-borrow shape.
     pub(super) fn complete_borrow_expression(
         &self,
         expression: NodeId,
     ) -> Result<Option<NodeId>, CheckStop> {
-        let child = self.tree.only_child(expression)?;
+        let Some(child) = self.tree.sole_expression_child(expression)? else {
+            return Ok(None);
+        };
         if self.tree.production(child)? != Production::Atom {
             return Ok(None);
         }

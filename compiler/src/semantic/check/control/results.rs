@@ -138,7 +138,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if function.result_mode != CheckedMode::Own {
             return Ok(());
         }
-        let atom = self.tree.only_child(expression_node)?;
+        // An infix expression reads its operands as operands, not as the
+        // returned value, so it has no implicit read at return position.
+        let Some(atom) = self.tree.sole_expression_child(expression_node)? else {
+            return Ok(());
+        };
         if self.tree.production(atom)? != Production::Atom {
             return Ok(());
         }

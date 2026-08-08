@@ -115,6 +115,29 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(*child)
     }
 
+    /// The one child holding an `expr`'s complete written content, or `None`
+    /// when the expression is the infix shape.
+    ///
+    /// [GRAM-5] `expr := atom infix_tail? | call | construct`. Three of those
+    /// alternatives are a single child that names what the expression is
+    /// written as; the infix one is two children producing a fresh operation
+    /// result that is no written atom, call, or construct. A structural query
+    /// asking which of the three shapes an expression has therefore has no
+    /// answer for infix and must answer `None` — never fail the tree, which
+    /// would turn a legal expression into an internal compiler failure.
+    pub(super) fn sole_expression_child(
+        &self,
+        expression: NodeId,
+    ) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        if self
+            .first_child_with(expression, Production::InfixTail)?
+            .is_some()
+        {
+            return Ok(None);
+        }
+        self.only_child(expression).map(Some)
+    }
+
     pub(super) fn first_child_with(
         &self,
         node: NodeId,
