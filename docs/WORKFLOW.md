@@ -307,15 +307,18 @@ instead of restating them.
   verdict differential** — every source run against both binaries, comparing
   exit code and cited rule — not the set diff. An unchanged failure set is
   exactly where such a change hides.
-- **Short identifiers are not greppable as substrings, and `-c` counts lines.**
-  Four measurements were wrong this way in one day. `ieq|ine|ile|ige` matches
-  inside *retained*, *scrutinee*, *multi-line*; `ile|ine` matches inside *while*
-  and *line*. Use word boundaries with `-P` — `-E` treats `\b` as a literal `b`,
-  silently, and ugrep refuses some bounded-repetition patterns outright. And
-  `grep -c` reports matching LINES even with `-o`, so it is not an occurrence
-  count. A scope estimate built this way propagates into a brief as fact: one
-  such figure was off by more than an order of magnitude and nobody could
-  reconstruct its basis afterwards.
+- **Short identifiers are not greppable as substrings, and never count with
+  `-c`.** Four measurements were wrong this way in one day. `ieq|ine|ile|ige`
+  matches inside *retained*, *scrutinee*, *multi-line*; `ile|ine` matches inside
+  *while* and *line*. Use word boundaries with `-P` — `-E` treats `\b` as a
+  literal `b`, silently, and ugrep refuses some bounded-repetition patterns
+  outright. For counting, the portable form is `grep -o … | wc -l`, because
+  **`-c` means different things in different greps**: the `grep` on this machine
+  is ugrep 7.5.0, where `-oc` reports occurrences, while GNU `grep -c` ignores
+  `-o` and reports matching lines. Two tools, opposite answers, identical flags,
+  no error from either. A scope estimate built on any of this propagates into a
+  brief as fact: one such figure was off by more than an order of magnitude and
+  nobody could reconstruct its basis afterwards.
 - **Read exit codes from `$?` directly, never through a pipe.** `make check |
   tail` reports the status of `tail`; a red gate has been committed here that
   way. Write `make check; echo "exit=$?"`.
