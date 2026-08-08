@@ -2,12 +2,14 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** owner approval 2026-08-07 (provenance gate advanced in
   priority); the held candidate
   `governance/spec-evolution/provenance-gate-candidate.md`
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** `exec-deflate-driver` /
+  `/Users/bytedance/do_not_scan/wf0037`, branch
+  `task/0037-deflate-boundary-driver`
+- **Base revision:** `407abde51707d903fe9f3ea1bf45ab6775ac6018`
 - **Dependency:** none for the driver itself; the provenance gate's
   activation depends on this task's measurement
 
