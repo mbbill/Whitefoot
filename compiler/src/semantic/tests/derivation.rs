@@ -219,8 +219,10 @@ fn main() -> own unit pure {
 #[test]
 fn a_written_type_argument_on_a_derived_operation_rejects() {
     assert_rule(
+        // migrate: keep — the written argument is the violation, so deleting
+        // it, which is what A1 does to a legal call, leaves nothing to cite.
         br#"fn smaller(x: own i32, y: own i32) -> own i32 pure {
-  return imin(x, y);
+  return imin<i32>(x, y);
 }
 
 fn main() -> own unit pure {
