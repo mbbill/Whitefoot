@@ -68,6 +68,68 @@ selection by the objective tiebreaks)
    expression contains exactly one operation, so no precedence table
    exists and the T3 uniqueness argument is trivial.** This respelling is
    cheap *because* ANF stays.
+
+   **What actually shipped, and why the row's own example overstates it
+   (lead, 2026-08-08).** v0.23 respells `== != <= >=` and leaves `ilt` and
+   `igt` as named calls, so `a < b` — this row's own example — is not legal.
+   The asymmetry is not arbitrary and not implementation convenience; it is
+   one irreducible collision, and locating it exactly changes which fixes
+   are available.
+
+   `<` in **type** position is not the problem: a comparison cannot occur
+   there, and the bulk of the corpus's angle brackets are type constructors
+   (`buffer<u8>`, `slice<'r, T>`). The collision is confined to expression
+   position, where an atom may be followed by `<`, and it decomposes into
+   three cases — two of which need only one token of lookahead beyond the
+   atom already consumed:
+
+   - **TYPEID `<`** — a generic variant constructor, `Some<T>(x)`. [FORM-3]
+     makes TYPEID `[A-Z][A-Za-z0-9]*` a lexical class distinct from IDENT,
+     and an ANF comparison's operands are atoms whose roots are
+     lowercase-or-numeric, so no comparison begins with a TYPEID. (Worth
+     confirming against the `atom` production before relying on it.)
+   - **a reserved lowercase operation name `<`** — the retained-argument
+     class (`cvt`, `reinterpret`, `array_new`, `arena_new`, `finf`, `fnan`)
+     and the SYS operations (`arg_get`, `read_once`, `open_read`, …). These
+     spellings can never be declared as anything, by [FORM-3]'s
+     `ReservedLowerNames` rule, which is precisely what that rule says it
+     buys: operation-versus-function resolution stays context-free. So set
+     membership decides, with no resolution and no inference.
+   - **a plain IDENT `<`** — a user-generic call, `f<i32>(x)`, against a
+     comparison, `a < b`. **This one is irreducible**, and no bounded
+     lookahead resolves it, because types nest: the closing `>` of
+     `f<Result<buffer<u8>, E>>(x)` sits at unbounded distance, so no fixed
+     *k* suffices and the "consume `<`, then decide on the next two tokens"
+     mechanism does not generalize. This is a property of the grammar, true
+     whether or not the current corpus happens to write a nested
+     instantiation.
+
+   So the real options are: leave the asymmetry; **give user-generic
+   instantiation a distinguishing marker**, which is the only one that
+   dissolves the collision rather than working around it; or drop infix
+   comparisons altogether for symmetry, forfeiting the ergonomic win.
+
+   Measured cost of the marker, migrated conformance corpus:
+
+   ```
+   git grep -ohP '(?<![A-Za-z0-9_.])[a-z][a-z0-9_]*(?=<)' \
+     <branch> -- 'tests/conformance/cases' | sort | uniq -c | sort -rn
+   ```
+
+   About 34 sites across about 25 distinct function names, against 106
+   type-position occurrences and about 86 reserved-operation occurrences.
+   The user-generic classification is by inspection of that tally, not by
+   resolution, so treat the figure as an order of magnitude rather than an
+   exact count. Note also that `-E` silently treats `\b` as a literal `b`
+   here — every result came back beginning with `b` on the first attempt —
+   so this measurement requires `-P`.
+
+   **The observation underneath.** `<>` is carrying two concerns at once,
+   comparison and type application, and that duplication is what forces the
+   choice. Rust pays for the same overload with turbofish. A marker on
+   generic instantiation is therefore not added ceremony; it is naming which
+   of two mechanisms is meant, which is the direction the residue-hunt axis
+   points.
 2. `index<T>(p, i)` → `p[i]` (the sole place form respelled; unique
    trivially).
 3. `check e else trap "msg"` → subsumed by the claim construct
