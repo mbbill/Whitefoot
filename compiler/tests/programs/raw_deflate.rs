@@ -44,6 +44,48 @@ fn stock_text_payload() -> Vec<u8> {
     payload
 }
 
+/// One invocation of the boundary driver and the outcome it must produce.
+struct OutcomeCase {
+    arguments: &'static [&'static [u8]],
+    code: i32,
+    diagnostic: &'static [u8],
+}
+
+/// Every outcome besides a successful decode and a closed destination, each
+/// reached by one fixture file the case writes.
+const OUTCOME_CASES: &[OutcomeCase] = &[
+    OutcomeCase {
+        arguments: &[],
+        code: 1,
+        diagnostic: b"usage: raw_deflate_boundary FILE\n",
+    },
+    OutcomeCase {
+        arguments: &[b"absent.deflate"],
+        code: 2,
+        diagnostic: b"raw_deflate_boundary: cannot read the compressed input\n",
+    },
+    OutcomeCase {
+        arguments: &[b"empty.deflate"],
+        code: 3,
+        diagnostic: b"raw_deflate_boundary: empty compressed input\n",
+    },
+    OutcomeCase {
+        arguments: &[b"oversize.deflate"],
+        code: 4,
+        diagnostic: b"raw_deflate_boundary: compressed input exceeds the input buffer\n",
+    },
+    OutcomeCase {
+        arguments: &[b"truncated.deflate"],
+        code: 5,
+        diagnostic: b"raw_deflate_boundary: compressed stream ends early\n",
+    },
+    OutcomeCase {
+        arguments: &[b"malformed.deflate"],
+        code: 6,
+        diagnostic: b"raw_deflate_boundary: malformed compressed stream\n",
+    },
+];
+
 fn boundary_driver() -> CompiledProgram {
     build_program(&compile_programs(&[
         "raw_deflate.wf",
@@ -119,42 +161,15 @@ fn each_boundary_and_decode_outcome_reaches_its_own_status() {
     directory.write(b"malformed.deflate", MALFORMED_LITERAL_TREE);
     directory.write(b"oversize.deflate", &vec![0_u8; ACCEPTED_INPUT_LENGTH + 1]);
 
-    let cases: &[(&[&[u8]], i32, &[u8])] = &[
-        (&[], 1, b"usage: raw_deflate_boundary FILE\n"),
-        (
-            &[b"absent.deflate"],
-            2,
-            b"raw_deflate_boundary: cannot read the compressed input\n",
-        ),
-        (
-            &[b"empty.deflate"],
-            3,
-            b"raw_deflate_boundary: empty compressed input\n",
-        ),
-        (
-            &[b"oversize.deflate"],
-            4,
-            b"raw_deflate_boundary: compressed input exceeds the input buffer\n",
-        ),
-        (
-            &[b"truncated.deflate"],
-            5,
-            b"raw_deflate_boundary: compressed stream ends early\n",
-        ),
-        (
-            &[b"malformed.deflate"],
-            6,
-            b"raw_deflate_boundary: malformed compressed stream\n",
-        ),
-    ];
-    for (arguments, code, diagnostic) in cases {
-        let output = program.run(directory.path(), arguments);
+    for case in OUTCOME_CASES {
+        let output = program.run(directory.path(), case.arguments);
         assert_eq!(
             output.status.code(),
-            Some(*code),
-            "unexpected status for {arguments:?}"
+            Some(case.code),
+            "unexpected status for {:?}",
+            case.arguments
         );
-        assert_eq!(output.stderr, *diagnostic, "unexpected diagnostic");
+        assert_eq!(output.stderr, case.diagnostic, "unexpected diagnostic");
         assert!(output.stdout.is_empty(), "a failed decode published bytes");
     }
 
