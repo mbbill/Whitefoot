@@ -352,4 +352,15 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
     only_these_trivia_bytes_render(
         b"fn main() -> own unit pure {\n  let flag = True();\n  let picked = if flag {\n    give 1_i32;\n  } else {\n    give 2_i32;\n  }\n  return unit;\n}\n",
     );
+    // A three-deep chain renders flat: every arm sits at one indent level.
+    // This is structural, not a special case. An else-position `if_stmt`
+    // begins after the then-block's closing brace, so it is inside no brace
+    // pair of its parent and `inside_body` leaves it at the outer format
+    // depth. Nothing in the depth computation mentions `if_stmt`, and
+    // `has_else` is read only when suppressing the break after a close
+    // brace. Do not add a special case here: depth would then accumulate and
+    // this fixture would indent each arm one level deeper.
+    only_these_trivia_bytes_render(
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"a\";\n  } else if flag {\n    check flag else trap \"b\";\n  } else if flag {\n    check flag else trap \"c\";\n  } else {\n    check flag else trap \"d\";\n  }\n  return unit;\n}\n",
+    );
 }

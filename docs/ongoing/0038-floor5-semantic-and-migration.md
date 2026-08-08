@@ -280,6 +280,20 @@ fmt --check` and `cargo clippy --all-targets -D warnings` both exit 0.
 The migration's FORM-2 canonical audit can now run, which was the reason
 this had to come first.
 
+**One property is structural and must stay that way.** An else-position
+`if_stmt` begins *after* the then-block's closing brace, so it lies inside
+no brace pair of its parent and `inside_body` leaves it at the outer
+`format_depth`. FORM-2's "an else-position `if` is never rendered as a
+nested introducer line" therefore needs no special case: nothing in the
+depth computation mentions `if_stmt`, and `has_else` is read only when
+suppressing the break after a close brace. A three-deep `else if` chain is
+pinned in the test for exactly this reason — add a special case and depth
+accumulates, indenting each arm one level deeper, and that fixture fails.
+
+The two-pair design was independently derived and converged on by a second
+executor before the collision was detected; that is corroboration, not
+review.
+
 ## Successor brief
 
 Rounds 1–5 of 0036 and this round are discharged; do not re-derive them.
