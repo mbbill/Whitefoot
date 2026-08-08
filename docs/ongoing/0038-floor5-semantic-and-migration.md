@@ -1065,6 +1065,44 @@ set that turned out to be disjoint from the set needing edits.
 
 All 20 cite their recorded rule after the change, 20 of 20.
 
+### A4 landed (`adc1a4d`) — the tool is complete, and the mandatory assertion found two more
+
+A4 is the only class that reshapes a tree. On the token stream the reshape
+is small for the reason the tool's shape exists: the arms' own braces become
+the conditional's, so only the match's outer braces and the two arm headers
+move and no indentation is computed anywhere. [ERR-2]'s asymmetry falls out
+— an empty `False` arm becomes the else-free `if`, an empty `True` arm keeps
+its block — and a value initializer keeps its `else` even when empty. A
+`False`-first match is reported rather than guessed, since it would need its
+bodies exchanged; the corpus writes `True` first in every measured case.
+
+**Complete measured class figures**, over the 400 corpus files that parse:
+
+| Class | Sites |
+| --- | --- |
+| A3 `let` annotations | 1992 |
+| C1 respells | 886 |
+| A1 argument lists | 691 |
+| prelude constructors written | 99 (0 bare) |
+| A4 conditionals | 260 (5 flattened) |
+| files changed | 312 of 400 |
+
+**The mandatory zero-surviving-Bool-match assertion earned its keep.** Run
+over the migrated output it found **2** survivors, both correctly declined
+by the tool because neither is a well-formed two-armed Bool match:
+
+- `type5-neg-match-non-enum.wf` — a scalar scrutinee, so GRAM-6 never
+  applies and TYPE-5 still fires. Cites TYPE-5 as written. **Leave.**
+- `reject-err2-nonexhaustive.wf` — recorded ERR-2, **now cites OP-1**. This
+  one needs a ruling and it is not the citation-masking question the 20
+  were: its scrutinee is Bool, and under GRAM-6 a Bool match is rejected
+  before exhaustiveness is ever consulted, so **ERR-2's concern cannot be
+  tested through a Bool match at all under v0.23**. Restating it means
+  giving it a source enum scrutinee — a change of witness, not of spelling.
+
+Both sit outside the 20 because both *parse*; they fail semantically, so no
+parse-based sweep would have surfaced them. Only the assertion did.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the
