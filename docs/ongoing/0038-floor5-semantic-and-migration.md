@@ -4243,3 +4243,89 @@ not GRAM-9. A construct in an atom position is GRAM-9's subject elsewhere, so
 the citation looks surprising. It is outside this task, it is recorded here only
 so the next reader does not have to rediscover it, and **it is not measured
 beyond that one observation** — no claim is made about which rule is correct.
+
+## Round 25 (exec-uninfix, 2026-08-08) — task #35 classified: not repairable in the diagnostic layer
+
+**Result: blocked, with the classification and the evidence.** No code change.
+The brief scoped this to "the diagnostic, not the rules" and asked me to check
+whether [DIAG-1] admits a context-dependent fix **before** writing one. It does
+not, and neither does it admit the alternative the brief offered.
+
+### What governs the field
+
+[DIAG-1]'s only sentence about it: "A mechanical fix or restructuring is
+included **exactly where the owning rule requires one**." So the field's content
+is keyed to the rule, not to the position. The compiler's own type says the same
+thing — `BareAffineUse`'s field is documented "Exact mechanical repair **required
+by OWN-1**" (`compiler/src/semantic/mod.rs`).
+
+[OWN-1] states exactly one repair, unconditionally, in its own bytes: "Every
+other bare `place` expression of affine type is a hard error (**write `move
+p`**)". The compiler renders that parenthetical, as it renders OWN-1's other one
+for `MoveOfCopy` ("copy values are used bare" → "use the copy place without
+`move`").
+
+### Both offered repairs are outside it, for the same reason
+
+- **A context-dependent fix** would make the diagnostic assert something the
+  owning rule does not require — the fix would vary while OWN-1's requirement
+  does not. [META-2] forbids exactly that shape: "no rule's meaning depends on
+  surrounding context".
+- **Dropping the fix inside a clause** is the same context-dependence in the
+  other direction: OWN-1 requires a fix wherever it rejects, so omitting it in
+  one position is as unsanctioned as varying it.
+- **Putting the repair on FN-8's rejection instead** fails at the same sentence
+  from the other side: FN-8 requires no mechanical fix, so including one there
+  would include a fix where the owning rule does not require one. `InvalidRequires`
+  is a fieldless variant today, consistently with that.
+
+### The structural fact, which is stronger than the prose reading
+
+`mechanical_fix` is typed **`&'static str`**. Every one of the 22 distinct fix
+strings in the compiler is a literal or a `const` at its rejection site; none is
+computed. A context-aware fix is therefore not merely unprecedented — it is not
+representable without changing the diagnostic schema, and it would have to be
+threaded to the four sites that raise `BareAffineUse`.
+
+Two independent lines — the rule's own sentence and the field's type — reach the
+same place.
+
+### So the defect is not in the diagnostic
+
+OWN-1 promises a repair that FN-8 forbids in one position. That is a joint
+inconsistency **between two rules**, and every available repair changes rule
+bytes: OWN-1's parenthetical, FN-8's prohibition, or FN-8's rejection behaviour.
+All three are outside this task by its own terms, and a specification change
+enters `docs/WORKFLOW.md`'s guarded branch, which needs a plan item naming the
+gap. Repairing it in the diagnostic layer would paper a rule-level contradiction
+over with a string.
+
+### The general shape, offered to the owner and marked as a reading
+
+[DIAG-1]'s simultaneity rule settles a citation by document order: "that event
+cites the established rule whose definition appears first in this
+specification". OWN-1 is §5 and FN-8 is §8, so OWN-1 wins. That rule was
+designed to make **citations** deterministic. It also decides, silently, **whose
+repair the writer is shown** — and nothing requires the earlier rule's repair to
+be legal in the position the later rule governs.
+
+**Stated as a reading of FN-8's text, not as a measurement.** FN-8 says "a place
+is legal only as a non-consuming operand of an admitted table operation", and
+`eeq`'s operands consume, so an affine operand should also be an FN-8 violation
+simultaneously — which is what would make this an instance of the tie-break
+rather than a lone OWN-1 misstep. I could not measure it: OWN-1 wins, so FN-8's
+judgment on the same node is unobservable. Disabling OWN-1 to see it is not a
+diagnostic change, so I did not.
+
+If that reading holds, the misdirection is not specific to `eeq`, to payload
+enums, or to requires clauses — it is what happens whenever a rule with a repair
+and a rule without one reject the same node and the one with the repair is
+earlier in the document.
+
+### What I did not do, and why
+
+No rule byte, no rejection behaviour, and no diagnostic string was changed. The
+smallest honest repair is a specification change, and the brief excluded that;
+recording the classification is the deliverable. Task #35 stays open with its
+cause identified rather than closed by an edit that would have been outside
+[DIAG-1].
