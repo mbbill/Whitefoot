@@ -382,6 +382,37 @@ candidate digest `a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b291
 with **257 passed / 271 failed**, the failure set captured for `comm`
 diffing.
 
+### Sequencing consequence: the rejections and the migration are one batch
+
+Measured while looking for a unit that could proceed around the blocker:
+**there is no independent one left.** Each remaining semantic item is
+coupled to the corpus migration, so landing any of them alone converts
+passing tests to failing — the same shape as round 1's catalog respell.
+
+- **GRAM-6's Bool-scrutinee rejection**: `compiler/src` inline sources hold
+  **87** `True() =>` arms across **12** files (`backend/tests*.rs` ×8,
+  `semantic/tests*.rs` ×3, `lowering/tests.rs`). Every one becomes a
+  rejection the moment GRAM-6 lands, so it must land together with their
+  migration to `if`/`else`.
+- **FN-4's re-keyed premise** expects the discharge body `return p0 +sat
+  p1;`, which cannot be spelled until infix resolution exists, so it is
+  coupled to [OP-1] (ii).
+- **[OP-1] (ii) infix resolution** is what clears the nine tests round 1's
+  catalog respell converted to failing; the catalog is already landed, so
+  this half is owed, but its oracle is the migrated sources.
+
+So the remainder is one atomic batch — semantic path plus migration plus
+the conformance cases — and its first transform class (A3's let-annotation
+deletion) is what the blocker above gates. That is why this round stops
+here rather than banking a partial semantic change: a half-landed
+rejection is indistinguishable from a regression in the gate.
+
+**The blocker gates 5 sites, not the batch.** A successor may migrate all
+four transform classes and leave exactly the five prelude-construction
+sites failing, as the visible and reproducible consequence of the open
+ruling. That is the recommended shape if the ruling is slow: it is honest,
+it isolates the gap to five named sites, and it weakens nothing.
+
 ## Round 3 counts (exec-0038, 2026-08-07) — independently confirmed
 
 All nine migration figures reproduce by two methods that share no failure
