@@ -6,12 +6,13 @@ This is a temporary live coordination record, not execution authority.
   **closed**: the requires-block `let` has a legal v0.23 form again, the same
   pass admits the infix spelling [FN-8] requires (`8838150`, `8ccd4d8`,
   `7e80d92`), and round 10's copy-gate finding is **closed** by judging
-  [FN-8]'s "own copy value" on the derived type (`2ccbf4a`, `96735a5`). The
-  adapter's failures fall 28 → 16 and hold there with nothing newly failing.
-  Round 8's findings 1–3 still need their rulings. One case is deliberately
-  left failing and is not this task's: `fn8-neg-requires-eeq-payload-enum`
-  shares the pre-existing OP-1/OWN-1 precedence defect with
-  `op1-neg-eeq-payload-enum`. See "Round 10" and "Round 11".
+  [FN-8]'s "own copy value" on the derived type (`2ccbf4a`, `96735a5`), now
+  with corpus coverage (`6b0dd43`). The adapter goes 28 → 16 failures and holds
+  there, passes 359 → 372, with nothing newly failing at any step. Round 8's
+  findings 1–3 still need their rulings. One case is deliberately left failing
+  and is not this task's: `fn8-neg-requires-eeq-payload-enum` shares the
+  pre-existing OP-1/OWN-1 precedence defect with `op1-neg-eeq-payload-enum`.
+  See "Round 10" and "Round 11".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
@@ -1808,14 +1809,20 @@ Round 9's claims reproduce exactly:
 The middle row is unchanged on purpose: A3 deleted the annotation from the
 grammar, so the annotated spelling must stay a parse error.
 
-### The failing set was 13, and the brief misnamed one of them
+### The failing set was 13, with one wrong count and one wrong name
 
 `grep "^  Fail " | grep -c InvalidCanonicalTree` over the adapter's own output
-gives 13, and the names match round 9's list with one correction: the member
-case is **`fn3-neg-requires-member`**, expecting `FN-3`. There is no
-`fn8-neg-requires-member` — no such case file and no such manifest id. The
-count also reads better as eight `fn8-*-requires-*` (five `neg`, three `pos`)
-than seven.
+gives 13, and the names are right everywhere except two places, which are worth
+separating because they belong to different artifacts:
+
+- **The count.** Both round 9's list above and round 10's brief say "the seven
+  `fn8-*-requires-*`". There are **eight** — five `neg` and three `pos` — plus
+  `fn8-trap-requires-false`, which the same glob also matches.
+- **The name.** `fn8-neg-requires-member` does not exist: no case file, no
+  manifest id. The member case is **`fn3-neg-requires-member`**, expecting
+  `FN-3`. This name is correct in round 9's list and correct in round 10's
+  brief; it was wrong only in the task-tracker card that opened round 10, so it
+  is not a defect of either written record.
 
 ### `8838150` — the authorized change
 
@@ -1873,30 +1880,65 @@ the existing spelling filter cannot see them. Sharing that predicate avoids a
 second reading of the operator table.
 
 **Corrected 2026-08-08, same round, before review.** `8ccd4d8`'s commit message
-claims a trapping operator, a `move`, a borrow, *and* a subscript escaped here.
-Only the subscript did. Measured at `efb5242`: `check x + 1_i32 else trap …`
-gives `Semantics/Source [OP-5] InvalidCheckCondition`, so a trapping operator
-**cannot** reach the check position — the condition must be Bool and trapping
-arithmetic yields an integer — and `let raised = x + 1_i32;` was rejected in the
-`let` position too. The `move` probe rejected `OWN-1 MoveOfCopy` for being a
-copy type, which proves nothing about [FN-8], and the borrow probe never parsed:
-both are **not measured**. So `traps()` above is prospective correctness for the
-newly admitted infix-in-`let` path, not a closed escape. One hole existed, not
-four. The sentence below survives this correction because it describes what the
-code rejects *now*, which was verified directly.
+overstated this, and the message stays as landed — the correction belongs here.
+It claims a trapping operator, a `move`, a borrow, *and* a subscript escaped the
+check position. **Only the subscript did**, and only that claim carried a
+rebuild-on-both-sides reproduction. Measured at `efb5242`:
+`check x + 1_i32 else trap …` gives `Semantics/Source [OP-5]
+InvalidCheckCondition`, so a trapping operator **cannot** reach a check
+condition at all — the condition must be Bool and trapping arithmetic yields an
+integer. The `move` probe rejected `OWN-1 MoveOfCopy` for being a copy type,
+which proves nothing about [FN-8], and the borrow probe never parsed: both are
+**not measured**. One pre-existing escape existed, not four.
+
+**But `traps()` is load-bearing, not prospective — a second correction, in the
+other direction.** An earlier draft of this section called it speculative. That
+was wrong, and measuring it settles it. The same commit newly *admits* the infix
+spelling in a clause `let`, and the pre-existing filter recognizes only a
+`.trap` suffix plus `{buffer_new, box_new, arena_new}` — bare `+ - * / %` carry
+the trapping mode with no suffix and are not even reached by that filter on the
+infix path. Removing the guard from the shipped code and rebuilding:
+
+```
+$ whitefootc --emit-llvm -o /dev/null p2-infix-trap-let.wf; echo "exit=$?"
+exit=0            # guard removed: `let incremented = x + 1_i32;` compiles
+whitefootc: Semantics/Source [FN-8]: … kind: InvalidRequires
+exit=1            # guard restored
+```
+
+So admitting infix without sharing `CheckedIntegerOperation::traps`
+(`compiler/src/semantic/model.rs:412`) would have opened a **new** hole in the
+same commit, since [FN-8] admits only a "non-trapping, total" row. `8ccd4d8`
+therefore did three things, each necessary: admitted a spelling [FN-8] requires
+admitting, kept a trapping row from riding in on that admission, and closed one
+pre-existing escape.
 
 ### What the two passes still reject
 
-Probed, not inferred. Resolution's shape pass: a non-final or repeated `check`
-(`p4`, two checks → `Resolution/Source [FN-8] RequiresShape(InvalidEntry)`), a
-`let` after the `check` (`p5`, same), an empty or all-`let` block
-(`MissingFinalCheck`), and any entry that is not an ordinary `let` or a `check`
-— a `doc`, a `set`, a `return`, a `propagate_let_rhs`, a `value_match`. The
-semantic subset pass: a user-function call, a `*.trap` row,
-`buffer_new`/`box_new`/`arena_new`, a trapping infix operator (`p2` →
-`FN-8/InvalidRequires`), a `move` or borrow operand, a subscripted place in any
-operand, and a bare-atom initializer (`p3`, `let candidate = x;` →
-`FN-8/InvalidRequires`) — an initializer is a computation, so an atom is not one.
+An earlier draft of this section said "probed, not inferred" over a list that was
+part probed and part read off the code. Both are legitimate grounds for a
+different kind of claim, so they are separated here rather than blended.
+
+**Resolution's shape pass** (`check_requires_blocks`), read off the code, two
+rows confirmed by probe:
+
+| rejected | ground |
+|---|---|
+| a `check` in any non-final position — so a repeated `check`, or a `let` after one | probed: `p4`, `p5` → `Resolution/Source [FN-8] RequiresShape(InvalidEntry)` |
+| an empty or all-`let` block, reported on the `requires_block` node | code: `RequiresShape(MissingFinalCheck)` |
+| any entry that is neither an ordinary `let` nor a `check` — `doc`, `set`, `return`, and a `let` whose right-hand side is `propagate` or `value_match`, which `requires_entry_kind` classifies as `Other` for want of an `OrdinaryLetRhs` child | code |
+
+**The semantic subset pass** (`validate_requires_*`), same split:
+
+| rejected | ground |
+|---|---|
+| a trapping infix operator | probed: `p2` → `FN-8/InvalidRequires`, and see the guard-removal measurement above |
+| a subscripted place in either infix operand | probed: `p6`, exit 0 before `8ccd4d8` and rejecting after |
+| a bare-atom initializer — an initializer is a computation, and an atom is not one | probed: `p3`, `let candidate = x;` → `FN-8/InvalidRequires` |
+| a clause local whose derived type is not a copy type | probed in round 11, nine rows, both sides |
+| a callee resolving to a source function | code: the `DeclarationClass::Function` arm |
+| a `*.trap` row, or `buffer_new`/`box_new`/`arena_new` | code: the spelling filter |
+| a `move` or `BorrowExpr` operand | code: `has_fixed(Move)` and the `BorrowExpr` child test — **not** probed, and the two attempts to probe it in round 10 both failed to isolate it |
 
 ### Negative cases: none flipped
 
@@ -2044,13 +2086,56 @@ round 11  Pass=371  Fail=16  Skip=14
 ```
 
 Failure-set diff against round 10, **both directions empty**, for the lib tests
-and the adapter alike. The one new passing test is this round's regression. The
-adapter is unchanged because no conformance case exercises a non-copy clause
-local — worth stating plainly, since it means the corpus is not what protects
-this gate; the lib test is.
+and the adapter alike. The one new passing test is this round's regression.
+
+Then `6b0dd43` adds the conformance case below, taking the adapter to
+**Pass=372 Fail=16 Skip=14** with the failure set again unchanged in both
+directions.
 
 `make check` exits 2 on the same pre-existing compiler target, every other step
-passing, `coverage 128/128`.
+passing, `coverage 128/128` both before and after the new case.
+
+### The gap between the count and the claim
+
+Worth more to a later reader than the numbers around it: **until `6b0dd43`,
+neither a conformance case nor a lib test covered a non-copy clause local.**
+Round 10's `Pass=371 Fail=16` was honestly measured and was never evidence that
+[FN-8] is fully enforced — a rule with no case behind it contributes nothing to
+that total whether the compiler checks it or not. The gate was reachable and
+unenforced while the corpus was green, which is precisely the shape of defect a
+verdict count cannot show. Two things now protect it: the lib test in `2ccbf4a`
+and the case in `6b0dd43`.
+
+### The ordering is unobservable, verified rather than assumed
+
+The copy judgment runs after `check_statement` while the subset pass runs
+before it, so a clause `let` that is *both* non-copy and outside the subset
+changes which check fires. Both cite `FN-8/InvalidRequires` through the same
+`invalid_requires(entry)`, so the ruling expected no observable difference —
+but the coordinate could still have moved, so it was measured.
+
+`d1-double-illformed.wf` is non-copy *and* carries a subscripted operand:
+`let xs = array_new<u64, 4>(ys[0_u64]);`. Its full diagnostic is byte-identical
+across the gate:
+
+```
+before (2ccbf4a)  Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [0, 0, 3, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(70), end: ByteOffset(108) }), kind: InvalidRequires }
+after  (96735a5)  Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [0, 0, 3, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(70), end: ByteOffset(108) }), kind: InvalidRequires }
+```
+
+Same rule, same kind, same node path, same byte range. The coordinate does not
+move, because both paths report the `requires_entry` rather than the offending
+operand. No new diagnostic kind was introduced: a non-copy local cites exactly
+what the deleted annotation check cited.
+
+### `6b0dd43` — the corpus coverage, isolated by construction
+
+`fn8-neg-requires-noncopy-local` binds `array_new<u64, 4>(0_u64)` in a clause
+and is well-formed in every other respect, so the admitted-vocabulary filter
+passes it — `array_new` is pure, total and non-trapping — and only the copy
+restriction can reject it. Verified rather than asserted: the same source
+**compiles at `2ccbf4a`** and rejects `FN-8` at `96735a5`, so nothing else in
+the program is what rejects it. The manifest row records the observed verdict.
 
 ### The regression landed first, and red
 
