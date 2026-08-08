@@ -519,8 +519,12 @@ mod tests {
                 "FORM-2",
             ),
             (
+                // The v0.22 case put the undeclared region in a `let`
+                // annotation, which A3 deletes along with the violation. A
+                // borrow keeps writing its region, so the same undeclared
+                // spelling reaches the same OWN-3 at the same stage.
                 "region.wf",
-                b"fn main() -> own unit pure {\n  let value = 0_i32;\n  return unit;\n}\n",
+                b"fn main() -> own unit pure {\n  let value = 0_i32;\n  let borrowed = &'gone value;\n  return unit;\n}\n",
                 CompilationStage::Resolution,
                 "OWN-3",
             ),

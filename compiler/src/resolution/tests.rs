@@ -1351,7 +1351,7 @@ fn identifier_renaming_preserves_general_resolution_structure() {
         ("function_27", "binding_42"),
     ] {
         let source = format!(
-            "fn {helper}() -> own unit pure {{\n}}\n\nfn main() -> own unit pure {{\n  let {local}: own i32 = 1_i32;\n  {helper}();\n  return {local};\n}}\n"
+            "fn {helper}() -> own unit pure {{\n}}\n\nfn main() -> own unit pure {{\n  let {local} = 1_i32;\n  {helper}();\n  return {local};\n}}\n"
         );
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {

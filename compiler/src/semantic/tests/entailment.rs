@@ -388,11 +388,9 @@ const count: u64 = 4_u64;
 
 fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> own i32 pure {
   if ilt(i, 2_u64) {
+  } else if ilt(i, 4_u64) {
   } else {
-    if ilt(i, 4_u64) {
-    } else {
-      return 0_i32;
-    }
+    return 0_i32;
   }
   let in_wide = wide[i];
   let in_narrow = narrow[i];
