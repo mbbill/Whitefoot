@@ -1,6 +1,17 @@
 # Stable active-specification filename — law amendment proposal
 
-Status: PROPOSAL AWAITING OWNER APPROVAL (drafted 2026-08-07). This amends
+Status: **APPROVED 2026-08-07** (`governance/APPROVALS.md`, "approval (stable
+active-specification filename)"), with all eight mandatory amendments below as
+conditions of adoption; condition 2's implementation form was subsequently read
+down in the same ledger on measured grounds. **Not yet switched over**: by §5 of
+this document, v0.23 activates the old way at `spec/kernel-spec-v0.23.md`, and
+the switchover rides the first activation with no EBNF change — the approved
+ENT-5 loop-rule fix. The line below said "AWAITING OWNER APPROVAL" until
+2026-08-08, contradicting the ledger for a day; corrected rather than left,
+because a document whose own status disagrees with the record is the defect
+this batch spent a day finding elsewhere.
+
+This amends
 project law (`CLAUDE.md` / `AGENTS.md`, which must stay byte-identical) and
 the specification-change workflow (`docs/WORKFLOW.md`). Nothing in it takes
 effect until the owner approves and the switchover commit lands.
