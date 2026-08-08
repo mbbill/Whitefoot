@@ -742,10 +742,14 @@ spelled operation by the operator table row; infix resolution consults
 no name domain, and an operator token is never a declaration, callee
 IDENT, or OPNAME." (iii) The `ModeWords` definition sentence "Let
 `ModeWords` be exactly the suffix alternatives in FORM-3's active
-OPNAME formation rule" becomes "Let `ModeWords` be exactly the suffix
+OPNAME formation rule; in this version it equals `{wrap, trap, checked,
+sat, strict}`." becomes "Let `ModeWords` be exactly the suffix
 alternatives in FORM-3's active OPNAME formation rule together with the
 operator-form suffixes of [GRAM-1]; in this version the two carriers
-share one closed set" — so the reservation set is derived from both
+share one closed set, `{wrap, trap, checked, sat, strict}`." — the
+anchor takes the whole sentence including its trailing set, which a
+prefix anchor left stranded as a second "in this version" clause — so
+the reservation set is derived from both
 suffix carriers (review R1), not from whichever rows happen to be
 respelled. Derived-set consequence: `ieq` `ine` `ile` `ige` leave
 `DotlessOperationNames` and therefore `ReservedLowerNames`;
