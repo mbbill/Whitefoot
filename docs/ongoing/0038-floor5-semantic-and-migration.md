@@ -4329,3 +4329,68 @@ smallest honest repair is a specification change, and the brief excluded that;
 recording the classification is the deliverable. Task #35 stays open with its
 cause identified rather than closed by an edit that would have been outside
 [DIAG-1].
+
+## Round 26 (exec-uninfix, 2026-08-08) — round 25's reading refuted by the implementation, and what fell out of refuting it
+
+Round 25 offered a general shape and marked it "a reading, not a measurement":
+that OWN-1's misdirecting fix was an instance of [DIAG-1]'s document-order
+tie-break, with FN-8 rejecting the same node simultaneously and losing by
+position. **It is wrong.** The instrument for "does the checker do X" is the
+checker, and reading it settles the question that no source program can.
+
+### Why no program could have answered it
+
+[GRAM-5]'s `atom` production has exactly four forms — `literal | "move" place |
+place | borrow_expr` — so an operand of a clause computation is one of four
+things, and each is decided before FN-8 could ever weigh in on consumption:
+
+| operand form | what happens in a clause |
+|---|---|
+| `literal` | never affine |
+| `"move" place` | FN-8's pass rejects the **shape** |
+| `borrow_expr` | FN-8's pass rejects the **shape** |
+| `place` (bare) | affine ⇒ OWN-1; copy ⇒ consuming is free and both rules agree |
+
+OWN-1 admits bare affine use in exactly three consuming contexts — `move p`, an
+own-place match scrutinee [OWN-13], and `propagate`'s direct operand [ERR-3] —
+and the clause's structural pass rejects the second and third as statement
+shapes. So **no program separates the two rules**, which is why round 25 could
+not measure it and why calling it unmeasurable in principle would have been the
+better report than calling it a reading.
+
+### What the implementation says
+
+`compiler/src/semantic/check/requires.rs` is **purely syntactic**.
+`validate_requires_atom` rejects `move`, a `borrow_expr`, and a subscript by
+shape; `validate_requires_place` walks `psuffix` children and recurses through
+`deref`. **Nothing in the file consults affinity, ownership, or consumption** —
+consistent with FN-8's own description of it as "an early FN-8 **structural**
+pass".
+
+So there is no simultaneous FN-8 rejection to tie-break against. **The
+misdirection is OWN-1 alone**, firing where its promised repair is forbidden by
+a rule that never looks at ownership.
+
+**This narrows #35 rather than widening it.** The blast radius is exactly the
+OWN-1/FN-8 pair, not "any rule with a repair that precedes a rule without one".
+Round 25's speculation would have sent someone auditing every rule pair in the
+document; it should not.
+
+### The finding that fell out, which is worth more than the correction
+
+FN-8's normative sentence — "a place is legal only as a **non-consuming**
+operand of an admitted table operation" — states a *property*, and the pass
+implements three *shapes*. Under v0.23 that property has **no independent
+effect**: by the table above, every program it would reject is already rejected,
+by OWN-1 or by a shape check, so nothing in the language distinguishes a
+compiler that enforces the sentence from one that does not.
+
+It is not a soundness hole — the outcomes coincide — and it is not the reason
+for #35. It is a **rule content piece with nothing exercising it**, closed by
+the grammar rather than by enumeration, and it is a third instance of the
+packet's §1.3 class after the FN-8 copy restriction and FN-2's wrong-kind
+argument. Three independent instances is the point at which per-rule accounting
+should stop being described as a pattern and start being described as the norm.
+
+Left to the lead: whether §1.3 gains it. No rule byte, no pass, and no
+diagnostic was changed in this round.
