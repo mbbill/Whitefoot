@@ -2404,6 +2404,122 @@ authorize it. Recommend it as the next slice.
 
 
 
+
+## Round 16 (exec-0038n, 2026-08-08) — the three remaining adapter failures, diagnosed
+
+No compiler or corpus change: this round is diagnosis, as scoped. Each cause is
+established by a control that separates it from the neighbouring hypothesis, and
+**one of the three is classified differently from the task card** — with the
+observation that settles it.
+
+### 1. `x-give-result-aggregate` and `semantic::tests::result_construction_…` — a MIGRATION gap, not a compiler defect
+
+Both reach TYPE-5 TypeMismatch, and the shared cause is not in the compiler.
+[TYPE-5] mandates written arguments on the prelude generic constructors in
+**every** position: "the prelude generic nominals `Option<T>` and `Result<T, E>`
+through their variant constructors `None`, `Some`, `Ok`, and `Err` … their
+absence … is a hard error citing TYPE-5 at the complete `construct`".
+
+`whitefoot-migrate` writes those arguments in exactly two positions —
+an annotated `let` (`write_constructor_arguments`) and a `return`
+(`returned_constructor`). It has **no rule for `give` or for `propagate`**, so
+constructors in those two positions were left bare by the migration and are now
+illegal.
+
+Measured, each with its written-argument control:
+
+```
+give Ok(value: 1_u64);                       TYPE-5
+give Ok<u64, u64>(value: 1_u64);             exit 0
+propagate Err(error: error);                 TYPE-5
+propagate Err<i32, StepError>(error: error); exit 0
+```
+
+**Scope measured, not estimated: 3 sites in 2 files, tree-wide.**
+
+```
+git grep -n -E "(give|propagate) (Ok|Err|Some|None)\(" \
+  -- tests/conformance/cases tests/programs compiler/src compiler/tests
+```
+
+returns `x-give-result-aggregate.wf:3`, `:5` and
+`compiler/src/semantic/tests.rs:737`, and nothing else. The `return` hits the
+same sweep reports are all Rust `return Err(BackendFailure::…)`, not Whitefoot.
+
+The two halves share one root cause and one fix, so they should land together;
+the conformance half is protected material and was not touched. Teaching the
+tool the two missing positions would additionally make a re-run idempotent
+rather than re-breaking them.
+
+### 2. `own5-neg-slice-value-match` — a MASKED negative, not a missing capability
+
+The task card classifies this as a capability gap. **It is an ordering problem,
+and the OWN-5 rejection it wants is implemented, correct, and reachable.**
+
+`check_let`'s slice-valued-delivery prohibition is at
+`semantic/check/control.rs:523`, keyed on the *derived* delivery type exactly as
+the candidate's OWN-5 requires. What runs first is `join_states`
+(`semantic/check/control/matches.rs:658`), which refuses any branch join whose
+bindings differ by more than region claims and stops with
+`Unsupported { OwnershipJoin }`.
+
+The discriminator holds everything fixed but the join:
+
+```
+give move left; / give move left;    both branches move the SAME binding
+  -> Semantics/Source [OWN-5]                      the rejection fires
+
+give move left; / give move right;   different bindings (the case)
+  -> Semantics/Unsupported { OwnershipJoin }       the rejection is masked
+```
+
+So nothing is unimplemented here. A capability stop is standing in front of a
+source rejection, which is the masking pattern this batch has now hit in four
+places. **This is the more serious of the two gaps for exactly the reason the
+card gives — a negative that never reaches its rejection tests nothing — but the
+repair is small rather than capability work**: a slice-valued delivery is
+prohibited outright, so OWN-5 can be judged before the join is attempted. That
+is a compiler change and is not taken here.
+
+### 3. `own3-pos-outlives-store` — a GENUINE capability gap, located to one predicate
+
+Classified correctly by the card. The trigger is isolated, and the `deref` in
+the case is irrelevant to it:
+
+| source | outcome |
+|---|---|
+| one region, borrow that region, deref | **exit 0** |
+| nested regions, borrow the **inner** region, deref | **exit 0** |
+| nested regions, borrow the **outer** region, deref | `Unsupported { RegionsAndBorrows }` |
+| nested regions, borrow the **outer** region, no deref | `Unsupported { RegionsAndBorrows }` |
+
+The predicate is `borrow_holder_scope_supported`
+(`semantic/check/borrows.rs:894`), whose whole body reduces to
+
+```rust
+holder_scope.parent() == Some(self.region_declaration(region)?.scope())
+```
+
+— the holder binding's scope must be a *direct child* of the borrowed region's
+scope, i.e. **the borrow's region must be the immediately enclosing region**.
+[OWN-3] permits any enclosing region that outlives, which is strictly wider, and
+the case is named for precisely that shape.
+
+Worth noting for whoever scopes the repair: **the general relation already
+exists in the same file** — `region_outlives` at `borrows.rs:883`, used for
+OWN-4's `InvalidBorrowLifetime`. So this is a predicate testing scope-parent
+identity where the outlives relation is what OWN-3 means, with that relation
+implemented next door. Whether widening it is sound depends on the loan
+bookkeeping downstream, which is why it is reported as a scoping question rather
+than attempted.
+
+### What this means for activation
+
+Of the four adapter failures, **one is not a compiler defect at all** — it is
+unfinished migration in two source positions, and it takes the lib sibling with
+it. Of the remaining three, one is a masked negative whose rule is already
+implemented, one is a located capability gap, and `fn8-neg-requires-eeq-payload-enum`
+is tracked separately. None is unexplained.
 ## Round 15 (exec-0038n, 2026-08-08) — citation by callee class, and the four rulings it forced
 
 Two commits on `task/0023-citation-by-callee-class`, rebased onto `main` at
