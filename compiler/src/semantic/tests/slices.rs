@@ -230,12 +230,12 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 
     let direct_move = format!(
         r#"{OWNER}fn main() -> own unit allocates(heap), traps {{
-  let source: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let sibling: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own Owner = Owner(source: move source, sibling: move sibling);
+  let source = buffer_new(1_u64, 0_u8);
+  let sibling = buffer_new(1_u64, 0_u8);
+  let owner = Owner(source: move source, sibling: move sibling);
   region 'view {{
-    let view: own slice<'view, u8> = slice_of<'view, u8>(&'view owner.source);
-    let taken: own buffer<u8> = move owner.sibling;
+    let view = slice_of(&'view owner.source);
+    let taken = move owner.sibling;
   }}
   return unit;
 }}
@@ -253,11 +253,11 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 }}
 
 fn main() -> own unit allocates(heap), traps {{
-  let source: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let sibling: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own Owner = Owner(source: move source, sibling: move sibling);
+  let source = buffer_new(1_u64, 0_u8);
+  let sibling = buffer_new(1_u64, 0_u8);
+  let owner = Owner(source: move source, sibling: move sibling);
   region 'view {{
-    let view: own slice<'view, u8> = slice_of<'view, u8>(&'view owner.source);
+    let view = slice_of(&'view owner.source);
     consume(value: move owner.sibling);
   }}
   return unit;
@@ -305,16 +305,16 @@ fn main() -> own unit allocates(heap), traps {
 
     let given = format!(
         r#"{OWNER}fn main() -> own unit allocates(heap), traps {{
-  let source: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let sibling: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own Owner = Owner(source: move source, sibling: move sibling);
-  let choose_owner: own Bool = True();
+  let source = buffer_new(1_u64, 0_u8);
+  let sibling = buffer_new(1_u64, 0_u8);
+  let owner = Owner(source: move source, sibling: move sibling);
+  let choose_owner = True();
   region 'view {{
-    let view: own slice<'view, u8> = slice_of<'view, u8>(&'view owner.source);
-    let selected: own buffer<u8> = if choose_owner {{
+    let view = slice_of(&'view owner.source);
+    let selected = if choose_owner {{
       give move owner.sibling;
     }} else {{
-      give buffer_new<u8>(1_u64, 0_u8);
+      give buffer_new(1_u64, 0_u8);
     }}
   }}
   return unit;
@@ -352,13 +352,13 @@ fn main() -> own unit pure {
 
     let ended_region = format!(
         r#"{OWNER}fn main() -> own unit allocates(heap), traps {{
-  let source: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let sibling: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own Owner = Owner(source: move source, sibling: move sibling);
+  let source = buffer_new(1_u64, 0_u8);
+  let sibling = buffer_new(1_u64, 0_u8);
+  let owner = Owner(source: move source, sibling: move sibling);
   region 'view {{
-    let view: own slice<'view, u8> = slice_of<'view, u8>(&'view owner.source);
+    let view = slice_of(&'view owner.source);
   }}
-  let taken: own buffer<u8> = move owner.sibling;
+  let taken = move owner.sibling;
   return unit;
 }}
 "#
@@ -447,6 +447,65 @@ fn main() -> own unit pure {
 "#,
         SemanticRule::Own10,
         SemanticIssueKind::InvalidBorrowLifetime,
+    );
+}
+
+/// [TYPE-5] `slice_of` is outside the retained-argument class, so it carries
+/// no written argument at all: the region comes from the operand's own borrow
+/// and the element from the place it views. Both halves are asserted, because
+/// a fix that only stopped demanding the argument would leave the derivation
+/// untested, and one that only derived would not reject the deleted form.
+#[test]
+fn slice_of_derives_its_region_and_rejects_a_written_argument() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let data = buffer_new(4_u64, 0_u8);
+  region 'outer {
+    region 'inner {
+      let view = slice_of(&'inner data);
+      let length = len(view);
+      check length == 4_u64 else trap "length";
+    }
+  }
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("the argument-free form must check: {outcome:?}");
+        };
+    });
+
+    // The derived region is the borrow's, not merely *a* region in scope: the
+    // same source with the outer region borrowed instead must reject, because
+    // `'outer` outlives the binding the view is taken from is not the point —
+    // the loan is keyed on the region the borrow writes.
+    assert_rule(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let data = buffer_new(4_u64, 0_u8);
+  region 'view {
+    let view = slice_of(&'view data);
+    let taken = move data;
+  }
+  return unit;
+}
+"#,
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+
+    // [OP-1] the deleted form is the rejection, on the same footing as a
+    // written argument on any other de-argumented row.
+    assert_rule(
+        br#"fn main() -> own unit allocates(heap), traps {
+  let data = buffer_new(4_u64, 0_u8);
+  region 'view {
+    slice_of<'view, u8>(&'view data);
+  }
+  return unit;
+}
+"#,
+        SemanticRule::Op1,
+        SemanticIssueKind::InvalidOperation,
     );
 }
 

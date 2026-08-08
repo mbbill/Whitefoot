@@ -37,42 +37,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let targs = self
+        // [TYPE-5] `slice_of` is outside the retained-argument class, so it
+        // carries no written argument: the region comes from the operand's own
+        // borrow and the element from the place it views. A written argument
+        // here is the rejection, not the supply.
+        if self
             .tree
             .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
-            })?;
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let [region_argument, element_argument] = arguments.as_slice() else {
+            .is_some()
+        {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        };
-        let region_use = self.use_at(*region_argument, LexicalUseRole::TypeArgumentRegion)?;
-        let ResolvedTarget::Source {
-            declaration: region,
-            class: DeclarationClass::Region,
-        } = region_use.target()
-        else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        };
-        let element_node = self
-            .tree
-            .first_child_with(*element_argument, Production::Type)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Op1,
-                    *element_argument,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
-        let element_type = self.parse_type_with(element_node, &function.substitution)?;
-        let Some(element) = self.flat_element(element_type)? else {
-            return self.issue_node(
-                SemanticRule::Op1,
-                element_node,
-                SemanticIssueKind::InvalidOperation,
-            );
-        };
+        }
         let atoms = self.operation_atoms(node, 1)?;
         let borrow = self
             .tree
@@ -91,21 +66,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::TypeMismatch,
             );
         }
+        // [OP-2] the result region is the one the operand's borrow writes.
         let borrow_region = self.use_at(borrow, LexicalUseRole::BorrowRegion)?;
         let ResolvedTarget::Source {
-            declaration: written_region,
+            declaration: region,
             class: DeclarationClass::Region,
         } = borrow_region.target()
         else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        if written_region != region {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::TypeMismatch,
-            );
-        }
         let place_node = self
             .tree
             .first_child_with(borrow, Production::Place)?
@@ -135,13 +104,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_direct_slice_borrow_lifetime(function, region, owner, borrow, loop_depth)?;
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
         let indexed = self.check_indexed_place(place_node, bindings, &suffixes, place_node)?;
-        if indexed.element_type() != element_type {
+        // [OP-2] the element is the viewed place's, and [STOR-4] still confines
+        // a slice to flat elements — now judged on the derived one.
+        let element_type = indexed.element_type();
+        let Some(element) = self.flat_element(element_type)? else {
             return self.issue_node(
-                SemanticRule::Type5,
+                SemanticRule::Op1,
                 atoms[0],
-                SemanticIssueKind::TypeMismatch,
+                SemanticIssueKind::InvalidOperation,
             );
-        }
+        };
         let (source, resolved) = match indexed {
             CheckedIndexedPlace::Array(array) => {
                 let resolved = array.resolved_place().unwrap_or(ResolvedPlace {
