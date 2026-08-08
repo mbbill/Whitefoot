@@ -2,30 +2,9 @@
 //! from its selected right-hand side, never from a written annotation, and a
 //! value initializer's come from its delivery set.
 
-use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::{assert_rule, with_semantics};
-
-/// Asserts a rejection and the exact source bytes it cites, for the rules
-/// that name *which* operand or node they land on.
-fn assert_rule_at(source: &[u8], rule: SemanticRule, cited: &str) {
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("expected {rule:?} at {cited:?}, got {outcome:?}");
-        };
-        assert_eq!(issue.rule(), rule);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!(
-                "expected a source-node citation, got {:?}",
-                issue.location()
-            );
-        };
-        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
-        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
-        let actual = std::str::from_utf8(&source[start..end]).expect("cited bytes must be text");
-        assert_eq!(actual, cited, "citation landed on the wrong node");
-    });
-}
+use super::{assert_rule, assert_rule_at, with_semantics};
 
 #[test]
 fn an_ordinary_let_takes_the_type_its_right_hand_side_produces() {

@@ -171,12 +171,8 @@ fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
   let counter: own u32 = 0_u32;
   loop @powers {
     let done: own Bool = ieq<u32>(counter, exponent);
-    match done {
-      True() => {
-        break @powers;
-      }
-      False() => {
-      }
+    if done {
+      break @powers;
     }
     set value = fmul.strict<f32>(value, 2.0_f32);
     set counter = iadd.wrap<u32>(counter, 1_u32);
@@ -189,12 +185,8 @@ fn power_f64(exponent: own u32) -> own f64 pure {
   let counter: own u32 = 0_u32;
   loop @powers {
     let done: own Bool = ieq<u32>(counter, exponent);
-    match done {
-      True() => {
-        break @powers;
-      }
-      False() => {
-      }
+    if done {
+      break @powers;
     }
     set value = fmul.strict<f64>(value, 2.0_f64);
     set counter = iadd.wrap<u32>(counter, 1_u32);

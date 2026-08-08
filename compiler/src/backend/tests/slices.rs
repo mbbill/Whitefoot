@@ -10,12 +10,8 @@ fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
   let length: own u64 = len<u8>(values);
   loop @items {
     let done: own Bool = ieq<u64>(offset, length);
-    match done {
-      True() => {
-        break @items;
-      }
-      False() => {
-      }
+    if done {
+      break @items;
     }
     let read_ok: own Bool = ilt<u64>(offset, length);
     claim offset_in_values: read_ok because "the walk stops at the slice length";
@@ -91,13 +87,10 @@ fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
 }
 
 fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
-  match take_left {
-    True() => {
-      return move left;
-    }
-    False() => {
-      return move right;
-    }
+  if take_left {
+    return move left;
+  } else {
+    return move right;
   }
 }
 

@@ -79,12 +79,8 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
     let cursor: own u64 = 0_u64;
     loop @sum {
       let done: own Bool = ieq<u64>(cursor, length);
-      match done {
-        True() => {
-          break @sum;
-        }
-        False() => {
-        }
+      if done {
+        break @sum;
       }
       let sum_ok: own Bool = ilt<u64>(cursor, length);
       claim cursor_in_bytes: sum_ok because "the sum stops at the copied length";
@@ -355,21 +351,18 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
                 match move problem {
                   CopyTooSmall(required: needed) => {
                     let untouched: own u8 = bytes[0_u64];
-                    match ieq<u8>(untouched, 7_u8) {
-                      True() => {
-                        let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(needed);
-                        match narrowed {
-                          Ok(value: code) => {
-                            return exit_status(code: code);
-                          }
-                          Err(error: overflowed) => {
-                            return exit_status(code: 200_u8);
-                          }
+                    if ieq<u8>(untouched, 7_u8) {
+                      let narrowed: own Result<u8, NarrowError> = cvt<u64, u8>(needed);
+                      match narrowed {
+                        Ok(value: code) => {
+                          return exit_status(code: code);
+                        }
+                        Err(error: overflowed) => {
+                          return exit_status(code: 200_u8);
                         }
                       }
-                      False() => {
-                        return exit_status(code: 201_u8);
-                      }
+                    } else {
+                      return exit_status(code: 201_u8);
                     }
                   }
                 }

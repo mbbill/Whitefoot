@@ -146,12 +146,8 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
 fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
     let source = br#"fn cleanup(flag: own Bool) -> own unit allocates(heap), traps {
   let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
-  match flag {
-    True() => {
-      return unit;
-    }
-    False() => {
-    }
+  if flag {
+    return unit;
   }
   loop @done {
     let scratch: own buffer<u16> = buffer_new<u16>(1_u64, 0_u16);
@@ -240,13 +236,9 @@ fn main() -> own unit allocates(heap), traps {
   let right: own buffer<u64> = buffer_new<u64>(2_u64, 0_u64);
   let pool: own Pool = Pool(left: move left, right: move right, count: 0_u64);
   let apply: own Bool = True();
-  match apply {
-    True() => {
-      region 'write {
-        update<'write>(pool: &uniq 'write pool);
-      }
-    }
-    False() => {
+  if apply {
+    region 'write {
+      update<'write>(pool: &uniq 'write pool);
     }
   }
   region 'read {

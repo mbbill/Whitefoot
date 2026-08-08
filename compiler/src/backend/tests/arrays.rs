@@ -213,12 +213,8 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
   let cursor: own u64 = 0_u64;
   let total: own u64 = 0_u64;
   loop @stream {
-    match ige<u64>(step, 200000_u64) {
-      True() => {
-        break @stream;
-      }
-      False() => {
-      }
+    if ige<u64>(step, 200000_u64) {
+      break @stream;
     }
     let cursor_ok: own Bool = ilt<u64>(cursor, 8_u64);
     claim cursor_in_window: cursor_ok because "the rotating cursor wraps at seven";
@@ -227,13 +223,10 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     set window[cursor] = imul.wrap<u64>(mixed, 1099511628211_u64);
     set total = iadd.wrap<u64>(total, previous);
     let at_end: own Bool = ieq<u64>(cursor, 7_u64);
-    let next_cursor: own u64 = match at_end {
-      True() => {
-        give 0_u64;
-      }
-      False() => {
-        give iadd.wrap<u64>(cursor, 1_u64);
-      }
+    let next_cursor: own u64 = if at_end {
+      give 0_u64;
+    } else {
+      give iadd.wrap<u64>(cursor, 1_u64);
     }
     set cursor = next_cursor;
     set step = iadd.trap<u64>(step, 1_u64);

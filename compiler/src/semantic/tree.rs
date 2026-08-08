@@ -2,6 +2,23 @@ use crate::syntax::terminal::TerminalPredicate;
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
 use crate::{NodePath, Production, ResolvedSyntaxUnit, SemanticCompilerFailure, SyntaxCoordinate};
 
+/// [GRAM-4] one conditional node's then-block and its alternative.
+pub(super) struct ConditionalBlocks {
+    pub(super) then_statements: Vec<NodeId>,
+    pub(super) alternative: ConditionalAlternative,
+}
+
+/// [GRAM-6] the three shapes an `if` alternative can take.
+pub(super) enum ConditionalAlternative {
+    /// No `else`: the else-free `if`, whose alternative delivers and does
+    /// nothing. [ERR-2] makes this the one spelling of the empty alternative.
+    Absent,
+    /// A braced `else` and the statements it owns.
+    Block(Vec<NodeId>),
+    /// `else if`: the nested conditional owning the rest of the chain.
+    Chain(NodeId),
+}
+
 pub(super) struct TreeView<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     paths: Vec<NodePath>,
@@ -130,6 +147,73 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
             pending.extend(self.children(candidate)?.iter().rev().copied());
         }
         Ok(matches)
+    }
+
+    /// [GRAM-4] the statement groups an `if_stmt` or `value_if` owns.
+    ///
+    /// Both blocks are `Stmt` children of the one conditional node, so only
+    /// the brace pairs separate them: the then-block is the group inside the
+    /// first pair and a braced `else` is the group inside the second. An
+    /// `else if` chain owns one pair and an `else` terminal, and reaches its
+    /// alternative through the nested conditional node instead.
+    pub(super) fn conditional_blocks(
+        &self,
+        node: NodeId,
+    ) -> Result<ConditionalBlocks, SemanticCompilerFailure> {
+        let record = self
+            .topology()
+            .node(node)
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let [Some(then_range), else_range] = record.body_ranges() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree);
+        };
+        let mut then_statements = Vec::new();
+        let mut else_statements = Vec::new();
+        for statement in self.children_with(node, Production::Stmt)? {
+            if self.within(statement, then_range)? {
+                then_statements.push(statement);
+            } else {
+                else_statements.push(statement);
+            }
+        }
+        // Only a braced `else` owns statements directly; with no second pair
+        // every statement of this node belongs to the then-block.
+        if else_range.is_none() && !else_statements.is_empty() {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree);
+        }
+        let alternative = match (else_range, record.has_else) {
+            (Some(_), _) => ConditionalAlternative::Block(else_statements),
+            (None, true) => {
+                let nested = self
+                    .children(node)?
+                    .iter()
+                    .copied()
+                    .find(|child| {
+                        self.production(*child).is_ok_and(|production| {
+                            matches!(production, Production::IfStmt | Production::ValueIf)
+                        })
+                    })
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                ConditionalAlternative::Chain(nested)
+            }
+            (None, false) => ConditionalAlternative::Absent,
+        };
+        Ok(ConditionalBlocks {
+            then_statements,
+            alternative,
+        })
+    }
+
+    fn within(
+        &self,
+        node: NodeId,
+        (open, close): (u64, u64),
+    ) -> Result<bool, SemanticCompilerFailure> {
+        let record = self
+            .topology()
+            .node(node)
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(record.first_terminal > open && record.last_terminal().is_some_and(|last| last < close))
     }
 
     pub(super) fn path(&self, node: NodeId) -> Result<&NodePath, SemanticCompilerFailure> {

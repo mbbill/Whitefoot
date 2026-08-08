@@ -8,11 +8,12 @@ use crate::{
 
 use super::super::super::model::{
     CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm,
-    CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedType,
+    CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
 };
+use super::super::super::tree::ConditionalAlternative;
 use super::super::borrows::{BorrowInfo, RequiredReferent};
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
-use super::{BreakState, ControlCounters, ControlScope, GiveContext};
+use super::{BlockResult, BreakState, ControlCounters, ControlScope, GiveContext};
 
 #[derive(Clone)]
 struct VariantDescriptor {
@@ -184,33 +185,296 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// [GRAM-6] the Bool conditional.
+    ///
+    /// It produces exactly the checked shape the Bool `match` produced before
+    /// the spelling changed: a two-armed match over [`CheckedEnumType::Bool`]
+    /// with `True` tagged 1 and `False` tagged 0. Lowering, entailment,
+    /// cleanup, and drops therefore need no `if` of their own. The arms cannot
+    /// come from [`Self::check_match`], which reads `arm` nodes and resolves
+    /// each one's variant by constructor name; an `if` owns no arm at all, so
+    /// its two are built here from the same descriptor.
+    pub(super) fn check_if(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut ControlCounters<'_>,
+        scope: ControlScope<'_>,
+        value_delivery: bool,
+    ) -> Result<MatchResult, CheckStop> {
+        if (self.tree.production(node)? == Production::ValueIf) != value_delivery {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        }
+        self.check_conditional(function, node, bindings, counters, scope, value_delivery)
+    }
+
+    /// The conditional body shared by both forms.
+    ///
+    /// `opens_delivery` is not "this is a `value_if`": [GIVE-1] gives an
+    /// else-if chain one delivery set belonging to the chain's binding, so
+    /// only the outermost `value_if` opens the context and every chained one
+    /// contributes to it, exactly as a statement `match` propagates `give`s.
+    fn check_conditional(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut ControlCounters<'_>,
+        scope: ControlScope<'_>,
+        opens_delivery: bool,
+    ) -> Result<MatchResult, CheckStop> {
+        let value_if = self.tree.production(node)? == Production::ValueIf;
+        let expression_node = self
+            .tree
+            .first_child_with(node, Production::Expr)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let condition =
+            self.check_match_expression(function, expression_node, bindings, scope.loops.len())?;
+        // [TYPE-7] exclusivity, which [GRAM-6] keeps: a condition reached
+        // through a holder is the implicit read, and its own `own Bool`
+        // judgment forms no rejection. `RequiredReferent::Enum` already
+        // admits `Bool`, the prelude enum this condition must be.
+        if self.reads_implicitly_through_holder(
+            condition.reference_value,
+            condition.expression.ty(),
+            RequiredReferent::Enum,
+        )? {
+            return self.issue_node(
+                SemanticRule::Type7,
+                expression_node,
+                SemanticIssueKind::MissingDereference {
+                    mechanical_fix: "write `deref(holder)`",
+                },
+            );
+        }
+        // [GRAM-6] the condition takes [OP-5]'s judgment exactly; every
+        // failure that is not TYPE-7's implicit read cites GRAM-6 here.
+        if condition.expression.ty() != CheckedType::Bool || condition.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Gram6,
+                expression_node,
+                SemanticIssueKind::InvalidConditionalForm {
+                    mechanical_fix: "give the condition exact value mode and type `own Bool`",
+                },
+            );
+        }
+        let blocks = self.tree.conditional_blocks(node)?;
+        self.reject_unspellable_else(node, &blocks.alternative, value_if)?;
+
+        let base_bindings = bindings.clone();
+        let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
+        let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
+        let local_give_context = opens_delivery.then(|| GiveContext::empty(&base_key_set, scope));
+        let arm_scope = ControlScope {
+            loops: scope.loops,
+            give_context: local_give_context.as_ref().or(scope.give_context),
+        };
+
+        let mut then_bindings = base_bindings.clone();
+        let then_checked = self.check_block(
+            function,
+            &blocks.then_statements,
+            &mut then_bindings,
+            counters,
+            arm_scope,
+        )?;
+        let mut else_bindings = base_bindings.clone();
+        let else_checked = match &blocks.alternative {
+            // [ERR-2] the else-free `if` is the empty-alternative form, so its
+            // False arm is the empty block rather than a missing one.
+            ConditionalAlternative::Absent => {
+                self.check_block(function, &[], &mut else_bindings, counters, arm_scope)?
+            }
+            ConditionalAlternative::Block(statements) => self.check_block(
+                function,
+                statements,
+                &mut else_bindings,
+                counters,
+                arm_scope,
+            )?,
+            // An `else if` chain: the nested conditional is the whole
+            // alternative and is not wrapped in a `stmt` node. It never opens
+            // a delivery context of its own — [GIVE-1] gives the whole chain
+            // one delivery set, belonging to the chain's binding.
+            ConditionalAlternative::Chain(nested) => {
+                let chained = self.check_conditional(
+                    function,
+                    *nested,
+                    &mut else_bindings,
+                    counters,
+                    arm_scope,
+                    false,
+                )?;
+                BlockResult {
+                    statements: vec![CheckedStatement::Match {
+                        scrutinee: chained.scrutinee,
+                        enum_type: chained.enum_type,
+                        arms: chained.arms,
+                        continues: chained.can_continue,
+                    }],
+                    can_continue: chained.can_continue,
+                    effects: chained.effects,
+                    all_paths_deliver: chained.all_paths_deliver,
+                    give_states: chained.give_states,
+                    break_states: chained.break_states,
+                }
+            }
+        };
+
+        let mut arms = Vec::with_capacity(2);
+        let mut normal_states = Vec::new();
+        let mut give_states = Vec::new();
+        let mut break_states = Vec::new();
+        let mut effects = condition.effects.clone();
+        let mut all_paths_deliver = true;
+        // The then-block is the `True` arm and the alternative is the `False`
+        // arm, tagged from the one Bool descriptor the `match` spelling used
+        // so the two spellings cannot drift apart. `bool_descriptor` lists the
+        // variants in that order.
+        let descriptor = Self::bool_descriptor();
+        for (variant, (checked, branch_bindings)) in descriptor
+            .variants
+            .iter()
+            .zip([(then_checked, then_bindings), (else_checked, else_bindings)])
+        {
+            let fallthrough_drops = if checked.can_continue {
+                self.live_affine_drops(&branch_bindings, &base_key_set)?
+            } else {
+                Vec::new()
+            };
+            if checked.can_continue {
+                normal_states.push(branch_bindings);
+            }
+            all_paths_deliver &= !checked.can_continue && checked.all_paths_deliver;
+            effects = effects.union(checked.effects);
+            give_states.extend(checked.give_states);
+            break_states.extend(checked.break_states);
+            arms.push(CheckedMatchArm {
+                tag: variant.tag,
+                binders: Vec::new(),
+                body: checked.statements,
+                fallthrough_drops,
+            });
+        }
+        if opens_delivery {
+            if !all_paths_deliver {
+                return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
+            }
+            self.join_states(&base_keys, &give_states, node, bindings)?;
+        } else {
+            self.join_states(&base_keys, &normal_states, node, bindings)?;
+        }
+        Ok(MatchResult {
+            scrutinee: condition.expression,
+            enum_type: CheckedEnumType::Bool,
+            arms,
+            delivered: local_give_context.as_ref().and_then(GiveContext::delivered),
+            can_continue: if opens_delivery {
+                !give_states.is_empty()
+            } else {
+                !normal_states.is_empty()
+            },
+            all_paths_deliver,
+            effects,
+            give_states: if opens_delivery {
+                Vec::new()
+            } else {
+                give_states
+            },
+            break_states,
+        })
+    }
+
+    /// [GRAM-6] the two `else` spellings the rule refuses, each reported at
+    /// the node the rule names.
+    fn reject_unspellable_else(
+        &self,
+        node: NodeId,
+        alternative: &ConditionalAlternative,
+        value_if: bool,
+    ) -> Result<(), CheckStop> {
+        let ConditionalAlternative::Block(statements) = alternative else {
+            return Ok(());
+        };
+        if statements.is_empty() {
+            // A `value_if`'s empty `else` delivers nothing, and that is
+            // [GIVE-1]'s empty delivery set rather than this rejection.
+            if value_if {
+                return Ok(());
+            }
+            return self.issue_node(
+                SemanticRule::Gram6,
+                node,
+                SemanticIssueKind::InvalidConditionalForm {
+                    mechanical_fix: "delete the empty `else` and spell the else-free `if`",
+                },
+            );
+        }
+        let [only] = statements.as_slice() else {
+            return Ok(());
+        };
+        let nested = self.tree.only_child(*only)?;
+        if self.tree.production(nested)? != Production::IfStmt {
+            return Ok(());
+        }
+        // In a `value_if` whose else block is exactly one else-free `if`, the
+        // branch cannot deliver, [GIVE-1] owns that rejection, and the chain
+        // form could not be spelled anyway — so GRAM-6 forms no candidate.
+        if value_if
+            && matches!(
+                self.tree.conditional_blocks(nested)?.alternative,
+                ConditionalAlternative::Absent
+            )
+        {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Gram6,
+            nested,
+            SemanticIssueKind::InvalidConditionalForm {
+                mechanical_fix: "flatten the nested `if` to `else if`",
+            },
+        )
+    }
+
+    fn bool_descriptor() -> MatchDescriptor {
+        MatchDescriptor {
+            enum_type: CheckedEnumType::Bool,
+            variants: vec![
+                VariantDescriptor {
+                    name: "True".to_owned(),
+                    tag: 1,
+                    fields: Vec::new(),
+                    constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(1)),
+                },
+                VariantDescriptor {
+                    name: "False".to_owned(),
+                    tag: 0,
+                    fields: Vec::new(),
+                    constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(2)),
+                },
+            ],
+        }
+    }
+
     fn match_descriptor(
         &self,
         ty: CheckedType,
         node: NodeId,
     ) -> Result<MatchDescriptor, CheckStop> {
         match ty {
-            CheckedType::Bool => Ok(MatchDescriptor {
-                enum_type: CheckedEnumType::Bool,
-                variants: vec![
-                    VariantDescriptor {
-                        name: "True".to_owned(),
-                        tag: 1,
-                        fields: Vec::new(),
-                        constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(
-                            1,
-                        )),
-                    },
-                    VariantDescriptor {
-                        name: "False".to_owned(),
-                        tag: 0,
-                        fields: Vec::new(),
-                        constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(
-                            2,
-                        )),
-                    },
-                ],
-            }),
+            // [GRAM-6] conditional control is type-driven and each form is the
+            // sole legal one for its class, so a Bool scrutinee is rejected
+            // here whatever its arms spell. Its descriptor survives below for
+            // `if`, which is the spelling this class does take.
+            CheckedType::Bool => self.issue_node(
+                SemanticRule::Gram6,
+                node,
+                SemanticIssueKind::InvalidConditionalForm {
+                    mechanical_fix: "spell the Bool conditional `if`",
+                },
+            ),
             CheckedType::Nominal(id) => {
                 // [TYPE-7]'s implicit read was already excluded by the caller,
                 // so a non-enum nominal here is the scrutinee's own mismatch.

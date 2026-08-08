@@ -238,7 +238,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
         &[
             (
                 "NotFound",
-                "match ieq<u32>(c, 2_u32) {\n  True() => {\n    match ieq<u8>(o, 1_u8) {\n      True() => {\n        return exit_status(code: 100_u8);\n      }\n      False() => {\n        return exit_status(code: 101_u8);\n      }\n    }\n  }\n  False() => {\n    return exit_status(code: 102_u8);\n  }\n}",
+                "if ieq<u32>(c, 2_u32) {\n  if ieq<u8>(o, 1_u8) {\n    return exit_status(code: 100_u8);\n  } else {\n    return exit_status(code: 101_u8);\n  }\n} else {\n  return exit_status(code: 102_u8);\n}",
             ),
             ("PermissionDenied", "return exit_status(code: 110_u8);"),
             ("NotDirectory", "return exit_status(code: 111_u8);"),
@@ -375,12 +375,8 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                         }
                       }
                     }
-                    match failed {
-                      True() => {
-                        return exit_status(code: 202_u8);
-                      }
-                      False() => {
-                      }
+                    if failed {
+                      return exit_status(code: 202_u8);
                     }
                     let scaled: own u64 = imul.wrap<u64>(total, 10_u64);
                     let mixed: own u64 = iadd.wrap<u64>(scaled, chunks);
@@ -472,12 +468,9 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                         }
                       }
                     }
-                    match ieq<u64>(vacant, 0_u64) {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 212_u8);
-                      }
+                    if ieq<u64>(vacant, 0_u64) {
+                    } else {
+                      return exit_status(code: 212_u8);
                     }
                     region 'g {
                       region 'e {
@@ -564,12 +557,9 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 2_u64, capacity: 3_u64) {
                           ReadBytes(count: n) => {
-                            match ieq<u64>(n, 3_u64) {
-                              True() => {
-                              }
-                              False() => {
-                                return exit_status(code: 250_u8);
-                              }
+                            if ieq<u64>(n, 3_u64) {
+                            } else {
+                              return exit_status(code: 250_u8);
                             }
                           }
                           ReadEnd() => {
@@ -584,12 +574,8 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                     let digest: own u64 = 0_u64;
                     let cursor: own u64 = 0_u64;
                     loop @fold {
-                      match ieq<u64>(cursor, 8_u64) {
-                        True() => {
-                          break @fold;
-                        }
-                        False() => {
-                        }
+                      if ieq<u64>(cursor, 8_u64) {
+                        break @fold;
                       }
                       let fold_ok: own Bool = ilt<u64>(cursor, 8_u64);
                       claim cursor_in_bytes: fold_ok because "the fold walks 0..8 over the eight-byte buffer";
@@ -660,12 +646,9 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 0_u64) {
         Ok(value: written) => {
-          match ieq<u64>(written, 0_u64) {
-            True() => {
-            }
-            False() => {
-              return exit_status(code: 210_u8);
-            }
+          if ieq<u64>(written, 0_u64) {
+          } else {
+            return exit_status(code: 210_u8);
           }
         }
         Err(error: problem) => {
@@ -819,12 +802,8 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
   let attempts: own u64 = 0_u64;
   let status: own u8 = 44_u8;
   loop @publish {{
-    match ige<u64>(attempts, 200000_u64) {{
-      True() => {{
-        break @publish;
-      }}
-      False() => {{
-      }}
+    if ige<u64>(attempts, 200000_u64) {{
+      break @publish;
     }}
     set attempts = iadd.wrap<u64>(attempts, 1_u64);
     region 'o {{
@@ -1043,12 +1022,9 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
   let name_length: own u64 = 0_u64;
   region 'a {
     let arguments: own u64 = args_count<'a>(args: &'a args);
-    match ieq<u64>(arguments, 2_u64) {
-      True() => {
-      }
-      False() => {
-        return exit_status(code: 2_u8);
-      }
+    if ieq<u64>(arguments, 2_u64) {
+    } else {
+      return exit_status(code: 2_u8);
     }
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -1121,12 +1097,9 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                         }
                       }
                     }
-                    match ieq<u8>(failed, 0_u8) {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: failed);
-                      }
+                    if ieq<u8>(failed, 0_u8) {
+                    } else {
+                      return exit_status(code: failed);
                     }
                     region 'x {
                       region 'y {

@@ -5,6 +5,7 @@ mod borrows;
 mod boxes;
 mod buffers;
 mod checked_division;
+mod conditionals;
 mod contracts;
 mod derivation;
 mod entailment;
@@ -160,6 +161,27 @@ fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
         };
         assert_eq!(issue.rule(), rule);
         assert_eq!(issue.kind(), &kind);
+    });
+}
+
+/// Asserts a rejection and the exact source bytes it cites, for the rules
+/// that name *which* operand or node they land on.
+fn assert_rule_at(source: &[u8], rule: SemanticRule, cited: &str) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected {rule:?} at {cited:?}, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule);
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!(
+                "expected a source-node citation, got {:?}",
+                issue.location()
+            );
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        let actual = std::str::from_utf8(&source[start..end]).expect("cited bytes must be text");
+        assert_eq!(actual, cited, "citation landed on the wrong node");
     });
 }
 
@@ -324,12 +346,8 @@ fn loop_break_and_backedge_cleanup_is_explicit() {
 fn main() -> own unit pure {
   loop @again {
     let first: own Cell = Cell(value: 1_i32);
-    match True() {
-      True() => {
-        break @again;
-      }
-      False() => {
-      }
+    if True() {
+      break @again;
     }
     let second: own Cell = Cell(value: 2_i32);
   }
@@ -479,12 +497,12 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
 #[test]
 fn give_completeness_rejects_each_structural_failure() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let result: own i32 = match flag {\n    True() => {\n    }\n    False() => {\n      give 0_i32;\n    }\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let result: own i32 = if flag {\n  } else {\n    give 0_i32;\n  }\n  return unit;\n}\n",
         SemanticRule::Give1,
         SemanticIssueKind::InvalidGive,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let result: own i32 = match flag {\n    True() => {\n      give 1_i32;\n      give 2_i32;\n    }\n    False() => {\n      give 0_i32;\n    }\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let result: own i32 = if flag {\n    give 1_i32;\n    give 2_i32;\n  } else {\n    give 0_i32;\n  }\n  return unit;\n}\n",
         SemanticRule::Give1,
         SemanticIssueKind::InvalidGive,
     );
@@ -525,7 +543,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
     assert_unsupported(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> own unit pure {\n  let cell: own Cell = Cell(value: 1_i32);\n  let flag: own Bool = True();\n  match flag {\n    True() => {\n      let consumed: own Cell = move cell;\n    }\n    False() => {\n    }\n  }\n  return unit;\n}\n",
+        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> own unit pure {\n  let cell: own Cell = Cell(value: 1_i32);\n  let flag: own Bool = True();\n  if flag {\n    let consumed: own Cell = move cell;\n  }\n  return unit;\n}\n",
         UnsupportedSemanticFeature::OwnershipJoin,
     );
 }
@@ -879,28 +897,22 @@ fn drop_binder(value: own Holder) -> own unit pure {
 }
 
 fn drop_before_give(flag: own Bool) -> own i32 pure {
-  let selected: own i32 = match flag {
-    True() => {
-      let temporary: own Cell = Cell(value: 2_i32);
-      give 1_i32;
-    }
-    False() => {
-      give 0_i32;
-    }
+  let selected: own i32 = if flag {
+    let temporary: own Cell = Cell(value: 2_i32);
+    give 1_i32;
+  } else {
+    give 0_i32;
   }
   return selected;
 }
 
 fn move_through_give(flag: own Bool) -> own Cell pure {
-  let selected: own Cell = match flag {
-    True() => {
-      let temporary: own Cell = Cell(value: 3_i32);
-      give move temporary;
-    }
-    False() => {
-      let temporary: own Cell = Cell(value: 4_i32);
-      give move temporary;
-    }
+  let selected: own Cell = if flag {
+    let temporary: own Cell = Cell(value: 3_i32);
+    give move temporary;
+  } else {
+    let temporary: own Cell = Cell(value: 4_i32);
+    give move temporary;
   }
   return move selected;
 }

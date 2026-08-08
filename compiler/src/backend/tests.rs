@@ -409,14 +409,11 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> own i32 pure {
     Empty() => {
     }
   }
-  let selected: own i32 = match flag {
-    True() => {
-      let temporary: own Cell = Cell(value: 7_i32);
-      give 1_i32;
-    }
-    False() => {
-      give 0_i32;
-    }
+  let selected: own i32 = if flag {
+    let temporary: own Cell = Cell(value: 7_i32);
+    give 1_i32;
+  } else {
+    give 0_i32;
   }
   return selected;
 }
@@ -465,29 +462,23 @@ fn main() -> own unit traps {
   let inner: own Inner = Inner(value: 2_i32);
   let outer: own Outer = Outer(inner: move inner, other: 7_i32);
   let flag: own Bool = True();
-  match flag {
-    True() => {
-      set number = 42_i32;
-      set outer.inner.value = number;
-    }
-    False() => {
-      set number = 9_i32;
-      set outer.inner.value = number;
-    }
+  if flag {
+    set number = 42_i32;
+    set outer.inner.value = number;
+  } else {
+    set number = 9_i32;
+    set outer.inner.value = number;
   }
   let observed: own i32 = outer.inner.value;
   check ieq<i32>(observed, 42_i32) else trap "nested set failed";
   let preserved: own i32 = outer.other;
   check ieq<i32>(preserved, 7_i32) else trap "sibling changed";
-  let selected: own i32 = match flag {
-    True() => {
-      set number = 43_i32;
-      give number;
-    }
-    False() => {
-      set number = 10_i32;
-      give number;
-    }
+  let selected: own i32 = if flag {
+    set number = 43_i32;
+    give number;
+  } else {
+    set number = 10_i32;
+    give number;
   }
   check ieq<i32>(selected, 43_i32) else trap "value match result failed";
   check ieq<i32>(number, 43_i32) else trap "value match set failed";
@@ -501,6 +492,47 @@ fn main() -> own unit traps {
     assert!(main.contains(" = insertvalue %wf.t0"));
 
     let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
+/// [GRAM-6] the Bool conditional lowers through the Bool `match` path it
+/// checks into, so no lowering, cleanup, or drop change is owed. Every branch
+/// here is observable: a wrong one leaves a flag false and the check traps.
+#[test]
+fn bool_conditionals_execute_through_the_existing_match_lowering() {
+    let source = br#"fn main() -> own unit traps {
+  let flag = True();
+  let other = False();
+  let seen = False();
+  if flag {
+    set seen = True();
+  }
+  check seen else trap "the else-free if did not run";
+  let untouched = True();
+  if other {
+    set untouched = False();
+  }
+  check untouched else trap "the else-free if ran when it should not";
+  let taken = if flag {
+    give True();
+  } else {
+    give False();
+  }
+  check taken else trap "the value_if took the wrong branch";
+  let chained = if other {
+    give False();
+  } else if flag {
+    give True();
+  } else {
+    give False();
+  }
+  check chained else trap "the else-if chain took the wrong branch";
+  return unit;
+}
+"#;
+    let output = compile_and_run(&compile(source));
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
@@ -564,14 +596,11 @@ struct Envelope {
 }
 
 fn step(value: own i32) -> own Result<i32, StepError> pure {
-  match ilt<i32>(value, 0_i32) {
-    True() => {
-      let error: own StepError = Failed();
-      return Err(error: error);
-    }
-    False() => {
-      return Ok(value: value);
-    }
+  if ilt<i32>(value, 0_i32) {
+    let error: own StepError = Failed();
+    return Err(error: error);
+  } else {
+    return Ok(value: value);
   }
 }
 
@@ -701,19 +730,11 @@ fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
     set outer = iadd.wrap<i32>(outer, 1_i32);
     let inner: own i32 = 0_i32;
     loop @inner_loop {
-      match ige<i32>(outer, 3_i32) {
-        True() => {
-          break @outer_loop;
-        }
-        False() => {
-        }
+      if ige<i32>(outer, 3_i32) {
+        break @outer_loop;
       }
-      match ige<i32>(inner, 2_i32) {
-        True() => {
-          break @inner_loop;
-        }
-        False() => {
-        }
+      if ige<i32>(inner, 2_i32) {
+        break @inner_loop;
       }
       set inner = iadd.wrap<i32>(inner, 1_i32);
     }
@@ -856,12 +877,8 @@ fn required_check_survives_host_optimization_of_an_unfoldable_loop() {
   let step: own u64 = 0_u64;
   let state: own u64 = 14695981039346656037_u64;
   loop @mix {
-    match ige<u64>(step, 4096_u64) {
-      True() => {
-        break @mix;
-      }
-      False() => {
-      }
+    if ige<u64>(step, 4096_u64) {
+      break @mix;
     }
     let mixed: own u64 = ixor<u64>(state, step);
     set state = imul.wrap<u64>(mixed, 1099511628211_u64);

@@ -59,13 +59,10 @@ fn a_dominating_branch_discharges_the_guarded_index_and_not_the_other_arm() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-      return values[i];
-    }
-    False() => {
-      return values[i];
-    }
+  if ilt<u64>(i, 4_u64) {
+    return values[i];
+  } else {
+    return values[i];
   }
 }
 
@@ -116,13 +113,10 @@ fn a_bool_binding_carries_its_comparison_to_the_match_when_no_kill_intervenes() 
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let flag: own Bool = ilt<u64>(i, 4_u64);
-  match flag {
-    True() => {
-      return values[i];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if flag {
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -140,13 +134,10 @@ fn a_set_between_initializer_and_use_invalidates_the_comparison_origin() {
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   let flag: own Bool = ilt<u64>(i, 4_u64);
   set i = iadd.wrap<u64>(i, 1_u64);
-  match flag {
-    True() => {
-      return values[i];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if flag {
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -176,20 +167,14 @@ struct Pair {
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
-  match ile<u64>(i, p.count) {
-    True() => {
-      match ilt<u64>(p.count, 4_u64) {
-        True() => {
-          return values[i];
-        }
-        False() => {
-          return 0_i32;
-        }
-      }
-    }
-    False() => {
+  if ile<u64>(i, p.count) {
+    if ilt<u64>(p.count, 4_u64) {
+      return values[i];
+    } else {
       return 0_i32;
     }
+  } else {
+    return 0_i32;
   }
 }
 
@@ -209,20 +194,14 @@ fn disequality_strengthens_a_weak_bound_to_a_strict_one() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ile<u64>(i, 4_u64) {
-    True() => {
-      match ieq<u64>(i, 4_u64) {
-        True() => {
-          return 0_i32;
-        }
-        False() => {
-          return values[i];
-        }
-      }
-    }
-    False() => {
+  if ile<u64>(i, 4_u64) {
+    if ieq<u64>(i, 4_u64) {
       return 0_i32;
+    } else {
+      return values[i];
     }
+  } else {
+    return 0_i32;
   }
 }
 
@@ -242,13 +221,10 @@ fn a_contradictory_state_discharges_every_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 0_u64) {
-    True() => {
-      return values[9_u64];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 0_u64) {
+    return values[9_u64];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -280,21 +256,15 @@ fn eat(p: own Pair) -> own unit pure {
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
-  match ile<u64>(i, p.count) {
-    True() => {
-      match ilt<u64>(p.count, 4_u64) {
-        True() => {
-          eat(p: move p);
-          return values[i];
-        }
-        False() => {
-          return 0_i32;
-        }
-      }
-    }
-    False() => {
+  if ile<u64>(i, p.count) {
+    if ilt<u64>(p.count, 4_u64) {
+      eat(p: move p);
+      return values[i];
+    } else {
       return 0_i32;
     }
+  } else {
+    return 0_i32;
   }
 }
 
@@ -323,17 +293,14 @@ struct Pair {
 }
 
 fn read(values: own array<i32, count>, p: own Pair) -> own i32 pure {
-  match ilt<u64>(p.count, 4_u64) {
-    True() => {
-      set p.other = 9_u64;
-      let kept: own i32 = values[p.count];
-      set p.count = 9_u64;
-      let lost: own i32 = values[p.count];
-      return kept;
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(p.count, 4_u64) {
+    set p.other = 9_u64;
+    let kept: own i32 = values[p.count];
+    set p.count = 9_u64;
+    let lost: own i32 = values[p.count];
+    return kept;
+  } else {
+    return 0_i32;
   }
 }
 
@@ -358,16 +325,13 @@ fn bump['w](p: &uniq 'w u64) -> own unit writes('w) {
 }
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-      region 'w {
-        bump<'w>(p: &uniq 'w i);
-      }
-      return values[i];
+  if ilt<u64>(i, 4_u64) {
+    region 'w {
+      bump<'w>(p: &uniq 'w i);
     }
-    False() => {
-      return 0_i32;
-    }
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -391,16 +355,13 @@ fn peek['r](p: &'r u64) -> own u64 reads('r) {
 }
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-      region 'r {
-        let seen: own u64 = peek<'r>(p: &'r i);
-      }
-      return values[i];
+  if ilt<u64>(i, 4_u64) {
+    region 'r {
+      let seen: own u64 = peek<'r>(p: &'r i);
     }
-    False() => {
-      return 0_i32;
-    }
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -426,17 +387,11 @@ fn a_join_keeps_the_weakest_bound_held_on_every_continuing_arm() {
 const count: u64 = 4_u64;
 
 fn read(wide: own array<i32, count>, narrow: own array<i32, two>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 2_u64) {
-    True() => {
-    }
-    False() => {
-      match ilt<u64>(i, 4_u64) {
-        True() => {
-        }
-        False() => {
-          return 0_i32;
-        }
-      }
+  if ilt<u64>(i, 2_u64) {
+  } else {
+    if ilt<u64>(i, 4_u64) {
+    } else {
+      return 0_i32;
     }
   }
   let in_wide: own i32 = wide[i];
@@ -460,12 +415,9 @@ fn an_arm_that_leaves_by_return_contributes_nothing_to_the_join() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 4_u64) {
+  } else {
+    return 0_i32;
   }
   return values[i];
 }
@@ -489,22 +441,16 @@ fn a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, pick: own Bool) -> own i32 pure {
-  match pick {
-    True() => {
-      let j: own u64 = 0_u64;
-      match ilt<u64>(j, 4_u64) {
-        True() => {
-          return values[j];
-        }
-        False() => {
-          return 0_i32;
-        }
-      }
-    }
-    False() => {
-      let j: own u64 = 9_u64;
+  if pick {
+    let j: own u64 = 0_u64;
+    if ilt<u64>(j, 4_u64) {
       return values[j];
+    } else {
+      return 0_i32;
     }
+  } else {
+    let j: own u64 = 9_u64;
+    return values[j];
   }
 }
 
@@ -527,12 +473,9 @@ fn a_fact_about_an_outer_binding_survives_a_region_exit() {
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   region 'a {
-    match ilt<u64>(i, 4_u64) {
-      True() => {
-      }
-      False() => {
-        return 0_i32;
-      }
+    if ilt<u64>(i, 4_u64) {
+    } else {
+      return 0_i32;
     }
   }
   return values[i];
@@ -559,13 +502,10 @@ fn a_break_edge_carries_surviving_facts_to_the_loop_continuation() {
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   loop @l {
-    match ilt<u64>(i, 4_u64) {
-      True() => {
-        break @l;
-      }
-      False() => {
-        return 0_i32;
-      }
+    if ilt<u64>(i, 4_u64) {
+      break @l;
+    } else {
+      return 0_i32;
     }
   }
   return values[i];
@@ -588,14 +528,11 @@ fn a_kill_before_the_break_edge_leaves_the_continuation_unproved() {
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
   loop @l {
-    match ilt<u64>(i, 4_u64) {
-      True() => {
-        set i = iadd.wrap<u64>(i, 1_u64);
-        break @l;
-      }
-      False() => {
-        return 0_i32;
-      }
+    if ilt<u64>(i, 4_u64) {
+      set i = iadd.wrap<u64>(i, 1_u64);
+      break @l;
+    } else {
+      return 0_i32;
     }
   }
   return values[i];
@@ -617,13 +554,10 @@ fn give_edges_join_at_the_value_match_continuation_with_arm_facts_dead() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  let picked: own i32 = match ilt<u64>(i, 4_u64) {
-    True() => {
-      give values[i];
-    }
-    False() => {
-      give 0_i32;
-    }
+  let picked: own i32 = if ilt<u64>(i, 4_u64) {
+    give values[i];
+  } else {
+    give 0_i32;
   }
   let after: own i32 = values[i];
   return picked;
@@ -654,27 +588,21 @@ enum Fail {
 }
 
 fn source(flag: own Bool) -> own Result<u64, Fail> pure {
-  match flag {
-    True() => {
-      return Ok(value: 1_u64);
-    }
-    False() => {
-      let bad: own Fail = Bad();
-      return Err(error: bad);
-    }
+  if flag {
+    return Ok(value: 1_u64);
+  } else {
+    let bad: own Fail = Bad();
+    return Err(error: bad);
   }
 }
 
 fn read(values: own array<i32, count>, i: own u64, flag: own Bool) -> own Result<i32, Fail> pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-      let v: own u64 = propagate source(flag: flag);
-      let a: own i32 = values[i];
-      return Ok(value: a);
-    }
-    False() => {
-      return Ok(value: 0_i32);
-    }
+  if ilt<u64>(i, 4_u64) {
+    let v: own u64 = propagate source(flag: flag);
+    let a: own i32 = values[i];
+    return Ok(value: a);
+  } else {
+    return Ok(value: 0_i32);
   }
 }
 
@@ -698,23 +626,17 @@ fn a_loop_body_kill_removes_the_fact_from_every_iteration_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 4_u64) {
+  } else {
+    return 0_i32;
   }
   let before: own i32 = values[i];
   loop @l {
     let inside: own i32 = values[i];
     set i = iadd.wrap<u64>(i, 1_u64);
-    match ilt<u64>(i, 4_u64) {
-      True() => {
-      }
-      False() => {
-        break @l;
-      }
+    if ilt<u64>(i, 4_u64) {
+    } else {
+      break @l;
     }
   }
   return before;
@@ -736,12 +658,9 @@ fn a_kill_free_loop_body_keeps_the_entry_fact_at_the_head() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 4_u64) {
+  } else {
+    return 0_i32;
   }
   loop @l {
     let inside: own i32 = values[i];
@@ -792,13 +711,10 @@ fn a_nested_index_offset_is_no_term_and_renders_its_canonical_bytes() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> own u8 pure {
-  match ilt<u64>(j, 4_u64) {
-    True() => {
-      return lens[order[j]];
-    }
-    False() => {
-      return 0_u8;
-    }
+  if ilt<u64>(j, 4_u64) {
+    return lens[order[j]];
+  } else {
+    return 0_u8;
   }
 }
 
@@ -899,13 +815,10 @@ fn an_allocation_length_binding_carries_the_length_into_a_branch() {
     let source = br#"fn read(n: own u64, i: own u64) -> own u8 allocates(heap), traps {
   let b: own buffer<u8> = buffer_new<u8>(n, 0_u8);
   let m: own u64 = len<u8>(b);
-  match ilt<u64>(i, m) {
-    True() => {
-      return b[i];
-    }
-    False() => {
-      return 0_u8;
-    }
+  if ilt<u64>(i, m) {
+    return b[i];
+  } else {
+    return 0_u8;
   }
 }
 
@@ -946,27 +859,21 @@ fn an_element_write_keeps_the_allocation_equality_that_a_write_to_its_length_kil
     // binding itself is not a source shape the engine can be shown.
     let source = br#"fn kept(n: own u64) -> own u8 allocates(heap), traps {
   let b: own buffer<u8> = buffer_new<u8>(n, 0_u8);
-  match ilt<u64>(3_u64, n) {
-    True() => {
-      set b[0_u64] = 1_u8;
-      return b[3_u64];
-    }
-    False() => {
-      return 0_u8;
-    }
+  if ilt<u64>(3_u64, n) {
+    set b[0_u64] = 1_u8;
+    return b[3_u64];
+  } else {
+    return 0_u8;
   }
 }
 
 fn killed(n: own u64) -> own u8 allocates(heap), traps {
   let b: own buffer<u8> = buffer_new<u8>(n, 0_u8);
-  match ilt<u64>(3_u64, n) {
-    True() => {
-      set n = 0_u64;
-      return b[3_u64];
-    }
-    False() => {
-      return 0_u8;
-    }
+  if ilt<u64>(3_u64, n) {
+    set n = 0_u64;
+    return b[3_u64];
+  } else {
+    return 0_u8;
   }
 }
 
@@ -1034,15 +941,12 @@ fn set_targets_carry_the_same_obligation_in_target_position() {
     let source = br#"const count: u64 = 4_u64;
 
 fn write(values: own array<u16, count>, i: own u64) -> own u16 pure {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-      set values[i] = 9_u16;
-      return 1_u16;
-    }
-    False() => {
-      set values[i] = 9_u16;
-      return 0_u16;
-    }
+  if ilt<u64>(i, 4_u64) {
+    set values[i] = 9_u16;
+    return 1_u16;
+  } else {
+    set values[i] = 9_u16;
+    return 0_u16;
   }
 }
 
@@ -1147,21 +1051,18 @@ fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, n: own u64) -> own i32 pure {
-  match ilt<u64>(n, 4_u64) {
-    True() => {
-      match cvt<u64, u8>(n) {
-        Ok(value: small) => {
-          let widened: own u64 = cvt<u8, u64>(small);
-          return values[widened];
-        }
-        Err(error: narrowed) => {
-          return 0_i32;
-        }
+  if ilt<u64>(n, 4_u64) {
+    match cvt<u64, u8>(n) {
+      Ok(value: small) => {
+        let widened: own u64 = cvt<u8, u64>(small);
+        return values[widened];
+      }
+      Err(error: narrowed) => {
+        return 0_i32;
       }
     }
-    False() => {
-      return 0_i32;
-    }
+  } else {
+    return 0_i32;
   }
 }
 
@@ -1185,14 +1086,11 @@ fn a_trapping_offset_establishes_its_equality_unconditionally() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
-  match ilt<u64>(i, 3_u64) {
-    True() => {
-      let next: own u64 = iadd.trap<u64>(i, 1_u64);
-      return values[next];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 3_u64) {
+    let next: own u64 = iadd.trap<u64>(i, 1_u64);
+    return values[next];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -1214,33 +1112,24 @@ fn a_wrapping_offset_establishes_only_where_the_range_is_already_proved() {
     let source = br#"const count: u64 = 4_u64;
 
 fn guarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
-  match ilt<u64>(p, 4_u64) {
-    True() => {
-      match ige<u64>(p, 1_u64) {
-        True() => {
-          let s: own u64 = isub.wrap<u64>(p, 1_u64);
-          return values[s];
-        }
-        False() => {
-          return 0_i32;
-        }
-      }
-    }
-    False() => {
+  if ilt<u64>(p, 4_u64) {
+    if ige<u64>(p, 1_u64) {
+      let s: own u64 = isub.wrap<u64>(p, 1_u64);
+      return values[s];
+    } else {
       return 0_i32;
     }
+  } else {
+    return 0_i32;
   }
 }
 
 fn unguarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
-  match ilt<u64>(p, 4_u64) {
-    True() => {
-      let s: own u64 = isub.wrap<u64>(p, 1_u64);
-      return values[s];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(p, 4_u64) {
+    let s: own u64 = isub.wrap<u64>(p, 1_u64);
+    return values[s];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -1265,59 +1154,50 @@ fn a_checked_offset_establishes_in_the_ok_arm_only_and_dies_with_its_base() {
     let source = br#"const count: u64 = 4_u64;
 
 fn direct(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 3_u64) {
-    True() => {
-      match iadd.checked<u64>(i, 1_u64) {
-        Ok(value: next) => {
-          return values[next];
-        }
-        Err(error: overflowed) => {
-          return 0_i32;
-        }
+  if ilt<u64>(i, 3_u64) {
+    match iadd.checked<u64>(i, 1_u64) {
+      Ok(value: next) => {
+        return values[next];
+      }
+      Err(error: overflowed) => {
+        return 0_i32;
       }
     }
-    False() => {
-      return 0_i32;
-    }
+  } else {
+    return 0_i32;
   }
 }
 
 fn through_binding(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 3_u64) {
-    True() => {
-      let outcome: own Result<u64, Overflow> = iadd.checked<u64>(i, 1_u64);
-      match outcome {
-        Ok(value: next) => {
-          return values[next];
-        }
-        Err(error: overflowed) => {
-          return 0_i32;
-        }
+  if ilt<u64>(i, 3_u64) {
+    let outcome: own Result<u64, Overflow> = iadd.checked<u64>(i, 1_u64);
+    match outcome {
+      Ok(value: next) => {
+        return values[next];
+      }
+      Err(error: overflowed) => {
+        return 0_i32;
       }
     }
-    False() => {
-      return 0_i32;
-    }
+  } else {
+    return 0_i32;
   }
 }
 
 fn killed(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  match ilt<u64>(i, 3_u64) {
-    True() => {
-      let outcome: own Result<u64, Overflow> = iadd.checked<u64>(i, 1_u64);
-      set i = 9_u64;
-      match outcome {
-        Ok(value: next) => {
-          return values[next];
-        }
-        Err(error: overflowed) => {
-          return 0_i32;
-        }
+  if ilt<u64>(i, 3_u64) {
+    let outcome: own Result<u64, Overflow> = iadd.checked<u64>(i, 1_u64);
+    set i = 9_u64;
+    match outcome {
+      Ok(value: next) => {
+        return values[next];
+      }
+      Err(error: overflowed) => {
+        return 0_i32;
       }
     }
-    False() => {
-      return 0_i32;
-    }
+  } else {
+    return 0_i32;
   }
 }
 
@@ -1741,14 +1621,11 @@ fn a_derivable_claim_is_redundant_and_reports_the_advisory_without_rejecting() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
-  match ilt<u64>(i, 4_u64) {
-    True() => {
-      claim proven: ilt<u64>(i, 4_u64) because "already branched";
-      return values[i];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 4_u64) {
+    claim proven: ilt<u64>(i, 4_u64) because "already branched";
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -1771,14 +1648,11 @@ fn a_refuted_claim_is_a_clm2_rejection_with_predicate_and_negation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
-  match ige<u64>(i, 4_u64) {
-    True() => {
-      claim in_range: ilt<u64>(i, 4_u64) because "refuted by the branch";
-      return values[i];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ige<u64>(i, 4_u64) {
+    claim in_range: ilt<u64>(i, 4_u64) because "refuted by the branch";
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 
@@ -1807,14 +1681,11 @@ fn a_contradictory_state_never_refutes_a_claim() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
-  match ilt<u64>(i, 0_u64) {
-    True() => {
-      claim absurd: ilt<u64>(i, 4_u64) because "under a false branch";
-      return values[i];
-    }
-    False() => {
-      return 0_i32;
-    }
+  if ilt<u64>(i, 0_u64) {
+    claim absurd: ilt<u64>(i, 4_u64) because "under a false branch";
+    return values[i];
+  } else {
+    return 0_i32;
   }
 }
 

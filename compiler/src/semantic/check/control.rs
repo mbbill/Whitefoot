@@ -290,6 +290,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     condition.effects.union(EffectSet::TRAPS),
                 ))
             }
+            // [GRAM-6] the Bool conditional checks into the same two-armed
+            // Bool match the `match` spelling produced, so everything below
+            // the checker sees one statement kind for both.
+            Production::IfStmt => {
+                let matched = self.check_if(function, node, bindings, counters, scope, false)?;
+                Ok(StatementResult {
+                    statement: CheckedStatement::Match {
+                        scrutinee: matched.scrutinee,
+                        enum_type: matched.enum_type,
+                        arms: matched.arms,
+                        continues: matched.can_continue,
+                    },
+                    can_continue: matched.can_continue,
+                    effects: matched.effects,
+                    all_paths_deliver: matched.all_paths_deliver,
+                    direct_give: false,
+                    give_states: matched.give_states,
+                    break_states: matched.break_states,
+                })
+            }
             Production::MatchStmt => {
                 let matched = self.check_match(function, node, bindings, counters, scope, false)?;
                 Ok(StatementResult {
@@ -472,13 +492,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .binding_names
             .push(declaration.spelling().to_owned());
 
-        if let Some(value_match) = self.tree.first_child_with(node, Production::ValueMatch)? {
-            let matched =
-                self.check_match(function, value_match, bindings, counters, scope, true)?;
+        // [GIVE-1] a value initializer is a `match` or an `if`. Both derive the
+        // binder from their delivery set and share every judgment below, so
+        // only the checker that produces the delivery set differs.
+        let value_match = self.tree.first_child_with(node, Production::ValueMatch)?;
+        let value_if = self.tree.first_child_with(node, Production::ValueIf)?;
+        if let Some(initializer) = value_match.or(value_if) {
+            let matched = if value_if.is_some() {
+                self.check_if(function, initializer, bindings, counters, scope, true)?
+            } else {
+                self.check_match(function, initializer, bindings, counters, scope, true)?
+            };
             if !matched.all_paths_deliver {
                 return self.issue_node(
                     SemanticRule::Give1,
-                    value_match,
+                    initializer,
                     SemanticIssueKind::InvalidGive,
                 );
             }
@@ -490,14 +518,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             if mode != CheckedMode::Own {
                 return self
-                    .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, value_match);
+                    .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, initializer);
             }
             if matches!(expected, CheckedType::Slice { .. }) {
                 return self.issue_node(
                     SemanticRule::Own5,
-                    value_match,
+                    initializer,
                     SemanticIssueKind::SliceValueMatch {
-                        mechanical_fix: "use a match statement whose arms return the slice directly, or call helpers with direct slice results",
+                        mechanical_fix: "use a match or if statement whose branches return the slice directly, or call helpers with direct slice results",
                     },
                 );
             }

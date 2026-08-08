@@ -721,7 +721,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         12,
         &[(
             "WriteZero",
-            "match ieq<u32>(c, 0_u32) {\n  True() => {\n    match ieq<u8>(o, 0_u8) {\n      True() => {\n        return exit_status(code: 120_u8);\n      }\n      False() => {\n        return exit_status(code: 121_u8);\n      }\n    }\n  }\n  False() => {\n    return exit_status(code: 122_u8);\n  }\n}",
+            "if ieq<u32>(c, 0_u32) {\n  if ieq<u8>(o, 0_u8) {\n    return exit_status(code: 120_u8);\n  } else {\n    return exit_status(code: 121_u8);\n  }\n} else {\n  return exit_status(code: 122_u8);\n}",
         )],
         "return exit_status(code: 199_u8);",
     );

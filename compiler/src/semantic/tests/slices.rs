@@ -133,12 +133,8 @@ fn slice_loans_live_until_their_named_data_region_ends() {
   let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
   let take_view: own Bool = True();
   region 'outer {
-    match take_view {
-      True() => {
-        let view: own slice<'outer, u8> = slice_of<'outer, u8>(&'outer values);
-      }
-      False() => {
-      }
+    if take_view {
+      let view: own slice<'outer, u8> = slice_of<'outer, u8>(&'outer values);
     }
     set values[0_u64] = 1_u8;
   }
@@ -315,13 +311,10 @@ fn main() -> own unit allocates(heap), traps {
   let choose_owner: own Bool = True();
   region 'view {{
     let view: own slice<'view, u8> = slice_of<'view, u8>(&'view owner.source);
-    let selected: own buffer<u8> = match choose_owner {{
-      True() => {{
-        give move owner.sibling;
-      }}
-      False() => {{
-        give buffer_new<u8>(1_u64, 0_u8);
-      }}
+    let selected: own buffer<u8> = if choose_owner {{
+      give move owner.sibling;
+    }} else {{
+      give buffer_new<u8>(1_u64, 0_u8);
     }}
   }}
   return unit;
@@ -484,13 +477,10 @@ fn returned_slices_keep_signature_ceilings_and_substituted_call_origins() {
 }
 
 fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
-  match take_left {
-    True() => {
-      return move left;
-    }
-    False() => {
-      return move right;
-    }
+  if take_left {
+    return move left;
+  } else {
+    return move right;
   }
 }
 
@@ -601,13 +591,10 @@ fn main() -> own unit pure {
 
     assert_rule(
         br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
-  match take_left {
-    True() => {
-      return move left;
-    }
-    False() => {
-      return move right;
-    }
+  if take_left {
+    return move left;
+  } else {
+    return move right;
   }
 }
 
@@ -650,13 +637,10 @@ fn main() -> own unit pure {
 fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
     assert_rule(
         br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
-  let selected: own slice<'r, u8> = match take_left {
-    True() => {
-      give move left;
-    }
-    False() => {
-      give move right;
-    }
+  let selected: own slice<'r, u8> = if take_left {
+    give move left;
+  } else {
+    give move right;
   }
   return move selected;
 }
