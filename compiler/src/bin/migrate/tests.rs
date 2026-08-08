@@ -82,14 +82,71 @@ fn a_named_arithmetic_row_becomes_its_operator() {
     assert!(out.contains("let b = a +wrap 2_i32;"), "{out}");
 }
 
-/// The four dotless comparisons respell; `ilt` and `igt` keep their names and
-/// lose only their arguments (O1).
+/// All six comparisons keep their named calls after the owner's cancellation
+/// of the infix spellings, and lose only their written arguments.
 #[test]
-fn comparisons_respell_and_the_two_named_rows_keep_their_spelling() {
+fn every_comparison_keeps_its_name_and_loses_only_its_argument() {
     let source = b"fn main() -> own unit traps {\n  let a: own u64 = 1_u64;\n  let same: own Bool = ieq<u64>(a, 1_u64);\n  let under: own Bool = ilt<u64>(a, 2_u64);\n  check same else trap \"eq\";\n  check under else trap \"lt\";\n  return unit;\n}\n";
     let out = migrated(source);
-    assert!(out.contains("let same = a == 1_u64;"), "{out}");
+    assert!(out.contains("let same = ieq(a, 1_u64);"), "{out}");
     assert!(out.contains("let under = ilt(a, 2_u64);"), "{out}");
+}
+
+/// The reverse class: a corpus already migrated to the cancelled spelling
+/// comes back to the named call, operands in the order they were written.
+#[test]
+fn an_infix_comparison_returns_to_its_named_call() {
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  let same = a == 1_u64;\n  let other = a != 2_u64;\n  let under = a <= 2_u64;\n  let over = a >= 0_u64;\n  check same else trap \"eq\";\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("let same = ieq(a, 1_u64);"), "{out}");
+    assert!(out.contains("let other = ine(a, 2_u64);"), "{out}");
+    assert!(out.contains("let under = ile(a, 2_u64);"), "{out}");
+    assert!(out.contains("let over = ige(a, 0_u64);"), "{out}");
+}
+
+/// The operand recovery is the whole risk in the reverse class, so the atom
+/// forms [GRAM-9] admits are exercised where they actually occur: a `deref`
+/// group on both sides, a subscripted place, and a field suffix after a group.
+#[test]
+fn the_reverse_class_recovers_every_atom_form_it_can_meet() {
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  region 'r {\n    let p = &'r a;\n    check deref(p) == a else trap \"deref left\";\n    check a == deref(p) else trap \"deref right\";\n  }\n  let b = buffer_new(2_u64, 0_u8);\n  check b[0_u64] <= b[1_u64] else trap \"subscript\";\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("check ieq(deref(p), a) else"), "{out}");
+    assert!(out.contains("check ieq(a, deref(p)) else"), "{out}");
+    assert!(out.contains("check ile(b[0_u64], b[1_u64]) else"), "{out}");
+}
+
+/// The statement keyword before an operand is not part of it. This is the one
+/// boundary a keyword blacklist would have got wrong, so it is asserted in
+/// every position that introduces an expression.
+#[test]
+fn a_statement_keyword_is_never_swallowed_into_an_operand() {
+    let source = b"fn pick(x: own i32) -> own Bool traps {\n  check x == 0_i32 else trap \"check\";\n  if x >= 1_i32 {\n    return x != 2_i32;\n  }\n  return x <= 3_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("check ieq(x, 0_i32) else"), "{out}");
+    assert!(out.contains("if ige(x, 1_i32) {"), "{out}");
+    assert!(out.contains("return ine(x, 2_i32);"), "{out}");
+    assert!(out.contains("return ile(x, 3_i32);"), "{out}");
+}
+
+/// A comparison inside a string is not a token either, so the reverse class
+/// cannot reach it — the same property the annotation class relies on.
+#[test]
+fn an_infix_comparison_inside_a_string_is_untouched() {
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  check a == 1_u64 else trap \"want a == 1\";\n  return unit;\n}\n";
+    let out = migrated(source);
+    assert!(out.contains("trap \"want a == 1\""), "{out}");
+    assert!(out.contains("check ieq(a, 1_u64) else"), "{out}");
+}
+
+/// The reverse class is re-runnable like every other: a named call holds no
+/// operator, so a second pass is the identity.
+#[test]
+fn the_reverse_class_is_idempotent() {
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  check a == 1_u64 else trap \"eq\";\n  return unit;\n}\n";
+    let once = migrated(source);
+    let twice = migrated(once.as_bytes());
+    assert_eq!(once, twice);
 }
 
 /// The retained-argument class keeps what no operand can supply.

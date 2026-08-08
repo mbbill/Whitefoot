@@ -22,6 +22,8 @@ pub(crate) struct Counts {
     pub(crate) annotations: usize,
     /// [OP-1] named rows respelled infix.
     pub(crate) respelled: usize,
+    /// [OP-1] infix comparisons returned to their named calls.
+    pub(crate) unspelled: usize,
     /// [TYPE-5] written type arguments deleted from a de-argumented row.
     pub(crate) arguments: usize,
     /// [GRAM-6] Bool matches rewritten as `if`.
@@ -38,6 +40,7 @@ impl Counts {
     pub(crate) fn add(&mut self, other: &Self) {
         self.annotations += other.annotations;
         self.respelled += other.respelled;
+        self.unspelled += other.unspelled;
         self.arguments += other.arguments;
         self.conditionals += other.conditionals;
         self.flattened += other.flattened;
@@ -47,9 +50,10 @@ impl Counts {
 
     pub(crate) fn summary(&self) -> String {
         format!(
-            "{} annotation(s), {} respell(s), {} argument list(s), {} constructor(s) written, {} left bare, {} conditional(s) ({} flattened)",
+            "{} annotation(s), {} respell(s), {} comparison(s) unspelled, {} argument list(s), {} constructor(s) written, {} left bare, {} conditional(s) ({} flattened)",
             self.annotations,
             self.respelled,
+            self.unspelled,
             self.arguments,
             self.constructors,
             self.bare_constructors,
@@ -71,7 +75,7 @@ const PRELUDE_GENERICS: [&[u8]; 2] = [b"Option", b"Result"];
 /// The tool carries this itself rather than reading the compiler's catalog:
 /// the catalog is already v0.23, so the *source* spellings this migration
 /// reads no longer exist anywhere in the tree.
-const INFIX_RESPELL: [(&[u8], &[u8]); 20] = [
+const INFIX_RESPELL: [(&[u8], &[u8]); 16] = [
     (b"iadd.wrap", b"+wrap"),
     (b"isub.wrap", b"-wrap"),
     (b"imul.wrap", b"*wrap"),
@@ -88,10 +92,27 @@ const INFIX_RESPELL: [(&[u8], &[u8]); 20] = [
     (b"irem.trap", b"%"),
     (b"idiv.checked", b"/checked"),
     (b"irem.checked", b"%checked"),
-    (b"ieq", b"=="),
-    (b"ine", b"!="),
-    (b"ile", b"<="),
-    (b"ige", b">="),
+];
+
+/// [OP-1] the infix comparison spellings the owner cancelled on 2026-08-08,
+/// and the named call each one returns to.
+///
+/// This is the reverse direction of [`INFIX_RESPELL`], and it exists because
+/// the corpus was already migrated to the spelling that was cancelled. It is
+/// reached from the same pre-pass as every other class, so the `.wf` corpus
+/// and the fixtures embedded in Rust literals share one implementation.
+///
+/// The operator is matched on its bytes rather than on one token kind, so the
+/// class keeps working after the lexer stops forming the compound tokens:
+/// `==`, `<=`, and `>=` then arrive as two byte-adjacent punctuation tokens.
+/// `!=` has no such fallback — `!` is no token at all in v0.22 — so a source
+/// still carrying one after that point fails to lex, loudly, rather than
+/// migrating silently.
+const COMPARISON_UNSPELL: [(&[u8], &[u8]); 4] = [
+    (b"==", b"ieq"),
+    (b"!=", b"ine"),
+    (b"<=", b"ile"),
+    (b">=", b"ige"),
 ];
 
 /// [TYPE-5] the closed retained-argument class: the rows whose written type
@@ -109,12 +130,16 @@ const RETAINED_ARGUMENTS: [&[u8]; 6] = [
 ///
 /// A generic *user* function keeps its arguments under [FN-2], so the type
 /// arguments are stripped only from a callee this list names.
-const DEARGUMENTED: [&[u8]; 57] = [
+const DEARGUMENTED: [&[u8]; 61] = [
     b"ineg.wrap",
     b"ineg.trap",
     b"ineg.checked",
+    b"ieq",
+    b"ine",
     b"ilt",
+    b"ile",
     b"igt",
+    b"ige",
     b"eeq",
     b"ene",
     b"fadd.strict",
@@ -213,6 +238,10 @@ pub(crate) fn pre_pass(
         // de-argumenting for the rows that become operators, because it
         // deletes the whole call form, so it is asked first.
         if let Some(consumed) = operation_call(source, &tokens, index, &mut edits, &mut counts)? {
+            index = consumed;
+            continue;
+        }
+        if let Some(consumed) = infix_comparison(source, &tokens, index, &mut edits, &mut counts)? {
             index = consumed;
             continue;
         }
@@ -589,6 +618,199 @@ fn operation_call(
     });
     counts.respelled += 1;
     Ok(Some(close + 1))
+}
+
+/// [OP-1] one infix comparison returned to its named call: `a <= b` becomes
+/// `ile(a, b)`.
+///
+/// Returns the index just past the right operand when one was rewritten.
+///
+/// The operator is the anchor and both operands are recovered from it, because
+/// unlike every other class this one has no callee token to key on. [GRAM-9]
+/// makes each operand exactly one `atom`, so the recovery walks the atom's own
+/// forms — place suffixes, a `deref(…)` group, `move`, and a borrow prefix —
+/// and nothing else. An operand that reaches a `(` or `<` is a call or a
+/// construct, which [GRAM-9] forbids in an atom position: the tool refuses it
+/// by name rather than emitting a rewrite around a boundary it guessed.
+fn infix_comparison(
+    source: &[u8],
+    tokens: &[OwnedLexeme],
+    index: usize,
+    edits: &mut Vec<Edit>,
+    counts: &mut Counts,
+) -> Result<Option<usize>, String> {
+    let Some((operator, last_operator_token)) = comparison_operator(source, tokens, index) else {
+        return Ok(None);
+    };
+    let callee = COMPARISON_UNSPELL
+        .iter()
+        .find(|(spelling, _)| *spelling == operator)
+        .map(|(_, callee)| *callee)
+        .ok_or_else(|| "an unlisted comparison operator reached the rewrite".to_owned())?;
+    if index == 0 {
+        return Err("an infix comparison began a source".to_owned());
+    }
+    let left = atom_start(source, tokens, index - 1)
+        .ok_or_else(|| "an infix comparison's left operand has no atom start".to_owned())?;
+    let right = atom_end(source, tokens, last_operator_token + 1)
+        .ok_or_else(|| "an infix comparison's right operand has no atom end".to_owned())?;
+    let mut head = callee.to_vec();
+    head.push(b'(');
+    edits.push(Edit {
+        start: tokens[left].start,
+        end: tokens[left].start,
+        replacement: head,
+    });
+    edits.push(Edit {
+        start: tokens[index].start,
+        end: tokens[last_operator_token].end,
+        replacement: b", ".to_vec(),
+    });
+    edits.push(Edit {
+        start: tokens[right].end,
+        end: tokens[right].end,
+        replacement: b")".to_vec(),
+    });
+    counts.unspelled += 1;
+    Ok(Some(right + 1))
+}
+
+/// The comparison operator starting at `index`, and its last token.
+///
+/// One compound token while the lexer still forms it, or two byte-adjacent
+/// punctuation tokens after it stops. Adjacency is what makes the two-token
+/// reading safe: [FORM-2] renders every canonical `=` with a space on each
+/// side, so two touching punctuation bytes never arise any other way.
+fn comparison_operator<'source>(
+    source: &'source [u8],
+    tokens: &[OwnedLexeme],
+    index: usize,
+) -> Option<(&'source [u8], usize)> {
+    let first = tokens.get(index)?;
+    let single = &source[first.start..first.end];
+    if COMPARISON_UNSPELL
+        .iter()
+        .any(|(spelling, _)| *spelling == single)
+    {
+        return Some((single, index));
+    }
+    let second = tokens.get(index + 1)?;
+    if second.start != first.end {
+        return None;
+    }
+    let pair = &source[first.start..second.end];
+    COMPARISON_UNSPELL
+        .iter()
+        .any(|(spelling, _)| *spelling == pair)
+        .then_some((pair, index + 1))
+}
+
+/// The first token of the `atom` whose last token is `last`.
+fn atom_start(source: &[u8], tokens: &[OwnedLexeme], last: usize) -> Option<usize> {
+    let mut start = last;
+    loop {
+        start = match tokens.get(start)?.kind {
+            Some(TokenKind::RightParen) => {
+                group_start(tokens, start, TokenKind::LeftParen, TokenKind::RightParen)?
+            }
+            Some(TokenKind::RightBracket) => group_start(
+                tokens,
+                start,
+                TokenKind::LeftBracket,
+                TokenKind::RightBracket,
+            )?,
+            _ => start,
+        };
+        if start == 0 {
+            return Some(0);
+        }
+        let previous = start - 1;
+        // A suffixed place carries its base leftwards; `move`, `deref`, and a
+        // borrow prefix carry their own.
+        let extends = match tokens.get(previous)?.kind {
+            Some(TokenKind::Dot | TokenKind::Ampersand | TokenKind::RegionForm) => true,
+            Some(TokenKind::LowerWordForm) => {
+                let spelling = bytes(source, tokens, previous);
+                spelling == b"move"
+                    || spelling == b"uniq"
+                    || spelling == b"deref"
+                    || suffix_start(tokens, start)
+            }
+            Some(TokenKind::RightParen | TokenKind::RightBracket) => suffix_start(tokens, start),
+            _ => false,
+        };
+        if !extends {
+            return Some(start);
+        }
+        start = previous;
+    }
+}
+
+/// The last token of the `atom` whose first token is `first`.
+fn atom_end(source: &[u8], tokens: &[OwnedLexeme], first: usize) -> Option<usize> {
+    let mut end = first;
+    loop {
+        end = match tokens.get(end)?.kind {
+            Some(TokenKind::LeftParen) => {
+                group_end(tokens, end, TokenKind::LeftParen, TokenKind::RightParen)?
+            }
+            Some(TokenKind::LeftBracket) => {
+                group_end(tokens, end, TokenKind::LeftBracket, TokenKind::RightBracket)?
+            }
+            _ => end,
+        };
+        let next = end + 1;
+        if next >= tokens.len() {
+            return Some(end);
+        }
+        let extends = match tokens[end].kind {
+            Some(TokenKind::Dot | TokenKind::Ampersand | TokenKind::RegionForm) => true,
+            Some(TokenKind::LowerWordForm) => {
+                let spelling = bytes(source, tokens, end);
+                spelling == b"move"
+                    || spelling == b"uniq"
+                    || spelling == b"deref"
+                    || suffix_start(tokens, next)
+            }
+            Some(TokenKind::RightParen | TokenKind::RightBracket) => suffix_start(tokens, next),
+            _ => false,
+        };
+        if !extends {
+            return Some(end);
+        }
+        end = next;
+    }
+}
+
+/// Whether the token at `index` begins a `psuffix` — `.` IDENT or `[` atom `]`.
+fn suffix_start(tokens: &[OwnedLexeme], index: usize) -> bool {
+    matches!(
+        tokens.get(index).and_then(|token| token.kind),
+        Some(TokenKind::Dot | TokenKind::LeftBracket)
+    )
+}
+
+/// The index of the token opening the group closed at `close`.
+fn group_start(
+    tokens: &[OwnedLexeme],
+    close: usize,
+    opening: TokenKind,
+    closing: TokenKind,
+) -> Option<usize> {
+    let mut depth = 0_i32;
+    for offset in (0..=close).rev() {
+        match tokens[offset].kind {
+            Some(kind) if kind == closing => depth += 1,
+            Some(kind) if kind == opening => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The index of the token closing a group opened at `open`.
