@@ -3,20 +3,20 @@ use super::{compile, compile_and_run};
 #[test]
 fn executes_every_negation_mode_for_every_signed_width() {
     let template = r#"fn main() -> own unit traps {
-  let wrapped: own $TYPE = ineg.wrap<$TYPE>($MIN_$TYPE);
-  check ieq<$TYPE>(wrapped, $MIN_$TYPE) else trap "wrapped negation drift";
-  let trapped: own $TYPE = ineg.trap<$TYPE>(-42_$TYPE);
-  check ieq<$TYPE>(trapped, 42_$TYPE) else trap "trapping negation drift";
-  let safe_result: own Result<$TYPE, Overflow> = ineg.checked<$TYPE>(-42_$TYPE);
+  let wrapped = ineg.wrap($MIN_$TYPE);
+  check wrapped == $MIN_$TYPE else trap "wrapped negation drift";
+  let trapped = ineg.trap(-42_$TYPE);
+  check trapped == 42_$TYPE else trap "trapping negation drift";
+  let safe_result = ineg.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      check ieq<$TYPE>(safe_value, 42_$TYPE) else trap "checked negation drift";
+      check safe_value == 42_$TYPE else trap "checked negation drift";
     }
     Err(error: safe_error) => {
       check False() else trap "safe negation took Err";
     }
   }
-  let overflow_result: own Result<$TYPE, Overflow> = ineg.checked<$TYPE>($MIN_$TYPE);
+  let overflow_result = ineg.checked($MIN_$TYPE);
   match move overflow_result {
     Ok(value: overflow_value) => {
       check False() else trap "minimum negation took Ok";

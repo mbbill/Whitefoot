@@ -3,18 +3,18 @@ use super::{compile, compile_and_run};
 #[test]
 fn executes_width_sensitive_integer_edges_for_every_unsigned_width() {
     let template = r#"fn main() -> own unit traps {
-  let shifted: own $TYPE = ishl.wrap<$TYPE>(1_$TYPE, $AMOUNT_u32);
-  check ieq<$TYPE>(shifted, 2_$TYPE) else trap "masked shift";
-  let rotated: own $TYPE = irotl<$TYPE>(1_$TYPE, $AMOUNT_u32);
-  check ieq<$TYPE>(rotated, 2_$TYPE) else trap "modular rotate";
-  let population: own u32 = ipopcount<$TYPE>($MAX_$TYPE);
-  check ieq<u32>(population, $WIDTH_u32) else trap "population count";
-  let leading: own u32 = iclz<$TYPE>(0_$TYPE);
-  check ieq<u32>(leading, $WIDTH_u32) else trap "zero leading count";
-  let trailing: own u32 = ictz<$TYPE>(0_$TYPE);
-  check ieq<u32>(trailing, $WIDTH_u32) else trap "zero trailing count";
-  let saturated: own $TYPE = imul.sat<$TYPE>($MAX_$TYPE, 2_$TYPE);
-  check ieq<$TYPE>(saturated, $MAX_$TYPE) else trap "saturating multiply";
+  let shifted = ishl.wrap(1_$TYPE, $AMOUNT_u32);
+  check shifted == 2_$TYPE else trap "masked shift";
+  let rotated = irotl(1_$TYPE, $AMOUNT_u32);
+  check rotated == 2_$TYPE else trap "modular rotate";
+  let population = ipopcount($MAX_$TYPE);
+  check population == $WIDTH_u32 else trap "population count";
+  let leading = iclz(0_$TYPE);
+  check leading == $WIDTH_u32 else trap "zero leading count";
+  let trailing = ictz(0_$TYPE);
+  check trailing == $WIDTH_u32 else trap "zero trailing count";
+  let saturated = $MAX_$TYPE *sat 2_$TYPE;
+  check saturated == $MAX_$TYPE else trap "saturating multiply";
 $BSWAP  return unit;
 }
 "#;
@@ -26,7 +26,7 @@ $BSWAP  return unit;
     ] {
         let bswap = swapped.map_or_else(String::new, |expected| {
             format!(
-                "  let swapped: own {ty} = ibswap<{ty}>(1_{ty});\n  check ieq<{ty}>(swapped, {expected}_{ty}) else trap \"byte swap\";\n"
+                "  let swapped = ibswap(1_{ty});\n  check swapped == {expected}_{ty} else trap \"byte swap\";\n"
             )
         });
         let source = template

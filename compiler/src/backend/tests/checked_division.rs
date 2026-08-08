@@ -3,25 +3,25 @@ use super::{compile, compile_and_run};
 #[test]
 fn guards_every_integer_error_before_llvm() {
     let template = r#"fn main() -> own unit traps {
-  let quotient: own Result<$TYPE, DivError> = idiv.checked<$TYPE>(84_$TYPE, 2_$TYPE);
+  let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {
-      check ieq<$TYPE>(quotient_value, 42_$TYPE) else trap "quotient drift";
+      check quotient_value == 42_$TYPE else trap "quotient drift";
     }
     Err(error: quotient_error) => {
       check False() else trap "quotient took Err";
     }
   }
-  let remainder: own Result<$TYPE, DivError> = irem.checked<$TYPE>(85_$TYPE, 43_$TYPE);
+  let remainder = 85_$TYPE %checked 43_$TYPE;
   match move remainder {
     Ok(value: remainder_value) => {
-      check ieq<$TYPE>(remainder_value, 42_$TYPE) else trap "remainder drift";
+      check remainder_value == 42_$TYPE else trap "remainder drift";
     }
     Err(error: remainder_error) => {
       check False() else trap "remainder took Err";
     }
   }
-  let divide_zero: own Result<$TYPE, DivError> = idiv.checked<$TYPE>(42_$TYPE, 0_$TYPE);
+  let divide_zero = 42_$TYPE /checked 0_$TYPE;
   match move divide_zero {
     Ok(value: divide_zero_value) => {
       check False() else trap "zero division took Ok";
@@ -36,7 +36,7 @@ fn guards_every_integer_error_before_llvm() {
       }
     }
   }
-  let remainder_zero: own Result<$TYPE, DivError> = irem.checked<$TYPE>(42_$TYPE, 0_$TYPE);
+  let remainder_zero = 42_$TYPE %checked 0_$TYPE;
   match move remainder_zero {
     Ok(value: remainder_zero_value) => {
       check False() else trap "zero remainder took Ok";
@@ -66,7 +66,7 @@ $SIGNED_CASES  return unit;
     ] {
         let signed_cases = if signed {
             format!(
-                r#"  let divide_overflow: own Result<{ty}, DivError> = idiv.checked<{ty}>({minimum}_{ty}, -1_{ty});
+                r#"  let divide_overflow = {minimum}_{ty} /checked -1_{ty};
   match move divide_overflow {{
     Ok(value: divide_overflow_value) => {{
       check False() else trap "division overflow took Ok";
@@ -81,7 +81,7 @@ $SIGNED_CASES  return unit;
       }}
     }}
   }}
-  let remainder_overflow: own Result<{ty}, DivError> = irem.checked<{ty}>({minimum}_{ty}, -1_{ty});
+  let remainder_overflow = {minimum}_{ty} %checked -1_{ty};
   match move remainder_overflow {{
     Ok(value: remainder_overflow_value) => {{
       check False() else trap "remainder overflow took Ok";

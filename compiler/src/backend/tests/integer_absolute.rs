@@ -3,20 +3,20 @@ use super::{compile, compile_and_run};
 #[test]
 fn executes_every_absolute_mode_for_every_signed_width() {
     let template = r#"fn main() -> own unit traps {
-  let wrapped: own $TYPE = iabs.wrap<$TYPE>($MIN_$TYPE);
-  check ieq<$TYPE>(wrapped, $MIN_$TYPE) else trap "wrapped absolute value drift";
-  let trapped: own $TYPE = iabs.trap<$TYPE>(-42_$TYPE);
-  check ieq<$TYPE>(trapped, 42_$TYPE) else trap "trapping absolute value drift";
-  let safe_result: own Result<$TYPE, Overflow> = iabs.checked<$TYPE>(-42_$TYPE);
+  let wrapped = iabs.wrap($MIN_$TYPE);
+  check wrapped == $MIN_$TYPE else trap "wrapped absolute value drift";
+  let trapped = iabs.trap(-42_$TYPE);
+  check trapped == 42_$TYPE else trap "trapping absolute value drift";
+  let safe_result = iabs.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      check ieq<$TYPE>(safe_value, 42_$TYPE) else trap "checked absolute value drift";
+      check safe_value == 42_$TYPE else trap "checked absolute value drift";
     }
     Err(error: safe_error) => {
       check False() else trap "safe absolute value took Err";
     }
   }
-  let overflow_result: own Result<$TYPE, Overflow> = iabs.checked<$TYPE>($MIN_$TYPE);
+  let overflow_result = iabs.checked($MIN_$TYPE);
   match move overflow_result {
     Ok(value: overflow_value) => {
       check False() else trap "minimum absolute value took Ok";
