@@ -598,6 +598,43 @@ fn infix_operators_execute_the_rows_they_name() {
     assert!(output.stderr.is_empty());
 }
 
+/// [OP-1] (ii) an infix returned directly from a function lowers and executes,
+/// not merely type-checks.
+///
+/// `return a + b;` failed semantic checking outright, so no lowering evidence
+/// existed for the shape. Both an arithmetic and a comparison result are
+/// returned and consumed at the call site, and the false comparison gates a
+/// trap, so a lost or inverted result fails here rather than passing quietly.
+#[test]
+fn an_infix_returned_from_a_function_executes() {
+    let source = br#"fn add(a: own i32, b: own i32) -> own i32 traps {
+  return a + b;
+}
+
+fn eq(a: own i32, b: own i32) -> own Bool pure {
+  return a == b;
+}
+
+fn main() -> own unit traps {
+  let sum = add(a: 20_i32, b: 22_i32);
+  let sum_ok = sum == 42_i32;
+  check sum_ok else trap "the returned sum is wrong";
+  let same = eq(a: 7_i32, b: 7_i32);
+  check same else trap "the returned comparison is wrong";
+  let differ = eq(a: 7_i32, b: 8_i32);
+  let impossible = eq(a: 0_i32, b: 1_i32);
+  if differ {
+    check impossible else trap "a false returned comparison must not be true";
+  }
+  return unit;
+}
+"#;
+    let output = compile_and_run(&compile(source));
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// [OP-2] bare infix arithmetic keeps the trapping semantics its named
 /// `.trap` spelling had: the required check is not lost to the shorter form.
 #[test]
