@@ -14,9 +14,10 @@ SPEC = ROOT / runner.ACTIVE_SPEC
 
 class ActiveSpecificationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> None:
-        spec = directory / "spec"
-        spec.mkdir()
-        (spec / runner.ACTIVE_SPEC.name).write_bytes(SPEC.read_bytes())
+        active = directory / runner.ACTIVE_SPEC
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_bytes(SPEC.read_bytes())
+        (directory / "spec").mkdir(exist_ok=True)
 
     def test_higher_version_lookalike_cannot_change_coverage_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -47,9 +48,9 @@ class ActiveSpecificationTests(unittest.TestCase):
 
 class ManifestValidationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> Path:
-        spec = directory / "spec"
-        spec.mkdir()
-        (spec / runner.ACTIVE_SPEC.name).write_bytes(SPEC.read_bytes())
+        active = directory / runner.ACTIVE_SPEC
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_bytes(SPEC.read_bytes())
         cases = directory / "cases"
         cases.mkdir()
         return cases
@@ -127,9 +128,9 @@ class ArrangementTests(unittest.TestCase):
     expressible exactly."""
 
     def make_repository(self, directory: Path) -> Path:
-        spec = directory / "spec"
-        spec.mkdir()
-        (spec / runner.ACTIVE_SPEC.name).write_bytes(SPEC.read_bytes())
+        active = directory / runner.ACTIVE_SPEC
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_bytes(SPEC.read_bytes())
         cases = directory / "cases"
         cases.mkdir()
         return cases

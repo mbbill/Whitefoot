@@ -8,7 +8,9 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// Compound source atoms such as `&uniq` are represented by their two raw
 /// token predicates. The declaration order is the stable dense predicate
 /// index: the v0.17 inventory, the three spellings v0.18 added, and the two
-/// v0.21 added, less the `index` spelling v0.22 released to IDENT. First grammar-occurrence order is carried by
+/// v0.21 added, less the `index` spelling v0.22 released to IDENT, plus the
+/// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings.
+/// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -149,10 +151,52 @@ pub enum FixedTerminal {
     Claim,
     /// `because`.
     Because,
+    /// `if`.
+    If,
+    /// `+`.
+    Plus,
+    /// `+wrap`.
+    PlusWrap,
+    /// `+checked`.
+    PlusChecked,
+    /// `+sat`.
+    PlusSat,
+    /// `-`.
+    Minus,
+    /// `-wrap`.
+    MinusWrap,
+    /// `-checked`.
+    MinusChecked,
+    /// `-sat`.
+    MinusSat,
+    /// `*`.
+    Star,
+    /// `*wrap`.
+    StarWrap,
+    /// `*checked`.
+    StarChecked,
+    /// `*sat`.
+    StarSat,
+    /// `/`.
+    Slash,
+    /// `/checked`.
+    SlashChecked,
+    /// `%`.
+    Percent,
+    /// `%checked`.
+    PercentChecked,
+    /// `==`.
+    EqualEqual,
+    /// `!=`.
+    BangEqual,
+    /// `<=`.
+    LessEqual,
+    /// `>=`.
+    GreaterEqual,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 68] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 89] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -197,6 +241,8 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 68] = [
     FixedTerminal::Ampersand,
     FixedTerminal::Uniq,
     FixedTerminal::Let,
+    FixedTerminal::If,
+    FixedTerminal::Else,
     FixedTerminal::Propagate,
     FixedTerminal::Set,
     FixedTerminal::Return,
@@ -204,13 +250,32 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 68] = [
     FixedTerminal::Break,
     FixedTerminal::Region,
     FixedTerminal::Check,
-    FixedTerminal::Else,
     FixedTerminal::Trap,
     FixedTerminal::Claim,
     FixedTerminal::Because,
     FixedTerminal::Give,
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
+    FixedTerminal::Plus,
+    FixedTerminal::PlusWrap,
+    FixedTerminal::PlusChecked,
+    FixedTerminal::PlusSat,
+    FixedTerminal::Minus,
+    FixedTerminal::MinusWrap,
+    FixedTerminal::MinusChecked,
+    FixedTerminal::MinusSat,
+    FixedTerminal::Star,
+    FixedTerminal::StarWrap,
+    FixedTerminal::StarChecked,
+    FixedTerminal::StarSat,
+    FixedTerminal::Slash,
+    FixedTerminal::SlashChecked,
+    FixedTerminal::Percent,
+    FixedTerminal::PercentChecked,
+    FixedTerminal::EqualEqual,
+    FixedTerminal::BangEqual,
+    FixedTerminal::LessEqual,
+    FixedTerminal::GreaterEqual,
     FixedTerminal::Move,
     FixedTerminal::Deref,
     FixedTerminal::Pure,
@@ -296,6 +361,27 @@ impl FixedTerminal {
             Self::Blocks => b"blocks",
             Self::Claim => b"claim",
             Self::Because => b"because",
+            Self::If => b"if",
+            Self::Plus => b"+",
+            Self::PlusWrap => b"+wrap",
+            Self::PlusChecked => b"+checked",
+            Self::PlusSat => b"+sat",
+            Self::Minus => b"-",
+            Self::MinusWrap => b"-wrap",
+            Self::MinusChecked => b"-checked",
+            Self::MinusSat => b"-sat",
+            Self::Star => b"*",
+            Self::StarWrap => b"*wrap",
+            Self::StarChecked => b"*checked",
+            Self::StarSat => b"*sat",
+            Self::Slash => b"/",
+            Self::SlashChecked => b"/checked",
+            Self::Percent => b"%",
+            Self::PercentChecked => b"%checked",
+            Self::EqualEqual => b"==",
+            Self::BangEqual => b"!=",
+            Self::LessEqual => b"<=",
+            Self::GreaterEqual => b">=",
         }
     }
 
@@ -343,21 +429,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 76] = {
-    let mut predicates = [TerminalPredicate::Identifier; 76];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 97] = {
+    let mut predicates = [TerminalPredicate::Identifier; 97];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[68] = TerminalPredicate::Identifier;
-    predicates[69] = TerminalPredicate::TypeIdentifier;
-    predicates[70] = TerminalPredicate::RegionIdentifier;
-    predicates[71] = TerminalPredicate::Label;
-    predicates[72] = TerminalPredicate::OperationName;
-    predicates[73] = TerminalPredicate::Literal;
-    predicates[74] = TerminalPredicate::String;
-    predicates[75] = TerminalPredicate::Digits;
+    predicates[89] = TerminalPredicate::Identifier;
+    predicates[90] = TerminalPredicate::TypeIdentifier;
+    predicates[91] = TerminalPredicate::RegionIdentifier;
+    predicates[92] = TerminalPredicate::Label;
+    predicates[93] = TerminalPredicate::OperationName;
+    predicates[94] = TerminalPredicate::Literal;
+    predicates[95] = TerminalPredicate::String;
+    predicates[96] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -365,14 +451,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 68,
-            Self::TypeIdentifier => 69,
-            Self::RegionIdentifier => 70,
-            Self::Label => 71,
-            Self::OperationName => 72,
-            Self::Literal => 73,
-            Self::String => 74,
-            Self::Digits => 75,
+            Self::Identifier => 89,
+            Self::TypeIdentifier => 90,
+            Self::RegionIdentifier => 91,
+            Self::Label => 92,
+            Self::OperationName => 93,
+            Self::Literal => 94,
+            Self::String => 95,
+            Self::Digits => 96,
         }
     }
 }

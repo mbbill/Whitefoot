@@ -8,7 +8,7 @@ use whitefoot::{
 };
 
 const APPROVED_CANDIDATE: &[u8] =
-    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.22-candidate.md");
+    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.23-candidate.md");
 const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
 const APPROVAL_RECORD: &str = include_str!("../../../governance/APPROVALS.md");
 

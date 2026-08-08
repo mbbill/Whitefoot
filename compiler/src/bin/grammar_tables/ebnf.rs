@@ -1,6 +1,6 @@
 //! Extract and parse the normative EBNF of a Whitefoot kernel specification.
 //!
-//! Sixty-one productions live in the four fenced blocks of GRAM-2..GRAM-5; the
+//! Sixty-five productions live in the four fenced blocks of GRAM-2..GRAM-5; the
 //! remaining four (`const`, `cvalue`, `effects`, `effect`) are written inline
 //! in the prose of CONST-1, CONST-2, and EFF-1. Scraping only fenced blocks
 //! silently loses those four.
@@ -134,8 +134,8 @@ pub fn productions(spec: &str) -> Vec<RawProduction> {
     split_block(&fenced_after(spec, "[GRAM-5]"), Owner::Gram5, &mut out);
     assert_eq!(
         out.len(),
-        61,
-        "the four fenced blocks define 61 productions"
+        65,
+        "the four fenced blocks define 65 productions"
     );
     out.push(inline(spec, "[CONST-1]", "const", Owner::Const1));
     out.push(inline(spec, "[CONST-2]", "cvalue", Owner::Const2));

@@ -102,6 +102,10 @@ const ENUM_ORDER: &[&str] = &[
     "program_kind",
     "input_label",
     "claim_stmt",
+    "if_stmt",
+    "value_if",
+    "infix_tail",
+    "infix_op",
 ];
 
 /// The decision index is the second stable dense index, and is historical for
@@ -339,8 +343,35 @@ fn table<T>(
     items: &[T],
     render: impl Fn(&T) -> String,
 ) {
+    emit_table(out, "const", name, element, items, render);
+}
+
+/// A table too large for a `const`, whose every use is a borrow.
+///
+/// A `const` array is re-materialized at each use, so clippy's
+/// `large_const_arrays` rejects one past its size threshold; `SELECT_ROWS`
+/// crossed it at v0.23. The storage class is written at the call site rather
+/// than guessed from a threshold the generator cannot see.
+fn static_table<T>(
+    out: &mut String,
+    name: &str,
+    element: &str,
+    items: &[T],
+    render: impl Fn(&T) -> String,
+) {
+    emit_table(out, "static", name, element, items, render);
+}
+
+fn emit_table<T>(
+    out: &mut String,
+    storage: &str,
+    name: &str,
+    element: &str,
+    items: &[T],
+    render: impl Fn(&T) -> String,
+) {
     out.push_str(&format!(
-        "#[rustfmt::skip]\npub(crate) const {name}: [{element}; {}] = [\n",
+        "#[rustfmt::skip]\npub(crate) {storage} {name}: [{element}; {}] = [\n",
         items.len()
     ));
     for item in items {
@@ -386,8 +417,7 @@ fn emit(
     let position = |name: &String| names.iter().position(|entry| entry == name).expect("known");
 
     let mut out = String::new();
-    let file = path.rsplit('/').next().unwrap_or(path);
-    out.push_str(&format!("// Generated from the grammar in spec/{file}.\n"));
+    out.push_str(&format!("// Generated from the grammar in {path}.\n"));
     out.push_str(
         "use crate::syntax::grammar::{\n    Decision, DecisionContext, DecisionKind, GrammarNode, GrammarNodeId, GrammarNodeKind,\n    LookaheadPredicate, NamePredicate, RuleOwner, SelectAtom, SelectRow,\n};\nuse crate::syntax::terminal::{FixedTerminal, TerminalPredicate};\n\n",
     );
@@ -501,7 +531,7 @@ fn emit(
     table(&mut out, "SELECT_ATOMS", "SelectAtom", &atoms, |token| {
         atom_text(*token)
     });
-    table(&mut out, "SELECT_ROWS", "SelectRow", &rows, |row| {
+    static_table(&mut out, "SELECT_ROWS", "SelectRow", &rows, |row| {
         row.clone()
     });
 

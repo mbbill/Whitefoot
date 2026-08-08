@@ -2,7 +2,7 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-`kernel-spec-v0.22.md`. Requirement (owner + META-6): every rule is provably
+`kernel-spec-v0.23-candidate.md`. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
@@ -833,3 +833,26 @@ Binding: `spec/kernel-spec-v0.22.md`, SHA-256
 removal prohibition is scoped to checker strengthening per the owner's
 version-compatibility deferral. Statistics unchanged: 80 derived · 48
 existence-only · 0 underived.
+
+## v0.23 amendment — FLOOR-5 spelling relief (2026-08-07, candidate stage)
+
+Specification binding:
+`governance/spec-evolution/kernel-spec-v0.23-candidate.md` at SHA-256
+`935b9538df69f6f6289e8a6c99004db45a1f5e1865929c4b7cc1ced861bec9d2`, assembled
+from the active v0.22 plus the approved FLOOR-5 delta
+(`governance/spec-evolution/spelling-relief-candidate.md`: SWEEP rows A1, A3,
+A4, and C1, with the owner rulings and adversarial-review fixes recorded
+there). Candidate stage: this binding exists ahead of activation so the native
+`whitefoot-spec` gate covers all 128 rule IDs; the `docs/WORKFLOW.md` step-4
+exact-byte approval and installation as `spec/kernel-spec-v0.23.md` are
+pending, and this binding is restated at activation.
+
+v0.23 adds and removes no rules. It modifies thirty-four existing rules at
+sixty-four verbatim-anchored sites: FORM-2, FORM-3, GRAM-1, GRAM-4, GRAM-5,
+GRAM-6, GRAM-7, GRAM-9, GIVE-1, TYPE-5, OWN-5, OWN-13, STOR-2, STOR-5, OP-1,
+OP-2, OP-4, OP-7, OP-8, OP-9, ERR-2, ERR-3, FN-1, FN-4, FN-8, EFF-2, DIAG-1,
+DIAG-3, SYS-13, ENT-2, ENT-3, ENT-5, ENT-6, and EX-1. Grammar productions grow
+by four (`if_stmt`, `value_if`, `infix_tail`, `infix_op`; total 69) and the
+fixed terminal inventory by twenty-one (`if` and the twenty `infix_op`
+spellings; total 97 terminal predicates). Statistics unchanged: 80 derived ·
+48 existence-only · 0 underived.

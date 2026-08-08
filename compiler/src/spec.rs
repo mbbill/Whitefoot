@@ -36,13 +36,15 @@ impl fmt::Display for SpecHash {
 }
 
 /// Version label of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.22";
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.23";
 
 /// Repository-relative path of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.22.md";
+pub const ACTIVE_KERNEL_SPEC_PATH: &str =
+    "governance/spec-evolution/kernel-spec-v0.23-candidate.md";
 
 /// Exact UTF-8 text of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.22.md");
+pub const ACTIVE_KERNEL_SPEC_TEXT: &str =
+    include_str!("../../governance/spec-evolution/kernel-spec-v0.23-candidate.md");
 
 /// Exact bytes of the active immutable kernel specification.
 pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
@@ -56,8 +58,8 @@ pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 /// them at runtime and the `whitefoot-spec` gate rejects any disagreement, so
 /// installing a specification cannot leave this naming the previous one.
 pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
-    0xb1, 0x33, 0xb7, 0x93, 0x62, 0x9d, 0x28, 0xe7, 0xee, 0x1b, 0x7a, 0xd0, 0xae, 0x3d, 0x49, 0x18,
-    0x59, 0x32, 0xb9, 0x39, 0x0f, 0x5c, 0x25, 0x51, 0x7f, 0x0f, 0xb0, 0xea, 0x2f, 0xc8, 0xa6, 0xe8,
+    0x93, 0x5b, 0x95, 0x38, 0xdf, 0x69, 0xf6, 0xf6, 0x28, 0x9e, 0x8a, 0x6c, 0x99, 0x00, 0x4d, 0xb4,
+    0x5a, 0x1f, 0x5e, 0x18, 0x65, 0x92, 0x9c, 0x4b, 0x7c, 0xc1, 0xce, 0xd8, 0x61, 0xbe, 0xc9, 0xd2,
 ]);
 
 /// SHA-256 of the embedded active specification, computed from its bytes.
