@@ -41,12 +41,30 @@ pub(crate) struct NodeRecord {
     pub(crate) extent: FinalizedExtent,
     pub(crate) body_open: Option<u64>,
     pub(crate) body_close: Option<u64>,
+    /// The second brace pair, which only `if_stmt` and `value_if` own.
+    ///
+    /// Every other block-bearing production owns exactly one pair, because a
+    /// nested block always belongs to a nested production node. An `if` with a
+    /// braced `else` owns two; an `else if` chain owns one plus an `else`
+    /// terminal whose block belongs to the nested `if_stmt` node.
+    pub(crate) else_open: Option<u64>,
+    pub(crate) else_close: Option<u64>,
+    /// Whether this node directly owns an `else` terminal.
+    pub(crate) has_else: bool,
 }
 
 impl NodeRecord {
     pub(crate) fn last_terminal(self) -> Option<u64> {
         self.first_terminal
             .checked_add(self.terminal_count.checked_sub(1)?)
+    }
+
+    /// Returns the brace pairs this node owns, in source order.
+    pub(crate) fn body_ranges(self) -> [Option<(u64, u64)>; 2] {
+        [
+            self.body_open.zip(self.body_close),
+            self.else_open.zip(self.else_close),
+        ]
     }
 }
 

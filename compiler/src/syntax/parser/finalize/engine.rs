@@ -461,6 +461,9 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             NodeId::from_index(self.nodes.len()).ok_or(FinalizeCompilerFailure::CounterOverflow)?;
         let mut body_open = None;
         let mut body_close = None;
+        let mut else_open = None;
+        let mut else_close = None;
+        let mut has_else = false;
         let mut production_ordinal = 0_u32;
         for index in root_start..self.roots.len() {
             let child = self.roots[index];
@@ -475,12 +478,30 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
                     if terminal.owner.replace(node_id).is_some() {
                         return Err(FinalizeCompilerFailure::InvalidParentTopology.into());
                     }
+                    // Braces are paired in source order, so an `if` with a
+                    // braced `else` keeps both blocks instead of only the
+                    // last. Every other production owns exactly one pair.
                     match predicate {
                         TerminalPredicate::Fixed(FixedTerminal::LeftBrace) => {
-                            body_open = Some(child.first_terminal);
+                            if body_open.is_none() {
+                                body_open = Some(child.first_terminal);
+                            } else if else_open.is_none() {
+                                else_open = Some(child.first_terminal);
+                            } else {
+                                return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
+                            }
                         }
                         TerminalPredicate::Fixed(FixedTerminal::RightBrace) => {
-                            body_close = Some(child.first_terminal);
+                            if body_close.is_none() {
+                                body_close = Some(child.first_terminal);
+                            } else if else_close.is_none() {
+                                else_close = Some(child.first_terminal);
+                            } else {
+                                return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
+                            }
+                        }
+                        TerminalPredicate::Fixed(FixedTerminal::Else) => {
+                            has_else = true;
                         }
                         _ => {}
                     }
@@ -516,6 +537,9 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             extent,
             body_open,
             body_close,
+            else_open,
+            else_close,
+            has_else,
         };
         let actual_id = self.push_node(node)?;
         if actual_id != node_id {
@@ -572,16 +596,17 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
                 if child_snapshot.parent != Some(parent_id) {
                     return Err(FinalizeCompilerFailure::InvalidParentTopology.into());
                 }
-                let inside_body = match (parent.body_open, parent.body_close) {
-                    (Some(open), Some(close)) => {
-                        child_snapshot.first_terminal > open
-                            && child_snapshot
-                                .last_terminal()
-                                .is_some_and(|last| last < close)
-                    }
-                    (None, None) => false,
-                    _ => return Err(FinalizeCompilerFailure::InvalidProductionShape.into()),
-                };
+                if parent.body_open.is_some() != parent.body_close.is_some()
+                    || parent.else_open.is_some() != parent.else_close.is_some()
+                {
+                    return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
+                }
+                let inside_body = parent.body_ranges().iter().flatten().any(|(open, close)| {
+                    child_snapshot.first_terminal > *open
+                        && child_snapshot
+                            .last_terminal()
+                            .is_some_and(|last| last < *close)
+                });
                 let child = self
                     .nodes
                     .get_mut(child_id.index())

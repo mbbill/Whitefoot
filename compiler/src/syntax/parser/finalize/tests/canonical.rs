@@ -328,3 +328,28 @@ fn the_command_entry_header_renders_from_form2_without_amendment() {
     assert!(COMMAND_ENTRY.starts_with(COMMAND_ENTRY_HEADER));
     only_these_trivia_bytes_render(COMMAND_ENTRY);
 }
+
+/// FORM-2's join line. `if_stmt` and `value_if` are the only productions
+/// owning two brace blocks, and the close-and-open line `} else {` is a
+/// rendering no v0.22 production produced. The `requires` block's `} {` is
+/// the precedent both follow.
+#[test]
+fn if_else_renders_its_join_line_and_indents_both_blocks() {
+    // An else-free `if`: one block, ordinary break after the close.
+    only_these_trivia_bytes_render(
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  }\n  return unit;\n}\n",
+    );
+    // A braced `else`: two blocks joined by `} else {` on one line.
+    only_these_trivia_bytes_render(
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  } else {\n    check flag else trap \"else\";\n  }\n  return unit;\n}\n",
+    );
+    // An `else if` chain: the nested `if_stmt` owns the second block, so the
+    // outer node has one pair plus an `else`, and still suppresses its break.
+    only_these_trivia_bytes_render(
+        b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"then\";\n  } else if flag {\n    check flag else trap \"chain\";\n  } else {\n    check flag else trap \"else\";\n  }\n  return unit;\n}\n",
+    );
+    // A `value_if` initializer delivers from both branches.
+    only_these_trivia_bytes_render(
+        b"fn main() -> own unit pure {\n  let flag = True();\n  let picked = if flag {\n    give 1_i32;\n  } else {\n    give 2_i32;\n  }\n  return unit;\n}\n",
+    );
+}
