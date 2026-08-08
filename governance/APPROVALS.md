@@ -315,3 +315,25 @@ ACTIVE-SPEC: v0.19 01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5
 ACTIVE-SPEC: v0.20 b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1 01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398
 ACTIVE-SPEC: v0.21 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1
 ACTIVE-SPEC: v0.22 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f
+
+## Pre-approval specification digests, as found
+
+The nine versions before exact-byte approval began have no approved digest;
+none was ever recorded for them. These lines are a measurement, taken with
+`shasum -a 256` on 2026-08-07 against the files as they stand in the
+repository. They are **not** approvals and they do not retroactively approve
+anything: they record what is on disk so `make check` can detect a released
+specification changing underneath the project from now on. If one of these
+files was already wrong before this measurement, this pins the wrong bytes —
+that is the honest limit of a digest recorded after the fact, and it is why
+these carry a different prefix from the approved chain above.
+
+ARCHIVE-SPEC: v0.0 717d1e1025e42b9122e972cac44c7e3e55acab6c146d9b4152c599e37330520e
+ARCHIVE-SPEC: v0.1 cf38fbf881450399ce41bc987369061d16a0321e1db713c9be233325ca83d310
+ARCHIVE-SPEC: v0.2 1393aeca4faabe0bd73649c61250c2b36c12152490bd1272ec5d3e5c26f34d8c
+ARCHIVE-SPEC: v0.3 771bdf907edfa01f40fca1fd97ea92a7e6fff072444e796c2e7da3311b7841b4
+ARCHIVE-SPEC: v0.4 30baf9cefa1ab179f39a1d5a0a660e37a4bce42a762574e7eb4098bc2505f3e1
+ARCHIVE-SPEC: v0.5 f41128b7e5cc7ecad1447ee0b45bdd3004d681c5048a08a5edc1d5fd0b8aa01a
+ARCHIVE-SPEC: v0.6 95ae3e1eec48109e1c55c65c2a3e3ddecccd6192c30c0d034e5b7931f10e535e
+ARCHIVE-SPEC: v0.7 212a2224d9d69ed58b0cb4cb3e8137572e2f06c6e1326698b1c6793ff0f04481
+ARCHIVE-SPEC: v0.8 d04336f7fa8d1a6a0f03fe58a17f972b658217a73a3dff91a906b4ba295328a8

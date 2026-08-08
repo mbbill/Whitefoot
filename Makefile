@@ -7,7 +7,7 @@
 
 PY := python3 -B
 
-check: repository-invariants spec-append-only conformance compiler
+check: repository-invariants spec-append-only spec-archive-integrity conformance compiler
 	@echo "== WHITEFOOT GATE GREEN (active compiler + independent evidence) =="
 
 # repository invariants: identical agent instructions and the canonical outline marker
@@ -34,6 +34,40 @@ spec-append-only-staged:
 	fi
 	@echo "spec append-only: no released kernel specification was modified or removed"
 
+# landed state, not staged diff: every recorded specification identity still
+# names bytes that hash to it, and every released specification has a record.
+# `spec-append-only` above only sees what one commit touches, and `pre-commit`
+# is bypassable by `--no-verify`, by merge commits, and by a clone whose
+# `core.hooksPath` points elsewhere, so this is the guard that actually holds.
+# `shasum` is used deliberately: it is the tool the digests were recorded with,
+# and it shares no code with the compiler's own SHA-256.
+spec-archive-integrity:
+	@set -- $$(awk '/^(ACTIVE|ARCHIVE)-SPEC: /{print $$2, $$3}' governance/APPROVALS.md); \
+	recorded=0; \
+	while test $$# -ge 2; do \
+		version="$$1"; digest="$$2"; shift 2; \
+		file="spec/kernel-spec-$$version.md"; \
+		if test ! -f "$$file"; then \
+			echo "spec archive integrity: $$version is recorded but $$file is missing" >&2; \
+			exit 1; \
+		fi; \
+		actual="$$(shasum -a 256 "$$file" | cut -d' ' -f1)"; \
+		if test "$$actual" != "$$digest"; then \
+			echo "spec archive integrity: $$file hashes to $$actual, recorded as $$digest" >&2; \
+			exit 1; \
+		fi; \
+		recorded=$$((recorded + 1)); \
+	done; \
+	versions="$$(awk '/^(ACTIVE|ARCHIVE)-SPEC: /{printf " %s", $$2}' governance/APPROVALS.md)"; \
+	for file in spec/kernel-spec-v*.md; do \
+		version="$${file#spec/kernel-spec-}"; version="$${version%.md}"; \
+		case " $$versions " in \
+			*" $$version "*) ;; \
+			*) echo "spec archive integrity: $$file has no recorded identity" >&2; exit 1;; \
+		esac; \
+	done; \
+	echo "spec archive integrity: $$recorded recorded specifications hash as recorded"
+
 conformance:
 	cd tests/conformance && $(PY) test_runner.py
 	$(PY) tests/conformance/runner.py coverage
@@ -48,9 +82,9 @@ compiler:
 conformance-run:
 	cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
 
-# one-time: point git at the tracked hooks (spec append-only pre-commit)
+# one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:
 	git config core.hooksPath governance/hooks
-	@echo "installed governance/hooks (spec append-only pre-commit)"
+	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check repository-invariants spec-append-only spec-append-only-staged conformance compiler conformance-run install-hooks
+.PHONY: check repository-invariants spec-append-only spec-append-only-staged spec-archive-integrity conformance compiler conformance-run install-hooks
