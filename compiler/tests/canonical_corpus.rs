@@ -185,3 +185,107 @@ fn every_canonical_corpus_file_re_renders_to_itself() {
         "{report}\nevery corpus file is accounted for"
     );
 }
+
+/// The anchor that locates [EX-1]'s program block in the active specification.
+///
+/// It is the rule's own normative sentence rather than a section number or a
+/// line offset, so a renumbered section keeps working and a rewritten rule
+/// fails loudly instead of matching some other fenced block.
+const EX1_ANCHOR: &str = "[EX-1] The following complete program is byte-exact canonical form:";
+
+/// [EX-1]'s program block, taken from the specification the compiler embeds.
+fn ex1_block() -> &'static str {
+    let occurrences = whitefoot::ACTIVE_KERNEL_SPEC_TEXT
+        .matches(EX1_ANCHOR)
+        .count();
+    assert_eq!(
+        occurrences, 1,
+        "[EX-1]'s sentence must occur exactly once, or this check is reading the wrong block"
+    );
+    let after = whitefoot::ACTIVE_KERNEL_SPEC_TEXT
+        .split_once(EX1_ANCHOR)
+        .expect("the anchor was just counted")
+        .1;
+    let opened = after
+        .split_once("```\n")
+        .expect("[EX-1]'s sentence must be followed by a fenced block")
+        .1;
+    opened
+        .split_once("```")
+        .expect("[EX-1]'s fenced block must close")
+        .0
+}
+
+/// The one conformance case that claims to embody [EX-1].
+///
+/// Identified through the manifest rather than by filename: the case is the
+/// row naming `EX-1` among its rules, and exactly one row does, so renaming or
+/// replacing the file cannot leave this check pointing at nothing.
+fn ex1_case() -> PathBuf {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler package must live directly under the repository root");
+    let manifest = repository
+        .join("tests")
+        .join("conformance")
+        .join("manifest.jsonl");
+    let text = std::fs::read_to_string(&manifest)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", manifest.display()));
+    let mut named: Vec<String> = Vec::new();
+    for row in text.lines() {
+        let row = row.trim();
+        if row.is_empty() || row.starts_with('#') {
+            continue;
+        }
+        let Some(rules) = row.split_once("\"rules\"") else {
+            continue;
+        };
+        let rules = rules.1.split_once(']').expect("a rules array must close").0;
+        if !rules.contains("\"EX-1\"") {
+            continue;
+        }
+        let id = row
+            .split_once("\"id\"")
+            .expect("a case row states an id")
+            .1
+            .split('"')
+            .nth(1)
+            .expect("an id is a quoted string")
+            .to_owned();
+        named.push(id);
+    }
+    assert_eq!(
+        named.len(),
+        1,
+        "exactly one conformance case may claim [EX-1]; found {named:?}"
+    );
+    repository
+        .join("tests")
+        .join("conformance")
+        .join("cases")
+        .join(format!("{}.wf", named[0]))
+}
+
+/// [EX-1] is normative bytes — §19 is titled "Worked example (normative
+/// bytes)", the rule requires byte-exact canonical form, and [SCOPE-2] accepts
+/// a program only if it satisfies every rule — and one conformance case exists
+/// to reproduce them. Nothing compared the two until a four-byte divergence in
+/// a `doc` string survived from candidate assembly into an owner review packet.
+///
+/// **This pins the copy to the block, never the block to reality.** It says
+/// nothing about whether [EX-1]'s bytes are the right bytes. It also must not
+/// be extended to `run-ex1-value-match`, an EX-1-*class* program that names no
+/// EX-1 among its rules and is deliberately a superset of the block.
+#[test]
+fn the_case_claiming_ex1_reproduces_its_normative_bytes() {
+    let case = ex1_case();
+    let bytes = std::fs::read(&case)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", case.display()));
+    let source = String::from_utf8(bytes).expect("a corpus file is UTF-8");
+    assert_eq!(
+        source,
+        ex1_block(),
+        "{} must reproduce [EX-1]'s program block byte for byte",
+        case.display()
+    );
+}
