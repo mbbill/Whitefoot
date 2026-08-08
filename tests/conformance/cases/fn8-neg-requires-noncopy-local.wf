@@ -1,0 +1,11 @@
+fn bounded(a: own u64) -> own u64 traps requires {
+  let xs = array_new<u64, 4>(0_u64);
+  check ilt(a, 8_u64) else trap "a must be under eight";
+} {
+  doc "A requirement local is a fresh own copy value, so an aggregate-typed local is rejected even though array_new is a pure, total, non-trapping row [FN-8].";
+  return a;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
