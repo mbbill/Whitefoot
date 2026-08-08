@@ -4,7 +4,7 @@ use super::super::model::{
     CheckedConstructor, CheckedField, CheckedFlatElement, CheckedNominal, CheckedNominalKind,
     CheckedType, CheckedVariant, IntegerType, NominalId,
 };
-use super::{CheckStop, Checker, PreludeType};
+use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn reject_recursive_nominal_layouts(&self) -> Result<(), CheckStop> {
@@ -107,11 +107,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.prelude_types.get(id.0 as usize).copied().flatten()
     }
 
+    /// The interned prelude instance, deferring when a derived type named one
+    /// that is not interned yet.
+    ///
+    /// The checked arithmetic rows produce `Result<T, Overflow>` and
+    /// `Result<T, DivError>` for a *derived* `T`, and after the annotation is
+    /// deleted nothing writes that type, so the miss is recoverable rather
+    /// than an error: the driver interns it and checks the function again.
     pub(super) fn prelude_nominal(&self, ty: PreludeType) -> Result<NominalId, CheckStop> {
-        self.prelude_nominals
-            .get(&ty)
-            .copied()
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+        if let Some(id) = self.prelude_nominals.get(&ty) {
+            return Ok(*id);
+        }
+        self.pending_nominals
+            .borrow_mut()
+            .push(PendingNominal::Prelude(ty));
+        Err(CheckStop::DeferredNominal)
     }
 
     pub(super) fn intern_box_nominal(

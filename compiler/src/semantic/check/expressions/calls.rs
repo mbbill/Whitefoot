@@ -17,7 +17,8 @@ use super::super::super::model::{
     CheckedNominalKind, CheckedNumericType, CheckedType, TrapSite,
 };
 use super::super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PreludeType, TypedExpression,
+    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
+    TypedExpression,
 };
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -177,8 +178,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         self.reject_written_operation_type_argument(node)?;
+        let atoms = self.operation_atoms(node, operation.operand_count())?;
+        self.check_integer_operation_row(node, operation, &atoms, function, bindings, loop_depth)
+    }
+
+    /// [OP-1] one integer row over its operand atoms, whichever spelling
+    /// selected it.
+    ///
+    /// The named call and the infix form share this judgment exactly, so the
+    /// two spellings of one operation cannot drift apart: [OP-2]'s
+    /// operand-derived selection, the trap site, and the checked-error result
+    /// are decided here once.
+    pub(in crate::semantic::check) fn check_integer_operation_row(
+        &self,
+        node: NodeId,
+        operation: CheckedIntegerOperation,
+        atoms: &[NodeId],
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
         let operand_count = operation.operand_count();
-        let atoms = self.operation_atoms(node, operand_count)?;
+        if atoms.len() != operand_count {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
         let mut arguments = Vec::with_capacity(operand_count);
         let mut effects = if operation.traps() {
             EffectSet::TRAPS
@@ -192,7 +215,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // itself, so "both operands must have one identical exact type"
         // falls out and cites TYPE-5 at the second operand atom.
         let mut operand_type = None;
-        for (index, atom) in atoms.into_iter().enumerate() {
+        for (index, atom) in atoms.iter().copied().enumerate() {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
             if argument.mode != CheckedMode::Own {
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
@@ -367,8 +390,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // purely local box names that type nowhere. Record the referent and
         // let the driver intern it and check this function again.
         let Some(nominal) = self.box_nominals.get(&referent).copied() else {
-            self.pending_box_referents.borrow_mut().push(referent);
-            return Err(CheckStop::DeferredBoxNominal);
+            self.pending_nominals
+                .borrow_mut()
+                .push(PendingNominal::Box(referent));
+            return Err(CheckStop::DeferredNominal);
         };
         Ok(TypedExpression::owned(
             CheckedExpression::BoxNew {

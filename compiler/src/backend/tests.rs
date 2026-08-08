@@ -558,6 +558,62 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
     assert!(output.stderr.is_empty());
 }
 
+/// [OP-1] (ii) the infix spelling executes the row its operator names, and
+/// the modes stay distinguishable: bare `+` traps, `+wrap` wraps, `+sat`
+/// saturates. Every result is checked, so a mis-selected row traps here.
+#[test]
+fn infix_operators_execute_the_rows_they_name() {
+    let source = br#"fn main() -> own unit traps {
+  let a = 20_i32;
+  let b = a + 22_i32;
+  let want = 42_i32;
+  let sum_ok = b == want;
+  check sum_ok else trap "bare plus is the trapping add";
+  let hi = 2147483647_i32;
+  let wrapped = hi +wrap 1_i32;
+  let low = -2147483648_i32;
+  let wrap_ok = wrapped == low;
+  check wrap_ok else trap "+wrap wraps";
+  let saturated = hi +sat 1_i32;
+  let sat_ok = saturated == hi;
+  check sat_ok else trap "+sat saturates";
+  let quotient = 43_i32 / 2_i32;
+  let q_ok = quotient == 21_i32;
+  check q_ok else trap "bare slash divides";
+  let rest = 43_i32 % 2_i32;
+  let r_ok = rest == 1_i32;
+  check r_ok else trap "bare percent remainders";
+  let differ = a != b;
+  check differ else trap "not equal";
+  let ordered = a <= b;
+  check ordered else trap "less equal";
+  let reversed = b >= a;
+  check reversed else trap "greater equal";
+  return unit;
+}
+"#;
+    let output = compile_and_run(&compile(source));
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
+/// [OP-2] bare infix arithmetic keeps the trapping semantics its named
+/// `.trap` spelling had: the required check is not lost to the shorter form.
+#[test]
+fn bare_infix_overflow_traps_at_runtime() {
+    let source = br#"fn main() -> own unit traps {
+  let hi = 2147483647_i32;
+  let overflowed = hi + 1_i32;
+  return unit;
+}
+"#;
+    let output = compile_and_run(&compile(source));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
+    assert!(stderr.starts_with("{\"rule_id\":\"OP-2\",\"message\":\"integer overflow\""));
+}
+
 #[test]
 fn compiler_independent_scalar_cases_execute_through_host_llvm() {
     for source in [

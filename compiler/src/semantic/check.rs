@@ -24,8 +24,8 @@ use crate::{
 use super::entailment::{EntailmentCallee, EntailmentContext, analyze_function};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedContract, CheckedExpression,
-    CheckedFunction, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedSliceOrigin, CheckedType, ClaimAdvisory, FunctionId, NominalId,
+    CheckedFunction, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
+    CheckedSliceOrigin, CheckedType, ClaimAdvisory, FunctionId, NominalId,
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
@@ -101,6 +101,15 @@ struct NominalTemplate {
     name: String,
     role: DeclarationRole,
     generic_parameters: Vec<GenericParameter>,
+}
+
+/// A nominal instance a derived type named, awaiting interning.
+#[derive(Clone, Copy)]
+enum PendingNominal {
+    /// [STOR-2] a box over this referent.
+    Box(CheckedType),
+    /// A prelude instance, such as the `Result<T, E>` a checked row produces.
+    Prelude(PreludeType),
 }
 
 #[derive(Clone)]
@@ -343,10 +352,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
-    /// [STOR-2] referents a `box_new` derived whose box nominal was not
-    /// interned yet. Written by the `&self` checking path and drained by the
-    /// `&mut self` driver between attempts at one function.
-    pending_box_referents: RefCell<Vec<CheckedType>>,
+    /// Nominal instances a derived type named that were not interned yet.
+    /// Written by the `&self` checking path and drained by the `&mut self`
+    /// driver between attempts at one function.
+    pending_nominals: RefCell<Vec<PendingNominal>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
@@ -405,7 +414,7 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
         // The deferred-box signal is repaired where it is raised, one
         // function at a time, so reaching here is an internal inconsistency
         // rather than anything the source can express.
-        Err(CheckStop::DeferredBoxNominal) => SemanticOutcome::CompilerFailure {
+        Err(CheckStop::DeferredNominal) => SemanticOutcome::CompilerFailure {
             failure: SemanticCompilerFailure::InvalidResolution,
         },
     }
@@ -425,7 +434,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
-            pending_box_referents: RefCell::new(Vec::new()),
+            pending_nominals: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -476,16 +485,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut functions = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
-            functions.push(self.check_function_interning_boxes(index, Some(&callees))?);
+            functions.push(self.check_function_interning_nominals(index, Some(&callees))?);
         }
-        // Function checking discovers box nominals [STOR-2] and nothing else:
-        // every other instance is interned from a written type before it runs.
-        for nominal in self
-            .nominals
+        // Function checking discovers only the instances a derived type
+        // names, which are box and prelude ones; a *source* nominal instance
+        // is always interned from a written type before it runs.
+        for instance in self
+            .source_nominal_instances
             .iter()
             .skip(nominal_count_before_function_checking)
         {
-            if !matches!(nominal.kind, CheckedNominalKind::Box { .. }) {
+            if instance.is_some() {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         }
@@ -591,28 +601,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// dark entailment engine reads; `None` skips the engine, which is the
     /// symbolic generic-template validation pass — [ENT] judgments are per
     /// concrete instantiation [ENT-1].
-    /// [STOR-2] checks one function, interning the box nominals its `box_new`
-    /// calls derive.
+    /// Checks one function, interning the nominal instances its derived
+    /// types name.
     ///
-    /// A derived referent has no written `box<T>` anywhere for the interning
-    /// pass to have found, and checking is `&self`, so the miss is reported
-    /// as [`CheckStop::DeferredBoxNominal`] and repaired here. Each attempt
-    /// must intern at least one new nominal, which bounds the loop by the
-    /// finitely many referent types one function can name.
-    fn check_function_interning_boxes(
+    /// A derived type has no written form anywhere for the interning pass to
+    /// have found — a purely local `box<T>` [STOR-2], the `Result<T, E>` a
+    /// checked arithmetic row produces — and checking is `&self`, so the miss
+    /// is reported as [`CheckStop::DeferredNominal`] and repaired here. Each
+    /// attempt must intern at least one new nominal, which bounds the loop by
+    /// the finitely many types one function can name.
+    fn check_function_interning_nominals(
         &mut self,
         index: usize,
         callees: Option<&[EntailmentCallee]>,
     ) -> Result<CheckedFunction, CheckStop> {
         loop {
             match self.check_function(index, callees) {
-                Err(CheckStop::DeferredBoxNominal) => {
-                    let pending = std::mem::take(&mut *self.pending_box_referents.borrow_mut());
-                    let before = self.box_nominals.len();
-                    for referent in pending {
-                        self.intern_box_nominal(referent)?;
+                Err(CheckStop::DeferredNominal) => {
+                    let pending = std::mem::take(&mut *self.pending_nominals.borrow_mut());
+                    let before = self.nominals.len();
+                    for nominal in pending {
+                        match nominal {
+                            PendingNominal::Box(referent) => {
+                                self.intern_box_nominal(referent)?;
+                            }
+                            PendingNominal::Prelude(ty) => {
+                                self.intern_prelude_nominal(ty)?;
+                            }
+                        }
                     }
-                    if self.box_nominals.len() == before {
+                    if self.nominals.len() == before {
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
                     }
                 }

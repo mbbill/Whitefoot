@@ -13,6 +13,7 @@ mod entry_form;
 mod float_conversion;
 mod floating;
 mod generics;
+mod infix;
 mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;

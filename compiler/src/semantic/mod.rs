@@ -661,15 +661,16 @@ enum CheckStop {
     Issue(SemanticIssue),
     Unsupported(SemanticUnsupported),
     Compiler(SemanticCompilerFailure),
-    /// [STOR-2] a `box_new` derived a referent whose box nominal is not
-    /// interned yet.
+    /// A derived type named a nominal instance that is not interned yet.
     ///
-    /// Function checking is `&self` and the one interning site reads a
-    /// *written* `box<T>` type, which a derived referent never has. This is
-    /// the recoverable signal that closes that gap: the driver interns the
-    /// pending referents and checks the function again. It is private to the
-    /// checker and never reaches a diagnostic.
-    DeferredBoxNominal,
+    /// Function checking is `&self`, and every interning site reads a
+    /// *written* type — a `box<T>` for [STOR-2], a `Result<T, E>` for the
+    /// checked arithmetic rows. A derived type has no written form anywhere,
+    /// so once the annotation is gone nothing interns it. This is the
+    /// recoverable signal that closes that gap: the driver interns what is
+    /// pending and checks the function again. It is private to the checker
+    /// and never reaches a diagnostic.
+    DeferredNominal,
 }
 
 impl From<SemanticCompilerFailure> for CheckStop {

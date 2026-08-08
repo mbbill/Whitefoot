@@ -12,8 +12,9 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedProjectedDrop,
-    CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace, FloatType, IntegerType,
+    CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
+    CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace,
+    FloatType, IntegerType,
 };
 use super::borrows::{AccessKind, ReborrowPosition, ResolvedPlace};
 use super::{
@@ -287,6 +288,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
+        // [GRAM-5] `expr := atom infix_tail? | call | construct`, so the only
+        // shape with more than one child is the infix one.
+        if let Some(tail) = self.tree.first_child_with(node, Production::InfixTail)? {
+            return self.check_infix(function, node, tail, bindings, loop_depth);
+        }
         let child = self.tree.only_child(node)?;
         match self.tree.production(child)? {
             Production::Atom => self.check_atom_in_context(
@@ -301,6 +307,78 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Production::Construct => self.check_construct(function, child, bindings, loop_depth),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
+    }
+
+    /// [OP-1] (ii) infix resolution: the operator token selects the row.
+    ///
+    /// [GRAM-9] admits exactly one operation per expression, so there is no
+    /// precedence to apply — the left operand is the `expr`'s own atom and
+    /// the right is the tail's. The row then takes the same judgment the
+    /// named spelling takes.
+    fn check_infix(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        tail: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        let left = self
+            .tree
+            .first_child_with(node, Production::Atom)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let operator = self
+            .tree
+            .first_child_with(tail, Production::InfixOp)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let right = self
+            .tree
+            .first_child_with(tail, Production::Atom)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let operation = self.infix_operation(operator)?;
+        self.check_integer_operation_row(
+            node,
+            operation,
+            &[left, right],
+            function,
+            bindings,
+            loop_depth,
+        )
+    }
+
+    /// [OP-1] the exact operator token, and the row it spells.
+    ///
+    /// Bare `+ - * / %` carry the trapping mode, the suffixed forms carry
+    /// wrap, checked and saturating, and the four nonstrict comparisons
+    /// respell here. `ilt` and `igt` keep their named spelling and have no
+    /// operator token, so nothing maps to them.
+    fn infix_operation(&self, operator: NodeId) -> Result<CheckedIntegerOperation, CheckStop> {
+        let [terminal] = self.tree.direct_token_indices(operator)? else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        Ok(match self.tree.token_bytes(*terminal)? {
+            b"+" => CheckedIntegerOperation::AddTrap,
+            b"+wrap" => CheckedIntegerOperation::AddWrap,
+            b"+checked" => CheckedIntegerOperation::AddChecked,
+            b"+sat" => CheckedIntegerOperation::AddSaturating,
+            b"-" => CheckedIntegerOperation::SubtractTrap,
+            b"-wrap" => CheckedIntegerOperation::SubtractWrap,
+            b"-checked" => CheckedIntegerOperation::SubtractChecked,
+            b"-sat" => CheckedIntegerOperation::SubtractSaturating,
+            b"*" => CheckedIntegerOperation::MultiplyTrap,
+            b"*wrap" => CheckedIntegerOperation::MultiplyWrap,
+            b"*checked" => CheckedIntegerOperation::MultiplyChecked,
+            b"*sat" => CheckedIntegerOperation::MultiplySaturating,
+            b"/" => CheckedIntegerOperation::DivideTrap,
+            b"/checked" => CheckedIntegerOperation::DivideChecked,
+            b"%" => CheckedIntegerOperation::RemainderTrap,
+            b"%checked" => CheckedIntegerOperation::RemainderChecked,
+            b"==" => CheckedIntegerOperation::Equal,
+            b"!=" => CheckedIntegerOperation::NotEqual,
+            b"<=" => CheckedIntegerOperation::LessEqual,
+            b">=" => CheckedIntegerOperation::GreaterEqual,
+            _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        })
     }
 
     pub(super) fn check_atom(
