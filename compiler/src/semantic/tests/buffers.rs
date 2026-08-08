@@ -264,9 +264,17 @@ fn main() -> own unit pure {
         SemanticRule::Stor5,
         expected.clone(),
     );
+    // The operation half. In v0.22 this was `buffer_new<slice<'r, u8>>(…)`,
+    // whose *written* element carried the violation and was cited at the
+    // `targ`; A1 deletes that argument [OP-9], and a region-bearing fill is
+    // then caught by the flat-element requirement citing OP-1 before STOR-5 is
+    // reached. [STOR-5] names `box_new` and `arena_new` — not `buffer_new` —
+    // as the derived-content path it owns, and `box_new`'s content type is
+    // derived from its operand [STOR-2, OP-2], so that is where the recorded
+    // rule and kind still fire, at the operand atom the rule names.
     assert_rule(
         br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
-  buffer_new(1_u64, move value);
+  box_new(move value);
   return unit;
 }
 

@@ -409,18 +409,29 @@ fn main() -> own unit pure {
     );
 }
 
+/// Both shapes are carried on rows that keep their callee name. [OP-7]'s
+/// one-spelling rule moved the twenty respelled rows out of the callee-name
+/// inventory, so `iadd.wrap` — which carried both shapes in v0.22 — is no
+/// longer a name at all and reaches OP-1 at resolution before either shape can
+/// be judged. The concerns survive on the rows that still have names: a call
+/// missing the arguments its row mandates, and one written with named
+/// arguments. Neither expectation is changed.
 #[test]
 fn operation_call_shapes_keep_their_exact_rule_owners() {
+    // A retained-argument row [TYPE-5] with its mandatory arguments absent.
+    // This is the shape that still earns FN-2, and it is one of the witnesses
+    // that must move if the tracked FN-2/[DIAG-1] citation question is settled
+    // the other way — which is what a second witness is for.
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value = 1_i32 +wrap 2_i32;\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return unit;\n}\n",
         SemanticRule::Fn2,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own i32 = iadd.wrap<i32>(left: 1_i32, right: 2_i32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let left = 1_i32;\n  let right = 2_i32;\n  let value = imin(left: left, right: right);\n  return unit;\n}\n",
         SemanticRule::Gram11,
         SemanticIssueKind::InvalidNamedArguments {
-            callee: "iadd.wrap".to_owned(),
+            callee: "imin".to_owned(),
             declared_parameters: Vec::new(),
         },
     );
