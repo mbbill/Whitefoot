@@ -6,6 +6,14 @@ const reason_empty: array<u8, 45> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8
 
 const reason_too_large: array<u8, 64> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
 
+const reason_truncated: array<u8, 51> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 115_u8, 116_u8, 114_u8, 101_u8, 97_u8, 109_u8, 32_u8, 101_u8, 110_u8, 100_u8, 115_u8, 32_u8, 101_u8, 97_u8, 114_u8, 108_u8, 121_u8, 10_u8];
+
+const reason_malformed: array<u8, 50> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 109_u8, 97_u8, 108_u8, 102_u8, 111_u8, 114_u8, 109_u8, 101_u8, 100_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 115_u8, 116_u8, 114_u8, 101_u8, 97_u8, 109_u8, 10_u8];
+
+const reason_output_full: array<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
+
+const reason_write_failed: array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
+
 fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity: own u64 = len<u8>(deref(destination));
@@ -35,6 +43,60 @@ fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text:
     set taken = iadd.wrap<u64>(taken, 1_u64);
   }
   return at;
+}
+
+fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('d 's), writes('d), traps {
+  doc "Copies one half-open source range into the destination at one offset.";
+  let source_room: own u64 = len<u8>(deref(source));
+  let destination_room: own u64 = len<u8>(deref(destination));
+  let target: own u64 = at;
+  let cursor: own u64 = from;
+  loop @copy {
+    let done: own Bool = ige<u64>(cursor, to);
+    match done {
+      True() => {
+        break @copy;
+      }
+      False() => {
+      }
+    }
+    let read_ok: own Bool = ilt<u64>(cursor, source_room);
+    claim copy_read_in_source: read_ok because "callers clamp the range to the source length";
+    let byte: own u8 = deref(source)[cursor];
+    let write_ok: own Bool = ilt<u64>(target, destination_room);
+    claim copy_write_in_destination: write_ok because "callers leave room for the copied range";
+    set deref(destination)[target] = byte;
+    set target = iadd.wrap<u64>(target, 1_u64);
+    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+  }
+  return target;
+}
+
+fn inflate_status(error: own InflateError) -> own u8 pure {
+  doc "Reduces one decode failure to the status the driver reports for it: 5 an early end of stream, 6 a malformed stream, 7 an output buffer too small.";
+  match error {
+    Truncated() => {
+      return 5_u8;
+    }
+    InvalidStoredLength() => {
+      return 6_u8;
+    }
+    InvalidHuffmanTree() => {
+      return 6_u8;
+    }
+    InvalidHuffmanCode() => {
+      return 6_u8;
+    }
+    InvalidDistance() => {
+      return 6_u8;
+    }
+    InvalidBlockType() => {
+      return 6_u8;
+    }
+    OutputFull() => {
+      return 7_u8;
+    }
+  }
 }
 
 fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
@@ -109,6 +171,54 @@ fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, rea
         let view: own slice<'too_large_view, u8> = slice_of<'too_large_view, u8>(&'too_large_view reason_too_large);
         region 'too_large_append {
           set length = append_slice<'too_large_append, 'too_large_view>(destination: &uniq 'too_large_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 5_u8) {
+    True() => {
+      region 'truncated_view {
+        let view: own slice<'truncated_view, u8> = slice_of<'truncated_view, u8>(&'truncated_view reason_truncated);
+        region 'truncated_append {
+          set length = append_slice<'truncated_append, 'truncated_view>(destination: &uniq 'truncated_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 6_u8) {
+    True() => {
+      region 'malformed_view {
+        let view: own slice<'malformed_view, u8> = slice_of<'malformed_view, u8>(&'malformed_view reason_malformed);
+        region 'malformed_append {
+          set length = append_slice<'malformed_append, 'malformed_view>(destination: &uniq 'malformed_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 7_u8) {
+    True() => {
+      region 'output_full_view {
+        let view: own slice<'output_full_view, u8> = slice_of<'output_full_view, u8>(&'output_full_view reason_output_full);
+        region 'output_full_append {
+          set length = append_slice<'output_full_append, 'output_full_view>(destination: &uniq 'output_full_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 8_u8) {
+    True() => {
+      region 'write_failed_view {
+        let view: own slice<'write_failed_view, u8> = slice_of<'write_failed_view, u8>(&'write_failed_view reason_write_failed);
+        region 'write_failed_append {
+          set length = append_slice<'write_failed_append, 'write_failed_view>(destination: &uniq 'write_failed_append deref(report), filled: length, text: move view);
         }
       }
     }
@@ -239,6 +349,51 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         publish_reason<'too_large_report, 'too_large_report>(err: &uniq 'too_large_report err, report: &uniq 'too_large_report report, reason: 4_u8);
       }
       return exit_status(code: 4_u8);
+    }
+    False() => {
+    }
+  }
+  let stream: own buffer<u8> = buffer_new<u8>(filled, 0_u8);
+  region 'stream_copy {
+    let copied: own u64 = copy_range<'stream_copy, 'stream_copy>(destination: &uniq 'stream_copy stream, at: 0_u64, source: &'stream_copy scratch, from: 0_u64, to: filled);
+  }
+  let decoded: own buffer<u8> = buffer_new<u8>(65536_u64, 0_u8);
+  let decoded_length: own u64 = 0_u64;
+  region 'inflate_call {
+    match inflate<'inflate_call>(out: &uniq 'inflate_call decoded, input: move stream) {
+      Ok(value: produced) => {
+        set decoded_length = produced;
+      }
+      Err(error: failure) => {
+        set status = inflate_status(error: failure);
+      }
+    }
+  }
+  match ine<u8>(status, 0_u8) {
+    True() => {
+      region 'decode_report {
+        publish_reason<'decode_report, 'decode_report>(err: &uniq 'decode_report err, report: &uniq 'decode_report report, reason: status);
+      }
+      return exit_status(code: status);
+    }
+    False() => {
+    }
+  }
+  region 'decoded_write {
+    match publish_all<'decoded_write, 'decoded_write>(output: &uniq 'decoded_write out, source: &'decoded_write decoded, length: decoded_length) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+        set status = 8_u8;
+      }
+    }
+  }
+  match ine<u8>(status, 0_u8) {
+    True() => {
+      region 'write_report {
+        publish_reason<'write_report, 'write_report>(err: &uniq 'write_report err, report: &uniq 'write_report report, reason: status);
+      }
+      return exit_status(code: status);
     }
     False() => {
     }
