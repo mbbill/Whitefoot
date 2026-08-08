@@ -37,15 +37,17 @@ call-spelling anchor extensions that add no site, [ENT-3] S4 and
 [FN-1] scale rather than a characterization defect: S4 fires only on
 "one comparison call", so after C1 no `requires` prologue establishes
 its entry fact and every dependent obligation is rejected under [OP-4]
-(62 canonical `.wf` sources carry `requires` blocks, on two distinct
-bases: 25 on the migration basis — conformance cases, programs, and
-research experiment sources — and 37 in the `tests/codegen/cases`
-holding corpus, which no harness consumes, which task 0031 deliberately
-left unrespelled, and which reconciles with the active specification
-per case at promotion, so its exposure surfaces there rather than at
-migration. The other §5 figures are measured on the migration basis
-alone. A previously circulated figure of 122 was the same set counted
-twice through a worktree mirror). It also found the one
+(**22** files carry `requires` blocks on the migration basis —
+`tests/conformance` and `tests/programs`, the corpora maintained at the
+active spec version — and 40 more sit in the two frozen corpora,
+`tests/codegen/` 37 and `research/experiments/` 3, for 62
+repository-wide. Task 0031 left both frozen unrespelled and both still
+spell the `index<T>(p, i)` form v0.22 deleted, so neither migrates with
+this batch; they reconcile per case at promotion, and their exposure
+surfaces there rather than at migration. Two withdrawn figures are
+recorded in §3: a 122 that counted every source twice through the
+worktree mirror, and a 25 that wrongly counted the frozen research
+sources into the migration basis). It also found the one
 defect in this candidate's own text: [OP-2] site (g) retained a mandate
 that the FN-2 missing-type-argument judgment applies, after site (f)
 deleted the only sentence defining it — with a third such FN-2 naming
@@ -1306,44 +1308,47 @@ Measured on the active corpus (2026-08-07; `.wf` sources excluding
 `archive/` and the worktree mirror). Two bases are stated because they
 differ sharply and only the first sizes this batch's migration.
 
-*Migration basis* — the canonical corpora, excluding `tests/codegen/`,
-which task 0031 records as a preserved holding corpus that no harness
-consumes, that was deliberately not respelled in the v0.22 migration,
-and on whose exclusion §5's re-measured figures (2255 deleted-class
-type arguments, 2765 let annotations) now rest. On that basis **25**
-files carry a `requires` block, one block each, and 23 of those blocks
-end in a final `check`. Three of the 23 conditions are a direct
-comparison call (all `ile`). Nineteen are Bool clause atoms whose
-defining right-hand sides are `ige` 8, `eeq` 3, `igt` 3, `band` 2,
-`ile` 1, `ieq` 1, and `ilt` 1; the twenty-third is a bare parameter in
+*Migration basis* — the corpora maintained at the active spec version,
+`tests/conformance` and `tests/programs`, which is §5's basis and the
+scope this batch migrates. On that basis **22**
+files carry a `requires` block, one block each, and 20 of those blocks
+end in a final `check`. Two of the 20 conditions are a direct
+comparison call (both `ile`). Seventeen are Bool clause atoms whose
+defining right-hand sides are `ige` 8, `eeq` 3, `igt` 3,
+`ile` 1, `ieq` 1, and `ilt` 1; the twentieth is a bare parameter in
 the negative case `fn8-neg-requires-non-bool-check.wf`, which exists to
-be rejected and establishes nothing either way. So 13 of the 23 route
+be rejected and establishes nothing either way. So 12 of the 20 route
 through a comparison C1 respells and are exactly the shape S4 stops
 recognizing, 4 keep a call spelling under O1 (`igt`, `ilt`), and the
-`eeq` and `band` clauses are neither respelled nor S1 origins and are
+`eeq` clauses are neither respelled nor S1 origins and are
 untouched. The canonical broken shape is `let permitted: own Bool =
 ieq<i32>(copied, x); check permitted …`, migrating to `let permitted =
 copied == x; check permitted …`
 (`tests/conformance/cases/fn8-neg-requires-user-call.wf`, verified).
-Independently of the final condition, 9 arithmetic lets inside these
-blocks (`imul.wrap` 4, `iadd.wrap` 4, `iadd.trap` 1) respell to infix
-and break the normalization's termination clause on their own, while
-`ishr.wrap`, `band`, and `len` keep call spellings and do not.
+Independently of the final condition, 3 arithmetic lets inside these
+blocks (`imul.wrap`, `iadd.wrap`, `iadd.trap`, one each) respell to
+infix and break the normalization's termination clause on their own,
+while `ishr.wrap`, `band`, and `len` keep call spellings and do not.
 
-*Including the holding corpus*, the totals are **62** files, 60 final
-checks, 39 direct comparison conditions (38 `ile`, 1 `ilt`), 21 Bool
-clause atoms, and 45 respelled arithmetic lets. `tests/codegen/`
-contributes the bulk of that — 37 files whose 36 direct `ile`/`ilt`
-conditions are precisely the form S4 stops recognizing — but those
-files do not migrate with this batch: they are reconciled with the
-active spec per case at promotion, so the S4 breakage surfaces there
-rather than in this migration. The smaller figure therefore sizes the
-work this batch does, and the larger one sizes the eventual exposure;
-neither is the whole answer alone. (An earlier revision of this
-paragraph reported 122 files on a basis that excluded neither the
-worktree mirror nor the holding corpus, so it counted every canonical
-source twice; its 82/76/4/2/46 breakdown did not reconcile against
-itself and is withdrawn.) The repair is
+```
+git ls-files 'tests/conformance/*.wf' 'tests/programs/*.wf' \
+  | xargs grep -l 'requires {' | wc -l          # 22
+```
+
+*Outside the migration basis*, the two frozen corpora carry 40 more
+`requires` blocks — 37 in `tests/codegen/` and 3 in
+`research/experiments/` — for 62 repository-wide. The
+`tests/codegen/` share is the sharper shape: 36 of its 37 conditions
+are a direct `ile`/`ilt` comparison call, precisely the form S4 stops
+recognizing. Those files do not migrate with this batch and are
+reconciled with the active spec per case at promotion, so the S4
+breakage surfaces there rather than here. The 22 sizes this batch's
+work; the 62 sizes the eventual exposure. (Two earlier revisions of
+this paragraph are withdrawn: one reported 122 files, counting every
+source twice through the worktree mirror, with an 82/76/4/2/46
+breakdown that did not reconcile against itself; the other reported 25
+on a basis that wrongly included `research/experiments`, which is
+frozen evidence and not on the active spec — see §5.) The repair is
 keyed forward, not widened: "one comparison admitted by the
 comparison-origin shape (a)" delegates the spelling question to (a),
 which this batch's S1 site already rewrites to admit exactly the four
@@ -1492,9 +1497,9 @@ its entry fact, so exactly the same obligations discharge — unrepaired
 it was a narrowing on the [FN-1] scale, because S4 fires only on "one
 comparison call" while C1 makes the four nonstrict comparisons infix
 and [FN-8] admits them there, leaving every dependent subscript
-obligation undischarged and rejected under [OP-4] across the 25
-canonical files this batch migrates, and across the 37 more in the
-preserved `tests/codegen/` holding corpus when those are promoted (§3). [OP-2]'s negation judgment
+obligation undischarged and rejected under [OP-4] across the 22
+files this batch migrates, and across the 40 more in the two frozen
+corpora when those are promoted (§3). [OP-2]'s negation judgment
 (site (g)) drops the FN-2 missing-type-argument mandate along with the
 argument it quantified over — unrepaired it was a total narrowing of
 the negation family, rejecting every `ineg.wrap`, `ineg.trap`, and
@@ -1512,24 +1517,91 @@ it respells [ENT-5].
 
 ## 5. Corpus migration (mechanical, printer-driven; re-measured
 2026-08-07 at this revision against the respelled v0.22 corpus, on the
-**migration basis**: every canonical `.wf` source outside `archive/`,
-the worktree mirror, and the `tests/codegen/` holding corpus — 444
-files, being `tests/conformance` 401, `research/experiments` 24, and
-`tests/programs` 19)
+**migration basis**: the corpora maintained at the active spec version —
+`tests/conformance` 401 and `tests/programs` 19, **420** files)
 
-Method, stated so any reader re-runs it instead of trusting this
-report: take the op column of [OP-1]'s operation table, drop the six
-retained spellings, and count in each basis file the matches of
-`(?<![A-Za-z0-9_.])<op><` after blanking double-quoted string
-literals. The lookbehind is what makes this a per-callee enumeration
-rather than a name grep: a bare `name<` sweep also catches `buffer<`,
-`array<`, `slice<`, `Result<`, every user-generic call, and every
-field access `x.len<`, and over-counts badly. Blanking string literals
-matters by exactly 3 occurrences, all `doc` text quoting a rule
-(`op6-neg-cvt-identity`, `op9-pos-buffer-new`, `stor2-pos-box-new`).
+**Standing requirement for this section: every figure carries the exact
+command that reproduces it — directory scope, pattern, and exclusions —
+so a reader re-runs the number instead of trusting this report.** These
+are the largest inputs the migration task sizes its work against and
+they go to the owner, and the staleness recorded below survived several
+reviews precisely because the figures travelled without their commands.
+A figure stated here without a runnable command is incomplete.
 
-- Deleted-class type arguments: **2255** occurrences (2258 before
-  string-literal exclusion). The complete deleted class — every table
+Why the basis is these two corpora and not every `.wf` file. Both
+`tests/codegen/` and `research/experiments/` are frozen at older spec
+versions and were excluded from the v0.22 migration by task 0031
+("`tests/codegen/` deliberately untouched (preserved holding corpus per
+its README; no harness consumes it); research experiment bundles stay
+frozen evidence"). That is not only a record but a measurable fact: both
+still spell the indexed place as the prefix `index<T>(place, offset)`
+that v0.22 deleted, 134 occurrences in `tests/codegen/` and 128 in
+`research/experiments/`, while the two basis corpora contain zero and
+use the `place[offset]` subscript throughout. Counting a corpus that is
+not on the active spec into a migration figure inflates it with work
+this batch does not do.
+
+```
+for d in tests/conformance tests/programs research/experiments tests/codegen; do
+  printf '%s index< = ' "$d"
+  git ls-files "$d/*.wf" | xargs cat | sed 's/^/ /' \
+    | grep -oE '[^A-Za-z0-9_.]index<' | wc -l
+done
+```
+
+Two definitions are shared by every command; paste them first. Every
+command below was run at this revision and returned the number it is
+attached to.
+
+```
+BASIS() { git ls-files 'tests/conformance/*.wf' 'tests/programs/*.wf'; }
+PREP()  { xargs cat | sed -E 's/"([^"\\]|\\.)*"/""/g' | sed 's/^/ /'; }
+```
+
+`PREP` does two things. It blanks double-quoted string literals, which
+matters by exactly 3 occurrences across the wider corpus — all `doc`
+text quoting a rule (`op6-neg-cvt-identity`, `op9-pos-buffer-new`,
+`stor2-pos-box-new`). Then it prefixes every line with a space so that a
+leading `[^A-Za-z0-9_.]` class suffices and no pattern needs `^` inside
+an alternation.
+
+Three method points, each load-bearing. The leading `[^A-Za-z0-9_.]` is
+what makes a count a per-callee enumeration rather than a name grep:
+without it, `name<` also matches `buffer<`, `array<`, `slice<`,
+`Result<`, every user-generic call, and every field access `x.len<` — on
+this basis a bare `identifier<` sweep returns 3494 against the 1588
+below. An operation alternation must enumerate the table's actual rows,
+never a cross-product of stems and mode words: the tempting
+`(iadd|isub|imul|idiv|irem)\.(wrap|trap|checked|sat)<` matches
+`idiv.wrap<i32>` in `tests/conformance/cases/op2-neg-div-wrap.wf`, one
+of the five deliberately-invalid fixtures and a row the table does not
+contain. And the space-prefix idiom is not cosmetic: the `grep` on this
+machine is ugrep 7.5.0, which silently returns **0** for an
+`-oE '(^|[^A-Za-z0-9_.])name<'` pattern instead of erroring, so a
+command written that way reports a confident, wrong zero. Every figure
+below was cross-checked against an independent Python `re` count using
+a true lookbehind, and the two agree exactly.
+
+- Basis: **420** files.
+
+  ```
+  BASIS | wc -l
+  ```
+- Deleted-class type arguments: **1588** occurrences. The op alternation
+  is derived from the active spec's own table, so the command re-derives
+  the deleted class rather than hard-coding 77 spellings that could
+  drift from it:
+
+  ```
+  OPS=$(sed -n '/^| op | domain/,/^$/p' spec/kernel-spec-v0.22.md \
+    | sed -E 's/^\| *//; s/ *\|.*//' | grep -o '`[^`]*`' | tr -d '`' \
+    | sort -u \
+    | grep -vE '^(cvt|reinterpret|array_new|arena_new|finf|fnan)$' \
+    | sed 's/\./\\./g' | paste -sd'|' -)
+  BASIS | PREP | grep -oE "[^A-Za-z0-9_.]($OPS)<" | wc -l
+  ```
+
+  The complete deleted class — every table
   operation except the six retained — led by `iadd.wrap`, `ieq`,
   `len`, `ilt`, and `isub.wrap`. Separately: five
   deliberately-invalid OPNAME spellings in negative conformance
@@ -1537,52 +1609,76 @@ matters by exactly 3 occurrences, all `doc` text quoting a rule
   `add.wrap`) are NOT deleted-class sites — they never parse to a
   table-op call, the migration never touches them, and a per-callee
   enumeration excludes them automatically because no such row exists.
-  Retained-class sites, untouched: **129** (130 before string-literal
-  exclusion) (`cvt`/`reinterpret`/`array_new`/`arena_new`/`finf`/`fnan`
+  Retained-class sites, untouched: **102**
+  (`cvt`/`reinterpret`/`array_new`/`arena_new`/`finf`/`fnan`
   — the F3 orphans now have their one legal spelling, unchanged).
-- Basis correction of record, applying to **every** figure in this
+
+  ```
+  BASIS | PREP \
+    | grep -oE '[^A-Za-z0-9_.](cvt|reinterpret|array_new|arena_new|finf|fnan)<' \
+    | wc -l
+  ```
+- Staleness correction of record, applying to **every** figure in this
   section rather than to one of them. The previously settled numbers —
   1353 deleted-class, 101 retained-class, 1748 let annotations, 257
   `True()` arms, 56 `ilt`/`igt`, 389 `check` statements, all "across
-  399 files" — are reproducible exactly, and were measured on a
-  narrower basis at an earlier revision: at 4530716 the corpus held
-  `tests/conformance` 380 plus `tests/programs` 19, which is precisely
-  the 399, and counting those two directories at that revision
-  *without* excluding string literals yields 1353, 101, 1748, 257, 56,
-  and 389 to the digit. That exact reproduction is what identifies the
-  basis; none of the figures was wrong for what it measured. Two
-  things then moved.
-  The basis omitted `research/experiments`, which this same section
-  migrates — the four [FN-4] discharge sites below include
-  `research/experiments/checked-law-channel/kernel.wf` and
-  `kernel_lib.wf` — so the denominator excluded files the migration
-  touches; and 21 conformance cases have landed since. Restoring the
-  research sources and re-measuring at this revision moves the
-  deleted-class figure from 1353 to 2255 (+902, +67%) and the retained
-  from 101 to 129. The migration task must size its work against 2255.
-  On the old basis alone, this revision would read 1588 and 102.
-- Let annotations deleted: **2765** binders (1748 on the superseded
-  basis, which that figure reproduces exactly).
-- Bool matches to `if`/`else`: **455** `True()`-arm matches (257 on the
-  superseded basis, reproduced exactly), including the else-if
+  399 files" — reproduce exactly at the revision that settled them: at
+  4530716 the corpus held `tests/conformance` 380 plus `tests/programs`
+  19, which is precisely the 399, and counting those two directories at
+  that revision *without* blanking string literals yields 1353, 101,
+  1748, 257, 56, and 389 to the digit. That exact reproduction settles
+  what "399 files" was, a question this section previously left to
+  inference. **The basis was correct; the figures were stale.** Twenty-one
+  conformance cases have landed since — 71 `.wf` files were added
+  corpus-wide in the three days to 2026-08-07 — and re-measuring the
+  same two corpora at this revision moves deleted-class 1353 → **1588**,
+  retained 101 → **102**, let annotations 1748 → **2003**, `True()` arms
+  257 → **262**, `ilt`/`igt` 56 → **207**, and `check` 389 → **406**.
+  The migration task sizes its work against 1588.
+- Let annotations deleted: **2003** binders (1748 when settled).
+
+  ```
+  BASIS | PREP \
+    | grep -oE '[^A-Za-z0-9_]let +[A-Za-z_][A-Za-z0-9_]* *:' | wc -l
+  ```
+- Bool matches to `if`/`else`: **262** `True()`-arm matches (257 when
+  settled), including the else-if
   flattening of the corpus's Bool ladders.
-- Infix respells: **599** add/sub/mul/div/rem sites led by 380
-  `iadd.wrap` and 71 `iadd.trap`, plus 703 `== != <= >=` sites; **238**
+
+  ```
+  BASIS | PREP | grep -oE 'True\(\) *=>' | wc -l
+  ```
+- Infix respells: **378** add/sub/mul/div/rem sites, plus **519**
+  `== != <= >=` sites; **207**
   `ilt`/`igt` sites keep named calls under O1, losing only their type
-  arguments. (Superseded basis, this method: 378, 227, 45, and 56,
-  against the section's earlier `~384`, 229, 47, and 56. The `ilt`/`igt`
-  56 and the `True()` 257, 1748, 1353, 101, and 389 all reproduce to
-  the digit, so the basis is certain; the residual 2 each on
-  `iadd.wrap` and `iadd.trap` is *not* string handling — those two
-  spellings have zero string-literal occurrences at that revision — and
-  I did not chase it further, because both figures are superseded. It
-  is recorded rather than smoothed over.) The `ilt`/`igt` figure moves
-  most, 56 to 238, because the added conformance cases exercise the two
-  retained comparisons heavily; O1's cost is four times what the
-  settled figure implied, which is the one place this correction
-  bears on an open ruling.
-- `check` statements: **418** — untouched (C3 open, O2); 389 on the
-  superseded basis, reproduced exactly. Measured as
+  arguments.
+
+  ```
+  BASIS | PREP | grep -oE \
+    '[^A-Za-z0-9_.]((iadd|isub|imul)\.(wrap|trap|checked|sat)|(idiv|irem)\.(trap|checked))<' \
+    | wc -l                                            # 378
+  BASIS | PREP | grep -oE '[^A-Za-z0-9_.](ieq|ine|ile|ige)<' | wc -l  # 519
+  BASIS | PREP | grep -oE '[^A-Za-z0-9_.](ilt|igt)<'   | wc -l        # 207
+  ```
+
+  The arithmetic total reproduces the settled `~384` as an exact 378 by
+  this method; the settled per-op 229 `iadd.wrap` and 47 `iadd.trap`
+  come out 227 and 45, a residual 2 each that is *not* string handling
+  (both spellings have zero string-literal occurrences at that
+  revision). Six other figures reproduce to the digit, so the basis is
+  certain; the residual is recorded rather than smoothed over. The
+  `ilt`/`igt` figure moves most, **56 to 207**, because the added
+  conformance cases exercise the two retained comparisons heavily —
+  O1's cost is roughly four times what the settled figure implied,
+  which is the one place this correction bears on an open ruling.
+- `check` statements: **406** — untouched (C3 open, O2); 389 when
+  settled.
+
+  ```
+  BASIS | xargs grep -hE '^[[:space:]]*check ' | wc -l
+  ```
+
+  Measured as
   line-leading `check` statements, which [FORM-2]'s line-bearing rule
   makes exact, and confirmed by the `else trap` count, unique to
   `check_stmt`; the additional loose-grep occurrences live
@@ -1592,10 +1688,23 @@ matters by exactly 3 occurrences, all `doc` text quoting a rule
   instance is respelled to the statement form in the same migration;
   none is expected (the shape is pointless), and the migration pass
   reports each one it rewrites.
-- `if` as a declaration spelling (narrowing 3): **0** sites across the
-  610 `.wf` files. The corpus's only two `if` tokens
-  (`gram6-pos-no-operators.wf`, `x-arith-iadd-checked-overflow-err-arm-runs.wf`)
-  are inside `doc` strings and migrate by no rule.
+- `if` as a declaration spelling (narrowing 3): **0** sites across all
+  **610** `.wf` files. This one figure is deliberately measured on the
+  widest scope rather than the migration basis — `archive/` and both
+  frozen corpora included — because it supports a "nowhere in the
+  repository" claim, which a narrow basis could not. Re-verified at
+  this revision: 0 `if` tokens outside string literals, 2 in total, and
+  both are the `doc`-string occurrences already named
+  (`gram6-pos-no-operators.wf`,
+  `x-arith-iadd-checked-overflow-err-arm-runs.wf`), which migrate by no
+  rule.
+
+  ```
+  git ls-files '*.wf' | wc -l                                    # 610
+  git ls-files '*.wf' | xargs cat | sed -E 's/"([^"\\]|\\.)*"/""/g' \
+    | sed 's/^/ /' | grep -oE '[^A-Za-z0-9_.]if[^A-Za-z0-9_]' | wc -l   # 0
+  git ls-files '*.wf' | xargs grep -lE '[^A-Za-z0-9_.]if[^A-Za-z0-9_]'  # the 2
+  ```
 - [FN-4] law-discharge bodies (the re-keyed shape): **4** active sites
   carry the exact discharge body `return iadd.sat<D>(p0, p1);` —
   `research/experiments/checked-law-channel/kernel.wf` and
@@ -1603,7 +1712,17 @@ matters by exactly 3 occurrences, all `doc` text quoting a rule
   and `fn4-neg-law-refuted-signedness.wf` — each migrating to `return
   p0 +sat p1;` by the ordinary printer pass, with no verdict change.
   A fifth site under `archive/` is out of scope by the standing
-  no-active-dependency rule. Four conformance verdicts read the FN-4
+  no-active-dependency rule. **Scope question for the owner, surfaced
+  not resolved:** two of those four sites are under
+  `research/experiments/`, which task 0031 froze as evidence and which
+  this section's basis therefore excludes — and which demonstrably is
+  not on the active spec, since it still writes the `index<T>(p, i)`
+  form v0.22 deleted. Either those two files migrate with this batch,
+  in which case a frozen bundle is being edited and the basis owes them
+  a line, or they do not, in which case this bullet's "4 active sites"
+  is 2. The re-key argument is unaffected either way — it is a rule
+  judgment, not a count — but the figure should not go to the owner
+  reading both ways at once. Four conformance verdicts read the FN-4
   discharge relation (`fn4-pos-law-discharged`, `fn4-pos-law-in-contract`,
   `fn4-neg-law-undischarged`, `fn4-neg-law-refuted-signedness`); all
   four are preserved by the re-key, and `fn4-neg-law-undischarged`
@@ -1697,7 +1816,7 @@ have owners):
   names become writer-reusable while `ilt`/`igt` stay reserved.
 - R3 — the derived delivery type is the batch's only new machinery;
   it ships fully worked (GIVE-1, ENT-2, ENT-5, F4, F5) and its cost
-  is recorded as proportionate to A3's 2765 deleted annotations (§5).
+  is recorded as proportionate to A3's 2003 deleted annotations (§5).
 
 No other contradiction between the batch and v0.22 remains: every
 collision — TYPE-5's mandate, GRAM-6's no-if sentence, GRAM-7's
@@ -1820,9 +1939,9 @@ table-operation calls" and fires only on "one comparison call", so
 after C1 the `requires` prologue this batch's own [FN-8] site admits
 reduces to a form S4 cannot recognize, no entry fact is established,
 and [OP-4] turns the resulting undischarged obligations into
-compile-time rejections across the 25 canonical files carrying
+compile-time rejections across the 22 files carrying
 `requires` blocks that this batch migrates — §5's basis — and across
-the 37 more in the preserved `tests/codegen/` holding corpus at their
+the 40 more in the two frozen corpora at their
 promotion (§3). [DIAG-3]'s `node_path` enumeration names "the operation
 `call` for a table-operation contract check" two sentences above this
 batch's own clause placing a bare `/` or `%` violation at its `infix`
