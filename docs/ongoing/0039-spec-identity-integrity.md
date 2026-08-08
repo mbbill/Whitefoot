@@ -2,12 +2,13 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS` — claimed 2026-08-07.
 - **Authority:** owner instruction 2026-08-07 ("开始吧") on the adversarial
   judgment of the stable-filename proposal; the judgment's amendments M2–M6
   and switchover steps C1–C4
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0039 / `/Users/bytedance/do_not_scan/wf-0039`
+  on branch `task/0039-spec-identity-integrity`
+- **Base revision:** a375dba
 - **Dependency:** none. Deliberately independent of the stable-filename
   switchover, which rides a later small activation (C6); every item here
   repairs a real defect in the CURRENT versioned scheme and is worth
@@ -62,9 +63,36 @@ Four steps, in this order, each its own cohesive commit, gates green
    to take a baseline path and a candidate path, both read at runtime, and
    update the command in `docs/WORKFLOW.md` step 3.
 
-## Notes
+## Progress
 
-Do NOT touch `spec/`'s filenames, `docs/roadmap.md`'s authority line, or
-the FLOOR-5 candidate: the stable-filename switchover is a separate,
-later step that rides a small activation. A discovery outside this scope
-stops the task with reproduction evidence.
+- Claimed at a375dba; all five defects confirmed by reading the const
+  definitions before any change (see the per-step commits).
+
+## Scope and expected touch set
+
+`compiler/src/spec.rs` (+ a new `compiler/src/spec/sha256.rs`),
+`compiler/src/bin/spec.rs`, `compiler/src/bin/grammar.rs`,
+`compiler/src/syntax/grammar/tests.rs`, `governance/APPROVALS.md`,
+`governance/hooks/pre-merge-commit`, `Makefile`, `docs/WORKFLOW.md`.
+No `spec/` filename, no `docs/roadmap.md` authority line, no FLOOR-5
+candidate.
+
+## Dependencies and integration order
+
+None. Semantic overlap risk: task 0036 (FLOOR-5) will later activate a new
+specification version and must then append one `ACTIVE-SPEC:` line rather
+than hand-editing an identity constant.
+
+## Validation
+
+`make -C compiler check` and `make check`, exit codes read directly, before
+and after each step. The computed digest is cross-checked against
+`shasum -a 256 spec/kernel-spec-v0.22.md`.
+
+## Stop condition
+
+A discovery outside this scope stops the task with reproduction evidence.
+
+## Closure
+
+Landed through lead review; no merge commits on the task branch.
