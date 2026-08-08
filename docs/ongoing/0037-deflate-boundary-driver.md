@@ -2,7 +2,8 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS`
+- **Status:** `WAITING` — driver delivered; the measurement waits on the
+  ENT-5 loop-fix activation
 - **Authority:** owner approval 2026-08-07 (provenance gate advanced in
   priority); the held candidate
   `governance/spec-evolution/provenance-gate-candidate.md`
@@ -10,8 +11,9 @@ This is a temporary live coordination record, not execution authority.
   `/Users/bytedance/do_not_scan/wf0037`, branch
   `task/0037-deflate-boundary-driver`
 - **Base revision:** `407abde51707d903fe9f3ea1bf45ab6775ac6018`
-- **Dependency:** none for the driver itself; the provenance gate's
-  activation depends on this task's measurement
+- **Dependency:** none for the driver itself, which is done; the
+  measurement depends on the ENT-5 loop fix being active, and the
+  provenance gate's activation depends on that measurement
 
 ## Goal
 
@@ -145,7 +147,30 @@ Run evidence, driver built by
   (`[OWN-6]` above, and `[OWN-1] MoveOfCopy` for `move` on an
   `InflateError`) are both correct behavior.
 
-## Stop condition
+## Stop condition and the measurement blocker
 
 The driver is complete and validated. The measurement half of this card
-does not start until the ENT-5 loop fix is active.
+does not start until the ENT-5 loop fix is active, and as of `main`
+`21312de` it is not. Verified, not assumed:
+
+- `git ls-tree --name-only main spec/` lists v0.20, v0.21, v0.22 and no
+  higher version, so nothing after v0.22 has activated.
+- `docs/roadmap.md` names `spec/kernel-spec-v0.22.md` (SHA-256
+  `b133b793…2fc8a6e8`) as the active language authority, and
+  `make -C compiler check` prints `Whitefoot v0.22 … 14 unbroken
+  activations`.
+- `governance/spec-evolution/ent5-loop-fix-v024-candidate.md` reads
+  `Status: CANDIDATE, OWNER-APPROVED 2026-08-07 …, ready for activation`
+  — approved, awaiting an activation task, not in force. Its own header
+  notes the v0.24 number is provisional and it may take v0.23.
+
+The compiler therefore still implements the defective loop rule that
+`research/investigations/obligation-discharge/ACCEPTANCE.md` isolates as
+the dominant cause of the deflate divergence (5 of 29 sites, per the
+candidate's §1). A gate measurement taken against this compiler would
+attribute to provenance what the loop rule caused, which is exactly what
+this card's ordering constraint forbids.
+
+Resume condition: an ENT-5 activation lands, the acceptance measurement
+is re-run against it, and only then is the gate rule applied to this
+driver's sites.
