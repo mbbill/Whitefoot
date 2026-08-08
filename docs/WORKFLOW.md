@@ -321,6 +321,57 @@ instead of restating them.
   leaving a green row, and it can launder a compiler defect into normative
   expectation.
 
+### The failures that look like success
+
+Most defects announce themselves. A handful do not, and every one of them was
+found here by a deliberate question rather than by a gate, because **their
+failure mode is success**: a conformance case that passes while testing nothing,
+a check that cannot fail, a transform verified against its own output, an
+operation performed against a baseline that no longer describes reality. Nothing
+that watches for failure sees any of them.
+
+The one habit that reaches all of them is to **prefer the observation that
+separates two hypotheses over one consistent with the hypothesis you already
+hold**. Gathering agreeing evidence feels like verification and is not, because
+the same observation usually fits the rival reading too. Before running a check,
+ask what result would make you believe the *other* thing; if no result would,
+the check is decorative. Worked instances from this project:
+
+- A working tree is clean *and* HEAD contains the fix — either alone is equally
+  consistent with the fix having been destroyed.
+- A test that MOVED to a different error versus one that STAYED PUT: moving
+  means the fix worked and a second cause is underneath; staying means it did
+  not work. The pass count is identical either way.
+- Two branches moving the *same* binding versus *different* bindings, holding
+  everything else fixed — that reclassified a supposed missing capability as a
+  masked rejection in one probe.
+- Breaking a check in each direction it can fail, not once. A wrong value and a
+  missing entry should fail differently; proving both is what separates a real
+  check from a decorative one.
+
+Three corollaries worth stating on their own:
+
+- **Run a transform against the input it should have handled, never against its
+  own output.** A migrator, renderer, or formatter checked on what it produced
+  is a fixed point and always agrees with itself.
+- **A mask's fix is itself a probe.** Read the run immediately after removing
+  one carefully instead of treating it as confirmation — that is the moment
+  previously unreachable code first executes, and it is where a second hidden
+  problem surfaces. A mask means the number of hidden problems is unknown, never
+  one.
+- **When a migrated case behaves oddly, read the migration diff before the
+  compiler.** The program may simply have stopped being the program the case was
+  written about, in which case a correct diagnosis of the compiler is an answer
+  to the wrong question.
+
+And a note on writing rules like these: state the **property** that produces the
+failure, not the causes you happen to have met. The verdict-differential rule
+above was first written as "ordering and precedence changes need a differential"
+and was wrong in both directions at once — too strong because it generalized
+from one instance, too weak because it enumerated known causes instead of the
+condition (a population that asserts pass/fail and never names the rule) that
+makes any of them bite.
+
 ### One writer per worktree
 
 An executor's worktree has exactly one writer: that executor. Nobody commits
