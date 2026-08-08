@@ -24,6 +24,7 @@ use whitefoot::{
     parse, render_canonical,
 };
 
+mod manifest;
 mod rewrite;
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -107,8 +108,20 @@ fn run() -> Result<(), String> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     let options = Options::parse(&arguments)?;
     let mut changed = 0_usize;
+    let mut kept = 0_usize;
     let mut counts = rewrite::Counts::default();
+    let mut surface_form = manifest::SurfaceFormCases::default();
     for path in &options.sources {
+        // A conformance case whose subject is the byte format is destroyed by
+        // rendering, so it keeps its own bytes and is reported by name.
+        if surface_form.covers(path)? {
+            kept += 1;
+            println!(
+                "keeping {} — its subject is the surface form",
+                path.display()
+            );
+            continue;
+        }
         let original = std::fs::read(path)
             .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
         let (migrated, file_counts) = migrate(&original, path)?;
@@ -122,7 +135,7 @@ fn run() -> Result<(), String> {
         }
     }
     println!(
-        "{} file(s), {changed} changed; {}",
+        "{} file(s), {changed} changed, {kept} kept for their surface form; {}",
         options.sources.len(),
         counts.summary()
     );

@@ -184,3 +184,60 @@ fn a_value_match_keeps_its_else_even_when_empty() {
     assert!(out.contains("let picked = if flag {"), "{out}");
     assert!(out.contains("} else {"), "{out}");
 }
+
+/// The exclusion is a rule over the manifest, not a list of file names.
+///
+/// The real manifest is read rather than a fixture, because the defect this
+/// closes was a hand list drifting out of agreement with the corpus: a
+/// seventeenth `FORM-*` case must change this count, and a case leaving the
+/// family must too.
+#[test]
+fn the_surface_form_exclusion_is_derived_from_the_real_manifest() {
+    let manifest = include_str!("../../../../tests/conformance/manifest.jsonl");
+    let ids = super::manifest::surface_form_ids(manifest).expect("the manifest reads");
+    let mut named: Vec<_> = ids.iter().map(String::as_str).collect();
+    named.sort_unstable();
+    assert_eq!(
+        named,
+        [
+            "form1-neg-unknown-construct",
+            "form2-neg-noncanonical-ws",
+            "form3-neg-opname-bad-suffix",
+            "form3-neg-region-param-missing-apostrophe",
+            "form3-neg-requires-binding",
+            "form3-neg-reserved-mode-field",
+            "form3-neg-typeid-fn-name",
+            "form4-neg-comment",
+            "form5-neg-missing-suffix",
+            "form7-neg-leading-zero",
+            "form7-neg-out-of-range",
+            "x-form-form2-tab-indent",
+            "x-form-form3-enum-name-ident",
+            "x-form-form4-block-comment",
+            "x-form-form5-op-arg-missing-suffix",
+            "x-form-form7-i32-max-plus-one",
+        ]
+    );
+}
+
+/// The two row shapes the reader must tell apart, and the one that must not be
+/// read as a case: an annotation row carries a top-level `rule` and no `id`.
+#[test]
+fn only_reject_rows_citing_a_form_rule_are_excluded() {
+    let manifest = concat!(
+        "# a comment line\n",
+        "\n",
+        r#"{"id": "layout", "rules": ["FORM-2"], "expect": {"kind": "reject", "rule": "FORM-2"}, "status": "runnable", "doc": "d"}"#,
+        "\n",
+        r#"{"id":"semantic","rules":["FORM-2","OP-1"],"expect":{"kind":"reject","rule":"OP-1"},"status":"runnable","doc":"d"}"#,
+        "\n",
+        r#"{"id": "positive", "rules": ["FORM-2"], "expect": {"kind": "run", "status": 0}, "status": "runnable", "doc": "d"}"#,
+        "\n",
+        r#"{"rule": "FORM-6", "covered_by": "policy", "reason": "r"}"#,
+        "\n",
+    );
+    let ids = super::manifest::surface_form_ids(manifest).expect("the manifest reads");
+    let mut named: Vec<_> = ids.iter().map(String::as_str).collect();
+    named.sort_unstable();
+    assert_eq!(named, ["layout"]);
+}
