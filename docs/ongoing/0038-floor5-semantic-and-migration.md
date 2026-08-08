@@ -2,11 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 7. **M2 landed** (`4c79e35`),
-  the **`box_new` interning repair landed** (`4e68436`) under ruling (b),
-  and **[OP-1] (ii) infix resolution landed** (`3af8478`), which was the
-  gate in front of M3. M3 — the remaining v0.22 spelling classes in the
-  fixtures and the corpus — is now unblocked and not started. See "Round 7".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 7. M2 (`4c79e35`), the
+  `box_new` repair (`4e68436`), [OP-1] (ii) infix resolution (`3af8478`),
+  the derived-nominal sweep (`55aa991`) and the migration tool's first
+  class (`16e8432`) are landed. **M3b needs a ruling before it runs**: 20
+  conformance cases expect a *pre-semantic* rejection and cannot survive a
+  parse-and-render migration at all. See "M3a".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
@@ -933,6 +934,47 @@ no benefit the class needs.
 is no third.** The `prelude_nominal` deferral is also a general safety net:
 any prelude instance a future derived type names now interns on demand,
 whatever produces it.
+
+### M3a — the migration tool (landed `16e8432`), and what the corpus run must decide first
+
+The tool is the forced shape: textual pre-pass to *parseable* v0.23, then
+parse, then `render_canonical`. The pre-pass walks the compiler's own
+lexemes, so a v0.22 spelling inside a string or comment is a single lexeme
+the walk never edits — the inline-fixture hazard removed by construction
+rather than defended against.
+
+**A3 is the only parse-blocking class.** Measured, not assumed: a v0.22
+corpus file lexes cleanly under the v0.23 lexer and fails at *parsing* on
+the `let` annotation ([GRAM-4]). A1's type arguments, C1's named operations
+and A4's Bool matches all parse today and fail semantically. So deleting the
+annotation — with the coupled prelude-constructor rewrite, since the
+constructor's arguments are what the annotation carried — restores the parse
+gate on its own, and the remaining classes land without reopening it.
+
+Measured on all 420 corpus files with `--check`: **400 parse and render.**
+
+### The 20 that do not, and why it is a ruling rather than a bug
+
+All 20 are `expect: {"kind": "reject"}` in `tests/conformance/manifest.jsonl`
+— verified against the manifest, not inferred from their names, 20 of 20.
+They are the cases rejected at or before parsing, so a parse-and-render
+migration cannot process them **by construction**. Four do not even lex.
+
+**Re-rendering one would silently destroy the case.**
+`x-form-form2-tab-indent.wf` exists to be rejected for tab indentation;
+canonical rendering fixes the indentation, so the migrated file would no
+longer test anything and would still be green. That is the exact class of
+silent verdict change the project forbids, and no gate would catch it —
+the case would keep passing.
+
+The other 177 reject cases are rejected *after* parsing, parse fine, and
+migrate normally, so this is not a property of negative cases in general.
+It is a property of the pre-semantic ones.
+
+**M3b therefore cannot be "run the tool over 420 files".** The owner or lead
+must rule on the 20: migrate them textually with no render, leave them at
+v0.22 spelling with a recorded reason, or restate each case against v0.23.
+The choice is a protected-evidence decision, not an executor's.
 
 ### Validation
 
