@@ -6,6 +6,19 @@ fixes F1–F11 and residue findings R1–R3 of the FLOOR-5 review applied per
 lead direction, see `research/investigations/obligation-discharge/
 CANDIDATE-REVIEW.md` at 710f4b3). Non-authoritative.
 
+Amended 2026-08-08 (owner/lead rulings, `governance/APPROVALS.md`). Two
+changes, neither adding a site. **The prelude variant constructors join
+[TYPE-5]'s retained-argument class**, mandatorily and in every position,
+closing the hole A3 opened at `let` and `give` and — as the corrected
+position enumeration in §7 shows — at the `match` scrutinee as well;
+this moves the candidate bytes and re-keys its three digest pins (§3
+[TYPE-5], §4, §5's fifth transform class, §7's eighth find). **O1 is
+restated as "mechanism ruled, deferred for batch hygiene"** rather than
+as settled retention, with the four binding conditions that make the
+deferral free (§6). No EBNF moved: §2's two blocks and [EX-1]'s program
+block re-hash to the MD5s §7 records, so the 69-production count and the
+derived tables are unchanged by this amendment.
+
 Sweep completeness (2026-08-07, prose-sweep repair). The 46-site revision
 covered the rules this batch *modifies* but not every rule whose normative
 prose *uses* a respelled operation, so fifteen sites were missing. The
@@ -94,7 +107,13 @@ Two structural findings remain surfaced up front:
 > [OP-2]'s rewritten derivation; exactly `cvt`, `reinterpret`,
 > `array_new` (type and const), `arena_new` (region and type), and
 > `finf`/`fnan` (type) keep written arguments, everywhere and
-> mandatorily, because no operand can supply them. Deletes the `: mode
+> mandatorily, because no operand can supply them. On that same ground
+> a `construct` of a generic nominal writes that nominal's arguments in
+> every position, mandatorily — the source nominals already under
+> [FN-2], and the prelude generics `Option<T>` and `Result<T, E>`
+> through their variant constructors `None`, `Some`, `Ok`, and `Err` —
+> since `None()` carries no operand at all and construction never
+> consults an expected nominal type [TYPE-6]. Deletes the `: mode
 > type` annotation from every `let` binder — the binder's mode and type
 > are exactly what its right-hand side produces, statement-locally
 > ([TYPE-5] rewritten; literals keep mandatory suffixes [FORM-5], so
@@ -319,6 +338,15 @@ byte at all (so `!=` cannot), and although `<` is in the left set and
 `>` in the right set, no grammar position places `=` immediately after
 either — every `>`-then-`=` position is separated by one space because
 `=` is in neither set — so `<=` and `>=` cannot arise by attachment.
+
+This closure is stated over **this version's twenty operator
+spellings** and is not inherited by a later one (O1 condition 3, §6).
+`<` remains in FORM-2's left attachment set and `>` in its right set,
+untouched by this batch, and both bytes are held reserved against any
+other use while O1's deferral stands. A version admitting them as infix
+operators must re-run the attachment argument for the pairs that
+becomes possible — it does not follow from the sentences above, which
+quantify over the operator set this version defines.
 
 Metanotation convention (drafting note; O9 ruled, §6). C1 makes `+ - *
 / %` source operator tokens, and this specification already writes
@@ -583,7 +611,8 @@ binding."
 > `ordinary_let_rhs` from its expression, which is always self-typed
 > (operands are typed atoms, calls are typed by their
 > [FN-1]/[OP-1]/[SYS-2] signatures, literals carry mandatory suffixes
-> [FORM-5], constructions name their nominal); a `propagate_let_rhs`
+> [FORM-5], constructions name their nominal and, when that nominal is
+> generic, write its arguments); a `propagate_let_rhs`
 > from the propagated Ok payload [ERR-3]; a `value_match` or `value_if`
 > from the derived common delivery type [GIVE-1], whose delivering
 > `give`s are inside the same `let_stmt`, so the derivation stays
@@ -597,7 +626,18 @@ binding."
 > pairs [OP-6, OP-8]), `array_new` (element type and const length
 > [CONST-1]), `arena_new` (region and element type), and `finf`/`fnan`
 > (result type) — the written arguments their rows fix, because no
-> operand can supply them. Every other table operation carries no
+> operand can supply them. A `construct` of a generic nominal states
+> that nominal's type and const arguments on the same ground and in
+> every position, mandatorily: the source nominals under [FN-2], and
+> the prelude generic nominals `Option<T>` and `Result<T, E>` through
+> their variant constructors `None`, `Some`, `Ok`, and `Err`. A nullary
+> `None()` has no operand to supply anything, and construction never
+> consults an expected nominal type [TYPE-6], so the written arguments
+> are the only supply there is; their absence, or a count other than
+> the named nominal's parameter list, is a hard error citing TYPE-5 at
+> the complete `construct`. The non-generic prelude nominals — `Bool`,
+> `Overflow`, `DivError`, `NarrowError` — have no parameters and write
+> nothing. Every other table operation carries no
 > written argument and derives its selected type from its operands
 > [OP-2]; a written argument there is a hard error citing OP-1.
 > Argument types match declared parameter types exactly. After [SET-1]
@@ -612,6 +652,40 @@ binding."
 > regions [FN-1], construction field names [GRAM-8], match binders
 > [GRAM-10], call argument names [GRAM-11] — and are deleted exactly
 > where reconstruction is unique and no transposition risk exists.
+
+Amendment of 2026-08-08 (owner/lead ruling, `governance/APPROVALS.md`),
+inside this existing site and adding none. As first drafted this rule
+gave "constructions name their nominal" as one of the four reasons an
+`ordinary_let_rhs` is self-typed. That is false for a construction of a
+*generic* nominal, which names a constructor and not an instantiation,
+and A3 deletes the annotation that was carrying those sites. The
+nullary `None()` is the total case: it has no payload to derive from,
+no expectation to read once the annotation is gone, and — before this
+amendment — no legal spelling anywhere.
+
+The repair is stated mandatorily and in every position rather than
+where an expectation happens to be missing, and that choice is
+load-bearing rather than stylistic: an optional-where-needed form
+leaves the rule quantified over *which position a construction sits
+in*, which is exactly the context-dependence [META-2] forbids and
+exactly the shape that made this defect invisible for three review
+rounds. Mandatory, the dependence on an expected type disappears from
+every position at once, and the rule needs no position enumeration to
+be true.
+
+The amendment adds no grammar and no new spelling. `construct :=
+TYPEID targs? "(" fieldinit_list? ")"` already admits the written
+arguments, and [FN-2] already says instantiation arguments for a
+"function, source nominal, or PRE-1 nominal generic parameter" are
+always explicit. What the amendment changes is that the specification
+now *says where the type comes from* for the prelude generics instead
+of leaving a supply the compiler had quietly taken from an expectation
+— which [TYPE-6]'s "construction and matching never consult an
+expected nominal type" already forbade. The citation and node are
+pinned to TYPE-5 at the complete `construct` because that is where the
+compiler already reports the same failure for source generic nominals
+(`generic_substitution` in `semantic/check/generics.rs`), so the two
+classes report identically rather than diverging by declaration source.
 
 **[OWN-5]** One site. The slice-valued-join prohibition "A
 `let`-initializer `match` whose declared result type is `slice<'r, T>`
@@ -1387,7 +1461,15 @@ admitted comparison [CLM-1, ENT-3]".
 
 **[EX-1]** Complete replacement of the worked-example program bytes
 (canonical under every rule of this batch; the O1 asymmetry is
-deliberately visible in `sign_of`'s first branch):
+deliberately visible in `sign_of`'s first branch). These bytes are
+canonical **for this version's operator set** and are not closed
+against a later one (O1 condition 3, §6): `if ilt(x, 0_i32)` beside
+`else if x == 0_i32` is precisely the asymmetry O1's deferred mechanism
+removes, so the version admitting `<` and `>` as infix re-cuts this
+example rather than inheriting it. The amendment of 2026-08-08 leaves
+these bytes unmoved — `Neg()`, `Zero()` and `Pos()` construct a
+non-generic source enum, and `Ok(value: w)`/`Err(error: e)` are `arm`
+patterns, which carry no `targs` child:
 
 ```
 enum Sign {
@@ -1482,6 +1564,33 @@ supplies the no-conversion law the rejection rests on but states no
 `let` judgment at all — it is about `cvt` and implicit conversion — so
 it is not the citation and not a site, §7.)
 
+**The prelude-construction amendment resolves a v0.22 internal
+divergence rather than choosing new behaviour, and it is stated here
+because it is nonetheless compiler-visible.** Three v0.22 sentences
+already agree with the amended rule: [FN-2]'s "instantiation arguments
+are always explicit", which is scoped to "function, source nominal, or
+PRE-1 nominal generic parameter"; [TYPE-6]'s "Constructor uniqueness is
+whole-unit and context-free, so construction and matching never consult
+an expected nominal type"; and the `construct := TYPEID targs? "("
+fieldinit_list? ")"` production, which admits the written arguments. The
+compiler did the opposite for the four generic prelude variant
+constructors: it took the nominal from the expectation and never read
+`targs` at all, so `None<i32>()` was accepted with its written argument
+*silently ignored* and `None()` was accepted with a supply v0.22's own
+[TYPE-6] forbids. Reading the amended rule against the specification,
+then, no program the v0.22 *text* admits is newly rejected. Reading it
+against the shipped compiler, the bare form of these four constructors
+stops being accepted and the written form starts being honoured — which
+is what makes `let x = None<buffer<u8>>();` spellable at all after A3,
+and is why the ruling is mandatory rather than fallback-only. Two
+conformance cases already assert the divergence's visible edge
+(`x-enum-option-context-free-constructor`,
+`x-enum-result-context-free-constructor`, both rejecting TYPE-5 for a
+constructor used as a match scrutinee with no expected type); both keep
+their verdict, their cited rule, and their node under the amendment, and
+only their `doc` reason is re-worded from "no expected type" to "the
+mandatory written arguments are absent" (§5).
+
 Five further classes are *not* acceptance-set changes only because the
 prose and pattern-7 sweeps key them forward; each would have been an
 unlisted change had an earlier revision shipped. [FN-4]'s source-law discharge
@@ -1569,7 +1678,7 @@ text quoting a rule (`op6-neg-cvt-identity`, `op9-pos-buffer-new`,
 leading `[^A-Za-z0-9_.]` class suffices and no pattern needs `^` inside
 an alternation.
 
-Three method points, each load-bearing. The leading `[^A-Za-z0-9_.]` is
+Four method points, each load-bearing. The leading `[^A-Za-z0-9_.]` is
 what makes a count a per-callee enumeration rather than a name grep:
 without it, `name<` also matches `buffer<`, `array<`, `slice<`,
 `Result<`, every user-generic call, and every field access `x.len<` — on
@@ -1585,6 +1694,33 @@ machine is ugrep 7.5.0, which silently returns **0** for an
 command written that way reports a confident, wrong zero. Every figure
 below was cross-checked against an independent Python `re` count using
 a true lookbehind, and the two agree exactly.
+
+Fourth, measured 2026-08-08 while adding the prelude-construction
+figure: the same ugrep has a **second** silent-zero mode, and the
+space-prefix idiom does not avoid it. A negated bracket class followed
+later in the pattern by a literal `(` — written either `\(` or `[(]` —
+can match zero, silently, with no error and no warning, and whether it
+does depends on the rest of the pattern rather than on the class. All
+of these were run against the single line `  Ok(value: v) => {`, which
+contains a match by inspection:
+
+| pattern | `grep -cE` |
+|---|---|
+| `Ok\(` | 1 |
+| `[^A-Za-z0-9_.]Ok\(` | **0** |
+| `[^A-Za-z0-9_.]Ok[(]` | **0** |
+| `[^abc]Ok\(` | **0** |
+| `[^A-Za-z0-9_.](None\|Some\|Ok\|Err)[(]` | 1 |
+| `[^A-Za-z0-9_.](None\|Some\|Ok\|Err)[(][^)]*[)]` | 1 |
+| `[^A-Za-z0-9_.](None\|Some\|Ok\|Err)[(][^)]*[)] *=>` | **0** |
+
+Rows 5 and 7 differ only by a trailing ` *=>` and disagree, so there is
+no pattern-shape rule a writer can apply defensively; the construct is
+simply not usable here. Every figure counting a `(` therefore uses
+`grep -oP` with a true PCRE lookbehind, which is the same expression
+the Python cross-check runs, and was verified against that line before
+being run on the corpus. The `<`-counting figures above are unaffected
+and are left exactly as they were verified — they carry no `(`.
 
 - Basis: **420** files.
 
@@ -1622,6 +1758,52 @@ a true lookbehind, and the two agree exactly.
     | grep -oE '[^A-Za-z0-9_.](cvt|reinterpret|array_new|arena_new|finf|fnan)<' \
     | wc -l
   ```
+- Generic-prelude constructions gaining written arguments (the 2026-08-08
+  retained-argument amendment, §3 [TYPE-5]): **103** sites. This class
+  did not exist before that amendment and is a *fifth* transform class
+  the migration owes. `PREP2` drops the space-prefix idiom because these
+  commands use PCRE lookbehind instead; see the fourth method point.
+
+  ```
+  PREP2() { xargs cat | sed -E 's/"([^"\\]|\\.)*"/""/g'; }
+  BASIS | PREP2 | grep -oP '(?<![A-Za-z0-9_.])(None|Some|Ok|Err)\s*\('   | wc -l  # 416
+  BASIS | PREP2 | grep -oP '(?<![A-Za-z0-9_.])(None|Some|Ok|Err)\s*\([^()]*\)\s*=>' \
+                                                                        | wc -l  # 313
+  BASIS | PREP2 | grep -oP '(?<![A-Za-z0-9_.])(None|Some|Ok|Err)\s*<'    | wc -l  # 0
+  ```
+
+  416 tokens of the four generic-prelude constructor spellings, of which
+  **313 are `arm` patterns and migrate by no rule**: `arm := TYPEID "("
+  fieldbind_list? ")" "=>" "{" stmt* "}"` has no `targs` child, and an
+  arm's nominal comes from the scrutinee, so the mandate does not reach
+  it. That leaves **103** constructions, and **0** already carry written
+  arguments — the migration writes all 103. The split by position is
+  total and closes against the 103 exactly, which is the check that the
+  arm/construct discriminator is sound:
+
+  ```
+  for kw in return give match; do
+    BASIS | PREP2 | grep -oP "(?<![A-Za-z0-9_.])$kw\s+(None|Some|Ok|Err)\s*\(" | wc -l
+  done                                                   # 98, 2, 2
+  BASIS | PREP2 | grep -oP '=\s*(None|Some|Ok|Err)\s*\(' | wc -l          # 1  (let RHS)
+  BASIS | PREP2 | grep -oP '(?<![A-Za-z0-9_.])set\s+[^=;]*=\s*(None|Some|Ok|Err)\s*\(' \
+                                                         | wc -l          # 0  (set)
+  ```
+
+  98 `return` + 2 `give` + 2 `match` scrutinee + 1 `let` RHS + 0 `set` =
+  **103**. The written arguments are recoverable at every one of them
+  without inference: at `return` from the function's `rtype` [FN-1], at
+  `give` and the `let` RHS from the delivery set's other members or the
+  initializer's own payload, and at the two scrutinee sites from the arm
+  list. **Two of the 103 are deliberately left bare** —
+  `x-enum-option-context-free-constructor` and
+  `x-enum-result-context-free-constructor`, the two `match` scrutinee
+  sites — because they are negative cases whose whole subject is a
+  constructor with no recoverable type; writing the arguments would
+  invert them. They keep verdict, cited rule (TYPE-5) and node, and only
+  their `doc` reason is re-worded (§4). So **101 sites are rewritten and
+  2 are pinned bare**, and the migration asserts that split rather than
+  reporting a total.
 - Staleness correction of record, applying to **every** figure in this
   section rather than to one of them. The previously settled numbers —
   1353 deleted-class, 101 retained-class, 1748 let annotations, 257
@@ -1741,13 +1923,20 @@ a true lookbehind, and the two agree exactly.
 ## 6. Ruled and open list
 
 Ruled (owner standing instruction plus reviewer confirmations,
-2026-08-07): the batch itself — A1 (with F3's total retained class), A3,
+2026-08-07): the batch itself — A1 (with the retained class total over
+the operation table per F3, **and over the generic prelude
+constructors per the 2026-08-08 amendment**, whose omission is the one
+defect F3's certification did not cover; §7), A3,
 A4, C1 as revised; C3 deferred (O2, reviewer-verified on all three
 grounds); O3 uniform annotation-free requires lets (reviewer-recommended
 on the T2 ground: the boundary fact is the final check, not the
 scaffolding); O5 the `=[` attachment stands closed (reviewer-verified:
 `=` is in neither attachment set, `==` cannot arise by attachment,
-extended by this repair to `<=`, `>=`, and `!=`); O7
+extended by this repair to `<=`, `>=`, and `!=`) — **closed over this
+version's operator set only**, per O1 condition 3: the verification
+enumerates the twenty spellings [GRAM-5] admits, so admitting `<` or
+`>` as operators re-opens it and it must be re-run rather than
+inherited; O7
 the empty then-block admitted with the asymmetry stated in ERR-2.
 
 O9 — arithmetic metanotation versus the new operator tokens — is ruled
@@ -1773,18 +1962,76 @@ ones this batch already restates in words. The ruling's conclusion is
 thus not merely upheld but strengthened: the minimal edit set is
 provably complete rather than a pragmatic trim.
 
+**O9's completeness is version-scoped**, per O1 condition 3. The
+discriminating pair is [FORM-2]'s mandatory one-space-each-side
+rendering together with [GRAM-9]'s one-operation-per-expression rule,
+and the second half is what does the work: it rules out any relation
+carrying both an arithmetic and a relational operator. The [ENT]
+fragment's `a - b <= c` and `p + k <= max(T)` are discriminated as
+metanotation *because* `<=` and `-` cannot co-occur in one source
+expression. That argument is about the shape of a relation, not about
+which bytes are operators, so it does not weaken when `<` and `>` join
+the set — but the *enumeration* behind "every backticked arithmetic
+occurrence except three, on two lines" was run against this version's
+twenty spellings. Admitting `<` and `>` adds two spellings to the sweep
+alphabet, so the enumeration is re-run in that version rather than
+inherited from this one. The rule survives; the count is not
+transferable.
+
+O1 — bare `<`/`>` infix — is **ruled, and deferred to the next version
+for batch hygiene** (owner, 2026-08-08: "同意推迟"). It is recorded here
+as a settled *mechanism* awaiting a version to land in, not as a
+settled retention of the named-call spelling, and the difference is
+the whole point of the entry: the reason `ilt` and `igt` are still
+named calls in these bytes is that the change does not belong in this
+batch, not that the fork was decided in favour of names.
+
+What was ruled. The zero-marker form is achievable by factoring one
+level deeper — consume `<` first, then decide on the two tokens after
+it, since a `targ` is always followed by `,` or `>` while a comparison
+operand is always followed by FOLLOW(`expr`) = {`;`, `else`, `because`,
+`{`}, which are structurally disjoint. A turbofish-shaped marker is
+*simpler* (+1 grammar line against +8 productions and +14 decisions)
+and is rejected on principle rather than on cost: a marker required in
+call position but not type position is a context-dependent spelling of
+one construct, which [META-2] forbids. The ruling carries a hard
+verification condition — the result must be re-derived in-tree with
+`whitefoot-grammar-tables` at zero conflicts, with five named programs
+still parsing, before any prose is drafted, failing which it reverts to
+the marker.
+
+Why it is not folded in here. It restructures `expr`, amends [GRAM-1]'s
+node-kind law, introduces the first position-sensitive [FORM-2] rule,
+and makes `>` a lexer invariant — which invalidates this batch's
+approved 69-production count and reopens the O1/O5/O9/R2/EX-1
+dispositions. FLOOR-5 lands as approved and `<`/`>` infix opens the
+next version.
+
+**Four binding conditions, so the deferral costs nothing.** They are
+recorded as conditions on *these bytes*, not as future intentions:
+
+1. O1 reads "mechanism ruled, deferred for batch hygiene", never as
+   settled retention. That is this entry.
+2. `<` and `>` stay **reserved against any other use**. This candidate
+   adds twenty operator terminal spellings and deliberately no bare `<`
+   and no bare `>` (§2); neither byte may be spent on another construct
+   — not as a marker, a bracket, a delimiter, or a shape kind — while
+   the deferral stands.
+3. [FORM-2]'s attachment sets, O5, O9, and [EX-1]'s bytes are **not
+   closed in any form presuming no operator will ever join those sets**.
+   Each is annotated below with the version-scoped form it is closed at.
+4. The corpus migration ships as a **scripted, re-runnable transform**
+   (§5), because the next version re-runs it rather than re-doing it.
+   A one-shot hand migration would make the deferral expensive, which
+   is exactly the cost the deferral was ruled to avoid.
+
+The `ilt`/`igt` cost of the deferral, re-measured on this revision's
+basis: **207** sites, not the 56 this entry carried through several
+revisions (§5's staleness correction). The asymmetry stays visible in
+[EX-1].
+
 Open (owner ruling needed; drafted with the recommended option):
 
-- O1 — bare `<`/`>` infix: excluded as drafted; `ilt`/`igt` stay named
-  (56 sites; the asymmetry is visible in EX-1). Corrected record of the
-  rejected alternative (review): after A1, the entire collision surface
-  is `(IDENT, "<")` on user-generic calls and SYS-2 region arguments —
-  type-position targs never compete (TYPEID is not an atom), so option
-  (b) is a call-targs-only introducer (turbofish-shaped compound
-  token), far cheaper than the first draft claimed, though still a
-  canonical change on every generic call. Revisit condition: R2's
-  predictability cost measured, or the next batch touching call
-  syntax.
 - O4 — the derived common delivery type ships as the fully-worked
   GIVE-1 replacement (§3): agreement judgment, empty-set rejection,
   chain delivery, ENT-2 term roots, ENT-5 join. Confirm the complete
@@ -1963,6 +2210,75 @@ prefix, [GIVE-1]'s "declared `mode type` (stated at the binder)",
 selection, [OP-2] (f) and (g), [OP-7], [OP-8], [FN-4] (i), [DIAG-1]'s
 typed-call paragraph, and the R3-PROVISIONAL register's "interior
 annotation mandate".
+
+### Eighth find, and the failure mode that hid it (2026-08-08)
+
+The prelude-construction hole (§3 [TYPE-5], §4, §5) was found after
+three adversarial review rounds and seven sweep patterns had run. It is
+worth recording *why* those missed it, because the reason is not
+carelessness and the same shape will recur.
+
+**Review finding F3 certified the retained-argument class "total
+against the complete operation table". That certification was sound.
+Its SCOPE was the gap.** Prelude variant constructors are not
+operations: they are not rows of the [OP-1] table, they carry no
+OPNAME, and they resolve through the constructor TYPEID domain
+[TYPE-6] rather than the callee domain. So they were never in the set
+F3 was checking, and a certification of totality over one set says
+nothing about a second set no one had named. Every one of the seven
+sweep patterns has the same boundary: six key on a spelling, a
+production form, or a node-kind enumeration, and the seventh keys on
+normative prose naming a deleted construct in words. A construction
+whose type came from an expectation carries none of those bytes,
+because the defect is in what the rule *fails* to say.
+
+The general lesson, stated so it is reusable: **a totality certificate
+is only as strong as the enumeration it quantifies over, and the
+enumeration is the part to attack.** The question that would have found
+this in round one is not "is the retained class total over the
+operations?" but "what is the complete set of things that carry a
+written type argument?" — which has two members, operations and generic
+nominal constructions, and the second was never enumerated.
+
+**The expectation sweep's own enumeration was also short, and this is
+recorded rather than smoothed over.** The sweep that produced the
+`give` find claimed completeness on the ground that a `construct` is
+not an `atom` under [GRAM-9], so it can only appear as a complete
+`expr`, and then listed five `expr` positions. The grammar has **nine**
+(v0.22 lines 149–161), and the missing four are `check_stmt`,
+`claim_stmt`, `match_stmt` and `value_match`. Re-derived completely:
+
+| position | production | supplier after A3 | |
+|---|---|---|---|
+| `return_stmt` | `"return" expr ";"` | the function result [FN-1] | survives |
+| `set_stmt` | `"set" place "=" expr ";"` | the target type [SET-1] | survives |
+| `check_stmt` | `"check" expr "else" "trap" STRING ";"` | none passed; `own Bool` judged after the fact [OP-5] | never had one |
+| `claim_stmt` | `"claim" IDENT ":" expr "because" STRING ";"` | none passed; `own Bool` judged after the fact [CLM-1] | never had one |
+| `match_stmt` | `"match" expr "{" arm+ "}"` | none, by [TYPE-6]'s context-free construction rule | never had one |
+| `value_match` | `"match" expr "{" arm+ "}"` | none, same | never had one |
+| `propagate_let_rhs` | `"propagate" expr ";"` | the let's expectation; [ERR-3] derives the payload | plumbing |
+| `ordinary_let_rhs` | `expr ";"` | the deleted annotation | REMOVED |
+| `give_stmt` | `"give" expr ";"` | the deleted annotation, via the give context | REMOVED |
+
+The four missed positions do not change the ruling — they strengthen
+it. Three of them never had an expectation to lose, so a construction
+was *already* untypeable there in v0.22, and the corpus proves it
+carries two conformance cases asserting exactly that rejection
+(`x-enum-option-context-free-constructor`,
+`x-enum-result-context-free-constructor`, §4). A repair scoped to "the
+positions where A3 removes a supplier" would have fixed `let` and
+`give` and left those two sites as they are. The mandatory form fixes
+all nine at once *because it stops the rule quantifying over positions
+at all* — which is the argument for mandatory-everywhere restated as a
+measurement rather than as a preference.
+
+Recount after the amendment, re-derived rather than carried: the
+amendment edits replacement text **inside** the existing [TYPE-5] site
+and adds none, exactly as the three pattern-7 corrections do
+([ENT-3] S4, [DIAG-3], [DIAG-1]). TYPE-5 stays 1 and the totals stay
+64/34. §1's version-header paragraph also gains a sentence; it is the
+proposed header rather than a §3 anchor/replacement pair, so it has
+never been counted as a site and is not one now.
 
 Recount, independently: FORM-2 3, FORM-3 1, GRAM-1 4, GRAM-4 1, GRAM-5
 1, GRAM-6 1, GRAM-7 1, GIVE-1 1, GRAM-9 2, TYPE-5 1, OWN-5 1, OWN-13 1,
