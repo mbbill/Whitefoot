@@ -425,6 +425,66 @@ already covers ("restate minimally so the recorded rule fires again, keeping the
 witness where possible"). The two rows that did move are the two whose concern
 genuinely died with the deleted bytes.
 
+### The OP-1/OWN-1 reading, checked rather than assumed
+
+A concurrent executor working `fn8-neg-requires-eeq-payload-enum` observed that
+it and `op1-neg-eeq-payload-enum` both reach `Reject(Some("OWN-1"))` where their
+rows want OP-1, and read the pair as an OP-1/OWN-1 **precedence defect** in the
+checker. That reading was considered here and **does not survive**. It is
+recorded because two units disagreed about one case.
+
+The affinity matrix, four sources, each run alone:
+
+| enum | operands | verdict |
+|---|---|---|
+| tag-only (copy) | bare | **exit 0**, accepted |
+| tag-only (copy) | moved | OWN-1 `MoveOfCopy` |
+| payload (affine) | bare | OWN-1 `BareAffineUse` |
+| payload (affine) | moved | **OP-1 `InvalidOperation`** |
+
+Both OWN-1 kinds are the two halves of one OWN-1 sentence, and the checker
+tracks operand affinity in both directions rather than preferring a rule:
+
+```
+$ grep -n 'Every other bare `place` expression of affine type is a hard error' …
+259:… tag-only enums (every variant nullary …) copy on use; all other values …
+    are affine. … Every other bare `place` expression of affine type is a hard
+    error (write `move p`), and `move p` on a copy value is a hard error …
+```
+
+A payload-carrying enum is affine by that classification, so the migrated bytes
+carried **two independent violations**, and OWN-1's was real. Which of two gets
+reported is settled by [DIAG-1], and it settles against the precedence reading
+from both directions:
+
+```
+$ grep -n 'Two or more simultaneously established post-resolution semantic' …
+652:… rejections whose immediate offending source premise is the same use of the
+    same canonical node are one rejection event, and that event cites the
+    established rule whose definition appears first in this specification …
+    The order among rejection events at distinct nodes is implementation-defined.
+```
+
+The two premises here are at **distinct** nodes — OWN-1 at the operand `atom`
+(bytes 152-156, `left`), OP-1 at the operation call (bytes 148-174) — so the
+order is implementation-defined and the compiler's choice conforms. And had they
+been at one node, OWN-1 is defined at line 259 against OP-1 at line 325, so the
+same-node rule would mandate **OWN-1** as well. There is no ordering the
+specification demands and the compiler withholds.
+
+The row was therefore never changed. The disposition is the restatement above:
+give the file exactly one violation by moving both operands, and OP-1 becomes
+forced rather than traversal-dependent. **The general lesson is the fragile
+shape, not a checker bug** — any negative case whose file carries two violations
+at distinct nodes has an implementation-defined citation, which is what made
+this row look moved at all.
+
+Not investigated, and stated as inference from the controls above rather than
+from that file: if `fn8-neg-requires-eeq-payload-enum` is also
+`BareAffineUse` on a payload-carrying enum with bare operands, it has this same
+real cause and the same one-line fix, not a precedence defect. It belongs to the
+other executor.
+
 ### Blocker — the FN-2 diagnostic path cites TYPE-5
 
 `fn2-neg-eeq-implicit-type` is **unchanged and still accepts**. It writes
