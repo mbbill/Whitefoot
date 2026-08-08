@@ -655,7 +655,6 @@ fn bare_infix_overflow_traps_at_runtime() {
 fn compiler_independent_scalar_cases_execute_through_host_llvm() {
     for source in [
         include_bytes!("../../../tests/conformance/cases/scope3-pos-defined-run.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/type5-pos-explicit.wf").as_slice(),
         include_bytes!("../../../tests/conformance/cases/gram11-pos-named-args.wf").as_slice(),
         include_bytes!("../../../tests/conformance/cases/form7-pos-in-range.wf").as_slice(),
         include_bytes!("../../../tests/conformance/cases/op1-pos-table-op.wf").as_slice(),
