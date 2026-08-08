@@ -305,7 +305,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
 fn a_move_keeps_the_resource_identity_and_its_release() {
     let source = format!(
         "fn release_after_move(file: own ReadFile) -> own unit external, blocks {{\n  \
-         let moved: own ReadFile = move file;\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+         let moved = move file;\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "release_after_move");
@@ -431,7 +431,7 @@ fn returning_or_passing_an_owner_derives_no_release_here() {
          fn hand_off(file: own ReadFile) -> own unit external, blocks {{\n  \
          release_read_file(file: move file);\n  return unit;\n}}\n\n\
          fn receive(file: own ReadFile) -> own unit external, blocks {{\n  \
-         let received: own ReadFile = pass_through(file: move file);\n  return unit;\n}}\n\n\
+         let received = pass_through(file: move file);\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -616,12 +616,12 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "fn main() -> own unit allocates(heap), traps {{\n  let data: own buffer<u8> = buffer_new<u8>(64_u64, 97_u8);\n  let mark: own u8 = 88_u8;\n  let seen: own u64 = 0_u64;\n  let stop: own u64 = len<u8>(data);\n  let cursor: own u64 = 0_u64;\n  loop @walk {{\n    let done: own Bool = ige<u64>(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte: own u8 = data[cursor];\n{middle}    set cursor = iadd.wrap<u64>(cursor, {step});\n  }}\n  check ilt<u64>(seen, 1000_u64) else trap \"walk drift\";\n  return unit;\n}}\n"
+        "fn main() -> own unit allocates(heap), traps {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  check ilt(seen, 1000_u64) else trap \"walk drift\";\n  return unit;\n}}\n"
     )
     .into_bytes()
 }
 
-const NEUTRAL_MIDDLE: &str = "    let newline: own Bool = ieq<u8>(byte, 10_u8);\n    if newline {\n      set seen = iadd.wrap<u64>(seen, 1_u64);\n    }\n    let lead: own Bool = ieq<u8>(byte, mark);\n    if lead {\n      set seen = iadd.wrap<u64>(seen, 2_u64);\n    }\n";
+const NEUTRAL_MIDDLE: &str = "    let newline = byte == 10_u8;\n    if newline {\n      set seen = seen +wrap 1_u64;\n    }\n    let lead = byte == mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
 
 fn probe_needle_counts(program: &IrProgram<'_, '_, '_>) -> Vec<usize> {
     program
@@ -651,7 +651,7 @@ fn a_recognized_byte_walk_gains_one_wide_probe_with_its_needles() {
 
 #[test]
 fn an_effect_on_the_quiet_path_declines_the_wide_probe() {
-    let middle = format!("{NEUTRAL_MIDDLE}    set seen = iadd.wrap<u64>(seen, 1_u64);\n");
+    let middle = format!("{NEUTRAL_MIDDLE}    set seen = seen +wrap 1_u64;\n");
     with_ir(&byte_walk_source(&middle, "1_u64"), |program| {
         assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
     });
@@ -666,7 +666,7 @@ fn a_non_single_step_increment_declines_the_wide_probe() {
 
 #[test]
 fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
-    let middle = "    let inner_mark: own u8 = 88_u8;\n    let lead: own Bool = ieq<u8>(byte, inner_mark);\n    if lead {\n      set seen = iadd.wrap<u64>(seen, 2_u64);\n    }\n";
+    let middle = "    let inner_mark = 88_u8;\n    let lead = byte == inner_mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
     with_ir(&byte_walk_source(middle, "1_u64"), |program| {
         assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
     });

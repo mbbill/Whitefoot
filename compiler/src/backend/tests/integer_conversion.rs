@@ -66,7 +66,7 @@ fn executes_exact_success_and_failure_edges_for_every_integer_pair() {
                 let value = total_value(source_type);
                 writeln!(
                     source,
-                    "  let total{total_count}: own {destination} = cvt<{source_type}, {destination}>({value}_{source_type});\n  check ieq<{destination}>(total{total_count}, {value}_{destination}) else trap \"total conversion {total_count}\";",
+                    "  let total{total_count} = cvt<{source_type}, {destination}>({value}_{source_type});\n  check total{total_count} == {value}_{destination} else trap \"total conversion {total_count}\";",
                     destination = destination_type.spelling,
                     source_type = source_type.spelling,
                 )
@@ -78,7 +78,7 @@ fn executes_exact_success_and_failure_edges_for_every_integer_pair() {
             let failure = failing_value(source_type, destination_type);
             writeln!(
                 source,
-                "  let success{checked_count}: own Result<{destination}, NarrowError> = cvt<{source_type}, {destination}>(1_{source_type});\n  match move success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      check ieq<{destination}>(success_value{checked_count}, 1_{destination}) else trap \"checked success value {checked_count}\";\n    }}\n    Err(error: success_error{checked_count}) => {{\n      check False() else trap \"checked success became error {checked_count}\";\n    }}\n  }}\n  let failure{checked_count}: own Result<{destination}, NarrowError> = cvt<{source_type}, {destination}>({failure}_{source_type});\n  match move failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      check False() else trap \"unrepresentable conversion succeeded {checked_count}\";\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
+                "  let success{checked_count} = cvt<{source_type}, {destination}>(1_{source_type});\n  match move success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      check success_value{checked_count} == 1_{destination} else trap \"checked success value {checked_count}\";\n    }}\n    Err(error: success_error{checked_count}) => {{\n      check False() else trap \"checked success became error {checked_count}\";\n    }}\n  }}\n  let failure{checked_count} = cvt<{source_type}, {destination}>({failure}_{source_type});\n  match move failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      check False() else trap \"unrepresentable conversion succeeded {checked_count}\";\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
                 destination = destination_type.spelling,
                 source_type = source_type.spelling,
             )
