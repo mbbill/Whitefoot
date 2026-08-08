@@ -4476,3 +4476,75 @@ Their docs name the control — `cvt<u8, i64>` and `pick<Held>` — which the bo
 deliberately does not contain, because naming the control is what makes a
 one-token differential legible. #38's tell is "a doc naming a construct its body
 lacks", and it cannot distinguish a stale reference from a deliberate one.
+
+## Round 28 (exec-uninfix, 2026-08-08) — #40 measured before building: two thirds of it already exists, one third cannot exist
+
+The brief said run it over the current corpus and report before wiring anything.
+Doing that first is what turned it from a build into a taxonomy, so **nothing
+was wired and nothing was added**.
+
+### The three populations, each measured
+
+**(1) A negative whose violation is deleted — the adapter already catches it,
+today, on every `make conformance-run`.** Demonstrated rather than read off the
+source: temporarily replacing `pick<4>` with `pick<Held>` in
+`fn2-neg-wrong-kind-instantiation-argument` — its violation removed — took the
+adapter from `391/2/13` to `390/3/13` with the case named. Restored; tree clean.
+
+The moved-citation half of the same population is evidenced by the adapter's own
+live output, which reports `want Reject("OP-1") reached Reject(Some("OWN-1"))`
+for `fn8-neg-requires-eeq-payload-enum`. Kind and rule are both compared.
+
+**(2) A verdict that moves *and* whose manifest row is updated to match — the
+adapter goes green and nothing sees it.** This population is **not
+hypothetical**: diffing every declared verdict between the batch base `8df0e29`
+and this tree finds exactly one, `type5-neg-wrong-region-arg-count`, moved
+`reject TYPE-5` → `reject FN-2`.
+
+**It is properly authorized** — `governance/APPROVALS.md:517` rules the
+restatement explicitly and argues the recorded rule was wrong before the change
+and independently of it. Reported as found and clean, not as a suspicion. What
+matters for #40 is the mechanism, not this instance: **the adapter compares
+actual against declared, so moving both together is invisible to it by
+construction**, and CLAUDE.md names editing a verdict to go green as a
+governance breach precisely because nothing mechanical stops it.
+
+**(3) A positive whose subject is deleted — no verdict-based check can see it.**
+`fn2-pos-explicit-instantiation` is live proof and needs no mutation: its source
+is now `let a = 40_i32 + 2_i32;` with no instantiation argument anywhere, its
+doc still says "Generic ops are instantiated with explicit type arguments", and
+**the adapter passes it**. Its verdict was `run 0` before its subject died and is
+`run 0` after. A differential over verdicts has nothing to compare.
+
+### What that means for the check
+
+| population | caught today | worth building |
+|---|---|---|
+| negative violation deleted | **yes**, the adapter | no — it exists |
+| verdict moved, manifest followed | **no** | **yes**, and cheaply |
+| positive subject deleted | no | **impossible** by this instrument |
+
+So the check the brief describes — re-run every case and compare against its
+manifest row — is the conformance adapter, which already runs in the repository
+gate. Building it would duplicate it.
+
+**The one thing worth building is (2), and it is not a corpus re-run at all.**
+It is a diff of the manifest's declared verdicts across a revision range: no
+compiler invocation, no case execution, no subject knowledge. Its current output
+is one hit and that hit is authorized, which is the right state to wire from —
+a new check whose first run is noisy teaches people to ignore it.
+
+Not built, per the brief. The measurement above is the deliverable.
+
+### The limit worth stating with it
+
+(3) is why this cannot be sold as "the check that would have caught §1.2". It
+would have caught **neither** of §1.2's emptied cases: both are positives, both
+kept their verdict, and both are green today. What it catches is a *different*
+failure — a citation moving under a manifest that follows it — which is real,
+and is the one nothing else looks at.
+
+The instrument limit is the same shape as round 26's: **a verdict is the wrong
+instrument for a question about subjects**, exactly as a source program was the
+wrong instrument for a question about the checker. Naming which instrument fails
+is what keeps the next person from building the version that cannot work.
