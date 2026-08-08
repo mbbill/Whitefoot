@@ -2,11 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   fixed delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** exec-0038 / `/Users/bytedance/do_not_scan/wf-0038-exec`
+  on branch `task/0036-floor5-grammar-and-migration`
+- **Base revision:** f80840d (main), branch rebased onto it
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -81,3 +82,31 @@ not to be weakened or silenced: `spec::tests::path_and_version_label_agree`,
 `whitefoot-spec`'s `recorded_chain_ends_at_the_embedded_specification`.
 The activation commit closes all three at once. `ACTIVE-SPEC:` is an owner
 approval record: writing one to make a gate green is forbidden.
+
+## Claim corrections (exec-0038, 2026-08-07)
+
+Three facts in the brief above do not hold as written and are corrected
+here rather than worked around.
+
+- **Branch tip `b0da5f8` does not exist** in this repository
+  (`git cat-file -t` fatal). The real tip of
+  `task/0036-floor5-grammar-and-migration` was `2ec8248`, carrying exactly
+  the three described commits; the reflog shows `b0da5f8` was never a
+  value of this ref. Taken over at `2ec8248` and rebased onto main
+  `f80840d`.
+- **The candidate hash is neither cited value.** The committed candidate
+  hashed to `935b9538…` — round 5's own reported bytes — not the
+  `bde4a9ef…` the brief cites as pinned. It was also *stale*: it was
+  assembled before main's `32e2af4` extended the [OP-1] (iii) anchor, so
+  it still carried the doubled "in this version" clause round 5 reported
+  and left literal. Re-applying the delta's corrected (iii) replacement,
+  which is the only delta change since assembly, gives
+  `a92b4513…`. That is the current-delta assembly and what the pins now
+  name; no other byte moved.
+- **The round-5 blocker is settled by the definition of done above**, which
+  rules candidate-stage pinning a recognized state with exactly three
+  checks left red until the owner's activation commit.
+
+## Progress
+
+Claimed at f80840d; branch rebased; candidate re-keyed to the current delta.
