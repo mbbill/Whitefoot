@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
-  doc "iadd.trap overflows i32 max by one and traps [FORM-7].";
+  doc "The bare + overflows i32 max by one and traps [FORM-7].";
   let a = 2147483647_i32;
   let b = a + 1_i32;
   return unit;

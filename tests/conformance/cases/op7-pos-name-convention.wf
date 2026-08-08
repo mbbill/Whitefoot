@@ -1,5 +1,5 @@
 fn main() -> own unit traps {
-  doc "Op names carry a domain prefix and a .mode suffix iff on a mode axis [OP-7]: iadd.checked (i-prefix, checked mode) and dotless ieq.";
+  doc "Op names carry a domain prefix and a .mode suffix iff on a mode axis [OP-7]: ineg.checked (i-prefix, checked mode) and dotless ieq.";
   let r = match 40_i32 +checked 2_i32 {
     Ok(value: v) => {
       give v;

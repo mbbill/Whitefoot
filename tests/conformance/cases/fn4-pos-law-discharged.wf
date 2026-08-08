@@ -1,5 +1,5 @@
 contract SatMonoid {
-  doc "FN-4 stated-and-checked: the exact direct iadd.sat body and closed unsigned table cells discharge these laws.";
+  doc "FN-4 stated-and-checked: the exact direct +sat body and closed unsigned table cells discharge these laws.";
   fn combine(x: own u64, y: own u64) -> own u64 pure;
   law associative(combine);
   law commutative(combine);

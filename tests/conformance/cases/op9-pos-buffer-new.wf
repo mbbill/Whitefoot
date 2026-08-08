@@ -1,5 +1,5 @@
 fn make(n: own u64) -> own buffer<i32> allocates(heap), traps {
-  doc "buffer_new<T>(n, v) allocates a flat runtime-length buffer and fills every element [OP-9]; its byte-size n*sizeof(T) is computed in u64.";
+  doc "buffer_new(n, v) allocates a flat runtime-length buffer and fills every element [OP-9]; its byte-size n*sizeof(T) is computed in u64.";
   return buffer_new(n, 0_i32);
 }
 
