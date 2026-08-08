@@ -1,12 +1,12 @@
 fn is_hex(byte: own u8) -> own Bool pure {
-  let decimal_low = byte >= 48_u8;
-  let decimal_high = byte <= 57_u8;
+  let decimal_low = ige(byte, 48_u8);
+  let decimal_high = ile(byte, 57_u8);
   let decimal = band(decimal_low, decimal_high);
-  let upper_low = byte >= 65_u8;
-  let upper_high = byte <= 70_u8;
+  let upper_low = ige(byte, 65_u8);
+  let upper_high = ile(byte, 70_u8);
   let upper = band(upper_low, upper_high);
-  let lower_low = byte >= 97_u8;
-  let lower_high = byte <= 102_u8;
+  let lower_low = ige(byte, 97_u8);
+  let lower_high = ile(byte, 102_u8);
   let lower = band(lower_low, lower_high);
   let alphabetic = bor(upper, lower);
   let result = bor(decimal, alphabetic);
@@ -14,12 +14,12 @@ fn is_hex(byte: own u8) -> own Bool pure {
 }
 
 fn hex_value(byte: own u8) -> own u8 pure {
-  let is_decimal = byte <= 57_u8;
+  let is_decimal = ile(byte, 57_u8);
   let result = if is_decimal {
     let value = byte -wrap 48_u8;
     give value;
   } else {
-    let is_upper = byte <= 70_u8;
+    let is_upper = ile(byte, 70_u8);
     let value = if is_upper {
       let offset = byte -wrap 65_u8;
       let upper_value = offset +wrap 10_u8;
@@ -37,25 +37,25 @@ fn hex_value(byte: own u8) -> own u8 pure {
 fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
   let output_length = len(deref(out));
   let source_length = len(src);
-  let sufficient = output_length >= source_length;
+  let sufficient = ige(output_length, source_length);
   check sufficient else trap "output too short";
 } {
   let source_length = len(src);
   let input_index = 0_u64;
   let output_index = 0_u64;
   loop @decode_loop {
-    let done = input_index == source_length;
+    let done = ieq(input_index, source_length);
     if done {
       break @decode_loop;
     }
     let scan_ok = ilt(input_index, source_length);
     claim scan_in_source: scan_ok because "the scan stops at the source length";
-    let writes_behind = output_index <= input_index;
+    let writes_behind = ile(output_index, input_index);
     claim writes_behind_scan: writes_behind because "each consumed byte emits at most one output byte";
     let byte = src[input_index];
-    let is_percent = byte == 37_u8;
+    let is_percent = ieq(byte, 37_u8);
     let remaining = source_length -wrap input_index;
-    let has_pair = remaining >= 3_u64;
+    let has_pair = ige(remaining, 3_u64);
     let candidate = band(is_percent, has_pair);
     if candidate {
       let next_index = input_index +wrap 1_u64;
@@ -107,7 +107,7 @@ fn main() -> own unit allocates(heap), traps {
   let output = buffer_new(11_u64, 204_u8);
   region 'decode_region {
     let produced = decode<'decode_region>(out: &uniq 'decode_region output, src: move input);
-    check produced == 7_u64 else trap "decoded length";
+    check ieq(produced, 7_u64) else trap "decoded length";
   }
   let output_zero = output[0_u64];
   let output_one = output[1_u64];
@@ -117,13 +117,13 @@ fn main() -> own unit allocates(heap), traps {
   let output_five = output[5_u64];
   let output_six = output[6_u64];
   let output_tail = output[7_u64];
-  check output_zero == 65_u8 else trap "decoded byte zero";
-  check output_one == 66_u8 else trap "decoded byte one";
-  check output_two == 74_u8 else trap "decoded byte two";
-  check output_three == 37_u8 else trap "decoded byte three";
-  check output_four == 122_u8 else trap "decoded byte four";
-  check output_five == 122_u8 else trap "decoded byte five";
-  check output_six == 37_u8 else trap "decoded byte six";
-  check output_tail == 204_u8 else trap "output tail changed";
+  check ieq(output_zero, 65_u8) else trap "decoded byte zero";
+  check ieq(output_one, 66_u8) else trap "decoded byte one";
+  check ieq(output_two, 74_u8) else trap "decoded byte two";
+  check ieq(output_three, 37_u8) else trap "decoded byte three";
+  check ieq(output_four, 122_u8) else trap "decoded byte four";
+  check ieq(output_five, 122_u8) else trap "decoded byte five";
+  check ieq(output_six, 37_u8) else trap "decoded byte six";
+  check ieq(output_tail, 204_u8) else trap "output tail changed";
   return unit;
 }

@@ -8,6 +8,6 @@ fn main() -> own unit traps {
       return unit;
     }
   }
-  check r == 42_i32 else trap "name drift";
+  check ieq(r, 42_i32) else trap "name drift";
   return unit;
 }

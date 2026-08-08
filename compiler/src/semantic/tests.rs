@@ -257,7 +257,7 @@ fn add(x: own i32, y: own i32) -> own i32 pure {
 
 fn main() -> own unit traps {
   let result = add(x: base, y: 2_i32);
-  check result == 42_i32 else trap "wrong answer";
+  check ieq(result, 42_i32) else trap "wrong answer";
   return unit;
 }
 "#;

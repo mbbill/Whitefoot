@@ -66,7 +66,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       }
     }
   }
-  if chosen >= 1_u64 {
+  if ige(chosen, 1_u64) {
     set selector = choice[0_u64];
   }
   let data = buffer_new(37_u64, 97_u8);
@@ -83,12 +83,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let stop = len(data);
   let cursor = 0_u64;
   loop @first_walk {
-    let done = cursor >= stop;
+    let done = ige(cursor, stop);
     if done {
       break @first_walk;
     }
     let byte = data[cursor];
-    let newline = byte == 10_u8;
+    let newline = ieq(byte, 10_u8);
     if newline {
       match cvt<u64, u8>(cursor) {
         Ok(value: narrow) => {
@@ -101,7 +101,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         }
       }
     }
-    let lead = byte == mark;
+    let lead = ieq(byte, mark);
     if lead {
       match cvt<u64, u8>(cursor) {
         Ok(value: narrow_lead) => {
@@ -124,19 +124,19 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let blank_stop = len(blank);
   let blank_cursor = 0_u64;
   loop @second_walk {
-    let blank_done = blank_cursor >= blank_stop;
+    let blank_done = ige(blank_cursor, blank_stop);
     if blank_done {
       break @second_walk;
     }
     let blank_byte = blank[blank_cursor];
-    let blank_newline = blank_byte == 10_u8;
+    let blank_newline = ieq(blank_byte, 10_u8);
     if blank_newline {
       let blank_newline_ok = ilt(count, 64_u64);
       claim blank_newline_in_found: blank_newline_ok because "the found log holds every hit of this bounded scan";
       set found[count] = 210_u8;
       set count = count +wrap 1_u64;
     }
-    let blank_lead = blank_byte == mark;
+    let blank_lead = ieq(blank_byte, mark);
     if blank_lead {
       let blank_lead_ok = ilt(count, 64_u64);
       claim blank_lead_in_found: blank_lead_ok because "the found log holds every hit of this bounded scan";
@@ -152,12 +152,12 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let short_stop = 20_u64;
   let short_cursor = 0_u64;
   loop @third_walk {
-    let short_done = short_cursor >= short_stop;
+    let short_done = ige(short_cursor, short_stop);
     if short_done {
       break @third_walk;
     }
     let short_byte = data[short_cursor];
-    let short_newline = short_byte == 10_u8;
+    let short_newline = ieq(short_byte, 10_u8);
     if short_newline {
       match cvt<u64, u8>(short_cursor) {
         Ok(value: short_narrow) => {
@@ -170,7 +170,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         }
       }
     }
-    let short_lead = short_byte == mark;
+    let short_lead = ieq(short_byte, mark);
     if short_lead {
       match cvt<u64, u8>(short_cursor) {
         Ok(value: short_narrow_lead) => {
@@ -197,27 +197,27 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       }
     }
   }
-  if selector == 102_u8 {
+  if ieq(selector, 102_u8) {
     let empty_length = opaque_length(n: 0_u64);
     let empty = buffer_new(empty_length, 0_u8);
     let empty_room = len(empty);
     let empty_bound = 5_u64;
     let empty_cursor = 0_u64;
     loop @empty_walk {
-      let empty_done = empty_cursor >= empty_bound;
+      let empty_done = ige(empty_cursor, empty_bound);
       if empty_done {
         break @empty_walk;
       }
       let empty_walk_ok = ilt(empty_cursor, empty_room);
       claim empty_walk_in_bounds: empty_walk_ok because "this hostile walk deliberately outruns its empty buffer";
       let empty_byte = empty[empty_cursor];
-      let empty_newline = empty_byte == 10_u8;
+      let empty_newline = ieq(empty_byte, 10_u8);
       if empty_newline {
       }
       set empty_cursor = empty_cursor +wrap 1_u64;
     }
   }
-  if selector == 109_u8 {
+  if ieq(selector, 109_u8) {
     let field = buffer_new(37_u64, 97_u8);
     set field[21_u64] = 88_u8;
     set field[36_u64] = 89_u8;
@@ -226,14 +226,14 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     let wall = 64_u64;
     let probe = 0_u64;
     loop @hostile_walk {
-      let hostile_done = probe >= wall;
+      let hostile_done = ige(probe, wall);
       if hostile_done {
         break @hostile_walk;
       }
       let hostile_walk_ok = ilt(probe, field_room);
       claim hostile_walk_in_bounds: hostile_walk_ok because "this hostile walk deliberately outruns its field";
       let hostile_byte = field[probe];
-      let hostile_lead = hostile_byte == mark;
+      let hostile_lead = ieq(hostile_byte, mark);
       if hostile_lead {
         set scratch[0_u64] = 88_u8;
         region 'lead_write {
@@ -245,7 +245,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           }
         }
       }
-      let hostile_tail = hostile_byte == 89_u8;
+      let hostile_tail = ieq(hostile_byte, 89_u8);
       if hostile_tail {
         set scratch[0_u64] = 89_u8;
         region 'tail_write {

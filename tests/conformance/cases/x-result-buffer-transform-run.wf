@@ -7,7 +7,7 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
   let output = buffer_new(length, 0_u8);
   let offset = 0_u64;
   loop @transform {
-    let done = offset == length;
+    let done = ieq(offset, length);
     if done {
       break @transform;
     } else {
@@ -15,7 +15,7 @@ fn transform(input: own buffer<u8>) -> own Result<buffer<u8>, DecodeError> alloc
       let read_ok = ilt(offset, input_room);
       claim offset_in_input: read_ok because "the walk stops at the input length";
       let byte = input[offset];
-      let zero = byte == 0_u8;
+      let zero = ieq(byte, 0_u8);
       if zero {
         let error = ZeroByte();
         return Err<buffer<u8>, DecodeError>(error: error);
@@ -49,9 +49,9 @@ fn main() -> own unit allocates(heap), traps {
       let middle_ok = ilt(1_u64, length);
       claim middle_in_transformed: middle_ok because "a three-byte input transforms to three bytes";
       let middle = transformed[1_u64];
-      check length == 3_u64 else trap "success length";
-      check first == 2_u8 else trap "success first byte";
-      check middle == 5_u8 else trap "success middle byte";
+      check ieq(length, 3_u64) else trap "success length";
+      check ieq(first, 2_u8) else trap "success first byte";
+      check ieq(middle, 5_u8) else trap "success middle byte";
     }
     Err(error: success_error) => {
       check False() else trap "success became error";

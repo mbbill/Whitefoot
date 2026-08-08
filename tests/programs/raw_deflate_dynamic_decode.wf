@@ -1,6 +1,6 @@
 fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit reads('l 'd), writes('l 'd), traps requires {
   let literal_room = len(deref(literal_lengths));
-  let enough_literals = literal_count <= literal_room;
+  let enough_literals = ile(literal_count, literal_room);
   check enough_literals else trap "literal lengths shorter than literal_count";
 } {
   let is_literal = ilt(position, literal_count);
@@ -61,7 +61,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
   let code_lengths = buffer_new(19_u64, 0_u8);
   let code_index = 0_u64;
   loop @read_code_lengths {
-    let codes_done = code_index == code_count;
+    let codes_done = ieq(code_index, code_count);
     if codes_done {
       break @read_code_lengths;
     } else {
@@ -104,7 +104,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
   let position = 0_u64;
   let previous_length = 0_u8;
   loop @expand_lengths {
-    let lengths_done = position == total_lengths;
+    let lengths_done = ieq(position, total_lengths);
     if lengths_done {
       break @expand_lengths;
     } else {
@@ -119,7 +119,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           }
         }
       }
-      let direct_length = length_symbol <= 15_u64;
+      let direct_length = ile(length_symbol, 15_u64);
       if direct_length {
         match cvt<u64, u8>(length_symbol) {
           Ok(value: length) => {
@@ -135,9 +135,9 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           }
         }
       } else {
-        let repeat_previous = length_symbol == 16_u64;
+        let repeat_previous = ieq(length_symbol, 16_u64);
         if repeat_previous {
-          let no_previous = position == 0_u64;
+          let no_previous = ieq(position, 0_u64);
           if no_previous {
             let error = InvalidHuffmanTree();
             return Err<unit, InflateError>(error: error);
@@ -162,7 +162,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           }
           let repeated = 0_u64;
           loop @repeat_previous_length {
-            let repeated_all = repeated == repeat_count;
+            let repeated_all = ieq(repeated, repeat_count);
             if repeated_all {
               break @repeat_previous_length;
             } else {
@@ -174,7 +174,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
             }
           }
         } else {
-          let short_zero = length_symbol == 17_u64;
+          let short_zero = ieq(length_symbol, 17_u64);
           let repeat_bits = 0_u64;
           let repeat_base = 0_u64;
           if short_zero {
@@ -190,7 +190,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
             }
             set repeat_base = 3_u64;
           } else {
-            let long_zero = length_symbol == 18_u64;
+            let long_zero = ieq(length_symbol, 18_u64);
             if long_zero {
             } else {
               let error = InvalidHuffmanTree();
@@ -217,7 +217,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           }
           let repeated = 0_u64;
           loop @repeat_zero_length {
-            let repeated_all = repeated == repeat_count;
+            let repeated_all = ieq(repeated, repeat_count);
             if repeated_all {
               break @repeat_zero_length;
             } else {
@@ -237,7 +237,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
   let end_ok = ilt(256_u64, end_room);
   claim end_symbol_in_literals: end_ok because "the literal table holds at least 257 lengths";
   let end_length = literal_lengths[256_u64];
-  let missing_end = end_length == 0_u8;
+  let missing_end = ieq(end_length, 0_u8);
   if missing_end {
     let error = InvalidHuffmanTree();
     return Err<unit, InflateError>(error: error);
@@ -258,7 +258,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
         }
       }
     }
-    let literal = symbol <= 255_u64;
+    let literal = ile(symbol, 255_u64);
     if literal {
       match cvt<u64, u8>(symbol) {
         Ok(value: byte) => {
@@ -278,7 +278,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
         }
       }
     } else {
-      let end_of_block = symbol == 256_u64;
+      let end_of_block = ieq(symbol, 256_u64);
       if end_of_block {
         break @dynamic_codes;
       } else {
@@ -294,7 +294,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           }
         }
         let distance_symbol = 0_u64;
-        let distance_tree_empty = distance_table.used_symbols == 0_u64;
+        let distance_tree_empty = ieq(distance_table.used_symbols, 0_u64);
         if distance_tree_empty {
           let error = InvalidDistance();
           return Err<unit, InflateError>(error: error);

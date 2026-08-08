@@ -2,6 +2,6 @@ const maximum: u64 = 18446744073709551615_u64;
 
 fn main() -> own unit traps {
   let copy = maximum;
-  check copy == 18446744073709551615_u64 else trap "scalar const width changed";
+  check ieq(copy, 18446744073709551615_u64) else trap "scalar const width changed";
   return unit;
 }

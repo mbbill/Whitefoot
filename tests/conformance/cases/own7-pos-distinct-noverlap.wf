@@ -8,7 +8,7 @@ fn main() -> own unit traps {
     set deref(ua) = 5_i32;
     set deref(ub) = 6_i32;
   }
-  check a == 5_i32 else trap "a";
-  check b == 6_i32 else trap "b";
+  check ieq(a, 5_i32) else trap "a";
+  check ieq(b, 6_i32) else trap "b";
   return unit;
 }

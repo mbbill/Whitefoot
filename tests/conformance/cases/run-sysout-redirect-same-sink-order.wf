@@ -38,7 +38,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
                           ReadBytes(count: n) => {
-                            let combined = n == 4_u64;
+                            let combined = ieq(n, 4_u64);
                             if combined {
                             } else {
                               return exit_status(code: 12_u8);
@@ -57,22 +57,22 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                     let byte1 = page[1_u64];
                     let byte2 = page[2_u64];
                     let byte3 = page[3_u64];
-                    let head0 = byte0 == 65_u8;
+                    let head0 = ieq(byte0, 65_u8);
                     if head0 {
                     } else {
                       return exit_status(code: 15_u8);
                     }
-                    let head1 = byte1 == 65_u8;
+                    let head1 = ieq(byte1, 65_u8);
                     if head1 {
                     } else {
                       return exit_status(code: 16_u8);
                     }
-                    let tail0 = byte2 == 66_u8;
+                    let tail0 = ieq(byte2, 66_u8);
                     if tail0 {
                     } else {
                       return exit_status(code: 17_u8);
                     }
-                    let tail1 = byte3 == 66_u8;
+                    let tail1 = ieq(byte3, 66_u8);
                     if tail1 {
                       return exit_status(code: 0_u8);
                     } else {

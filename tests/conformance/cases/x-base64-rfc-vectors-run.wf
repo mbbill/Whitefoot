@@ -5,7 +5,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
   let required_input_length = len(input);
   let required_out_groups = ishr.wrap(required_out_length, 2_u32);
   let required_covered_input = required_out_groups *wrap 3_u64;
-  check required_input_length <= required_covered_input else trap "base64 output capacity";
+  check ile(required_input_length, required_covered_input) else trap "base64 output capacity";
 } {
   let out_room = len(deref(out));
   let input_length = len(input);
@@ -78,7 +78,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
     }
   }
   let tail_length = input_length -wrap input_offset;
-  let one_byte_tail = tail_length == 1_u64;
+  let one_byte_tail = ieq(tail_length, 1_u64);
   if one_byte_tail {
     let tail_one_in_ok = ilt(input_offset, input_length);
     claim tail_one_in_input: tail_one_in_ok because "a one-byte tail leaves one input byte";
@@ -113,7 +113,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own u64 reads(
     set deref(out)[tail_one_output_three] = 61_u8;
     set output_offset = output_offset +wrap 4_u64;
   }
-  let two_byte_tail = tail_length == 2_u64;
+  let two_byte_tail = ieq(tail_length, 2_u64);
   if two_byte_tail {
     let tail_two_input_one = input_offset +wrap 1_u64;
     let tail_two_in_zero_ok = ilt(input_offset, input_length);
@@ -172,45 +172,45 @@ fn main() -> own unit allocates(heap), traps {
   let man_output = buffer_new(4_u64, 0_u8);
   region 'man_region {
     let man_length = encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input);
-    check man_length == 4_u64 else trap "Man length drift";
+    check ieq(man_length, 4_u64) else trap "Man length drift";
   }
   let man_zero = man_output[0_u64];
   let man_one = man_output[1_u64];
   let man_two = man_output[2_u64];
   let man_three = man_output[3_u64];
-  check man_zero == 84_u8 else trap "Man[0] drift";
-  check man_one == 87_u8 else trap "Man[1] drift";
-  check man_two == 70_u8 else trap "Man[2] drift";
-  check man_three == 117_u8 else trap "Man[3] drift";
+  check ieq(man_zero, 84_u8) else trap "Man[0] drift";
+  check ieq(man_one, 87_u8) else trap "Man[1] drift";
+  check ieq(man_two, 70_u8) else trap "Man[2] drift";
+  check ieq(man_three, 117_u8) else trap "Man[3] drift";
   let m_input = buffer_new(1_u64, 77_u8);
   let m_output = buffer_new(4_u64, 0_u8);
   region 'm_region {
     let m_length = encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input);
-    check m_length == 4_u64 else trap "M length drift";
+    check ieq(m_length, 4_u64) else trap "M length drift";
   }
   let m_zero = m_output[0_u64];
   let m_one = m_output[1_u64];
   let m_two = m_output[2_u64];
   let m_three = m_output[3_u64];
-  check m_zero == 84_u8 else trap "M[0] drift";
-  check m_one == 81_u8 else trap "M[1] drift";
-  check m_two == 61_u8 else trap "M[2] drift";
-  check m_three == 61_u8 else trap "M[3] drift";
+  check ieq(m_zero, 84_u8) else trap "M[0] drift";
+  check ieq(m_one, 81_u8) else trap "M[1] drift";
+  check ieq(m_two, 61_u8) else trap "M[2] drift";
+  check ieq(m_three, 61_u8) else trap "M[3] drift";
   let ma_input = buffer_new(2_u64, 0_u8);
   set ma_input[0_u64] = 77_u8;
   set ma_input[1_u64] = 97_u8;
   let ma_output = buffer_new(4_u64, 0_u8);
   region 'ma_region {
     let ma_length = encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input);
-    check ma_length == 4_u64 else trap "Ma length drift";
+    check ieq(ma_length, 4_u64) else trap "Ma length drift";
   }
   let ma_zero = ma_output[0_u64];
   let ma_one = ma_output[1_u64];
   let ma_two = ma_output[2_u64];
   let ma_three = ma_output[3_u64];
-  check ma_zero == 84_u8 else trap "Ma[0] drift";
-  check ma_one == 87_u8 else trap "Ma[1] drift";
-  check ma_two == 69_u8 else trap "Ma[2] drift";
-  check ma_three == 61_u8 else trap "Ma[3] drift";
+  check ieq(ma_zero, 84_u8) else trap "Ma[0] drift";
+  check ieq(ma_one, 87_u8) else trap "Ma[1] drift";
+  check ieq(ma_two, 69_u8) else trap "Ma[2] drift";
+  check ieq(ma_three, 61_u8) else trap "Ma[3] drift";
   return unit;
 }

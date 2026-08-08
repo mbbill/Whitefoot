@@ -23,12 +23,12 @@ fn main() -> own unit pure {
     Hi() => {
     }
   }
-  let flag = 1_u64 == 1_u64;
+  let flag = ieq(1_u64, 1_u64);
   let both = band(flag, flag);
   let neither = bnot(both);
   let i = 0_u64;
   loop @l {
-    if i >= 3_u64 {
+    if ige(i, 3_u64) {
       break @l;
     }
     if neither {

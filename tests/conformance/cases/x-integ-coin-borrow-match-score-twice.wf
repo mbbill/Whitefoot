@@ -26,7 +26,7 @@ fn main() -> own unit traps {
       }
     }
     let total = first + second;
-    check total == 13_i32 else trap "coin score drift";
+    check ieq(total, 13_i32) else trap "coin score drift";
   }
   return unit;
 }

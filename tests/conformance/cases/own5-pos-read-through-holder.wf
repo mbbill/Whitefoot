@@ -4,8 +4,8 @@ fn main() -> own unit traps {
   region 'r {
     let u = &uniq 'r a;
     set deref(u) = 10_i32;
-    check deref(u) == 10_i32 else trap "rw";
+    check ieq(deref(u), 10_i32) else trap "rw";
   }
-  check a == 10_i32 else trap "after";
+  check ieq(a, 10_i32) else trap "after";
   return unit;
 }

@@ -26,7 +26,7 @@ fn main() -> own unit traps {
       }
     }
     let t = a + b;
-    check t == 61_i32 else trap "borrow payload drift";
+    check ieq(t, 61_i32) else trap "borrow payload drift";
   }
   return unit;
 }

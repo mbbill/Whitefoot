@@ -12,7 +12,7 @@ fn main() -> own unit traps {
     let view_ok = ilt(1_u64, view_room);
     claim view_sized: view_ok because "fixed_view returns the three-byte constant view";
     let observed = view[1_u64];
-    check observed == 13_u8 else trap "returned const slice";
+    check ieq(observed, 13_u8) else trap "returned const slice";
   }
   return unit;
 }

@@ -4,7 +4,7 @@ fn mandelbrot_escapes(cx: own f64, cy: own f64) -> own Bool pure {
   let iteration = 0_u32;
   let escaped = False();
   loop @orbit {
-    let exhausted = iteration == 64_u32;
+    let exhausted = ieq(iteration, 64_u32);
     if exhausted {
       break @orbit;
     }
@@ -34,13 +34,13 @@ fn main() -> own unit traps {
   let y = 0_u32;
   let escaped_points = 0_u32;
   loop @rows {
-    let rows_done = y == 48_u32;
+    let rows_done = ieq(y, 48_u32);
     if rows_done {
       break @rows;
     }
     let x = 0_u32;
     loop @columns {
-      let columns_done = x == 64_u32;
+      let columns_done = ieq(x, 64_u32);
       if columns_done {
         break @columns;
       }
@@ -58,6 +58,6 @@ fn main() -> own unit traps {
     }
     set y = y +wrap 1_u32;
   }
-  check escaped_points == 2437_u32 else trap "mandelbrot grid mismatch";
+  check ieq(escaped_points, 2437_u32) else trap "mandelbrot grid mismatch";
   return unit;
 }

@@ -3,7 +3,7 @@ fn crc32(bytes: own buffer<u8>) -> own u32 traps {
   let offset = 0_u64;
   let length = len(bytes);
   loop @bytes {
-    let bytes_done = offset == length;
+    let bytes_done = ieq(offset, length);
     if bytes_done {
       break @bytes;
     } else {
@@ -14,13 +14,13 @@ fn crc32(bytes: own buffer<u8>) -> own u32 traps {
       set crc = ixor(crc, word);
       let bit = 0_u32;
       loop @bits {
-        let bits_done = bit == 8_u32;
+        let bits_done = ieq(bit, 8_u32);
         if bits_done {
           break @bits;
         } else {
           let low_bit = iand(crc, 1_u32);
           let shifted = ishr.wrap(crc, 1_u32);
-          let low_bit_set = low_bit == 1_u32;
+          let low_bit_set = ieq(low_bit, 1_u32);
           if low_bit_set {
             set crc = ixor(shifted, 3988292384_u32);
           } else {
@@ -47,6 +47,6 @@ fn main() -> own unit allocates(heap), traps {
   set bytes[7_u64] = 56_u8;
   set bytes[8_u64] = 57_u8;
   let checksum = crc32(bytes: move bytes);
-  check checksum == 3421780262_u32 else trap "CRC32 vector";
+  check ieq(checksum, 3421780262_u32) else trap "CRC32 vector";
   return unit;
 }

@@ -19,6 +19,6 @@ fn main() -> own unit traps {
   doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
   let red_atom_0001 = Red();
   let n = pick(c: red_atom_0001);
-  check n == 1_i32 else trap "x";
+  check ieq(n, 1_i32) else trap "x";
   return unit;
 }

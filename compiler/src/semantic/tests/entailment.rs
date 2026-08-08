@@ -167,7 +167,7 @@ struct Pair {
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
-  if i <= p.count {
+  if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       return values[i];
     } else {
@@ -194,8 +194,8 @@ fn disequality_strengthens_a_weak_bound_to_a_strict_one() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
-  if i <= 4_u64 {
-    if i == 4_u64 {
+  if ile(i, 4_u64) {
+    if ieq(i, 4_u64) {
       return 0_i32;
     } else {
       return values[i];
@@ -256,7 +256,7 @@ fn eat(p: own Pair) -> own unit pure {
 }
 
 fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 pure {
-  if i <= p.count {
+  if ile(i, p.count) {
     if ilt(p.count, 4_u64) {
       eat(p: move p);
       return values[i];
@@ -1001,7 +1001,7 @@ fn a_check_without_comparison_origin_establishes_nothing() {
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
   let low = ilt(i, 4_u64);
-  let high = i >= 0_u64;
+  let high = ige(i, 0_u64);
   check band(low, high) else trap "i must be in range";
   return values[i];
 }
@@ -1111,7 +1111,7 @@ fn a_wrapping_offset_establishes_only_where_the_range_is_already_proved() {
 
 fn guarded(values: own array<i32, count>, p: own u64) -> own i32 pure {
   if ilt(p, 4_u64) {
-    if p >= 1_u64 {
+    if ige(p, 1_u64) {
       let s = p -wrap 1_u64;
       return values[s];
     } else {
@@ -1342,7 +1342,7 @@ fn a_requires_shape_outside_the_admitted_comparison_establishes_nothing() {
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps requires {
   let low = ilt(i, 4_u64);
-  let high = i >= 0_u64;
+  let high = ige(i, 0_u64);
   let ok = band(low, high);
   check ok else trap "i must be in range";
 } {
@@ -1646,7 +1646,7 @@ fn a_refuted_claim_is_a_clm2_rejection_with_predicate_and_negation() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
-  if i >= 4_u64 {
+  if ige(i, 4_u64) {
     claim in_range: ilt(i, 4_u64) because "refuted by the branch";
     return values[i];
   } else {

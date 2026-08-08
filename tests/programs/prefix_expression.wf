@@ -23,7 +23,7 @@ fn parse_expression['r](input: &'r buffer<u8>, offset: own u64) -> own Result<Pa
   }
   let token = deref(input)[offset];
   let next = offset + 1_u64;
-  let is_add = token == 43_u8;
+  let is_add = ieq(token, 43_u8);
   if is_add {
     let left_output = propagate parse_expression<'r>(input: input, offset: next);
     let right_offset = left_output.next;
@@ -80,11 +80,11 @@ fn main() -> own unit allocates(heap), traps {
     match parsed {
       Ok(value: output) => {
         let consumed = output.next;
-        check consumed == 5_u64 else trap "prefix parser left trailing input";
+        check ieq(consumed, 5_u64) else trap "prefix parser left trailing input";
         let root = move output.node;
         region 'tree {
           let value = evaluate<'tree>(expression: &'tree root);
-          check value == 9_u64 else trap "prefix expression result";
+          check ieq(value, 9_u64) else trap "prefix expression result";
         }
       }
       Err(error: parse_error) => {

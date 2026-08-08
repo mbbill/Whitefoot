@@ -1,5 +1,5 @@
 fn increment(x: own i32) -> own i32 traps requires {
-  let value = x >= 0_i32;
+  let value = ige(x, 0_i32);
   check value else trap "x must be nonnegative";
 } {
   doc "A requirement local's scope ends with the clause, so its name is fresh again in the body [FN-8/TYPE-6].";
@@ -9,6 +9,6 @@ fn increment(x: own i32) -> own i32 traps requires {
 
 fn main() -> own unit traps {
   let value = increment(x: 7_i32);
-  check value == 8_i32 else trap "requires scope drift";
+  check ieq(value, 8_i32) else trap "requires scope drift";
   return unit;
 }

@@ -4,13 +4,13 @@ use super::{compile, compile_and_run};
 fn executes_every_negation_mode_for_every_signed_width() {
     let template = r#"fn main() -> own unit traps {
   let wrapped = ineg.wrap($MIN_$TYPE);
-  check wrapped == $MIN_$TYPE else trap "wrapped negation drift";
+  check ieq(wrapped, $MIN_$TYPE) else trap "wrapped negation drift";
   let trapped = ineg.trap(-42_$TYPE);
-  check trapped == 42_$TYPE else trap "trapping negation drift";
+  check ieq(trapped, 42_$TYPE) else trap "trapping negation drift";
   let safe_result = ineg.checked(-42_$TYPE);
   match move safe_result {
     Ok(value: safe_value) => {
-      check safe_value == 42_$TYPE else trap "checked negation drift";
+      check ieq(safe_value, 42_$TYPE) else trap "checked negation drift";
     }
     Err(error: safe_error) => {
       check False() else trap "safe negation took Err";

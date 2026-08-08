@@ -11,7 +11,7 @@ fn main() -> own unit allocates(heap), traps {
   let length = len(columns.left);
   let cursor = 0_u64;
   loop @fill {
-    if cursor == length {
+    if ieq(cursor, length) {
       break @fill;
     }
     let fill_left_ok = ilt(cursor, length);
@@ -27,7 +27,7 @@ fn main() -> own unit allocates(heap), traps {
   set cursor = 0_u64;
   let total = 0_u64;
   loop @fold {
-    if cursor == length {
+    if ieq(cursor, length) {
       break @fold;
     }
     let fold_left_ok = ilt(cursor, length);
@@ -41,6 +41,6 @@ fn main() -> own unit allocates(heap), traps {
     set total = total +wrap right_value;
     set cursor = cursor +wrap 1_u64;
   }
-  check total == 45_u64 else trap "struct-of-buffers checksum drift";
+  check ieq(total, 45_u64) else trap "struct-of-buffers checksum drift";
   return unit;
 }

@@ -37,12 +37,12 @@ fn main() -> own unit allocates(heap), traps {
   let storage_ok = ilt(1_u64, storage_room);
   claim storage_sized: storage_ok because "filled_buffer allocates its length argument";
   let stored = storage[1_u64];
-  check small_maximum == 9_u8 else trap "u8 generic maximum";
-  check signed_maximum == -2_i64 else trap "i64 generic maximum";
-  check short_value == 7_u8 else trap "short const instance";
-  check long_value == 11_u8 else trap "long const instance";
-  check typed_byte == 13_u8 else trap "typed byte array";
-  check typed_word == -17_i64 else trap "typed word array";
-  check stored == 19_u16 else trap "typed buffer";
+  check ieq(small_maximum, 9_u8) else trap "u8 generic maximum";
+  check ieq(signed_maximum, -2_i64) else trap "i64 generic maximum";
+  check ieq(short_value, 7_u8) else trap "short const instance";
+  check ieq(long_value, 11_u8) else trap "long const instance";
+  check ieq(typed_byte, 13_u8) else trap "typed byte array";
+  check ieq(typed_word, -17_i64) else trap "typed word array";
+  check ieq(stored, 19_u16) else trap "typed buffer";
   return unit;
 }

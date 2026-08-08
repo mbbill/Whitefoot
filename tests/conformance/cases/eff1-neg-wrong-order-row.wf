@@ -5,6 +5,6 @@ fn f(x: own i32) -> own i32 traps, allocates(heap) {
 
 fn main() -> own unit traps {
   let a = f(x: 7_i32);
-  check a == 7_i32 else trap "x";
+  check ieq(a, 7_i32) else trap "x";
   return unit;
 }

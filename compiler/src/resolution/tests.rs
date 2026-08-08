@@ -879,7 +879,7 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
 fn a_respelled_family_produces_no_lexical_use_at_all() {
     let source = br#"fn main() -> own unit pure {
   let sum = 1_i32 +wrap 2_i32;
-  let equal = sum == 3_i32;
+  let equal = ieq(sum, 3_i32);
   let named = imin(sum, 3_i32);
   return unit;
 }
@@ -1021,7 +1021,7 @@ fn main() -> own unit traps {
     let borrowed = &'r ordinary;
     let called = user<i32, 'r, one>(arg: borrowed);
     let view = move called;
-    check ordinary == two else trap "bad";
+    check ieq(ordinary, two) else trap "bad";
   }
   loop @done {
     break @done;
@@ -1277,10 +1277,10 @@ fn conditional_branches_are_separate_lexical_scopes() {
     let sibling_branches = br#"fn get(pick: own Bool) -> own unit traps {
   if pick {
     let inside = 1_u64;
-    check inside == 1_u64 else trap "left";
+    check ieq(inside, 1_u64) else trap "left";
   } else {
     let inside = 2_u64;
-    check inside == 2_u64 else trap "right";
+    check ieq(inside, 2_u64) else trap "right";
   }
   return unit;
 }
@@ -1301,11 +1301,11 @@ fn get(pick: own Pick) -> own unit traps {
   match pick {
     Left() => {
       let inside = 1_u64;
-      check inside == 1_u64 else trap "left";
+      check ieq(inside, 1_u64) else trap "left";
     }
     Right() => {
       let inside = 2_u64;
-      check inside == 2_u64 else trap "right";
+      check ieq(inside, 2_u64) else trap "right";
     }
   }
   return unit;
@@ -1321,10 +1321,10 @@ fn get(pick: own Pick) -> own unit traps {
     let expired_then_enclosing = br#"fn get(pick: own Bool) -> own unit traps {
   if pick {
     let offset = 0_u64;
-    check offset == 0_u64 else trap "inner";
+    check ieq(offset, 0_u64) else trap "inner";
   }
   let offset = 1_u64;
-  check offset == 1_u64 else trap "outer";
+  check ieq(offset, 1_u64) else trap "outer";
   return unit;
 }
 "#;
@@ -1339,9 +1339,9 @@ fn get(pick: own Pick) -> own unit traps {
   let offset = 0_u64;
   if pick {
     let offset = 1_u64;
-    check offset == 1_u64 else trap "inner";
+    check ieq(offset, 1_u64) else trap "inner";
   }
-  check offset == 0_u64 else trap "outer";
+  check ieq(offset, 0_u64) else trap "outer";
   return unit;
 }
 "#;

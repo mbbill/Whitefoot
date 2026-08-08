@@ -17,8 +17,8 @@ fn main() -> own unit allocates(heap), traps {
   claim sized_by_make: room because "make allocates n slots and main passes four";
   set values[2_u64] = replacement();
   let stored = values[2_u64];
-  check length == 4_u64 else trap "length drift";
-  check stored == 9_u16 else trap "store drift";
+  check ieq(length, 4_u64) else trap "length drift";
+  check ieq(stored, 9_u16) else trap "store drift";
   return unit;
 }
 "#;
@@ -132,7 +132,7 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
   let values = buffer_new(0_u64, 7_u8);
   let length = len(values);
-  check length == 0_u64 else trap "length drift";
+  check ieq(length, 0_u64) else trap "length drift";
   return unit;
 }
 "#;
@@ -243,7 +243,7 @@ fn main() -> own unit allocates(heap), traps {
   }
   region 'read {
     let observed = observe<'read>(pool: &'read pool);
-    check observed == 14_u64 else trap "borrowed struct update drift";
+    check ieq(observed, 14_u64) else trap "borrowed struct update drift";
   }
   return unit;
 }
@@ -344,7 +344,7 @@ fn main() -> own unit allocates(heap), traps {
   let updated_ok = ilt(1_u64, updated_room);
   claim updated_sized: updated_ok because "update returns the two-slot columns";
   let value = updated.left[1_u64];
-  check value == 9_u16 else trap "projected store drift";
+  check ieq(value, 9_u16) else trap "projected store drift";
   return unit;
 }
 "#;

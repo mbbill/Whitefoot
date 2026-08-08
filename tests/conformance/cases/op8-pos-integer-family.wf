@@ -11,6 +11,6 @@ fn main() -> own unit traps {
   let mixed = mix(word: 305419896_u32);
   let bits = ipopcount(mixed);
   let bounded = imin(bits, 32_u32);
-  check bounded <= 32_u32 else trap "integer family drift";
+  check ile(bounded, 32_u32) else trap "integer family drift";
   return unit;
 }

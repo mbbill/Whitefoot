@@ -56,7 +56,7 @@ fn main() -> own unit traps {
   region 'r {
     bump<'r>(n: &uniq 'r a);
   }
-  check a == 42_i32 else trap "callee write lost";
+  check ieq(a, 42_i32) else trap "callee write lost";
   return unit;
 }
 "#,

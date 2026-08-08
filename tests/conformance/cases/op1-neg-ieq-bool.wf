@@ -1,5 +1,5 @@
 fn compare(left: own Bool, right: own Bool) -> own Bool pure {
-  return left == right;
+  return ieq(left, right);
 }
 
 fn main() -> own unit pure {

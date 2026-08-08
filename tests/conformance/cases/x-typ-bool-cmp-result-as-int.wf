@@ -7,6 +7,6 @@ fn main() -> own unit pure {
   let a = 1_i32;
   let b = 2_i32;
   let h = Holder(value: 0_i32);
-  set h.value = a == b;
+  set h.value = ieq(a, b);
   return unit;
 }

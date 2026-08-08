@@ -10,7 +10,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
   let start = deref(pool).count;
   let index_value = 0_u64;
   loop @leaves {
-    let done = index_value >= leaves;
+    let done = ige(index_value, leaves);
     if done {
       break @leaves;
     } else {
@@ -29,7 +29,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
   }
   let width = leaves;
   loop @levels {
-    let complete = width <= 1_u64;
+    let complete = ile(width, 1_u64);
     if complete {
       break @levels;
     } else {
@@ -37,7 +37,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('
       let next_start = deref(pool).count;
       let parent = 0_u64;
       loop @parents {
-        let parents_done = parent >= half;
+        let parents_done = ige(parent, half);
         if parents_done {
           break @parents;
         } else {
@@ -69,7 +69,7 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
   let left_ok = ilt(root, left_room);
   claim root_reads_left: left_ok because "build returns indices inside the pool";
   let left_child = deref(pool).left[root];
-  let leaf = left_child == 0_u64;
+  let leaf = ieq(left_child, 0_u64);
   if leaf {
     return 1_u64;
   }
@@ -92,9 +92,9 @@ fn main() -> own unit allocates(heap), traps {
   region 'tree {
     let root = build<'tree>(pool: &uniq 'tree pool, depth: depth);
     let nodes = checksum<'tree>(pool: &'tree pool, root: root);
-    check nodes == 63_u64 else trap "tree checksum drift";
+    check ieq(nodes, 63_u64) else trap "tree checksum drift";
   }
   let used = pool.count;
-  check used == 64_u64 else trap "tree allocation drift";
+  check ieq(used, 64_u64) else trap "tree allocation drift";
   return unit;
 }

@@ -1,12 +1,12 @@
 fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
   let out_length = len(deref(out));
   let source_length = len(source);
-  check source_length <= out_length else trap "output capacity";
+  check ile(source_length, out_length) else trap "output capacity";
 } {
   let length = len(source);
   let offset = 0_u64;
   loop @copy {
-    let done = offset == length;
+    let done = ieq(offset, length);
     if done {
       break @copy;
     } else {
@@ -27,9 +27,9 @@ fn main() -> own unit allocates(heap), traps {
   region 'copy_region {
     let destination = &uniq 'copy_region output;
     let written = copy_bytes<'copy_region>(out: move destination, source: move source);
-    check written == length else trap "copy length";
+    check ieq(written, length) else trap "copy length";
   }
   let last = output[3_u64];
-  check last == 7_u8 else trap "copy content";
+  check ieq(last, 7_u8) else trap "copy content";
   return unit;
 }

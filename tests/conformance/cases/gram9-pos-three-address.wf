@@ -4,6 +4,6 @@ fn main() -> own unit traps {
   let b = 4_i32;
   let s = a +wrap b;
   let p = s *wrap s;
-  check p == 49_i32 else trap "drift";
+  check ieq(p, 49_i32) else trap "drift";
   return unit;
 }

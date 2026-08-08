@@ -1,7 +1,7 @@
 fn get(table: own array<u8, 4>, symbol: own u64) -> own u8 pure {
   doc "Only a comparison call, or a let binding of one, has comparison origin: `band`, `bor`, `bnot`, `eeq`, `ene`, and user-function results contribute nothing [ENT-3]. A two-sided guard folded through `bor` therefore establishes no fact on either arm, and the guarded subscript is undischarged [OP-4] even though no execution reaches it out of range.";
   let below = ilt(symbol, 0_u64);
-  let above = symbol >= 4_u64;
+  let above = ige(symbol, 4_u64);
   let invalid = bor(below, above);
   if invalid {
     return 0_u8;

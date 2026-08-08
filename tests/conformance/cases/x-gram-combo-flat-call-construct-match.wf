@@ -16,7 +16,7 @@ fn main() -> own unit traps {
   let p = Even(n: d);
   match p {
     Even(n: v) => {
-      check d == 14_i32 else trap "drift";
+      check ieq(d, 14_i32) else trap "drift";
     }
     Odd(n: v) => {
       return unit;

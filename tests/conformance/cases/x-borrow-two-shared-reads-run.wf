@@ -4,7 +4,7 @@ fn main() -> own unit traps {
   region 'r {
     let s1 = &'r a;
     let s2 = &'r a;
-    check deref(s1) == deref(s2) else trap "eq";
+    check ieq(deref(s1), deref(s2)) else trap "eq";
   }
   return unit;
 }

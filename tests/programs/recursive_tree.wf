@@ -37,7 +37,7 @@ fn main() -> own unit allocates(heap), traps {
   let root = boxed_branch(left: move branch0, right: move branch1);
   region 'tree {
     let nodes = count<'tree>(tree: &'tree root);
-    check nodes == 7_u64 else trap "recursive tree count";
+    check ieq(nodes, 7_u64) else trap "recursive tree count";
   }
   return unit;
 }

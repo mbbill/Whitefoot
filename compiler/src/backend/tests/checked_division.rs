@@ -6,7 +6,7 @@ fn guards_every_integer_error_before_llvm() {
   let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {
-      check quotient_value == 42_$TYPE else trap "quotient drift";
+      check ieq(quotient_value, 42_$TYPE) else trap "quotient drift";
     }
     Err(error: quotient_error) => {
       check False() else trap "quotient took Err";
@@ -15,7 +15,7 @@ fn guards_every_integer_error_before_llvm() {
   let remainder = 85_$TYPE %checked 43_$TYPE;
   match move remainder {
     Ok(value: remainder_value) => {
-      check remainder_value == 42_$TYPE else trap "remainder drift";
+      check ieq(remainder_value, 42_$TYPE) else trap "remainder drift";
     }
     Err(error: remainder_error) => {
       check False() else trap "remainder took Err";

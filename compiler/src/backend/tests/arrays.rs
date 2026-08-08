@@ -63,9 +63,9 @@ fn read(values: own array<u16, 4>, offset: own u64) -> own u16 traps {
 fn main() -> own unit traps {
   let values = make();
   let length = len(values);
-  check length == 4_u64 else trap "length drift";
+  check ieq(length, 4_u64) else trap "length drift";
   let value = read(values: move values, offset: 3_u64);
-  check value == 42_u16 else trap "fill drift";
+  check ieq(value, 42_u16) else trap "fill drift";
   return unit;
 }
 "#;
@@ -151,7 +151,7 @@ fn main() -> own unit traps {
   let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
-  check stored == 9_u8 else trap "set drift";
+  check ieq(stored, 9_u8) else trap "set drift";
   return unit;
 }
 "#;
@@ -213,7 +213,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
   let cursor = 0_u64;
   let total = 0_u64;
   loop @stream {
-    if step >= 200000_u64 {
+    if ige(step, 200000_u64) {
       break @stream;
     }
     let cursor_ok = ilt(cursor, 8_u64);
@@ -222,7 +222,7 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     let mixed = ixor(previous, step);
     set window[cursor] = mixed *wrap 1099511628211_u64;
     set total = total +wrap previous;
-    let at_end = cursor == 7_u64;
+    let at_end = ieq(cursor, 7_u64);
     let next_cursor = if at_end {
       give 0_u64;
     } else {
@@ -231,8 +231,8 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     set cursor = next_cursor;
     set step = step + 1_u64;
   }
-  check step == 200000_u64 else trap "stream length drift";
-  check cursor == 0_u64 else trap "stream cursor drift";
+  check ieq(step, 200000_u64) else trap "stream length drift";
+  check ieq(cursor, 0_u64) else trap "stream cursor drift";
   return unit;
 }
 "#;
@@ -291,9 +291,9 @@ fn main() -> own unit traps {
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
   let stored = outer.inner.values[1_u64];
-  check stored == 9_u8 else trap "array update";
-  check outer.inner.sibling == 77_u16 else trap "inner sibling";
-  check outer.prefix == 123_u32 else trap "outer sibling";
+  check ieq(stored, 9_u8) else trap "array update";
+  check ieq(outer.inner.sibling, 77_u16) else trap "inner sibling";
+  check ieq(outer.prefix, 123_u32) else trap "outer sibling";
   return unit;
 }
 "#;

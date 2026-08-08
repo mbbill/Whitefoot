@@ -11,7 +11,7 @@ fn main() -> own unit traps {
     let p = &'r a;
     let b = deref(p) +wrap a;
     let s = Zero();
-    check b == 10_i32 else trap "drift";
+    check ieq(b, 10_i32) else trap "drift";
   }
   return unit;
 }

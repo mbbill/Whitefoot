@@ -25,12 +25,12 @@ const distance_extras: array<u8, 30> =[0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 2_u8,
 
 fn read_bits['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count: own u32) -> own Result<u64, InflateError> reads('s 'i), writes('s) {
   loop @fill_bits {
-    let enough = deref(state).bits >= count;
+    let enough = ige(deref(state).bits, count);
     if enough {
       break @fill_bits;
     } else {
       let input_length = len(deref(input));
-      let input_done = deref(state).input_offset >= input_length;
+      let input_done = ige(deref(state).input_offset, input_length);
       if input_done {
         let error = Truncated();
         return Err<u64, InflateError>(error: error);
@@ -71,15 +71,15 @@ fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u
     }
     set code = ior(code, bit);
     let count = 0_u64;
-    if bit_length == 7_u32 {
+    if ieq(bit_length, 7_u32) {
       set count = 24_u64;
-    } else if bit_length == 8_u32 {
+    } else if ieq(bit_length, 8_u32) {
       set count = 152_u64;
-    } else if bit_length == 9_u32 {
+    } else if ieq(bit_length, 9_u32) {
       set count = 112_u64;
     }
     let first_after_count = first +wrap count;
-    let at_or_after_first = code >= first;
+    let at_or_after_first = ige(code, first);
     let before_end = ilt(code, first_after_count);
     let found = band(at_or_after_first, before_end);
     if found {
@@ -104,7 +104,7 @@ fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u
     set symbol_index = symbol_index +wrap count;
     set first = ishl.wrap(first_after_count, 1_u32);
     set code = ishl.wrap(code, 1_u32);
-    if bit_length == 9_u32 {
+    if ieq(bit_length, 9_u32) {
       let error = InvalidHuffmanCode();
       return Err<u64, InflateError>(error: error);
     }
@@ -115,7 +115,7 @@ fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u
 
 fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, value: own u8) -> own Result<unit, InflateError> reads('s 'o), writes('s 'o) {
   let output_length = len(deref(out));
-  let output_full = deref(state).output_offset >= output_length;
+  let output_full = ige(deref(state).output_offset, output_length);
   if output_full {
     let error = OutputFull();
     return Err<unit, InflateError>(error: error);
@@ -138,7 +138,7 @@ fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>,
         }
       }
     }
-    let literal = symbol <= 255_u64;
+    let literal = ile(symbol, 255_u64);
     if literal {
       match cvt<u64, u8>(symbol) {
         Ok(value: byte) => {
@@ -158,7 +158,7 @@ fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>,
         }
       }
     } else {
-      let end_of_block = symbol == 256_u64;
+      let end_of_block = ieq(symbol, 256_u64);
       if end_of_block {
         break @fixed_codes;
       } else {
@@ -215,7 +215,7 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
         }
       }
     }
-    let final_block = final_value == 1_u64;
+    let final_block = ieq(final_value, 1_u64);
     let block_type = 0_u64;
     region 'block_type_call {
       match read_bits<'block_type_call, 'block_type_call>(state: &uniq 'block_type_call state, input: &'block_type_call input, count: 2_u32) {
@@ -227,7 +227,7 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
         }
       }
     }
-    let stored_block = block_type == 0_u64;
+    let stored_block = ieq(block_type, 0_u64);
     if stored_block {
       set state.hold = 0_u64;
       set state.bits = 0_u32;
@@ -263,7 +263,7 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
       let nlen_high = ishl.wrap(nlen_high_word, 8_u32);
       let stored_complement = ior(nlen_low, nlen_high);
       let expected_complement = inot(stored_length);
-      let complement_valid = stored_complement == expected_complement;
+      let complement_valid = ieq(stored_complement, expected_complement);
       if complement_valid {
       } else {
         let error = InvalidStoredLength();
@@ -284,7 +284,7 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
       }
       let copied = 0_u64;
       loop @copy_stored {
-        let copy_done = copied == copy_length;
+        let copy_done = ieq(copied, copy_length);
         if copy_done {
           break @copy_stored;
         } else {
@@ -307,7 +307,7 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
       }
       set state.input_offset = state.input_offset +wrap copy_length;
     } else {
-      let fixed_block = block_type == 1_u64;
+      let fixed_block = ieq(block_type, 1_u64);
       if fixed_block {
         region 'fixed_call {
           match decode_fixed<'fixed_call, 'fixed_call, 'fixed_call>(state: &uniq 'fixed_call state, input: &'fixed_call input, out: &uniq 'fixed_call deref(out)) {
@@ -319,7 +319,7 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
           }
         }
       } else {
-        let dynamic_block = block_type == 2_u64;
+        let dynamic_block = ieq(block_type, 2_u64);
         if dynamic_block {
           region 'dynamic_call {
             match decode_dynamic<'dynamic_call, 'dynamic_call, 'dynamic_call>(state: &uniq 'dynamic_call state, input: &'dynamic_call input, out: &uniq 'dynamic_call deref(out)) {

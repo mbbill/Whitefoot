@@ -3,7 +3,7 @@ fn main() -> own unit traps {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     let v = deref(a);
-    check v == 4_i32 else trap "arena drift";
+    check ieq(v, 4_i32) else trap "arena drift";
   }
   return unit;
 }

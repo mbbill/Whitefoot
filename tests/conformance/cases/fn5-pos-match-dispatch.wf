@@ -18,6 +18,6 @@ fn apply(op: own Op, x: own i32) -> own i32 traps {
 fn main() -> own unit traps {
   let inc_atom_0001 = Inc();
   let r = apply(op: inc_atom_0001, x: 41_i32);
-  check r == 42_i32 else trap "dispatch drift";
+  check ieq(r, 42_i32) else trap "dispatch drift";
   return unit;
 }

@@ -8,7 +8,7 @@ fn sign_of(x: own i32) -> own Sign pure {
   doc "Conditional value produced by returning from arms (canonical for return position).";
   if ilt(x, 0_i32) {
     return Neg();
-  } else if x == 0_i32 {
+  } else if ieq(x, 0_i32) {
     return Zero();
   } else {
     return Pos();
@@ -28,7 +28,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check v == 42_i32 else trap "arithmetic drift";
+    check ieq(v, 42_i32) else trap "arithmetic drift";
   }
   return unit;
 }

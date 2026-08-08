@@ -3,7 +3,7 @@ fn main() -> own unit traps {
   let i = 0_i32;
   let acc = 1_i32;
   loop @l {
-    if i >= 20_i32 {
+    if ige(i, 20_i32) {
       break @l;
     }
     set acc = acc * 7_i32;

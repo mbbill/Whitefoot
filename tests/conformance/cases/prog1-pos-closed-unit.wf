@@ -7,6 +7,6 @@ fn main() -> own unit traps {
   doc "PROG-1 closed world: helper is defined in-unit, ieq/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
   let a = 6_i32;
   let b = helper(x: a);
-  check b == 7_i32 else trap "closed-world drift";
+  check ieq(b, 7_i32) else trap "closed-world drift";
   return unit;
 }

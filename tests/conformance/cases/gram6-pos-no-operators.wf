@@ -3,12 +3,12 @@ fn main() -> own unit traps {
   let n = 4_i32;
   let acc = 0_i32;
   loop @l {
-    if n == 0_i32 {
+    if ieq(n, 0_i32) {
       break @l;
     }
     set acc = acc +wrap n;
     set n = n -wrap 1_i32;
   }
-  check acc == 10_i32 else trap "sum drift";
+  check ieq(acc, 10_i32) else trap "sum drift";
   return unit;
 }

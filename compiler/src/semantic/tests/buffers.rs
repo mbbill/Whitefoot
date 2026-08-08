@@ -19,8 +19,8 @@ fn main() -> own unit allocates(heap), traps {
   claim sized_by_make: ok because "make allocates n slots and main passes four";
   set values[2_u64] = 9_u16;
   let stored = values[2_u64];
-  check length == 4_u64 else trap "length drift";
-  check stored == 9_u16 else trap "store drift";
+  check ieq(length, 4_u64) else trap "length drift";
+  check ieq(stored, 9_u16) else trap "store drift";
   return unit;
 }
 "#;
@@ -140,8 +140,8 @@ fn main() -> own unit allocates(heap), traps {
   set columns.left[2_u64] = 7_u64;
   let length = len(columns.right);
   let value = columns.left[2_u64];
-  check length == 4_u64 else trap "length drift";
-  check value == 7_u64 else trap "value drift";
+  check ieq(length, 4_u64) else trap "length drift";
+  check ieq(value, 7_u64) else trap "value drift";
   return unit;
 }
 "#;

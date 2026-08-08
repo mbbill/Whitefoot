@@ -14,15 +14,15 @@ fn main() -> own unit traps {
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len(filter.taps);
-  check tap_count == 8_u64 else trap "FIR tap count";
+  check ieq(tap_count, 8_u64) else trap "FIR tap count";
   let frame = 0_u64;
   let output_sum = 0.0_f64;
   loop @frames {
-    let finished = frame == 64_u64;
+    let finished = ieq(frame, 64_u64);
     if finished {
       break @frames;
     }
-    let first_frame = frame == 0_u64;
+    let first_frame = ieq(frame, 0_u64);
     let sample = if first_frame {
       give 8.0_f64;
     } else {
@@ -35,7 +35,7 @@ fn main() -> own unit traps {
     let read_cursor = filter.delay.cursor;
     let output = 0.0_f64;
     loop @taps {
-      let taps_finished = tap == tap_count;
+      let taps_finished = ieq(tap, tap_count);
       if taps_finished {
         break @taps;
       }
@@ -47,7 +47,7 @@ fn main() -> own unit traps {
       let delayed = filter.delay.samples[read_cursor];
       let contribution = fmul.strict(coefficient, delayed);
       set output = fadd.strict(output, contribution);
-      let at_start = read_cursor == 0_u64;
+      let at_start = ieq(read_cursor, 0_u64);
       let previous_cursor = if at_start {
         give 7_u64;
       } else {
@@ -57,7 +57,7 @@ fn main() -> own unit traps {
       set tap = tap +wrap 1_u64;
     }
     set output_sum = fadd.strict(output_sum, output);
-    let at_end = filter.delay.cursor == 7_u64;
+    let at_end = ieq(filter.delay.cursor, 7_u64);
     let next_cursor = if at_end {
       give 0_u64;
     } else {

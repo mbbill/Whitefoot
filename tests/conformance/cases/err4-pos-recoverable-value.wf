@@ -8,6 +8,6 @@ fn main() -> own unit traps {
       give 0_i32;
     }
   }
-  check v == 0_i32 else trap "x";
+  check ieq(v, 0_i32) else trap "x";
   return unit;
 }

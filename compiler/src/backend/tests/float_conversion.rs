@@ -170,7 +170,7 @@ fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
   let value = 1.0_f32;
   let counter = 0_u32;
   loop @powers {
-    let done = counter == exponent;
+    let done = ieq(counter, exponent);
     if done {
       break @powers;
     }
@@ -184,7 +184,7 @@ fn power_f64(exponent: own u32) -> own f64 pure {
   let value = 1.0_f64;
   let counter = 0_u32;
   loop @powers {
-    let done = counter == exponent;
+    let done = ieq(counter, exponent);
     if done {
       break @powers;
     }

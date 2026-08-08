@@ -8,7 +8,7 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   let right_room = len(deref(right));
   let index_value = 0_u64;
   loop @fill {
-    let done = index_value == length;
+    let done = ieq(index_value, length);
     if done {
       break @fill;
     } else {
@@ -31,7 +31,7 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> o
   let index_value = 0_u64;
   let total = 0_u64;
   loop @fold {
-    let done = index_value == length;
+    let done = ieq(index_value, length);
     if done {
       break @fold;
     } else {
@@ -63,7 +63,7 @@ fn main() -> own unit allocates(heap), traps {
     let left_in = &'fold_region columns.left;
     let right_in = &'fold_region columns.right;
     let total = fold<'fold_region>(left: left_in, right: right_in, length: length);
-    check total == 52_u64 else trap "borrowed columns";
+    check ieq(total, 52_u64) else trap "borrowed columns";
   }
   return unit;
 }

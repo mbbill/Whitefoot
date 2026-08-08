@@ -8,6 +8,6 @@ fn positive(x: own i32) -> own i32 traps requires {
 
 fn main() -> own unit traps {
   let value = positive(x: 0_i32);
-  check value == 0_i32 else trap "unreachable body result";
+  check ieq(value, 0_i32) else trap "unreachable body result";
   return unit;
 }

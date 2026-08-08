@@ -188,7 +188,7 @@ fn main() -> own unit pure {
         "fn main() -> own unit traps {
   let a = 6_u64;
   let b = 7_u64;
-  check a <= b else trap \"six is at most seven\";
+  check ile(a, b) else trap \"six is at most seven\";
   return unit;
 }
 ",
@@ -198,7 +198,7 @@ fn main() -> own unit pure {
         "fn main() -> own unit traps {
   let a = 6_u64;
   let b = 7_u64;
-  claim ordered: a <= b because \"six is at most seven\";
+  claim ordered: ile(a, b) because \"six is at most seven\";
   return unit;
 }
 ",
@@ -256,7 +256,7 @@ fn main() -> own unit pure {
         "fn main() -> own unit pure {
   let a = 6_u64;
   let b = 7_u64;
-  if a <= b {
+  if ile(a, b) {
     return unit;
   }
   return unit;
@@ -268,7 +268,7 @@ fn main() -> own unit pure {
         "fn main() -> own unit pure {
   let a = 6_u64;
   let b = 7_u64;
-  let c = if a <= b {
+  let c = if ile(a, b) {
     give 1_u64;
   } else {
     give 2_u64;

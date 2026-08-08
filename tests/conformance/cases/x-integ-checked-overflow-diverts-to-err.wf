@@ -13,6 +13,6 @@ fn main() -> own unit traps {
   } else {
     give 0_i32;
   }
-  check label == 0_i32 else trap "overflow was not diverted to Err";
+  check ieq(label, 0_i32) else trap "overflow was not diverted to Err";
   return unit;
 }

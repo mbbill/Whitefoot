@@ -25,7 +25,7 @@ fn main() -> own unit traps {
       return unit;
     }
     Pos() => {
-      check d == 42_i32 else trap "drift";
+      check ieq(d, 42_i32) else trap "drift";
     }
   }
   return unit;

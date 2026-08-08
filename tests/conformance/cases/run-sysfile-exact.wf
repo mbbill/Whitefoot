@@ -14,7 +14,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
                           ReadBytes(count: n) => {
-                            let filled = n == 8_u64;
+                            let filled = ieq(n, 8_u64);
                             if filled {
                             } else {
                               return exit_status(code: 10_u8);

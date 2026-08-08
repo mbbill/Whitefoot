@@ -238,7 +238,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
         &[
             (
                 "NotFound",
-                "if c == 2_u32 {\n  if o == 1_u8 {\n    return exit_status(code: 100_u8);\n  } else {\n    return exit_status(code: 101_u8);\n  }\n} else {\n  return exit_status(code: 102_u8);\n}",
+                "if ieq(c, 2_u32) {\n  if ieq(o, 1_u8) {\n    return exit_status(code: 100_u8);\n  } else {\n    return exit_status(code: 101_u8);\n  }\n} else {\n  return exit_status(code: 102_u8);\n}",
             ),
             ("PermissionDenied", "return exit_status(code: 110_u8);"),
             ("NotDirectory", "return exit_status(code: 111_u8);"),
@@ -468,7 +468,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                         }
                       }
                     }
-                    if vacant == 0_u64 {
+                    if ieq(vacant, 0_u64) {
                     } else {
                       return exit_status(code: 212_u8);
                     }
@@ -557,7 +557,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd bytes, offset: 2_u64, capacity: 3_u64) {
                           ReadBytes(count: n) => {
-                            if n == 3_u64 {
+                            if ieq(n, 3_u64) {
                             } else {
                               return exit_status(code: 250_u8);
                             }
@@ -574,7 +574,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                     let digest = 0_u64;
                     let cursor = 0_u64;
                     loop @fold {
-                      if cursor == 8_u64 {
+                      if ieq(cursor, 8_u64) {
                         break @fold;
                       }
                       let fold_ok = ilt(cursor, 8_u64);
@@ -646,7 +646,7 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
     region 's {
       match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 0_u64) {
         Ok(value: written) => {
-          if written == 0_u64 {
+          if ieq(written, 0_u64) {
           } else {
             return exit_status(code: 210_u8);
           }
@@ -802,7 +802,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
   let attempts = 0_u64;
   let status = 44_u8;
   loop @publish {{
-    if attempts >= 200000_u64 {{
+    if ige(attempts, 200000_u64) {{
       break @publish;
     }}
     set attempts = attempts +wrap 1_u64;
@@ -1022,7 +1022,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
   let name_length = 0_u64;
   region 'a {
     let arguments = args_count<'a>(args: &'a args);
-    if arguments == 2_u64 {
+    if ieq(arguments, 2_u64) {
     } else {
       return exit_status(code: 2_u8);
     }
@@ -1097,7 +1097,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                         }
                       }
                     }
-                    if failed == 0_u8 {
+                    if ieq(failed, 0_u8) {
                     } else {
                       return exit_status(code: failed);
                     }

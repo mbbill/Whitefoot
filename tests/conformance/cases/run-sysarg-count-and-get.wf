@@ -2,7 +2,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus pure {
   doc "SYS-9: args_count is total and arg_get returns Ok at a present position and InvalidIndex beyond the last; the counted vector is the complete native one, so position 0 is the invoked name.";
   region 'a {
     let count = args_count<'a>(args: &'a args);
-    let counted = count == 3_u64;
+    let counted = ieq(count, 3_u64);
     if counted {
     } else {
       return exit_status(code: 10_u8);

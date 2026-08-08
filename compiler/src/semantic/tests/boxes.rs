@@ -9,7 +9,7 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
   let value = 41_u64;
   let owner = box_new(value);
   let loaded = deref(owner);
-  check loaded == 41_u64 else trap "box value";
+  check ieq(loaded, 41_u64) else trap "box value";
   return unit;
 }
 "#;

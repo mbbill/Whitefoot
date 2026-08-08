@@ -12,7 +12,7 @@ fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> own Result<u8, N
 fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> own Result<unit, NarrowError> reads('i 'o), writes('o), traps {
   let pixel = 0_u64;
   loop @pixels {
-    let done = pixel == 8_u64;
+    let done = ieq(pixel, 8_u64);
     if done {
       break @pixels;
     }
@@ -66,13 +66,13 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  check output[0_u64] == 0_u8 else trap "black";
-  check output[1_u64] == 255_u8 else trap "white";
-  check output[2_u64] == 85_u8 else trap "red";
-  check output[3_u64] == 85_u8 else trap "green";
-  check output[4_u64] == 85_u8 else trap "blue";
-  check output[5_u64] == 170_u8 else trap "yellow";
-  check output[6_u64] == 2_u8 else trap "low";
-  check output[7_u64] == 253_u8 else trap "high";
+  check ieq(output[0_u64], 0_u8) else trap "black";
+  check ieq(output[1_u64], 255_u8) else trap "white";
+  check ieq(output[2_u64], 85_u8) else trap "red";
+  check ieq(output[3_u64], 85_u8) else trap "green";
+  check ieq(output[4_u64], 85_u8) else trap "blue";
+  check ieq(output[5_u64], 170_u8) else trap "yellow";
+  check ieq(output[6_u64], 2_u8) else trap "low";
+  check ieq(output[7_u64], 253_u8) else trap "high";
   return unit;
 }

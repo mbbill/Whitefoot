@@ -6,6 +6,6 @@ fn dbl(x: own i32) -> own i32 pure {
 
 fn main() -> own unit traps {
   let a = dbl(x: 21_i32);
-  check a == 42_i32 else trap "x";
+  check ieq(a, 42_i32) else trap "x";
   return unit;
 }

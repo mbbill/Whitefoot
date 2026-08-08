@@ -53,8 +53,8 @@ fn requires_check_participates_in_exact_effects_and_op5_typing() {
 fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     with_semantics(
         b"fn f(a: own u64) -> own u64 traps requires {\n  \
-          let ok = a <= 8_u64;\n  \
-          check ok else trap \"bounded\";\n} {\n  \
+          let doubled = a *wrap 2_u64;\n  \
+          check ile(doubled, 16_u64) else trap \"bounded\";\n} {\n  \
           return a;\n}\n\n\
           fn main() -> own unit pure {\n  \
           return unit;\n}\n",
@@ -78,7 +78,8 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     // Reached only through the infix tail's own atom, never the expr's.
     assert_rule(
         b"fn f(xs: own array<u64, 4>, a: own u64) -> own u64 traps requires {\n  \
-          check a <= xs[1_u64] else trap \"bounded\";\n} {\n  \
+          let sum = a +wrap xs[1_u64];\n  \
+          check ile(sum, 8_u64) else trap \"bounded\";\n} {\n  \
           return a;\n}\n\n\
           fn main() -> own unit pure {\n  \
           return unit;\n}\n",

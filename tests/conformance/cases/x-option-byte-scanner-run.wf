@@ -2,7 +2,7 @@ fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> reads
   let length = len(deref(input));
   let offset = 0_u64;
   loop @scan {
-    let done = offset == length;
+    let done = ieq(offset, length);
     if done {
       break @scan;
     } else {
@@ -10,7 +10,7 @@ fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> reads
       let in_range = ilt(offset, room);
       claim offset_in_range: in_range because "the scan stops at the buffer length";
       let byte = deref(input)[offset];
-      let found = byte == needle;
+      let found = ieq(byte, needle);
       if found {
         return Some<u64>(value: offset);
       } else {
@@ -37,7 +37,7 @@ fn main() -> own unit allocates(heap), traps {
         check False() else trap "present byte was absent";
       }
       Some(value: present_offset) => {
-        check present_offset == 3_u64 else trap "present byte offset";
+        check ieq(present_offset, 3_u64) else trap "present byte offset";
       }
     }
     let missing = find_byte<'scan_region>(input: view, needle: 99_u8);

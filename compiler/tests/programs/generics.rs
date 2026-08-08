@@ -17,8 +17,8 @@ fn main() -> own unit traps {
   let wide = forward<i64>(value: -17_i64);
   let small_value = small.value;
   let wide_value = wide.value;
-  check small_value == 13_u8 else trap "cross-record small";
-  check wide_value == -17_i64 else trap "cross-record wide";
+  check ieq(small_value, 13_u8) else trap "cross-record small";
+  check ieq(wide_value, -17_i64) else trap "cross-record wide";
   return unit;
 }
 "#;

@@ -25,7 +25,7 @@ fn consume(owner: own Owner) -> own unit traps {
       let ok = ilt(0_u64, room);
       claim payload_nonempty: ok because "the transferred pair holds one byte per column";
       let byte = pair.left[0_u64];
-      check byte == 11_u8 else trap "transferred payload drift";
+      check ieq(byte, 11_u8) else trap "transferred payload drift";
     }
   }
   return unit;
@@ -128,7 +128,7 @@ fn consume(value: own Option<buffer<u8>>) -> own unit traps {
       let ok = ilt(0_u64, room);
       claim payload_nonempty: ok because "the transferred buffer holds one byte";
       let byte = bytes[0_u64];
-      check byte == 17_u8 else trap "Some payload drift";
+      check ieq(byte, 17_u8) else trap "Some payload drift";
     }
   }
   return unit;

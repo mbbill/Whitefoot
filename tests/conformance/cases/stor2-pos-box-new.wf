@@ -2,6 +2,6 @@ fn main() -> own unit allocates(heap), traps {
   doc "Creation: box_new<T>(v) returns own box<T> [STOR-2]; content is read through deref.";
   let b = box_new(5_i32);
   let v = deref(b);
-  check v == 5_i32 else trap "box drift";
+  check ieq(v, 5_i32) else trap "box drift";
   return unit;
 }

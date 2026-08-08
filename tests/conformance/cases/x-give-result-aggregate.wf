@@ -12,20 +12,20 @@ fn main() -> own unit traps {
   let first = choose(b: true_atom_0001);
   match move first {
     Ok(value: ok_value) => {
-      check ok_value == 1_u64 else trap "wrong Ok payload";
+      check ieq(ok_value, 1_u64) else trap "wrong Ok payload";
     }
     Err(error: ok_error) => {
-      check 0_u64 == 1_u64 else trap "expected Ok";
+      check ieq(0_u64, 1_u64) else trap "expected Ok";
     }
   }
   let false_atom_0002 = False();
   let second = choose(b: false_atom_0002);
   match move second {
     Ok(value: err_value) => {
-      check 0_u64 == 1_u64 else trap "expected Err";
+      check ieq(0_u64, 1_u64) else trap "expected Err";
     }
     Err(error: err_error) => {
-      check err_error == 2_u64 else trap "wrong Err payload";
+      check ieq(err_error, 2_u64) else trap "wrong Err payload";
     }
   }
   return unit;

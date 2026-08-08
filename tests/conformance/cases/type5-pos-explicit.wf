@@ -6,6 +6,6 @@ fn main() -> own unit traps {
   doc "Every let states full mode+type; the call states its type arg; types match [TYPE-5].";
   let a = 41_i32;
   let b = addk(x: a);
-  check b == 42_i32 else trap "type drift";
+  check ieq(b, 42_i32) else trap "type drift";
   return unit;
 }

@@ -4,7 +4,7 @@ fn main() -> own unit allocates(heap), traps {
   let length = len(values);
   let cursor = 0_u64;
   loop @fill {
-    if cursor == length {
+    if ieq(cursor, length) {
       break @fill;
     }
     let fill_in_range = ilt(cursor, length);
@@ -15,7 +15,7 @@ fn main() -> own unit allocates(heap), traps {
   set cursor = 0_u64;
   let total = 0_u64;
   loop @fold {
-    if cursor == length {
+    if ieq(cursor, length) {
       break @fold;
     }
     let fold_in_range = ilt(cursor, length);
@@ -24,6 +24,6 @@ fn main() -> own unit allocates(heap), traps {
     set total = total +wrap value;
     set cursor = cursor +wrap 1_u64;
   }
-  check total == 36_u64 else trap "mutable buffer checksum drift";
+  check ieq(total, 36_u64) else trap "mutable buffer checksum drift";
   return unit;
 }

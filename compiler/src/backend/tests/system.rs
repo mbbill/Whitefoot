@@ -78,7 +78,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> own u
     let total = 0_u64;
     let cursor = 0_u64;
     loop @sum {
-      let done = cursor == length;
+      let done = ieq(cursor, length);
       if done {
         break @sum;
       }
@@ -351,7 +351,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
                 match move problem {
                   CopyTooSmall(required: needed) => {
                     let untouched = bytes[0_u64];
-                    if untouched == 7_u8 {
+                    if ieq(untouched, 7_u8) {
                       let narrowed = cvt<u64, u8>(needed);
                       match narrowed {
                         Ok(value: code) => {

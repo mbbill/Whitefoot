@@ -14,7 +14,7 @@ fn make_dynamic_input() -> own buffer<u8> allocates(heap), traps {
   let input = buffer_new(72_u64, 0_u8);
   let index_value = 0_u64;
   loop @fill_dynamic_source {
-    let done = index_value == 72_u64;
+    let done = ieq(index_value, 72_u64);
     if done {
       break @fill_dynamic_source;
     } else {
@@ -32,7 +32,7 @@ fn make_dynamic_match_input() -> own buffer<u8> allocates(heap), traps {
   let input = buffer_new(82_u64, 0_u8);
   let index_value = 0_u64;
   loop @fill_dynamic_match_source {
-    let done = index_value == 82_u64;
+    let done = ieq(index_value, 82_u64);
     if done {
       break @fill_dynamic_match_source;
     } else {
@@ -50,7 +50,7 @@ fn make_literal_only_dynamic_input() -> own buffer<u8> allocates(heap), traps {
   let input = buffer_new(13_u64, 0_u8);
   let index_value = 0_u64;
   loop @fill_literal_only_dynamic_source {
-    let done = index_value == 13_u64;
+    let done = ieq(index_value, 13_u64);
     if done {
       break @fill_literal_only_dynamic_source;
     } else {
@@ -112,7 +112,7 @@ fn main() -> own unit allocates(heap), traps {
     let valid_result = inflate<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
     match move valid_result {
       Ok(value: valid_length) => {
-        check valid_length == 5_u64 else trap "stored output length";
+        check ieq(valid_length, 5_u64) else trap "stored output length";
       }
       Err(error: valid_error) => {
         check False() else trap "stored stream rejected";
@@ -124,11 +124,11 @@ fn main() -> own unit allocates(heap), traps {
   let valid_two = valid_output[2_u64];
   let valid_three = valid_output[3_u64];
   let valid_four = valid_output[4_u64];
-  check valid_zero == 104_u8 else trap "stored byte zero";
-  check valid_one == 101_u8 else trap "stored byte one";
-  check valid_two == 108_u8 else trap "stored byte two";
-  check valid_three == 108_u8 else trap "stored byte three";
-  check valid_four == 111_u8 else trap "stored byte four";
+  check ieq(valid_zero, 104_u8) else trap "stored byte zero";
+  check ieq(valid_one, 101_u8) else trap "stored byte one";
+  check ieq(valid_two, 108_u8) else trap "stored byte two";
+  check ieq(valid_three, 108_u8) else trap "stored byte three";
+  check ieq(valid_four, 111_u8) else trap "stored byte four";
   let invalid_length_input = buffer_new(6_u64, 0_u8);
   set invalid_length_input[0_u64] = 1_u8;
   set invalid_length_input[1_u64] = 1_u8;
@@ -170,7 +170,7 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let invalid_length_sentinel = invalid_length_output[0_u64];
-  check invalid_length_sentinel == 9_u8 else trap "invalid length wrote output";
+  check ieq(invalid_length_sentinel, 9_u8) else trap "invalid length wrote output";
   let truncated_input = buffer_new(4_u64, 0_u8);
   set truncated_input[0_u64] = 1_u8;
   set truncated_input[1_u64] = 2_u8;
@@ -210,7 +210,7 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let truncated_sentinel = truncated_output[0_u64];
-  check truncated_sentinel == 7_u8 else trap "truncation wrote output";
+  check ieq(truncated_sentinel, 7_u8) else trap "truncation wrote output";
   let full_input = buffer_new(7_u64, 0_u8);
   set full_input[0_u64] = 1_u8;
   set full_input[1_u64] = 2_u8;
@@ -253,7 +253,7 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let full_sentinel = full_output[0_u64];
-  check full_sentinel == 11_u8 else trap "output full wrote prefix";
+  check ieq(full_sentinel, 11_u8) else trap "output full wrote prefix";
   let fixed_literal_input = buffer_new(7_u64, 0_u8);
   set fixed_literal_input[0_u64] = 203_u8;
   set fixed_literal_input[1_u64] = 72_u8;
@@ -267,7 +267,7 @@ fn main() -> own unit allocates(heap), traps {
     let fixed_literal_result = inflate<'fixed_literal_region>(out: &uniq 'fixed_literal_region fixed_literal_output, input: move fixed_literal_input);
     match move fixed_literal_result {
       Ok(value: fixed_literal_length) => {
-        check fixed_literal_length == 5_u64 else trap "fixed literal output length";
+        check ieq(fixed_literal_length, 5_u64) else trap "fixed literal output length";
       }
       Err(error: fixed_literal_error) => {
         check False() else trap "fixed literal stream rejected";
@@ -279,11 +279,11 @@ fn main() -> own unit allocates(heap), traps {
   let fixed_literal_two = fixed_literal_output[2_u64];
   let fixed_literal_three = fixed_literal_output[3_u64];
   let fixed_literal_four = fixed_literal_output[4_u64];
-  check fixed_literal_zero == 104_u8 else trap "fixed literal byte zero";
-  check fixed_literal_one == 101_u8 else trap "fixed literal byte one";
-  check fixed_literal_two == 108_u8 else trap "fixed literal byte two";
-  check fixed_literal_three == 108_u8 else trap "fixed literal byte three";
-  check fixed_literal_four == 111_u8 else trap "fixed literal byte four";
+  check ieq(fixed_literal_zero, 104_u8) else trap "fixed literal byte zero";
+  check ieq(fixed_literal_one, 101_u8) else trap "fixed literal byte one";
+  check ieq(fixed_literal_two, 108_u8) else trap "fixed literal byte two";
+  check ieq(fixed_literal_three, 108_u8) else trap "fixed literal byte three";
+  check ieq(fixed_literal_four, 111_u8) else trap "fixed literal byte four";
   let fixed_match_input = buffer_new(5_u64, 0_u8);
   set fixed_match_input[0_u64] = 75_u8;
   set fixed_match_input[1_u64] = 76_u8;
@@ -295,7 +295,7 @@ fn main() -> own unit allocates(heap), traps {
     let fixed_match_result = inflate<'fixed_match_region>(out: &uniq 'fixed_match_region fixed_match_output, input: move fixed_match_input);
     match move fixed_match_result {
       Ok(value: fixed_match_length) => {
-        check fixed_match_length == 16_u64 else trap "fixed match output length";
+        check ieq(fixed_match_length, 16_u64) else trap "fixed match output length";
       }
       Err(error: fixed_match_error) => {
         check False() else trap "fixed match stream rejected";
@@ -304,7 +304,7 @@ fn main() -> own unit allocates(heap), traps {
   }
   let fixed_match_index = 0_u64;
   loop @check_fixed_match {
-    let fixed_match_done = fixed_match_index == 16_u64;
+    let fixed_match_done = ieq(fixed_match_index, 16_u64);
     if fixed_match_done {
       break @check_fixed_match;
     } else {
@@ -312,7 +312,7 @@ fn main() -> own unit allocates(heap), traps {
       let fixed_match_ok = ilt(fixed_match_index, fixed_match_room);
       claim fixed_match_in_output: fixed_match_ok because "the walk stops at sixteen and the output holds sixteen bytes";
       let fixed_match_byte = fixed_match_output[fixed_match_index];
-      check fixed_match_byte == 97_u8 else trap "fixed overlapping match byte";
+      check ieq(fixed_match_byte, 97_u8) else trap "fixed overlapping match byte";
       set fixed_match_index = fixed_match_index +wrap 1_u64;
     }
   }
@@ -332,7 +332,7 @@ fn main() -> own unit allocates(heap), traps {
     let fixed_phrase_result = inflate<'fixed_phrase_region>(out: &uniq 'fixed_phrase_region fixed_phrase_output, input: move fixed_phrase_input);
     match move fixed_phrase_result {
       Ok(value: fixed_phrase_length) => {
-        check fixed_phrase_length == 17_u64 else trap "fixed phrase output length";
+        check ieq(fixed_phrase_length, 17_u64) else trap "fixed phrase output length";
       }
       Err(error: fixed_phrase_error) => {
         check False() else trap "fixed phrase stream rejected";
@@ -341,7 +341,7 @@ fn main() -> own unit allocates(heap), traps {
   }
   let fixed_phrase_index = 0_u64;
   loop @check_fixed_phrase {
-    let fixed_phrase_done = fixed_phrase_index == 17_u64;
+    let fixed_phrase_done = ieq(fixed_phrase_index, 17_u64);
     if fixed_phrase_done {
       break @check_fixed_phrase;
     } else {
@@ -350,7 +350,7 @@ fn main() -> own unit allocates(heap), traps {
       claim fixed_phrase_in_output: fixed_phrase_out_ok because "the walk stops at seventeen and the output holds seventeen bytes";
       let fixed_phrase_actual = fixed_phrase_output[fixed_phrase_index];
       let fixed_phrase_wanted = fixed_phrase_expected[fixed_phrase_index];
-      check fixed_phrase_actual == fixed_phrase_wanted else trap "fixed distance-extra byte";
+      check ieq(fixed_phrase_actual, fixed_phrase_wanted) else trap "fixed distance-extra byte";
       set fixed_phrase_index = fixed_phrase_index +wrap 1_u64;
     }
   }
@@ -360,7 +360,7 @@ fn main() -> own unit allocates(heap), traps {
     let dynamic_result = inflate<'dynamic_region>(out: &uniq 'dynamic_region dynamic_output, input: move dynamic_input);
     match move dynamic_result {
       Ok(value: dynamic_length) => {
-        check dynamic_length == 100_u64 else trap "dynamic output length";
+        check ieq(dynamic_length, 100_u64) else trap "dynamic output length";
       }
       Err(error: dynamic_error) => {
         check False() else trap "dynamic stream rejected";
@@ -369,7 +369,7 @@ fn main() -> own unit allocates(heap), traps {
   }
   let dynamic_output_index = 0_u64;
   loop @check_dynamic_output {
-    let dynamic_output_done = dynamic_output_index == 100_u64;
+    let dynamic_output_done = ieq(dynamic_output_index, 100_u64);
     if dynamic_output_done {
       break @check_dynamic_output;
     } else {
@@ -378,7 +378,7 @@ fn main() -> own unit allocates(heap), traps {
       claim dynamic_in_output: dynamic_out_ok because "the walk stops at one hundred and the output holds one hundred bytes";
       let dynamic_actual = dynamic_output[dynamic_output_index];
       let dynamic_wanted = dynamic_expected_bytes[dynamic_output_index];
-      check dynamic_actual == dynamic_wanted else trap "dynamic output byte";
+      check ieq(dynamic_actual, dynamic_wanted) else trap "dynamic output byte";
       set dynamic_output_index = dynamic_output_index +wrap 1_u64;
     }
   }
@@ -388,7 +388,7 @@ fn main() -> own unit allocates(heap), traps {
     let literal_only_result = inflate<'literal_only_region>(out: &uniq 'literal_only_region literal_only_output, input: move literal_only_input);
     match move literal_only_result {
       Ok(value: literal_only_length) => {
-        check literal_only_length == 1_u64 else trap "literal-only dynamic output length";
+        check ieq(literal_only_length, 1_u64) else trap "literal-only dynamic output length";
       }
       Err(error: literal_only_error) => {
         check False() else trap "literal-only dynamic stream rejected";
@@ -396,14 +396,14 @@ fn main() -> own unit allocates(heap), traps {
     }
   }
   let literal_only_byte = literal_only_output[0_u64];
-  check literal_only_byte == 65_u8 else trap "literal-only dynamic output byte";
+  check ieq(literal_only_byte, 65_u8) else trap "literal-only dynamic output byte";
   let dynamic_match_input = make_dynamic_match_input();
   let dynamic_match_output = buffer_new(400_u64, 0_u8);
   region 'dynamic_match_region {
     let dynamic_match_result = inflate<'dynamic_match_region>(out: &uniq 'dynamic_match_region dynamic_match_output, input: move dynamic_match_input);
     match move dynamic_match_result {
       Ok(value: dynamic_match_length) => {
-        check dynamic_match_length == 400_u64 else trap "dynamic match output length";
+        check ieq(dynamic_match_length, 400_u64) else trap "dynamic match output length";
       }
       Err(error: dynamic_match_error) => {
         check False() else trap "dynamic match stream rejected";
@@ -412,14 +412,14 @@ fn main() -> own unit allocates(heap), traps {
   }
   let dynamic_match_repeat = 0_u64;
   loop @check_dynamic_match_repeats {
-    let all_repeats_checked = dynamic_match_repeat == 4_u64;
+    let all_repeats_checked = ieq(dynamic_match_repeat, 4_u64);
     if all_repeats_checked {
       break @check_dynamic_match_repeats;
     } else {
       let dynamic_match_base = dynamic_match_repeat *wrap 100_u64;
       let dynamic_match_index = 0_u64;
       loop @check_dynamic_match_chunk {
-        let chunk_checked = dynamic_match_index == 100_u64;
+        let chunk_checked = ieq(dynamic_match_index, 100_u64);
         if chunk_checked {
           break @check_dynamic_match_chunk;
         } else {
@@ -431,7 +431,7 @@ fn main() -> own unit allocates(heap), traps {
           let dynamic_match_exp_ok = ilt(dynamic_match_index, 100_u64);
           claim dynamic_match_in_expected: dynamic_match_exp_ok because "the chunk walk stops at one hundred";
           let dynamic_match_wanted = dynamic_expected_bytes[dynamic_match_index];
-          check dynamic_match_actual == dynamic_match_wanted else trap "dynamic match output byte";
+          check ieq(dynamic_match_actual, dynamic_match_wanted) else trap "dynamic match output byte";
           set dynamic_match_index = dynamic_match_index +wrap 1_u64;
         }
       }
@@ -441,7 +441,7 @@ fn main() -> own unit allocates(heap), traps {
   let mixed_block_input = buffer_new(78_u64, 0_u8);
   let mixed_block_input_index = 0_u64;
   loop @fill_mixed_block_input {
-    let mixed_block_input_done = mixed_block_input_index == 78_u64;
+    let mixed_block_input_done = ieq(mixed_block_input_index, 78_u64);
     if mixed_block_input_done {
       break @fill_mixed_block_input;
     } else {
@@ -457,7 +457,7 @@ fn main() -> own unit allocates(heap), traps {
     let mixed_block_result = inflate<'mixed_block_region>(out: &uniq 'mixed_block_region mixed_block_output, input: move mixed_block_input);
     match move mixed_block_result {
       Ok(value: mixed_block_length) => {
-        check mixed_block_length == 105_u64 else trap "mixed block output length";
+        check ieq(mixed_block_length, 105_u64) else trap "mixed block output length";
       }
       Err(error: mixed_block_error) => {
         check False() else trap "mixed block stream rejected";
@@ -466,7 +466,7 @@ fn main() -> own unit allocates(heap), traps {
   }
   let mixed_block_index = 0_u64;
   loop @check_mixed_block_prefix {
-    let mixed_block_prefix_done = mixed_block_index == 100_u64;
+    let mixed_block_prefix_done = ieq(mixed_block_index, 100_u64);
     if mixed_block_prefix_done {
       break @check_mixed_block_prefix;
     } else {
@@ -477,7 +477,7 @@ fn main() -> own unit allocates(heap), traps {
       let mixed_exp_ok = ilt(mixed_block_index, 100_u64);
       claim mixed_in_expected: mixed_exp_ok because "the prefix walk stops at one hundred";
       let mixed_block_wanted = dynamic_expected_bytes[mixed_block_index];
-      check mixed_block_actual == mixed_block_wanted else trap "mixed block prefix byte";
+      check ieq(mixed_block_actual, mixed_block_wanted) else trap "mixed block prefix byte";
       set mixed_block_index = mixed_block_index +wrap 1_u64;
     }
   }
@@ -486,11 +486,11 @@ fn main() -> own unit allocates(heap), traps {
   let mixed_block_l0 = mixed_block_output[102_u64];
   let mixed_block_l1 = mixed_block_output[103_u64];
   let mixed_block_o = mixed_block_output[104_u64];
-  check mixed_block_h == 104_u8 else trap "mixed block suffix h";
-  check mixed_block_e == 101_u8 else trap "mixed block suffix e";
-  check mixed_block_l0 == 108_u8 else trap "mixed block suffix first l";
-  check mixed_block_l1 == 108_u8 else trap "mixed block suffix second l";
-  check mixed_block_o == 111_u8 else trap "mixed block suffix o";
+  check ieq(mixed_block_h, 104_u8) else trap "mixed block suffix h";
+  check ieq(mixed_block_e, 101_u8) else trap "mixed block suffix e";
+  check ieq(mixed_block_l0, 108_u8) else trap "mixed block suffix first l";
+  check ieq(mixed_block_l1, 108_u8) else trap "mixed block suffix second l";
+  check ieq(mixed_block_o, 111_u8) else trap "mixed block suffix o";
   let invalid_tree_input = buffer_new(4_u64, 0_u8);
   set invalid_tree_input[0_u64] = 5_u8;
   let invalid_tree_output = buffer_new(1_u64, 0_u8);
@@ -502,14 +502,14 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: invalid_tree_error) => {
         let invalid_tree_code = error_code(error: invalid_tree_error);
-        check invalid_tree_code == 3_u8 else trap "invalid dynamic tree misclassified";
+        check ieq(invalid_tree_code, 3_u8) else trap "invalid dynamic tree misclassified";
       }
     }
   }
   let dynamic_truncated_input = buffer_new(10_u64, 0_u8);
   let dynamic_truncated_index = 0_u64;
   loop @fill_dynamic_truncated {
-    let dynamic_truncated_filled = dynamic_truncated_index == 10_u64;
+    let dynamic_truncated_filled = ieq(dynamic_truncated_index, 10_u64);
     if dynamic_truncated_filled {
       break @fill_dynamic_truncated;
     } else {
@@ -529,7 +529,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: dynamic_truncated_error) => {
         let dynamic_truncated_code = error_code(error: dynamic_truncated_error);
-        check dynamic_truncated_code == 1_u8 else trap "truncated dynamic stream misclassified";
+        check ieq(dynamic_truncated_code, 1_u8) else trap "truncated dynamic stream misclassified";
       }
     }
   }
@@ -543,7 +543,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: dynamic_full_error) => {
         let dynamic_full_code = error_code(error: dynamic_full_error);
-        check dynamic_full_code == 7_u8 else trap "dynamic output shortage misclassified";
+        check ieq(dynamic_full_code, 7_u8) else trap "dynamic output shortage misclassified";
       }
     }
   }
@@ -557,7 +557,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: reserved_block_error) => {
         let reserved_block_code = error_code(error: reserved_block_error);
-        check reserved_block_code == 6_u8 else trap "reserved block type misclassified";
+        check ieq(reserved_block_code, 6_u8) else trap "reserved block type misclassified";
       }
     }
   }
@@ -571,7 +571,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: fixed_truncated_error) => {
         let fixed_truncated_code = error_code(error: fixed_truncated_error);
-        check fixed_truncated_code == 1_u8 else trap "truncated fixed stream misclassified";
+        check ieq(fixed_truncated_code, 1_u8) else trap "truncated fixed stream misclassified";
       }
     }
   }
@@ -587,7 +587,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: invalid_huffman_error) => {
         let invalid_huffman_code = error_code(error: invalid_huffman_error);
-        check invalid_huffman_code == 4_u8 else trap "reserved fixed symbol misclassified";
+        check ieq(invalid_huffman_code, 4_u8) else trap "reserved fixed symbol misclassified";
       }
     }
   }
@@ -603,7 +603,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: invalid_distance_error) => {
         let invalid_distance_code = error_code(error: invalid_distance_error);
-        check invalid_distance_code == 5_u8 else trap "distance before history misclassified";
+        check ieq(invalid_distance_code, 5_u8) else trap "distance before history misclassified";
       }
     }
   }
@@ -624,7 +624,7 @@ fn main() -> own unit allocates(heap), traps {
       }
       Err(error: fixed_full_error) => {
         let fixed_full_code = error_code(error: fixed_full_error);
-        check fixed_full_code == 7_u8 else trap "fixed output shortage misclassified";
+        check ieq(fixed_full_code, 7_u8) else trap "fixed output shortage misclassified";
       }
     }
   }

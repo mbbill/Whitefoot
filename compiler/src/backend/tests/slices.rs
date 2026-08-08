@@ -9,7 +9,7 @@ fn sum['r](values: own slice<'r, u8>) -> own u64 reads('r), traps {
   let total = 0_u64;
   let length = len(values);
   loop @items {
-    let done = offset == length;
+    let done = ieq(offset, length);
     if done {
       break @items;
     }
@@ -27,19 +27,19 @@ fn main() -> own unit allocates(heap), traps {
   region 'static_view {
     let view = slice_of(&'static_view bytes);
     let total = sum<'static_view>(values: move view);
-    check total == 10_u64 else trap "array slice";
+    check ieq(total, 10_u64) else trap "array slice";
   }
   let local = array_new<u8, 4>(3_u8);
   region 'local_view {
     let view = slice_of(&'local_view local);
     let total = sum<'local_view>(values: move view);
-    check total == 12_u64 else trap "local array slice";
+    check ieq(total, 12_u64) else trap "local array slice";
   }
   let runtime = buffer_new(4_u64, 2_u8);
   region 'runtime_view {
     let view = slice_of(&'runtime_view runtime);
     let total = sum<'runtime_view>(values: move view);
-    check total == 8_u64 else trap "buffer slice";
+    check ieq(total, 8_u64) else trap "buffer slice";
   }
   return unit;
 }
@@ -112,7 +112,7 @@ fn main() -> own unit traps {
     let borrowed_source = slice_of(&'view left);
     region 'descriptor {
       let borrowed_value = borrowed_first<'descriptor, 'view>(value: &'descriptor borrowed_source);
-      check borrowed_value == 11_u8 else trap "borrowed";
+      check ieq(borrowed_value, 11_u8) else trap "borrowed";
     }
     let initial = slice_of(&'view left);
     let passed = pass<'view>(value: move initial);
@@ -120,7 +120,7 @@ fn main() -> own unit traps {
     let passed_ok = ilt(0_u64, passed_room);
     claim passed_nonempty: passed_ok because "pass returns the two-byte view";
     let pass_value = passed[0_u64];
-    check pass_value == 11_u8 else trap "pass";
+    check ieq(pass_value, 11_u8) else trap "pass";
     let left_view = slice_of(&'view left);
     let right_view = slice_of(&'view right);
     let take_left = False();
@@ -129,13 +129,13 @@ fn main() -> own unit traps {
     let selected_ok = ilt(0_u64, selected_room);
     claim selected_nonempty: selected_ok because "choose returns one two-byte view";
     let selected_value = selected[0_u64];
-    check selected_value == 29_u8 else trap "choice";
+    check ieq(selected_value, 29_u8) else trap "choice";
     let constant = fixed_view<'view>();
     let constant_room = len(constant);
     let constant_ok = ilt(1_u64, constant_room);
     claim constant_sized: constant_ok because "fixed_view returns the two-byte constant view";
     let constant_value = constant[1_u64];
-    check constant_value == 13_u8 else trap "const";
+    check ieq(constant_value, 13_u8) else trap "const";
   }
   return unit;
 }

@@ -111,7 +111,7 @@ let made = Value(field: atom);
 let selected = match atom { Some(value: payload) => { give payload; } }
 let infix = atom + positional;
 let suffixed = made.field * named;
-let compared = atom <= generic;
+let compared = ile(atom, generic);
 let chosen = if compared { give atom; } else { give named; }
 return unit;
 }

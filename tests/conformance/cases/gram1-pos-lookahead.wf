@@ -20,7 +20,7 @@ fn main() -> own unit traps {
   }
   match s {
     Neg() => {
-      check c == 42_i32 else trap "drift";
+      check ieq(c, 42_i32) else trap "drift";
     }
     Zero() => {
       return unit;

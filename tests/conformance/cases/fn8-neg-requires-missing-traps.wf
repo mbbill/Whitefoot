@@ -1,5 +1,5 @@
 fn missing_effect(x: own i32) -> own i32 pure requires {
-  let permitted = x >= 0_i32;
+  let permitted = ige(x, 0_i32);
   check permitted else trap "x must be nonnegative";
 } {
   doc "A requirement check exhibits traps, so omitting traps from the function row violates EFF-2.";

@@ -3,7 +3,7 @@ fn main() -> own unit traps {
   let a = 4_i32;
   region 'r {
     let p = &'r a;
-    check deref(p) == 4_i32 else trap "p";
+    check ieq(deref(p), 4_i32) else trap "p";
   }
   return unit;
 }

@@ -3,13 +3,13 @@ fn main() -> own unit traps {
   let i = 0_i32;
   let sum = 0_i32;
   loop @l {
-    if i >= 5_i32 {
+    if ige(i, 5_i32) {
       break @l;
     }
     set sum = sum + i;
     set i = i + 1_i32;
   }
-  check sum == 10_i32 else trap "sum drift";
+  check ieq(sum, 10_i32) else trap "sum drift";
   let doubled = match sum *checked 2_i32 {
     Ok(value: d) => {
       give d;
@@ -18,6 +18,6 @@ fn main() -> own unit traps {
       return unit;
     }
   }
-  check doubled == 20_i32 else trap "double drift";
+  check ieq(doubled, 20_i32) else trap "double drift";
   return unit;
 }

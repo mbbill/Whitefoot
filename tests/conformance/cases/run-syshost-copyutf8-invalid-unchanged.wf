@@ -24,7 +24,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
         }
         let offset = 0_u64;
         loop @sentinel {
-          let done = offset == 8_u64;
+          let done = ieq(offset, 8_u64);
           if done {
             break @sentinel;
           } else {
@@ -32,7 +32,7 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
             let scan_ok = ilt(offset, room);
             claim offset_in_bytes: scan_ok because "the sentinel walk stops at the four-byte buffer";
             let byte = bytes[offset];
-            let intact = byte == 90_u8;
+            let intact = ieq(byte, 90_u8);
             if intact {
             } else {
               return exit_status(code: 12_u8);

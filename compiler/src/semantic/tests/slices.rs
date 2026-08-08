@@ -11,7 +11,7 @@ fn slices_retain_type_source_and_access_operations() {
 
 fn first['r](values: own slice<'r, u8>) -> own u8 reads('r), traps {
   let length = len(values);
-  check length == 2_u64 else trap "length";
+  check ieq(length, 2_u64) else trap "length";
   return values[0_u64];
 }
 
@@ -19,7 +19,7 @@ fn main() -> own unit traps {
   region 'view {
     let values = slice_of(&'view bytes);
     let value = first<'view>(values: move values);
-    check value == 4_u8 else trap "value";
+    check ieq(value, 4_u8) else trap "value";
   }
   return unit;
 }
@@ -463,7 +463,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     region 'inner {
       let view = slice_of(&'inner data);
       let length = len(view);
-      check length == 4_u64 else trap "length";
+      check ieq(length, 4_u64) else trap "length";
     }
   }
   return unit;
@@ -494,7 +494,10 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     );
 
     // [OP-1] the deleted form is the rejection, on the same footing as a
-    // written argument on any other de-argumented row.
+    // written argument on any other de-argumented row. So A1's deletion,
+    // correct on every legal call, would remove the very violation this
+    // asserts — the `derivation.rs:224` class.
+    // migrate: keep — the written `<'view, u8>` IS the subject.
     assert_rule(
         br#"fn main() -> own unit allocates(heap), traps {
   let data = buffer_new(4_u64, 0_u8);
@@ -533,7 +536,7 @@ fn main() -> own unit traps {
     let passed_ok = ilt(0_u64, passed_room);
     claim passed_sized: passed_ok because "pass returns the two-byte view of left";
     let passed_value = passed[0_u64];
-    check passed_value == 11_u8 else trap "returned slice pass through";
+    check ieq(passed_value, 11_u8) else trap "returned slice pass through";
     let left_source = slice_of(&'view left);
     let right_source = slice_of(&'view right);
     let take_left = False();
@@ -542,7 +545,7 @@ fn main() -> own unit traps {
     let selected_ok = ilt(0_u64, selected_room);
     claim selected_sized: selected_ok because "choose returns one two-byte view";
     let selected_value = selected[0_u64];
-    check selected_value == 29_u8 else trap "returned slice choice";
+    check ieq(selected_value, 29_u8) else trap "returned slice choice";
   }
   return unit;
 }

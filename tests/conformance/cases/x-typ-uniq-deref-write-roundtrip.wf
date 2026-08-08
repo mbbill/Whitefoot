@@ -5,6 +5,6 @@ fn main() -> own unit traps {
     let p = &uniq 'r a;
     set deref(p) = 42_i32;
   }
-  check a == 42_i32 else trap "uniq write lost";
+  check ieq(a, 42_i32) else trap "uniq write lost";
   return unit;
 }

@@ -9,10 +9,10 @@ fn main() -> own unit traps {
   match t {
     Num(n: v) => {
       let d = v * 2_i32;
-      check d == 42_i32 else trap "num payload drift";
+      check ieq(d, 42_i32) else trap "num payload drift";
     }
     Nil() => {
-      check 0_i32 == 1_i32 else trap "nil";
+      check ieq(0_i32, 1_i32) else trap "nil";
     }
   }
   return unit;

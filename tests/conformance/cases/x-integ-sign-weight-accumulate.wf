@@ -8,7 +8,7 @@ fn classify(x: own i32) -> own Sign pure {
   doc "Classify an integer's sign; the closed-set result is consumed by match at each call site [FN-5].";
   if ilt(x, 0_i32) {
     return Neg();
-  } else if x == 0_i32 {
+  } else if ieq(x, 0_i32) {
     return Zero();
   } else {
     return Pos();
@@ -38,6 +38,6 @@ fn main() -> own unit traps {
   let wc = weight(x: 7_i32);
   let s0 = wa + wb;
   let s1 = s0 + wc;
-  check s1 == 3_i32 else trap "weight-sum drift";
+  check ieq(s1, 3_i32) else trap "weight-sum drift";
   return unit;
 }

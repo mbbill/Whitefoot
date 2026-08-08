@@ -16,58 +16,47 @@ const reason_write_failed: array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8,
 
 fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) {
   doc "Appends as much of one static message as the destination still holds.";
-  let capacity: own u64 = len<u8>(deref(destination));
-  let length: own u64 = len<u8>(text);
-  let at: own u64 = filled;
-  let taken: own u64 = 0_u64;
+  let capacity = len(deref(destination));
+  let length = len(text);
+  let at = filled;
+  let taken = 0_u64;
   loop @append {
-    let done: own Bool = ige<u64>(taken, length);
-    match done {
-      True() => {
-        break @append;
-      }
-      False() => {
-      }
+    let done = ige(taken, length);
+    if done {
+      break @append;
     }
-    let room: own Bool = ilt<u64>(at, capacity);
-    match room {
-      True() => {
-      }
-      False() => {
-        break @append;
-      }
+    let room = ilt(at, capacity);
+    if room {
+    } else {
+      break @append;
     }
-    let byte: own u8 = text[taken];
+    let byte = text[taken];
     set deref(destination)[at] = byte;
-    set at = iadd.wrap<u64>(at, 1_u64);
-    set taken = iadd.wrap<u64>(taken, 1_u64);
+    set at = at +wrap 1_u64;
+    set taken = taken +wrap 1_u64;
   }
   return at;
 }
 
 fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('d 's), writes('d), traps {
   doc "Copies one half-open source range into the destination at one offset.";
-  let source_room: own u64 = len<u8>(deref(source));
-  let destination_room: own u64 = len<u8>(deref(destination));
-  let target: own u64 = at;
-  let cursor: own u64 = from;
+  let source_room = len(deref(source));
+  let destination_room = len(deref(destination));
+  let target = at;
+  let cursor = from;
   loop @copy {
-    let done: own Bool = ige<u64>(cursor, to);
-    match done {
-      True() => {
-        break @copy;
-      }
-      False() => {
-      }
+    let done = ige(cursor, to);
+    if done {
+      break @copy;
     }
-    let read_ok: own Bool = ilt<u64>(cursor, source_room);
+    let read_ok = ilt(cursor, source_room);
     claim copy_read_in_source: read_ok because "callers clamp the range to the source length";
-    let byte: own u8 = deref(source)[cursor];
-    let write_ok: own Bool = ilt<u64>(target, destination_room);
+    let byte = deref(source)[cursor];
+    let write_ok = ilt(target, destination_room);
     claim copy_write_in_destination: write_ok because "callers leave room for the copied range";
     set deref(destination)[target] = byte;
-    set target = iadd.wrap<u64>(target, 1_u64);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    set target = target +wrap 1_u64;
+    set cursor = cursor +wrap 1_u64;
   }
   return target;
 }
@@ -101,128 +90,93 @@ fn inflate_status(error: own InflateError) -> own u8 pure {
 
 fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
-  let sent: own u64 = 0_u64;
+  let sent = 0_u64;
   loop @publish {
-    let pending: own Bool = ilt<u64>(sent, length);
-    match pending {
-      True() => {
-      }
-      False() => {
-        break @publish;
-      }
+    let pending = ilt(sent, length);
+    if pending {
+    } else {
+      break @publish;
     }
-    let remaining: own u64 = isub.wrap<u64>(length, sent);
+    let remaining = length -wrap sent;
     region 'attempt {
       match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
         Ok(value: written) => {
-          set sent = iadd.wrap<u64>(sent, written);
+          set sent = sent +wrap written;
         }
         Err(error: problem) => {
-          return Err(error: move problem);
+          return Err<unit, IoError>(error: move problem);
         }
       }
     }
   }
-  return Ok(value: unit);
+  return Ok<unit, IoError>(value: unit);
 }
 
 fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, reason: own u8) -> own unit reads('e 'r), writes('e 'r), external, blocks, traps {
   doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
-  let length: own u64 = 0_u64;
-  match ieq<u8>(reason, 1_u8) {
-    True() => {
-      region 'usage_view {
-        let view: own slice<'usage_view, u8> = slice_of<'usage_view, u8>(&'usage_view usage_text);
-        region 'usage_append {
-          set length = append_slice<'usage_append, 'usage_view>(destination: &uniq 'usage_append deref(report), filled: length, text: move view);
-        }
+  let length = 0_u64;
+  if ieq(reason, 1_u8) {
+    region 'usage_view {
+      let view = slice_of(&'usage_view usage_text);
+      region 'usage_append {
+        set length = append_slice<'usage_append, 'usage_view>(destination: &uniq 'usage_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 2_u8) {
-    True() => {
-      region 'unreadable_view {
-        let view: own slice<'unreadable_view, u8> = slice_of<'unreadable_view, u8>(&'unreadable_view reason_unreadable);
-        region 'unreadable_append {
-          set length = append_slice<'unreadable_append, 'unreadable_view>(destination: &uniq 'unreadable_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 2_u8) {
+    region 'unreadable_view {
+      let view = slice_of(&'unreadable_view reason_unreadable);
+      region 'unreadable_append {
+        set length = append_slice<'unreadable_append, 'unreadable_view>(destination: &uniq 'unreadable_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 3_u8) {
-    True() => {
-      region 'empty_view {
-        let view: own slice<'empty_view, u8> = slice_of<'empty_view, u8>(&'empty_view reason_empty);
-        region 'empty_append {
-          set length = append_slice<'empty_append, 'empty_view>(destination: &uniq 'empty_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 3_u8) {
+    region 'empty_view {
+      let view = slice_of(&'empty_view reason_empty);
+      region 'empty_append {
+        set length = append_slice<'empty_append, 'empty_view>(destination: &uniq 'empty_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 4_u8) {
-    True() => {
-      region 'too_large_view {
-        let view: own slice<'too_large_view, u8> = slice_of<'too_large_view, u8>(&'too_large_view reason_too_large);
-        region 'too_large_append {
-          set length = append_slice<'too_large_append, 'too_large_view>(destination: &uniq 'too_large_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 4_u8) {
+    region 'too_large_view {
+      let view = slice_of(&'too_large_view reason_too_large);
+      region 'too_large_append {
+        set length = append_slice<'too_large_append, 'too_large_view>(destination: &uniq 'too_large_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 5_u8) {
-    True() => {
-      region 'truncated_view {
-        let view: own slice<'truncated_view, u8> = slice_of<'truncated_view, u8>(&'truncated_view reason_truncated);
-        region 'truncated_append {
-          set length = append_slice<'truncated_append, 'truncated_view>(destination: &uniq 'truncated_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 5_u8) {
+    region 'truncated_view {
+      let view = slice_of(&'truncated_view reason_truncated);
+      region 'truncated_append {
+        set length = append_slice<'truncated_append, 'truncated_view>(destination: &uniq 'truncated_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 6_u8) {
-    True() => {
-      region 'malformed_view {
-        let view: own slice<'malformed_view, u8> = slice_of<'malformed_view, u8>(&'malformed_view reason_malformed);
-        region 'malformed_append {
-          set length = append_slice<'malformed_append, 'malformed_view>(destination: &uniq 'malformed_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 6_u8) {
+    region 'malformed_view {
+      let view = slice_of(&'malformed_view reason_malformed);
+      region 'malformed_append {
+        set length = append_slice<'malformed_append, 'malformed_view>(destination: &uniq 'malformed_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 7_u8) {
-    True() => {
-      region 'output_full_view {
-        let view: own slice<'output_full_view, u8> = slice_of<'output_full_view, u8>(&'output_full_view reason_output_full);
-        region 'output_full_append {
-          set length = append_slice<'output_full_append, 'output_full_view>(destination: &uniq 'output_full_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 7_u8) {
+    region 'output_full_view {
+      let view = slice_of(&'output_full_view reason_output_full);
+      region 'output_full_append {
+        set length = append_slice<'output_full_append, 'output_full_view>(destination: &uniq 'output_full_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
-  match ieq<u8>(reason, 8_u8) {
-    True() => {
-      region 'write_failed_view {
-        let view: own slice<'write_failed_view, u8> = slice_of<'write_failed_view, u8>(&'write_failed_view reason_write_failed);
-        region 'write_failed_append {
-          set length = append_slice<'write_failed_append, 'write_failed_view>(destination: &uniq 'write_failed_append deref(report), filled: length, text: move view);
-        }
+  if ieq(reason, 8_u8) {
+    region 'write_failed_view {
+      let view = slice_of(&'write_failed_view reason_write_failed);
+      region 'write_failed_append {
+        set length = append_slice<'write_failed_append, 'write_failed_view>(destination: &uniq 'write_failed_append deref(report), filled: length, text: move view);
       }
-    }
-    False() => {
     }
   }
   region 'reason_write {
@@ -238,25 +192,22 @@ fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, rea
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
-  let scratch: own buffer<u8> = buffer_new<u8>(4097_u64, 0_u8);
-  let report: own buffer<u8> = buffer_new<u8>(128_u64, 0_u8);
-  let arguments: own u64 = 0_u64;
+  let scratch = buffer_new(4097_u64, 0_u8);
+  let report = buffer_new(128_u64, 0_u8);
+  let arguments = 0_u64;
   region 'invocation {
     set arguments = args_count<'invocation>(args: &'invocation args);
   }
-  let named: own Bool = ige<u64>(arguments, 2_u64);
-  match named {
-    True() => {
+  let named = ige(arguments, 2_u64);
+  if named {
+  } else {
+    region 'usage_report {
+      publish_reason<'usage_report, 'usage_report>(err: &uniq 'usage_report err, report: &uniq 'usage_report report, reason: 1_u8);
     }
-    False() => {
-      region 'usage_report {
-        publish_reason<'usage_report, 'usage_report>(err: &uniq 'usage_report err, report: &uniq 'usage_report report, reason: 1_u8);
-      }
-      return exit_status(code: 1_u8);
-    }
+    return exit_status(code: 1_u8);
   }
-  let status: own u8 = 0_u8;
-  let filled: own u64 = 0_u64;
+  let status = 0_u8;
+  let filled = 0_u64;
   region 'path_lease {
     match arg_get<'path_lease>(args: &'path_lease args, position: 1_u64) {
       Ok(value: text) => {
@@ -265,21 +216,17 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
             region 'open_call {
               match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
                 Ok(value: file) => {
-                  let ended: own u8 = 0_u8;
+                  let ended = 0_u8;
                   loop @chunks {
-                    let room: own u64 = isub.wrap<u64>(4097_u64, filled);
-                    let full: own Bool = ieq<u64>(room, 0_u64);
-                    match full {
-                      True() => {
-                        break @chunks;
-                      }
-                      False() => {
-                      }
+                    let room = 4097_u64 -wrap filled;
+                    let full = ieq(room, 0_u64);
+                    if full {
+                      break @chunks;
                     }
                     region 'read_call {
                       match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call scratch, offset: filled, capacity: room) {
                         ReadBytes(count: taken) => {
-                          set filled = iadd.wrap<u64>(filled, taken);
+                          set filled = filled +wrap taken;
                         }
                         ReadEnd() => {
                           set ended = 1_u8;
@@ -289,20 +236,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         }
                       }
                     }
-                    match ine<u8>(ended, 0_u8) {
-                      True() => {
-                        break @chunks;
-                      }
-                      False() => {
-                      }
+                    if ine(ended, 0_u8) {
+                      break @chunks;
                     }
                   }
-                  match ieq<u8>(ended, 2_u8) {
-                    True() => {
-                      set status = 2_u8;
-                    }
-                    False() => {
-                    }
+                  if ieq(ended, 2_u8) {
+                    set status = 2_u8;
                   }
                 }
                 Err(error: problem) => {
@@ -321,44 +260,32 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
     }
   }
-  match ine<u8>(status, 0_u8) {
-    True() => {
-      region 'read_report {
-        publish_reason<'read_report, 'read_report>(err: &uniq 'read_report err, report: &uniq 'read_report report, reason: status);
-      }
-      return exit_status(code: status);
+  if ine(status, 0_u8) {
+    region 'read_report {
+      publish_reason<'read_report, 'read_report>(err: &uniq 'read_report err, report: &uniq 'read_report report, reason: status);
     }
-    False() => {
-    }
+    return exit_status(code: status);
   }
-  let empty: own Bool = ieq<u64>(filled, 0_u64);
-  match empty {
-    True() => {
-      region 'empty_report {
-        publish_reason<'empty_report, 'empty_report>(err: &uniq 'empty_report err, report: &uniq 'empty_report report, reason: 3_u8);
-      }
-      return exit_status(code: 3_u8);
+  let empty = ieq(filled, 0_u64);
+  if empty {
+    region 'empty_report {
+      publish_reason<'empty_report, 'empty_report>(err: &uniq 'empty_report err, report: &uniq 'empty_report report, reason: 3_u8);
     }
-    False() => {
-    }
+    return exit_status(code: 3_u8);
   }
-  let too_large: own Bool = igt<u64>(filled, 4096_u64);
-  match too_large {
-    True() => {
-      region 'too_large_report {
-        publish_reason<'too_large_report, 'too_large_report>(err: &uniq 'too_large_report err, report: &uniq 'too_large_report report, reason: 4_u8);
-      }
-      return exit_status(code: 4_u8);
+  let too_large = igt(filled, 4096_u64);
+  if too_large {
+    region 'too_large_report {
+      publish_reason<'too_large_report, 'too_large_report>(err: &uniq 'too_large_report err, report: &uniq 'too_large_report report, reason: 4_u8);
     }
-    False() => {
-    }
+    return exit_status(code: 4_u8);
   }
-  let stream: own buffer<u8> = buffer_new<u8>(filled, 0_u8);
+  let stream = buffer_new(filled, 0_u8);
   region 'stream_copy {
-    let copied: own u64 = copy_range<'stream_copy, 'stream_copy>(destination: &uniq 'stream_copy stream, at: 0_u64, source: &'stream_copy scratch, from: 0_u64, to: filled);
+    let copied = copy_range<'stream_copy, 'stream_copy>(destination: &uniq 'stream_copy stream, at: 0_u64, source: &'stream_copy scratch, from: 0_u64, to: filled);
   }
-  let decoded: own buffer<u8> = buffer_new<u8>(65536_u64, 0_u8);
-  let decoded_length: own u64 = 0_u64;
+  let decoded = buffer_new(65536_u64, 0_u8);
+  let decoded_length = 0_u64;
   region 'inflate_call {
     match inflate<'inflate_call>(out: &uniq 'inflate_call decoded, input: move stream) {
       Ok(value: produced) => {
@@ -369,15 +296,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
     }
   }
-  match ine<u8>(status, 0_u8) {
-    True() => {
-      region 'decode_report {
-        publish_reason<'decode_report, 'decode_report>(err: &uniq 'decode_report err, report: &uniq 'decode_report report, reason: status);
-      }
-      return exit_status(code: status);
+  if ine(status, 0_u8) {
+    region 'decode_report {
+      publish_reason<'decode_report, 'decode_report>(err: &uniq 'decode_report err, report: &uniq 'decode_report report, reason: status);
     }
-    False() => {
-    }
+    return exit_status(code: status);
   }
   region 'decoded_write {
     match publish_all<'decoded_write, 'decoded_write>(output: &uniq 'decoded_write out, source: &'decoded_write decoded, length: decoded_length) {
@@ -388,15 +311,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
     }
   }
-  match ine<u8>(status, 0_u8) {
-    True() => {
-      region 'write_report {
-        publish_reason<'write_report, 'write_report>(err: &uniq 'write_report err, report: &uniq 'write_report report, reason: status);
-      }
-      return exit_status(code: status);
+  if ine(status, 0_u8) {
+    region 'write_report {
+      publish_reason<'write_report, 'write_report>(err: &uniq 'write_report err, report: &uniq 'write_report report, reason: status);
     }
-    False() => {
-    }
+    return exit_status(code: status);
   }
   return exit_status(code: 0_u8);
 }
