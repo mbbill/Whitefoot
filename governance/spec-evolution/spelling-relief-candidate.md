@@ -1309,8 +1309,8 @@ differ sharply and only the first sizes this batch's migration.
 *Migration basis* — the canonical corpora, excluding `tests/codegen/`,
 which task 0031 records as a preserved holding corpus that no harness
 consumes, that was deliberately not respelled in the v0.22 migration,
-and on whose exclusion §5's other figures (1353 deleted-class type
-arguments, 1748 let annotations) are measured. On that basis **25**
+and on whose exclusion §5's re-measured figures (2255 deleted-class
+type arguments, 2765 let annotations) now rest. On that basis **25**
 files carry a `requires` block, one block each, and 23 of those blocks
 end in a final `check`. Three of the 23 conditions are a direct
 comparison call (all `ile`). Nineteen are Bool clause atoms whose
@@ -1510,34 +1510,82 @@ trap, every discharge judgment, and the claim lifecycle are unchanged;
 the `if` continuation joins facts exactly as the `match` continuation
 it respells [ENT-5].
 
-## 5. Corpus migration (mechanical, printer-driven; measured 2026-08-07
-against the respelled v0.22 corpus, canonical `.wf` sources only, 399
-files excluding the worktree mirror)
+## 5. Corpus migration (mechanical, printer-driven; re-measured
+2026-08-07 at this revision against the respelled v0.22 corpus, on the
+**migration basis**: every canonical `.wf` source outside `archive/`,
+the worktree mirror, and the `tests/codegen/` holding corpus — 444
+files, being `tests/conformance` 401, `research/experiments` 24, and
+`tests/programs` 19)
 
-- Deleted-class type arguments: **1353** occurrences (settled by the
-  reviewer's final per-callee enumeration across the 399 files; the
-  earlier 1357/1356 figures both admitted invalid-spelling fixtures.
-  The first draft's 1260 under-counted — it omitted the float family
-  and `box_new`; this count is the complete deleted class: every table
-  operation except the six retained). Separately: five
+Method, stated so any reader re-runs it instead of trusting this
+report: take the op column of [OP-1]'s operation table, drop the six
+retained spellings, and count in each basis file the matches of
+`(?<![A-Za-z0-9_.])<op><` after blanking double-quoted string
+literals. The lookbehind is what makes this a per-callee enumeration
+rather than a name grep: a bare `name<` sweep also catches `buffer<`,
+`array<`, `slice<`, `Result<`, every user-generic call, and every
+field access `x.len<`, and over-counts badly. Blanking string literals
+matters by exactly 3 occurrences, all `doc` text quoting a rule
+(`op6-neg-cvt-identity`, `op9-pos-buffer-new`, `stor2-pos-box-new`).
+
+- Deleted-class type arguments: **2255** occurrences (2258 before
+  string-literal exclusion). The complete deleted class — every table
+  operation except the six retained — led by `iadd.wrap`, `ieq`,
+  `len`, `ilt`, and `isub.wrap`. Separately: five
   deliberately-invalid OPNAME spellings in negative conformance
   fixtures (`irotl.trap`, `idiv.wrap`, `fneg.strict`, `iadd.bogus`,
   `add.wrap`) are NOT deleted-class sites — they never parse to a
-  table-op call, and the migration never touches them. Retained-class sites, untouched: **101**
-  (`cvt`/`reinterpret`/`array_new`/`arena_new`/`finf`/`fnan` — the F3
-  orphans now have their one legal spelling, unchanged).
-- Let annotations deleted: 1748 binders (reviewer-reproduced).
-- Bool matches to `if`/`else`: 257 `True()`-arm matches
-  (reviewer-reproduced), including the else-if flattening of the
-  corpus's Bool ladders.
-- Infix respells: ~384 add/sub/mul/div/rem sites led by 229 `iadd.wrap`
-  and 47 `iadd.trap` (reviewer-reproduced), plus the `== != <= >=`
-  sites; 56 `ilt`/`igt` sites keep named calls under O1, losing only
-  their type arguments.
-- `check` statements: **389** — untouched (C3 open, O2). Measured as
+  table-op call, the migration never touches them, and a per-callee
+  enumeration excludes them automatically because no such row exists.
+  Retained-class sites, untouched: **129** (130 before string-literal
+  exclusion) (`cvt`/`reinterpret`/`array_new`/`arena_new`/`finf`/`fnan`
+  — the F3 orphans now have their one legal spelling, unchanged).
+- Basis correction of record, applying to **every** figure in this
+  section rather than to one of them. The previously settled numbers —
+  1353 deleted-class, 101 retained-class, 1748 let annotations, 257
+  `True()` arms, 56 `ilt`/`igt`, 389 `check` statements, all "across
+  399 files" — are reproducible exactly, and were measured on a
+  narrower basis at an earlier revision: at 4530716 the corpus held
+  `tests/conformance` 380 plus `tests/programs` 19, which is precisely
+  the 399, and counting those two directories at that revision
+  *without* excluding string literals yields 1353, 101, 1748, 257, 56,
+  and 389 to the digit. That exact reproduction is what identifies the
+  basis; none of the figures was wrong for what it measured. Two
+  things then moved.
+  The basis omitted `research/experiments`, which this same section
+  migrates — the four [FN-4] discharge sites below include
+  `research/experiments/checked-law-channel/kernel.wf` and
+  `kernel_lib.wf` — so the denominator excluded files the migration
+  touches; and 21 conformance cases have landed since. Restoring the
+  research sources and re-measuring at this revision moves the
+  deleted-class figure from 1353 to 2255 (+902, +67%) and the retained
+  from 101 to 129. The migration task must size its work against 2255.
+  On the old basis alone, this revision would read 1588 and 102.
+- Let annotations deleted: **2765** binders (1748 on the superseded
+  basis, which that figure reproduces exactly).
+- Bool matches to `if`/`else`: **455** `True()`-arm matches (257 on the
+  superseded basis, reproduced exactly), including the else-if
+  flattening of the corpus's Bool ladders.
+- Infix respells: **599** add/sub/mul/div/rem sites led by 380
+  `iadd.wrap` and 71 `iadd.trap`, plus 703 `== != <= >=` sites; **238**
+  `ilt`/`igt` sites keep named calls under O1, losing only their type
+  arguments. (Superseded basis, this method: 378, 227, 45, and 56,
+  against the section's earlier `~384`, 229, 47, and 56. The `ilt`/`igt`
+  56 and the `True()` 257, 1748, 1353, 101, and 389 all reproduce to
+  the digit, so the basis is certain; the residual 2 each on
+  `iadd.wrap` and `iadd.trap` is *not* string handling — those two
+  spellings have zero string-literal occurrences at that revision — and
+  I did not chase it further, because both figures are superseded. It
+  is recorded rather than smoothed over.) The `ilt`/`igt` figure moves
+  most, 56 to 238, because the added conformance cases exercise the two
+  retained comparisons heavily; O1's cost is four times what the
+  settled figure implied, which is the one place this correction
+  bears on an open ruling.
+- `check` statements: **418** — untouched (C3 open, O2); 389 on the
+  superseded basis, reproduced exactly. Measured as
   line-leading `check` statements, which [FORM-2]'s line-bearing rule
   makes exact, and confirmed by the `else trap` count, unique to
-  `check_stmt`; the twenty additional loose-grep occurrences live
+  `check_stmt`; the additional loose-grep occurrences live
   inside `doc` strings and trap messages (both earlier figures — the
   draft's 404 and the review's 409 — were loose counts).
 - Empty-delivery-set value initializers (narrowing 2): any corpus
@@ -1649,7 +1697,7 @@ have owners):
   names become writer-reusable while `ilt`/`igt` stay reserved.
 - R3 — the derived delivery type is the batch's only new machinery;
   it ships fully worked (GIVE-1, ENT-2, ENT-5, F4, F5) and its cost
-  is recorded as proportionate to A3's 1748 deleted annotations.
+  is recorded as proportionate to A3's 2765 deleted annotations (§5).
 
 No other contradiction between the batch and v0.22 remains: every
 collision — TYPE-5's mandate, GRAM-6's no-if sentence, GRAM-7's
