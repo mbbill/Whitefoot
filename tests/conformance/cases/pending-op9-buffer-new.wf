@@ -1,5 +1,5 @@
 fn main() -> own unit allocates(heap), traps {
   doc "buffer_new allocates and fills a runtime-length flat buffer [OP-9].";
-  let b: own buffer<i32> = buffer_new<i32>(4_u64, 0_i32);
+  let b = buffer_new(4_u64, 0_i32);
   return unit;
 }

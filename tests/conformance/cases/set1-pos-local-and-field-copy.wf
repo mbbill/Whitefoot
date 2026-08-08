@@ -8,35 +8,29 @@ struct Outer {
 }
 
 fn main() -> own unit traps {
-  let number: own i32 = 1_i32;
-  let inner: own Inner = Inner(value: 2_i32);
-  let outer: own Outer = Outer(inner: move inner, other: 7_i32);
-  let flag: own Bool = True();
-  match flag {
-    True() => {
-      set number = 42_i32;
-      set outer.inner.value = number;
-    }
-    False() => {
-      set number = 9_i32;
-      set outer.inner.value = number;
-    }
+  let number = 1_i32;
+  let inner = Inner(value: 2_i32);
+  let outer = Outer(inner: move inner, other: 7_i32);
+  let flag = True();
+  if flag {
+    set number = 42_i32;
+    set outer.inner.value = number;
+  } else {
+    set number = 9_i32;
+    set outer.inner.value = number;
   }
-  let observed: own i32 = outer.inner.value;
-  check ieq<i32>(observed, 42_i32) else trap "nested set failed";
-  let preserved: own i32 = outer.other;
-  check ieq<i32>(preserved, 7_i32) else trap "sibling changed";
-  let selected: own i32 = match flag {
-    True() => {
-      set number = 43_i32;
-      give number;
-    }
-    False() => {
-      set number = 10_i32;
-      give number;
-    }
+  let observed = outer.inner.value;
+  check observed == 42_i32 else trap "nested set failed";
+  let preserved = outer.other;
+  check preserved == 7_i32 else trap "sibling changed";
+  let selected = if flag {
+    set number = 43_i32;
+    give number;
+  } else {
+    set number = 10_i32;
+    give number;
   }
-  check ieq<i32>(selected, 43_i32) else trap "value match result failed";
-  check ieq<i32>(number, 43_i32) else trap "value match set failed";
+  check selected == 43_i32 else trap "value match result failed";
+  check number == 43_i32 else trap "value match set failed";
   return unit;
 }

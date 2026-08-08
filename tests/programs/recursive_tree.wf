@@ -4,13 +4,13 @@ enum Tree {
 }
 
 fn boxed_leaf() -> own box<Tree> allocates(heap) {
-  let leaf: own Tree = Leaf();
-  return box_new<Tree>(move leaf);
+  let leaf = Leaf();
+  return box_new(move leaf);
 }
 
 fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> own box<Tree> allocates(heap) {
-  let branch: own Tree = Branch(left: move left, right: move right);
-  return box_new<Tree>(move branch);
+  let branch = Branch(left: move left, right: move right);
+  return box_new(move branch);
 }
 
 fn count['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
@@ -19,25 +19,25 @@ fn count['r](tree: &'r box<Tree>) -> own u64 reads('r), traps {
       return 1_u64;
     }
     Branch(left: l, right: r) => {
-      let left_count: own u64 = count<'r>(tree: l);
-      let right_count: own u64 = count<'r>(tree: r);
-      let children: own u64 = iadd.trap<u64>(left_count, right_count);
-      return iadd.trap<u64>(children, 1_u64);
+      let left_count = count<'r>(tree: l);
+      let right_count = count<'r>(tree: r);
+      let children = left_count + right_count;
+      return children + 1_u64;
     }
   }
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let leaf0: own box<Tree> = boxed_leaf();
-  let leaf1: own box<Tree> = boxed_leaf();
-  let leaf2: own box<Tree> = boxed_leaf();
-  let leaf3: own box<Tree> = boxed_leaf();
-  let branch0: own box<Tree> = boxed_branch(left: move leaf0, right: move leaf1);
-  let branch1: own box<Tree> = boxed_branch(left: move leaf2, right: move leaf3);
-  let root: own box<Tree> = boxed_branch(left: move branch0, right: move branch1);
+  let leaf0 = boxed_leaf();
+  let leaf1 = boxed_leaf();
+  let leaf2 = boxed_leaf();
+  let leaf3 = boxed_leaf();
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  let branch1 = boxed_branch(left: move leaf2, right: move leaf3);
+  let root = boxed_branch(left: move branch0, right: move branch1);
   region 'tree {
-    let nodes: own u64 = count<'tree>(tree: &'tree root);
-    check ieq<u64>(nodes, 7_u64) else trap "recursive tree count";
+    let nodes = count<'tree>(tree: &'tree root);
+    check nodes == 7_u64 else trap "recursive tree count";
   }
   return unit;
 }

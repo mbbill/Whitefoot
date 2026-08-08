@@ -4,72 +4,66 @@ struct Columns {
 }
 
 fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> own unit reads('r), writes('r), traps {
-  let left_room: own u64 = len<u64>(deref(left));
-  let right_room: own u64 = len<u64>(deref(right));
-  let index_value: own u64 = 0_u64;
+  let left_room = len(deref(left));
+  let right_room = len(deref(right));
+  let index_value = 0_u64;
   loop @fill {
-    let done: own Bool = ieq<u64>(index_value, length);
-    match done {
-      True() => {
-        break @fill;
-      }
-      False() => {
-        let in_left: own Bool = ilt<u64>(index_value, left_room);
-        claim left_in_range: in_left because "fill walks 0..length and callers size the left column to length";
-        set deref(left)[index_value] = index_value;
-        let shifted: own u64 = iadd.wrap<u64>(index_value, 10_u64);
-        let in_right: own Bool = ilt<u64>(index_value, right_room);
-        claim right_in_range: in_right because "fill walks 0..length and callers size the right column to length";
-        set deref(right)[index_value] = shifted;
-        set index_value = iadd.wrap<u64>(index_value, 1_u64);
-      }
+    let done = index_value == length;
+    if done {
+      break @fill;
+    } else {
+      let in_left = ilt(index_value, left_room);
+      claim left_in_range: in_left because "fill walks 0..length and callers size the left column to length";
+      set deref(left)[index_value] = index_value;
+      let shifted = index_value +wrap 10_u64;
+      let in_right = ilt(index_value, right_room);
+      claim right_in_range: in_right because "fill walks 0..length and callers size the right column to length";
+      set deref(right)[index_value] = shifted;
+      set index_value = index_value +wrap 1_u64;
     }
   }
   return unit;
 }
 
 fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> own u64 reads('r), traps {
-  let left_room: own u64 = len<u64>(deref(left));
-  let right_room: own u64 = len<u64>(deref(right));
-  let index_value: own u64 = 0_u64;
-  let total: own u64 = 0_u64;
+  let left_room = len(deref(left));
+  let right_room = len(deref(right));
+  let index_value = 0_u64;
+  let total = 0_u64;
   loop @fold {
-    let done: own Bool = ieq<u64>(index_value, length);
-    match done {
-      True() => {
-        break @fold;
-      }
-      False() => {
-        let in_left: own Bool = ilt<u64>(index_value, left_room);
-        claim left_in_range: in_left because "fold walks 0..length over columns sized to length";
-        let left_value: own u64 = deref(left)[index_value];
-        let in_right: own Bool = ilt<u64>(index_value, right_room);
-        claim right_in_range: in_right because "fold walks 0..length over columns sized to length";
-        let right_value: own u64 = deref(right)[index_value];
-        set total = iadd.wrap<u64>(total, left_value);
-        set total = iadd.wrap<u64>(total, right_value);
-        set index_value = iadd.wrap<u64>(index_value, 1_u64);
-      }
+    let done = index_value == length;
+    if done {
+      break @fold;
+    } else {
+      let in_left = ilt(index_value, left_room);
+      claim left_in_range: in_left because "fold walks 0..length over columns sized to length";
+      let left_value = deref(left)[index_value];
+      let in_right = ilt(index_value, right_room);
+      claim right_in_range: in_right because "fold walks 0..length over columns sized to length";
+      let right_value = deref(right)[index_value];
+      set total = total +wrap left_value;
+      set total = total +wrap right_value;
+      set index_value = index_value +wrap 1_u64;
     }
   }
   return total;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let length: own u64 = 4_u64;
-  let left: own buffer<u64> = buffer_new<u64>(length, 0_u64);
-  let right: own buffer<u64> = buffer_new<u64>(length, 0_u64);
-  let columns: own Columns = Columns(left: move left, right: move right);
+  let length = 4_u64;
+  let left = buffer_new(length, 0_u64);
+  let right = buffer_new(length, 0_u64);
+  let columns = Columns(left: move left, right: move right);
   region 'fill_region {
-    let left_out: &uniq 'fill_region buffer<u64> = &uniq 'fill_region columns.left;
-    let right_out: &uniq 'fill_region buffer<u64> = &uniq 'fill_region columns.right;
+    let left_out = &uniq 'fill_region columns.left;
+    let right_out = &uniq 'fill_region columns.right;
     fill<'fill_region>(left: move left_out, right: move right_out, length: length);
   }
   region 'fold_region {
-    let left_in: &'fold_region buffer<u64> = &'fold_region columns.left;
-    let right_in: &'fold_region buffer<u64> = &'fold_region columns.right;
-    let total: own u64 = fold<'fold_region>(left: left_in, right: right_in, length: length);
-    check ieq<u64>(total, 52_u64) else trap "borrowed columns";
+    let left_in = &'fold_region columns.left;
+    let right_in = &'fold_region columns.right;
+    let total = fold<'fold_region>(left: left_in, right: right_in, length: length);
+    check total == 52_u64 else trap "borrowed columns";
   }
   return unit;
 }

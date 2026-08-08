@@ -1,5 +1,5 @@
 fn compare(left: own Bool, right: own Bool) -> own Bool pure {
-  return ine<Bool>(left, right);
+  return left != right;
 }
 
 fn main() -> own unit pure {

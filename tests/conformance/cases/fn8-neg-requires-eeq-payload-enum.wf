@@ -4,7 +4,7 @@ enum ClausePayloadEq {
 }
 
 fn guarded(left: own ClausePayloadEq, right: own ClausePayloadEq) -> own unit traps requires {
-  let same: own Bool = eeq<ClausePayloadEq>(left, right);
+  let same = eeq(left, right);
   check same else trap "payload precondition escaped";
 } {
   return unit;

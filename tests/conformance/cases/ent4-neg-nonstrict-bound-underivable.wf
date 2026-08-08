@@ -1,7 +1,7 @@
 fn get(b: own buffer<u8>, i: own u64) -> own u8 traps {
   doc "Derivability is exact: `a - b <= c` is derivable only when the closed state contains `a - b <= c'` with c' <= c [ENT-4]. A checked `i <= room` establishes `i - room <= 0`, which does not derive the obligation's `i - room <= -1`, so the subscript is undischarged [OP-4] -- correctly, since i may equal the length.";
-  let room: own u64 = len<u8>(b);
-  let within: own Bool = ile<u64>(i, room);
+  let room = len(b);
+  let within = i <= room;
   check within else trap "offset past the length";
   return b[i];
 }

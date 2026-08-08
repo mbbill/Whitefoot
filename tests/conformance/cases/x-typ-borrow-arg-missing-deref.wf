@@ -4,10 +4,10 @@ fn takes_i32(x: own i32) -> own unit pure {
 
 fn main() -> own unit pure {
   doc "Passing a borrow where an own i32 argument is declared needs deref [TYPE-7].";
-  let a: own i32 = 7_i32;
+  let a = 7_i32;
   region 'r {
-    let p: &'r i32 = &'r a;
-    let r: own unit = takes_i32(x: p);
+    let p = &'r a;
+    let r = takes_i32(x: p);
     return unit;
   }
   return unit;

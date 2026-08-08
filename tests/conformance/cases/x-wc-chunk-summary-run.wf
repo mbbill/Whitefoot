@@ -7,125 +7,89 @@ struct Summary {
 }
 
 fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> own unit writes('r) {
-  let length: own u64 = len<u8>(input);
-  let index_value: own u64 = 0_u64;
-  let lines: own u64 = 0_u64;
-  let words: own u64 = 0_u64;
-  let previous_space: own Bool = True();
-  let first_space: own u64 = 1_u64;
-  match ieq<u64>(length, 0_u64) {
-    True() => {
-    }
-    False() => {
-      let first: own u8 = input[0_u64];
-      let first_ge_tab: own Bool = ige<u8>(first, 9_u8);
-      let first_le_cr: own Bool = ile<u8>(first, 13_u8);
-      let first_control_space: own Bool = band<Bool>(first_ge_tab, first_le_cr);
-      let first_plain_space: own Bool = ieq<u8>(first, 32_u8);
-      let first_is_space: own Bool = bor<Bool>(first_control_space, first_plain_space);
-      match first_is_space {
-        True() => {
-          set first_space = 1_u64;
-        }
-        False() => {
-          set first_space = 0_u64;
-        }
-      }
+  let length = len(input);
+  let index_value = 0_u64;
+  let lines = 0_u64;
+  let words = 0_u64;
+  let previous_space = True();
+  let first_space = 1_u64;
+  if length == 0_u64 {
+  } else {
+    let first = input[0_u64];
+    let first_ge_tab = first >= 9_u8;
+    let first_le_cr = first <= 13_u8;
+    let first_control_space = band(first_ge_tab, first_le_cr);
+    let first_plain_space = first == 32_u8;
+    let first_is_space = bor(first_control_space, first_plain_space);
+    if first_is_space {
+      set first_space = 1_u64;
+    } else {
+      set first_space = 0_u64;
     }
   }
   loop @scan {
-    let done: own Bool = ige<u64>(index_value, length);
-    match done {
-      True() => {
-        break @scan;
+    let done = index_value >= length;
+    if done {
+      break @scan;
+    } else {
+      let byte = input[index_value];
+      let newline = byte == 10_u8;
+      if newline {
+        set lines = lines +wrap 1_u64;
       }
-      False() => {
-        let byte: own u8 = input[index_value];
-        let newline: own Bool = ieq<u8>(byte, 10_u8);
-        match newline {
-          True() => {
-            set lines = iadd.wrap<u64>(lines, 1_u64);
-          }
-          False() => {
-          }
-        }
-        let ge_tab: own Bool = ige<u8>(byte, 9_u8);
-        let le_cr: own Bool = ile<u8>(byte, 13_u8);
-        let control_space: own Bool = band<Bool>(ge_tab, le_cr);
-        let plain_space: own Bool = ieq<u8>(byte, 32_u8);
-        let is_space: own Bool = bor<Bool>(control_space, plain_space);
-        let not_space: own Bool = bnot<Bool>(is_space);
-        let starts_word: own Bool = band<Bool>(previous_space, not_space);
-        match starts_word {
-          True() => {
-            set words = iadd.wrap<u64>(words, 1_u64);
-          }
-          False() => {
-          }
-        }
-        set previous_space = is_space;
-        set index_value = iadd.wrap<u64>(index_value, 1_u64);
+      let ge_tab = byte >= 9_u8;
+      let le_cr = byte <= 13_u8;
+      let control_space = band(ge_tab, le_cr);
+      let plain_space = byte == 32_u8;
+      let is_space = bor(control_space, plain_space);
+      let not_space = bnot(is_space);
+      let starts_word = band(previous_space, not_space);
+      if starts_word {
+        set words = words +wrap 1_u64;
       }
+      set previous_space = is_space;
+      set index_value = index_value +wrap 1_u64;
     }
   }
   set deref(out).lines = lines;
   set deref(out).words = words;
   set deref(out).bytes = length;
   set deref(out).first_space = first_space;
-  match previous_space {
-    True() => {
-      set deref(out).last_space = 1_u64;
-    }
-    False() => {
-      set deref(out).last_space = 0_u64;
-    }
+  if previous_space {
+    set deref(out).last_space = 1_u64;
+  } else {
+    set deref(out).last_space = 0_u64;
   }
   return unit;
 }
 
 fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> own unit reads('r), writes('r) {
-  match ieq<u64>(deref(left).bytes, 0_u64) {
-    True() => {
-      set deref(out).lines = deref(right).lines;
-      set deref(out).words = deref(right).words;
-      set deref(out).bytes = deref(right).bytes;
-      set deref(out).first_space = deref(right).first_space;
-      set deref(out).last_space = deref(right).last_space;
-      return unit;
-    }
-    False() => {
+  if deref(left).bytes == 0_u64 {
+    set deref(out).lines = deref(right).lines;
+    set deref(out).words = deref(right).words;
+    set deref(out).bytes = deref(right).bytes;
+    set deref(out).first_space = deref(right).first_space;
+    set deref(out).last_space = deref(right).last_space;
+    return unit;
+  }
+  if deref(right).bytes == 0_u64 {
+    set deref(out).lines = deref(left).lines;
+    set deref(out).words = deref(left).words;
+    set deref(out).bytes = deref(left).bytes;
+    set deref(out).first_space = deref(left).first_space;
+    set deref(out).last_space = deref(left).last_space;
+    return unit;
+  }
+  let lines = deref(left).lines +wrap deref(right).lines;
+  let raw_words = deref(left).words +wrap deref(right).words;
+  let joined = 0_u64;
+  if deref(left).last_space == 0_u64 {
+    if deref(right).first_space == 0_u64 {
+      set joined = 1_u64;
     }
   }
-  match ieq<u64>(deref(right).bytes, 0_u64) {
-    True() => {
-      set deref(out).lines = deref(left).lines;
-      set deref(out).words = deref(left).words;
-      set deref(out).bytes = deref(left).bytes;
-      set deref(out).first_space = deref(left).first_space;
-      set deref(out).last_space = deref(left).last_space;
-      return unit;
-    }
-    False() => {
-    }
-  }
-  let lines: own u64 = iadd.wrap<u64>(deref(left).lines, deref(right).lines);
-  let raw_words: own u64 = iadd.wrap<u64>(deref(left).words, deref(right).words);
-  let joined: own u64 = 0_u64;
-  match ieq<u64>(deref(left).last_space, 0_u64) {
-    True() => {
-      match ieq<u64>(deref(right).first_space, 0_u64) {
-        True() => {
-          set joined = 1_u64;
-        }
-        False() => {
-        }
-      }
-    }
-    False() => {
-    }
-  }
-  let words: own u64 = isub.wrap<u64>(raw_words, joined);
-  let bytes: own u64 = iadd.wrap<u64>(deref(left).bytes, deref(right).bytes);
+  let words = raw_words -wrap joined;
+  let bytes = deref(left).bytes +wrap deref(right).bytes;
   set deref(out).lines = lines;
   set deref(out).words = words;
   set deref(out).bytes = bytes;
@@ -135,36 +99,36 @@ fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> 
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let left_input: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);
+  let left_input = buffer_new(4_u64, 0_u8);
   set left_input[0_u64] = 97_u8;
   set left_input[1_u64] = 32_u8;
   set left_input[2_u64] = 98_u8;
   set left_input[3_u64] = 10_u8;
-  let left: own Summary = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
+  let left = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region 'left_region {
     summarize<'left_region>(out: &uniq 'left_region left, input: move left_input);
   }
-  let right_input: own buffer<u8> = buffer_new<u8>(1_u64, 99_u8);
-  let right: own Summary = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
+  let right_input = buffer_new(1_u64, 99_u8);
+  let right = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region 'right_region {
     summarize<'right_region>(out: &uniq 'right_region right, input: move right_input);
   }
-  let total: own Summary = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
+  let total = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region 'combine_region {
     combine<'combine_region>(out: &uniq 'combine_region total, left: &'combine_region left, right: &'combine_region right);
   }
-  check ieq<u64>(total.lines, 1_u64) else trap "line summary drift";
-  check ieq<u64>(total.words, 3_u64) else trap "word summary drift";
-  check ieq<u64>(total.bytes, 5_u64) else trap "byte summary drift";
-  check ieq<u64>(total.first_space, 0_u64) else trap "first-space summary drift";
-  check ieq<u64>(total.last_space, 0_u64) else trap "last-space summary drift";
-  let empty: own Summary = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 1_u64, last_space: 1_u64);
-  let copied: own Summary = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
+  check total.lines == 1_u64 else trap "line summary drift";
+  check total.words == 3_u64 else trap "word summary drift";
+  check total.bytes == 5_u64 else trap "byte summary drift";
+  check total.first_space == 0_u64 else trap "first-space summary drift";
+  check total.last_space == 0_u64 else trap "last-space summary drift";
+  let empty = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 1_u64, last_space: 1_u64);
+  let copied = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region 'identity_region {
     combine<'identity_region>(out: &uniq 'identity_region copied, left: &'identity_region empty, right: &'identity_region total);
   }
-  check ieq<u64>(copied.lines, 1_u64) else trap "identity line drift";
-  check ieq<u64>(copied.words, 3_u64) else trap "identity word drift";
-  check ieq<u64>(copied.bytes, 5_u64) else trap "identity byte drift";
+  check copied.lines == 1_u64 else trap "identity line drift";
+  check copied.words == 3_u64 else trap "identity word drift";
+  check copied.bytes == 5_u64 else trap "identity byte drift";
   return unit;
 }

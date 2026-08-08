@@ -6,29 +6,21 @@ enum Sign {
 
 fn sign_of(x: own i32) -> own Sign pure {
   doc "Conditional value produced by returning from arms (canonical for return position).";
-  match ilt<i32>(x, 0_i32) {
-    True() => {
-      return Neg();
-    }
-    False() => {
-      match ieq<i32>(x, 0_i32) {
-        True() => {
-          return Zero();
-        }
-        False() => {
-          return Pos();
-        }
-      }
-    }
+  if ilt(x, 0_i32) {
+    return Neg();
+  } else if x == 0_i32 {
+    return Zero();
+  } else {
+    return Pos();
   }
 }
 
 fn main() -> own unit traps {
   doc "let-initializer match with give: a conditional value bound, then reused.";
-  let a: own i32 = 40_i32;
+  let a = 40_i32;
   region 'r {
-    let p: &'r i32 = &'r a;
-    let v: own i32 = match iadd.checked<i32>(deref(p), 2_i32) {
+    let p = &'r a;
+    let v = match deref(p) +checked 2_i32 {
       Ok(value: w) => {
         give w;
       }
@@ -36,7 +28,7 @@ fn main() -> own unit traps {
         return unit;
       }
     }
-    check ieq<i32>(v, 42_i32) else trap "arithmetic drift";
+    check v == 42_i32 else trap "arithmetic drift";
   }
   return unit;
 }

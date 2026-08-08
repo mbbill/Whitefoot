@@ -6,108 +6,95 @@ struct Pool {
 
 fn build['r](pool: &uniq 'r Pool, depth: own u32) -> own u64 reads('r), writes('r), traps {
   doc "Build a complete tree bottom-up in two parallel buffers; index zero is the null sentinel.";
-  let leaves: own u64 = ishl.wrap<u64>(1_u64, depth);
-  let start: own u64 = deref(pool).count;
-  let index_value: own u64 = 0_u64;
+  let leaves = ishl.wrap(1_u64, depth);
+  let start = deref(pool).count;
+  let index_value = 0_u64;
   loop @leaves {
-    let done: own Bool = ige<u64>(index_value, leaves);
-    match done {
-      True() => {
-        break @leaves;
-      }
-      False() => {
-        let slot: own u64 = deref(pool).count;
-        let left_room: own u64 = len<u64>(deref(pool).left);
-        let left_ok: own Bool = ilt<u64>(slot, left_room);
-        claim leaf_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
-        set deref(pool).left[slot] = 0_u64;
-        let right_room: own u64 = len<u64>(deref(pool).right);
-        let right_ok: own Bool = ilt<u64>(slot, right_room);
-        claim leaf_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
-        set deref(pool).right[slot] = 0_u64;
-        set deref(pool).count = iadd.trap<u64>(slot, 1_u64);
-        set index_value = iadd.trap<u64>(index_value, 1_u64);
-      }
+    let done = index_value >= leaves;
+    if done {
+      break @leaves;
+    } else {
+      let slot = deref(pool).count;
+      let left_room = len(deref(pool).left);
+      let left_ok = ilt(slot, left_room);
+      claim leaf_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
+      set deref(pool).left[slot] = 0_u64;
+      let right_room = len(deref(pool).right);
+      let right_ok = ilt(slot, right_room);
+      claim leaf_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
+      set deref(pool).right[slot] = 0_u64;
+      set deref(pool).count = slot + 1_u64;
+      set index_value = index_value + 1_u64;
     }
   }
-  let width: own u64 = leaves;
+  let width = leaves;
   loop @levels {
-    let complete: own Bool = ile<u64>(width, 1_u64);
-    match complete {
-      True() => {
-        break @levels;
-      }
-      False() => {
-        let half: own u64 = ishr.wrap<u64>(width, 1_u32);
-        let next_start: own u64 = deref(pool).count;
-        let parent: own u64 = 0_u64;
-        loop @parents {
-          let parents_done: own Bool = ige<u64>(parent, half);
-          match parents_done {
-            True() => {
-              break @parents;
-            }
-            False() => {
-              let doubled: own u64 = imul.trap<u64>(parent, 2_u64);
-              let left_child: own u64 = iadd.trap<u64>(start, doubled);
-              let right_child: own u64 = iadd.trap<u64>(left_child, 1_u64);
-              let slot: own u64 = deref(pool).count;
-              let left_room: own u64 = len<u64>(deref(pool).left);
-              let left_ok: own Bool = ilt<u64>(slot, left_room);
-              claim parent_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
-              set deref(pool).left[slot] = left_child;
-              let right_room: own u64 = len<u64>(deref(pool).right);
-              let right_ok: own Bool = ilt<u64>(slot, right_room);
-              claim parent_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
-              set deref(pool).right[slot] = right_child;
-              set deref(pool).count = iadd.trap<u64>(slot, 1_u64);
-              set parent = iadd.trap<u64>(parent, 1_u64);
-            }
-          }
+    let complete = width <= 1_u64;
+    if complete {
+      break @levels;
+    } else {
+      let half = ishr.wrap(width, 1_u32);
+      let next_start = deref(pool).count;
+      let parent = 0_u64;
+      loop @parents {
+        let parents_done = parent >= half;
+        if parents_done {
+          break @parents;
+        } else {
+          let doubled = parent * 2_u64;
+          let left_child = start + doubled;
+          let right_child = left_child + 1_u64;
+          let slot = deref(pool).count;
+          let left_room = len(deref(pool).left);
+          let left_ok = ilt(slot, left_room);
+          claim parent_left_in_pool: left_ok because "main sizes the pool to hold the complete tree";
+          set deref(pool).left[slot] = left_child;
+          let right_room = len(deref(pool).right);
+          let right_ok = ilt(slot, right_room);
+          claim parent_right_in_pool: right_ok because "main sizes the pool to hold the complete tree";
+          set deref(pool).right[slot] = right_child;
+          set deref(pool).count = slot + 1_u64;
+          set parent = parent + 1_u64;
         }
-        set start = next_start;
-        set width = half;
       }
+      set start = next_start;
+      set width = half;
     }
   }
   return start;
 }
 
 fn checksum['r](pool: &'r Pool, root: own u64) -> own u64 reads('r), traps {
-  let left_room: own u64 = len<u64>(deref(pool).left);
-  let left_ok: own Bool = ilt<u64>(root, left_room);
+  let left_room = len(deref(pool).left);
+  let left_ok = ilt(root, left_room);
   claim root_reads_left: left_ok because "build returns indices inside the pool";
-  let left_child: own u64 = deref(pool).left[root];
-  let leaf: own Bool = ieq<u64>(left_child, 0_u64);
-  match leaf {
-    True() => {
-      return 1_u64;
-    }
-    False() => {
-    }
+  let left_child = deref(pool).left[root];
+  let leaf = left_child == 0_u64;
+  if leaf {
+    return 1_u64;
   }
-  let right_room: own u64 = len<u64>(deref(pool).right);
-  let right_ok: own Bool = ilt<u64>(root, right_room);
+  let right_room = len(deref(pool).right);
+  let right_ok = ilt(root, right_room);
   claim root_reads_right: right_ok because "build returns indices inside the pool";
-  let right_child: own u64 = deref(pool).right[root];
-  let left_count: own u64 = checksum<'r>(pool: pool, root: left_child);
-  let right_count: own u64 = checksum<'r>(pool: pool, root: right_child);
-  let children: own u64 = iadd.trap<u64>(left_count, right_count);
-  return iadd.trap<u64>(children, 1_u64);
+  let right_child = deref(pool).right[root];
+  let left_count = checksum<'r>(pool: pool, root: left_child);
+  let right_count = checksum<'r>(pool: pool, root: right_child);
+  let children = left_count + right_count;
+  return children + 1_u64;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let capacity: own u64 = 64_u64;
-  let left: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
-  let right: own buffer<u64> = buffer_new<u64>(capacity, 0_u64);
-  let pool: own Pool = Pool(left: move left, right: move right, count: 1_u64);
-  let depth: own u32 = 5_u32;
+  let capacity = 64_u64;
+  let left = buffer_new(capacity, 0_u64);
+  let right = buffer_new(capacity, 0_u64);
+  let pool = Pool(left: move left, right: move right, count: 1_u64);
+  let depth = 5_u32;
   region 'tree {
-    let root: own u64 = build<'tree>(pool: &uniq 'tree pool, depth: depth);
-    let nodes: own u64 = checksum<'tree>(pool: &'tree pool, root: root);
-    check ieq<u64>(nodes, 63_u64) else trap "tree checksum drift";
+    let root = build<'tree>(pool: &uniq 'tree pool, depth: depth);
+    let nodes = checksum<'tree>(pool: &'tree pool, root: root);
+    check nodes == 63_u64 else trap "tree checksum drift";
   }
-  let used: own u64 = pool.count;
-  check ieq<u64>(used, 64_u64) else trap "tree allocation drift";
+  let used = pool.count;
+  check used == 64_u64 else trap "tree allocation drift";
   return unit;
 }

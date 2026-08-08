@@ -4,12 +4,12 @@ fn opaque_length(n: own u64) -> own u64 pure {
 
 fn main() -> own unit allocates(heap), traps {
   doc "A conforming claim whose predicate is false at runtime aborts with the DIAG-3 record citing CLM-1 and the claim name. The empty length passes through a call so no fact reaches the claim [ENT-2] and CLM-2 neither proves nor refutes it. This carries the retired runtime OP-4 bounds-trap concern: out-of-bounds is now a compile-time rejection, and the claim is the runtime trap surface.";
-  let hidden: own u64 = opaque_length(n: 0_u64);
-  let b: own buffer<i64> = buffer_new<i64>(hidden, 0_i64);
-  let room: own u64 = len<i64>(b);
-  let ok: own Bool = ilt<u64>(0_u64, room);
+  let hidden = opaque_length(n: 0_u64);
+  let b = buffer_new(hidden, 0_i64);
+  let room = len(b);
+  let ok = ilt(0_u64, room);
   claim nonempty: ok because "this hostile fixture wants the trap record";
-  let x: own i64 = b[0_u64];
-  check ieq<i64>(x, 0_i64) else trap "unreachable";
+  let x = b[0_u64];
+  check x == 0_i64 else trap "unreachable";
   return unit;
 }

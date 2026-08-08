@@ -1,9 +1,9 @@
 fn first(b: own buffer<u8>, i: own u64) -> own u8 traps {
   doc "TYPE-5: a subscript states no element type; the selected type derives from the base place's buffer<u8>, so the binder's stated own u8 is the only type that matches. The dominating claim discharges the bounds obligation [OP-4, CLM-1].";
-  let n: own u64 = len<u8>(b);
-  let ok: own Bool = ilt<u64>(i, n);
+  let n = len(b);
+  let ok = ilt(i, n);
   claim offset_in_bounds: ok because "callers index below the buffer length";
-  let value: own u8 = b[i];
+  let value = b[i];
   return value;
 }
 

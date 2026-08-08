@@ -1,6 +1,6 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
   doc "SYS-8: a short success is not end of input. A file shorter than the requested range yields ReadBytes(n) with n below the capacity, and only the next call, which observes no available byte, states ReadEnd. Exactly the first n bytes of the range may have changed and the rest of the buffer is unchanged.";
-  let page: own buffer<u8> = buffer_new<u8>(8_u64, 90_u8);
+  let page = buffer_new(8_u64, 90_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -14,13 +14,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                       region 'd {
                         match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
                           ReadBytes(count: n) => {
-                            let short: own Bool = ieq<u64>(n, 3_u64);
-                            match short {
-                              True() => {
-                              }
-                              False() => {
-                                return exit_status(code: 10_u8);
-                              }
+                            let short = n == 3_u64;
+                            if short {
+                            } else {
+                              return exit_status(code: 10_u8);
                             }
                           }
                           ReadEnd() => {
@@ -32,14 +29,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         }
                       }
                     }
-                    let beyond: own u8 = page[3_u64];
-                    let intact: own Bool = ieq<u8>(beyond, 90_u8);
-                    match intact {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 13_u8);
-                      }
+                    let beyond = page[3_u64];
+                    let intact = beyond == 90_u8;
+                    if intact {
+                    } else {
+                      return exit_status(code: 13_u8);
                     }
                     region 'g {
                       region 'e {

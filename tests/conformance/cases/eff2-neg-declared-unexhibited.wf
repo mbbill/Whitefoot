@@ -4,7 +4,7 @@ fn f(x: own i32) -> own i32 traps {
 }
 
 fn main() -> own unit traps {
-  let a: own i32 = f(x: 7_i32);
-  check ieq<i32>(a, 7_i32) else trap "x";
+  let a = f(x: 7_i32);
+  check a == 7_i32 else trap "x";
   return unit;
 }

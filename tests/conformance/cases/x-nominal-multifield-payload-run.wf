@@ -6,10 +6,10 @@ enum Packet {
 fn score(packet: own Packet) -> own i32 traps {
   match move packet {
     Data(left: left_value, right: right_value, ready: ready_value) => {
-      check ieq<i32>(left_value, 20_i32) else trap "left payload drift";
-      check ieq<u64>(right_value, 22_u64) else trap "right payload drift";
+      check left_value == 20_i32 else trap "left payload drift";
+      check right_value == 22_u64 else trap "right payload drift";
       check ready_value else trap "Bool payload drift";
-      return iadd.trap<i32>(left_value, 22_i32);
+      return left_value + 22_i32;
     }
     Empty() => {
       return 0_i32;
@@ -19,9 +19,9 @@ fn score(packet: own Packet) -> own i32 traps {
 
 fn main() -> own unit traps {
   doc "Construct, pass, destructure, and validate every field of one mixed-width payload variant [GRAM-8, GRAM-10, OWN-13].";
-  let ready: own Bool = True();
-  let packet: own Packet = Data(left: 20_i32, right: 22_u64, ready: ready);
-  let result: own i32 = score(packet: move packet);
-  check ieq<i32>(result, 42_i32) else trap "multi-field payload drift";
+  let ready = True();
+  let packet = Data(left: 20_i32, right: 22_u64, ready: ready);
+  let result = score(packet: move packet);
+  check result == 42_i32 else trap "multi-field payload drift";
   return unit;
 }

@@ -7,7 +7,7 @@ contract SatMonoid {
 }
 
 fn satadd(x: own u64, y: own u64) -> own u64 pure {
-  return iadd.sat<u64>(x, y);
+  return x +sat y;
 }
 
 conform u64: SatMonoid {

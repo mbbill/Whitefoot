@@ -1,6 +1,6 @@
 fn main() -> own unit pure {
   doc "OWN-1: move of a copy value is a hard error - one spelling per meaning; copies are used bare.";
-  let flag: own Bool = ieq<u64>(1_u64, 1_u64);
-  let dup: own Bool = move flag;
+  let flag = 1_u64 == 1_u64;
+  let dup = move flag;
   return unit;
 }

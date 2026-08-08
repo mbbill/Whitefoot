@@ -1,9 +1,9 @@
 fn get(b: own buffer<i32>, i: own u64) -> own i32 traps {
   doc "A claim the closed fact state already derives is redundant [CLM-2]: the program remains accepted, the check still executes, and a conforming implementation reports one non-rejecting advisory. The first claim's passed fact [ENT-3 S3] is what derives the second.";
-  let room: own u64 = len<i32>(b);
-  let inside: own Bool = ilt<u64>(i, room);
+  let room = len(b);
+  let inside = ilt(i, room);
   claim offset_in_bounds: inside because "callers index below the buffer length";
-  let again: own Bool = ilt<u64>(i, room);
+  let again = ilt(i, room);
   claim offset_still_in_bounds: again because "restating a fact the state already carries";
   return b[i];
 }

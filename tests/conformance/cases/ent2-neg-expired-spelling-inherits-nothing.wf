@@ -1,16 +1,12 @@
 fn get(b: own buffer<u8>, pick: own Bool) -> own u8 traps {
   doc "Facts attach to terms, not to spellings. The arm-local `offset` is bounded by an executed check, but that fact dies on the edge leaving its scope [ENT-5](d) before any join, and the later binding of the same spelling is a different term inheriting nothing [ENT-2], so its subscript is undischarged [OP-4].";
-  let room: own u64 = len<u8>(b);
-  match pick {
-    True() => {
-      let offset: own u64 = 0_u64;
-      let inside: own Bool = ilt<u64>(offset, room);
-      check inside else trap "the buffer is empty";
-    }
-    False() => {
-    }
+  let room = len(b);
+  if pick {
+    let offset = 0_u64;
+    let inside = ilt(offset, room);
+    check inside else trap "the buffer is empty";
   }
-  let offset: own u64 = 0_u64;
+  let offset = 0_u64;
   return b[offset];
 }
 

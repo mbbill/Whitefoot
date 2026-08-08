@@ -4,7 +4,7 @@ fn element<const n: u64>(values: own array<u8, n>) -> own u8 pure {
 }
 
 fn main() -> own unit pure {
-  let wide: own array<u8, 4> = array_new<u8, 4>(7_u8);
-  let value: own u8 = element<4>(values: move wide);
+  let wide = array_new<u8, 4>(7_u8);
+  let value = element<4>(values: move wide);
   return unit;
 }

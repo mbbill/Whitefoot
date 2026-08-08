@@ -4,19 +4,16 @@ enum Flag {
 }
 
 fn make_ok(value: own u64) -> own Result<u64, Flag> pure {
-  return Ok(value: value);
+  return Ok<u64, Flag>(value: value);
 }
 
 fn make_err(second: own Bool) -> own Result<u64, Flag> pure {
-  match second {
-    True() => {
-      let second_atom_0001: own Flag = Second();
-      return Err(error: second_atom_0001);
-    }
-    False() => {
-      let first_atom_0002: own Flag = First();
-      return Err(error: first_atom_0002);
-    }
+  if second {
+    let second_atom_0001 = Second();
+    return Err<u64, Flag>(error: second_atom_0001);
+  } else {
+    let first_atom_0002 = First();
+    return Err<u64, Flag>(error: first_atom_0002);
   }
 }
 
@@ -39,20 +36,17 @@ fn result_code(result: own Result<u64, Flag>) -> own u64 pure {
 }
 
 fn make_some(second: own Bool) -> own Option<Flag> pure {
-  match second {
-    True() => {
-      let second_atom_0003: own Flag = Second();
-      return Some(value: second_atom_0003);
-    }
-    False() => {
-      let first_atom_0004: own Flag = First();
-      return Some(value: first_atom_0004);
-    }
+  if second {
+    let second_atom_0003 = Second();
+    return Some<Flag>(value: second_atom_0003);
+  } else {
+    let first_atom_0004 = First();
+    return Some<Flag>(value: first_atom_0004);
   }
 }
 
 fn make_none() -> own Option<Flag> pure {
-  return None();
+  return None<Flag>();
 }
 
 fn option_code(option: own Option<Flag>) -> own u64 pure {
@@ -74,27 +68,27 @@ fn option_code(option: own Option<Flag>) -> own u64 pure {
 }
 
 fn main() -> own unit traps {
-  let ok: own Result<u64, Flag> = make_ok(value: 7_u64);
-  let ok_code: own u64 = result_code(result: move ok);
-  check ieq<u64>(ok_code, 7_u64) else trap "Ok payload drift";
-  let false_atom_0005: own Bool = False();
-  let first_error: own Result<u64, Flag> = make_err(second: false_atom_0005);
-  let first_code: own u64 = result_code(result: move first_error);
-  check ieq<u64>(first_code, 10_u64) else trap "First payload drift";
-  let true_atom_0006: own Bool = True();
-  let second_error: own Result<u64, Flag> = make_err(second: true_atom_0006);
-  let second_code: own u64 = result_code(result: move second_error);
-  check ieq<u64>(second_code, 20_u64) else trap "Second payload drift";
-  let false_atom_0007: own Bool = False();
-  let some_first: own Option<Flag> = make_some(second: false_atom_0007);
-  let some_first_code: own u64 = option_code(option: move some_first);
-  check ieq<u64>(some_first_code, 40_u64) else trap "Some First payload drift";
-  let true_atom_0008: own Bool = True();
-  let some_second: own Option<Flag> = make_some(second: true_atom_0008);
-  let some_second_code: own u64 = option_code(option: move some_second);
-  check ieq<u64>(some_second_code, 50_u64) else trap "Some Second payload drift";
-  let none: own Option<Flag> = make_none();
-  let none_code: own u64 = option_code(option: move none);
-  check ieq<u64>(none_code, 30_u64) else trap "None drift";
+  let ok = make_ok(value: 7_u64);
+  let ok_code = result_code(result: move ok);
+  check ok_code == 7_u64 else trap "Ok payload drift";
+  let false_atom_0005 = False();
+  let first_error = make_err(second: false_atom_0005);
+  let first_code = result_code(result: move first_error);
+  check first_code == 10_u64 else trap "First payload drift";
+  let true_atom_0006 = True();
+  let second_error = make_err(second: true_atom_0006);
+  let second_code = result_code(result: move second_error);
+  check second_code == 20_u64 else trap "Second payload drift";
+  let false_atom_0007 = False();
+  let some_first = make_some(second: false_atom_0007);
+  let some_first_code = option_code(option: move some_first);
+  check some_first_code == 40_u64 else trap "Some First payload drift";
+  let true_atom_0008 = True();
+  let some_second = make_some(second: true_atom_0008);
+  let some_second_code = option_code(option: move some_second);
+  check some_second_code == 50_u64 else trap "Some Second payload drift";
+  let none = make_none();
+  let none_code = option_code(option: move none);
+  check none_code == 30_u64 else trap "None drift";
   return unit;
 }

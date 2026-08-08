@@ -12,7 +12,7 @@ fn steal['r](packet: &'r Packet) -> own unit pure {
   doc "OWN-5: a payload binder derived from a shared match is non-owning and cannot move its affine referent.";
   match deref(packet) {
     Data(item: element) => {
-      let stolen: own Pair = move deref(element);
+      let stolen = move deref(element);
     }
     Empty() => {
     }

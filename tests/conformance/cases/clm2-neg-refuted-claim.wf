@@ -1,8 +1,8 @@
 fn probe(room: own u64, i: own u64) -> own unit traps {
   doc "A non-contradictory fact state that derives a claim predicate's exact negation rejects the program citing CLM-2, carrying the claim name, the predicate, and the derived negation: a claim proven to trap on every execution reaching it is a compile-time defect.";
-  let beyond: own Bool = ige<u64>(i, room);
+  let beyond = i >= room;
   claim offset_at_or_past_room: beyond because "this fixture states the offset is not below room";
-  let inside: own Bool = ilt<u64>(i, room);
+  let inside = ilt(i, room);
   claim offset_below_room: inside because "the exact negation of the fact already established";
   return unit;
 }

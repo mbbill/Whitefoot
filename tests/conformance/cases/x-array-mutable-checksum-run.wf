@@ -1,36 +1,28 @@
 fn main() -> own unit traps {
   doc "A mutable fixed array is filled and folded; the loop claims discharge its indexed writes and reads.";
-  let values: own array<u64, 8> = array_new<u64, 8>(0_u64);
-  let cursor: own u64 = 0_u64;
+  let values = array_new<u64, 8>(0_u64);
+  let cursor = 0_u64;
   loop @fill {
-    match ieq<u64>(cursor, 8_u64) {
-      True() => {
-        break @fill;
-      }
-      False() => {
-      }
+    if cursor == 8_u64 {
+      break @fill;
     }
-    let fill_in_range: own Bool = ilt<u64>(cursor, 8_u64);
+    let fill_in_range = ilt(cursor, 8_u64);
     claim fill_cursor_in_range: fill_in_range because "the fill walks 0..8 and breaks at eight";
-    set values[cursor] = iadd.wrap<u64>(cursor, 1_u64);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    set values[cursor] = cursor +wrap 1_u64;
+    set cursor = cursor +wrap 1_u64;
   }
   set cursor = 0_u64;
-  let total: own u64 = 0_u64;
+  let total = 0_u64;
   loop @fold {
-    match ieq<u64>(cursor, 8_u64) {
-      True() => {
-        break @fold;
-      }
-      False() => {
-      }
+    if cursor == 8_u64 {
+      break @fold;
     }
-    let fold_in_range: own Bool = ilt<u64>(cursor, 8_u64);
+    let fold_in_range = ilt(cursor, 8_u64);
     claim fold_cursor_in_range: fold_in_range because "the fold walks 0..8 and breaks at eight";
-    let value: own u64 = values[cursor];
-    set total = iadd.wrap<u64>(total, value);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    let value = values[cursor];
+    set total = total +wrap value;
+    set cursor = cursor +wrap 1_u64;
   }
-  check ieq<u64>(total, 36_u64) else trap "mutable array checksum drift";
+  check total == 36_u64 else trap "mutable array checksum drift";
   return unit;
 }

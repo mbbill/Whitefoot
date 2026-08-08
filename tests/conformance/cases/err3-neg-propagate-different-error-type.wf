@@ -1,7 +1,7 @@
 fn bad(x: own i64) -> own Result<i64, DivError> pure {
-  let d: own Result<i64, Overflow> = iadd.checked<i64>(x, x);
-  let v: own i64 = propagate d;
-  let r: own Result<i64, DivError> = idiv.checked<i64>(v, 2_i64);
+  let d = x +checked x;
+  let v = propagate d;
+  let r = v /checked 2_i64;
   return move r;
 }
 

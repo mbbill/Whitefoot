@@ -3,7 +3,7 @@ contract PureMember {
 }
 
 fn trapping_apply(x: own i32) -> own i32 traps {
-  check ieq<i32>(x, x) else trap "retained explicit check";
+  check x == x else trap "retained explicit check";
   return x;
 }
 

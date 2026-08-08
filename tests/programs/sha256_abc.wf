@@ -3,133 +3,121 @@ const sha256_abc_block: array<u32, 16> =[1633837952_u32, 0_u32, 0_u32, 0_u32, 0_
 const sha256_round_constants: array<u32, 64> =[1116352408_u32, 1899447441_u32, 3049323471_u32, 3921009573_u32, 961987163_u32, 1508970993_u32, 2453635748_u32, 2870763221_u32, 3624381080_u32, 310598401_u32, 607225278_u32, 1426881987_u32, 1925078388_u32, 2162078206_u32, 2614888103_u32, 3248222580_u32, 3835390401_u32, 4022224774_u32, 264347078_u32, 604807628_u32, 770255983_u32, 1249150122_u32, 1555081692_u32, 1996064986_u32, 2554220882_u32, 2821834349_u32, 2952996808_u32, 3210313671_u32, 3336571891_u32, 3584528711_u32, 113926993_u32, 338241895_u32, 666307205_u32, 773529912_u32, 1294757372_u32, 1396182291_u32, 1695183700_u32, 1986661051_u32, 2177026350_u32, 2456956037_u32, 2730485921_u32, 2820302411_u32, 3259730800_u32, 3345764771_u32, 3516065817_u32, 3600352804_u32, 4094571909_u32, 275423344_u32, 430227734_u32, 506948616_u32, 659060556_u32, 883997877_u32, 958139571_u32, 1322822218_u32, 1537002063_u32, 1747873779_u32, 1955562222_u32, 2024104815_u32, 2227730452_u32, 2361852424_u32, 2428436474_u32, 2756734187_u32, 3204031479_u32, 3329325298_u32];
 
 fn xor_three(x: own u32, y: own u32, z: own u32) -> own u32 pure {
-  let first: own u32 = ixor<u32>(x, y);
-  return ixor<u32>(first, z);
+  let first = ixor(x, y);
+  return ixor(first, z);
 }
 
 fn sha256_small_zero(word: own u32) -> own u32 pure {
-  let rotate_seven: own u32 = irotr<u32>(word, 7_u32);
-  let rotate_eighteen: own u32 = irotr<u32>(word, 18_u32);
-  let shift_three: own u32 = ishr.wrap<u32>(word, 3_u32);
+  let rotate_seven = irotr(word, 7_u32);
+  let rotate_eighteen = irotr(word, 18_u32);
+  let shift_three = ishr.wrap(word, 3_u32);
   return xor_three(x: rotate_seven, y: rotate_eighteen, z: shift_three);
 }
 
 fn sha256_small_one(word: own u32) -> own u32 pure {
-  let rotate_seventeen: own u32 = irotr<u32>(word, 17_u32);
-  let rotate_nineteen: own u32 = irotr<u32>(word, 19_u32);
-  let shift_ten: own u32 = ishr.wrap<u32>(word, 10_u32);
+  let rotate_seventeen = irotr(word, 17_u32);
+  let rotate_nineteen = irotr(word, 19_u32);
+  let shift_ten = ishr.wrap(word, 10_u32);
   return xor_three(x: rotate_seventeen, y: rotate_nineteen, z: shift_ten);
 }
 
 fn sha256_big_zero(word: own u32) -> own u32 pure {
-  let rotate_two: own u32 = irotr<u32>(word, 2_u32);
-  let rotate_thirteen: own u32 = irotr<u32>(word, 13_u32);
-  let rotate_twenty_two: own u32 = irotr<u32>(word, 22_u32);
+  let rotate_two = irotr(word, 2_u32);
+  let rotate_thirteen = irotr(word, 13_u32);
+  let rotate_twenty_two = irotr(word, 22_u32);
   return xor_three(x: rotate_two, y: rotate_thirteen, z: rotate_twenty_two);
 }
 
 fn sha256_big_one(word: own u32) -> own u32 pure {
-  let rotate_six: own u32 = irotr<u32>(word, 6_u32);
-  let rotate_eleven: own u32 = irotr<u32>(word, 11_u32);
-  let rotate_twenty_five: own u32 = irotr<u32>(word, 25_u32);
+  let rotate_six = irotr(word, 6_u32);
+  let rotate_eleven = irotr(word, 11_u32);
+  let rotate_twenty_five = irotr(word, 25_u32);
   return xor_three(x: rotate_six, y: rotate_eleven, z: rotate_twenty_five);
 }
 
 fn sha256_choose(x: own u32, y: own u32, z: own u32) -> own u32 pure {
-  let selected: own u32 = iand<u32>(x, y);
-  let inverted: own u32 = inot<u32>(x);
-  let rejected: own u32 = iand<u32>(inverted, z);
-  return ixor<u32>(selected, rejected);
+  let selected = iand(x, y);
+  let inverted = inot(x);
+  let rejected = iand(inverted, z);
+  return ixor(selected, rejected);
 }
 
 fn sha256_majority(x: own u32, y: own u32, z: own u32) -> own u32 pure {
-  let xy: own u32 = iand<u32>(x, y);
-  let xz: own u32 = iand<u32>(x, z);
-  let yz: own u32 = iand<u32>(y, z);
+  let xy = iand(x, y);
+  let xz = iand(x, z);
+  let yz = iand(y, z);
   return xor_three(x: xy, y: xz, z: yz);
 }
 
 fn sha256_abc_word_zero() -> own u32 traps {
-  let schedule: own array<u32, 64> = array_new<u32, 64>(0_u32);
-  let copy_index: own u64 = 0_u64;
+  let schedule = array_new<u32, 64>(0_u32);
+  let copy_index = 0_u64;
   loop @copy_block {
-    let copy_done: own Bool = ieq<u64>(copy_index, 16_u64);
-    match copy_done {
-      True() => {
-        break @copy_block;
-      }
-      False() => {
-      }
+    let copy_done = copy_index == 16_u64;
+    if copy_done {
+      break @copy_block;
     }
-    let copy_in_range: own Bool = ilt<u64>(copy_index, 16_u64);
+    let copy_in_range = ilt(copy_index, 16_u64);
     claim copy_index_in_block: copy_in_range because "the copy walks 0..16 and breaks at sixteen";
-    let source_word: own u32 = sha256_abc_block[copy_index];
+    let source_word = sha256_abc_block[copy_index];
     set schedule[copy_index] = source_word;
-    set copy_index = iadd.wrap<u64>(copy_index, 1_u64);
+    set copy_index = copy_index +wrap 1_u64;
   }
-  let extend_index: own u64 = 16_u64;
+  let extend_index = 16_u64;
   loop @extend_schedule {
-    let extend_done: own Bool = ieq<u64>(extend_index, 64_u64);
-    match extend_done {
-      True() => {
-        break @extend_schedule;
-      }
-      False() => {
-      }
+    let extend_done = extend_index == 64_u64;
+    if extend_done {
+      break @extend_schedule;
     }
-    let extend_lower: own Bool = ige<u64>(extend_index, 16_u64);
+    let extend_lower = extend_index >= 16_u64;
     claim extend_index_from_sixteen: extend_lower because "the extension starts at sixteen and only grows";
-    let extend_upper: own Bool = ilt<u64>(extend_index, 64_u64);
+    let extend_upper = ilt(extend_index, 64_u64);
     claim extend_index_in_schedule: extend_upper because "the extension walks 16..64 and breaks at sixty-four";
-    let index_minus_two: own u64 = isub.wrap<u64>(extend_index, 2_u64);
-    let word_minus_two: own u32 = schedule[index_minus_two];
-    let sigma_one: own u32 = sha256_small_one(word: word_minus_two);
-    let index_minus_seven: own u64 = isub.wrap<u64>(extend_index, 7_u64);
-    let word_minus_seven: own u32 = schedule[index_minus_seven];
-    let index_minus_fifteen: own u64 = isub.wrap<u64>(extend_index, 15_u64);
-    let word_minus_fifteen: own u32 = schedule[index_minus_fifteen];
-    let sigma_zero: own u32 = sha256_small_zero(word: word_minus_fifteen);
-    let index_minus_sixteen: own u64 = isub.wrap<u64>(extend_index, 16_u64);
-    let word_minus_sixteen: own u32 = schedule[index_minus_sixteen];
-    let first_sum: own u32 = iadd.wrap<u32>(word_minus_sixteen, sigma_zero);
-    let second_sum: own u32 = iadd.wrap<u32>(first_sum, word_minus_seven);
-    let extended_word: own u32 = iadd.wrap<u32>(second_sum, sigma_one);
+    let index_minus_two = extend_index -wrap 2_u64;
+    let word_minus_two = schedule[index_minus_two];
+    let sigma_one = sha256_small_one(word: word_minus_two);
+    let index_minus_seven = extend_index -wrap 7_u64;
+    let word_minus_seven = schedule[index_minus_seven];
+    let index_minus_fifteen = extend_index -wrap 15_u64;
+    let word_minus_fifteen = schedule[index_minus_fifteen];
+    let sigma_zero = sha256_small_zero(word: word_minus_fifteen);
+    let index_minus_sixteen = extend_index -wrap 16_u64;
+    let word_minus_sixteen = schedule[index_minus_sixteen];
+    let first_sum = word_minus_sixteen +wrap sigma_zero;
+    let second_sum = first_sum +wrap word_minus_seven;
+    let extended_word = second_sum +wrap sigma_one;
     set schedule[extend_index] = extended_word;
-    set extend_index = iadd.wrap<u64>(extend_index, 1_u64);
+    set extend_index = extend_index +wrap 1_u64;
   }
-  let a: own u32 = 1779033703_u32;
-  let b: own u32 = 3144134277_u32;
-  let c: own u32 = 1013904242_u32;
-  let d: own u32 = 2773480762_u32;
-  let e: own u32 = 1359893119_u32;
-  let f: own u32 = 2600822924_u32;
-  let g: own u32 = 528734635_u32;
-  let h: own u32 = 1541459225_u32;
-  let round: own u64 = 0_u64;
+  let a = 1779033703_u32;
+  let b = 3144134277_u32;
+  let c = 1013904242_u32;
+  let d = 2773480762_u32;
+  let e = 1359893119_u32;
+  let f = 2600822924_u32;
+  let g = 528734635_u32;
+  let h = 1541459225_u32;
+  let round = 0_u64;
   loop @compression_rounds {
-    let rounds_done: own Bool = ieq<u64>(round, 64_u64);
-    match rounds_done {
-      True() => {
-        break @compression_rounds;
-      }
-      False() => {
-      }
+    let rounds_done = round == 64_u64;
+    if rounds_done {
+      break @compression_rounds;
     }
-    let big_one: own u32 = sha256_big_one(word: e);
-    let choose: own u32 = sha256_choose(x: e, y: f, z: g);
-    let round_in_range: own Bool = ilt<u64>(round, 64_u64);
+    let big_one = sha256_big_one(word: e);
+    let choose = sha256_choose(x: e, y: f, z: g);
+    let round_in_range = ilt(round, 64_u64);
     claim round_in_schedule: round_in_range because "the compression walks 0..64 and breaks at sixty-four";
-    let constant: own u32 = sha256_round_constants[round];
-    let schedule_word: own u32 = schedule[round];
-    let temp_one_a: own u32 = iadd.wrap<u32>(h, big_one);
-    let temp_one_b: own u32 = iadd.wrap<u32>(temp_one_a, choose);
-    let temp_one_c: own u32 = iadd.wrap<u32>(temp_one_b, constant);
-    let temp_one: own u32 = iadd.wrap<u32>(temp_one_c, schedule_word);
-    let big_zero: own u32 = sha256_big_zero(word: a);
-    let majority: own u32 = sha256_majority(x: a, y: b, z: c);
-    let temp_two: own u32 = iadd.wrap<u32>(big_zero, majority);
-    let next_e: own u32 = iadd.wrap<u32>(d, temp_one);
-    let next_a: own u32 = iadd.wrap<u32>(temp_one, temp_two);
+    let constant = sha256_round_constants[round];
+    let schedule_word = schedule[round];
+    let temp_one_a = h +wrap big_one;
+    let temp_one_b = temp_one_a +wrap choose;
+    let temp_one_c = temp_one_b +wrap constant;
+    let temp_one = temp_one_c +wrap schedule_word;
+    let big_zero = sha256_big_zero(word: a);
+    let majority = sha256_majority(x: a, y: b, z: c);
+    let temp_two = big_zero +wrap majority;
+    let next_e = d +wrap temp_one;
+    let next_a = temp_one +wrap temp_two;
     set h = g;
     set g = f;
     set f = e;
@@ -138,27 +126,23 @@ fn sha256_abc_word_zero() -> own u32 traps {
     set c = b;
     set b = a;
     set a = next_a;
-    set round = iadd.wrap<u64>(round, 1_u64);
+    set round = round +wrap 1_u64;
   }
-  return iadd.wrap<u32>(a, 1779033703_u32);
+  return a +wrap 1779033703_u32;
 }
 
 fn main() -> own unit traps {
-  let iteration: own u64 = 0_u64;
-  let accumulated: own u32 = 0_u32;
+  let iteration = 0_u64;
+  let accumulated = 0_u32;
   loop @sustained_hashing {
-    let finished: own Bool = ieq<u64>(iteration, 1024_u64);
-    match finished {
-      True() => {
-        break @sustained_hashing;
-      }
-      False() => {
-      }
+    let finished = iteration == 1024_u64;
+    if finished {
+      break @sustained_hashing;
     }
-    let digest_word: own u32 = sha256_abc_word_zero();
-    set accumulated = iadd.wrap<u32>(accumulated, digest_word);
-    set iteration = iadd.wrap<u64>(iteration, 1_u64);
+    let digest_word = sha256_abc_word_zero();
+    set accumulated = accumulated +wrap digest_word;
+    set iteration = iteration +wrap 1_u64;
   }
-  check ieq<u32>(accumulated, 3764059136_u32) else trap "sha256 sustained workload";
+  check accumulated == 3764059136_u32 else trap "sha256 sustained workload";
   return unit;
 }

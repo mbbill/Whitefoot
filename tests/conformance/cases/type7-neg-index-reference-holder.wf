@@ -1,9 +1,9 @@
 fn main() -> own unit allocates(heap), traps {
   doc "TYPE-7 applies to an index base: a reference holder requires explicit deref(.) before indexing its referent.";
-  let items: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
+  let items = buffer_new(2_u64, 0_u8);
   region 'r {
-    let holder: &'r buffer<u8> = &'r items;
-    let value: own u8 = holder[0_u64];
+    let holder = &'r items;
+    let value = holder[0_u64];
   }
   return unit;
 }

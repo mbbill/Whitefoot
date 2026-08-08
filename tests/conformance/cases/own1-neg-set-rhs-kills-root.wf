@@ -7,7 +7,7 @@ fn take(cell: own Cell) -> own i32 pure {
 }
 
 fn main() -> own unit pure {
-  let cell: own Cell = Cell(value: 1_i32);
+  let cell = Cell(value: 1_i32);
   set cell.value = take(cell: move cell);
   return unit;
 }

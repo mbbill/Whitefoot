@@ -1,26 +1,19 @@
 fn main() -> own unit traps {
   doc "GRAM-4: let, region, loop, match(stmt), break, set, give(let-match), check, return statements.";
-  let i: own i32 = 0_i32;
+  let i = 0_i32;
   region 'r {
     loop @l {
-      match ige<i32>(i, 3_i32) {
-        True() => {
-          break @l;
-        }
-        False() => {
-        }
+      if i >= 3_i32 {
+        break @l;
       }
-      set i = iadd.wrap<i32>(i, 1_i32);
+      set i = i +wrap 1_i32;
     }
   }
-  let d: own i32 = match ieq<i32>(i, 3_i32) {
-    True() => {
-      give 7_i32;
-    }
-    False() => {
-      give 0_i32;
-    }
+  let d = if i == 3_i32 {
+    give 7_i32;
+  } else {
+    give 0_i32;
   }
-  check ieq<i32>(d, 7_i32) else trap "bad";
+  check d == 7_i32 else trap "bad";
   return unit;
 }

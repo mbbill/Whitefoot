@@ -1,5 +1,5 @@
 fn bounded(x: own i32) -> own i32 traps requires {
-  let permitted: own Bool = ige<i32>(x, 0_i32);
+  let permitted = x >= 0_i32;
   check permitted else trap "x must be nonnegative";
 } {
   doc "A checked, Bool-valued, pure-total requirement is evaluated before the function body [FN-8].";
@@ -7,7 +7,7 @@ fn bounded(x: own i32) -> own i32 traps requires {
 }
 
 fn main() -> own unit traps {
-  let value: own i32 = bounded(x: 7_i32);
-  check ieq<i32>(value, 7_i32) else trap "requires result drift";
+  let value = bounded(x: 7_i32);
+  check value == 7_i32 else trap "requires result drift";
   return unit;
 }

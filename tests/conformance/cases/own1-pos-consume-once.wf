@@ -6,7 +6,7 @@ enum Sign {
 
 fn main() -> own unit pure {
   doc "OWN-1: an affine value (own enum) is consumed by exactly one match-move.";
-  let s: own Sign = Pos();
+  let s = Pos();
   match s {
     Neg() => {
       return unit;

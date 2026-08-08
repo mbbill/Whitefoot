@@ -1,50 +1,46 @@
 fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> own Result<u8, NarrowError> pure {
-  let red_float: own f32 = cvt<u8, f32>(red);
-  let green_float: own f32 = cvt<u8, f32>(green);
-  let blue_float: own f32 = cvt<u8, f32>(blue);
-  let red_green: own f32 = fadd.strict<f32>(red_float, green_float);
-  let total: own f32 = fadd.strict<f32>(red_green, blue_float);
-  let average: own f32 = fdiv.strict<f32>(total, 3.0_f32);
-  let rounded: own f32 = froundeven<f32>(average);
+  let red_float = cvt<u8, f32>(red);
+  let green_float = cvt<u8, f32>(green);
+  let blue_float = cvt<u8, f32>(blue);
+  let red_green = fadd.strict(red_float, green_float);
+  let total = fadd.strict(red_green, blue_float);
+  let average = fdiv.strict(total, 3.0_f32);
+  let rounded = froundeven(average);
   return cvt<f32, u8>(rounded);
 }
 
 fn grayscale['i, 'o](input: &'i buffer<u8>, output: &uniq 'o buffer<u8>) -> own Result<unit, NarrowError> reads('i 'o), writes('o), traps {
-  let pixel: own u64 = 0_u64;
+  let pixel = 0_u64;
   loop @pixels {
-    let done: own Bool = ieq<u64>(pixel, 8_u64);
-    match done {
-      True() => {
-        break @pixels;
-      }
-      False() => {
-      }
+    let done = pixel == 8_u64;
+    if done {
+      break @pixels;
     }
-    let base: own u64 = imul.wrap<u64>(pixel, 3_u64);
-    let green_offset: own u64 = iadd.wrap<u64>(base, 1_u64);
-    let blue_offset: own u64 = iadd.wrap<u64>(base, 2_u64);
-    let input_room: own u64 = len<u8>(deref(input));
-    let red_ok: own Bool = ilt<u64>(base, input_room);
+    let base = pixel *wrap 3_u64;
+    let green_offset = base +wrap 1_u64;
+    let blue_offset = base +wrap 2_u64;
+    let input_room = len(deref(input));
+    let red_ok = ilt(base, input_room);
     claim red_in_input: red_ok because "eight pixels read three bytes each from a 24-byte input";
-    let red: own u8 = deref(input)[base];
-    let green_ok: own Bool = ilt<u64>(green_offset, input_room);
+    let red = deref(input)[base];
+    let green_ok = ilt(green_offset, input_room);
     claim green_in_input: green_ok because "eight pixels read three bytes each from a 24-byte input";
-    let green: own u8 = deref(input)[green_offset];
-    let blue_ok: own Bool = ilt<u64>(blue_offset, input_room);
+    let green = deref(input)[green_offset];
+    let blue_ok = ilt(blue_offset, input_room);
     claim blue_in_input: blue_ok because "eight pixels read three bytes each from a 24-byte input";
-    let blue: own u8 = deref(input)[blue_offset];
-    let value: own u8 = propagate grayscale_value(red: red, green: green, blue: blue);
-    let output_room: own u64 = len<u8>(deref(output));
-    let pixel_ok: own Bool = ilt<u64>(pixel, output_room);
+    let blue = deref(input)[blue_offset];
+    let value = propagate grayscale_value(red: red, green: green, blue: blue);
+    let output_room = len(deref(output));
+    let pixel_ok = ilt(pixel, output_room);
     claim pixel_in_output: pixel_ok because "the walk stops at the eight-pixel output";
     set deref(output)[pixel] = value;
-    set pixel = iadd.wrap<u64>(pixel, 1_u64);
+    set pixel = pixel +wrap 1_u64;
   }
-  return Ok(value: unit);
+  return Ok<unit, NarrowError>(value: unit);
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let input: own buffer<u8> = buffer_new<u8>(24_u64, 0_u8);
+  let input = buffer_new(24_u64, 0_u8);
   set input[3_u64] = 255_u8;
   set input[4_u64] = 255_u8;
   set input[5_u64] = 255_u8;
@@ -59,9 +55,9 @@ fn main() -> own unit allocates(heap), traps {
   set input[21_u64] = 254_u8;
   set input[22_u64] = 253_u8;
   set input[23_u64] = 252_u8;
-  let output: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
+  let output = buffer_new(8_u64, 0_u8);
   region 'image {
-    let result: own Result<unit, NarrowError> = grayscale<'image, 'image>(input: &'image input, output: &uniq 'image output);
+    let result = grayscale<'image, 'image>(input: &'image input, output: &uniq 'image output);
     match move result {
       Ok(value: success) => {
       }
@@ -70,13 +66,13 @@ fn main() -> own unit allocates(heap), traps {
       }
     }
   }
-  check ieq<u8>(output[0_u64], 0_u8) else trap "black";
-  check ieq<u8>(output[1_u64], 255_u8) else trap "white";
-  check ieq<u8>(output[2_u64], 85_u8) else trap "red";
-  check ieq<u8>(output[3_u64], 85_u8) else trap "green";
-  check ieq<u8>(output[4_u64], 85_u8) else trap "blue";
-  check ieq<u8>(output[5_u64], 170_u8) else trap "yellow";
-  check ieq<u8>(output[6_u64], 2_u8) else trap "low";
-  check ieq<u8>(output[7_u64], 253_u8) else trap "high";
+  check output[0_u64] == 0_u8 else trap "black";
+  check output[1_u64] == 255_u8 else trap "white";
+  check output[2_u64] == 85_u8 else trap "red";
+  check output[3_u64] == 85_u8 else trap "green";
+  check output[4_u64] == 85_u8 else trap "blue";
+  check output[5_u64] == 170_u8 else trap "yellow";
+  check output[6_u64] == 2_u8 else trap "low";
+  check output[7_u64] == 253_u8 else trap "high";
   return unit;
 }

@@ -25,402 +25,320 @@ const distance_extras: array<u8, 30> =[0_u8, 0_u8, 0_u8, 0_u8, 1_u8, 1_u8, 2_u8,
 
 fn read_bits['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, count: own u32) -> own Result<u64, InflateError> reads('s 'i), writes('s) {
   loop @fill_bits {
-    let enough: own Bool = ige<u32>(deref(state).bits, count);
-    match enough {
-      True() => {
-        break @fill_bits;
+    let enough = deref(state).bits >= count;
+    if enough {
+      break @fill_bits;
+    } else {
+      let input_length = len(deref(input));
+      let input_done = deref(state).input_offset >= input_length;
+      if input_done {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
       }
-      False() => {
-        let input_length: own u64 = len<u8>(deref(input));
-        let input_done: own Bool = ige<u64>(deref(state).input_offset, input_length);
-        match input_done {
-          True() => {
-            let error: own InflateError = Truncated();
-            return Err(error: error);
-          }
-          False() => {
-          }
-        }
-        let next_byte: own u8 = deref(input)[deref(state).input_offset];
-        let next_word: own u64 = cvt<u8, u64>(next_byte);
-        let shifted: own u64 = ishl.wrap<u64>(next_word, deref(state).bits);
-        set deref(state).hold = ior<u64>(deref(state).hold, shifted);
-        set deref(state).bits = iadd.wrap<u32>(deref(state).bits, 8_u32);
-        set deref(state).input_offset = iadd.wrap<u64>(deref(state).input_offset, 1_u64);
-      }
+      let next_byte = deref(input)[deref(state).input_offset];
+      let next_word = cvt<u8, u64>(next_byte);
+      let shifted = ishl.wrap(next_word, deref(state).bits);
+      set deref(state).hold = ior(deref(state).hold, shifted);
+      set deref(state).bits = deref(state).bits +wrap 8_u32;
+      set deref(state).input_offset = deref(state).input_offset +wrap 1_u64;
     }
   }
-  let mask_high: own u64 = ishl.wrap<u64>(1_u64, count);
-  let mask: own u64 = isub.wrap<u64>(mask_high, 1_u64);
-  let value: own u64 = iand<u64>(deref(state).hold, mask);
-  set deref(state).hold = ishr.wrap<u64>(deref(state).hold, count);
-  set deref(state).bits = isub.wrap<u32>(deref(state).bits, count);
-  return Ok(value: value);
+  let mask_high = ishl.wrap(1_u64, count);
+  let mask = mask_high -wrap 1_u64;
+  let value = iand(deref(state).hold, mask);
+  set deref(state).hold = ishr.wrap(deref(state).hold, count);
+  set deref(state).bits = deref(state).bits -wrap count;
+  return Ok<u64, InflateError>(value: value);
 }
 
 fn decode_fixed_symbol['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>) -> own Result<u64, InflateError> reads('s 'i), writes('s) {
-  let code: own u64 = 0_u64;
-  let first: own u64 = 0_u64;
-  let symbol_index: own u64 = 0_u64;
-  let bit_length: own u32 = 1_u32;
-  let decoded: own u64 = 0_u64;
+  let code = 0_u64;
+  let first = 0_u64;
+  let symbol_index = 0_u64;
+  let bit_length = 1_u32;
+  let decoded = 0_u64;
   loop @code_lengths {
-    let bit: own u64 = 0_u64;
+    let bit = 0_u64;
     region 'read_code_bit {
       match read_bits<'read_code_bit, 'read_code_bit>(state: &uniq 'read_code_bit deref(state), input: &'read_code_bit deref(input), count: 1_u32) {
         Ok(value: read_bit) => {
           set bit = read_bit;
         }
         Err(error: read_error) => {
-          return Err(error: read_error);
+          return Err<u64, InflateError>(error: read_error);
         }
       }
     }
-    set code = ior<u64>(code, bit);
-    let count: own u64 = 0_u64;
-    match ieq<u32>(bit_length, 7_u32) {
-      True() => {
-        set count = 24_u64;
-      }
-      False() => {
-        match ieq<u32>(bit_length, 8_u32) {
-          True() => {
-            set count = 152_u64;
-          }
-          False() => {
-            match ieq<u32>(bit_length, 9_u32) {
-              True() => {
-                set count = 112_u64;
-              }
-              False() => {
-              }
-            }
-          }
-        }
-      }
+    set code = ior(code, bit);
+    let count = 0_u64;
+    if bit_length == 7_u32 {
+      set count = 24_u64;
+    } else if bit_length == 8_u32 {
+      set count = 152_u64;
+    } else if bit_length == 9_u32 {
+      set count = 112_u64;
     }
-    let first_after_count: own u64 = iadd.wrap<u64>(first, count);
-    let at_or_after_first: own Bool = ige<u64>(code, first);
-    let before_end: own Bool = ilt<u64>(code, first_after_count);
-    let found: own Bool = band<Bool>(at_or_after_first, before_end);
-    match found {
-      True() => {
-        let offset: own u64 = isub.wrap<u64>(code, first);
-        let ordered: own u64 = iadd.wrap<u64>(symbol_index, offset);
-        match ilt<u64>(ordered, 24_u64) {
-          True() => {
-            set decoded = iadd.wrap<u64>(ordered, 256_u64);
-            break @code_lengths;
-          }
-          False() => {
-          }
-        }
-        match ilt<u64>(ordered, 168_u64) {
-          True() => {
-            set decoded = isub.wrap<u64>(ordered, 24_u64);
-            break @code_lengths;
-          }
-          False() => {
-          }
-        }
-        match ilt<u64>(ordered, 176_u64) {
-          True() => {
-            let tail: own u64 = isub.wrap<u64>(ordered, 168_u64);
-            set decoded = iadd.wrap<u64>(tail, 280_u64);
-            break @code_lengths;
-          }
-          False() => {
-          }
-        }
-        set decoded = isub.wrap<u64>(ordered, 32_u64);
+    let first_after_count = first +wrap count;
+    let at_or_after_first = code >= first;
+    let before_end = ilt(code, first_after_count);
+    let found = band(at_or_after_first, before_end);
+    if found {
+      let offset = code -wrap first;
+      let ordered = symbol_index +wrap offset;
+      if ilt(ordered, 24_u64) {
+        set decoded = ordered +wrap 256_u64;
         break @code_lengths;
       }
-      False() => {
+      if ilt(ordered, 168_u64) {
+        set decoded = ordered -wrap 24_u64;
+        break @code_lengths;
       }
+      if ilt(ordered, 176_u64) {
+        let tail = ordered -wrap 168_u64;
+        set decoded = tail +wrap 280_u64;
+        break @code_lengths;
+      }
+      set decoded = ordered -wrap 32_u64;
+      break @code_lengths;
     }
-    set symbol_index = iadd.wrap<u64>(symbol_index, count);
-    set first = ishl.wrap<u64>(first_after_count, 1_u32);
-    set code = ishl.wrap<u64>(code, 1_u32);
-    match ieq<u32>(bit_length, 9_u32) {
-      True() => {
-        let error: own InflateError = InvalidHuffmanCode();
-        return Err(error: error);
-      }
-      False() => {
-      }
+    set symbol_index = symbol_index +wrap count;
+    set first = ishl.wrap(first_after_count, 1_u32);
+    set code = ishl.wrap(code, 1_u32);
+    if bit_length == 9_u32 {
+      let error = InvalidHuffmanCode();
+      return Err<u64, InflateError>(error: error);
     }
-    set bit_length = iadd.wrap<u32>(bit_length, 1_u32);
+    set bit_length = bit_length +wrap 1_u32;
   }
-  return Ok(value: decoded);
+  return Ok<u64, InflateError>(value: decoded);
 }
 
 fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, value: own u8) -> own Result<unit, InflateError> reads('s 'o), writes('s 'o) {
-  let output_length: own u64 = len<u8>(deref(out));
-  let output_full: own Bool = ige<u64>(deref(state).output_offset, output_length);
-  match output_full {
-    True() => {
-      let error: own InflateError = OutputFull();
-      return Err(error: error);
-    }
-    False() => {
-    }
+  let output_length = len(deref(out));
+  let output_full = deref(state).output_offset >= output_length;
+  if output_full {
+    let error = OutputFull();
+    return Err<unit, InflateError>(error: error);
   }
   set deref(out)[deref(state).output_offset] = value;
-  set deref(state).output_offset = iadd.wrap<u64>(deref(state).output_offset, 1_u64);
-  return Ok(value: unit);
+  set deref(state).output_offset = deref(state).output_offset +wrap 1_u64;
+  return Ok<unit, InflateError>(value: unit);
 }
 
 fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
   loop @fixed_codes {
-    let symbol: own u64 = 0_u64;
+    let symbol = 0_u64;
     region 'symbol_call {
       match decode_fixed_symbol<'symbol_call, 'symbol_call>(state: &uniq 'symbol_call deref(state), input: &'symbol_call deref(input)) {
         Ok(value: decoded_symbol) => {
           set symbol = decoded_symbol;
         }
         Err(error: symbol_error) => {
-          return Err(error: symbol_error);
+          return Err<unit, InflateError>(error: symbol_error);
         }
       }
     }
-    let literal: own Bool = ile<u64>(symbol, 255_u64);
-    match literal {
-      True() => {
-        match cvt<u64, u8>(symbol) {
-          Ok(value: byte) => {
-            region 'literal_emit {
-              match emit_byte<'literal_emit, 'literal_emit>(state: &uniq 'literal_emit deref(state), out: &uniq 'literal_emit deref(out), value: byte) {
-                Ok(value: emitted) => {
-                }
-                Err(error: emit_error) => {
-                  return Err(error: emit_error);
-                }
+    let literal = symbol <= 255_u64;
+    if literal {
+      match cvt<u64, u8>(symbol) {
+        Ok(value: byte) => {
+          region 'literal_emit {
+            match emit_byte<'literal_emit, 'literal_emit>(state: &uniq 'literal_emit deref(state), out: &uniq 'literal_emit deref(out), value: byte) {
+              Ok(value: emitted) => {
+              }
+              Err(error: emit_error) => {
+                return Err<unit, InflateError>(error: emit_error);
               }
             }
-          }
-          Err(error: conversion_error) => {
-            let error: own InflateError = InvalidHuffmanCode();
-            return Err(error: error);
           }
         }
+        Err(error: conversion_error) => {
+          let error = InvalidHuffmanCode();
+          return Err<unit, InflateError>(error: error);
+        }
       }
-      False() => {
-        let end_of_block: own Bool = ieq<u64>(symbol, 256_u64);
-        match end_of_block {
-          True() => {
-            break @fixed_codes;
+    } else {
+      let end_of_block = symbol == 256_u64;
+      if end_of_block {
+        break @fixed_codes;
+      } else {
+        let copy_length = 0_u64;
+        region 'fixed_length_call {
+          match decode_length<'fixed_length_call, 'fixed_length_call>(state: &uniq 'fixed_length_call deref(state), input: &'fixed_length_call deref(input), symbol: symbol) {
+            Ok(value: decoded_length) => {
+              set copy_length = decoded_length;
+            }
+            Err(error: length_error) => {
+              return Err<unit, InflateError>(error: length_error);
+            }
           }
-          False() => {
-            let copy_length: own u64 = 0_u64;
-            region 'fixed_length_call {
-              match decode_length<'fixed_length_call, 'fixed_length_call>(state: &uniq 'fixed_length_call deref(state), input: &'fixed_length_call deref(input), symbol: symbol) {
-                Ok(value: decoded_length) => {
-                  set copy_length = decoded_length;
-                }
-                Err(error: length_error) => {
-                  return Err(error: length_error);
-                }
-              }
+        }
+        let distance_symbol = 0_u64;
+        region 'distance_symbol_call {
+          match read_bits<'distance_symbol_call, 'distance_symbol_call>(state: &uniq 'distance_symbol_call deref(state), input: &'distance_symbol_call deref(input), count: 5_u32) {
+            Ok(value: distance_code) => {
+              set distance_symbol = distance_code;
             }
-            let distance_symbol: own u64 = 0_u64;
-            region 'distance_symbol_call {
-              match read_bits<'distance_symbol_call, 'distance_symbol_call>(state: &uniq 'distance_symbol_call deref(state), input: &'distance_symbol_call deref(input), count: 5_u32) {
-                Ok(value: distance_code) => {
-                  set distance_symbol = distance_code;
-                }
-                Err(error: distance_symbol_error) => {
-                  return Err(error: distance_symbol_error);
-                }
-              }
+            Err(error: distance_symbol_error) => {
+              return Err<unit, InflateError>(error: distance_symbol_error);
             }
-            region 'fixed_copy_call {
-              match copy_distance<'fixed_copy_call, 'fixed_copy_call, 'fixed_copy_call>(state: &uniq 'fixed_copy_call deref(state), input: &'fixed_copy_call deref(input), out: &uniq 'fixed_copy_call deref(out), copy_length: copy_length, distance_symbol: distance_symbol) {
-                Ok(value: copied) => {
-                }
-                Err(error: copy_error) => {
-                  return Err(error: copy_error);
-                }
-              }
+          }
+        }
+        region 'fixed_copy_call {
+          match copy_distance<'fixed_copy_call, 'fixed_copy_call, 'fixed_copy_call>(state: &uniq 'fixed_copy_call deref(state), input: &'fixed_copy_call deref(input), out: &uniq 'fixed_copy_call deref(out), copy_length: copy_length, distance_symbol: distance_symbol) {
+            Ok(value: copied) => {
+            }
+            Err(error: copy_error) => {
+              return Err<unit, InflateError>(error: copy_error);
             }
           }
         }
       }
     }
   }
-  return Ok(value: unit);
+  return Ok<unit, InflateError>(value: unit);
 }
 
 fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u64, InflateError> reads('r), writes('r), allocates(heap), traps {
-  let input_length: own u64 = len<u8>(input);
-  let output_length: own u64 = len<u8>(deref(out));
-  let state: own InflateState = InflateState(input_offset: 0_u64, output_offset: 0_u64, hold: 0_u64, bits: 0_u32);
+  let input_length = len(input);
+  let output_length = len(deref(out));
+  let state = InflateState(input_offset: 0_u64, output_offset: 0_u64, hold: 0_u64, bits: 0_u32);
   loop @blocks {
-    let final_value: own u64 = 0_u64;
+    let final_value = 0_u64;
     region 'final_call {
       match read_bits<'final_call, 'final_call>(state: &uniq 'final_call state, input: &'final_call input, count: 1_u32) {
         Ok(value: final_bit) => {
           set final_value = final_bit;
         }
         Err(error: final_error) => {
-          return Err(error: final_error);
+          return Err<u64, InflateError>(error: final_error);
         }
       }
     }
-    let final_block: own Bool = ieq<u64>(final_value, 1_u64);
-    let block_type: own u64 = 0_u64;
+    let final_block = final_value == 1_u64;
+    let block_type = 0_u64;
     region 'block_type_call {
       match read_bits<'block_type_call, 'block_type_call>(state: &uniq 'block_type_call state, input: &'block_type_call input, count: 2_u32) {
         Ok(value: block_type_bits) => {
           set block_type = block_type_bits;
         }
         Err(error: block_type_error) => {
-          return Err(error: block_type_error);
+          return Err<u64, InflateError>(error: block_type_error);
         }
       }
     }
-    let stored_block: own Bool = ieq<u64>(block_type, 0_u64);
-    match stored_block {
-      True() => {
-        set state.hold = 0_u64;
-        set state.bits = 0_u32;
-        let length_bytes_remaining: own u64 = isub.wrap<u64>(input_length, state.input_offset);
-        let length_truncated: own Bool = ilt<u64>(length_bytes_remaining, 4_u64);
-        match length_truncated {
-          True() => {
-            let error: own InflateError = Truncated();
-            return Err(error: error);
-          }
-          False() => {
-          }
-        }
-        let len_high_offset: own u64 = iadd.wrap<u64>(state.input_offset, 1_u64);
-        let nlen_low_offset: own u64 = iadd.wrap<u64>(state.input_offset, 2_u64);
-        let nlen_high_offset: own u64 = iadd.wrap<u64>(state.input_offset, 3_u64);
-        let header_room: own u64 = len<u8>(input);
-        let header_zero_ok: own Bool = ilt<u64>(state.input_offset, header_room);
-        claim stored_header_zero_in_input: header_zero_ok because "the guard proved four header bytes remain";
-        let len_low_byte: own u8 = input[state.input_offset];
-        let header_one_ok: own Bool = ilt<u64>(len_high_offset, header_room);
-        claim stored_header_one_in_input: header_one_ok because "the guard proved four header bytes remain";
-        let len_high_byte: own u8 = input[len_high_offset];
-        let header_two_ok: own Bool = ilt<u64>(nlen_low_offset, header_room);
-        claim stored_header_two_in_input: header_two_ok because "the guard proved four header bytes remain";
-        let nlen_low_byte: own u8 = input[nlen_low_offset];
-        let header_three_ok: own Bool = ilt<u64>(nlen_high_offset, header_room);
-        claim stored_header_three_in_input: header_three_ok because "the guard proved four header bytes remain";
-        let nlen_high_byte: own u8 = input[nlen_high_offset];
-        set state.input_offset = iadd.wrap<u64>(state.input_offset, 4_u64);
-        let len_low: own u16 = cvt<u8, u16>(len_low_byte);
-        let len_high_word: own u16 = cvt<u8, u16>(len_high_byte);
-        let len_high: own u16 = ishl.wrap<u16>(len_high_word, 8_u32);
-        let stored_length: own u16 = ior<u16>(len_low, len_high);
-        let nlen_low: own u16 = cvt<u8, u16>(nlen_low_byte);
-        let nlen_high_word: own u16 = cvt<u8, u16>(nlen_high_byte);
-        let nlen_high: own u16 = ishl.wrap<u16>(nlen_high_word, 8_u32);
-        let stored_complement: own u16 = ior<u16>(nlen_low, nlen_high);
-        let expected_complement: own u16 = inot<u16>(stored_length);
-        let complement_valid: own Bool = ieq<u16>(stored_complement, expected_complement);
-        match complement_valid {
-          True() => {
-          }
-          False() => {
-            let error: own InflateError = InvalidStoredLength();
-            return Err(error: error);
-          }
-        }
-        let copy_length: own u64 = cvt<u16, u64>(stored_length);
-        let input_remaining: own u64 = isub.wrap<u64>(input_length, state.input_offset);
-        let input_short: own Bool = ilt<u64>(input_remaining, copy_length);
-        match input_short {
-          True() => {
-            let error: own InflateError = Truncated();
-            return Err(error: error);
-          }
-          False() => {
-          }
-        }
-        let output_remaining: own u64 = isub.wrap<u64>(output_length, state.output_offset);
-        let output_short: own Bool = ilt<u64>(output_remaining, copy_length);
-        match output_short {
-          True() => {
-            let error: own InflateError = OutputFull();
-            return Err(error: error);
-          }
-          False() => {
-          }
-        }
-        let copied: own u64 = 0_u64;
-        loop @copy_stored {
-          let copy_done: own Bool = ieq<u64>(copied, copy_length);
-          match copy_done {
-            True() => {
-              break @copy_stored;
-            }
-            False() => {
-              let source_index: own u64 = iadd.wrap<u64>(state.input_offset, copied);
-              let stored_room: own u64 = len<u8>(input);
-              let source_in_input: own Bool = ilt<u64>(source_index, stored_room);
-              claim stored_copy_in_input: source_in_input because "the guard proved copy_length bytes remain past the offset";
-              let byte: own u8 = input[source_index];
-              region 'stored_emit {
-                match emit_byte<'stored_emit, 'stored_emit>(state: &uniq 'stored_emit state, out: &uniq 'stored_emit deref(out), value: byte) {
-                  Ok(value: emitted) => {
-                  }
-                  Err(error: emit_error) => {
-                    return Err(error: emit_error);
-                  }
-                }
-              }
-              set copied = iadd.wrap<u64>(copied, 1_u64);
-            }
-          }
-        }
-        set state.input_offset = iadd.wrap<u64>(state.input_offset, copy_length);
+    let stored_block = block_type == 0_u64;
+    if stored_block {
+      set state.hold = 0_u64;
+      set state.bits = 0_u32;
+      let length_bytes_remaining = input_length -wrap state.input_offset;
+      let length_truncated = ilt(length_bytes_remaining, 4_u64);
+      if length_truncated {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
       }
-      False() => {
-        let fixed_block: own Bool = ieq<u64>(block_type, 1_u64);
-        match fixed_block {
-          True() => {
-            region 'fixed_call {
-              match decode_fixed<'fixed_call, 'fixed_call, 'fixed_call>(state: &uniq 'fixed_call state, input: &'fixed_call input, out: &uniq 'fixed_call deref(out)) {
-                Ok(value: decoded) => {
-                }
-                Err(error: decode_error) => {
-                  return Err(error: decode_error);
-                }
+      let len_high_offset = state.input_offset +wrap 1_u64;
+      let nlen_low_offset = state.input_offset +wrap 2_u64;
+      let nlen_high_offset = state.input_offset +wrap 3_u64;
+      let header_room = len(input);
+      let header_zero_ok = ilt(state.input_offset, header_room);
+      claim stored_header_zero_in_input: header_zero_ok because "the guard proved four header bytes remain";
+      let len_low_byte = input[state.input_offset];
+      let header_one_ok = ilt(len_high_offset, header_room);
+      claim stored_header_one_in_input: header_one_ok because "the guard proved four header bytes remain";
+      let len_high_byte = input[len_high_offset];
+      let header_two_ok = ilt(nlen_low_offset, header_room);
+      claim stored_header_two_in_input: header_two_ok because "the guard proved four header bytes remain";
+      let nlen_low_byte = input[nlen_low_offset];
+      let header_three_ok = ilt(nlen_high_offset, header_room);
+      claim stored_header_three_in_input: header_three_ok because "the guard proved four header bytes remain";
+      let nlen_high_byte = input[nlen_high_offset];
+      set state.input_offset = state.input_offset +wrap 4_u64;
+      let len_low = cvt<u8, u16>(len_low_byte);
+      let len_high_word = cvt<u8, u16>(len_high_byte);
+      let len_high = ishl.wrap(len_high_word, 8_u32);
+      let stored_length = ior(len_low, len_high);
+      let nlen_low = cvt<u8, u16>(nlen_low_byte);
+      let nlen_high_word = cvt<u8, u16>(nlen_high_byte);
+      let nlen_high = ishl.wrap(nlen_high_word, 8_u32);
+      let stored_complement = ior(nlen_low, nlen_high);
+      let expected_complement = inot(stored_length);
+      let complement_valid = stored_complement == expected_complement;
+      if complement_valid {
+      } else {
+        let error = InvalidStoredLength();
+        return Err<u64, InflateError>(error: error);
+      }
+      let copy_length = cvt<u16, u64>(stored_length);
+      let input_remaining = input_length -wrap state.input_offset;
+      let input_short = ilt(input_remaining, copy_length);
+      if input_short {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
+      }
+      let output_remaining = output_length -wrap state.output_offset;
+      let output_short = ilt(output_remaining, copy_length);
+      if output_short {
+        let error = OutputFull();
+        return Err<u64, InflateError>(error: error);
+      }
+      let copied = 0_u64;
+      loop @copy_stored {
+        let copy_done = copied == copy_length;
+        if copy_done {
+          break @copy_stored;
+        } else {
+          let source_index = state.input_offset +wrap copied;
+          let stored_room = len(input);
+          let source_in_input = ilt(source_index, stored_room);
+          claim stored_copy_in_input: source_in_input because "the guard proved copy_length bytes remain past the offset";
+          let byte = input[source_index];
+          region 'stored_emit {
+            match emit_byte<'stored_emit, 'stored_emit>(state: &uniq 'stored_emit state, out: &uniq 'stored_emit deref(out), value: byte) {
+              Ok(value: emitted) => {
+              }
+              Err(error: emit_error) => {
+                return Err<u64, InflateError>(error: emit_error);
               }
             }
           }
-          False() => {
-            let dynamic_block: own Bool = ieq<u64>(block_type, 2_u64);
-            match dynamic_block {
-              True() => {
-                region 'dynamic_call {
-                  match decode_dynamic<'dynamic_call, 'dynamic_call, 'dynamic_call>(state: &uniq 'dynamic_call state, input: &'dynamic_call input, out: &uniq 'dynamic_call deref(out)) {
-                    Ok(value: decoded) => {
-                    }
-                    Err(error: decode_error) => {
-                      return Err(error: decode_error);
-                    }
-                  }
-                }
+          set copied = copied +wrap 1_u64;
+        }
+      }
+      set state.input_offset = state.input_offset +wrap copy_length;
+    } else {
+      let fixed_block = block_type == 1_u64;
+      if fixed_block {
+        region 'fixed_call {
+          match decode_fixed<'fixed_call, 'fixed_call, 'fixed_call>(state: &uniq 'fixed_call state, input: &'fixed_call input, out: &uniq 'fixed_call deref(out)) {
+            Ok(value: decoded) => {
+            }
+            Err(error: decode_error) => {
+              return Err<u64, InflateError>(error: decode_error);
+            }
+          }
+        }
+      } else {
+        let dynamic_block = block_type == 2_u64;
+        if dynamic_block {
+          region 'dynamic_call {
+            match decode_dynamic<'dynamic_call, 'dynamic_call, 'dynamic_call>(state: &uniq 'dynamic_call state, input: &'dynamic_call input, out: &uniq 'dynamic_call deref(out)) {
+              Ok(value: decoded) => {
               }
-              False() => {
-                let error: own InflateError = InvalidBlockType();
-                return Err(error: error);
+              Err(error: decode_error) => {
+                return Err<u64, InflateError>(error: decode_error);
               }
             }
           }
+        } else {
+          let error = InvalidBlockType();
+          return Err<u64, InflateError>(error: error);
         }
       }
     }
-    match final_block {
-      True() => {
-        break @blocks;
-      }
-      False() => {
-      }
+    if final_block {
+      break @blocks;
     }
   }
-  return Ok(value: state.output_offset);
+  return Ok<u64, InflateError>(value: state.output_offset);
 }

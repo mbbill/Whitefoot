@@ -1,11 +1,8 @@
 fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> own slice<'r, u8> pure {
-  let selected: own slice<'r, u8> = match take_left {
-    True() => {
-      give move left;
-    }
-    False() => {
-      give move right;
-    }
+  let selected = if take_left {
+    give move left;
+  } else {
+    give move right;
   }
   return move selected;
 }

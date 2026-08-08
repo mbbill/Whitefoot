@@ -4,12 +4,12 @@ enum Packet {
 
 fn main() -> own unit pure {
   doc "OWN-13: a local exclusive borrow match derives an &uniq payload binder that reads through its parent provenance.";
-  let packet: own Packet = Data(value: 4_i32);
+  let packet = Data(value: 4_i32);
   region 'r {
-    let holder: &uniq 'r Packet = &uniq 'r packet;
+    let holder = &uniq 'r packet;
     match deref(holder) {
       Data(value: payload) => {
-        let saved: own i32 = deref(payload);
+        let saved = deref(payload);
       }
     }
   }

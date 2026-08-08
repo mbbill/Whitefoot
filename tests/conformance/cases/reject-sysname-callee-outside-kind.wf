@@ -1,5 +1,5 @@
 fn main() -> own unit pure {
   doc "A system-unadmitted unit contributes no inventory entry [SYS-3], so `args_count` is an undeclared IDENT callee and the use cites OP-1.";
-  let total: own u64 = args_count(args: 0_u64);
+  let total = args_count(args: 0_u64);
   return unit;
 }

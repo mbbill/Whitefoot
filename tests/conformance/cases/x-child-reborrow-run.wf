@@ -3,8 +3,8 @@ struct Counter {
 }
 
 fn write_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
-  let room: own u64 = len<u8>(deref(out));
-  let first_ok: own Bool = ilt<u64>(0_u64, room);
+  let room = len(deref(out));
+  let first_ok = ilt(0_u64, room);
   claim first_in_range: first_ok because "callers pass a buffer of at least two bytes";
   set deref(out)[0_u64] = 7_u8;
   return unit;
@@ -14,15 +14,15 @@ fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), t
   region 'byte_child {
     write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
   }
-  let room: own u64 = len<u8>(deref(out));
-  let second_ok: own Bool = ilt<u64>(1_u64, room);
+  let room = len(deref(out));
+  let second_ok = ilt(1_u64, room);
   claim second_in_range: second_ok because "callers pass a buffer of at least two bytes";
   set deref(out)[1_u64] = 9_u8;
   return unit;
 }
 
 fn bump_counter['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r) {
-  let next: own u64 = iadd.wrap<u64>(deref(counter).value, 1_u64);
+  let next = deref(counter).value +wrap 1_u64;
   set deref(counter).value = next;
   return unit;
 }
@@ -31,21 +31,21 @@ fn proxy_counter['r](counter: &uniq 'r Counter) -> own unit reads('r), writes('r
   region 'counter_child {
     bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
   }
-  set deref(counter).value = iadd.wrap<u64>(deref(counter).value, 1_u64);
+  set deref(counter).value = deref(counter).value +wrap 1_u64;
   return unit;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let output: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
-  let counter: own Counter = Counter(value: 40_u64);
+  let output = buffer_new(2_u64, 0_u8);
+  let counter = Counter(value: 40_u64);
   region 'owners {
     proxy_byte<'owners>(out: &uniq 'owners output);
     proxy_counter<'owners>(counter: &uniq 'owners counter);
   }
-  let first: own u8 = output[0_u64];
-  let second: own u8 = output[1_u64];
-  check ieq<u8>(first, 7_u8) else trap "child buffer write";
-  check ieq<u8>(second, 9_u8) else trap "resumed buffer parent";
-  check ieq<u64>(counter.value, 42_u64) else trap "resumed struct parent";
+  let first = output[0_u64];
+  let second = output[1_u64];
+  check first == 7_u8 else trap "child buffer write";
+  check second == 9_u8 else trap "resumed buffer parent";
+  check counter.value == 42_u64 else trap "resumed struct parent";
   return unit;
 }

@@ -9,80 +9,63 @@ struct FirFilter {
 }
 
 fn main() -> own unit traps {
-  let taps: own array<f64, 8> = array_new<f64, 8>(0.125_f64);
-  let samples: own array<f64, 8> = array_new<f64, 8>(0.0_f64);
-  let delay: own DelayLine = DelayLine(samples: move samples, cursor: 0_u64);
-  let filter: own FirFilter = FirFilter(taps: move taps, delay: move delay);
-  let tap_count: own u64 = len<f64>(filter.taps);
-  check ieq<u64>(tap_count, 8_u64) else trap "FIR tap count";
-  let frame: own u64 = 0_u64;
-  let output_sum: own f64 = 0.0_f64;
+  let taps = array_new<f64, 8>(0.125_f64);
+  let samples = array_new<f64, 8>(0.0_f64);
+  let delay = DelayLine(samples: move samples, cursor: 0_u64);
+  let filter = FirFilter(taps: move taps, delay: move delay);
+  let tap_count = len(filter.taps);
+  check tap_count == 8_u64 else trap "FIR tap count";
+  let frame = 0_u64;
+  let output_sum = 0.0_f64;
   loop @frames {
-    let finished: own Bool = ieq<u64>(frame, 64_u64);
-    match finished {
-      True() => {
-        break @frames;
-      }
-      False() => {
-      }
+    let finished = frame == 64_u64;
+    if finished {
+      break @frames;
     }
-    let first_frame: own Bool = ieq<u64>(frame, 0_u64);
-    let sample: own f64 = match first_frame {
-      True() => {
-        give 8.0_f64;
-      }
-      False() => {
-        give 0.0_f64;
-      }
+    let first_frame = frame == 0_u64;
+    let sample = if first_frame {
+      give 8.0_f64;
+    } else {
+      give 0.0_f64;
     }
-    let write_ok: own Bool = ilt<u64>(filter.delay.cursor, 8_u64);
+    let write_ok = ilt(filter.delay.cursor, 8_u64);
     claim cursor_in_delay: write_ok because "the ring cursor wraps at seven";
     set filter.delay.samples[filter.delay.cursor] = sample;
-    let tap: own u64 = 0_u64;
-    let read_cursor: own u64 = filter.delay.cursor;
-    let output: own f64 = 0.0_f64;
+    let tap = 0_u64;
+    let read_cursor = filter.delay.cursor;
+    let output = 0.0_f64;
     loop @taps {
-      let taps_finished: own Bool = ieq<u64>(tap, tap_count);
-      match taps_finished {
-        True() => {
-          break @taps;
-        }
-        False() => {
-        }
+      let taps_finished = tap == tap_count;
+      if taps_finished {
+        break @taps;
       }
-      let tap_ok: own Bool = ilt<u64>(tap, 8_u64);
+      let tap_ok = ilt(tap, 8_u64);
       claim tap_in_taps: tap_ok because "the tap walk stops at the eight-tap count";
-      let coefficient: own f64 = filter.taps[tap];
-      let read_ok: own Bool = ilt<u64>(read_cursor, 8_u64);
+      let coefficient = filter.taps[tap];
+      let read_ok = ilt(read_cursor, 8_u64);
       claim read_cursor_in_delay: read_ok because "the ring read cursor wraps at seven";
-      let delayed: own f64 = filter.delay.samples[read_cursor];
-      let contribution: own f64 = fmul.strict<f64>(coefficient, delayed);
-      set output = fadd.strict<f64>(output, contribution);
-      let at_start: own Bool = ieq<u64>(read_cursor, 0_u64);
-      let previous_cursor: own u64 = match at_start {
-        True() => {
-          give 7_u64;
-        }
-        False() => {
-          give isub.wrap<u64>(read_cursor, 1_u64);
-        }
+      let delayed = filter.delay.samples[read_cursor];
+      let contribution = fmul.strict(coefficient, delayed);
+      set output = fadd.strict(output, contribution);
+      let at_start = read_cursor == 0_u64;
+      let previous_cursor = if at_start {
+        give 7_u64;
+      } else {
+        give read_cursor -wrap 1_u64;
       }
       set read_cursor = previous_cursor;
-      set tap = iadd.wrap<u64>(tap, 1_u64);
+      set tap = tap +wrap 1_u64;
     }
-    set output_sum = fadd.strict<f64>(output_sum, output);
-    let at_end: own Bool = ieq<u64>(filter.delay.cursor, 7_u64);
-    let next_cursor: own u64 = match at_end {
-      True() => {
-        give 0_u64;
-      }
-      False() => {
-        give iadd.wrap<u64>(filter.delay.cursor, 1_u64);
-      }
+    set output_sum = fadd.strict(output_sum, output);
+    let at_end = filter.delay.cursor == 7_u64;
+    let next_cursor = if at_end {
+      give 0_u64;
+    } else {
+      give filter.delay.cursor +wrap 1_u64;
     }
     set filter.delay.cursor = next_cursor;
-    set frame = iadd.wrap<u64>(frame, 1_u64);
+    set frame = frame +wrap 1_u64;
   }
-  check feq<f64>(output_sum, 8.0_f64) else trap "FIR impulse response";
+  check feq(output_sum, 8.0_f64) else trap "FIR impulse response";
   return unit;
 }

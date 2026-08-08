@@ -4,6 +4,6 @@ fn id(x: own i32) -> own i32 pure {
 
 fn main() -> own unit traps {
   doc "A user-fn call must use named args [GRAM-11]; positional is rejected.";
-  let a: own i32 = id(40_i32);
+  let a = id(40_i32);
   return unit;
 }

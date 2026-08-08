@@ -5,7 +5,7 @@ enum Wrap {
 
 fn main() -> own unit pure {
   doc "GRAM-8: named construction - declared field written once as IDENT:atom in order; nullary written K().";
-  let a: own Wrap = W(inner: 7_i32);
-  let b: own Wrap = N();
+  let a = W(inner: 7_i32);
+  let b = N();
   return unit;
 }

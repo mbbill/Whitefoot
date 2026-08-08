@@ -1,7 +1,7 @@
 fn main() -> own unit allocates(heap), traps {
   doc "OWN-1 applies inside an index place: a u64 offset is Copy and cannot be written with move.";
-  let items: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);
-  let offset: own u64 = 0_u64;
-  let value: own u8 = items[move offset];
+  let items = buffer_new(2_u64, 0_u8);
+  let offset = 0_u64;
+  let value = items[move offset];
   return unit;
 }

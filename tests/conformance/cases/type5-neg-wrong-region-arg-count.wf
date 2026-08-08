@@ -4,9 +4,9 @@ fn takes_one['p](x: &'p i32) -> own unit pure {
 
 fn main() -> own unit pure {
   doc "A call stating two region arguments to a fn declaring one region parameter is a region-arg arity mismatch [TYPE-5].";
-  let v: own i32 = 3_i32;
+  let v = 3_i32;
   region 'r {
-    let b: &'r i32 = &'r v;
+    let b = &'r v;
     takes_one<'r, 'r>(x: b);
   }
   return unit;

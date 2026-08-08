@@ -4,7 +4,7 @@ enum PayloadEq {
 }
 
 fn compare(left: own PayloadEq, right: own PayloadEq) -> own Bool pure {
-  return eeq<PayloadEq>(left, right);
+  return eeq(left, right);
 }
 
 fn main() -> own unit pure {

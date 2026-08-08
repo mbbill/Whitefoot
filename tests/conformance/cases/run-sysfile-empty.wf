@@ -1,6 +1,6 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
   doc "SYS-8: on a zero-byte file the first read_once over a nonempty range is ReadEnd, never ReadBytes(0), because ReadBytes(count) is returned only for a count greater than zero. This is the empty member of the empty, short, exact, and multichunk file-shape family.";
-  let page: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
+  let page = buffer_new(8_u64, 0_u8);
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {

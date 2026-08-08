@@ -1,38 +1,35 @@
 fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
-  let out_length: own u64 = len<u8>(deref(out));
-  let source_length: own u64 = len<u8>(source);
-  check ile<u64>(source_length, out_length) else trap "output capacity";
+  let out_length = len(deref(out));
+  let source_length = len(source);
+  check source_length <= out_length else trap "output capacity";
 } {
-  let length: own u64 = len<u8>(source);
-  let offset: own u64 = 0_u64;
+  let length = len(source);
+  let offset = 0_u64;
   loop @copy {
-    let done: own Bool = ieq<u64>(offset, length);
-    match done {
-      True() => {
-        break @copy;
-      }
-      False() => {
-        let copy_ok: own Bool = ilt<u64>(offset, length);
-        claim copy_offset_in_source: copy_ok because "the copy stops at the source length and the requires clause sizes the output";
-        let value: own u8 = source[offset];
-        set deref(out)[offset] = value;
-        set offset = iadd.wrap<u64>(offset, 1_u64);
-      }
+    let done = offset == length;
+    if done {
+      break @copy;
+    } else {
+      let copy_ok = ilt(offset, length);
+      claim copy_offset_in_source: copy_ok because "the copy stops at the source length and the requires clause sizes the output";
+      let value = source[offset];
+      set deref(out)[offset] = value;
+      set offset = offset +wrap 1_u64;
     }
   }
   return length;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let length: own u64 = 4_u64;
-  let source: own buffer<u8> = buffer_new<u8>(length, 7_u8);
-  let output: own buffer<u8> = buffer_new<u8>(length, 0_u8);
+  let length = 4_u64;
+  let source = buffer_new(length, 7_u8);
+  let output = buffer_new(length, 0_u8);
   region 'copy_region {
-    let destination: &uniq 'copy_region buffer<u8> = &uniq 'copy_region output;
-    let written: own u64 = copy_bytes<'copy_region>(out: move destination, source: move source);
-    check ieq<u64>(written, length) else trap "copy length";
+    let destination = &uniq 'copy_region output;
+    let written = copy_bytes<'copy_region>(out: move destination, source: move source);
+    check written == length else trap "copy length";
   }
-  let last: own u8 = output[3_u64];
-  check ieq<u8>(last, 7_u8) else trap "copy content";
+  let last = output[3_u64];
+  check last == 7_u8 else trap "copy content";
   return unit;
 }

@@ -6,7 +6,7 @@ enum Tri {
 
 fn main() -> own unit pure {
   doc "OWN-1 amendment: tag-only enums are copy - matched twice, passed bare, loop-carried, and set-mutated without move.";
-  let t: own Tri = Mid();
+  let t = Mid();
   match t {
     Lo() => {
     }
@@ -23,25 +23,17 @@ fn main() -> own unit pure {
     Hi() => {
     }
   }
-  let flag: own Bool = ieq<u64>(1_u64, 1_u64);
-  let both: own Bool = band<Bool>(flag, flag);
-  let neither: own Bool = bnot<Bool>(both);
-  let i: own u64 = 0_u64;
+  let flag = 1_u64 == 1_u64;
+  let both = band(flag, flag);
+  let neither = bnot(both);
+  let i = 0_u64;
   loop @l {
-    match ige<u64>(i, 3_u64) {
-      True() => {
-        break @l;
-      }
-      False() => {
-      }
+    if i >= 3_u64 {
+      break @l;
     }
-    match neither {
-      True() => {
-      }
-      False() => {
-      }
+    if neither {
     }
-    set i = iadd.wrap<u64>(i, 1_u64);
+    set i = i +wrap 1_u64;
   }
   return unit;
 }

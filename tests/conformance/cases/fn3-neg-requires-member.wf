@@ -3,7 +3,7 @@ contract CheckedMember {
 }
 
 fn checked_apply(x: own i32) -> own i32 traps requires {
-  let valid: own Bool = ige<i32>(x, 0_i32);
+  let valid = x >= 0_i32;
   check valid else trap "nonnegative input";
 } {
   return x;

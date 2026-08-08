@@ -7,9 +7,9 @@ conform buffer<u8>: BorrowedSum {
 }
 
 fn add_borrowed['a, 'b](x: &'a buffer<u8>, y: &'b buffer<u8>) -> own u64 reads('b 'a) {
-  let x_length: own u64 = len<u8>(deref(x));
-  let y_length: own u64 = len<u8>(deref(y));
-  return iadd.wrap<u64>(x_length, y_length);
+  let x_length = len(deref(x));
+  let y_length = len(deref(y));
+  return x_length +wrap y_length;
 }
 
 fn main() -> own unit pure {

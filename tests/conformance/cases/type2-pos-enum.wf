@@ -5,13 +5,13 @@ enum Light {
 
 fn main() -> own unit traps {
   doc "enum is a composite type [TYPE-2]: construct and match a value.";
-  let s: own Light = On();
+  let s = On();
   match s {
     Off() => {
       return unit;
     }
     On() => {
-      check ieq<i32>(1_i32, 1_i32) else trap "unreachable";
+      check 1_i32 == 1_i32 else trap "unreachable";
     }
   }
   return unit;

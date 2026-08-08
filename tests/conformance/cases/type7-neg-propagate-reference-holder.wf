@@ -4,8 +4,8 @@ enum StepError {
 
 fn forward['r](holder: &'r Result<i32, StepError>) -> own Result<i32, StepError> pure {
   doc "TYPE-7: propagate cannot implicitly consume a Result through a reference holder; deref remains explicit.";
-  let value: own i32 = propagate holder;
-  return Ok(value: value);
+  let value = propagate holder;
+  return Ok<i32, StepError>(value: value);
 }
 
 fn main() -> own unit pure {

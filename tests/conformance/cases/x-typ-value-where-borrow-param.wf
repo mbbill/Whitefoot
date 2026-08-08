@@ -4,9 +4,9 @@ fn needs_ref['r](p: &'r i32) -> own unit pure {
 
 fn main() -> own unit pure {
   doc "Passing an own i32 value where a &'r i32 borrow parameter is declared [TYPE-5].";
-  let a: own i32 = 5_i32;
+  let a = 5_i32;
   region 'call_region {
-    let r: own unit = needs_ref<'call_region>(p: a);
+    let r = needs_ref<'call_region>(p: a);
   }
   return unit;
 }

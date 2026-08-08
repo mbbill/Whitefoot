@@ -6,20 +6,12 @@ enum Sign {
 
 fn classify(x: own i32) -> own Sign pure {
   doc "Classify an integer's sign; the closed-set result is consumed by match at each call site [FN-5].";
-  match ilt<i32>(x, 0_i32) {
-    True() => {
-      return Neg();
-    }
-    False() => {
-      match ieq<i32>(x, 0_i32) {
-        True() => {
-          return Zero();
-        }
-        False() => {
-          return Pos();
-        }
-      }
-    }
+  if ilt(x, 0_i32) {
+    return Neg();
+  } else if x == 0_i32 {
+    return Zero();
+  } else {
+    return Pos();
   }
 }
 
@@ -40,12 +32,12 @@ fn weight(x: own i32) -> own i32 pure {
 
 fn main() -> own unit traps {
   doc "Accumulate sign-weights of three inputs via cross-fn enum dispatch, then verify the sum [OP-1, OWN-13].";
-  let neg: own i32 = isub.wrap<i32>(0_i32, 5_i32);
-  let wa: own i32 = weight(x: neg);
-  let wb: own i32 = weight(x: 0_i32);
-  let wc: own i32 = weight(x: 7_i32);
-  let s0: own i32 = iadd.trap<i32>(wa, wb);
-  let s1: own i32 = iadd.trap<i32>(s0, wc);
-  check ieq<i32>(s1, 3_i32) else trap "weight-sum drift";
+  let neg = 0_i32 -wrap 5_i32;
+  let wa = weight(x: neg);
+  let wb = weight(x: 0_i32);
+  let wc = weight(x: 7_i32);
+  let s0 = wa + wb;
+  let s1 = s0 + wc;
+  check s1 == 3_i32 else trap "weight-sum drift";
   return unit;
 }

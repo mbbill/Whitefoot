@@ -1,5 +1,5 @@
 fn control(x: own i32) -> own i32 traps requires {
-  let permitted: own Bool = ige<i32>(x, 0_i32);
+  let permitted = x >= 0_i32;
   return x;
   check permitted else trap "x must be nonnegative";
 } {

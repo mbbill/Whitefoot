@@ -1,40 +1,36 @@
 fn controller_output(error: own f64, integral: own f64, previous_error: own f64, step: own f64) -> own f64 pure {
-  let proportional: own f64 = fmul.strict<f64>(0.5_f64, error);
-  let integral_term: own f64 = fmul.strict<f64>(0.125_f64, integral);
-  let error_change: own f64 = fsub.strict<f64>(error, previous_error);
-  let derivative: own f64 = fdiv.strict<f64>(error_change, step);
-  let derivative_term: own f64 = fmul.strict<f64>(0.03125_f64, derivative);
-  let proportional_integral: own f64 = fadd.strict<f64>(proportional, integral_term);
-  let raw_output: own f64 = fadd.strict<f64>(proportional_integral, derivative_term);
-  let lower_bounded: own f64 = fmax<f64>(raw_output, -2.0_f64);
-  return fmin<f64>(lower_bounded, 2.0_f64);
+  let proportional = fmul.strict(0.5_f64, error);
+  let integral_term = fmul.strict(0.125_f64, integral);
+  let error_change = fsub.strict(error, previous_error);
+  let derivative = fdiv.strict(error_change, step);
+  let derivative_term = fmul.strict(0.03125_f64, derivative);
+  let proportional_integral = fadd.strict(proportional, integral_term);
+  let raw_output = fadd.strict(proportional_integral, derivative_term);
+  let lower_bounded = fmax(raw_output, -2.0_f64);
+  return fmin(lower_bounded, 2.0_f64);
 }
 
 fn main() -> own unit traps {
-  let iteration: own u64 = 0_u64;
-  let measured: own f64 = 0.0_f64;
-  let integral: own f64 = 0.0_f64;
-  let previous_error: own f64 = 0.0_f64;
+  let iteration = 0_u64;
+  let measured = 0.0_f64;
+  let integral = 0.0_f64;
+  let previous_error = 0.0_f64;
   loop @control_samples {
-    let finished: own Bool = ieq<u64>(iteration, 4096_u64);
-    match finished {
-      True() => {
-        break @control_samples;
-      }
-      False() => {
-      }
+    let finished = iteration == 4096_u64;
+    if finished {
+      break @control_samples;
     }
-    let error: own f64 = fsub.strict<f64>(1.0_f64, measured);
-    let next_integral: own f64 = ffma.strict<f64>(error, 0.015625_f64, integral);
-    let output: own f64 = controller_output(error: error, integral: next_integral, previous_error: previous_error, step: 0.015625_f64);
-    let next_measured: own f64 = ffma.strict<f64>(output, 0.00390625_f64, measured);
+    let error = fsub.strict(1.0_f64, measured);
+    let next_integral = ffma.strict(error, 0.015625_f64, integral);
+    let output = controller_output(error: error, integral: next_integral, previous_error: previous_error, step: 0.015625_f64);
+    let next_measured = ffma.strict(output, 0.00390625_f64, measured);
     set measured = next_measured;
     set integral = next_integral;
     set previous_error = error;
-    set iteration = iadd.wrap<u64>(iteration, 1_u64);
+    set iteration = iteration +wrap 1_u64;
   }
-  let above_floor: own Bool = fgt<f64>(measured, 0.5_f64);
-  let below_ceiling: own Bool = flt<f64>(measured, 1.5_f64);
-  check band<Bool>(above_floor, below_ceiling) else trap "feedback controller failed to converge";
+  let above_floor = fgt(measured, 0.5_f64);
+  let below_ceiling = flt(measured, 1.5_f64);
+  check band(above_floor, below_ceiling) else trap "feedback controller failed to converge";
   return unit;
 }

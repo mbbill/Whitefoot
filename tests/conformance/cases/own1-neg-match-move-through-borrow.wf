@@ -6,7 +6,7 @@ fn inspect['r](holder: &'r Packet) -> own unit pure {
   doc "OWN-1: move deref(holder) cannot steal a borrowed enum; bare match deref(holder) derives borrowed payload binders.";
   match move deref(holder) {
     Data(value: payload) => {
-      let saved: own i32 = deref(payload);
+      let saved = deref(payload);
     }
   }
   return unit;

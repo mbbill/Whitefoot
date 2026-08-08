@@ -5,10 +5,10 @@ fn takesown(n: own i32) -> own i32 pure {
 
 fn main() -> own unit pure {
   doc "Caller passes a shared borrow where the signature declares an own value [FN-1].";
-  let a: own i32 = 5_i32;
+  let a = 5_i32;
   region 'r {
-    let b: &'r i32 = &'r a;
-    let r: own i32 = takesown(n: b);
+    let b = &'r a;
+    let r = takesown(n: b);
   }
   return unit;
 }

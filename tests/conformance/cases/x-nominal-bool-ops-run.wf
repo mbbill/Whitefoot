@@ -1,16 +1,16 @@
 fn main() -> own unit traps {
   doc "Exercise every Boolean table operation through normal source compilation and host execution [OP-1, OP-8].";
-  let yes: own Bool = True();
-  let no: own Bool = False();
-  let both: own Bool = band<Bool>(yes, no);
-  let not_both: own Bool = bnot<Bool>(both);
+  let yes = True();
+  let no = False();
+  let both = band(yes, no);
+  let not_both = bnot(both);
   check not_both else trap "band drift";
-  let either: own Bool = bor<Bool>(no, yes);
+  let either = bor(no, yes);
   check either else trap "bor drift";
-  let different: own Bool = bxor<Bool>(yes, no);
+  let different = bxor(yes, no);
   check different else trap "bxor off-diagonal drift";
-  let same: own Bool = bxor<Bool>(yes, yes);
-  let not_same: own Bool = bnot<Bool>(same);
+  let same = bxor(yes, yes);
+  let not_same = bnot(same);
   check not_same else trap "bxor diagonal drift";
   return unit;
 }

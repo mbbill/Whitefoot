@@ -1,8 +1,8 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead) -> own ExitStatus allocates(heap), external, blocks, traps {
   doc "SYS-8: a file larger than the buffer needs repeated calls, the cursor advances by exactly the reported count each time, and on the final short read exactly the first count bytes of the range may have changed while every other byte of the reused buffer is unchanged. Repetition and accumulation are ordinary source loops, not a read-exact primitive.";
-  let page: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
-  let total: own u64 = 0_u64;
-  let chunks: own u64 = 0_u64;
+  let page = buffer_new(8_u64, 0_u8);
+  let total = 0_u64;
+  let chunks = 0_u64;
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
@@ -13,13 +13,13 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match open_read<'c, 'p>(root: &'c cwd, path: &'p path) {
                   Ok(value: file) => {
                     loop @scan {
-                      let failed: own Bool = False();
+                      let failed = False();
                       region 'f {
                         region 'd {
                           match read_once<'f, 'd>(file: &uniq 'f file, destination: &uniq 'd page, offset: 0_u64, capacity: 8_u64) {
                             ReadBytes(count: n) => {
-                              set total = iadd.wrap<u64>(total, n);
-                              set chunks = iadd.wrap<u64>(chunks, 1_u64);
+                              set total = total +wrap n;
+                              set chunks = chunks +wrap 1_u64;
                             }
                             ReadEnd() => {
                               set failed = True();
@@ -30,78 +30,56 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                       }
-                      match failed {
-                        True() => {
-                          break @scan;
-                        }
-                        False() => {
-                        }
+                      if failed {
+                        break @scan;
                       }
                     }
-                    let counted: own Bool = ieq<u64>(total, 20_u64);
-                    match counted {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 11_u8);
-                      }
+                    let counted = total == 20_u64;
+                    if counted {
+                    } else {
+                      return exit_status(code: 11_u8);
                     }
-                    let repeated: own Bool = ieq<u64>(chunks, 3_u64);
-                    match repeated {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 12_u8);
-                      }
+                    let repeated = chunks == 3_u64;
+                    if repeated {
+                    } else {
+                      return exit_status(code: 12_u8);
                     }
-                    let last_first_room: own u64 = len<u8>(page);
-                    let last_first_ok: own Bool = ilt<u64>(0_u64, last_first_room);
+                    let last_first_room = len(page);
+                    let last_first_ok = ilt(0_u64, last_first_room);
                     claim last_first_in_page: last_first_ok because "the page buffer holds eight bytes";
-                    let last_first: own u8 = page[0_u64];
-                    let wrote_prefix: own Bool = ieq<u8>(last_first, 103_u8);
-                    match wrote_prefix {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 13_u8);
-                      }
+                    let last_first = page[0_u64];
+                    let wrote_prefix = last_first == 103_u8;
+                    if wrote_prefix {
+                    } else {
+                      return exit_status(code: 13_u8);
                     }
-                    let last_fourth_room: own u64 = len<u8>(page);
-                    let last_fourth_ok: own Bool = ilt<u64>(3_u64, last_fourth_room);
+                    let last_fourth_room = len(page);
+                    let last_fourth_ok = ilt(3_u64, last_fourth_room);
                     claim last_fourth_in_page: last_fourth_ok because "the page buffer holds eight bytes";
-                    let last_fourth: own u8 = page[3_u64];
-                    let wrote_end: own Bool = ieq<u8>(last_fourth, 106_u8);
-                    match wrote_end {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 14_u8);
-                      }
+                    let last_fourth = page[3_u64];
+                    let wrote_end = last_fourth == 106_u8;
+                    if wrote_end {
+                    } else {
+                      return exit_status(code: 14_u8);
                     }
-                    let carried_room: own u64 = len<u8>(page);
-                    let carried_ok: own Bool = ilt<u64>(4_u64, carried_room);
+                    let carried_room = len(page);
+                    let carried_ok = ilt(4_u64, carried_room);
                     claim carried_in_page: carried_ok because "the page buffer holds eight bytes";
-                    let carried: own u8 = page[4_u64];
-                    let untouched: own Bool = ieq<u8>(carried, 99_u8);
-                    match untouched {
-                      True() => {
-                      }
-                      False() => {
-                        return exit_status(code: 15_u8);
-                      }
+                    let carried = page[4_u64];
+                    let untouched = carried == 99_u8;
+                    if untouched {
+                    } else {
+                      return exit_status(code: 15_u8);
                     }
-                    let carried_last_room: own u64 = len<u8>(page);
-                    let carried_last_ok: own Bool = ilt<u64>(7_u64, carried_last_room);
+                    let carried_last_room = len(page);
+                    let carried_last_ok = ilt(7_u64, carried_last_room);
                     claim carried_last_in_page: carried_last_ok because "the page buffer holds eight bytes";
-                    let carried_last: own u8 = page[7_u64];
-                    let untouched_last: own Bool = ieq<u8>(carried_last, 102_u8);
-                    match untouched_last {
-                      True() => {
-                        return exit_status(code: 0_u8);
-                      }
-                      False() => {
-                        return exit_status(code: 16_u8);
-                      }
+                    let carried_last = page[7_u64];
+                    let untouched_last = carried_last == 102_u8;
+                    if untouched_last {
+                      return exit_status(code: 0_u8);
+                    } else {
+                      return exit_status(code: 16_u8);
                     }
                   }
                   Err(error: problem) => {

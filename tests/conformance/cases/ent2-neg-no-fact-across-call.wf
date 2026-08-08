@@ -4,11 +4,11 @@ fn identity(n: own u64) -> own u64 pure {
 
 fn get(b: own buffer<u8>) -> own u8 traps {
   doc "No fact crosses a call boundary [ENT-2]. The checked comparison bounds `probe`, but the value returned by `identity` is a fresh term carrying no relation to it, so the subscript is undischarged [OP-4] and the residual names the returned binding.";
-  let room: own u64 = len<u8>(b);
-  let probe: own u64 = 0_u64;
-  let inside: own Bool = ilt<u64>(probe, room);
+  let room = len(b);
+  let probe = 0_u64;
+  let inside = ilt(probe, room);
   check inside else trap "the buffer is empty";
-  let echoed: own u64 = identity(n: probe);
+  let echoed = identity(n: probe);
   return b[echoed];
 }
 

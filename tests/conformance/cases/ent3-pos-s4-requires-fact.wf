@@ -1,6 +1,6 @@
 fn get(b: own buffer<u8>, i: own u64) -> own u8 traps requires {
-  let room: own u64 = len<u8>(b);
-  let inside: own Bool = ilt<u64>(i, room);
+  let room = len(b);
+  let inside = ilt(i, room);
   check inside else trap "offset out of range";
 } {
   doc "Source S4: the requires block's final check condition, with every clause local replaced by its defining right-hand side, is the one relation that enters the body's entry fact state [ENT-3 S4] and the only fact crossing into the body from outside [ENT-2]. The executed prologue is the proof [FN-8].";

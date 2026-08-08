@@ -4,7 +4,7 @@ enum Flag {
 }
 
 fn bad() -> own Result<u64, Flag> pure {
-  return Err(error: 1_u64);
+  return Err<u64, Flag>(error: 1_u64);
 }
 
 fn main() -> own unit pure {

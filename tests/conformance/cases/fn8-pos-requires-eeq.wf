@@ -5,15 +5,15 @@ enum ClauseEq {
 }
 
 fn guarded(left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
-  let same: own Bool = eeq<ClauseEq>(left, right);
+  let same = eeq(left, right);
   check same else trap "enum precondition failed";
 } {
   return unit;
 }
 
 fn main() -> own unit traps {
-  let left: own ClauseEq = ClauseSecond();
-  let right: own ClauseEq = ClauseSecond();
+  let left = ClauseSecond();
+  let right = ClauseSecond();
   guarded(left: left, right: right);
   return unit;
 }

@@ -1,7 +1,7 @@
 fn main() -> own unit allocates(heap), traps {
   doc "FORM-3: v0.22 releases index from the fixed grammar atoms, so it is an ordinary IDENT, declarable as a binding and usable as a subscript offset.";
-  let index: own u64 = 1_u64;
-  let items: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
-  let value: own u8 = items[index];
+  let index = 1_u64;
+  let items = buffer_new(2_u64, 7_u8);
+  let value = items[index];
   return unit;
 }

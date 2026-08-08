@@ -1,7 +1,7 @@
 fn main() -> own unit allocates(heap), traps {
   doc "Source S6: `buffer_new<T>(n, v)` establishes len(b) = n on the normal continuation [ENT-3, OP-9], and the copy equality of source S5 carries the literal into n, so a constant offset below that length discharges [OP-4]. The length is a declared allocation property, not a writer statement.";
-  let size: own u64 = 4_u64;
-  let b: own buffer<u8> = buffer_new<u8>(size, 0_u8);
-  let value: own u8 = b[2_u64];
+  let size = 4_u64;
+  let b = buffer_new(size, 0_u8);
+  let value = b[2_u64];
   return unit;
 }

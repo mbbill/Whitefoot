@@ -1,37 +1,29 @@
 fn main() -> own unit allocates(heap), traps {
   doc "A runtime-length buffer is allocated, filled, folded, and released; loop claims discharge its indexed access.";
-  let values: own buffer<u64> = buffer_new<u64>(8_u64, 0_u64);
-  let length: own u64 = len<u64>(values);
-  let cursor: own u64 = 0_u64;
+  let values = buffer_new(8_u64, 0_u64);
+  let length = len(values);
+  let cursor = 0_u64;
   loop @fill {
-    match ieq<u64>(cursor, length) {
-      True() => {
-        break @fill;
-      }
-      False() => {
-      }
+    if cursor == length {
+      break @fill;
     }
-    let fill_in_range: own Bool = ilt<u64>(cursor, length);
+    let fill_in_range = ilt(cursor, length);
     claim fill_cursor_in_range: fill_in_range because "the fill walks 0..length and breaks at length";
-    set values[cursor] = iadd.wrap<u64>(cursor, 1_u64);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    set values[cursor] = cursor +wrap 1_u64;
+    set cursor = cursor +wrap 1_u64;
   }
   set cursor = 0_u64;
-  let total: own u64 = 0_u64;
+  let total = 0_u64;
   loop @fold {
-    match ieq<u64>(cursor, length) {
-      True() => {
-        break @fold;
-      }
-      False() => {
-      }
+    if cursor == length {
+      break @fold;
     }
-    let fold_in_range: own Bool = ilt<u64>(cursor, length);
+    let fold_in_range = ilt(cursor, length);
     claim fold_cursor_in_range: fold_in_range because "the fold walks 0..length and breaks at length";
-    let value: own u64 = values[cursor];
-    set total = iadd.wrap<u64>(total, value);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    let value = values[cursor];
+    set total = total +wrap value;
+    set cursor = cursor +wrap 1_u64;
   }
-  check ieq<u64>(total, 36_u64) else trap "mutable buffer checksum drift";
+  check total == 36_u64 else trap "mutable buffer checksum drift";
   return unit;
 }

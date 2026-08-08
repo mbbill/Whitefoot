@@ -1,18 +1,14 @@
 fn main() -> own unit traps {
   doc "A loop folds a running product with imul.trap [OP-1]; the accumulator overflows i32 before the comparison-driven break bound is reached, so the trapping multiply aborts the process [SCOPE-4].";
-  let i: own i32 = 0_i32;
-  let acc: own i32 = 1_i32;
+  let i = 0_i32;
+  let acc = 1_i32;
   loop @l {
-    match ige<i32>(i, 20_i32) {
-      True() => {
-        break @l;
-      }
-      False() => {
-      }
+    if i >= 20_i32 {
+      break @l;
     }
-    set acc = imul.trap<i32>(acc, 7_i32);
-    set i = iadd.trap<i32>(i, 1_i32);
+    set acc = acc * 7_i32;
+    set i = i + 1_i32;
   }
-  check igt<i32>(acc, 0_i32) else trap "unreachable after overflow";
+  check igt(acc, 0_i32) else trap "unreachable after overflow";
   return unit;
 }

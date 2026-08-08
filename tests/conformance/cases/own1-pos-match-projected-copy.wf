@@ -9,8 +9,8 @@ struct Holder {
 
 fn main() -> own unit allocates(heap), traps {
   doc "OWN-1: projected Copy reads do not consume their affine struct or buffer owner.";
-  let state: own State = Ready();
-  let holder: own Holder = Holder(state: state);
+  let state = Ready();
+  let holder = Holder(state: state);
   match holder.state {
     Ready() => {
     }
@@ -23,12 +23,12 @@ fn main() -> own unit allocates(heap), traps {
     Done() => {
     }
   }
-  let saved_holder: own Holder = move holder;
-  let items: own buffer<u8> = buffer_new<u8>(2_u64, 7_u8);
-  let first: own u8 = items[0_u64];
-  let second: own u8 = items[1_u64];
-  check ieq<u8>(first, 7_u8) else trap "first indexed copy";
-  check ieq<u8>(second, 7_u8) else trap "second indexed copy";
-  let saved_items: own buffer<u8> = move items;
+  let saved_holder = move holder;
+  let items = buffer_new(2_u64, 7_u8);
+  let first = items[0_u64];
+  let second = items[1_u64];
+  check first == 7_u8 else trap "first indexed copy";
+  check second == 7_u8 else trap "second indexed copy";
+  let saved_items = move items;
   return unit;
 }

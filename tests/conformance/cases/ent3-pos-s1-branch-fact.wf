@@ -1,14 +1,11 @@
 fn get(b: own buffer<u8>, i: own u64) -> own u8 pure {
   doc "Source S1: a match whose scrutinee has comparison origin establishes that relation at the True() arm's entry and its exact negation at the False() arm's entry [ENT-3]. The guarded arm discharges the subscript with no runtime bounds branch [OP-4].";
-  let room: own u64 = len<u8>(b);
-  let inside: own Bool = ilt<u64>(i, room);
-  match inside {
-    True() => {
-      return b[i];
-    }
-    False() => {
-      return 0_u8;
-    }
+  let room = len(b);
+  let inside = ilt(i, room);
+  if inside {
+    return b[i];
+  } else {
+    return 0_u8;
   }
 }
 

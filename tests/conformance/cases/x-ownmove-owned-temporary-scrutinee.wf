@@ -8,10 +8,10 @@ fn main() -> own unit traps {
   doc "OWN-13 owned temporary: a non-place scrutinee (a construction) is an owned temporary moved into the match.";
   match Pos() {
     Neg() => {
-      check ieq<i32>(0_i32, 1_i32) else trap "neg";
+      check 0_i32 == 1_i32 else trap "neg";
     }
     Zero() => {
-      check ieq<i32>(0_i32, 1_i32) else trap "zero";
+      check 0_i32 == 1_i32 else trap "zero";
     }
     Pos() => {
     }

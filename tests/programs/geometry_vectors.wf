@@ -5,23 +5,23 @@ struct Vector3<T: Float> {
 }
 
 fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> own T pure {
-  let total: own T = 0_T;
-  let x_product: own T = fmul.strict<T>(left.x, right.x);
-  let after_x: own T = fadd.strict<T>(total, x_product);
-  let y_product: own T = fmul.strict<T>(left.y, right.y);
-  let after_y: own T = fadd.strict<T>(after_x, y_product);
-  let z_product: own T = fmul.strict<T>(left.z, right.z);
-  return fadd.strict<T>(after_y, z_product);
+  let total = 0_T;
+  let x_product = fmul.strict(left.x, right.x);
+  let after_x = fadd.strict(total, x_product);
+  let y_product = fmul.strict(left.y, right.y);
+  let after_y = fadd.strict(after_x, y_product);
+  let z_product = fmul.strict(left.z, right.z);
+  return fadd.strict(after_y, z_product);
 }
 
 fn main() -> own unit traps {
-  let left32: own Vector3<f32> = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
-  let right32: own Vector3<f32> = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
-  let product32: own f32 = dot3<f32>(left: move left32, right: move right32);
-  check feq<f32>(product32, 32.0_f32) else trap "f32 vector dot product";
-  let left64: own Vector3<f64> = Vector3<f64>(x: -2.0_f64, y: 3.0_f64, z: 5.0_f64);
-  let right64: own Vector3<f64> = Vector3<f64>(x: 7.0_f64, y: 11.0_f64, z: 13.0_f64);
-  let product64: own f64 = dot3<f64>(left: move left64, right: move right64);
-  check feq<f64>(product64, 84.0_f64) else trap "f64 vector dot product";
+  let left32 = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
+  let right32 = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
+  let product32 = dot3<f32>(left: move left32, right: move right32);
+  check feq(product32, 32.0_f32) else trap "f32 vector dot product";
+  let left64 = Vector3<f64>(x: -2.0_f64, y: 3.0_f64, z: 5.0_f64);
+  let right64 = Vector3<f64>(x: 7.0_f64, y: 11.0_f64, z: 13.0_f64);
+  let product64 = dot3<f64>(left: move left64, right: move right64);
+  check feq(product64, 84.0_f64) else trap "f64 vector dot product";
   return unit;
 }

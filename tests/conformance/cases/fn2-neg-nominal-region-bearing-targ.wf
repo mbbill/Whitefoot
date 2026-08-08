@@ -2,7 +2,7 @@ struct Marker<T> {
 }
 
 fn invalid['r]() -> own unit pure {
-  let marker: own Marker<slice<'r, u8>> = Marker<slice<'r, u8>>();
+  let marker = Marker<slice<'r, u8>>();
   return unit;
 }
 

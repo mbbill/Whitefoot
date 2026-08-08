@@ -5,7 +5,7 @@ contract BadMonoid {
 }
 
 fn satadd_signed(x: own i64, y: own i64) -> own i64 pure {
-  return iadd.sat<i64>(x, y);
+  return x +sat y;
 }
 
 conform i64: BadMonoid {

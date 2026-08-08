@@ -1,7 +1,7 @@
 fn count_arguments(args: own Args) -> own u64 external, blocks {
   doc "Args is an immutable value whose release is a logical consume with no external effect [SYS-5, SYS-9], and args_count's own row carries neither new category, so declaring `external, blocks` is declared-but-unexhibited and is rejected citing EFF-2.";
   region 'a {
-    let total: own u64 = args_count<'a>(args: &'a args);
+    let total = args_count<'a>(args: &'a args);
     return total;
   }
 }

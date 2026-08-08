@@ -1,7 +1,7 @@
 fn mutable_clause(x: own i32) -> own i32 traps requires {
-  let candidate: own i32 = x;
-  set candidate = iadd.wrap<i32>(candidate, 1_i32);
-  let permitted: own Bool = igt<i32>(candidate, x);
+  let candidate = x;
+  set candidate = candidate +wrap 1_i32;
+  let permitted = igt(candidate, x);
   check permitted else trap "candidate must increase";
 } {
   doc "Requirement clauses are immutable ANF fact blocks; set is rejected [FN-8].";

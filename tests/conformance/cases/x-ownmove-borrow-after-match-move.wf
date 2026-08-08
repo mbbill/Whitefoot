@@ -6,7 +6,7 @@ enum Sign {
 
 fn main() -> own unit pure {
   doc "OWN-1/OWN-13: matching an own value moves it; borrowing the now-dead binding afterward is a use-after-move.";
-  let s: own Sign = Pos();
+  let s = Pos();
   match s {
     Neg(mag: m) => {
     }
@@ -16,7 +16,7 @@ fn main() -> own unit pure {
     }
   }
   region 'r {
-    let b: &'r Sign = &'r s;
+    let b = &'r s;
   }
   return unit;
 }

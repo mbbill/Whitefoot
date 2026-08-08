@@ -5,50 +5,42 @@ struct Columns {
 
 fn main() -> own unit allocates(heap), traps {
   doc "Parallel runtime-length columns are filled, folded, and released through one struct owner; loop claims discharge the indexing.";
-  let left: own buffer<u64> = buffer_new<u64>(6_u64, 0_u64);
-  let right: own buffer<u64> = buffer_new<u64>(6_u64, 0_u64);
-  let columns: own Columns = Columns(left: move left, right: move right);
-  let length: own u64 = len<u64>(columns.left);
-  let cursor: own u64 = 0_u64;
+  let left = buffer_new(6_u64, 0_u64);
+  let right = buffer_new(6_u64, 0_u64);
+  let columns = Columns(left: move left, right: move right);
+  let length = len(columns.left);
+  let cursor = 0_u64;
   loop @fill {
-    match ieq<u64>(cursor, length) {
-      True() => {
-        break @fill;
-      }
-      False() => {
-      }
+    if cursor == length {
+      break @fill;
     }
-    let fill_left_ok: own Bool = ilt<u64>(cursor, length);
+    let fill_left_ok = ilt(cursor, length);
     claim fill_left_in_range: fill_left_ok because "the fill walks 0..length over the left column";
     set columns.left[cursor] = cursor;
-    let doubled: own u64 = imul.wrap<u64>(cursor, 2_u64);
-    let right_room: own u64 = len<u64>(columns.right);
-    let fill_right_ok: own Bool = ilt<u64>(cursor, right_room);
+    let doubled = cursor *wrap 2_u64;
+    let right_room = len(columns.right);
+    let fill_right_ok = ilt(cursor, right_room);
     claim fill_right_in_range: fill_right_ok because "both columns are allocated with six slots";
     set columns.right[cursor] = doubled;
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    set cursor = cursor +wrap 1_u64;
   }
   set cursor = 0_u64;
-  let total: own u64 = 0_u64;
+  let total = 0_u64;
   loop @fold {
-    match ieq<u64>(cursor, length) {
-      True() => {
-        break @fold;
-      }
-      False() => {
-      }
+    if cursor == length {
+      break @fold;
     }
-    let fold_left_ok: own Bool = ilt<u64>(cursor, length);
+    let fold_left_ok = ilt(cursor, length);
     claim fold_left_in_range: fold_left_ok because "the fold walks 0..length over the left column";
-    let left_value: own u64 = columns.left[cursor];
-    let right_room: own u64 = len<u64>(columns.right);
-    let fold_right_ok: own Bool = ilt<u64>(cursor, right_room);
+    let left_value = columns.left[cursor];
+    let right_room = len(columns.right);
+    let fold_right_ok = ilt(cursor, right_room);
     claim fold_right_in_range: fold_right_ok because "both columns are allocated with six slots";
-    let right_value: own u64 = columns.right[cursor];
-    set total = iadd.wrap<u64>(total, left_value);
-    set total = iadd.wrap<u64>(total, right_value);
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    let right_value = columns.right[cursor];
+    set total = total +wrap left_value;
+    set total = total +wrap right_value;
+    set cursor = cursor +wrap 1_u64;
   }
-  check ieq<u64>(total, 45_u64) else trap "struct-of-buffers checksum drift";
+  check total == 45_u64 else trap "struct-of-buffers checksum drift";
   return unit;
 }

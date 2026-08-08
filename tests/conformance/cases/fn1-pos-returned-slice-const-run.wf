@@ -1,18 +1,18 @@
 const fixed_bytes: array<u8, 3> =[7_u8, 13_u8, 19_u8];
 
 fn fixed_view['r]() -> own slice<'r, u8> pure {
-  let view: own slice<'r, u8> = slice_of<'r, u8>(&'r fixed_bytes);
+  let view = slice_of(&'r fixed_bytes);
   return move view;
 }
 
 fn main() -> own unit traps {
   region 'view {
-    let view: own slice<'view, u8> = fixed_view<'view>();
-    let view_room: own u64 = len<u8>(view);
-    let view_ok: own Bool = ilt<u64>(1_u64, view_room);
+    let view = fixed_view<'view>();
+    let view_room = len(view);
+    let view_ok = ilt(1_u64, view_room);
     claim view_sized: view_ok because "fixed_view returns the three-byte constant view";
-    let observed: own u8 = view[1_u64];
-    check ieq<u8>(observed, 13_u8) else trap "returned const slice";
+    let observed = view[1_u64];
+    check observed == 13_u8 else trap "returned const slice";
   }
   return unit;
 }

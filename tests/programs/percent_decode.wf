@@ -1,114 +1,98 @@
 fn is_hex(byte: own u8) -> own Bool pure {
-  let decimal_low: own Bool = ige<u8>(byte, 48_u8);
-  let decimal_high: own Bool = ile<u8>(byte, 57_u8);
-  let decimal: own Bool = band<Bool>(decimal_low, decimal_high);
-  let upper_low: own Bool = ige<u8>(byte, 65_u8);
-  let upper_high: own Bool = ile<u8>(byte, 70_u8);
-  let upper: own Bool = band<Bool>(upper_low, upper_high);
-  let lower_low: own Bool = ige<u8>(byte, 97_u8);
-  let lower_high: own Bool = ile<u8>(byte, 102_u8);
-  let lower: own Bool = band<Bool>(lower_low, lower_high);
-  let alphabetic: own Bool = bor<Bool>(upper, lower);
-  let result: own Bool = bor<Bool>(decimal, alphabetic);
+  let decimal_low = byte >= 48_u8;
+  let decimal_high = byte <= 57_u8;
+  let decimal = band(decimal_low, decimal_high);
+  let upper_low = byte >= 65_u8;
+  let upper_high = byte <= 70_u8;
+  let upper = band(upper_low, upper_high);
+  let lower_low = byte >= 97_u8;
+  let lower_high = byte <= 102_u8;
+  let lower = band(lower_low, lower_high);
+  let alphabetic = bor(upper, lower);
+  let result = bor(decimal, alphabetic);
   return result;
 }
 
 fn hex_value(byte: own u8) -> own u8 pure {
-  let is_decimal: own Bool = ile<u8>(byte, 57_u8);
-  let result: own u8 = match is_decimal {
-    True() => {
-      let value: own u8 = isub.wrap<u8>(byte, 48_u8);
-      give value;
+  let is_decimal = byte <= 57_u8;
+  let result = if is_decimal {
+    let value = byte -wrap 48_u8;
+    give value;
+  } else {
+    let is_upper = byte <= 70_u8;
+    let value = if is_upper {
+      let offset = byte -wrap 65_u8;
+      let upper_value = offset +wrap 10_u8;
+      give upper_value;
+    } else {
+      let offset = byte -wrap 97_u8;
+      let lower_value = offset +wrap 10_u8;
+      give lower_value;
     }
-    False() => {
-      let is_upper: own Bool = ile<u8>(byte, 70_u8);
-      let value: own u8 = match is_upper {
-        True() => {
-          let offset: own u8 = isub.wrap<u8>(byte, 65_u8);
-          let upper_value: own u8 = iadd.wrap<u8>(offset, 10_u8);
-          give upper_value;
-        }
-        False() => {
-          let offset: own u8 = isub.wrap<u8>(byte, 97_u8);
-          let lower_value: own u8 = iadd.wrap<u8>(offset, 10_u8);
-          give lower_value;
-        }
-      }
-      give value;
-    }
+    give value;
   }
   return result;
 }
 
 fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
-  let output_length: own u64 = len<u8>(deref(out));
-  let source_length: own u64 = len<u8>(src);
-  let sufficient: own Bool = ige<u64>(output_length, source_length);
+  let output_length = len(deref(out));
+  let source_length = len(src);
+  let sufficient = output_length >= source_length;
   check sufficient else trap "output too short";
 } {
-  let source_length: own u64 = len<u8>(src);
-  let input_index: own u64 = 0_u64;
-  let output_index: own u64 = 0_u64;
+  let source_length = len(src);
+  let input_index = 0_u64;
+  let output_index = 0_u64;
   loop @decode_loop {
-    let done: own Bool = ieq<u64>(input_index, source_length);
-    match done {
-      True() => {
-        break @decode_loop;
-      }
-      False() => {
-      }
+    let done = input_index == source_length;
+    if done {
+      break @decode_loop;
     }
-    let scan_ok: own Bool = ilt<u64>(input_index, source_length);
+    let scan_ok = ilt(input_index, source_length);
     claim scan_in_source: scan_ok because "the scan stops at the source length";
-    let writes_behind: own Bool = ile<u64>(output_index, input_index);
+    let writes_behind = output_index <= input_index;
     claim writes_behind_scan: writes_behind because "each consumed byte emits at most one output byte";
-    let byte: own u8 = src[input_index];
-    let is_percent: own Bool = ieq<u8>(byte, 37_u8);
-    let remaining: own u64 = isub.wrap<u64>(source_length, input_index);
-    let has_pair: own Bool = ige<u64>(remaining, 3_u64);
-    let candidate: own Bool = band<Bool>(is_percent, has_pair);
-    match candidate {
-      True() => {
-        let next_index: own u64 = iadd.wrap<u64>(input_index, 1_u64);
-        let last_index: own u64 = iadd.wrap<u64>(input_index, 2_u64);
-        let high_ok: own Bool = ilt<u64>(next_index, source_length);
-        claim high_in_source: high_ok because "a candidate escape has two bytes after the percent";
-        let high_byte: own u8 = src[next_index];
-        let low_ok: own Bool = ilt<u64>(last_index, source_length);
-        claim low_in_source: low_ok because "a candidate escape has two bytes after the percent";
-        let low_byte: own u8 = src[last_index];
-        let high_valid: own Bool = is_hex(byte: high_byte);
-        let low_valid: own Bool = is_hex(byte: low_byte);
-        let valid: own Bool = band<Bool>(high_valid, low_valid);
-        match valid {
-          True() => {
-            let high: own u8 = hex_value(byte: high_byte);
-            let low: own u8 = hex_value(byte: low_byte);
-            let shifted: own u8 = imul.wrap<u8>(high, 16_u8);
-            let decoded: own u8 = iadd.wrap<u8>(shifted, low);
-            set deref(out)[output_index] = decoded;
-            set input_index = iadd.wrap<u64>(input_index, 3_u64);
-            set output_index = iadd.wrap<u64>(output_index, 1_u64);
-          }
-          False() => {
-            set deref(out)[output_index] = byte;
-            set input_index = iadd.wrap<u64>(input_index, 1_u64);
-            set output_index = iadd.wrap<u64>(output_index, 1_u64);
-          }
-        }
-      }
-      False() => {
+    let byte = src[input_index];
+    let is_percent = byte == 37_u8;
+    let remaining = source_length -wrap input_index;
+    let has_pair = remaining >= 3_u64;
+    let candidate = band(is_percent, has_pair);
+    if candidate {
+      let next_index = input_index +wrap 1_u64;
+      let last_index = input_index +wrap 2_u64;
+      let high_ok = ilt(next_index, source_length);
+      claim high_in_source: high_ok because "a candidate escape has two bytes after the percent";
+      let high_byte = src[next_index];
+      let low_ok = ilt(last_index, source_length);
+      claim low_in_source: low_ok because "a candidate escape has two bytes after the percent";
+      let low_byte = src[last_index];
+      let high_valid = is_hex(byte: high_byte);
+      let low_valid = is_hex(byte: low_byte);
+      let valid = band(high_valid, low_valid);
+      if valid {
+        let high = hex_value(byte: high_byte);
+        let low = hex_value(byte: low_byte);
+        let shifted = high *wrap 16_u8;
+        let decoded = shifted +wrap low;
+        set deref(out)[output_index] = decoded;
+        set input_index = input_index +wrap 3_u64;
+        set output_index = output_index +wrap 1_u64;
+      } else {
         set deref(out)[output_index] = byte;
-        set input_index = iadd.wrap<u64>(input_index, 1_u64);
-        set output_index = iadd.wrap<u64>(output_index, 1_u64);
+        set input_index = input_index +wrap 1_u64;
+        set output_index = output_index +wrap 1_u64;
       }
+    } else {
+      set deref(out)[output_index] = byte;
+      set input_index = input_index +wrap 1_u64;
+      set output_index = output_index +wrap 1_u64;
     }
   }
   return output_index;
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let input: own buffer<u8> = buffer_new<u8>(11_u64, 0_u8);
+  let input = buffer_new(11_u64, 0_u8);
   set input[0_u64] = 65_u8;
   set input[1_u64] = 37_u8;
   set input[2_u64] = 52_u8;
@@ -120,26 +104,26 @@ fn main() -> own unit allocates(heap), traps {
   set input[8_u64] = 122_u8;
   set input[9_u64] = 122_u8;
   set input[10_u64] = 37_u8;
-  let output: own buffer<u8> = buffer_new<u8>(11_u64, 204_u8);
+  let output = buffer_new(11_u64, 204_u8);
   region 'decode_region {
-    let produced: own u64 = decode<'decode_region>(out: &uniq 'decode_region output, src: move input);
-    check ieq<u64>(produced, 7_u64) else trap "decoded length";
+    let produced = decode<'decode_region>(out: &uniq 'decode_region output, src: move input);
+    check produced == 7_u64 else trap "decoded length";
   }
-  let output_zero: own u8 = output[0_u64];
-  let output_one: own u8 = output[1_u64];
-  let output_two: own u8 = output[2_u64];
-  let output_three: own u8 = output[3_u64];
-  let output_four: own u8 = output[4_u64];
-  let output_five: own u8 = output[5_u64];
-  let output_six: own u8 = output[6_u64];
-  let output_tail: own u8 = output[7_u64];
-  check ieq<u8>(output_zero, 65_u8) else trap "decoded byte zero";
-  check ieq<u8>(output_one, 66_u8) else trap "decoded byte one";
-  check ieq<u8>(output_two, 74_u8) else trap "decoded byte two";
-  check ieq<u8>(output_three, 37_u8) else trap "decoded byte three";
-  check ieq<u8>(output_four, 122_u8) else trap "decoded byte four";
-  check ieq<u8>(output_five, 122_u8) else trap "decoded byte five";
-  check ieq<u8>(output_six, 37_u8) else trap "decoded byte six";
-  check ieq<u8>(output_tail, 204_u8) else trap "output tail changed";
+  let output_zero = output[0_u64];
+  let output_one = output[1_u64];
+  let output_two = output[2_u64];
+  let output_three = output[3_u64];
+  let output_four = output[4_u64];
+  let output_five = output[5_u64];
+  let output_six = output[6_u64];
+  let output_tail = output[7_u64];
+  check output_zero == 65_u8 else trap "decoded byte zero";
+  check output_one == 66_u8 else trap "decoded byte one";
+  check output_two == 74_u8 else trap "decoded byte two";
+  check output_three == 37_u8 else trap "decoded byte three";
+  check output_four == 122_u8 else trap "decoded byte four";
+  check output_five == 122_u8 else trap "decoded byte five";
+  check output_six == 37_u8 else trap "decoded byte six";
+  check output_tail == 204_u8 else trap "output tail changed";
   return unit;
 }

@@ -3,9 +3,9 @@ fn mutate['r](x: &uniq 'r u64) -> own unit pure {
 }
 
 fn main() -> own unit pure {
-  let value: own u64 = 0_u64;
+  let value = 0_u64;
   region 'r {
-    let shared: &'r u64 = &'r value;
+    let shared = &'r value;
     mutate(x: shared);
   }
   return unit;

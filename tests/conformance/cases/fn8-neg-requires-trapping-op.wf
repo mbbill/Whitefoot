@@ -1,6 +1,6 @@
 fn trapping_op(x: own i32) -> own i32 traps requires {
-  let incremented: own i32 = iadd.trap<i32>(x, 1_i32);
-  let permitted: own Bool = igt<i32>(incremented, x);
+  let incremented = x + 1_i32;
+  let permitted = igt(incremented, x);
   check permitted else trap "increment must increase";
 } {
   doc "Only pure-total table operations are legal in a requirement clause; a trapping op violates FN-8.";

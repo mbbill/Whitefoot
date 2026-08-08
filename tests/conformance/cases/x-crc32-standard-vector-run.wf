@@ -1,51 +1,42 @@
 fn crc32(bytes: own buffer<u8>) -> own u32 traps {
-  let crc: own u32 = 4294967295_u32;
-  let offset: own u64 = 0_u64;
-  let length: own u64 = len<u8>(bytes);
+  let crc = 4294967295_u32;
+  let offset = 0_u64;
+  let length = len(bytes);
   loop @bytes {
-    let bytes_done: own Bool = ieq<u64>(offset, length);
-    match bytes_done {
-      True() => {
-        break @bytes;
-      }
-      False() => {
-        let in_range: own Bool = ilt<u64>(offset, length);
-        claim offset_in_range: in_range because "the byte walk stops at length";
-        let byte: own u8 = bytes[offset];
-        let word: own u32 = cvt<u8, u32>(byte);
-        set crc = ixor<u32>(crc, word);
-        let bit: own u32 = 0_u32;
-        loop @bits {
-          let bits_done: own Bool = ieq<u32>(bit, 8_u32);
-          match bits_done {
-            True() => {
-              break @bits;
-            }
-            False() => {
-              let low_bit: own u32 = iand<u32>(crc, 1_u32);
-              let shifted: own u32 = ishr.wrap<u32>(crc, 1_u32);
-              let low_bit_set: own Bool = ieq<u32>(low_bit, 1_u32);
-              match low_bit_set {
-                True() => {
-                  set crc = ixor<u32>(shifted, 3988292384_u32);
-                }
-                False() => {
-                  set crc = shifted;
-                }
-              }
-              set bit = iadd.wrap<u32>(bit, 1_u32);
-            }
+    let bytes_done = offset == length;
+    if bytes_done {
+      break @bytes;
+    } else {
+      let in_range = ilt(offset, length);
+      claim offset_in_range: in_range because "the byte walk stops at length";
+      let byte = bytes[offset];
+      let word = cvt<u8, u32>(byte);
+      set crc = ixor(crc, word);
+      let bit = 0_u32;
+      loop @bits {
+        let bits_done = bit == 8_u32;
+        if bits_done {
+          break @bits;
+        } else {
+          let low_bit = iand(crc, 1_u32);
+          let shifted = ishr.wrap(crc, 1_u32);
+          let low_bit_set = low_bit == 1_u32;
+          if low_bit_set {
+            set crc = ixor(shifted, 3988292384_u32);
+          } else {
+            set crc = shifted;
           }
+          set bit = bit +wrap 1_u32;
         }
-        set offset = iadd.wrap<u64>(offset, 1_u64);
       }
+      set offset = offset +wrap 1_u64;
     }
   }
-  return ixor<u32>(crc, 4294967295_u32);
+  return ixor(crc, 4294967295_u32);
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(9_u64, 0_u8);
+  let bytes = buffer_new(9_u64, 0_u8);
   set bytes[0_u64] = 49_u8;
   set bytes[1_u64] = 50_u8;
   set bytes[2_u64] = 51_u8;
@@ -55,7 +46,7 @@ fn main() -> own unit allocates(heap), traps {
   set bytes[6_u64] = 55_u8;
   set bytes[7_u64] = 56_u8;
   set bytes[8_u64] = 57_u8;
-  let checksum: own u32 = crc32(bytes: move bytes);
-  check ieq<u32>(checksum, 3421780262_u32) else trap "CRC32 vector";
+  let checksum = crc32(bytes: move bytes);
+  check checksum == 3421780262_u32 else trap "CRC32 vector";
   return unit;
 }

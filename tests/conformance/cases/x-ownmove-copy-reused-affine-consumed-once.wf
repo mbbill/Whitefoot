@@ -5,16 +5,16 @@ enum Flag {
 
 fn main() -> own unit traps {
   doc "OWN-1 copy vs affine: i32 n is reused three times (copy on use); the enum is consumed by exactly one match (affine).";
-  let n: own i32 = 14_i32;
-  let s: own i32 = iadd.trap<i32>(n, n);
-  let t: own i32 = iadd.trap<i32>(s, n);
-  check ieq<i32>(t, 42_i32) else trap "copy drift";
-  let f: own Flag = A();
+  let n = 14_i32;
+  let s = n + n;
+  let t = s + n;
+  check t == 42_i32 else trap "copy drift";
+  let f = A();
   match f {
     A() => {
     }
     B() => {
-      check ieq<i32>(0_i32, 1_i32) else trap "b";
+      check 0_i32 == 1_i32 else trap "b";
     }
   }
   return unit;

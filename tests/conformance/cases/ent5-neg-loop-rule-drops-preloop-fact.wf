@@ -1,10 +1,10 @@
 fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
   doc "Loops carry no induction: the fact state at each iteration head is the state before the loop minus every fact having a support member that any kill event inside the loop body, at any nesting depth, may kill [ENT-5]. The `set` later in the body kills the checked bound at the head, so the subscript is undischarged [OP-4] even on the first iteration, where the check still dominates it.";
-  let room: own u64 = len<u8>(b);
-  let offset: own u64 = 0_u64;
-  let inside: own Bool = ilt<u64>(offset, room);
+  let room = len(b);
+  let offset = 0_u64;
+  let inside = ilt(offset, room);
   check inside else trap "the buffer is empty";
-  let sample: own u8 = 0_u8;
+  let sample = 0_u8;
   loop @walk {
     set sample = b[offset];
     set offset = start;

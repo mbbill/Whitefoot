@@ -5,8 +5,8 @@ contract OpaqueMonoid {
 }
 
 fn twostep(x: own u64, y: own u64) -> own u64 pure {
-  let t: own u64 = iadd.wrap<u64>(x, y);
-  return iadd.wrap<u64>(t, 1_u64);
+  let t = x +wrap y;
+  return t +wrap 1_u64;
 }
 
 conform u64: OpaqueMonoid {

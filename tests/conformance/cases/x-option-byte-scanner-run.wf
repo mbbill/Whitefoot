@@ -1,34 +1,28 @@
 fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> own Option<u64> reads('r), traps {
-  let length: own u64 = len<u8>(deref(input));
-  let offset: own u64 = 0_u64;
+  let length = len(deref(input));
+  let offset = 0_u64;
   loop @scan {
-    let done: own Bool = ieq<u64>(offset, length);
-    match done {
-      True() => {
-        break @scan;
-      }
-      False() => {
-        let room: own u64 = len<u8>(deref(input));
-        let in_range: own Bool = ilt<u64>(offset, room);
-        claim offset_in_range: in_range because "the scan stops at the buffer length";
-        let byte: own u8 = deref(input)[offset];
-        let found: own Bool = ieq<u8>(byte, needle);
-        match found {
-          True() => {
-            return Some(value: offset);
-          }
-          False() => {
-            set offset = iadd.wrap<u64>(offset, 1_u64);
-          }
-        }
+    let done = offset == length;
+    if done {
+      break @scan;
+    } else {
+      let room = len(deref(input));
+      let in_range = ilt(offset, room);
+      claim offset_in_range: in_range because "the scan stops at the buffer length";
+      let byte = deref(input)[offset];
+      let found = byte == needle;
+      if found {
+        return Some<u64>(value: offset);
+      } else {
+        set offset = offset +wrap 1_u64;
       }
     }
   }
-  return None();
+  return None<u64>();
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(6_u64, 0_u8);
+  let bytes = buffer_new(6_u64, 0_u8);
   set bytes[0_u64] = 10_u8;
   set bytes[1_u64] = 20_u8;
   set bytes[2_u64] = 30_u8;
@@ -36,17 +30,17 @@ fn main() -> own unit allocates(heap), traps {
   set bytes[4_u64] = 50_u8;
   set bytes[5_u64] = 60_u8;
   region 'scan_region {
-    let view: &'scan_region buffer<u8> = &'scan_region bytes;
-    let present: own Option<u64> = find_byte<'scan_region>(input: view, needle: 40_u8);
+    let view = &'scan_region bytes;
+    let present = find_byte<'scan_region>(input: view, needle: 40_u8);
     match move present {
       None() => {
         check False() else trap "present byte was absent";
       }
       Some(value: present_offset) => {
-        check ieq<u64>(present_offset, 3_u64) else trap "present byte offset";
+        check present_offset == 3_u64 else trap "present byte offset";
       }
     }
-    let missing: own Option<u64> = find_byte<'scan_region>(input: view, needle: 99_u8);
+    let missing = find_byte<'scan_region>(input: view, needle: 99_u8);
     match move missing {
       None() => {
       }
