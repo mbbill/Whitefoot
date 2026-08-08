@@ -2,19 +2,20 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 8. **M3b has run**: the two
-  structural assertions are a standing library gate (`a7cb4e4`), the corpus
-  is migrated (`060a0f0`), and the delta's §5 carries the measured figures
-  (`96862aa`). **Four things need a ruling before the batch closes** — one
-  conformance case the migration would destroy, two whose concern died with
-  the deleted bytes, and an infix path the checker does not have. See
-  "Round 8".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 9. Round 8's finding 4 is
+  **closed**: infix is checked at every one of [GRAM-5]'s eleven expression
+  positions (`90781eb`, `bfbe43c`, `435ccb4`), and the adapter's failures fall
+  52 → 28. Round 8's findings 1–3 still need their rulings. **One new blocker**:
+  the 13 remaining `InvalidCanonicalTree` failures are all requires-block cases
+  with a separate cause — the deleted v0.23 `let` annotation — and fixing it
+  needs a design choice this unit did not own. See "Round 9".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038g (round 8) / `/Users/bytedance/do_not_scan/wf0038-m3b`
+- **Owner / workspace:** exec-0038j (round 9) / `/Users/bytedance/do_not_scan/wf0038-r9`
   on branch `task/0038-floor5-semantic-and-migration`
-- **Base revision:** e8054fe (main), already the merge base; no rebase was owed
+- **Base revision:** 55ff3ff (main), already the merge base; no rebase was owed
+  — verified, not assumed: `git merge-base HEAD main` equals main's tip
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -89,6 +90,159 @@ not to be weakened or silenced: `spec::tests::path_and_version_label_agree`,
 `whitefoot-spec`'s `recorded_chain_ends_at_the_embedded_specification`.
 The activation commit closes all three at once. `ACTIVE-SPEC:` is an owner
 approval record: writing one to make a gate green is forbidden.
+
+## Round 9 (exec-0038j, 2026-08-08) — round 8's finding 4 closed; one new blocker
+
+Three commits. Infix is checked at every expression position the grammar has,
+and the adapter's failures fall 52 → 28. The 24 that went were all the infix
+defect; the 13 that remain are a different one, reported below rather than
+absorbed.
+
+### The enumeration, which is the actual deliverable
+
+**Eleven positions take a bare `expr`, not nine.** Extracted from the v0.23
+candidate's fenced grammar blocks by matching `expr` as a whole word on every
+right-hand side, so `borrow_expr` and the `expr_stmt` left-hand side cannot
+inflate it:
+
+| position | infix reachable | was checked |
+|---|---|---|
+| `ordinary_let_rhs` | yes | yes |
+| `propagate_let_rhs` | yes | yes |
+| `set_stmt` | yes | yes |
+| `return_stmt` | yes | **no** |
+| `check_stmt` | yes | yes |
+| `claim_stmt` | yes | yes |
+| `give_stmt` | yes | yes |
+| `match_stmt` scrutinee | yes | yes |
+| `value_match` scrutinee | yes | yes |
+| `if_stmt` condition | yes | yes |
+| `value_if` condition | yes | yes |
+
+The round-8 brief's list of nine **omitted the `if_stmt` and `value_if`
+conditions**. Both are reachable — a Bool-producing infix is exactly what an
+`if` condition wants — and both were already checked, so the omission cost
+nothing this time; it is recorded because the list was offered as the
+enumeration and was not one.
+
+`expr_stmt := call ";"` takes a `call`, so infix cannot be written there. It is
+excluded by the grammar, not by observation.
+
+**Independently corroborated**: `compiler/src/syntax/grammar/generated.rs`
+carries exactly 11 `GrammarNode::new(…Production::Expr…)` entries. Two methods
+— the spec's grammar text and the compiler's generated tables — reach eleven.
+
+### `90781eb` — the fix
+
+Root cause, and it is not "infix resolution is missing": ten positions route
+through `check_expression`, which has read infix since `3af8478`. `return_stmt`
+routes through it too. What broke was two **structural queries** that run before
+it and read the `expr` node with `tree.only_child`, and [GRAM-5]'s
+`expr := atom infix_tail?` is the one alternative with two children.
+
+The two sites are reached under **complementary** conditions, so each needed its
+own proof:
+
+- `check_return_implicit_read` ([TYPE-7]) returns early unless the result mode
+  is `own`. This is the site round 8's reproduction hit.
+- `complete_borrow_expression` ([OWN-14]) is reached only when the result mode
+  is a borrow. Proven separately: a borrow-returning function with an infix
+  return expression failed internally, while its control — the same function
+  returning a plain atom — cites FN-1 cleanly. An infix can never produce a
+  borrow, so FN-1 is the correct outcome and the internal failure was hiding it.
+
+Both ask which of `atom infix_tail? | call | construct` an expression is written
+as. Infix is none of the three, so the answer is "no such child" rather than a
+failed tree. One shared `sole_expression_child` beside `only_child` answers it
+once. A sweep confirms these were the only two: `only_child` has eight callers
+and the other six take `item`, `requires_entry`, `stmt`, or a wrapper, never an
+`expr`; `Production::InfixTail` has exactly two consumers.
+
+### `bfbe43c`, `435ccb4` — the tests, verified to discriminate
+
+The eleven positions are a table, so a position cannot be missed by fixing
+whichever test happened to fail. Two assertions each: the infix checks
+completely, and — stronger, because a position that merely stopped failing the
+tree could still be skipping the judgment — the same source rewritten to
+disagree on its second operand must cite TYPE-5 at exactly that operand. All
+eleven do. Plus the borrow-result FN-1 test above, and a backend test that
+returns an arithmetic and a comparison result and consumes both, since the
+semantic gate says nothing about lowering and this shape had never reached the
+backend.
+
+**Not assumed to be gates — measured.** With the fix reverted and the tests
+kept, exactly three fail, each reporting
+`CompilerFailure { failure: InvalidCanonicalTree }`, and the table names
+`return_stmt`. The backend trap guard was checked the same way: entering its
+branch on purpose fails the test.
+
+### The three oracles
+
+Both baselines were recomputed in a worktree at `102dfbe` rather than relayed,
+and both reproduce round 8's recorded numbers exactly.
+
+1. **Library SET: 4 removed, 0 added.** 300 passed / 266 failed →
+   308 / 262. The four are all corpus-embedding tests
+   (`compiler_independent_scalar_cases…`,
+   `compiler_independent_nominal_data_cases…`,
+   `buffers::compiler_independent_borrowed_pool_tree_executes`,
+   `contracts::protected_fn4_cases_discharge_only_the_closed_table`). The four
+   new tests all pass; 566 + 4 = 570 reconciles.
+2. **Library STAGE: 0 moved earlier, 0 moved later, 0 changed within a stage**,
+   over the 262 failing in both runs. A targeted fix should move nothing it did
+   not fix, and it moved nothing.
+3. **Adapter: 335/52/14 → 359/28/14.** 24 resolved, **all 24 at
+   Semantics/Compiler**; 0 newly failing; of the 28 still failing, 0 moved
+   earlier and 0 changed verdict or stage at all.
+
+**Two brief counts corrected.** The baseline carries **37**
+`InvalidCanonicalTree` adapter failures, not 38. And the infix defect accounted
+for **24** of them, not all of them — the remaining 13 are the separate cause
+below. Both figures are reproducible from the two adapter logs.
+
+### Blocker — the requires-block `let` has no legal form
+
+**All 13 remaining `InvalidCanonicalTree` adapter failures are requires-block
+cases**: `ent3-pos-s4-requires-fact`, `fn3-neg-requires-member`, the seven
+`fn8-*-requires-*`, `fn8-trap-requires-false`, `x-base64-rfc-vectors-run`, and
+`x-requires-output-capacity-run`. Not the infix defect, and not fixed here.
+
+`validate_requires_let` (`compiler/src/semantic/check/requires.rs:78`) requires
+a `Mode` child and then a `Type` child, failing `InvalidCanonicalTree` when
+either is absent. Those are the two parts of the `let` annotation that v0.23's
+A3 deletes. Four controls isolate it:
+
+```
+requires { let ok = ilt(a, 8_u64); … }             # InvalidCanonicalTree
+requires { let ok: own Bool = ilt(a, 8_u64); … }   # Parsing/Source [GRAM-4]
+requires { check a <= 8_u64 else trap "…"; }       # exit 0 — infix is fine here
+requires { check ilt(a, 8_u64) else trap "…"; }    # exit 0
+```
+
+The middle two are the point: **there is now no way to write a requires-block
+`let`** — with the annotation it no longer parses, without it the checker fails
+internally — and infix inside a requires block already works, so this is a
+distinct defect that happens to share a symptom.
+
+**Why it was not fixed here.** Restoring the restriction needs the binding's
+mode and type derived from the initializer under [TYPE-5] instead of read off
+the deleted annotation, and `validate_requires_statement` runs *before*
+`check_statement`, where no derivation exists yet. Choosing between reordering
+validation after checking and deriving separately is an unwritten design
+decision, not a mechanical repair, so it belongs to whoever owns the semantic
+path's TYPE-5 derivation item rather than to this unit.
+
+### Validation
+
+- `make -C compiler check`: **exit 2** (`$?`, not through a pipe), lib
+  **308 passed / 262 failed** — the same exit and the same failure classes as
+  the baseline, with 0 tests regressed.
+- `make check`: **exit 2**, failing at the same compiler step. Earlier stages
+  pass: spec append-only, spec archive integrity at 23, conformance coverage
+  **128/128 rules, 0 uncovered**.
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt --check` exit 0.
+- The three activation-gated checks remain red by the definition of done above,
+  and nothing was written to make them green.
 
 ## Round 8 (exec-0038g, 2026-08-08) — M3b ran; four things need a ruling
 
