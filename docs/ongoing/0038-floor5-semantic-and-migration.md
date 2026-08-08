@@ -294,6 +294,26 @@ The two-pair design was independently derived and converged on by a second
 executor before the collision was detected; that is corroboration, not
 review.
 
+## Two method habits worth copying (lead ruling, 2026-08-07)
+
+Named here because they are cheap, general, and each caught something on
+this branch that a looser method would have missed.
+
+**Pin a new rendering to the byte, not to acceptance.** `} else {` is a
+line no v0.22 production produced, so asserting merely that it *parses*
+or *audits clean* would pass for a renderer that put the brace anywhere.
+`only_these_trivia_bytes_render` asserts the source is canonical **and**
+that deleting any single trivia byte makes it non-canonical, which fixes
+the join line exactly. Use it for any layout rule with no precedent.
+
+**Diff failure sets, never failure counts.** A count is not evidence: one
+regression cancelling one fix leaves the total unchanged. Every run on
+this branch wrote its sorted failure names to a file and `comm`-diffed
+them against the previous run, which is how "257 passed / 271 failed" was
+shown to be exactly the new test and not a swap. It is also how round 1
+caught that respelling the catalog turned nine passing tests into failing
+ones — invisible in the total, obvious in the set.
+
 ## Successor brief
 
 Rounds 1–5 of 0036 and this round are discharged; do not re-derive them.
