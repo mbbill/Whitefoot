@@ -2067,6 +2067,18 @@ yields a plain `i64`, which is a copy type and stays admitted, while the
 narrowing one yields an `Option`/`Result` and does not. A spelling-based filter
 could not separate those two — same row family, different derived type.
 
+**Joined, because the two halves argue necessity and sat apart (lead,
+2026-08-08).** These measurements are the necessity argument, not a convenience
+one, and neither half carries it alone. `array_new` and the `checked` rows show
+the admitted-row filter cannot *imply* copy — every one of them is pure, total
+and non-trapping, so the vocabulary check passes them and something else must
+reject them; that establishes that some copy check is required. The two `cvt`
+directions then show a spelling-based copy filter is impossible, since one row
+family yields opposite verdicts. Together they say the derived type is the only
+thing that can carry this rule — which is why the ruling's original ground, that
+the deleted `Type` child owed nothing but typing, was wrong, and why restoring
+the check by reading an annotation would have been wrong too.
+
 Six real corpus programs with clause locals also still reach their verdicts
 through the adapter, including the two `run` cases and the `trap` case, which is
 a stronger over-rejection check than any single probe.
