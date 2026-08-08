@@ -1705,24 +1705,23 @@ a true lookbehind, and the two agree exactly.
     | sed 's/^/ /' | grep -oE '[^A-Za-z0-9_.]if[^A-Za-z0-9_]' | wc -l   # 0
   git ls-files '*.wf' | xargs grep -lE '[^A-Za-z0-9_.]if[^A-Za-z0-9_]'  # the 2
   ```
-- [FN-4] law-discharge bodies (the re-keyed shape): **4** active sites
+- [FN-4] law-discharge bodies (the re-keyed shape): **2** migrating sites
   carry the exact discharge body `return iadd.sat<D>(p0, p1);` —
   `research/experiments/checked-law-channel/kernel.wf` and
   `kernel_lib.wf`, and conformance cases `fn4-pos-law-discharged.wf`
   and `fn4-neg-law-refuted-signedness.wf` — each migrating to `return
   p0 +sat p1;` by the ordinary printer pass, with no verdict change.
   A fifth site under `archive/` is out of scope by the standing
-  no-active-dependency rule. **Scope question for the owner, surfaced
-  not resolved:** two of those four sites are under
-  `research/experiments/`, which task 0031 froze as evidence and which
-  this section's basis therefore excludes — and which demonstrably is
-  not on the active spec, since it still writes the `index<T>(p, i)`
-  form v0.22 deleted. Either those two files migrate with this batch,
-  in which case a frozen bundle is being edited and the basis owes them
-  a line, or they do not, in which case this bullet's "4 active sites"
-  is 2. The re-key argument is unaffected either way — it is a rule
-  judgment, not a count — but the figure should not go to the owner
-  reading both ways at once. Four conformance verdicts read the FN-4
+  no-active-dependency rule. **Scope settled (lead, 2026-08-07):** the
+  migrating count is **2** — the two conformance cases. The two sites
+  under `research/experiments/` do NOT migrate with this batch: task
+  0031 froze that bundle as evidence, it is demonstrably not on the
+  active spec (it still writes the `index<T>(p, i)` form v0.22 deleted,
+  128 occurrences), and editing it here would both break that freeze
+  and require migrating its v0.22 debt first. They reconcile with the
+  active specification at promotion, exactly as the `tests/codegen`
+  holding corpus does. The re-key argument is unaffected — it is a rule
+  judgment, not a count. Four conformance verdicts read the FN-4
   discharge relation (`fn4-pos-law-discharged`, `fn4-pos-law-in-contract`,
   `fn4-neg-law-undischarged`, `fn4-neg-law-refuted-signedness`); all
   four are preserved by the re-key, and `fn4-neg-law-undischarged`
