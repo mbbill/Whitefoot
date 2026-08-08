@@ -25,7 +25,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         function: &FunctionSignature,
         propagate: NodeId,
-        expected: CheckedType,
         declaration: DeclarationId,
         binding: BindingId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
@@ -35,21 +34,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(propagate, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let expected_operand = match function.result {
-            CheckedType::Nominal(return_nominal) => match self.prelude_type(return_nominal) {
-                Some(PreludeType::Result(_, error_type)) => Some(CheckedType::Nominal(
-                    self.prelude_nominal(PreludeType::Result(expected, error_type))?,
-                )),
-                _ => None,
-            },
-            _ => None,
-        };
-        let value = self.check_consuming_expression_with_expected(
+        // [TYPE-5] a `propagate_let_rhs` binder is derived from the
+        // propagated Ok payload [ERR-3], so the operand carries no
+        // expectation and the payload is read off its Result type below.
+        let value = self.check_consuming_expression(
             function,
             expression_node,
             bindings,
             scope.loops.len(),
-            expected_operand,
         )?;
         let holder_without_deref = value.mode != CheckedMode::Own
             || match value.expression.ty() {
@@ -81,7 +73,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return self.invalid_propagation(propagate);
         };
-        if ok_type != expected || error_type != return_error_type {
+        if error_type != return_error_type {
             return self.invalid_propagation(propagate);
         }
         let error_drops = self.live_affine_drops(bindings, &HashSet::new())?;
@@ -92,7 +84,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     binding,
                     declaration,
                     mode: CheckedMode::Own,
-                    ty: expected,
+                    ty: ok_type,
                     live: true,
                     loop_depth: scope.loops.len(),
                     borrow: None,

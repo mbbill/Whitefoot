@@ -31,6 +31,9 @@ pub(super) struct MatchResult {
     pub(super) scrutinee: CheckedExpression,
     pub(super) enum_type: CheckedEnumType,
     pub(super) arms: Vec<CheckedMatchArm>,
+    /// [GIVE-1] the mode and type the delivery set derived, or `None` for a
+    /// statement `match` and for a value initializer that delivers nothing.
+    pub(super) delivered: Option<(CheckedMode, CheckedType)>,
     pub(super) can_continue: bool,
     pub(super) all_paths_deliver: bool,
     pub(super) effects: EffectSet,
@@ -46,7 +49,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
-        value_expected: Option<CheckedType>,
+        value_delivery: bool,
     ) -> Result<MatchResult, CheckStop> {
         let expression_node = self
             .tree
@@ -77,14 +80,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let base_key_set = base_keys.iter().copied().collect::<HashSet<_>>();
         let value_match = self.tree.production(node)? == Production::ValueMatch;
-        if value_match != value_expected.is_some() {
+        if value_match != value_delivery {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        let local_give_context = value_expected.map(|expected| GiveContext {
-            expected,
-            preserved: base_key_set.clone(),
-            enclosing_loops: scope.loops.iter().map(|context| context.id).collect(),
-        });
+        let local_give_context = value_delivery.then(|| GiveContext::empty(&base_key_set, scope));
         let arm_scope = ControlScope {
             loops: scope.loops,
             give_context: local_give_context.as_ref().or(scope.give_context),
@@ -172,6 +171,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             scrutinee: scrutinee.expression,
             enum_type: descriptor.enum_type,
             arms,
+            delivered: local_give_context.as_ref().and_then(GiveContext::delivered),
             can_continue: if value_match {
                 !give_states.is_empty()
             } else {

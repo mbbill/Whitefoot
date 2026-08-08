@@ -1,7 +1,4 @@
-use crate::syntax::NodeId;
-use crate::{
-    PreludeDeclarationId, Production, SemanticCompilerFailure, UnsupportedSemanticFeature,
-};
+use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
     CheckedConstructor, CheckedField, CheckedFlatElement, CheckedNominal, CheckedNominalKind,
@@ -273,23 +270,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(ok, error))?)
             }
         })
-    }
-
-    pub(super) fn enclosing_function(&self, mut node: NodeId) -> Result<NodeId, CheckStop> {
-        loop {
-            let record = self
-                .tree
-                .topology()
-                .node(node)
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let Some(parent) = record.parent else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
-            if self.tree.production(parent)? == Production::FnDecl {
-                return Ok(parent);
-            }
-            node = parent;
-        }
     }
 
     pub(super) fn intern_prelude_nominal(

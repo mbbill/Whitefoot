@@ -254,41 +254,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        self.check_expression_with_expected(function, node, bindings, loop_depth, None)
-    }
-
-    pub(super) fn check_expression_with_expected(
-        &self,
-        function: &FunctionSignature,
-        node: NodeId,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        loop_depth: usize,
-        expected: Option<CheckedType>,
-    ) -> Result<TypedExpression, CheckStop> {
         self.check_expression_in_context(
             function,
             node,
             bindings,
             loop_depth,
-            expected,
             PlaceUseContext::Ordinary,
         )
     }
 
-    pub(super) fn check_consuming_expression_with_expected(
+    pub(super) fn check_consuming_expression(
         &self,
         function: &FunctionSignature,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        expected: Option<CheckedType>,
     ) -> Result<TypedExpression, CheckStop> {
         self.check_expression_in_context(
             function,
             node,
             bindings,
             loop_depth,
-            expected,
             PlaceUseContext::Consuming,
         )
     }
@@ -299,7 +285,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        expected: Option<CheckedType>,
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
         let child = self.tree.only_child(node)?;
@@ -313,9 +298,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ReborrowPosition::Forbidden,
             ),
             Production::Call => self.check_call(function, child, bindings, loop_depth),
-            Production::Construct => {
-                self.check_construct(function, child, bindings, loop_depth, expected)
-            }
+            Production::Construct => self.check_construct(function, child, bindings, loop_depth),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
     }
@@ -771,7 +754,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        self.check_consuming_expression_with_expected(function, node, bindings, loop_depth, None)
+        self.check_consuming_expression(function, node, bindings, loop_depth)
     }
 
     pub(super) fn check_construct(
@@ -780,7 +763,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        expected: Option<CheckedType>,
     ) -> Result<TypedExpression, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let constructor_name = usage.spelling().to_owned();
@@ -816,49 +798,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.source_constructor(node, declaration, &function.substitution)?
             }
             ResolvedTarget::Prelude(id) => match id.ordinal() {
+                // [TYPE-5] the prelude generic nominals are constructed
+                // through these variant constructors, and they write the
+                // nominal's arguments in every position, mandatorily:
+                // `None()` has no operand to supply them and construction
+                // never consults an expected nominal type [TYPE-6]. The
+                // written arguments are read here exactly as
+                // `generic_substitution` reads a source generic's, so both
+                // classes cite TYPE-5 at the complete `construct`.
                 5 | 6 => {
-                    let Some(CheckedType::Nominal(nominal)) = expected else {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::TypeMismatch,
-                        );
-                    };
-                    if !matches!(
-                        self.prelude_type(nominal),
-                        Some(super::PreludeType::Option(_))
-                    ) {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::TypeMismatch,
-                        );
-                    }
+                    let value = self.option_type_argument_with(node, &function.substitution)?;
                     Constructor::Enum {
-                        nominal,
+                        nominal: self.prelude_nominal(super::PreludeType::Option(value))?,
                         variant: u32::from(id.ordinal() == 6),
                     }
                 }
                 11 | 13 => {
-                    let Some(CheckedType::Nominal(nominal)) = expected else {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::TypeMismatch,
-                        );
-                    };
-                    if !matches!(
-                        self.prelude_type(nominal),
-                        Some(super::PreludeType::Result(_, _))
-                    ) {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::TypeMismatch,
-                        );
-                    }
+                    let (ok, error) =
+                        self.result_type_arguments_with(node, &function.substitution)?;
                     Constructor::Enum {
-                        nominal,
+                        nominal: self.prelude_nominal(super::PreludeType::Result(ok, error))?,
                         variant: u32::from(id.ordinal() == 13),
                     }
                 }

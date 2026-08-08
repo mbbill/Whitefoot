@@ -227,6 +227,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Ok(());
         }
+        // [TYPE-5] a prelude variant constructor writes its nominal's
+        // arguments, so the instance it names is interned from those written
+        // arguments here, before function checking reads it immutably.
+        if let ResolvedTarget::Prelude(id) = usage.target() {
+            match id.ordinal() {
+                5 | 6 => {
+                    let value = self.option_type_argument_with(node, caller)?;
+                    self.intern_prelude_nominal(PreludeType::Option(value))?;
+                }
+                11 | 13 => {
+                    let (ok, error) = self.result_type_arguments_with(node, caller)?;
+                    self.intern_prelude_nominal(PreludeType::Result(ok, error))?;
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
             return Ok(());
         };
@@ -254,35 +271,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        for statement in self.tree.descendants_with(node, Production::LetStmt)? {
-            if self
-                .tree
-                .first_child_with(statement, Production::PropagateLetRhs)?
-                .is_none()
-            {
-                continue;
-            }
-            let ok_node = self
-                .tree
-                .first_child_with(statement, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let ok = self.parse_type_with(ok_node, substitution)?;
-            let function = self.enclosing_function(statement)?;
-            let rtype = self
-                .tree
-                .first_child_with(function, Production::Rtype)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let return_node = self
-                .tree
-                .first_child_with(rtype, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let return_type = self.parse_type_with(return_node, substitution)?;
-            if let CheckedType::Nominal(return_nominal) = return_type
-                && let Some(PreludeType::Result(_, error)) = self.prelude_type(return_nominal)
-            {
-                self.intern_prelude_nominal(PreludeType::Result(ok, error))?;
-            }
-        }
+        // A `propagate_let_rhs` needed its operand's `Result` instance
+        // interned from the let's written annotation. [TYPE-5] deletes that
+        // annotation and [ERR-3] derives the binder from the operand's own
+        // Ok payload instead, so the instance is the callee's and its
+        // signature already interned it.
 
         for call in self.tree.descendants_with(node, Production::Call)? {
             let callee = self

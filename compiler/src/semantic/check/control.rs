@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 mod loops;
@@ -38,9 +39,28 @@ pub(super) struct StatementResult {
 }
 
 pub(super) struct GiveContext {
-    expected: CheckedType,
+    /// [GIVE-1] the binding's mode and type are derived from the delivery
+    /// set, not written: the first delivering `give` of this initializer
+    /// produces them and every later one must agree exactly. `None` until
+    /// that first `give` is checked; still `None` afterwards exactly when
+    /// the delivery set is empty.
+    delivered: Cell<Option<(CheckedMode, CheckedType)>>,
     preserved: HashSet<DeclarationId>,
     enclosing_loops: HashSet<CheckedLoopId>,
+}
+
+impl GiveContext {
+    pub(super) fn empty(preserved: &HashSet<DeclarationId>, scope: ControlScope<'_>) -> Self {
+        Self {
+            delivered: Cell::new(None),
+            preserved: preserved.clone(),
+            enclosing_loops: scope.loops.iter().map(|context| context.id).collect(),
+        }
+    }
+
+    pub(super) fn delivered(&self) -> Option<(CheckedMode, CheckedType)> {
+        self.delivered.get()
+    }
 }
 
 pub(super) struct ControlCounters<'state> {
@@ -154,24 +174,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // the returned reborrow [OWN-14]. Control leaves the function
                 // before the creating statement ends, so the suspended holder
                 // never resumes and no point observes both usable [OWN-5].
-                let value =
-                    if let Some(borrow) = self.complete_borrow_expression(expression_node)? {
-                        self.check_borrow(
-                            borrow,
-                            function,
-                            bindings,
-                            scope.loops.len(),
-                            ReborrowPosition::ReturnExpression,
-                        )?
-                    } else {
-                        self.check_expression_with_expected(
-                            function,
-                            expression_node,
-                            bindings,
-                            scope.loops.len(),
-                            Some(function.result),
-                        )?
-                    };
+                let value = if let Some(borrow) =
+                    self.complete_borrow_expression(expression_node)?
+                {
+                    self.check_borrow(
+                        borrow,
+                        function,
+                        bindings,
+                        scope.loops.len(),
+                        ReborrowPosition::ReturnExpression,
+                    )?
+                } else {
+                    self.check_expression(function, expression_node, bindings, scope.loops.len())?
+                };
                 if value.expression.ty() != function.result {
                     return Err(CheckStop::Issue(SemanticIssue {
                         rule: SemanticRule::Fn1,
@@ -276,7 +291,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ))
             }
             Production::MatchStmt => {
-                let matched = self.check_match(function, node, bindings, counters, scope, None)?;
+                let matched = self.check_match(function, node, bindings, counters, scope, false)?;
                 Ok(StatementResult {
                     statement: CheckedStatement::Match {
                         scrutinee: matched.scrutinee,
@@ -304,19 +319,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Expr)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let value = self.check_expression_with_expected(
-                    function,
-                    expression_node,
-                    bindings,
-                    scope.loops.len(),
-                    Some(context.expected),
-                )?;
-                if value.expression.ty() != context.expected {
-                    return self.issue_node(
-                        SemanticRule::Type5,
-                        node,
-                        SemanticIssueKind::TypeMismatch,
-                    );
+                let value =
+                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+                // [GIVE-1] derivation is agreement over the closed delivery
+                // set: the first delivering `give` produces the binding's
+                // exact mode and type, and every later one must match them.
+                let delivered = (value.mode, value.expression.ty());
+                match context.delivered.get() {
+                    None => context.delivered.set(Some(delivered)),
+                    Some(earlier) if earlier == delivered => {}
+                    Some(_) => {
+                        return self.issue_node(
+                            SemanticRule::Give1,
+                            node,
+                            SemanticIssueKind::TypeMismatch,
+                        );
+                    }
                 }
                 Ok(StatementResult {
                     statement: CheckedStatement::Give {
@@ -345,13 +363,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // evaluate the RHS, then re-establish target writability.
                 let (declaration, target, target_effects) =
                     self.check_set_target(function, target_node, bindings, scope.loops.len())?;
-                let value = self.check_expression_with_expected(
-                    function,
-                    expression_node,
-                    bindings,
-                    scope.loops.len(),
-                    Some(target.ty()),
-                )?;
+                let value =
+                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
                 if value.expression.ty() != target.ty() {
                     return self.issue_node(
                         SemanticRule::Type5,
@@ -448,16 +461,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
-        let mode = self
-            .tree
-            .first_child_with(node, Production::Mode)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let mode = self.parse_mode(mode)?;
-        let ty_node = self
-            .tree
-            .first_child_with(node, Production::Type)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let expected = self.parse_type_with(ty_node, &function.substitution)?;
+        // [TYPE-5] a `let` binder's mode and type are derived, never written:
+        // exactly what its selected right-hand side produces. Each arm below
+        // therefore checks that right-hand side first and reads the binding's
+        // mode and type off the result.
         let declaration = self.declaration_at(node, DeclarationRole::Let)?;
         let declaration_id = declaration.id();
         let binding = Self::allocate_binding(counters.next_binding)?;
@@ -466,6 +473,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .push(declaration.spelling().to_owned());
 
         if let Some(value_match) = self.tree.first_child_with(node, Production::ValueMatch)? {
+            let matched =
+                self.check_match(function, value_match, bindings, counters, scope, true)?;
+            if !matched.all_paths_deliver {
+                return self.issue_node(
+                    SemanticRule::Give1,
+                    value_match,
+                    SemanticIssueKind::InvalidGive,
+                );
+            }
+            // [GIVE-1] an empty delivery set — every arm leaves by `return`
+            // or by `break` — rejects at the `let_stmt` node, because the
+            // mechanical fix is the statement form with the binding dropped.
+            let Some((mode, expected)) = matched.delivered else {
+                return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
+            };
             if mode != CheckedMode::Own {
                 return self
                     .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, value_match);
@@ -477,21 +499,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::SliceValueMatch {
                         mechanical_fix: "use a match statement whose arms return the slice directly, or call helpers with direct slice results",
                     },
-                );
-            }
-            let matched = self.check_match(
-                function,
-                value_match,
-                bindings,
-                counters,
-                scope,
-                Some(expected),
-            )?;
-            if !matched.all_paths_deliver {
-                return self.issue_node(
-                    SemanticRule::Give1,
-                    value_match,
-                    SemanticIssueKind::InvalidGive,
                 );
             }
             if matched.can_continue
@@ -536,13 +543,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::PropagateLetRhs)?
         {
-            if mode != CheckedMode::Own {
-                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, propagate);
-            }
             return self.check_propagate_let(
                 function,
                 propagate,
-                expected,
                 declaration_id,
                 binding,
                 bindings,
@@ -557,16 +560,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(rhs, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let value = self.check_expression_with_expected(
-            function,
-            expression_node,
-            bindings,
-            scope.loops.len(),
-            Some(expected),
-        )?;
-        if value.expression.ty() != expected {
-            return self.issue_node(SemanticRule::Type5, node, SemanticIssueKind::TypeMismatch);
-        }
+        // An `ordinary_let_rhs` is always self-typed [TYPE-5], so it is
+        // checked with no expectation and the binder takes what it produces.
+        let value =
+            self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+        let mode = value.mode;
+        let expected = value.expression.ty();
         if matches!(mode, CheckedMode::Unique(_)) && value.holder.is_some() {
             return self.unsupported(
                 UnsupportedSemanticFeature::RegionsAndBorrows,

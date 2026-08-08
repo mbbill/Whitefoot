@@ -6,6 +6,7 @@ mod boxes;
 mod buffers;
 mod checked_division;
 mod contracts;
+mod derivation;
 mod entailment;
 mod entry_form;
 mod float_conversion;
