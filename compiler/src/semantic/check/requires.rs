@@ -7,7 +7,7 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
-use super::super::model::{CheckedMode, CheckedStatement};
+use super::super::model::CheckedStatement;
 use super::{
     CheckStop, Checker, ControlCounters, ControlScope, EffectSet, FunctionSignature, LocalBinding,
 };
@@ -75,21 +75,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// Validates one clause `let` against the admitted [FN-8] subset.
+    ///
+    /// A clause `let` carries no written mode or type, so neither is read
+    /// here. [FN-8] fixes the mode itself — "each let introduces a fresh
+    /// clause-local own copy value visible to later clause statements" — and
+    /// the type is derived from the initializer by the ordinary [TYPE-5]
+    /// derivation that a function-body `let` uses, in `check_statement`
+    /// immediately after this pass. What remains written, and what this pass
+    /// examines, is the right-hand side: an ordinary initializer whose
+    /// expression is a call to an admitted operation-table row.
     fn validate_requires_let(&self, entry: NodeId, node: NodeId) -> Result<(), CheckStop> {
-        let mode = self
-            .tree
-            .first_child_with(node, Production::Mode)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self.parse_mode(mode)? != CheckedMode::Own {
-            return self.invalid_requires(entry);
-        }
-        let ty = self
-            .tree
-            .first_child_with(node, Production::Type)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if !self.is_copy_type(self.parse_type(ty)?)? {
-            return self.invalid_requires(entry);
-        }
         let rhs = self
             .tree
             .first_child_with(node, Production::OrdinaryLetRhs)?
