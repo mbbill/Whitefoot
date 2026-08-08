@@ -2,15 +2,16 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 10. Round 9's blocker is
-  **closed**: the requires-block `let` has a legal v0.23 form again, and the
-  same pass now admits the infix spelling [FN-8] requires (`8838150`,
-  `8ccd4d8`, `7e80d92`). The adapter's failures fall 28 → 16 with nothing newly
-  failing. Round 8's findings 1–3 still need their rulings. **One new finding**:
-  deleting the `Type` child also deleted the only enforcement of [FN-8]'s "own
-  **copy** value", which is reachable through `array_new` and the `checked`
-  arithmetic rows; the fix is one place but the ruling as written does not
-  authorize it. See "Round 10".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 11. Round 9's blocker is
+  **closed**: the requires-block `let` has a legal v0.23 form again, the same
+  pass admits the infix spelling [FN-8] requires (`8838150`, `8ccd4d8`,
+  `7e80d92`), and round 10's copy-gate finding is **closed** by judging
+  [FN-8]'s "own copy value" on the derived type (`2ccbf4a`, `96735a5`). The
+  adapter's failures fall 28 → 16 and hold there with nothing newly failing.
+  Round 8's findings 1–3 still need their rulings. One case is deliberately
+  left failing and is not this task's: `fn8-neg-requires-eeq-payload-enum`
+  shares the pre-existing OP-1/OWN-1 precedence defect with
+  `op1-neg-eeq-payload-enum`. See "Round 10" and "Round 11".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
@@ -1871,6 +1872,19 @@ bare `+ - * / %` forms carry the trapping mode with **no `.trap` suffix** and
 the existing spelling filter cannot see them. Sharing that predicate avoids a
 second reading of the operator table.
 
+**Corrected 2026-08-08, same round, before review.** `8ccd4d8`'s commit message
+claims a trapping operator, a `move`, a borrow, *and* a subscript escaped here.
+Only the subscript did. Measured at `efb5242`: `check x + 1_i32 else trap …`
+gives `Semantics/Source [OP-5] InvalidCheckCondition`, so a trapping operator
+**cannot** reach the check position — the condition must be Bool and trapping
+arithmetic yields an integer — and `let raised = x + 1_i32;` was rejected in the
+`let` position too. The `move` probe rejected `OWN-1 MoveOfCopy` for being a
+copy type, which proves nothing about [FN-8], and the borrow probe never parsed:
+both are **not measured**. So `traps()` above is prospective correctness for the
+newly admitted infix-in-`let` path, not a closed escape. One hole existed, not
+four. The sentence below survives this correction because it describes what the
+code rejects *now*, which was verified directly.
+
 ### What the two passes still reject
 
 Probed, not inferred. Resolution's shape pass: a non-final or repeated `check`
@@ -1967,3 +1981,91 @@ ordinary checking produced — no reordering of the shape pass, no second
 derivation. That is a one-place change, but where the assertion sits and which
 diagnostic wins are the lead's call, and the ruling as written does not
 authorize it. Recommend it as the next slice.
+
+## Round 11 (exec-0038k, 2026-08-08) — the copy gate, restored from the derived type
+
+Two commits, on the lead ruling of 2026-08-08 that corrected round 10's: the
+`Type` child had been doing double duty, and its second duty was [FN-8]'s "own
+**copy** value". The compiler was the wrong side of the discrepancy; the spec
+text stands.
+
+### The fix
+
+`check_requires` now applies `is_copy_type` to the type `check_statement`
+derived one line earlier, reached through the `BindingId` the checked `Let`
+carries. No annotation is read and no second derivation exists — the judgment
+uses the checker's own answer.
+
+Ordering is deliberate and unchanged where it matters: the subset pass still
+runs before `check_statement`, so a malformed clause is still reported ahead of
+this. Only an ordinary checking error on the initializer wins over the copy
+judgment, which is correct — a type that did not derive cannot be judged.
+
+### Every reachable non-copy family, before and after
+
+One probe per family, `whitefootc --emit-llvm -o /dev/null <file>; echo "exit=$?"`,
+with the before column built from `2ccbf4a` (the red-test commit) rather than
+reconstructed:
+
+| probe | clause `let` | before | after |
+|---|---|---|---|
+| `f1-array-new` | `array_new<i32, 4>(0_i32)` | exit 0 | `FN-8 InvalidRequires` |
+| `f2-1-checked` | `x +checked 2_i32` | exit 0 | `FN-8 InvalidRequires` |
+| `f2-2-checked` | `x -checked 2_i32` | exit 0 | `FN-8 InvalidRequires` |
+| `f2-3-checked` | `x *checked 2_i32` | exit 0 | `FN-8 InvalidRequires` |
+| `f2-4-checked` | `x /checked 2_i32` | exit 0 | `FN-8 InvalidRequires` |
+| `f2-5-checked` | `x %checked 2_i32` | exit 0 | `FN-8 InvalidRequires` |
+| `f3-cvt-partial` | `cvt<i64, i32>(x)` | exit 0 | `FN-8 InvalidRequires` |
+| **`f5-cvt-total`** | `cvt<i32, i64>(x)` | exit 0 | **exit 0** |
+| **`f4-copy-positive`** | `ilt(a, 8_u64)` and `a <= 8_u64` | exit 0 | **exit 0** |
+
+The last two rows are the over-rejection guard and are the reason the gate is
+judged on the derived type rather than on the row spelling: a **total** `cvt`
+yields a plain `i64`, which is a copy type and stays admitted, while the
+narrowing one yields an `Option`/`Result` and does not. A spelling-based filter
+could not separate those two — same row family, different derived type.
+
+Six real corpus programs with clause locals also still reach their verdicts
+through the adapter, including the two `run` cases and the `trap` case, which is
+a stronger over-rejection check than any single probe.
+
+### Measured, against round 10's numbers as the floor
+
+```
+$ make -C compiler check; echo "exit=$?"
+round 10  exit=2   318 passed; 253 failed
+round 11  exit=2   319 passed; 253 failed
+```
+
+```
+$ cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
+round 10  Pass=371  Fail=16  Skip=14
+round 11  Pass=371  Fail=16  Skip=14
+```
+
+Failure-set diff against round 10, **both directions empty**, for the lib tests
+and the adapter alike. The one new passing test is this round's regression. The
+adapter is unchanged because no conformance case exercises a non-copy clause
+local — worth stating plainly, since it means the corpus is not what protects
+this gate; the lib test is.
+
+`make check` exits 2 on the same pre-existing compiler target, every other step
+passing, `coverage 128/128`.
+
+### The regression landed first, and red
+
+`2ccbf4a` adds the test one commit ahead of `96735a5`, failing with
+`expected Fn8/InvalidRequires, got Complete(...)` — the defect stated as a test
+rather than as prose. It carries the two non-copy shapes and the copy-typed
+positive control in one place, so a future change cannot restore the gate by
+over-rejecting every clause `let`.
+
+### One process note against this round
+
+The copy-gate edit was written, verified green, and then **destroyed** by a
+`git checkout <commit> -- <file>` used to measure the before column, because it
+had not been committed yet. Re-applied and committed immediately. The rule the
+brief gave — commit after every sub-step — exists for exactly this, and the
+differential-measurement habit is what collides with it: measuring the before
+column requires moving the working tree, so the after state must be committed
+*first*. Nothing was lost beyond the rework.
