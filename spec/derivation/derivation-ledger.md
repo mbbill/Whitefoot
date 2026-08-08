@@ -2,14 +2,14 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-`kernel-spec-v0.18.md`. Requirement (owner + META-6): every rule is provably
+`kernel-spec-v0.22.md`. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
 **Current statistics: 80 derived · 48 existence-only · 0 underived**
-(128 rules: 120 in the active v0.20 plus the eight v0.21-candidate
+(128 rules: 120 inherited from v0.20 plus the eight added in v0.21, all
 additions)
 
 ## Re-grounding priority queue (weakest chains)

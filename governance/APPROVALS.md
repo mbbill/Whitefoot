@@ -273,3 +273,9 @@ specification or test change.
 - reason: an R3-PROVISIONAL register entry is discharged by argument alone when the deciding criterion is itself mechanically checkable (T1 reconstructibility, T3 uniqueness, T4 class-globality all verify by machine) — a writer-tier experiment there is ceremony. When the criterion is which spelling a writer gets right more often, argument is insufficient and measured data is required. FLOOR-5's three settlements (no-if, prefix arithmetic, the body half of the annotation mandate) fall in the first class. Precedent governs the remaining eleven entries.
 - boundary: register discharge only; no spec rule changes by this entry.
 - evidence: lead proposal + owner instruction "完全同意" (2026-08-07).
+
+## 2026-08-07 — scope amendment (activated candidates removed)
+- owner: lead action under the standing overnight delegation; owner ratification pending
+- reason: the thirteen candidate files `kernel-spec-v0.10-candidate.md` through `kernel-spec-v0.22-candidate.md` were deleted after each was verified byte-identical (`cmp`) to its installed `spec/kernel-spec-vN.md`. They were 2.2 MB of parallel versions of an append-only directory, which the hygiene rule forbids; the approved bytes survive unchanged in `spec/`, and each prior exact-byte approval entry remains valid by SHA-256 against the installed file. `kernel-spec-v0.23-candidate.md` is in flight and untouched. Going forward a candidate is deleted at activation once the installed bytes are verified identical.
+- boundary: those thirteen files only; no approval entry edited.
+- evidence: process-design workflow finding (M5); per-file `cmp` verification.
