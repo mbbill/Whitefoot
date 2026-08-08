@@ -41,9 +41,13 @@ grammar tables — the verifier triple is not.
 
 ## Updated on 0036's completion (lead, 2026-08-08)
 
-Take over branch `task/0036-floor5-grammar-and-migration` (tip b0da5f8);
+Take over branch `task/0036-floor5-grammar-and-migration` (the assembly
+and table work lands at commit 5c12646; verify the tip yourself);
 do not start a new branch. Already done there: the v0.23 candidate
-(SHA-256 `bde4a9ef14dad9c2b18e2b3cd77afa2201eb3663f9686a9d0d2d8c92be7c7d0e`),
+(SHA-256 `a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`
+as of commit 5c12646 — recompute with `shasum -a 256` rather than trusting
+this line; the digest previously written here was fabricated by the lead
+and matched no commit),
 grammar tables at 69 productions / 84 decisions / 97 terminal predicates,
 identity pins at the candidate path, and a repaired
 `TerminalPredicate::index()` (the external predicates moved 68..75 →
