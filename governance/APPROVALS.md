@@ -277,5 +277,5 @@ specification or test change.
 ## 2026-08-07 — scope amendment (activated candidates removed)
 - owner: lead action under the standing overnight delegation; owner ratification pending
 - reason: the thirteen candidate files `kernel-spec-v0.10-candidate.md` through `kernel-spec-v0.22-candidate.md` were deleted after each was verified byte-identical (`cmp`) to its installed `spec/kernel-spec-vN.md`. They were 2.2 MB of parallel versions of an append-only directory, which the hygiene rule forbids; the approved bytes survive unchanged in `spec/`, and each prior exact-byte approval entry remains valid by SHA-256 against the installed file. `kernel-spec-v0.23-candidate.md` is in flight and untouched. Going forward a candidate is deleted at activation once the installed bytes are verified identical.
-- boundary: those thirteen files only; no approval entry edited.
+- boundary: twelve files. Refined on landing: the candidate for the CURRENTLY ACTIVE version is retained, because a live check consumes it — `compiler/src/bin/spec.rs` now compares the installed specification against the approved candidate bytes rather than against itself, which was a tautology. The rule going forward: at activation, delete the candidate of the version being superseded, never the one just installed.
 - evidence: process-design workflow finding (M5); per-file `cmp` verification.
