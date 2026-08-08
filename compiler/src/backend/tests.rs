@@ -538,6 +538,26 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
     assert!(output.stderr.is_empty());
 }
 
+/// [STOR-2] a box whose nominal is derived rather than written lowers and
+/// runs like any other: it is in the executable prefix, it allocates, its
+/// content reads back, and it is released. `box<u64>` is spelled nowhere.
+#[test]
+fn a_derived_box_nominal_allocates_reads_back_and_releases() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let flag = True();
+  let owner = box_new(flag);
+  let loaded = deref(owner);
+  check loaded else trap "the derived box did not read back";
+  return unit;
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 #[test]
 fn compiler_independent_scalar_cases_execute_through_host_llvm() {
     for source in [

@@ -12,6 +12,7 @@ mod requires;
 mod support;
 mod types;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
@@ -23,8 +24,8 @@ use crate::{
 use super::entailment::{EntailmentCallee, EntailmentContext, analyze_function};
 use super::model::{
     BindingId, CheckedConstant, CheckedConstantId, CheckedContract, CheckedExpression,
-    CheckedFunction, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
-    CheckedSliceOrigin, CheckedType, ClaimAdvisory, FunctionId, NominalId,
+    CheckedFunction, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedParameter,
+    CheckedProgramData, CheckedSliceOrigin, CheckedType, ClaimAdvisory, FunctionId, NominalId,
 };
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
@@ -342,6 +343,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
+    /// [STOR-2] referents a `box_new` derived whose box nominal was not
+    /// interned yet. Written by the `&self` checking path and drained by the
+    /// `&mut self` driver between attempts at one function.
+    pending_box_referents: RefCell<Vec<CheckedType>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
@@ -397,6 +402,12 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
         Err(CheckStop::Issue(issue)) => SemanticOutcome::SourceIssue { issue },
         Err(CheckStop::Unsupported(unsupported)) => SemanticOutcome::Unsupported { unsupported },
         Err(CheckStop::Compiler(failure)) => SemanticOutcome::CompilerFailure { failure },
+        // The deferred-box signal is repaired where it is raised, one
+        // function at a time, so reaching here is an internal inconsistency
+        // rather than anything the source can express.
+        Err(CheckStop::DeferredBoxNominal) => SemanticOutcome::CompilerFailure {
+            failure: SemanticCompilerFailure::InvalidResolution,
+        },
     }
 }
 
@@ -414,6 +425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
+            pending_box_referents: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -448,8 +460,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_constants(&items)?;
         self.complete_nominals()?;
         self.collect_function_signatures(&items)?;
-        let executable_nominal_count = self.nominals.len();
-        self.collect_contracts(&items)?;
         let nominal_count_before_function_checking = self.nominals.len();
         let main = self.main_id()?;
 
@@ -466,11 +476,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut functions = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
-            functions.push(self.check_function(index, Some(&callees))?);
+            functions.push(self.check_function_interning_boxes(index, Some(&callees))?);
         }
-        if self.nominals.len() != nominal_count_before_function_checking {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        // Function checking discovers box nominals [STOR-2] and nothing else:
+        // every other instance is interned from a written type before it runs.
+        for nominal in self
+            .nominals
+            .iter()
+            .skip(nominal_count_before_function_checking)
+        {
+            if !matches!(nominal.kind, CheckedNominalKind::Box { .. }) {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
         }
+        // The ordinary function path is complete, so the executable prefix
+        // closes here — after the derived box nominals, which executable code
+        // allocates and drops, and before the contract metadata, which no
+        // executable path reaches.
+        let executable_nominal_count = self.nominals.len();
+        self.collect_contracts(&items)?;
         let (conformances, law_derivations) =
             self.check_conformances_and_laws(&items, &functions)?;
         // The required non-rejecting [CLM-2] redundancy advisories, one per
@@ -567,6 +591,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// dark entailment engine reads; `None` skips the engine, which is the
     /// symbolic generic-template validation pass — [ENT] judgments are per
     /// concrete instantiation [ENT-1].
+    /// [STOR-2] checks one function, interning the box nominals its `box_new`
+    /// calls derive.
+    ///
+    /// A derived referent has no written `box<T>` anywhere for the interning
+    /// pass to have found, and checking is `&self`, so the miss is reported
+    /// as [`CheckStop::DeferredBoxNominal`] and repaired here. Each attempt
+    /// must intern at least one new nominal, which bounds the loop by the
+    /// finitely many referent types one function can name.
+    fn check_function_interning_boxes(
+        &mut self,
+        index: usize,
+        callees: Option<&[EntailmentCallee]>,
+    ) -> Result<CheckedFunction, CheckStop> {
+        loop {
+            match self.check_function(index, callees) {
+                Err(CheckStop::DeferredBoxNominal) => {
+                    let pending = std::mem::take(&mut *self.pending_box_referents.borrow_mut());
+                    let before = self.box_nominals.len();
+                    for referent in pending {
+                        self.intern_box_nominal(referent)?;
+                    }
+                    if self.box_nominals.len() == before {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                }
+                outcome => return outcome,
+            }
+        }
+    }
+
     pub(super) fn check_function(
         &self,
         index: usize,

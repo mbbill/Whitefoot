@@ -362,11 +362,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let nominal = self
-            .box_nominals
-            .get(&referent)
-            .copied()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        // [STOR-2] the box nominal is derived from the operand, so the pass
+        // that interns from a written `box<T>` cannot have reached it: a
+        // purely local box names that type nowhere. Record the referent and
+        // let the driver intern it and check this function again.
+        let Some(nominal) = self.box_nominals.get(&referent).copied() else {
+            self.pending_box_referents.borrow_mut().push(referent);
+            return Err(CheckStop::DeferredBoxNominal);
+        };
         Ok(TypedExpression::owned(
             CheckedExpression::BoxNew {
                 nominal,

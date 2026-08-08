@@ -117,3 +117,57 @@ fn main() -> own unit pure {
         expected,
     );
 }
+
+/// [STOR-2] the box nominal is derived from the operand, so a purely local
+/// box names `box<T>` nowhere for the written-type interning pass to find.
+///
+/// The control pair differs only in whether some *other* declaration spells
+/// `box<u64>`. Before the checker could intern a derived referent, the first
+/// program failed with a compiler failure while the second compiled — an
+/// implementation limitation deciding what source was acceptable.
+#[test]
+fn a_derived_box_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
+    let named_nowhere = br#"fn main() -> own unit allocates(heap) {
+  let owner = box_new(41_u64);
+  let loaded = deref(owner);
+  return unit;
+}
+"#;
+    let named_in_a_signature = br#"fn take(b: own box<u64>) -> own unit pure {
+  return unit;
+}
+
+fn main() -> own unit allocates(heap) {
+  let owner = box_new(41_u64);
+  take(b: move owner);
+  return unit;
+}
+"#;
+    for source in [named_nowhere.as_slice(), named_in_a_signature.as_slice()] {
+        with_semantics(source, |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("a derived box nominal must check: {outcome:?}");
+            };
+            // The derived nominal sits inside the executable prefix, because
+            // executable code allocates and drops it.
+            let boxes = checked
+                .data
+                .nominals
+                .iter()
+                .take(checked.data.executable_nominal_count)
+                .filter(|nominal| {
+                    matches!(
+                        nominal.kind,
+                        CheckedNominalKind::Box {
+                            referent: CheckedType::Integer(_)
+                        }
+                    )
+                })
+                .count();
+            assert_eq!(
+                boxes, 1,
+                "exactly one box<u64> nominal, and it is executable"
+            );
+        });
+    }
+}
