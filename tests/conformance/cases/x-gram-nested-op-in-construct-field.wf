@@ -2,6 +2,6 @@ enum Wrap { W(inner: i32); }
 
 fn main () -> own unit pure {
   doc "GRAM-9: a call (iadd.wrap) in a construct-field atom position does not derive; the field value must be a bound name or literal.";
-  let x: own Wrap = W(inner: iadd.wrap<i32>(3_i32, 4_i32));
+  let x = W(inner: iadd.wrap<i32>(3_i32, 4_i32));
   return unit;
 }

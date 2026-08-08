@@ -1014,6 +1014,57 @@ Remaining: A4, the Bool matches. It is the one class that reshapes a tree
 rather than respelling tokens, so the renderer cannot rescue a mistake in
 it; the algorithm is the one already proven by hand on 105 inline fixtures.
 
+### The 20 pre-semantic reject cases — measured and disposed (ruling 2026-08-08)
+
+The ruling's key point is one neither obvious option had: **leaving them at
+v0.22 is not automatically safe either**, because a v0.22 annotation is
+itself a [GRAM-4] error under v0.23, so a case rejected at the grammar stage
+may cite the annotation's rule instead of its own — the same silent verdict
+change, from the other direction. So each case was run against the v0.23
+compiler and its cited rule compared to its manifest row. A measurement, not
+a judgement.
+
+**13 still cite their own rule and are left unmigrated at v0.22 spelling.**
+Their rejection fires before the annotation can matter — every lexical case
+(`FORM-4` comments, `FORM-2` tab indentation) and every case whose violation
+is in a signature or effect row rather than a `let`.
+
+**7 had been masked, all by [GRAM-4], and are restated.** Each carried
+exactly one annotated `let` whose right-hand side held the violation under
+test, so the restatement is the minimal one: delete the annotation, keep the
+violation byte-for-byte. All 7 now reject for their own rule again, verified
+by re-running the compiler.
+
+Note which cases fell on which side: **every byte-level case is in the
+untouched 13**, and none of the 7 tests a layout or lexical property. That
+is why deleting an annotation from them perturbs nothing under test — the
+ruling's caution about textual edits and byte-level properties applies to a
+set that turned out to be disjoint from the set needing edits.
+
+| case                                           | stage    | rule    | observed | disposition |
+| form1-neg-unknown-construct                    | Parsing  | FORM-1  | FORM-1   | left at v0.22 |
+| form3-neg-opname-bad-suffix                    | Parsing  | FORM-3  | FORM-3   | restated |
+| form3-neg-region-param-missing-apostrophe      | Parsing  | FORM-3  | FORM-3   | left at v0.22 |
+| form3-neg-requires-binding                     | Parsing  | FORM-3  | FORM-3   | left at v0.22 |
+| form3-neg-reserved-mode-field                  | Parsing  | FORM-3  | FORM-3   | left at v0.22 |
+| form3-neg-typeid-fn-name                       | Parsing  | FORM-3  | FORM-3   | left at v0.22 |
+| form4-neg-comment                              | Lexing   | FORM-4  | FORM-4   | left at v0.22 |
+| form5-neg-missing-suffix                       | Parsing  | FORM-5  | FORM-5   | restated |
+| gram9-neg-constructor-in-call-argument         | Parsing  | GRAM-9  | GRAM-9   | left at v0.22 |
+| gram9-neg-constructor-in-constructor-field     | Parsing  | GRAM-9  | GRAM-9   | restated |
+| gram9-neg-nested-call                          | Parsing  | GRAM-9  | GRAM-9   | restated |
+| x-eff-pure-combined-with-traps                 | Parsing  | EFF-1   | EFF-1    | left at v0.22 |
+| x-eff-trailing-comma-row                       | Parsing  | EFF-1   | EFF-1    | left at v0.22 |
+| x-eff-writes-missing-region                    | Parsing  | EFF-1   | EFF-1    | left at v0.22 |
+| x-form-form2-tab-indent                        | Lexing   | FORM-2  | FORM-2   | left at v0.22 |
+| x-form-form3-enum-name-ident                   | Parsing  | FORM-3  | FORM-3   | left at v0.22 |
+| x-form-form4-block-comment                     | Lexing   | FORM-4  | FORM-4   | left at v0.22 |
+| x-form-form5-op-arg-missing-suffix             | Parsing  | FORM-5  | FORM-5   | restated |
+| x-gram-nested-op-in-construct-field            | Parsing  | GRAM-9  | GRAM-9   | restated |
+| x-gram-nested-ucall-in-call-arg                | Parsing  | GRAM-9  | GRAM-9   | restated |
+
+All 20 cite their recorded rule after the change, 20 of 20.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the

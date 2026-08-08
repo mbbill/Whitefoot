@@ -8,6 +8,6 @@ fn add2 (x: own i32, y: own i32) -> own i32 pure {
 
 fn main () -> own unit pure {
   doc "GRAM-9: a user-fn call (inc) nested in another call's argument atom position does not derive; bind it with a preceding let.";
-  let r: own i32 = add2(x: inc(y: 1_i32), y: 2_i32);
+  let r = add2(x: inc(y: 1_i32), y: 2_i32);
   return unit;
 }
