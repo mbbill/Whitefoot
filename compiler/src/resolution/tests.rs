@@ -781,18 +781,27 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
     });
 }
 
-/// OP-1 (iii): reservation is derived from the op column, so respelling
-/// `ieq` to `==` takes it out of `DotlessOperationNames` and frees the name
-/// for source. `ilt` keeps its spelling under ruling O1 and stays reserved,
-/// which is what the test above pins.
+/// OP-1 (iii): reservation is derived from the op column, so every one of the
+/// six comparisons is reserved again after the owner cancelled their infix
+/// spellings. The test above pins `ilt`, which never moved; this one pins the
+/// four that did, because they were declarable for exactly one revision and a
+/// program written against it must stop compiling.
 #[test]
-fn respelled_comparisons_leave_the_reserved_name_inventory() {
-    with_one_resolution(b"fn ieq() -> own unit pure {\n}\n", |outcome| {
-        assert!(
-            matches!(outcome, ResolutionOutcome::Complete(_)),
-            "a respelled comparison name is declarable: {outcome:?}"
-        );
-    });
+fn every_comparison_name_is_reserved_from_source_declarations() {
+    for spelling in ["ieq", "ine", "ile", "ige"] {
+        let source = format!("fn {spelling}() -> own unit pure {{\n}}\n");
+        with_one_resolution(source.as_bytes(), |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a comparison name declaration must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Form3);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::ReservedName { spelling: declared, .. }
+                    if declared == spelling
+            ));
+        });
+    }
 }
 
 #[test]
@@ -875,6 +884,10 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
 /// never a declaration, callee IDENT, or OPNAME". The respelling therefore did
 /// not move these rows to a different name — it took them out of the name
 /// domain entirely, which is a property worth a gate of its own.
+///
+/// The split is smaller than it was: after the owner cancelled the infix
+/// comparisons only arithmetic crosses this line, so `ieq` joins `imin` on the
+/// named side and is a second control rather than a second subject.
 #[test]
 fn a_respelled_family_produces_no_lexical_use_at_all() {
     let source = br#"fn main() -> own unit pure {
@@ -888,25 +901,24 @@ fn a_respelled_family_produces_no_lexical_use_at_all() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("infix operations must resolve: {outcome:?}");
         };
-        let operations: Vec<_> = resolved
+        let mut operations: Vec<_> = resolved
             .lexical_uses()
             .iter()
             .filter(|usage| matches!(usage.target(), ResolvedTarget::Operation(_)))
+            .map(|usage| usage.spelling())
             .collect();
-        // The named row in the same function is the control: it proves the
-        // filter finds operation uses at all, so the two infix rows being
+        operations.sort_unstable();
+        // The two named rows in the same function are the control: they prove
+        // the filter finds operation uses at all, so the infix row being
         // absent is the property and not an empty search.
-        assert_eq!(operations.len(), 1);
-        assert_eq!(operations[0].spelling(), "imin");
-        for operator in ["+wrap", "=="] {
-            assert!(
-                !resolved
-                    .lexical_uses()
-                    .iter()
-                    .any(|usage| usage.spelling() == operator),
-                "a respelled family must produce no lexical use: {operator}"
-            );
-        }
+        assert_eq!(operations, ["ieq", "imin"]);
+        assert!(
+            !resolved
+                .lexical_uses()
+                .iter()
+                .any(|usage| usage.spelling() == "+wrap"),
+            "a respelled family must produce no lexical use"
+        );
     });
 }
 
@@ -1529,17 +1541,18 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
 
 #[test]
 fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
-    // The callee path now covers the families that keep a name; the twenty
+    // The callee path now covers the families that keep a name; the sixteen
     // [OP-7] respelled to operators reach their row by operator token and are
     // covered by `a_respelled_family_produces_no_lexical_use_at_all`. The two
     // halves are counted here so that a family silently leaving one for the
-    // other cannot pass unnoticed.
+    // other cannot pass unnoticed — which is what the owner's cancellation of
+    // the infix comparisons did, moving four families back across this line.
     let named: Vec<_> = OPERATION_FAMILIES
         .iter()
         .enumerate()
         .filter(|(_, spelling)| !is_operator_family(spelling))
         .collect();
-    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 20);
+    assert_eq!(named.len(), OPERATION_FAMILIES.len() - 16);
 
     let mut source = String::from("fn main() -> own unit pure {\n");
     for (_, operation) in &named {

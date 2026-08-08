@@ -14,7 +14,7 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 69);
-    assert_eq!(diagnostic_terminal_order().len(), 97);
+    assert_eq!(diagnostic_terminal_order().len(), 93);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[68], Production::Effect);
 }
@@ -124,7 +124,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
     assert_eq!(DECISIONS.len(), 84);
-    assert_eq!(SELECT_ROWS.len(), 3_264);
+    assert_eq!(SELECT_ROWS.len(), 3_156);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -168,6 +168,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_264);
+    assert_eq!(total_rows, 3_156);
     assert!(saw_atom_only);
 }

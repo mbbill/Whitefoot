@@ -78,9 +78,16 @@ fn operator_forms_take_their_maximal_lowercase_suffix() {
     );
 }
 
+/// [GRAM-1] the compound set is exactly `->` and `=>`, and the bytes that
+/// spelled a comparison operator form nothing longer than themselves.
+///
+/// The comparison halves are the control: `==`, `<=`, and `>=` are here for
+/// their *absence* as compound tokens, because the owner's cancellation of the
+/// infix comparisons is what put them back to two tokens each. `!=` cannot
+/// appear at all — `!` is a raw lexical defect, asserted in `hostile.rs`.
 #[test]
 fn compound_punctuation_beats_its_single_byte_prefixes() {
-    let observed = observed(b"a == b != c <= d >= e -> f => g < h > i = j\n");
+    let observed = observed(b"a == b <= d >= e -> f => g < h > i = j\n");
     let tokens: Vec<_> = observed
         .iter()
         .filter(|(_, label)| label.starts_with("token:"))
@@ -90,13 +97,14 @@ fn compound_punctuation_beats_its_single_byte_prefixes() {
         tokens,
         [
             "token:LowerWordForm",
-            "token:EqualEqual",
+            "token:Equal",
+            "token:Equal",
             "token:LowerWordForm",
-            "token:BangEqual",
+            "token:LeftAngle",
+            "token:Equal",
             "token:LowerWordForm",
-            "token:LessEqual",
-            "token:LowerWordForm",
-            "token:GreaterEqual",
+            "token:RightAngle",
+            "token:Equal",
             "token:LowerWordForm",
             "token:ThinArrow",
             "token:LowerWordForm",

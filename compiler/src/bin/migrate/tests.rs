@@ -94,12 +94,18 @@ fn every_comparison_keeps_its_name_and_loses_only_its_argument() {
 
 /// The reverse class: a corpus already migrated to the cancelled spelling
 /// comes back to the named call, operands in the order they were written.
+///
+/// `!=` is deliberately absent. Its bytes reach the pre-pass only while the
+/// lexer still forms the compound token, and after the cancellation `!` is a
+/// raw lexical defect, so a fixture spelling one would fail to lex rather than
+/// migrate. The 7 `!=` sites the corpus carried were migrated in the commit
+/// that ran the tool, before the lexer reverted; the three below still lex,
+/// as two byte-adjacent punctuation tokens each.
 #[test]
 fn an_infix_comparison_returns_to_its_named_call() {
-    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  let same = a == 1_u64;\n  let other = a != 2_u64;\n  let under = a <= 2_u64;\n  let over = a >= 0_u64;\n  check same else trap \"eq\";\n  return unit;\n}\n";
+    let source = b"fn main() -> own unit traps {\n  let a = 1_u64;\n  let same = a == 1_u64;\n  let under = a <= 2_u64;\n  let over = a >= 0_u64;\n  check same else trap \"eq\";\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("let same = ieq(a, 1_u64);"), "{out}");
-    assert!(out.contains("let other = ine(a, 2_u64);"), "{out}");
     assert!(out.contains("let under = ile(a, 2_u64);"), "{out}");
     assert!(out.contains("let over = ige(a, 0_u64);"), "{out}");
 }
@@ -121,11 +127,11 @@ fn the_reverse_class_recovers_every_atom_form_it_can_meet() {
 /// every position that introduces an expression.
 #[test]
 fn a_statement_keyword_is_never_swallowed_into_an_operand() {
-    let source = b"fn pick(x: own i32) -> own Bool traps {\n  check x == 0_i32 else trap \"check\";\n  if x >= 1_i32 {\n    return x != 2_i32;\n  }\n  return x <= 3_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
+    let source = b"fn pick(x: own i32) -> own Bool traps {\n  check x == 0_i32 else trap \"check\";\n  if x >= 1_i32 {\n    return x <= 2_i32;\n  }\n  return x <= 3_i32;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n";
     let out = migrated(source);
     assert!(out.contains("check ieq(x, 0_i32) else"), "{out}");
     assert!(out.contains("if ige(x, 1_i32) {"), "{out}");
-    assert!(out.contains("return ine(x, 2_i32);"), "{out}");
+    assert!(out.contains("return ile(x, 2_i32);"), "{out}");
     assert!(out.contains("return ile(x, 3_i32);"), "{out}");
 }
 

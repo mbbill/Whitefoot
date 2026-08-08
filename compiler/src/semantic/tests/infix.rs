@@ -58,10 +58,6 @@ fn every_operator_token_selects_its_row() {
         ("/checked", CheckedIntegerOperation::DivideChecked, false),
         ("%", CheckedIntegerOperation::RemainderTrap, true),
         ("%checked", CheckedIntegerOperation::RemainderChecked, false),
-        ("==", CheckedIntegerOperation::Equal, false),
-        ("!=", CheckedIntegerOperation::NotEqual, false),
-        ("<=", CheckedIntegerOperation::LessEqual, false),
-        (">=", CheckedIntegerOperation::GreaterEqual, false),
     ] {
         // [EFF-2] the row is exact, so only the trapping operators may
         // declare `traps`.

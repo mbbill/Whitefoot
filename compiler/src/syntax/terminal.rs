@@ -185,18 +185,10 @@ pub enum FixedTerminal {
     Percent,
     /// `%checked`.
     PercentChecked,
-    /// `==`.
-    EqualEqual,
-    /// `!=`.
-    BangEqual,
-    /// `<=`.
-    LessEqual,
-    /// `>=`.
-    GreaterEqual,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 89] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 85] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -272,10 +264,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 89] = [
     FixedTerminal::SlashChecked,
     FixedTerminal::Percent,
     FixedTerminal::PercentChecked,
-    FixedTerminal::EqualEqual,
-    FixedTerminal::BangEqual,
-    FixedTerminal::LessEqual,
-    FixedTerminal::GreaterEqual,
     FixedTerminal::Move,
     FixedTerminal::Deref,
     FixedTerminal::Pure,
@@ -378,10 +366,6 @@ impl FixedTerminal {
             Self::SlashChecked => b"/checked",
             Self::Percent => b"%",
             Self::PercentChecked => b"%checked",
-            Self::EqualEqual => b"==",
-            Self::BangEqual => b"!=",
-            Self::LessEqual => b"<=",
-            Self::GreaterEqual => b">=",
         }
     }
 
@@ -456,21 +440,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 97] = {
-    let mut predicates = [TerminalPredicate::Identifier; 97];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 93] = {
+    let mut predicates = [TerminalPredicate::Identifier; 93];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[89] = TerminalPredicate::Identifier;
-    predicates[90] = TerminalPredicate::TypeIdentifier;
-    predicates[91] = TerminalPredicate::RegionIdentifier;
-    predicates[92] = TerminalPredicate::Label;
-    predicates[93] = TerminalPredicate::OperationName;
-    predicates[94] = TerminalPredicate::Literal;
-    predicates[95] = TerminalPredicate::String;
-    predicates[96] = TerminalPredicate::Digits;
+    predicates[85] = TerminalPredicate::Identifier;
+    predicates[86] = TerminalPredicate::TypeIdentifier;
+    predicates[87] = TerminalPredicate::RegionIdentifier;
+    predicates[88] = TerminalPredicate::Label;
+    predicates[89] = TerminalPredicate::OperationName;
+    predicates[90] = TerminalPredicate::Literal;
+    predicates[91] = TerminalPredicate::String;
+    predicates[92] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -478,14 +462,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 89,
-            Self::TypeIdentifier => 90,
-            Self::RegionIdentifier => 91,
-            Self::Label => 92,
-            Self::OperationName => 93,
-            Self::Literal => 94,
-            Self::String => 95,
-            Self::Digits => 96,
+            Self::Identifier => 85,
+            Self::TypeIdentifier => 86,
+            Self::RegionIdentifier => 87,
+            Self::Label => 88,
+            Self::OperationName => 89,
+            Self::Literal => 90,
+            Self::String => 91,
+            Self::Digits => 92,
         }
     }
 }

@@ -61,12 +61,12 @@ pub(crate) const OPERATION_FAMILIES: [&str; 83] = [
     "ineg.wrap",
     "ineg.trap",
     "ineg.checked",
-    "==",
-    "!=",
+    "ieq",
+    "ine",
     "ilt",
-    "<=",
+    "ile",
     "igt",
-    ">=",
+    "ige",
     "eeq",
     "ene",
     "fadd.strict",
@@ -1403,22 +1403,25 @@ mod tests {
                 .iter()
                 .all(|word| !OPERATION_FAMILIES.contains(word))
         );
-        // OP-1 (iii)'s derived-set consequence: the four respelled comparisons
-        // leave DotlessOperationNames because an operator spelling is not an
-        // IDENT, while `ilt` and `igt` keep their names under ruling O1 and so
-        // stay reserved.
-        assert_eq!(reserved_name("ieq"), None);
-        assert_eq!(reserved_name("ine"), None);
-        assert_eq!(reserved_name("ile"), None);
-        assert_eq!(reserved_name("ige"), None);
-        assert_eq!(
-            reserved_name("ilt"),
-            Some((ReservedNameClass::DotlessOperation, 18))
-        );
-        assert_eq!(
-            reserved_name("igt"),
-            Some((ReservedNameClass::DotlessOperation, 20))
-        );
+        // OP-1 (iii)'s derived-set consequence after the owner cancelled the
+        // infix comparisons: every respelled row is a dotted OPNAME and was
+        // never a member, so all six integer comparisons are reserved and
+        // DotlessOperationNames has exactly its v0.22 membership. The ordinals
+        // are consecutive because the six occupy one contiguous op-column run.
+        for (spelling, ordinal) in [
+            ("ieq", 16),
+            ("ine", 17),
+            ("ilt", 18),
+            ("ile", 19),
+            ("igt", 20),
+            ("ige", 21),
+        ] {
+            assert_eq!(
+                reserved_name(spelling),
+                Some((ReservedNameClass::DotlessOperation, ordinal)),
+                "{spelling} is a dotless operation name"
+            );
+        }
         assert_eq!(
             reserved_name("cvt"),
             Some((ReservedNameClass::DotlessOperation, 38))

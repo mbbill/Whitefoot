@@ -838,7 +838,7 @@ existence-only · 0 underived.
 
 Specification binding:
 `governance/spec-evolution/kernel-spec-v0.23-candidate.md` at SHA-256
-`ab257aa65874c4e6de167189b97cf706b5ca0045ccab86fdb54da83e2ba613da`, assembled
+`5037bd852adc3c1fc623e1b6e1c9b4c209b9cdc927fb2cb3fdf445ac81d791fd`, assembled
 from the active v0.22 plus the approved FLOOR-5 delta
 (`governance/spec-evolution/spelling-relief-candidate.md`: SWEEP rows A1, A3,
 A4, and C1, with the owner rulings and adversarial-review fixes recorded
@@ -848,11 +848,17 @@ exact-byte approval and installation as `spec/kernel-spec-v0.23.md` are
 pending, and this binding is restated at activation.
 
 v0.23 adds and removes no rules. It modifies thirty-four existing rules at
-sixty-four verbatim-anchored sites: FORM-2, FORM-3, GRAM-1, GRAM-4, GRAM-5,
+sixty-two verbatim-anchored sites: FORM-2, FORM-3, GRAM-1, GRAM-4, GRAM-5,
 GRAM-6, GRAM-7, GRAM-9, GIVE-1, TYPE-5, OWN-5, OWN-13, STOR-2, STOR-5, OP-1,
 OP-2, OP-4, OP-7, OP-8, OP-9, ERR-2, ERR-3, FN-1, FN-4, FN-8, EFF-2, DIAG-1,
 DIAG-3, SYS-13, ENT-2, ENT-3, ENT-5, ENT-6, and EX-1. Grammar productions grow
 by four (`if_stmt`, `value_if`, `infix_tail`, `infix_op`; total 69) and the
-fixed terminal inventory by twenty-one (`if` and the twenty `infix_op`
-spellings; total 97 terminal predicates). Statistics unchanged: 80 derived ·
+fixed terminal inventory by seventeen (`if` and the sixteen `infix_op`
+spellings; total 93 terminal predicates). Statistics unchanged: 80 derived ·
 48 existence-only · 0 underived.
+
+Amended 2026-08-08 by owner decision: the infix comparison spellings are
+cancelled and all six integer comparisons keep their named calls, so the
+delta loses two sites ([GRAM-1]'s compound-token sentence and [ENT-3] S1's
+comparison-origin clause, both byte-identical to v0.22 again) and four
+terminal spellings. The rule list and the production count are unchanged.

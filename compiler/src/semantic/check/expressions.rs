@@ -376,10 +376,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             b"/checked" => CheckedIntegerOperation::DivideChecked,
             b"%" => CheckedIntegerOperation::RemainderTrap,
             b"%checked" => CheckedIntegerOperation::RemainderChecked,
-            b"==" => CheckedIntegerOperation::Equal,
-            b"!=" => CheckedIntegerOperation::NotEqual,
-            b"<=" => CheckedIntegerOperation::LessEqual,
-            b">=" => CheckedIntegerOperation::GreaterEqual,
             _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         })
     }

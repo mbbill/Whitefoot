@@ -111,14 +111,6 @@ pub enum TokenKind {
     ThinArrow,
     /// `=>`.
     FatArrow,
-    /// `==`.
-    EqualEqual,
-    /// `!=`.
-    BangEqual,
-    /// `<=`.
-    LessEqual,
-    /// `>=`.
-    GreaterEqual,
     /// `&`.
     Ampersand,
 }

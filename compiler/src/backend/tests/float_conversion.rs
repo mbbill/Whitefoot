@@ -323,13 +323,14 @@ fn emit_success_case(
     } else {
         format!("1_{}", destination_type.spelling)
     };
-    // [OP-1] `ieq` respelled to `==`; `feq` keeps its name, so the two
-    // destinations no longer share one call shape.
-    let equality = if destination_type.kind == NumericKind::Float {
-        format!("feq(success_value{conversion}, {destination_value})")
+    // [OP-7] the domain prefix is the only difference: `ieq` and `feq` are
+    // both named calls, so the two destinations share one call shape.
+    let domain = if destination_type.kind == NumericKind::Float {
+        'f'
     } else {
-        format!("success_value{conversion} == {destination_value}")
+        'i'
     };
+    let equality = format!("{domain}eq(success_value{conversion}, {destination_value})");
     writeln!(
         source,
         "  let success{conversion} = cvt<{source_type}, {destination}>({source_value});\n  match move success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      check {equality} else trap \"partial success value {conversion}\";\n    }}\n    Err(error: success_error{conversion}) => {{\n      check False() else trap \"partial success became error {conversion}\";\n    }}\n  }}",
