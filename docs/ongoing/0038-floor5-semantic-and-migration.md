@@ -2,14 +2,15 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — 2026-08-07 round 1, handed back at a clean boundary:
-  the front end is complete and green, the semantic path and migration are
-  not started, and four conformance verdicts need a ruling (below).
+- **Status:** `IN PROGRESS` — 2026-08-07 round 2. The front end is complete
+  and green for v0.23 (lex, parse, finalize, FORM-2 canonical, including the
+  `} else {` join line). The semantic path and the corpus migration are next;
+  the four verdict-meaning breaks are ruled at 9dcaebc.
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   fixed delta `governance/spec-evolution/spelling-relief-candidate.md`
 - **Owner / workspace:** exec-0038 / `/Users/bytedance/do_not_scan/wf-0038-exec`
   on branch `task/0036-floor5-grammar-and-migration`
-- **Base revision:** f80840d (main), branch rebased onto it
+- **Base revision:** 9dcaebc (main), branch rebased onto it
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -245,12 +246,46 @@ The other nine cases the scan flagged are safe: `op1-neg-ieq-bool` and
 `op1-neg-ineg-unsigned` reject on operand domain, which [OP-2] (f) and (g)
 preserve word for word after the argument is dropped.
 
+## Progress (round 2, exec-0038, 2026-08-07) — FORM-2 blocker cleared
+
+`5895526` clears the item round 1 named as the successor's first blocker,
+so the front end is now complete for v0.23 end to end: lex, classify,
+parse, finalize, and FORM-2 canonical rendering.
+
+**What the blocker actually was.** `NodeRecord` held one brace pair,
+assigned at `finalize/engine.rs` from the *last* `{` and `}` the node
+owned, so an `if` with a braced `else` kept only the else block. Braces
+now pair in source order into a second optional pair (`else_open` /
+`else_close`) that only `if_stmt` and `value_if` ever use; every other
+block-bearing production still owns exactly one pair, because a nested
+block always belongs to a nested production node. `inside_body` tests both
+pairs, so else-block children get their format depth.
+
+**The join line.** `} else {` is a rendering no v0.22 production produced.
+It follows the `requires` block's `} {` precedent: suppress the break
+after a close brace that joins a continuation. An `else if` chain reaches
+the same rule through the `else` terminal the outer node owns while the
+nested `if_stmt` owns the second block, so the outer node has one pair
+plus `has_else`.
+
+**Evidence.** `if_else_renders_its_join_line_and_indents_both_blocks`
+pins the exact canonical bytes for four shapes — else-free `if`, braced
+`else`, an `else if` chain, and a `value_if` initializer — through
+`only_these_trivia_bytes_render`, which additionally asserts that removing
+*any single* trivia byte makes the source non-canonical. Full lib run
+after the change: **257 passed / 271 failed**, with the failure set
+byte-identical to before it (no regressions, no accidental fixes); `cargo
+fmt --check` and `cargo clippy --all-targets -D warnings` both exit 0.
+
+The migration's FORM-2 canonical audit can now run, which was the reason
+this had to come first.
+
 ## Successor brief
 
 Rounds 1–5 of 0036 and this round are discharged; do not re-derive them.
 The front end is done. What remains, in order:
 
-1. **FORM-2 for `if_stmt`/`value_if` — the one structural blocker, and it
+1. ~~FORM-2 for `if_stmt`/`value_if`~~ — **DONE in round 2 (`5895526`)**. Retained below because the analysis explains the shape: it
    is bigger than the round-2 brief implies.** `is_block_bearing` needs
    the two productions, but the model underneath cannot hold them:
    `NodeRecord` carries a single `body_open`/`body_close` pair and
