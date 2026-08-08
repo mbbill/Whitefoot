@@ -69,7 +69,7 @@ initial directory, so a case may also name that label as a path and read the
 combined bytes back. Absent keys mean the default arrangement — the default
 argument vector, an empty standard input, no fixtures, and separate sinks.
 """
-import hashlib, json, re, sys
+import hashlib, json, re, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -328,6 +328,60 @@ def coverage(cases, annots):
     return rules, spec_name, covered, by_case, annotated, pos, neg, sorted(rules - covered)
 
 
+def declared_verdicts(text):
+    """Every case's declared verdict in one manifest's text, keyed by id."""
+    verdicts = {}
+    for line in text.splitlines():
+        row = line.strip()
+        if not row or row.startswith("#"):
+            continue
+        case = json.loads(row)
+        if "id" in case:
+            verdicts[case["id"]] = case["expect"]
+    return verdicts
+
+
+def manifest_at(revision):
+    """The manifest as of one revision, read through git rather than the tree."""
+    path = MANIFEST.relative_to(ROOT)
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), "show", f"{revision}:{path}"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"cannot read the manifest at {revision}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def verdict_diff(revision):
+    """Reports every declared verdict that moved or vanished since `revision`.
+
+    This is the one population the adapter cannot see. The adapter compares
+    each case's ACTUAL verdict against its DECLARED one, so a verdict that
+    moves while its manifest row is edited to follow leaves the adapter green
+    — which `CLAUDE.md` names a governance breach precisely because nothing
+    mechanical stops it.
+
+    ITS LIMIT, stated because a checker trusted past its range is worse than
+    none: it cannot see an EMPTIED case. A positive whose subject was deleted
+    still declares, and still reaches, the verdict it always did; there is
+    nothing here to compare. A verdict is the wrong instrument for a question
+    about a case's subject, and this check does not answer one.
+
+    A hit is not a defect. Restating a citation is legitimate with owner
+    agreement and a ledger entry; the point is that it becomes visible instead
+    of silent, so each hit is read against `governance/APPROVALS.md`.
+    """
+    before, after = declared_verdicts(manifest_at(revision)), declared_verdicts(
+        MANIFEST.read_text()
+    )
+    moved = sorted(k for k in before.keys() & after.keys() if before[k] != after[k])
+    gone = sorted(before.keys() - after.keys())
+    added = sorted(after.keys() - before.keys())
+    return before, after, moved, gone, added
+
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "all"
     verbose = "-v" in sys.argv
@@ -359,6 +413,25 @@ def main():
                 elif o == "SKIP" and verbose:
                     print(f"  SKIP  {c['id']:38} {v[1] if len(v) > 1 else 'pending'}")
             print("conformance run: " + "  ".join(f"{k}={tally[k]}" for k in sorted(tally)))
+    if cmd == "verdicts":
+        if len(sys.argv) < 3:
+            raise SystemExit("usage: runner.py verdicts <revision>")
+        revision = sys.argv[2]
+        before, after, moved, gone, added = verdict_diff(revision)
+        for case in moved:
+            print(f"  MOVED   {case:38} {before[case]} -> {after[case]}")
+        for case in gone:
+            print(f"  REMOVED {case:38} {before[case]}")
+        if verbose:
+            for case in added:
+                print(f"  added   {case:38} {after[case]}")
+        print(
+            f"declared verdicts vs {revision}: {len(moved)} moved, {len(gone)} removed, "
+            f"{len(added)} added, {len(after)} total"
+        )
+        # An addition is free under CLAUDE.md; a move or a removal is protected
+        # material changing and is what this exists to surface.
+        sys.exit(1 if moved or gone else 0)
     if cmd in ("coverage", "all"):
         rules, spec_name, covered, by_case, annotated, pos, neg, uncovered = coverage(cases, annots)
         print(f"coverage ({spec_name}): {len(covered)}/{len(rules)} rules covered "

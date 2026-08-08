@@ -230,5 +230,52 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue(pending_only <= covered)
 
 
+class DeclaredVerdictDiffTests(unittest.TestCase):
+    """The one population the adapter cannot see: a verdict that moves while
+    its manifest row is edited to follow it, leaving the adapter green."""
+
+    BEFORE = (
+        '{"id": "a", "rules": ["OP-1"], "expect": {"kind": "reject", "rule": "OP-1"}, '
+        '"status": "runnable", "doc": "d"}\n'
+        '{"id": "b", "rules": ["FN-2"], "expect": {"kind": "run", "exit": 0}, '
+        '"status": "runnable", "doc": "d"}\n'
+        '{"id": "c", "rules": ["FN-8"], "expect": {"kind": "accept"}, '
+        '"status": "runnable", "doc": "d"}\n'
+        '{"rule": "GRAM-6", "covered_by": "policy", "reason": "r"}\n'
+    )
+
+    def test_a_moved_citation_is_reported_with_both_sides(self):
+        after = self.BEFORE.replace('"rule": "OP-1"}', '"rule": "TYPE-5"}')
+        before_map = runner.declared_verdicts(self.BEFORE)
+        after_map = runner.declared_verdicts(after)
+        moved = [k for k in before_map.keys() & after_map.keys()
+                 if before_map[k] != after_map[k]]
+        self.assertEqual(moved, ["a"])
+        self.assertEqual(before_map["a"]["rule"], "OP-1")
+        self.assertEqual(after_map["a"]["rule"], "TYPE-5")
+
+    def test_an_annotation_row_is_not_a_case(self):
+        # The GRAM-6 policy row states a rule and no id; reading it as a case
+        # would invent a verdict that no case declares.
+        self.assertEqual(sorted(runner.declared_verdicts(self.BEFORE)), ["a", "b", "c"])
+
+    def test_a_changed_exit_status_counts_as_a_moved_verdict(self):
+        # The whole expectation is compared, not just its rule, so a run case
+        # whose expected exit moves is caught with the reject cases.
+        after = self.BEFORE.replace('"exit": 0}', '"exit": 1}')
+        before_map = runner.declared_verdicts(self.BEFORE)
+        after_map = runner.declared_verdicts(after)
+        self.assertNotEqual(before_map["b"], after_map["b"])
+
+    def test_an_emptied_case_is_invisible_here_and_that_is_the_limit(self):
+        # `b` keeps `run 0` whatever happens to its source. This check compares
+        # DECLARED verdicts, so a positive whose subject was deleted -- the
+        # emptied class -- produces nothing at all. Asserted rather than
+        # documented, so the limit cannot quietly stop being true.
+        before_map = runner.declared_verdicts(self.BEFORE)
+        after_map = runner.declared_verdicts(self.BEFORE)
+        moved = [k for k in before_map.keys() & after_map.keys()
+                 if before_map[k] != after_map[k]]
+        self.assertEqual(moved, [])
 if __name__ == "__main__":
     unittest.main()
