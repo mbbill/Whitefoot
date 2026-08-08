@@ -133,7 +133,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         entry: NodeId,
         expression: NodeId,
     ) -> Result<bool, CheckStop> {
-        if let Some(tail) = self.tree.first_child_with(expression, Production::InfixTail)? {
+        if let Some(tail) = self
+            .tree
+            .first_child_with(expression, Production::InfixTail)?
+        {
             self.validate_requires_infix(entry, expression, tail)?;
             return Ok(true);
         }
