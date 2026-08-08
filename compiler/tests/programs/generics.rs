@@ -13,12 +13,12 @@ const GENERIC_CONSUMER: &[u8] = br#"fn forward<T: Int>(value: own T) -> own Pair
 }
 
 fn main() -> own unit traps {
-  let small: own Pair<u8> = forward<u8>(value: 13_u8);
-  let wide: own Pair<i64> = forward<i64>(value: -17_i64);
-  let small_value: own u8 = small.value;
-  let wide_value: own i64 = wide.value;
-  check ieq<u8>(small_value, 13_u8) else trap "cross-record small";
-  check ieq<i64>(wide_value, -17_i64) else trap "cross-record wide";
+  let small = forward<u8>(value: 13_u8);
+  let wide = forward<i64>(value: -17_i64);
+  let small_value = small.value;
+  let wide_value = wide.value;
+  check small_value == 13_u8 else trap "cross-record small";
+  check wide_value == -17_i64 else trap "cross-record wide";
   return unit;
 }
 "#;

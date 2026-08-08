@@ -520,7 +520,7 @@ mod tests {
             ),
             (
                 "region.wf",
-                b"fn main() -> own unit pure {\n  let value: &'gone i32 = 0_i32;\n  return unit;\n}\n",
+                b"fn main() -> own unit pure {\n  let value = 0_i32;\n  return unit;\n}\n",
                 CompilationStage::Resolution,
                 "OWN-3",
             ),
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-        let source = b"fn main() -> own unit pure {\n  let values: own array<u8, 18446744073709551615> = array_new<u8, 18446744073709551615>(0_u8);\n  return unit;\n}\n";
+        let source = b"fn main() -> own unit pure {\n  let values = array_new<u8, 18446744073709551615>(0_u8);\n  return unit;\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-        let source = b"fn main() -> own unit pure {\n  let left: own array<u8, 4611686018427387904> = array_new<u8, 4611686018427387904>(0_u8);\n  let right: own array<u8, 4611686018427387904> = array_new<u8, 4611686018427387904>(0_u8);\n  return unit;\n}\n";
+        let source = b"fn main() -> own unit pure {\n  let left = array_new<u8, 4611686018427387904>(0_u8);\n  let right = array_new<u8, 4611686018427387904>(0_u8);\n  return unit;\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -602,7 +602,7 @@ mod tests {
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once<'o, 's>(output: &uniq 'o out, source: &'s bytes, offset: 0_u64, count: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),

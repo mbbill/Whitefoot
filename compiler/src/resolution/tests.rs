@@ -165,7 +165,7 @@ fn named_constants_remain_lexically_declaration_before_use() {
 #[test]
 fn decimal_array_sizes_need_no_lexical_target() {
     let source = br#"fn main() -> own unit pure {
-  let values: own array<i32, 4> = array_new<i32, 4>(0_i32);
+  let values = array_new<i32, 4>(0_i32);
   return unit;
 }
 "#;
@@ -205,7 +205,7 @@ struct Later {
 #[test]
 fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
     let source = br#"fn guarded() -> own unit traps requires {
-  let value: own Missing = missing;
+  let value = missing;
 } {
   return unit;
 }
@@ -347,7 +347,7 @@ fn calls(x: own u64) -> own unit pure {
 }
 
 fn outcomes(m: own ReadOutcome) -> own unit pure {
-  let failed: own IoError = NotFound(code: 1_u32, origin: 0_u8);
+  let failed = NotFound(code: 1_u32, origin: 0_u8);
   match m {
     ReadBytes(count: got) => {
       return unit;
@@ -427,7 +427,7 @@ fn a_system_unadmitted_unit_sees_system_spellings_as_ordinary_undeclared_names()
     // contributes no entry, so a system operation spelling is an ordinary
     // undeclared callee decided by the ordinary lexical-use ranks.
     let callee = br#"fn main() -> own unit pure {
-  let x: own u64 = 0_u64;
+  let x = 0_u64;
   args_count(args: x);
   return unit;
 }
@@ -483,8 +483,8 @@ fn args_count(args: own u64) -> own u64 pure {
 }
 
 fn main() -> own unit pure {
-  let x: own u64 = args_count(args: 0_u64);
-  let s: own HostString = HostString();
+  let x = args_count(args: 0_u64);
+  let s = HostString();
   match ReadEnd() {
     ReadEnd() => {
       return unit;
@@ -610,7 +610,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
     // A nested declaration collides at rank 5 exactly like a root one
     // ([SYS-1]: at the compilation root and in every nested scope alike);
     // this is a rejection, never a shadow of the system entry.
-    let nested = "command fn main() -> own ExitStatus pure {\n  let host_bytes_len: own u64 = 0_u64;\n  return exit_status(code: 0_u8);\n}\n";
+    let nested = "command fn main() -> own ExitStatus pure {\n  let host_bytes_len = 0_u64;\n  return exit_status(code: 0_u8);\n}\n";
     with_one_resolution(nested.as_bytes(), |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the nested system collision must reject: {outcome:?}");
@@ -722,7 +722,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
 #[test]
 fn requires_locals_do_not_escape_into_the_function_body() {
     let source = br#"fn guarded() -> own unit traps requires {
-  let condition: own i32 = 1_i32;
+  let condition = 1_i32;
   check condition else trap "failed";
 } {
   return condition;
@@ -838,8 +838,8 @@ fn a_break_label_must_lexically_enclose_the_break() {
 #[test]
 fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
     let source = br#"fn main() -> own unit pure {
-  let sum: own i32 = iadd.wrap(1_i32, 2_i32);
-  let equal: own Bool = ieq<i32>(sum, 3_i32);
+  let sum = 1_i32 +wrap 2_i32;
+  let equal = sum == 3_i32;
   return unit;
 }
 "#;
@@ -948,14 +948,14 @@ fn numeric<T: Int>() -> own T pure {
 }
 
 fn main() -> own unit traps {
-  let ordinary: own i32 = iadd.wrap(1_i32, two);
-  let made: own Package<i32, one> = Package<i32, one>(items: ordinary);
+  let ordinary = 1_i32 +wrap two;
+  let made = Package<i32, one>(items: ordinary);
   set deref(made).items = ordinary;
   region 'r {
-    let borrowed: &'r i32 = &'r ordinary;
-    let called: &'r i32 = user<i32, 'r, one>(arg: borrowed);
-    let view: own slice<'r, i32> = move called;
-    check ieq<i32>(ordinary, two) else trap "bad";
+    let borrowed = &'r ordinary;
+    let called = user<i32, 'r, one>(arg: borrowed);
+    let view = move called;
+    check ordinary == two else trap "bad";
   }
   loop @done {
     break @done;
@@ -1159,7 +1159,7 @@ fn approved_duplicate_main_conformance_case_is_type6() {
 #[test]
 fn nested_declarations_cannot_shadow_source_later_global_functions() {
     let source = br#"fn main() -> own unit pure {
-  let future: own i32 = 1_i32;
+  let future = 1_i32;
   return unit;
 }
 
@@ -1311,7 +1311,7 @@ fn ieq() -> own unit pure {
 }
 
 fn guarded() -> own unit traps requires {
-  let value: own i32 = 1_i32;
+  let value = 1_i32;
 } {
   return unit;
 }

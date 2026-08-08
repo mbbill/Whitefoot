@@ -62,11 +62,11 @@ fn ordered_canonical_sources_keep_independent_forests() {
 #[test]
 fn nested_blocks_arms_and_requires_follow_tree_depth() {
     let source = br#"fn guarded(value: own i32) -> own unit traps requires {
-  check ieq<i32>(value, 0_i32) else trap "precondition";
+  check value == 0_i32 else trap "precondition";
 } {
   match value {
     Some(payload: item) => {
-      check ieq<i32>(item, payload) else trap "drift";
+      check item == payload else trap "drift";
     }
     None() => {
       return unit;

@@ -22,33 +22,33 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> own u64 pure {
 
 fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
-  let sent: own u64 = 0_u64;
+  let sent = 0_u64;
   loop @publish {
-    let pending: own Bool = ilt<u64>(sent, length);
+    let pending = ilt(sent, length);
     if pending {
     } else {
       break @publish;
     }
-    let remaining: own u64 = isub.wrap<u64>(length, sent);
+    let remaining = length -wrap sent;
     region 'attempt {
       match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
         Ok(value: written) => {
-          set sent = iadd.wrap<u64>(sent, written);
+          set sent = sent +wrap written;
         }
         Err(error: problem) => {
-          return Err(error: move problem);
+          return Err<unit, IoError>(error: move problem);
         }
       }
     }
   }
-  return Ok(value: unit);
+  return Ok<unit, IoError>(value: unit);
 }
 
 command fn main(command.args as args: own Args, command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected hostile walk that must trap at its exact byte.";
-  let selector: own u8 = 111_u8;
-  let choice: own buffer<u8> = buffer_new<u8>(8_u64, 0_u8);
-  let chosen: own u64 = 0_u64;
+  let selector = 111_u8;
+  let choice = buffer_new(8_u64, 0_u8);
+  let chosen = 0_u64;
   region 'pick {
     match arg_get<'pick>(args: &'pick args, position: 1_u64) {
       Ok(value: text) => {
@@ -66,10 +66,10 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       }
     }
   }
-  if ige<u64>(chosen, 1_u64) {
+  if chosen >= 1_u64 {
     set selector = choice[0_u64];
   }
-  let data: own buffer<u8> = buffer_new<u8>(37_u64, 97_u8);
+  let data = buffer_new(37_u64, 97_u8);
   set data[0_u64] = 88_u8;
   set data[1_u64] = 88_u8;
   set data[15_u64] = 88_u8;
@@ -77,118 +77,118 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   set data[17_u64] = 88_u8;
   set data[31_u64] = 10_u8;
   set data[36_u64] = 88_u8;
-  let found: own buffer<u8> = buffer_new<u8>(64_u64, 0_u8);
-  let count: own u64 = 0_u64;
-  let mark: own u8 = 88_u8;
-  let stop: own u64 = len<u8>(data);
-  let cursor: own u64 = 0_u64;
+  let found = buffer_new(64_u64, 0_u8);
+  let count = 0_u64;
+  let mark = 88_u8;
+  let stop = len(data);
+  let cursor = 0_u64;
   loop @first_walk {
-    let done: own Bool = ige<u64>(cursor, stop);
+    let done = cursor >= stop;
     if done {
       break @first_walk;
     }
-    let byte: own u8 = data[cursor];
-    let newline: own Bool = ieq<u8>(byte, 10_u8);
+    let byte = data[cursor];
+    let newline = byte == 10_u8;
     if newline {
       match cvt<u64, u8>(cursor) {
         Ok(value: narrow) => {
-          let first_newline_ok: own Bool = ilt<u64>(count, 64_u64);
+          let first_newline_ok = ilt(count, 64_u64);
           claim first_newline_in_found: first_newline_ok because "the found log holds every hit of this bounded scan";
           set found[count] = narrow;
-          set count = iadd.wrap<u64>(count, 1_u64);
+          set count = count +wrap 1_u64;
         }
         Err(error: wide_position) => {
         }
       }
     }
-    let lead: own Bool = ieq<u8>(byte, mark);
+    let lead = byte == mark;
     if lead {
       match cvt<u64, u8>(cursor) {
         Ok(value: narrow_lead) => {
-          let first_lead_ok: own Bool = ilt<u64>(count, 64_u64);
+          let first_lead_ok = ilt(count, 64_u64);
           claim first_lead_in_found: first_lead_ok because "the found log holds every hit of this bounded scan";
           set found[count] = narrow_lead;
-          set count = iadd.wrap<u64>(count, 1_u64);
+          set count = count +wrap 1_u64;
         }
         Err(error: wide_lead) => {
         }
       }
     }
-    set cursor = iadd.wrap<u64>(cursor, 1_u64);
+    set cursor = cursor +wrap 1_u64;
   }
-  let first_sentinel_ok: own Bool = ilt<u64>(count, 64_u64);
+  let first_sentinel_ok = ilt(count, 64_u64);
   claim first_sentinel_in_found: first_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 200_u8;
-  set count = iadd.wrap<u64>(count, 1_u64);
-  let blank: own buffer<u8> = buffer_new<u8>(40_u64, 97_u8);
-  let blank_stop: own u64 = len<u8>(blank);
-  let blank_cursor: own u64 = 0_u64;
+  set count = count +wrap 1_u64;
+  let blank = buffer_new(40_u64, 97_u8);
+  let blank_stop = len(blank);
+  let blank_cursor = 0_u64;
   loop @second_walk {
-    let blank_done: own Bool = ige<u64>(blank_cursor, blank_stop);
+    let blank_done = blank_cursor >= blank_stop;
     if blank_done {
       break @second_walk;
     }
-    let blank_byte: own u8 = blank[blank_cursor];
-    let blank_newline: own Bool = ieq<u8>(blank_byte, 10_u8);
+    let blank_byte = blank[blank_cursor];
+    let blank_newline = blank_byte == 10_u8;
     if blank_newline {
-      let blank_newline_ok: own Bool = ilt<u64>(count, 64_u64);
+      let blank_newline_ok = ilt(count, 64_u64);
       claim blank_newline_in_found: blank_newline_ok because "the found log holds every hit of this bounded scan";
       set found[count] = 210_u8;
-      set count = iadd.wrap<u64>(count, 1_u64);
+      set count = count +wrap 1_u64;
     }
-    let blank_lead: own Bool = ieq<u8>(blank_byte, mark);
+    let blank_lead = blank_byte == mark;
     if blank_lead {
-      let blank_lead_ok: own Bool = ilt<u64>(count, 64_u64);
+      let blank_lead_ok = ilt(count, 64_u64);
       claim blank_lead_in_found: blank_lead_ok because "the found log holds every hit of this bounded scan";
       set found[count] = 211_u8;
-      set count = iadd.wrap<u64>(count, 1_u64);
+      set count = count +wrap 1_u64;
     }
-    set blank_cursor = iadd.wrap<u64>(blank_cursor, 1_u64);
+    set blank_cursor = blank_cursor +wrap 1_u64;
   }
-  let second_sentinel_ok: own Bool = ilt<u64>(count, 64_u64);
+  let second_sentinel_ok = ilt(count, 64_u64);
   claim second_sentinel_in_found: second_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 201_u8;
-  set count = iadd.wrap<u64>(count, 1_u64);
-  let short_stop: own u64 = 20_u64;
-  let short_cursor: own u64 = 0_u64;
+  set count = count +wrap 1_u64;
+  let short_stop = 20_u64;
+  let short_cursor = 0_u64;
   loop @third_walk {
-    let short_done: own Bool = ige<u64>(short_cursor, short_stop);
+    let short_done = short_cursor >= short_stop;
     if short_done {
       break @third_walk;
     }
-    let short_byte: own u8 = data[short_cursor];
-    let short_newline: own Bool = ieq<u8>(short_byte, 10_u8);
+    let short_byte = data[short_cursor];
+    let short_newline = short_byte == 10_u8;
     if short_newline {
       match cvt<u64, u8>(short_cursor) {
         Ok(value: short_narrow) => {
-          let short_newline_ok: own Bool = ilt<u64>(count, 64_u64);
+          let short_newline_ok = ilt(count, 64_u64);
           claim short_newline_in_found: short_newline_ok because "the found log holds every hit of this bounded scan";
           set found[count] = short_narrow;
-          set count = iadd.wrap<u64>(count, 1_u64);
+          set count = count +wrap 1_u64;
         }
         Err(error: short_wide) => {
         }
       }
     }
-    let short_lead: own Bool = ieq<u8>(short_byte, mark);
+    let short_lead = short_byte == mark;
     if short_lead {
       match cvt<u64, u8>(short_cursor) {
         Ok(value: short_narrow_lead) => {
-          let short_lead_ok: own Bool = ilt<u64>(count, 64_u64);
+          let short_lead_ok = ilt(count, 64_u64);
           claim short_lead_in_found: short_lead_ok because "the found log holds every hit of this bounded scan";
           set found[count] = short_narrow_lead;
-          set count = iadd.wrap<u64>(count, 1_u64);
+          set count = count +wrap 1_u64;
         }
         Err(error: short_wide_lead) => {
         }
       }
     }
-    set short_cursor = iadd.wrap<u64>(short_cursor, 1_u64);
+    set short_cursor = short_cursor +wrap 1_u64;
   }
-  let third_sentinel_ok: own Bool = ilt<u64>(count, 64_u64);
+  let third_sentinel_ok = ilt(count, 64_u64);
   claim third_sentinel_in_found: third_sentinel_ok because "the found log holds every hit of this bounded scan";
   set found[count] = 202_u8;
-  set count = iadd.wrap<u64>(count, 1_u64);
+  set count = count +wrap 1_u64;
   region 'phase_publish {
     match publish_all<'phase_publish, 'phase_publish>(output: &uniq 'phase_publish out, source: &'phase_publish found, length: count) {
       Ok(value: published) => {
@@ -197,43 +197,43 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
       }
     }
   }
-  if ieq<u8>(selector, 102_u8) {
-    let empty_length: own u64 = opaque_length(n: 0_u64);
-    let empty: own buffer<u8> = buffer_new<u8>(empty_length, 0_u8);
-    let empty_room: own u64 = len<u8>(empty);
-    let empty_bound: own u64 = 5_u64;
-    let empty_cursor: own u64 = 0_u64;
+  if selector == 102_u8 {
+    let empty_length = opaque_length(n: 0_u64);
+    let empty = buffer_new(empty_length, 0_u8);
+    let empty_room = len(empty);
+    let empty_bound = 5_u64;
+    let empty_cursor = 0_u64;
     loop @empty_walk {
-      let empty_done: own Bool = ige<u64>(empty_cursor, empty_bound);
+      let empty_done = empty_cursor >= empty_bound;
       if empty_done {
         break @empty_walk;
       }
-      let empty_walk_ok: own Bool = ilt<u64>(empty_cursor, empty_room);
+      let empty_walk_ok = ilt(empty_cursor, empty_room);
       claim empty_walk_in_bounds: empty_walk_ok because "this hostile walk deliberately outruns its empty buffer";
-      let empty_byte: own u8 = empty[empty_cursor];
-      let empty_newline: own Bool = ieq<u8>(empty_byte, 10_u8);
+      let empty_byte = empty[empty_cursor];
+      let empty_newline = empty_byte == 10_u8;
       if empty_newline {
       }
-      set empty_cursor = iadd.wrap<u64>(empty_cursor, 1_u64);
+      set empty_cursor = empty_cursor +wrap 1_u64;
     }
   }
-  if ieq<u8>(selector, 109_u8) {
-    let field: own buffer<u8> = buffer_new<u8>(37_u64, 97_u8);
+  if selector == 109_u8 {
+    let field = buffer_new(37_u64, 97_u8);
     set field[21_u64] = 88_u8;
     set field[36_u64] = 89_u8;
-    let scratch: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-    let field_room: own u64 = len<u8>(field);
-    let wall: own u64 = 64_u64;
-    let probe: own u64 = 0_u64;
+    let scratch = buffer_new(1_u64, 0_u8);
+    let field_room = len(field);
+    let wall = 64_u64;
+    let probe = 0_u64;
     loop @hostile_walk {
-      let hostile_done: own Bool = ige<u64>(probe, wall);
+      let hostile_done = probe >= wall;
       if hostile_done {
         break @hostile_walk;
       }
-      let hostile_walk_ok: own Bool = ilt<u64>(probe, field_room);
+      let hostile_walk_ok = ilt(probe, field_room);
       claim hostile_walk_in_bounds: hostile_walk_ok because "this hostile walk deliberately outruns its field";
-      let hostile_byte: own u8 = field[probe];
-      let hostile_lead: own Bool = ieq<u8>(hostile_byte, mark);
+      let hostile_byte = field[probe];
+      let hostile_lead = hostile_byte == mark;
       if hostile_lead {
         set scratch[0_u64] = 88_u8;
         region 'lead_write {
@@ -245,7 +245,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           }
         }
       }
-      let hostile_tail: own Bool = ieq<u8>(hostile_byte, 89_u8);
+      let hostile_tail = hostile_byte == 89_u8;
       if hostile_tail {
         set scratch[0_u64] = 89_u8;
         region 'tail_write {
@@ -257,7 +257,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           }
         }
       }
-      set probe = iadd.wrap<u64>(probe, 1_u64);
+      set probe = probe +wrap 1_u64;
     }
   }
   return exit_status(code: 0_u8);
