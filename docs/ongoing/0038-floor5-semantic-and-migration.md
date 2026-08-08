@@ -172,6 +172,9 @@ exits 0, and `fn2-neg-eeq-implicit-type`'s `return eeq(left, right);` exits 0 â€
 the migration respelled both violations out of existence, so no citation fix
 could reach either, and the citation defect being fixed in round 15 while both
 still failed is what proved it. Both belong to round 8's finding-2 class.
+Only `fn2-neg-eeq-implicit-type` was then repurposed onto live FN-2 content and
+passes; **the driver-test entry in the table above is unaffected and still
+fails for the recorded reason**, so the two must not be read as one disposition.
 
 No known-failures file, no gate exception, no machinery â€” a list in the live
 record that dies with the record. Adding a mechanism that lets a red gate pass
