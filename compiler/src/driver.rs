@@ -660,12 +660,13 @@ mod tests {
                     .as_slice(),
                 "EFF-2",
             ),
-            (
-                "fn2-neg-implicit-instantiation.wf",
-                include_bytes!("../../tests/conformance/cases/fn2-neg-implicit-instantiation.wf")
-                    .as_slice(),
-                "FN-2",
-            ),
+            // `fn2-neg-implicit-instantiation.wf` sat here until 2026-08-08,
+            // when the case was retired: A1 respelled its violation out of
+            // existence, so it compiled at exit 0 and this row could never
+            // hold again. Its FN-2 content lives at
+            // `fn2-neg-eeq-implicit-type`, repurposed onto a user-generic
+            // call. The entry goes with the case it names rather than being
+            // an assertion dropped on its own.
             (
                 "form7-neg-out-of-range.wf",
                 include_bytes!("../../tests/conformance/cases/form7-neg-out-of-range.wf")
@@ -736,7 +737,12 @@ mod tests {
                 "x-match-give1-wrong-type.wf",
                 include_bytes!("../../tests/conformance/cases/x-match-give1-wrong-type.wf")
                     .as_slice(),
-                "TYPE-5",
+                // Moved TYPE-5 -> GIVE-1 by the 2026-08-08 M3b dispositions
+                // ruling (d), source unchanged. The manifest row was updated
+                // then and this second witness was not, which is exactly the
+                // desync it exists to catch — so it is updated by hand against
+                // the ruling, never derived from the manifest.
+                "GIVE-1",
             ),
             (
                 "x-integ-give-in-statement-match-rejected.wf",
