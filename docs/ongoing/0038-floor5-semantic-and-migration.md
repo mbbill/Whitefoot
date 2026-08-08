@@ -149,28 +149,29 @@ regardless of whether the total went up or down.
 | `semantic::tests::borrows::general_borrows_…` | capability gap, `RegionsAndBorrows` |
 | `semantic::tests::slices::slice_value_matches_…` | capability gap, `OwnershipJoin` |
 
-Conformance adapter alongside it: **Pass=383 Fail=5 Skip=14**, the five being
-`own3-pos-outlives-store` (capability gap, `RegionsAndBorrows`),
+Conformance adapter alongside it: **Pass=384 Fail=4 Skip=14** after round 15,
+the four being `own3-pos-outlives-store` (capability gap, `RegionsAndBorrows`),
 `x-give-result-aggregate` (a positive wrongly rejected TYPE-5),
-`fn2-neg-eeq-implicit-type` (**its violation died with the deleted bytes**),
 `fn8-neg-requires-eeq-payload-enum` (may have no legal v0.23 spelling in a
-requires clause), `own5-neg-slice-value-match` (capability gap,
-`OwnershipJoin`, and it is hiding a negative).
+requires clause), and `own5-neg-slice-value-match` (capability gap,
+`OwnershipJoin`, and it is hiding a negative). Round 15 repurposed the fifth,
+`fn2-neg-eeq-implicit-type`, onto live FN-2 content, so it passes rather than
+merely disappearing.
 
-**Correction, 2026-08-08, same day.** This table first attributed
+**Correction, 2026-08-08, reached independently by the lead and the executing
+unit and merged here.** This table first attributed
 `driver::…::compiler_independent_negative_cases_…` to the
 citation-by-callee-class defect, and by implication `fn2-neg-eeq-implicit-type`
-with it. **Both are wrong and the correction matters more than a normal one**,
-because this table is the reference for telling a real regression from an
-expected failure: an entry pointing at a cause that cannot produce it makes the
-next reader either wait for a fix that will never clear it, or read a genuine
-change as expected. Measured: `fn2-neg-implicit-instantiation.wf` now reads
-`let a = 40_i32 + 2_i32;` and exits 0, and `fn2-neg-eeq-implicit-type`'s
-`return eeq(left, right);` exits 0 — the migration respelled both violations out
-of existence, so no citation fix can reach either. Both belong to round 8's
-finding-2 class. The `pending` reason on that manifest row is therefore stale
-twice over: the FN-2 diagnostic path now exists, and the case still cannot
-reject.
+with it. **Both were wrong, and this correction matters more than an ordinary
+one**, because the table is the mechanism for telling a real regression from an
+expected failure while `main` is red: an entry naming a cause that cannot
+produce it makes the next reader either wait for a fix that will never clear
+it, or read a genuine change as expected. Measured:
+`fn2-neg-implicit-instantiation.wf` now reads `let a = 40_i32 + 2_i32;` and
+exits 0, and `fn2-neg-eeq-implicit-type`'s `return eeq(left, right);` exits 0 —
+the migration respelled both violations out of existence, so no citation fix
+could reach either, and the citation defect being fixed in round 15 while both
+still failed is what proved it. Both belong to round 8's finding-2 class.
 
 No known-failures file, no gate exception, no machinery — a list in the live
 record that dies with the record. Adding a mechanism that lets a red gate pass
@@ -2399,6 +2400,132 @@ diagnostic wins are the lead's call, and the ruling as written does not
 authorize it. Recommend it as the next slice.
 
 
+
+## Round 15 (exec-0038n, 2026-08-08) — citation by callee class, and the four rulings it forced
+
+Two commits on `task/0023-citation-by-callee-class`, rebased onto `main` at
+`dfec564`. The library gate goes **568 passed / 6 failed → 569 / 6** with the
+same six names, and the adapter **383/5/14 → 384/4/14**. Nothing newly failing
+against `main`'s pinned sets in either lane. Exit codes from `$?`.
+
+### `d6e66b5` — the compiler cites by callee class
+
+[DIAG-1] selects the cited rule by the callee's class; the compiler selected
+from the *kind* of argument problem, so it was wrong in both directions at
+once. That is why two units reported it as two blockers.
+
+| shape | before | after |
+|---|---|---|
+| `pick(value: move a)` user-generic, missing | TYPE-5 | **FN-2** |
+| `pick<Held, Held>(…)` user-generic, wrong count | TYPE-5 | **FN-2** |
+| `pick<Held>(value: move a)` correct | exit 0 | exit 0 |
+| `cvt(value)` table op, missing | FN-2 | **TYPE-5** |
+| `cvt<i32>(value)` table op, wrong count | OP-1 | OP-1 |
+| `array_new(0_u8)` table op, missing | FN-2 | **TYPE-5** |
+| `finf()` table op, missing | TYPE-5 | TYPE-5 |
+| `Pair(v: 1_i32)` construct, missing | TYPE-5 | TYPE-5 |
+
+`finf`/`fnan` were already correct and `retained_operation_type_argument`'s doc
+comment already carried the reason, so the two wrong table sites were brought
+to their sibling's reading rather than to a new one.
+
+**The user-generic half needed the rule threaded, not replaced.**
+`generic_substitution` reads one argument list for two callee classes that
+[DIAG-1] assigns different rules — a user-generic call cites FN-2, a generic
+nominal's construct cites TYPE-5 "at the complete `construct`". The rule now
+arrives from the caller that knows its own class instead of being chosen
+inside from the shape of the failure: one parameter, two call sites, no new
+machinery.
+
+Two recorded expectations moved, both flagged in advance as witnesses to this
+question rather than found convenient here — round 14 named the `cvt(value)`
+one explicitly — and `generic_argument_kinds_…`'s two wrong-kind arguments on
+a user-generic call, which recorded TYPE-5 where [DIAG-1] gives a wrong-kind
+argument to the callee's class.
+
+New test `the_cited_rule_follows_the_callee_class_and_not_the_argument_problem`
+holds one argument problem fixed across the classes so only the callee varies,
+with the generic-nominal construct as the control that the rule is not simply
+keyed on the shared argument-list reader.
+
+### The three verdicts the fix moved, and why the executor stopped
+
+The adapter went 383/5/14 → **380/8/14**: `type5-neg-wrong-region-arg-count`,
+`type5-neg-shared-for-uniq-arg` and `x-fn-own-arg-for-ref-param` all moved
+TYPE-5 → FN-2. Conformance material, so the unit stopped and reported rather
+than integrating a net −3 on its own judgement. All three call a function that
+is region-parametric but not generic.
+
+### `17f68ac` — the four rulings carried out
+
+**Ruling 1, the citation.** `type5-neg-wrong-region-arg-count` moves TYPE-5 →
+FN-2 in the manifest, source untouched. [TYPE-5]'s own sentence assigns "type,
+region, and const arguments for user generics [FN-2]", so its recorded rule
+was wrong independently of any compiler change — the same shape as
+`own1-neg-match-move-through-borrow`'s OWN-1 → OWN-5. The id is kept: an id is
+a stable identifier, not a claim.
+
+**Ruling 2, the sources.** The other two omitted a mandatory region argument
+and were rejected for that before reaching the mode mismatch that is their
+subject. **The mask predates the fix**; the fix only made it visible, because
+the masking citation happened to be TYPE-5 and matched the row by coincidence.
+Each now writes its region argument — `x-fn-own-arg-for-ref-param` also gains
+the `region 'r` block it needs in order to have one to write — and both return
+to `Semantics/Source [TYPE-5]`, observed rather than assumed.
+
+**Ruling 3, the retirement — and its precondition changed the outcome.** The
+required enumeration of FN-2's negative content against live cases:
+
+| piece | live carrier |
+|---|---|
+| region-bearing generic argument at the `targ` | `fn2-neg-function-region-bearing-targ`, `fn2-neg-nominal-region-bearing-targ` — both runnable, both reject FN-2 |
+| wrong region-argument count on a user function | `type5-neg-wrong-region-arg-count`, after ruling 1 |
+| **missing instantiation argument on a user generic** | **none** — `fn2-neg-implicit-instantiation` is the only carrier and is pending on a source A1 makes legal |
+
+So retiring would have left the third piece uncovered, and the ruling's
+condition applies: `fn2-neg-eeq-implicit-type` is **repurposed onto it rather
+than retired**. Its old concern is gone twice over — A1 deletes `eeq`'s written
+argument, and [DIAG-1] gives a table operation the rule [OP-2] selects rather
+than FN-2 in any event. It now states a user-generic call with no instantiation
+argument and rejects FN-2. The enumeration is the part that earned its keep:
+retiring on the first reading would have silently dropped coverage.
+
+**Ruling 4, the stale reason.** `fn2-neg-implicit-instantiation` keeps
+`pending` and its reason is **corrected rather than deleted**. The old reason —
+"the active compiler does not yet implement the complete generic-instantiation
+judgment and its FN-2 diagnostic path" — is stale in both halves: that path
+exists as of `d6e66b5`, and it is not what blocks the case. Its source reads
+`let a = 40_i32 + 2_i32;`, legal v0.23, accepted at exit 0.
+
+### A correction to this record's own pinned failure set
+
+`6ad23a1` attributes `driver::…::compiler_independent_negative_cases_…` to the
+citation defect. **It is not, and the fix does not clear it** — that test
+demands FN-2 from `fn2-neg-implicit-instantiation.wf`, measured exit 0. Its
+concern died with A1's bytes, which is round 8's finding-2 class. The
+attribution matters because the pinned table is the reference for telling a
+real regression from an expected one, and an entry pointing at a cause that
+cannot produce it sends the next reader hunting a fixed defect.
+
+### Not fixed, and reported rather than forced
+
+[DIAG-1]'s third clause: a system operation's region arguments must cite SYS-2,
+and `system.rs` cites TYPE-5. **`SemanticRule` has no `Sys2` variant anywhere
+in `compiler/src`**, so the correct citation is unrepresentable rather than
+merely unused, and no conformance case expects a SYS-2 rejection — SYS-2
+appears only in an accept row's rule list. Registered as its own slice.
+
+### Validation
+
+- `make -C compiler check`: **exit 2**, lib **569 passed / 6 failed**, the same
+  six names as `main`'s pinned set.
+- Adapter **Pass=384 Fail=4 Skip=14**: `main`'s pinned five less the repurposed
+  case, which now passes. Nothing newly failing.
+- `make check`: exit 2 at the same compiler step; conformance coverage
+  **128/128 rules, 0 uncovered**.
+- The manifest's six non-JSON lines are pre-existing and identical on `main`;
+  the three edited rows parse.
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt --check` exit 0.
 ## Round 14 (exec-0038n, 2026-08-08) — the rebase, `slice_of`, and the six ruled restatements
 
 Five commits on top of round 13, on `task/0038-m3c-inline-fixtures` rebased
