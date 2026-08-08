@@ -362,6 +362,21 @@ def verdict_diff(revision):
     — which `CLAUDE.md` names a governance breach precisely because nothing
     mechanical stops it.
 
+    THE SCOPE, because "the migration damaged a case" is three classes and
+    this check owns exactly one of them:
+
+      (A) a negative whose violation was a construct the migration deletes.
+          It then compiles where its row demands a rejection, so THE ADAPTER
+          already catches it and always did. Not this check's.
+      (B) a positive whose subject was deleted. It keeps passing and its
+          verdict never moves, so no verdict-based check reaches it. Not this
+          check's, and not anything's — see the limit below.
+      (C) a declared verdict that moves with its row following. This check.
+
+    Reading a green run here as "the migration broke nothing" is therefore
+    wrong in class (B)'s direction, which is the direction that has actually
+    cost this project cases.
+
     ITS LIMIT, stated because a checker trusted past its range is worse than
     none: it cannot see an EMPTIED case. A positive whose subject was deleted
     still declares, and still reaches, the verdict it always did; there is
