@@ -2,12 +2,11 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 7. **M2 is landed**
-  (`4c79e35`) and the **`box_new` interning repair is landed** (`4e68436`),
-  discharging the round-6 blocker under the 2026-08-08 ruling (b). M3 —
-  the remaining v0.22 spelling classes in the fixtures and the corpus — is
-  next, and it is gated on a finding below: arithmetic compiles under
-  neither spelling on this branch. See "Round 7".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 7. **M2 landed** (`4c79e35`),
+  the **`box_new` interning repair landed** (`4e68436`) under ruling (b),
+  and **[OP-1] (ii) infix resolution landed** (`3af8478`), which was the
+  gate in front of M3. M3 — the remaining v0.22 spelling classes in the
+  fixtures and the corpus — is now unblocked and not started. See "Round 7".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
@@ -855,12 +854,43 @@ Two regressions: the control pair, which also asserts the derived nominal is
 inside the executable prefix, and an executing test that allocates a
 `box<Bool>` spelled nowhere, reads it back and releases it.
 
+### [OP-1] (ii) infix resolution (landed `3af8478`)
+
+The finding that gated M3 is closed. Arithmetic and comparison compiled
+under **neither** spelling: round 1's catalog respell deleted the named
+forms, and nothing had taught the checker to read the infix one, so
+`iadd.wrap` failed resolution with an empty candidate set while `a +wrap b`
+parsed and died at `InvalidCanonicalTree`. The cause was one line —
+`check_expression_in_context` took `only_child`, and [GRAM-5]'s
+`expr := atom infix_tail?` is the one shape with two children.
+
+The operator selects the row by its exact bytes, and the row check is
+**extracted rather than copied**, so [OP-2]'s operand-derived selection, the
+trap site and the checked-error result are decided once for both spellings.
+
+**Five operators needed the `box_new` repair generalized, and that is the
+finding worth carrying.** The checked rows `+checked`, `-checked`,
+`*checked`, `/checked` and `%checked` produce `Result<T, Overflow>` and
+`Result<T, DivError>` over a *derived* `T`, which after A3 nothing writes —
+the identical defect the `box_new` blocker named, in a second nominal
+family, and equally a compiler failure on valid source. It was invisible
+until infix resolution made those rows reachable at all. `prelude_nominal`
+now defers exactly as a missed box referent does, so the mechanism is one
+`CheckStop::DeferredNominal` over a pending list of both kinds. **A third
+family may exist**: the general shape is "a nominal instance named only by a
+derived type", and any lookup-only accessor over an intern table has it.
+
+The guard on function checking became the invariant it was really
+protecting: no *source* nominal instance is discovered while checking a
+function.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the
 `test` step on the pre-existing 285, unchanged from the baseline at
-`4da1717` — zero added and zero removed after M2, and again after the
-`box_new` repair. Lib goes 259 -> 273 passed across the two commits. `cargo clippy --all-targets` clean; `cargo fmt` applied. The 12
+`4da1717` — zero added and zero removed after M2, after the `box_new`
+repair, and after infix resolution; the stage oracle reports zero changes
+too. Lib goes 259 -> 279 passed across the three commits. `cargo clippy --all-targets` clean; `cargo fmt` applied. The 12
 new tests are 11 in `semantic/tests/conditionals.rs` — the three rejections
 pinned to their cited bytes, the enum scrutinee still taking `match`, the
 flattened chain, the else-free form, the empty then-block, a non-Bool
