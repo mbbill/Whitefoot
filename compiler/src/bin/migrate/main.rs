@@ -24,6 +24,7 @@ use whitefoot::{
     parse, render_canonical,
 };
 
+mod embedded;
 mod manifest;
 mod rewrite;
 
@@ -78,16 +79,21 @@ fn main() {
 
 struct Options {
     check_only: bool,
+    /// Read the sources as Rust and migrate the fixtures embedded in their
+    /// string literals, rather than reading them as Whitefoot.
+    rust: bool,
     sources: Vec<PathBuf>,
 }
 
 impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut check_only = false;
+        let mut rust = false;
         let mut sources = Vec::new();
         for argument in arguments {
             match argument.as_str() {
                 "--check" => check_only = true,
+                "--rust" => rust = true,
                 other if other.starts_with("--") => {
                     return Err(format!("unknown option {other}"));
                 }
@@ -95,10 +101,13 @@ impl Options {
             }
         }
         if sources.is_empty() {
-            return Err("usage: whitefoot-migrate [--check] <file.wf>...".to_owned());
+            return Err(
+                "usage: whitefoot-migrate [--check] [--rust] <file.wf|file.rs>...".to_owned(),
+            );
         }
         Ok(Self {
             check_only,
+            rust,
             sources,
         })
     }
@@ -107,6 +116,9 @@ impl Options {
 fn run() -> Result<(), String> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     let options = Options::parse(&arguments)?;
+    if options.rust {
+        return run_rust(&options);
+    }
     let mut changed = 0_usize;
     let mut kept = 0_usize;
     let mut counts = rewrite::Counts::default();
@@ -136,6 +148,55 @@ fn run() -> Result<(), String> {
     }
     println!(
         "{} file(s), {changed} changed, {kept} kept for their surface form; {}",
+        options.sources.len(),
+        counts.summary()
+    );
+    Ok(())
+}
+
+/// The embedded-fixture pass. Every migrated and every blocked fixture is
+/// printed with its file and line, because the blocked set is the report this
+/// mode exists to produce.
+fn run_rust(options: &Options) -> Result<(), String> {
+    let mut changed = 0_usize;
+    let mut migrated_fixtures = 0_usize;
+    let mut blocked = 0_usize;
+    let mut counts = rewrite::Counts::default();
+    for path in &options.sources {
+        let original = std::fs::read(path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        let (rewritten, outcomes) = embedded::migrate_rust(&original, path)?;
+        for outcome in &outcomes {
+            let location = format!("{}:{}", path.display(), outcome.line);
+            match &outcome.state {
+                embedded::State::Migrated {
+                    counts: fixture,
+                    changed_lines,
+                    total_lines,
+                } => {
+                    counts.add(fixture);
+                    migrated_fixtures += 1;
+                    println!(
+                        "migrated {location}  {changed_lines}/{total_lines} line(s)  {}",
+                        fixture.summary()
+                    );
+                }
+                embedded::State::Blocked { reason } => {
+                    blocked += 1;
+                    println!("BLOCKED  {location}  {reason}");
+                }
+            }
+        }
+        if rewritten != original {
+            changed += 1;
+            if !options.check_only {
+                std::fs::write(path, &rewritten)
+                    .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
+            }
+        }
+    }
+    println!(
+        "{} rust file(s), {changed} changed; {migrated_fixtures} fixture(s) migrated, {blocked} blocked; {}",
         options.sources.len(),
         counts.summary()
     );
