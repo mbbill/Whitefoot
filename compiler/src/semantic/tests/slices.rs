@@ -510,26 +510,6 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
 }
 
 #[test]
-fn slice_of_keeps_nonflat_element_arguments_in_the_op1_domain() {
-    assert_rule(
-        br#"struct Item {
-  value: u8;
-}
-
-fn main() -> own unit pure {
-  let values = array_new<u8, 2>(0_u8);
-  region 'view {
-    slice_of(&'view values);
-  }
-  return unit;
-}
-"#,
-        SemanticRule::Op1,
-        SemanticIssueKind::InvalidOperation,
-    );
-}
-
-#[test]
 fn returned_slices_keep_signature_ceilings_and_substituted_call_origins() {
     let source = br#"fn pass['r](value: own slice<'r, u8>) -> own slice<'r, u8> pure {
   return move value;

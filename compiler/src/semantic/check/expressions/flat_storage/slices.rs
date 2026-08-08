@@ -106,6 +106,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let indexed = self.check_indexed_place(place_node, bindings, &suffixes, place_node)?;
         // [OP-2] the element is the viewed place's, and [STOR-4] still confines
         // a slice to flat elements — now judged on the derived one.
+        //
+        // DELIBERATELY UNTESTED, by the 2026-08-08 ruling. Once the element is
+        // derived rather than written, no source appears to reach this arm:
+        // `array<T, N>` and `buffer<T>` already require a flat T, so every
+        // route tried — a non-copy struct element, a generic element, a nested
+        // array element, an `array_new` of a struct — is rejected earlier by
+        // TYPE-2 or by OP-1 on the array type itself, each confirmed with a
+        // control that deletes the `slice_of` line and fails identically. That
+        // is "not shown reachable", not "proven unreachable", so the rejection
+        // stays. Widening what `array<T, N>` or `buffer<T>` admit re-opens the
+        // question and owes this arm a test.
         let element_type = indexed.element_type();
         let Some(element) = self.flat_element(element_type)? else {
             return self.issue_node(
