@@ -2,15 +2,18 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-07 round 2. The front end is complete
-  and green for v0.23 (lex, parse, finalize, FORM-2 canonical, including the
-  `} else {` join line). The semantic path and the corpus migration are next;
-  the four verdict-meaning breaks are ruled at 9dcaebc.
+- **Status:** `BLOCKED` — 2026-08-07 round 3. The front end is complete and
+  green for v0.23 (lex, parse, finalize, FORM-2 canonical, including the
+  `} else {` join line). The nine migration figures are independently
+  confirmed by a second method. The semantic path stops at its first site:
+  A3 leaves the nullary prelude construction `None()` with no reconstructible
+  type, which moves the candidate bytes and needs a ruling. See "Round 3
+  blocker".
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   fixed delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038 / `/Users/bytedance/do_not_scan/wf-0038-exec`
+- **Owner / workspace:** exec-0038 (round 3) / `/Users/bytedance/do_not_scan/wf-0038-sem`
   on branch `task/0036-floor5-grammar-and-migration`
-- **Base revision:** 9dcaebc (main), branch rebased onto it
+- **Base revision:** e810ce5 (main), branch rebased onto it
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -313,6 +316,90 @@ them against the previous run, which is how "257 passed / 271 failed" was
 shown to be exactly the new test and not a swap. It is also how round 1
 caught that respelling the catalog turned nine passing tests into failing
 ones — invisible in the total, obvious in the set.
+
+## Round 3 blocker (exec-0038, 2026-08-07) — A3 makes `None()` untypeable
+
+**This needs an owner/lead ruling and it moves the candidate bytes, so it
+stops the semantic path here.** [TYPE-5]'s rewritten text asserts that an
+`ordinary_let_rhs` is "always self-typed", listing "constructions name
+their nominal" as one of the four reasons. That claim is false for the
+nullary prelude variant constructions, and A3 deletes the annotation that
+was carrying them.
+
+Reproduction, `compiler/src/backend/tests/resource_enums.rs:140`:
+
+```
+let abandoned_none: own Option<buffer<u8>> = None();
+```
+
+Migrated by A3 this is `let abandoned_none = None();`. Nothing in that
+right-hand side supplies `buffer<u8>`: `None()` has no payload to derive an
+element type from, and `Option` is not in [TYPE-5]'s retained-argument
+class, so no written argument is admitted either. The binding's type is
+not reconstructible, uniquely or otherwise.
+
+**The compiler's current channel is exactly the one A3 removes.**
+`check_construct` (`semantic/check/expressions.rs:820,843`) resolves the
+prelude `Option` and `Result` constructors — ordinals 5, 6, 11 and 13 —
+by `let Some(CheckedType::Nominal(nominal)) = expected else { reject
+TYPE-5 }`. It reads the expectation and **never consults written type
+arguments**, so `None<buffer<u8>>()` does not rescue the site either; that
+spelling is rejected today for the same reason. `let_stmt` is the only
+construct position whose expectation came from an annotation — `set` uses
+the target type and call arguments use declared parameter types — so A3
+removes the sole supply for this class.
+
+**Measured scope**, basis and method as in the round-3 count block below.
+Corpus: **1** annotated let-RHS prelude construction
+(`tests/programs/generic_nominals.wf:86`, a `Some`). Compiler inline
+fixtures: **4** (`backend/tests/resource_enums.rs:139,141,144` and
+`semantic/tests/options.rs:21`), one of which is the `None()` above. The
+count is small; the rule is not, because after A3 `let x = None();` has no
+legal spelling anywhere.
+
+**Why an executor cannot settle it.** The three repairs are a language
+choice, and two of them move normative bytes that three digest pins name:
+
+- (a) Add the prelude variant constructors to [TYPE-5]'s retained-argument
+  class and make `check_construct` honour written `targs`. This is the
+  repair the delta's own rationale already argues for — the retained class
+  exists "because no operand can supply them", which is exactly true of
+  `None()`. Spelling becomes `None<buffer<u8>>()` and
+  `Some<u8>(value: v)`. Moves the candidate.
+- (b) Derive the nominal from the payload. Handles `Some`/`Ok`/`Err` and
+  **cannot** handle `None()`, so it does not close the gap.
+- (c) Keep an expected-type channel for the `let` initializer. Contradicts
+  [TYPE-5]'s "no binder's type depends on ... an expected type" in the same
+  paragraph.
+
+(a) is the only coherent one. It is a delta change, so it re-keys
+`a92b4513…` and the three pins.
+
+Everything above this line on the branch is verified and unchanged:
+candidate digest `a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`
+(recomputed, and the `spec.rs` byte array decodes to it), rebase onto main
+`e810ce5` clean over 13 commits, and `make -C compiler check` **exit 2**
+with **257 passed / 271 failed**, the failure set captured for `comm`
+diffing.
+
+## Round 3 counts (exec-0038, 2026-08-07) — independently confirmed
+
+All nine migration figures reproduce by two methods that share no failure
+mode: the delta §5 ugrep commands, and Python `re` with a true lookbehind
+(`(?<![A-Za-z0-9_.])`) with the deleted-class alternation re-derived from
+the v0.22 op table at run time rather than hard-coded. Basis **420**,
+deleted-class **1588**, retained **102**, let annotations **2003**,
+`True()` arms **262**, arithmetic **378**, comparison **519**,
+`ilt`/`igt` **207**, `check` **406**. Also 610 `.wf` files repo-wide with
+**0** free-standing `if` tokens.
+
+Two things the recomputation settled. The 378/379 discrepancy is the
+single argument-free table-op call in the basis,
+`tests/conformance/cases/fn2-neg-implicit-instantiation.wf:3` — which is
+ruling (1)'s subject, so that ruling's premise is unique rather than one
+of a class. And ruling (3) was amended before use: its case matches on a
+Bool scrutinee, so a rewrite keeping the `match` form would assert GIVE-1
+and earn GRAM-6; the enum-scrutinee form is now recorded at `e810ce5`.
 
 ## Successor brief
 
