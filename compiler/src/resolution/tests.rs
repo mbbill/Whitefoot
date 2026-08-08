@@ -1197,6 +1197,100 @@ fn sibling_contract_signatures_do_not_share_region_parameters() {
     });
 }
 
+/// A conditional's two blocks are two lexical blocks [TYPE-6], and they are
+/// the one construct whose blocks hang off the same node [GRAM-4], so the
+/// scope tree has to separate them by brace pair rather than by production.
+///
+/// The two rejecting sources are the controls that make the two accepting ones
+/// mean something: `match` arms, which are separate productions, must reach the
+/// same answer as the `if` branches; and a genuine shadow of a live enclosing
+/// binder must still be rejected, since giving each branch its own scope would
+/// otherwise hide it.
+#[test]
+fn conditional_branches_are_separate_lexical_scopes() {
+    let sibling_branches = br#"fn get(pick: own Bool) -> own unit traps {
+  if pick {
+    let inside = 1_u64;
+    check inside == 1_u64 else trap "left";
+  } else {
+    let inside = 2_u64;
+    check inside == 2_u64 else trap "right";
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(sibling_branches, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "disjoint sibling branches may reuse a spelling: {outcome:?}"
+        );
+    });
+
+    let arm_control = br#"enum Pick {
+  Left();
+  Right();
+}
+
+fn get(pick: own Pick) -> own unit traps {
+  match pick {
+    Left() => {
+      let inside = 1_u64;
+      check inside == 1_u64 else trap "left";
+    }
+    Right() => {
+      let inside = 2_u64;
+      check inside == 2_u64 else trap "right";
+    }
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(arm_control, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "the arm spelling of the same program must resolve too: {outcome:?}"
+        );
+    });
+
+    let expired_then_enclosing = br#"fn get(pick: own Bool) -> own unit traps {
+  if pick {
+    let offset = 0_u64;
+    check offset == 0_u64 else trap "inner";
+  }
+  let offset = 1_u64;
+  check offset == 1_u64 else trap "outer";
+  return unit;
+}
+"#;
+    with_one_resolution(expired_then_enclosing, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "an expired branch scope may not block a later enclosing binder: {outcome:?}"
+        );
+    });
+
+    let live_shadow = br#"fn get(pick: own Bool) -> own unit traps {
+  let offset = 0_u64;
+  if pick {
+    let offset = 1_u64;
+    check offset == 1_u64 else trap "inner";
+  }
+  check offset == 0_u64 else trap "outer";
+  return unit;
+}
+"#;
+    with_one_resolution(live_shadow, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("a branch binder may not shadow a live enclosing one: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "offset"
+        ));
+    });
+}
+
 #[test]
 fn semantic_stage_order_precedes_source_position_and_inventory_rank_is_event_local() {
     let later_inventory_error = br#"fn main() -> own unit pure {

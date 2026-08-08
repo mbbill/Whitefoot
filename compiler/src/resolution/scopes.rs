@@ -132,6 +132,55 @@ impl ScopeBuild {
                     build.declaration_scopes[node_id.index()] = Some(arm);
                     assign_nested_body_scopes(topology, children, &mut child_scopes, arm, body)?;
                 }
+                // A conditional's two blocks are two lexical blocks, and they
+                // are the one construct whose blocks are not nested
+                // productions: [GRAM-4] hangs both `stmt*` sequences off the
+                // same `if_stmt` or `value_if` node, so their statements can
+                // only be told apart by the brace pair each falls inside.
+                // Without this, a `let` in either block would declare into the
+                // enclosing block and collide with a sibling branch's binder or
+                // with a later binder of the same spelling in the enclosing
+                // block, both of which [TYPE-6] admits as disjoint scopes.
+                Production::IfStmt | Production::ValueIf => {
+                    let [Some(then_range), else_range] = node.body_ranges() else {
+                        return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+                    };
+                    let then_body = build.push_scope(
+                        Some(current_scope),
+                        ScopeKind::NestedBody,
+                        path.clone(),
+                    )?;
+                    // Absent for the else-free `if` and for an `else if` chain,
+                    // whose alternative is the nested conditional node rather
+                    // than a block this node owns.
+                    let else_body = match else_range {
+                        Some(_) => Some(build.push_scope(
+                            Some(current_scope),
+                            ScopeKind::NestedBody,
+                            path.clone(),
+                        )?),
+                        None => None,
+                    };
+                    for (index, child) in children.iter().enumerate() {
+                        let child_record = topology
+                            .node(*child)
+                            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+                        // The condition `expr` and a chained conditional both
+                        // read the enclosing scope, so only statements move.
+                        if child_record.production != Production::Stmt {
+                            continue;
+                        }
+                        child_scopes[index] = if within(
+                            child_record.first_terminal,
+                            child_record.last_terminal(),
+                            then_range,
+                        ) {
+                            then_body
+                        } else {
+                            else_body.ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
+                        };
+                    }
+                }
                 _ => {}
             }
 
@@ -207,6 +256,11 @@ impl ScopeBuild {
             scope = parent;
         }
     }
+}
+
+/// Whether a node's complete terminal run lies strictly inside a brace pair.
+fn within(first_terminal: u64, last_terminal: Option<u64>, (open, close): (u64, u64)) -> bool {
+    first_terminal > open && last_terminal.is_some_and(|last| last < close)
 }
 
 fn assign_nested_body_scopes(
