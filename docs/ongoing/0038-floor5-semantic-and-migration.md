@@ -125,6 +125,39 @@ not to be weakened or silenced: `spec::tests::path_and_version_label_agree`,
 The activation commit closes all three at once. `ACTIVE-SPEC:` is an owner
 approval record: writing one to make a gate green is forbidden.
 
+### `main` is RED while this batch is live, and this is the exact set
+
+Stated plainly because it is a real cost, not a footnote. The batch landed on
+`main` at `8df0e29` with `make check` exit 2 and the library at **568 passed /
+6 failed**. Since two of the six are activation-gated by the ruling above,
+**`main` cannot be green until the owner approves the candidate bytes**, so
+integrating before activation was a lead choice that traded a working gate for
+visible progress. Whoever reads a red `main` during this window should know it
+was expected, and — more importantly — should still be able to detect a NEW
+breakage.
+
+The mechanism is the one this batch already invented: **compare the failure SET
+by name, never the count.** Any name outside this list is a real regression
+regardless of whether the total went up or down.
+
+| test | owner |
+|---|---|
+| `spec::tests::path_and_version_label_agree` | activation-gated |
+| `spec::tests::computed_identity_is_the_approved_digest` | activation-gated |
+| `driver::…::compiler_independent_negative_cases_keep_their_semantic_rule` | the citation-by-callee-class defect |
+| `semantic::tests::result_construction_…` | shares `x-give-result-aggregate`'s cause |
+| `semantic::tests::borrows::general_borrows_…` | capability gap, `RegionsAndBorrows` |
+| `semantic::tests::slices::slice_value_matches_…` | capability gap, `OwnershipJoin` |
+
+Conformance adapter alongside it: **Pass=383 Fail=5 Skip=14**, the five being
+`own3-pos-outlives-store`, `x-give-result-aggregate`, `fn2-neg-eeq-implicit-type`,
+`fn8-neg-requires-eeq-payload-enum`, `own5-neg-slice-value-match`.
+
+No known-failures file, no gate exception, no machinery — a list in the live
+record that dies with the record. Adding a mechanism that lets a red gate pass
+is exactly the shape this project forbids, and it would outlive the reason for
+it.
+
 ## Round 9 (exec-0038j, 2026-08-08) — round 8's finding 4 closed; one new blocker
 
 Three commits. Infix is checked at every expression position the grammar has,
