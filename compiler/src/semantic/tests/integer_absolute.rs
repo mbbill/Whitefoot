@@ -6,9 +6,9 @@ use super::{assert_rule, with_semantics};
 #[test]
 fn retains_each_mode_and_rejects_unsigned_types() {
     let source = br#"fn main() -> own unit traps {
-  let wrapped: own i8 = iabs.wrap<i8>(-128_i8);
-  let trapped: own i16 = iabs.trap<i16>(-42_i16);
-  let absolute_result: own Result<i32, Overflow> = iabs.checked<i32>(-42_i32);
+  let wrapped = iabs.wrap(-128_i8);
+  let trapped = iabs.trap(-42_i16);
+  let absolute_result = iabs.checked(-42_i32);
   return unit;
 }
 "#;
@@ -38,7 +38,7 @@ fn retains_each_mode_and_rejects_unsigned_types() {
     });
 
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own u8 = iabs.wrap<u8>(1_u8);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = iabs.wrap(1_u8);\n  return unit;\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );

@@ -9,18 +9,18 @@ use super::{assert_rule, with_semantics};
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
     let source = br#"fn make(n: own u64) -> own buffer<u16> allocates(heap), traps {
-  return buffer_new<u16>(n, 3_u16);
+  return buffer_new(n, 3_u16);
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u16> = make(n: 4_u64);
-  let length: own u64 = len<u16>(values);
-  let ok: own Bool = ilt<u64>(2_u64, length);
+  let values = make(n: 4_u64);
+  let length = len(values);
+  let ok = ilt(2_u64, length);
   claim sized_by_make: ok because "make allocates n slots and main passes four";
   set values[2_u64] = 9_u16;
-  let stored: own u16 = values[2_u64];
-  check ieq<u64>(length, 4_u64) else trap "length drift";
-  check ieq<u16>(stored, 9_u16) else trap "store drift";
+  let stored = values[2_u64];
+  check length == 4_u64 else trap "length drift";
+  check stored == 9_u16 else trap "store drift";
   return unit;
 }
 "#;
@@ -98,12 +98,12 @@ fn main() -> own unit allocates(heap), traps {
 #[test]
 fn buffer_effect_rows_are_checked_both_ways() {
     assert_rule(
-        b"fn main() -> own unit traps {\n  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let values = buffer_new(2_u64, 0_u8);\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
     assert_rule(
-        b"fn main() -> own unit allocates(heap) {\n  let values: own buffer<u8> = buffer_new<u8>(2_u64, 0_u8);\n  return unit;\n}\n",
+        b"fn main() -> own unit allocates(heap) {\n  let values = buffer_new(2_u64, 0_u8);\n  return unit;\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -117,7 +117,7 @@ fn buffer_effect_rows_are_checked_both_ways() {
 #[test]
 fn buffer_new_keeps_its_primitive_only_operation_domain() {
     assert_rule(
-        b"fn main() -> own unit allocates(heap), traps {\n  let initial: own Bool = False();\n  let values: own buffer<Bool> = buffer_new<Bool>(2_u64, initial);\n  return unit;\n}\n",
+        b"fn main() -> own unit allocates(heap), traps {\n  let initial = False();\n  let values = buffer_new(2_u64, initial);\n  return unit;\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -131,17 +131,17 @@ fn struct_buffer_paths_and_reverse_cleanup_are_explicit() {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let left: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
-  let right: own buffer<u64> = buffer_new<u64>(4_u64, 0_u64);
-  let columns: own Columns = Columns(left: move left, right: move right);
-  let left_room: own u64 = len<u64>(columns.left);
-  let ok: own Bool = ilt<u64>(2_u64, left_room);
+  let left = buffer_new(4_u64, 0_u64);
+  let right = buffer_new(4_u64, 0_u64);
+  let columns = Columns(left: move left, right: move right);
+  let left_room = len(columns.left);
+  let ok = ilt(2_u64, left_room);
   claim left_sized: ok because "columns.left was allocated with four slots";
   set columns.left[2_u64] = 7_u64;
-  let length: own u64 = len<u64>(columns.right);
-  let value: own u64 = columns.left[2_u64];
-  check ieq<u64>(length, 4_u64) else trap "length drift";
-  check ieq<u64>(value, 7_u64) else trap "value drift";
+  let length = len(columns.right);
+  let value = columns.left[2_u64];
+  check length == 4_u64 else trap "length drift";
+  check value == 7_u64 else trap "value drift";
   return unit;
 }
 "#;
@@ -266,7 +266,7 @@ fn main() -> own unit pure {
     );
     assert_rule(
         br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap), traps {
-  buffer_new<slice<'r, u8>>(1_u64, move value);
+  buffer_new(1_u64, move value);
   return unit;
 }
 

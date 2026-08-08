@@ -95,7 +95,7 @@ fn over_declaring_the_release_row_rejects_likewise() {
     // No release contributed the mismatching categories, so this is the
     // ordinary EFF-2 mismatch, not the release-attributed diagnostic.
     assert_rule(
-        b"fn count_arguments(args: own Args) -> own u64 external, blocks {\n  region 'a {\n    let total: own u64 = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn count_arguments(args: own Args) -> own u64 external, blocks {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         SemanticIssueKind::EffectMismatch,
     );
@@ -108,7 +108,7 @@ fn an_immutable_borrowing_helper_is_exactly_pure() {
     // row [SYS-2], and `Args` releases with the empty row [SYS-5], so `pure`
     // is exact rather than merely permitted.
     assert_complete(
-        b"fn count_arguments(args: own Args) -> own u64 pure {\n  region 'a {\n    let total: own u64 = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn count_arguments(args: own Args) -> own u64 pure {\n  region 'a {\n    let total = args_count<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -156,7 +156,7 @@ fn memory_reclamation_contributes_no_release_row() {
         b"fn consume(data: own buffer<u8>) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
     );
     assert_complete(
-        b"fn main() -> own unit allocates(heap), traps {\n  let boxed: own box<u64> = box_new<u64>(0_u64);\n  let stored: own buffer<u8> = buffer_new<u8>(4_u64, 0_u8);\n  return unit;\n}\n",
+        b"fn main() -> own unit allocates(heap), traps {\n  let boxed = box_new(0_u64);\n  let stored = buffer_new(4_u64, 0_u8);\n  return unit;\n}\n",
     );
 }
 
@@ -167,7 +167,7 @@ fn release_attribution_is_transitive_over_owned_content() {
     // boxed `ReadFile` with its fixed `external, blocks` row, so the row is
     // exhibited through the indirection.
     assert_complete(
-        b"fn stash(file: own ReadFile) -> own unit allocates(heap), external, blocks {\n  let boxed: own box<ReadFile> = box_new<ReadFile>(move file);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn stash(file: own ReadFile) -> own unit allocates(heap), external, blocks {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 

@@ -10,20 +10,20 @@ fn concrete_options_reuse_the_nominal_path_for_supported_payloads() {
 }
 
 fn scalar(value: own i32) -> own Option<i32> pure {
-  return Some(value: value);
+  return Some<i32>(value: value);
 }
 
 fn aggregate(value: own Pair) -> own Option<Pair> pure {
-  return Some(value: move value);
+  return Some<Pair>(value: move value);
 }
 
 fn nested() -> own Option<Option<u8>> pure {
-  let inner: own Option<u8> = Some(value: 7_u8);
-  return Some(value: move inner);
+  let inner = Some<u8>(value: 7_u8);
+  return Some<Option<u8>>(value: move inner);
 }
 
 fn absent() -> own Option<Pair> pure {
-  return None();
+  return None<Pair>();
 }
 
 fn main() -> own unit pure {

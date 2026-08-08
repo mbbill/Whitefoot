@@ -8,8 +8,8 @@ use super::with_semantics;
 #[test]
 fn produces_div_error_results() {
     let source = br#"fn main() -> own unit pure {
-  let quotient: own Result<i32, DivError> = idiv.checked<i32>(-2147483648_i32, -1_i32);
-  let remainder: own Result<u64, DivError> = irem.checked<u64>(42_u64, 5_u64);
+  let quotient = -2147483648_i32 /checked -1_i32;
+  let remainder = 42_u64 %checked 5_u64;
   return unit;
 }
 "#;

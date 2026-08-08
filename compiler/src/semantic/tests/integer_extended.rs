@@ -6,28 +6,28 @@ use super::{assert_rule, with_semantics};
 #[test]
 fn retains_the_complete_nonfloating_integer_family() {
     let source = br#"fn main() -> own unit traps {
-  let a: own i32 = idiv.trap<i32>(8_i32, 2_i32);
-  let b: own i32 = irem.trap<i32>(9_i32, 2_i32);
-  let c: own i32 = iand<i32>(a, b);
-  let d: own i32 = ior<i32>(a, b);
-  let e: own i32 = ixor<i32>(a, b);
-  let f: own i32 = inot<i32>(a);
-  let g: own i32 = ishl.wrap<i32>(a, 1_u32);
-  let h: own i32 = ishr.wrap<i32>(a, 1_u32);
-  let i: own i32 = ishl.trap<i32>(a, 1_u32);
-  let j: own i32 = ishr.trap<i32>(a, 1_u32);
-  let k: own i32 = irotl<i32>(a, 1_u32);
-  let l: own i32 = irotr<i32>(a, 1_u32);
-  let m: own u32 = ipopcount<i32>(a);
-  let n: own u32 = iclz<i32>(a);
-  let o: own u32 = ictz<i32>(a);
-  let p: own i32 = ibswap<i32>(a);
-  let q: own i32 = imulhi<i32>(a, b);
-  let r: own i32 = iadd.sat<i32>(a, b);
-  let s: own i32 = isub.sat<i32>(a, b);
-  let t: own i32 = imul.sat<i32>(a, b);
-  let u: own i32 = imin<i32>(a, b);
-  let v: own i32 = imax<i32>(a, b);
+  let a = 8_i32 / 2_i32;
+  let b = 9_i32 % 2_i32;
+  let c = iand(a, b);
+  let d = ior(a, b);
+  let e = ixor(a, b);
+  let f = inot(a);
+  let g = ishl.wrap(a, 1_u32);
+  let h = ishr.wrap(a, 1_u32);
+  let i = ishl.trap(a, 1_u32);
+  let j = ishr.trap(a, 1_u32);
+  let k = irotl(a, 1_u32);
+  let l = irotr(a, 1_u32);
+  let m = ipopcount(a);
+  let n = iclz(a);
+  let o = ictz(a);
+  let p = ibswap(a);
+  let q = imulhi(a, b);
+  let r = a +sat b;
+  let s = a -sat b;
+  let t = a *sat b;
+  let u = imin(a, b);
+  let v = imax(a, b);
   return unit;
 }
 "#;
@@ -55,12 +55,12 @@ fn retains_the_complete_nonfloating_integer_family() {
     });
 
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own i8 = ibswap<i8>(1_i8);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = ibswap(1_i8);\n  return unit;\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own i8 = ishl.wrap<i8>(1_i8, 1_i8);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = ishl.wrap(1_i8, 1_i8);\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );

@@ -220,7 +220,7 @@ fn main() -> own unit pure {
 fn a_written_type_argument_on_a_derived_operation_rejects() {
     assert_rule(
         br#"fn smaller(x: own i32, y: own i32) -> own i32 pure {
-  return imin<i32>(x, y);
+  return imin(x, y);
 }
 
 fn main() -> own unit pure {

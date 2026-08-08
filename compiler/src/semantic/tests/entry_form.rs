@@ -464,12 +464,12 @@ fn arg_get_calls_are_checked_by_the_same_general_rule() {
         declared_parameters: vec!["args".to_owned(), "position".to_owned()],
     };
     assert_rule(
-        b"fn probe['a](args: &'a Args) -> own unit reads('a) {\n  let value: own u64 = arg_get<'a>(args: args);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['a](args: &'a Args) -> own unit reads('a) {\n  let value = arg_get<'a>(args: args);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         declared.clone(),
     );
     assert_rule(
-        b"fn probe['a](args: &'a Args) -> own unit reads('a) {\n  let value: own u64 = arg_get<'a>(args: args, offset: 0_u64);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe['a](args: &'a Args) -> own unit reads('a) {\n  let value = arg_get<'a>(args: args, offset: 0_u64);\n  return unit;\n}\n\ncommand fn main() -> own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         declared,
     );

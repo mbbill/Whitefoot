@@ -201,7 +201,7 @@ fn a_claim_statement_is_an_accepted_named_runtime_check() {
     // constructed `True()` predicate has no comparison origin, so it is
     // neither redundant nor refutable [CLM-2].
     let source = br#"fn main() -> own unit traps {
-  let flag: own Bool = True();
+  let flag = True();
   claim held: flag because "constructed true";
   return unit;
 }
@@ -217,7 +217,7 @@ fn a_claim_statement_is_an_accepted_named_runtime_check() {
 #[test]
 fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
     let source = br#"fn main() -> own unit traps {
-  let flag: own Bool = True();
+  let flag = True();
   claim held: flag because "first";
   claim held: flag because "second";
   return unit;
@@ -235,7 +235,7 @@ fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
 #[test]
 fn a_non_bool_claim_condition_is_a_clm1_rejection() {
     let source = br#"fn main() -> own unit traps {
-  let value: own u64 = 3_u64;
+  let value = 3_u64;
   claim held: value because "not a Bool";
   return unit;
 }
@@ -252,12 +252,12 @@ fn scalar_constants_calls_operations_and_checks_publish_one_checked_program() {
     let source = br#"const base: i32 = 40_i32;
 
 fn add(x: own i32, y: own i32) -> own i32 pure {
-  return iadd.wrap<i32>(x, y);
+  return x +wrap y;
 }
 
 fn main() -> own unit traps {
-  let result: own i32 = add(x: base, y: 2_i32);
-  check ieq<i32>(result, 42_i32) else trap "wrong answer";
+  let result = add(x: base, y: 2_i32);
+  check result == 42_i32 else trap "wrong answer";
   return unit;
 }
 "#;
@@ -273,7 +273,7 @@ fn main() -> own unit traps {
 #[test]
 fn semantic_rule_owners_remain_distinct() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own i8 = 128_i8;\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = 128_i8;\n  return unit;\n}\n",
         SemanticRule::Form7,
         SemanticIssueKind::InvalidIntegerLiteral,
     );
@@ -346,11 +346,11 @@ fn loop_break_and_backedge_cleanup_is_explicit() {
 
 fn main() -> own unit pure {
   loop @again {
-    let first: own Cell = Cell(value: 1_i32);
+    let first = Cell(value: 1_i32);
     if True() {
       break @again;
     }
-    let second: own Cell = Cell(value: 2_i32);
+    let second = Cell(value: 2_i32);
   }
   return unit;
 }
@@ -401,7 +401,7 @@ fn main() -> own unit pure {
         },
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let a: own i32 = 1_i32;\n  let b: own i32 = move a;\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let a = 1_i32;\n  let b = move a;\n  return unit;\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::MoveOfCopy {
             mechanical_fix: "use the copy place without `move`",
@@ -412,7 +412,7 @@ fn main() -> own unit pure {
 #[test]
 fn operation_call_shapes_keep_their_exact_rule_owners() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own i32 = iadd.wrap(1_i32, 2_i32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = 1_i32 +wrap 2_i32;\n  return unit;\n}\n",
         SemanticRule::Fn2,
         SemanticIssueKind::InvalidOperation,
     );
@@ -486,7 +486,7 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
         },
     );
     assert_rule(
-        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> own unit pure {\n  let pair: own Pairing = Both(a: 1_i32, b: 2_i32);\n  match move pair {\n    Both(a: first) => {\n    }\n  }\n  return unit;\n}\n",
+        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> own unit pure {\n  let pair = Both(a: 1_i32, b: 2_i32);\n  match move pair {\n    Both(a: first) => {\n    }\n  }\n  return unit;\n}\n",
         SemanticRule::Gram10,
         SemanticIssueKind::InvalidMatchFields {
             variant: "Both".to_owned(),
@@ -498,12 +498,12 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
 #[test]
 fn give_completeness_rejects_each_structural_failure() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let result: own i32 = if flag {\n  } else {\n    give 0_i32;\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let flag = True();\n  let result = if flag {\n  } else {\n    give 0_i32;\n  }\n  return unit;\n}\n",
         SemanticRule::Give1,
         SemanticIssueKind::InvalidGive,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let flag: own Bool = True();\n  let result: own i32 = if flag {\n    give 1_i32;\n    give 2_i32;\n  } else {\n    give 0_i32;\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let flag = True();\n  let result = if flag {\n    give 1_i32;\n    give 2_i32;\n  } else {\n    give 0_i32;\n  }\n  return unit;\n}\n",
         SemanticRule::Give1,
         SemanticIssueKind::InvalidGive,
     );
@@ -512,12 +512,12 @@ fn give_completeness_rejects_each_structural_failure() {
 #[test]
 fn enum_equality_exclusions_reach_the_intended_rule() {
     assert_rule(
-        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> own unit pure {\n  let left: own PayloadEq = PayloadEmpty();\n  let right: own PayloadEq = PayloadEmpty();\n  let equal: own Bool = eeq<PayloadEq>(move left, move right);\n  return unit;\n}\n",
+        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> own unit pure {\n  let left = PayloadEmpty();\n  let right = PayloadEmpty();\n  let equal = eeq(move left, move right);\n  return unit;\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\nfn main() -> own unit pure {\n  let left: own LeftEq = LeftFirst();\n  let right: own RightEq = RightFirst();\n  let equal: own Bool = eeq<LeftEq>(left, right);\n  return unit;\n}\n",
+        b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\nfn main() -> own unit pure {\n  let left = LeftFirst();\n  let right = RightFirst();\n  let equal = eeq(left, right);\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
@@ -540,11 +540,11 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
     assert_unsupported(
-        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> own unit pure {\n  let flag: own Flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return unit;\n}\n",
+        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> own unit pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return unit;\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
     assert_unsupported(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> own unit pure {\n  let cell: own Cell = Cell(value: 1_i32);\n  let flag: own Bool = True();\n  if flag {\n    let consumed: own Cell = move cell;\n  }\n  return unit;\n}\n",
+        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> own unit pure {\n  let cell = Cell(value: 1_i32);\n  let flag = True();\n  if flag {\n    let consumed = move cell;\n  }\n  return unit;\n}\n",
         UnsupportedSemanticFeature::OwnershipJoin,
     );
 }
@@ -594,8 +594,8 @@ fn propagate_of_a_box_holder_is_a_type7_missing_dereference() {
 }
 
 fn unwrap(holder: own box<Result<i32, StepError>>) -> own Result<i32, StepError> pure {
-  let accepted: own i32 = propagate holder;
-  return Ok(value: accepted);
+  let accepted = propagate holder;
+  return Ok<i32, StepError>(value: accepted);
 }
 
 fn main() -> own unit pure {
@@ -664,25 +664,25 @@ struct Pair {
 }
 
 fn step(value: own i32) -> own Result<i32, StepError> pure {
-  return Ok(value: value);
+  return Ok<i32, StepError>(value: value);
 }
 
 fn forward(value: own i32) -> own Result<Pair, StepError> pure {
-  let accepted: own i32 = propagate step(value: value);
-  let pair: own Pair = Pair(value: accepted);
-  return Ok(value: move pair);
+  let accepted = propagate step(value: value);
+  let pair = Pair(value: accepted);
+  return Ok<Pair, StepError>(value: move pair);
 }
 
 fn direct(error: own StepError) -> own Result<Pair, StepError> pure {
-  let accepted: own i32 = propagate Err(error: error);
-  let pair: own Pair = Pair(value: accepted);
-  return Ok(value: move pair);
+  let accepted = propagate Err(error: error);
+  let pair = Pair(value: accepted);
+  return Ok<Pair, StepError>(value: move pair);
 }
 
 fn bare(result: own Result<i32, StepError>) -> own Result<Pair, StepError> pure {
-  let accepted: own i32 = propagate result;
-  let pair: own Pair = Pair(value: accepted);
-  return Ok(value: move pair);
+  let accepted = propagate result;
+  let pair = Pair(value: accepted);
+  return Ok<Pair, StepError>(value: move pair);
 }
 
 fn main() -> own unit pure {
@@ -714,14 +714,14 @@ fn main() -> own unit pure {
 }
 
 fn reuse(result: own Result<i32, StepError>) -> own Result<i32, StepError> pure {
-  let accepted: own i32 = propagate result;
+  let accepted = propagate result;
   match result {
     Ok(value: second_value) => {
     }
     Err(error: second_error) => {
     }
   }
-  return Ok(value: accepted);
+  return Ok<i32, StepError>(value: accepted);
 }
 
 fn main() -> own unit pure {
@@ -746,7 +746,7 @@ fn main() -> own unit pure {
 }
 
 fn main() -> own unit pure {
-  let flag: own Flag = First();
+  let flag = First();
   match Err(error: flag) {
     Ok(value: ok_value) => {
     }
@@ -778,10 +778,10 @@ struct Outer {
 }
 
 fn main() -> own unit pure {
-  let number: own i32 = 1_i32;
+  let number = 1_i32;
   set number = 2_i32;
-  let inner: own Inner = Inner(value: 3_i32);
-  let outer: own Outer = Outer(inner: move inner, other: 4_i32);
+  let inner = Inner(value: 3_i32);
+  let outer = Outer(inner: move inner, other: 4_i32);
   set outer.inner.value = number;
   return unit;
 }
@@ -816,7 +816,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule(
-        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> own unit pure {\n  let left: own Cell = Cell(value: 1_i32);\n  let right: own Cell = Cell(value: 2_i32);\n  set left = move right;\n  return unit;\n}\n",
+        b"struct Cell {\n  value: i32;\n}\n\nfn main() -> own unit pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return unit;\n}\n",
         SemanticRule::Stor1,
         SemanticIssueKind::AffineSetTarget {
             target_type: "Cell".to_owned(),
@@ -825,7 +825,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
         },
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let number: own i32 = 1_i32;\n  set number = True();\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let number = 1_i32;\n  set number = True();\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
@@ -842,7 +842,7 @@ fn take(cell: own Cell) -> own i32 pure {
 }
 
 fn main() -> own unit pure {
-  let cell: own Cell = Cell(value: 1_i32);
+  let cell = Cell(value: 1_i32);
   set cell.value = take(cell: move cell);
   return unit;
 }
@@ -878,7 +878,7 @@ enum Holder {
 }
 
 fn make() -> own Cell pure {
-  let cell: own Cell = Cell(value: 1_i32);
+  let cell = Cell(value: 1_i32);
   return move cell;
 }
 
@@ -898,8 +898,8 @@ fn drop_binder(value: own Holder) -> own unit pure {
 }
 
 fn drop_before_give(flag: own Bool) -> own i32 pure {
-  let selected: own i32 = if flag {
-    let temporary: own Cell = Cell(value: 2_i32);
+  let selected = if flag {
+    let temporary = Cell(value: 2_i32);
     give 1_i32;
   } else {
     give 0_i32;
@@ -908,29 +908,29 @@ fn drop_before_give(flag: own Bool) -> own i32 pure {
 }
 
 fn move_through_give(flag: own Bool) -> own Cell pure {
-  let selected: own Cell = if flag {
-    let temporary: own Cell = Cell(value: 3_i32);
+  let selected = if flag {
+    let temporary = Cell(value: 3_i32);
     give move temporary;
   } else {
-    let temporary: own Cell = Cell(value: 4_i32);
+    let temporary = Cell(value: 4_i32);
     give move temporary;
   }
   return move selected;
 }
 
 fn reverse_order() -> own unit pure {
-  let first: own Cell = Cell(value: 5_i32);
-  let second: own Cell = Cell(value: 6_i32);
+  let first = Cell(value: 5_i32);
+  let second = Cell(value: 6_i32);
   return unit;
 }
 
 fn consume_projection() -> own unit pure {
-  let selected: own Cell = Cell(value: 7_i32);
-  let inner_sibling: own Cell = Cell(value: 8_i32);
-  let inner: own Inner = Inner(selected: move selected, sibling: move inner_sibling);
-  let outer_sibling: own Cell = Cell(value: 9_i32);
-  let outer: own Outer = Outer(inner: move inner, sibling: move outer_sibling);
-  let taken: own Cell = move outer.inner.selected;
+  let selected = Cell(value: 7_i32);
+  let inner_sibling = Cell(value: 8_i32);
+  let inner = Inner(selected: move selected, sibling: move inner_sibling);
+  let outer_sibling = Cell(value: 9_i32);
+  let outer = Outer(inner: move inner, sibling: move outer_sibling);
+  let taken = move outer.inner.selected;
   return unit;
 }
 

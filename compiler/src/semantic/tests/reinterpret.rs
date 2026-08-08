@@ -73,10 +73,10 @@ fn retains_every_equal_width_reinterpret_pair() {
 #[test]
 fn reinterpret_shape_pair_and_operand_failures_keep_their_rule_owners() {
     for source in [
-        b"fn main() -> own unit pure {\n  let value: own i32 = reinterpret<i32, i32>(1_i32);\n  return unit;\n}\n".as_slice(),
-        b"fn main() -> own unit pure {\n  let value: own u16 = reinterpret<i8, u16>(1_i8);\n  return unit;\n}\n",
-        b"fn main() -> own unit pure {\n  let value: own f64 = reinterpret<f32, f64>(1.0_f32);\n  return unit;\n}\n",
-        b"fn main() -> own unit pure {\n  let value: own u32 = reinterpret<i32>(1_i32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = reinterpret<i32, i32>(1_i32);\n  return unit;\n}\n".as_slice(),
+        b"fn main() -> own unit pure {\n  let value = reinterpret<i8, u16>(1_i8);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = reinterpret<f32, f64>(1.0_f32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = reinterpret<i32>(1_i32);\n  return unit;\n}\n",
     ] {
         assert_rule(
             source,
@@ -85,7 +85,7 @@ fn reinterpret_shape_pair_and_operand_failures_keep_their_rule_owners() {
         );
     }
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own u32 = reinterpret<i32, u32>(1_u32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = reinterpret<i32, u32>(1_u32);\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );

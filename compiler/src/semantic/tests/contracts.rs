@@ -260,7 +260,7 @@ contract AddIdentity {
 }
 
 fn saturating_add(x: own u64, y: own u64) -> own u64 pure {
-  return iadd.sat<u64>(x, y);
+  return x +sat y;
 }
 
 conform u64: AddIdentity {
@@ -472,9 +472,9 @@ fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
 }
 
 fn add_lengths['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b 'a) {
-  let first_length: own u64 = len<u8>(deref(first));
-  let second_length: own u64 = len<u8>(deref(second));
-  return iadd.wrap<u64>(first_length, second_length);
+  let first_length = len(deref(first));
+  let second_length = len(deref(second));
+  return first_length +wrap second_length;
 }
 
 conform buffer<u8>: LengthSum {
@@ -500,8 +500,8 @@ fn positional_region_alpha_equality_includes_slice_type_regions() {
 }
 
 fn read_first['input](bytes: own slice<'input, u8>) -> own u8 reads('input), traps {
-  let room: own u64 = len<u8>(bytes);
-  let ok: own Bool = ilt<u64>(0_u64, room);
+  let room = len(bytes);
+  let ok = ilt(0_u64, room);
   claim nonempty: ok because "conforming callers pass a nonempty slice";
   return bytes[0_u64];
 }
@@ -529,7 +529,7 @@ fn positional_region_ordinal_swap_is_not_alpha_equal() {
 }
 
 fn second_length['a, 'b](first: &'a buffer<u8>, second: &'b buffer<u8>) -> own u64 reads('b) {
-  return len<u8>(deref(second));
+  return len(deref(second));
 }
 
 conform buffer<u8>: FirstLength {

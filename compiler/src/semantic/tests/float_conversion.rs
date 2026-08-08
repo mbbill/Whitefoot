@@ -114,12 +114,12 @@ fn partial_float_conversion_result_is_available_without_an_annotation() {
 #[test]
 fn float_conversion_operand_failures_keep_their_rule_owners() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own f32 = cvt<f32, f32>(1.0_f32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = cvt<f32, f32>(1.0_f32);\n  return unit;\n}\n",
         SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own f64 = cvt<u32, f64>(1_u16);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = cvt<u32, f64>(1_u16);\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );

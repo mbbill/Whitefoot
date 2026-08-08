@@ -6,10 +6,10 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 #[test]
 fn box_creation_dereference_and_cleanup_are_explicit() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
-  let value: own u64 = 41_u64;
-  let owner: own box<u64> = box_new<u64>(value);
-  let loaded: own u64 = deref(owner);
-  check ieq<u64>(loaded, 41_u64) else trap "box value";
+  let value = 41_u64;
+  let owner = box_new(value);
+  let loaded = deref(owner);
+  check loaded == 41_u64 else trap "box value";
   return unit;
 }
 "#;
@@ -52,9 +52,9 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
 #[test]
 fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
     let source = br#"fn main() -> own unit allocates(heap), traps {
-  let bytes: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own box<buffer<u8>> = box_new<buffer<u8>>(move bytes);
-  let extracted: own buffer<u8> = move deref(owner);
+  let bytes = buffer_new(1_u64, 0_u8);
+  let owner = box_new(move bytes);
+  let extracted = move deref(owner);
   return unit;
 }
 "#;
@@ -80,7 +80,7 @@ fn main() -> own unit pure {
     );
     assert_rule(
         br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap) {
-  box_new<slice<'r, u8>>(move value);
+  box_new(move value);
   return unit;
 }
 

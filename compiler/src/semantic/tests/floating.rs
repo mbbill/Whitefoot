@@ -8,30 +8,30 @@ use super::{assert_rule, with_semantics};
 #[test]
 fn retains_the_complete_direct_float_operation_family() {
     let source = br#"fn main() -> own unit pure {
-  let a: own f32 = fadd.strict<f32>(1.0_f32, 2.0_f32);
-  let b: own f32 = fsub.strict<f32>(a, 1.0_f32);
-  let c: own f32 = fmul.strict<f32>(a, b);
-  let d: own f32 = fdiv.strict<f32>(c, b);
-  let e: own Bool = feq<f32>(a, d);
-  let f: own Bool = flt<f32>(b, a);
-  let g: own Bool = fle<f32>(b, a);
-  let h: own Bool = fgt<f32>(a, b);
-  let i: own Bool = fge<f32>(a, b);
-  let j: own Bool = fne<f32>(a, b);
-  let k: own f32 = fneg<f32>(a);
-  let l: own f32 = fabs<f32>(k);
-  let m: own f32 = fcopysign<f32>(a, k);
-  let n: own f32 = fmin<f32>(a, b);
-  let o: own f32 = fmax<f32>(a, b);
-  let p: own f32 = ffloor<f32>(a);
-  let q: own f32 = fceil<f32>(a);
-  let r: own f32 = ftrunc<f32>(a);
-  let s: own f32 = froundeven<f32>(a);
-  let t: own f32 = frem<f32>(a, b);
-  let u: own f32 = fsqrt.strict<f32>(a);
-  let v: own f32 = ffma.strict<f32>(a, b, c);
-  let w: own f32 = finf<f32>();
-  let x: own f32 = fnan<f32>();
+  let a = fadd.strict(1.0_f32, 2.0_f32);
+  let b = fsub.strict(a, 1.0_f32);
+  let c = fmul.strict(a, b);
+  let d = fdiv.strict(c, b);
+  let e = feq(a, d);
+  let f = flt(b, a);
+  let g = fle(b, a);
+  let h = fgt(a, b);
+  let i = fge(a, b);
+  let j = fne(a, b);
+  let k = fneg(a);
+  let l = fabs(k);
+  let m = fcopysign(a, k);
+  let n = fmin(a, b);
+  let o = fmax(a, b);
+  let p = ffloor(a);
+  let q = fceil(a);
+  let r = ftrunc(a);
+  let s = froundeven(a);
+  let t = frem(a, b);
+  let u = fsqrt.strict(a);
+  let v = ffma.strict(a, b, c);
+  let w = finf<f32>();
+  let x = fnan<f32>();
   return unit;
 }
 "#;
@@ -83,17 +83,17 @@ fn retains_the_complete_direct_float_operation_family() {
 #[test]
 fn float_literal_and_operation_failures_keep_their_rule_owners() {
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own f64 = 1.00_f64;\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = 1.00_f64;\n  return unit;\n}\n",
         SemanticRule::Form7,
         SemanticIssueKind::InvalidFloatLiteral,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own f64 = fadd.strict<i32>(1_i32, 2_i32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = fadd.strict(1_i32, 2_i32);\n  return unit;\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"fn main() -> own unit pure {\n  let value: own f64 = fadd.strict<f64>(1.0_f64, 2_i32);\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let value = fadd.strict(1.0_f64, 2_i32);\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );

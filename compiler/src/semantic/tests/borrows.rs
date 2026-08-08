@@ -70,7 +70,7 @@ fn borrowed_column_effect_rows_are_exact() {
 #[test]
 fn borrowed_buffer_length_exhibits_a_read_of_its_storage_origin() {
     let source = br#"fn length['r](values: &'r buffer<u8>) -> own u64 reads('r) {
-  return len<u8>(deref(values));
+  return len(deref(values));
 }
 
 fn main() -> own unit pure {
@@ -88,10 +88,10 @@ fn main() -> own unit pure {
 fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
     assert_rule(
         br#"fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  let values = buffer_new(1_u64, 0_u8);
   region 'r {
-    let first: &uniq 'r buffer<u8> = &uniq 'r values;
-    let second: &uniq 'r buffer<u8> = &uniq 'r values;
+    let first = &uniq 'r values;
+    let second = &uniq 'r values;
   }
   return unit;
 }
@@ -101,9 +101,9 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
     );
     assert_rule(
         br#"fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  let values = buffer_new(1_u64, 0_u8);
   region 'r {
-    let shared: &'r buffer<u8> = &'r values;
+    let shared = &'r values;
     set values[0_u64] = 1_u8;
   }
   return unit;
@@ -122,7 +122,7 @@ fn user_calls_reject_overlapping_unique_arguments() {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  let values = buffer_new(1_u64, 0_u8);
   region 'r {
     two<'r>(first: &uniq 'r values, second: &uniq 'r values);
   }
@@ -138,7 +138,7 @@ fn main() -> own unit allocates(heap), traps {
 fn own_storage_cannot_be_borrowed_into_a_caller_region() {
     assert_rule(
         br#"fn invalid['caller](values: own buffer<u8>) -> own unit pure {
-  let escaped: &'caller buffer<u8> = &'caller values;
+  let escaped = &'caller values;
   return unit;
 }
 
@@ -155,8 +155,8 @@ fn main() -> own unit pure {
 fn call_effects_preserve_the_incoming_storage_origin() {
     let source =
         br#"fn write['r](out: &uniq 'r buffer<u8>) -> own unit reads('r), writes('r), traps {
-  let room: own u64 = len<u8>(deref(out));
-  let ok: own Bool = ilt<u64>(0_u64, room);
+  let room = len(deref(out));
+  let ok = ilt(0_u64, room);
   claim has_room: ok because "callers pass a nonempty buffer";
   set deref(out)[0_u64] = 1_u8;
   return unit;
@@ -192,15 +192,15 @@ fn count['r](pool: &'r Pool) -> own u64 reads('r) {
 }
 
 fn first['r](pool: &'r Pool) -> own u64 reads('r), traps {
-  let room: own u64 = len<u64>(deref(pool).left);
-  let ok: own Bool = ilt<u64>(0_u64, room);
+  let room = len(deref(pool).left);
+  let ok = ilt(0_u64, room);
   claim left_nonempty: ok because "callers pool at least one element per column";
   return deref(pool).left[0_u64];
 }
 
 fn update['r](pool: &uniq 'r Pool) -> own unit reads('r), writes('r), traps {
-  let room: own u64 = len<u64>(deref(pool).right);
-  let ok: own Bool = ilt<u64>(0_u64, room);
+  let room = len(deref(pool).right);
+  let ok = ilt(0_u64, room);
   claim right_nonempty: ok because "callers pool at least one element per column";
   set deref(pool).right[0_u64] = 9_u64;
   set deref(pool).count = 1_u64;
@@ -296,10 +296,10 @@ fn struct_borrow_roots_block_owner_access_and_affine_moves() {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let values: own buffer<u64> = buffer_new<u64>(1_u64, 0_u64);
-  let pool: own Pool = Pool(values: move values, count: 0_u64);
+  let values = buffer_new(1_u64, 0_u64);
+  let pool = Pool(values: move values, count: 0_u64);
   region 'r {
-    let view: &'r Pool = &'r pool;
+    let view = &'r pool;
     set pool.count = 1_u64;
   }
   return unit;
@@ -338,7 +338,7 @@ fn consume['r](counter: &uniq 'r Counter, value: own u64) -> own unit pure {
 }
 
 fn main() -> own unit pure {
-  let counter: own Counter = Counter(value: 1_u64);
+  let counter = Counter(value: 1_u64);
   region 'r {
     consume<'r>(counter: &uniq 'r counter, value: counter.value);
   }
@@ -359,7 +359,7 @@ fn observe['r](counter: &'r Counter, value: own u64) -> own unit pure {
 }
 
 fn main() -> own unit pure {
-  let counter: own Counter = Counter(value: 1_u64);
+  let counter = Counter(value: 1_u64);
   region 'r {
     observe<'r>(counter: &'r counter, value: counter.value);
   }
@@ -384,9 +384,9 @@ fn consume['r](source: &'r buffer<u8>, sibling: own buffer<u8>) -> own unit pure
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let source: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let sibling: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
-  let owner: own Owner = Owner(source: move source, sibling: move sibling);
+  let source = buffer_new(1_u64, 0_u8);
+  let sibling = buffer_new(1_u64, 0_u8);
+  let owner = Owner(source: move source, sibling: move sibling);
   region 'r {
     consume<'r>(source: &'r owner.source, sibling: move owner.sibling);
   }
@@ -497,7 +497,7 @@ fn main() -> own unit pure {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let out: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  let out = buffer_new(1_u64, 0_u8);
   loop @once {
     region 'inside {
       observe<'inside>(out: &'inside out);
@@ -520,7 +520,7 @@ fn main() -> own unit allocates(heap), traps {
 }
 
 fn main() -> own unit allocates(heap), traps {
-  let out: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  let out = buffer_new(1_u64, 0_u8);
   region 'outside {
     loop @once {
       observe<'outside>(out: &'outside out);
@@ -559,7 +559,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
 }
 
 command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
-  let batch: own buffer<u8> = buffer_new<u8>(1_u64, 0_u8);
+  let batch = buffer_new(1_u64, 0_u8);
   region 'publication {
     publish<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, count: 1_u64);
   }
@@ -629,7 +629,7 @@ fn bump['r](p: &uniq 'r i32) -> own unit writes('r) {
 fn score['r](c: &'r Cell) -> own i32 reads('r), traps {
   match deref(c) {
     Full(v: x) => {
-      return iadd.trap<i32>(deref(x), 1_i32);
+      return deref(x) + 1_i32;
     }
     Void() => {
       return 0_i32;
@@ -638,16 +638,16 @@ fn score['r](c: &'r Cell) -> own i32 reads('r), traps {
 }
 
 fn main() -> own unit traps {
-  let a: own i32 = 5_i32;
+  let a = 5_i32;
   region 'r {
-    let s: &'r i32 = &'r a;
-    check ieq<i32>(deref(s), 5_i32) else trap "read";
+    let s = &'r a;
+    check deref(s) == 5_i32 else trap "read";
   }
   region 'q {
-    let u: &uniq 'q i32 = &uniq 'q a;
+    let u = &uniq 'q a;
     set deref(u) = 7_i32;
   }
-  check ieq<i32>(a, 7_i32) else trap "write";
+  check a == 7_i32 else trap "write";
   return unit;
 }
 "#;
@@ -704,7 +704,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     // [OWN-4]: a borrow narrowed to an inner region cannot be returned as the
     // caller's region.
     assert_rule(
-        b"fn leak['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    let q: &'s i32 = x;\n    return q;\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn leak['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    let q = x;\n    return q;\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own4,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
@@ -718,7 +718,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [TYPE-7]: a bare holder is not an enum value, so it cannot be matched.
     assert_rule(
-        b"enum State {\n  Ready();\n  Done();\n}\n\nfn main() -> own unit pure {\n  let state: own State = Ready();\n  region 'r {\n    let holder: &'r State = &'r state;\n    match holder {\n      Ready() => {\n      }\n      Done() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum State {\n  Ready();\n  Done();\n}\n\nfn main() -> own unit pure {\n  let state = Ready();\n  region 'r {\n    let holder = &'r state;\n    match holder {\n      Ready() => {\n      }\n      Done() => {\n      }\n    }\n  }\n  return unit;\n}\n",
         SemanticRule::Type7,
         SemanticIssueKind::MissingDereference {
             mechanical_fix: "write `deref(holder)`",
@@ -726,7 +726,7 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [TYPE-7]: neither is a `borrow_expr`.
     assert_rule(
-        b"enum State {\n  Ready();\n}\n\nfn main() -> own unit pure {\n  let state: own State = Ready();\n  region 'r {\n    match &'r state {\n      Ready() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum State {\n  Ready();\n}\n\nfn main() -> own unit pure {\n  let state = Ready();\n  region 'r {\n    match &'r state {\n      Ready() => {\n      }\n    }\n  }\n  return unit;\n}\n",
         SemanticRule::Type7,
         SemanticIssueKind::MissingDereference {
             mechanical_fix: "write `deref(holder)`",
@@ -742,19 +742,19 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
     );
     // [OWN-5]: a shared holder never makes its referent writable.
     assert_rule(
-        b"fn main() -> own unit pure {\n  let a: own i32 = 1_i32;\n  region 'r {\n    let s: &'r i32 = &'r a;\n    set deref(s) = 9_i32;\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let a = 1_i32;\n  region 'r {\n    let s = &'r a;\n    set deref(s) = 9_i32;\n  }\n  return unit;\n}\n",
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
     // [OWN-5]: two live uniq borrows of one scalar place overlap.
     assert_rule(
-        b"fn main() -> own unit pure {\n  let a: own i32 = 3_i32;\n  region 'r {\n    let u1: &uniq 'r i32 = &uniq 'r a;\n    let u2: &uniq 'r i32 = &uniq 'r a;\n  }\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let a = 3_i32;\n  region 'r {\n    let u1 = &uniq 'r a;\n    let u2 = &uniq 'r a;\n  }\n  return unit;\n}\n",
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
     // [OWN-12]: two uniq arguments over one place alias at the call.
     assert_rule(
-        b"fn two['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  let x: own i32 = 0_i32;\n  region 'r {\n    two<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return unit;\n}\n",
+        b"fn two['r](a: &uniq 'r i32, b: &uniq 'r i32) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  let x = 0_i32;\n  region 'r {\n    two<'r>(a: &uniq 'r x, b: &uniq 'r x);\n  }\n  return unit;\n}\n",
         SemanticRule::Own12,
         SemanticIssueKind::BorrowConflict,
     );
@@ -827,7 +827,7 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
          return it as the complete return expression from a parameter or let-bound holder, \
          or return the holder itself";
     assert_rule(
-        b"fn bind['r](x: &'r i32) -> own unit pure {\n  region 'c {\n    let y: &'c i32 = &'c deref(x);\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn bind['r](x: &'r i32) -> own unit pure {\n  region 'c {\n    let y = &'c deref(x);\n  }\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own14,
         SemanticIssueKind::InvalidReborrowPosition {
             mechanical_fix: RESTRUCTURING,
@@ -857,7 +857,7 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
 #[test]
 fn arm_scoped_child_reborrows_admit_payload_uses() {
     with_semantics(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &uniq 'r Packet = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved: own i32 = deref(payload);\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> own unit pure {\n  let packet = Data(value: 4_i32);\n  region 'r {\n    let holder = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved = deref(payload);\n      }\n    }\n  }\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("a uniq-match payload read through its binder must check: {outcome:?}");
@@ -865,7 +865,7 @@ fn arm_scoped_child_reborrows_admit_payload_uses() {
         },
     );
     with_semantics(
-        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &'r Packet = &'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved: own i32 = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n        let again: own i32 = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> own unit pure {\n  let packet = Data(value: 4_i32);\n  region 'r {\n    let holder = &'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        let saved = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n        let again = deref(payload);\n      }\n      Idle() => {\n      }\n    }\n  }\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("a shared root is never suspended and matches again: {outcome:?}");
@@ -873,7 +873,7 @@ fn arm_scoped_child_reborrows_admit_payload_uses() {
         },
     );
     with_semantics(
-        b"enum Inner {\n  Leaf(value: i32);\n}\n\nenum Outer {\n  Wrap(inner: Inner);\n}\n\nfn main() -> own unit pure {\n  let leaf: own Inner = Leaf(value: 7_i32);\n  let packet: own Outer = Wrap(inner: move leaf);\n  region 'r {\n    let holder: &'r Outer = &'r packet;\n    match deref(holder) {\n      Wrap(inner: nested) => {\n        match deref(nested) {\n          Leaf(value: payload) => {\n            let saved: own i32 = deref(payload);\n          }\n        }\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum Inner {\n  Leaf(value: i32);\n}\n\nenum Outer {\n  Wrap(inner: Inner);\n}\n\nfn main() -> own unit pure {\n  let leaf = Leaf(value: 7_i32);\n  let packet = Wrap(inner: move leaf);\n  region 'r {\n    let holder = &'r packet;\n    match deref(holder) {\n      Wrap(inner: nested) => {\n        match deref(nested) {\n          Leaf(value: payload) => {\n            let saved = deref(payload);\n          }\n        }\n      }\n    }\n  }\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("a shared binder must root the next scrutinee: {outcome:?}");
@@ -890,13 +890,13 @@ fn arm_scoped_child_reborrows_admit_payload_uses() {
 fn suspended_uniq_match_roots_do_not_resume() {
     // In-arm reuse of the suspended root.
     assert_rule(
-        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &uniq 'r Packet = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        match deref(holder) {\n          Data(value: other) => {\n          }\n        }\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n}\n\nfn main() -> own unit pure {\n  let packet = Data(value: 4_i32);\n  region 'r {\n    let holder = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n        match deref(holder) {\n          Data(value: other) => {\n          }\n        }\n      }\n    }\n  }\n  return unit;\n}\n",
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
     // Post-match reuse, joined across a binder-creating and a binder-free arm.
     assert_rule(
-        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> own unit pure {\n  let packet: own Packet = Data(value: 4_i32);\n  region 'r {\n    let holder: &uniq 'r Packet = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n      }\n      Idle() => {\n      }\n    }\n  }\n  return unit;\n}\n",
+        b"enum Packet {\n  Data(value: i32);\n  Idle();\n}\n\nfn main() -> own unit pure {\n  let packet = Data(value: 4_i32);\n  region 'r {\n    let holder = &uniq 'r packet;\n    match deref(holder) {\n      Data(value: payload) => {\n      }\n      Idle() => {\n      }\n    }\n    match deref(holder) {\n      Data(value: payload) => {\n      }\n      Idle() => {\n      }\n    }\n  }\n  return unit;\n}\n",
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );

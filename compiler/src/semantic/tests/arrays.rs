@@ -13,13 +13,13 @@ fn constants_fill_length_and_index_share_exact_array_types() {
 const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 fn main() -> own unit traps {
-  let values: own array<i32, count> = array_new<i32, count>(7_i32);
-  let length: own u64 = len<i32>(values);
-  let local: own i32 = values[2_u64];
-  let stored: own u8 = table[2_u64];
-  check ieq<u64>(length, 4_u64) else trap "length drift";
-  check ieq<i32>(local, 7_i32) else trap "fill drift";
-  check ieq<u8>(stored, 30_u8) else trap "const drift";
+  let values = array_new<i32, count>(7_i32);
+  let length = len(values);
+  let local = values[2_u64];
+  let stored = table[2_u64];
+  check length == 4_u64 else trap "length drift";
+  check local == 7_i32 else trap "fill drift";
+  check stored == 30_u8 else trap "const drift";
   return unit;
 }
 "#;
@@ -122,7 +122,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  let items: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  let value: own u8 = items[0_u32];\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
@@ -175,10 +175,10 @@ fn main() -> own unit pure {
 #[test]
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
     let source = br#"fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
+  let values = array_new<u8, 2>(0_u8);
   set values[1_u64] = 9_u8;
-  let stored: own u8 = values[1_u64];
-  check ieq<u8>(stored, 9_u8) else trap "set drift";
+  let stored = values[1_u64];
+  check stored == 9_u8 else trap "set drift";
   return unit;
 }
 "#;
@@ -215,7 +215,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript is not an [EFF-2] trap source: the indexed set
     // with a constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"fn main() -> own unit pure {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return unit;\n}\n",
+        b"fn main() -> own unit pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return unit;\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -224,12 +224,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule(
-        b"fn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return unit;\n}\n",
+        b"fn main() -> own unit traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return unit;\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::TypeMismatch,
     );
     assert_rule(
-        b"fn consume(values: own array<u8, 2>) -> own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> own unit traps {\n  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return unit;\n}\n",
+        b"fn consume(values: own array<u8, 2>) -> own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> own unit traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return unit;\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -248,14 +248,14 @@ struct Outer {
 }
 
 fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  let inner: own Inner = Inner(values: move values);
-  let outer: own Outer = Outer(inner: move inner);
-  let length: own u64 = len<u8>(outer.inner.values);
+  let values = array_new<u8, 2>(0_u8);
+  let inner = Inner(values: move values);
+  let outer = Outer(inner: move inner);
+  let length = len(outer.inner.values);
   set outer.inner.values[1_u64] = 9_u8;
-  let stored: own u8 = outer.inner.values[1_u64];
-  check ieq<u64>(length, 2_u64) else trap "length drift";
-  check ieq<u8>(stored, 9_u8) else trap "set drift";
+  let stored = outer.inner.values[1_u64];
+  check length == 2_u64 else trap "length drift";
+  check stored == 9_u8 else trap "set drift";
   return unit;
 }
 "#;
@@ -297,9 +297,9 @@ fn replacement(value: own Outer) -> own u8 pure {
 }
 
 fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  let inner: own Inner = Inner(values: move values);
-  let outer: own Outer = Outer(inner: move inner);
+  let values = array_new<u8, 2>(0_u8);
+  let inner = Inner(values: move values);
+  let outer = Outer(inner: move inner);
   set outer.inner.values[1_u64] = replacement(value: move outer);
   return unit;
 }
@@ -320,11 +320,11 @@ struct Outer {
 }
 
 fn main() -> own unit traps {
-  let values: own array<u8, 2> = array_new<u8, 2>(0_u8);
-  let inner: own Inner = Inner(values: move values);
-  let outer: own Outer = Outer(inner: move inner);
+  let values = array_new<u8, 2>(0_u8);
+  let inner = Inner(values: move values);
+  let outer = Outer(inner: move inner);
   region 'view {
-    let held: &'view Outer = &'view outer;
+    let held = &'view outer;
     set outer.inner.values[1_u64] = 9_u8;
   }
   return unit;
