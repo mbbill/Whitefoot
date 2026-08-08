@@ -1297,7 +1297,7 @@ fn semantic_stage_order_precedes_source_position_and_inventory_rank_is_event_loc
   missing();
 }
 
-fn ieq() -> own unit pure {
+fn ilt() -> own unit pure {
 }
 "#;
     with_one_resolution(later_inventory_error, |outcome| {
@@ -1307,7 +1307,7 @@ fn ieq() -> own unit pure {
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
 
-    let later_fn8_error = br#"fn ieq() -> own unit pure {
+    let later_fn8_error = br#"fn ilt() -> own unit pure {
 }
 
 fn guarded() -> own unit traps requires {
@@ -1328,7 +1328,7 @@ fn guarded() -> own unit traps requires {
 
 const value: i32 = 1_i32;
 
-fn ieq() -> own unit pure {
+fn ilt() -> own unit pure {
 }
 "#;
     with_one_resolution(earlier_lower_rank, |outcome| {
