@@ -2,18 +2,19 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08 round 7. M2 (`4c79e35`), the
-  `box_new` repair (`4e68436`), [OP-1] (ii) infix resolution (`3af8478`),
-  the derived-nominal sweep (`55aa991`) and the migration tool's first
-  class (`16e8432`) are landed. **M3b needs a ruling before it runs**: 20
-  conformance cases expect a *pre-semantic* rejection and cannot survive a
-  parse-and-render migration at all. See "M3a".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 8. **M3b has run**: the two
+  structural assertions are a standing library gate (`a7cb4e4`), the corpus
+  is migrated (`060a0f0`), and the delta's §5 carries the measured figures
+  (`96862aa`). **Four things need a ruling before the batch closes** — one
+  conformance case the migration would destroy, two whose concern died with
+  the deleted bytes, and an infix path the checker does not have. See
+  "Round 8".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038f (round 7) / `/Users/bytedance/do_not_scan/wf0038-r7`
+- **Owner / workspace:** exec-0038g (round 8) / `/Users/bytedance/do_not_scan/wf0038-m3b`
   on branch `task/0038-floor5-semantic-and-migration`
-- **Base revision:** fb80bb1 (main), already an ancestor; no rebase was owed
+- **Base revision:** e8054fe (main), already the merge base; no rebase was owed
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -88,6 +89,180 @@ not to be weakened or silenced: `spec::tests::path_and_version_label_agree`,
 `whitefoot-spec`'s `recorded_chain_ends_at_the_embedded_specification`.
 The activation commit closes all three at once. `ACTIVE-SPEC:` is an owner
 approval record: writing one to make a gate green is forbidden.
+
+## Round 8 (exec-0038g, 2026-08-08) — M3b ran; four things need a ruling
+
+Three commits. The corpus is migrated and the failure set shrinks for the
+first time in this batch. Four findings stop short of closing it, and each
+carries a reproduction.
+
+**Handoff state found, corrected before work.** The brief said no worktree
+held the branch; `/Users/bytedance/do_not_scan/wf0038-r7` did, with the
+`reject-err2-nonexhaustive` restatement uncommitted. Both resolved
+themselves mid-orientation — the branch was committed (`70859f3`), rebased
+onto `e8054fe` and its worktree removed while this round was reading — so
+nothing was destroyed and no rebase was owed. Verified rather than assumed:
+`git merge-base main task/0038…` equals main's tip.
+
+### `a7cb4e4` — the two structural assertions, as a library gate
+
+`compiler/src/syntax/parser/finalize/tests/corpus_shape.rs`. Round 7 was
+right that a bin cannot reach `FinalizedTopology`; a library test is also a
+standing gate rather than a one-shot. The detector ships with its own
+controls — both forbidden forms, the enum `match` and `else if` chain that
+replace them, an `else` holding an `if` *plus another statement* (which
+cannot be flattened and is not the defect), the empty `else` that is a
+different [GRAM-6] clause, and a source that reaches no tree.
+
+It landed **red on exactly one file** and went green with the migration,
+which is the evidence that it fires.
+
+**One limitation, stated rather than papered over.** A tree carries no
+types, so a Bool `match` is detected by its arms naming `True`/`False`.
+`x-typ-match-foreign-variant.wf` has a Bool scrutinee and a `Some` arm, so
+the assertion cannot see it — the adapter does (below). Widening the
+criterion needs types, not a better pattern.
+
+`type5-neg-match-non-enum.wf` matches `True()` against an `i32`; the
+2026-08-08 ruling left it deliberately. It is named in the test and asserted
+to still be present, so neither a second such file nor its disappearance
+passes unnoticed.
+
+### `060a0f0` — the corpus migration
+
+310 files. **The 20 exclusions were measured, not assumed**: `--check` over
+all 420 one file at a time refuses exactly 20, and that set is identical to
+the ruled list, 20 of 20. Re-running the tool over the result changes 0
+files, and the corpus round-trip gate reports all 400 round-tripping.
+
+Measured class figures are in the delta's §5 (`96862aa`) and reconcile to
+the site: 1575 written type arguments in the 400 plus 12 in the excluded 20
+is the 1587 the old command now returns, and A1's 690 plus C1's 886 is 1576,
+one more because `fn2-neg-implicit-instantiation.wf` writes `iadd.trap(...)`
+with no argument to delete. 261 `True()` arms, 260 conditionals, one ruled
+survivor. **The drop from the recorded 312/691 is the `reject-err2`
+restatement, proven by running the tool on that file's pre-restatement
+bytes: exactly 1 changed file and 1 argument list.**
+
+### The three oracles
+
+1. **Failure SET: 20 removed, 0 added.** Lib 280 → 300 passed, 286 → 266
+   failed. 19 are tests that `include_bytes!` a corpus case — the lib does
+   embed 96 corpus files across 19 sources, which is why a corpus migration
+   moves it at all — and the 20th is the corpus assertion above.
+2. **Stage oracle: 0 moved earlier, 17 moved later, 0 changed within a
+   stage**, over the 266 failing in both runs. Parsing 92 → 61, Resolution
+   1 → 10, Semantics 0 → 8. Predicted before the run and confirmed.
+3. **Adapter: 116/271/14 → 335/52/14.** Main's lane was recomputed in its
+   own worktree rather than relayed: **386/1/14**.
+
+### Finding 1 — a conformance case the migration destroys (NOT landed)
+
+`form2-neg-noncanonical-ws.wf` is **reverted to its committed bytes** and
+needs a ruling. Its entire content under test is an isolated four-space
+indentation; canonical re-rendering removes it, and the migrated file
+**compiles cleanly (exit 0) where its manifest row demands a FORM-2
+rejection**. Changing protected conformance evidence is not an executor's
+call, so it is left unmigrated and reported.
+
+This falsifies one sentence of the 2026-08-08 ruling — "every byte-level
+case is in the untouched 13 … the set turned out to be disjoint from the set
+needing edits." This is a byte-level case that both parses after the pre-pass
+and needs an edit.
+
+**A minimal restatement is verified and ready**: take the migrated line and
+restore its four-space indentation, i.e.
+
+```
+fn main() -> own unit pure {
+    let a = 1_i32;
+  return unit;
+}
+```
+
+which rejects `CanonicalSource/Source [FORM-2]` — the recorded verdict,
+observed rather than inferred. Unmigrated it instead cites GRAM-4, so
+neither leaving it nor migrating it is correct; only the restatement is.
+
+### Finding 2 — two cases whose concern died with the deleted bytes
+
+Both now **accept where their manifest demands a rejection**, and neither is
+a tool defect:
+
+- `x-typ-bool-cmp-result-as-int` (TYPE-5). Its violation was
+  `let v: own i32 = ieq<i32>(a, b);` — an annotation disagreeing with the
+  right-hand side. A3 deletes the annotation, so there is nothing left to
+  disagree. Under v0.23 the concern **cannot be expressed at all**, because
+  a binder's type is its initializer's by construction.
+- `fn2-neg-eeq-implicit-type` (FN-2). **Untouched by the migration** — it
+  already writes `eeq(left, right)` bare. v0.22 rejected the missing type
+  argument; v0.23 deletes that argument by design, so it is now legal.
+
+The delta already anticipates the class — "the error classes that lived only
+in deleted bytes die with their bytes" — but retiring or restating a
+conformance case is protected evidence and needs owner agreement plus an
+approval-ledger entry. Nothing was changed.
+
+### Finding 3 — six cases reject under a different rule
+
+Verdict kind preserved, citation moved. `type7-neg-implicit-read`
+TYPE-7 → FN-1; `ent2-neg-expired-spelling-inherits-nothing` OP-4 → TYPE-6;
+`x-typ-match-foreign-variant` TYPE-6 → GRAM-6; `x-match-give1-wrong-type`
+TYPE-5 → EFF-2; `own1-neg-match-move-through-borrow` OWN-1 → OWN-5;
+`op1-neg-eeq-payload-enum` OP-1 → OWN-1. Same masking class the ruling
+handled for the 20, now on cases that parse. Plus one positive,
+`ent5-pos-join-keeps-common-bound`, newly rejecting TYPE-6
+`DeclarationCollision`.
+
+### Finding 4 — infix has no checker path in `return` position
+
+**38 of the 52 remaining adapter failures are
+`Semantics/Compiler: InvalidCanonicalTree`**, an internal compiler failure
+rather than a source rejection. Reduced to a minimal reproduction with a
+control that distinguishes the cause — the same operation in a `let`
+initializer is checked normally:
+
+```
+fn eq(a: own i32, b: own i32) -> own Bool pure {
+  return a == b;                    # Semantics/Compiler: InvalidCanonicalTree
+}
+```
+```
+let c = a == b;                     # accepted, exit 0
+let c = left == right;              # own Bool: Semantics/Source [OP-1], correct
+let c = a + b;                      # in a pure fn: Semantics/Source [EFF-2], correct
+return a + b;                       # Semantics/Compiler: InvalidCanonicalTree
+```
+
+[OP-1] (ii) infix resolution landed at `3af8478` for the `let` path; the
+`return` path did not get one. The migration did not cause this — it
+exposed it, because the corpus now writes infix where it wrote named calls.
+
+### Validation
+
+- `make -C compiler check`: **exit 2** (read from `$?`), lib
+  **300 passed / 266 failed**.
+- `make check`: **exit 2**, failing at the same compiler step. Earlier
+  stages pass: repository invariants, spec append-only, spec archive
+  integrity at 23, conformance coverage **128/128 rules, 0 uncovered**.
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt` applied.
+- Corpus round-trip gate: 400 round-tripped, 20 underived (exactly the
+  ruled 20). Its `underived.is_empty()` assertion is falsified by the
+  ruling and is a **fifth open item** — the round-5 brief predicted
+  "418 round-tripped, 2 non-canonical, 0 underived" before the 20 were
+  ruled out. It was left alone rather than relaxed.
+
+### The candidate did not move, and no pin was re-keyed
+
+The round-8 brief said landing §5's figures "changes the candidate's bytes,
+so re-assemble it and re-key all three digest pins". **Measured false.** No
+§5 content appears in `kernel-spec-v0.23-candidate.md` (checked for seven
+distinctive strings, all zero), and the candidate hashes to
+`ab257aa65874c4e6de167189b97cf706b5ca0045ccab86fdb54da83e2ba613da` both
+before and after the edit — which is already what all three pins record
+(`compiler/src/spec.rs`'s byte array, `tests/conformance/runner.py:80`,
+`spec/derivation/derivation-ledger.md:841`). Re-keying would have churned
+three correct pins.
 
 ## Claim corrections (exec-0038, 2026-08-07)
 
