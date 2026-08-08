@@ -2336,6 +2336,309 @@ derivation. That is a one-place change, but where the assertion sits and which
 diagnostic wins are the lead's call, and the ruling as written does not
 authorize it. Recommend it as the next slice.
 
+## Round 13 (exec-0038n, 2026-08-08) — M3c: the compiler's inline fixtures
+
+Twelve commits on `task/0038-m3c-inline-fixtures`, based on `d89af13`
+(verified with `git log --oneline -1`, not taken from the brief). The library
+gate moves **319 passed / 253 failed → 533 / 39**, exit 2 both times, read from
+`$?` and never through a pipe. **214 tests fixed, zero newly failing** in
+either direction of the set diff. The adapter is byte-identical either side —
+`Pass=371 Fail=16 Skip=14`, same 16 names — which is the expected result of
+not touching the corpus.
+
+Reproduce:
+
+```
+make -C compiler check; echo "exit=$?"
+cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
+```
+
+### One rewriter, reached from Rust — `0bfc70e`, `d6de89a`
+
+`compiler/src/bin/migrate/embedded.rs` adds a `--rust` mode that locates each
+Rust string literal, decodes it, hands the bytes to `migrate` **unchanged**,
+and re-encodes in the literal form it came from. No second rewriter: every
+spelling decision is still the corpus tool's.
+
+Two gates, both load-bearing and both measured rather than assumed:
+
+1. **A literal is rewritten only when the pre-pass changed its bytes.** This is
+   what keeps `driver.rs`'s deliberately non-canonical FORM-2 sources
+   (`b"fn main() -> own unit pure {}"`, `b" fn main()…"`) and `conditionals.rs`'s
+   unflattened `else if` untouched — they parse, so without this gate the
+   canonical render would have silently repaired them. This is round 8's
+   `form2-neg-noncanonical-ws` hazard, closed by construction.
+2. **A rewrite lands only when decoding its own re-encoding reproduces the
+   migrated bytes.** An escaping the module cannot round-trip is reported, not
+   guessed at.
+
+Eight tests for the scanner and codec, each with its own control: every literal
+form located with its content; quotes inside comments and character literals
+not mistaken for delimiters; a lifetime not swallowing the literal after it;
+`bar` not read as the `b` prefix; escapes decoding to the bytes a test feeds
+the compiler; an unmodelled escape refusing rather than guessing; encoding
+round-tripping every form; a raw literal refusing content that spells its own
+terminator.
+
+The pre-pass gate cannot cover the Bool `match`, which is a spelling class and
+a forbidden form at once. A `migrate: keep` comment at the site does, and
+records the reason where the next reader is. Two tests for the marker, each
+carrying its control: it holds a fixture back where its absence migrates the
+same fixture, and its window reaches over the assertion lines a fixture nests
+inside but no further.
+
+`compiler/src/bin/migrate/` is excluded from the sweep by hand: its `tests.rs`
+fixtures are v0.22 **inputs** and its `rewrite.rs` tables are v0.22 spellings,
+both by design.
+
+### What the tool migrated — `fc8d142`, `4cebaea`, `5afd631`
+
+182 Rust files read, 41 changed, 270 fixtures migrated, 3 kept, 29 blocked.
+847 annotations, 256 respells, 368 argument lists, 26 constructors written,
+0 conditionals (after the markers).
+
+```
+cd compiler && find src tests -name '*.rs' | grep -v '^src/bin/migrate/' \
+  | xargs ./target/debug/whitefoot-migrate --rust --check
+```
+
+Split into three commits by area. Each is **line for line** — semantic 519/519,
+backend+lowering 485/485, the rest 107/107 insertions/deletions — which is the
+evidence that no fixture was re-laid-out rather than respelled. The tool also
+reports changed/total lines per fixture so a whole-fixture re-layout would show
+as an outlier; the four highest ratios are all files where nearly every line
+carries an annotation or a respell, checked individually.
+
+### The three kept fixtures, each inspected and decided
+
+| site | why it is held back |
+|---|---|
+| `semantic/tests/conditionals.rs:24` | the Bool `match` **is** the [GRAM-6] rejection under test; migrating it to `if` leaves a source that checks clean |
+| `syntax/parser/finalize/tests/corpus_shape.rs:235` | this control **is** the forbidden form the detector detects |
+| `semantic/tests/derivation.rs:224` | its violation is the *written* argument `imin<i32>(…)`; A1's deletion, correct on every legal call, removes the violation |
+
+The third was found by measurement, not foresight: it is the **one** test the
+mechanical pass newly broke, and it broke loudly rather than silently. `916e882`
+restored its bytes and marked it; the tool now reports it kept, and the test
+passes again.
+
+### What the tool structurally could not reach — `d726678`, `73dc1c2`, `585cae5`, `d44fd3b`, `8c32713`, `b72d648`
+
+The brief's "lexeme-walking removes the `format!`-placeholder hazard by
+construction" is true of a placeholder *inside* a fixture and false of a
+fixture that *is* a template. Three idioms never reached the tool:
+
+- **`$PLACEHOLDER` templates** (`floating`, `integer_absolute`,
+  `integer_negation`, `integer_extended`, `checked_division`) — `$` does not
+  lex, so the literal was skipped as not-Whitefoot.
+- **`format!` templates** with `{{`/`}}` and `{name}` — not a Whitefoot program.
+- **Fragments** — a `class_arms` arm or a `NEUTRAL_MIDDLE` is a statement list.
+
+Every one was migrated by **assembling it the way its test does**, running
+`whitefoot-migrate` over the assembled program, and splitting the result back
+at the placeholder boundaries. Nothing was hand-derived. For the whole-template
+cases the reversal is verified rather than assumed: re-substituting into the
+reversed text must reproduce the migrated bytes exactly, and the substituted
+value was checked absent from the template first, so no unrelated occurrence
+can be captured.
+
+Two of these needed more than a substitution, and both are the delta showing
+through:
+
+- `float_conversion`'s emitter chose `{equality}` between `ieq` and `feq`. Only
+  `ieq` respells, so the two destination kinds no longer share a call shape;
+  the emitter now builds the whole comparison. **The marker sweep missed this
+  file entirely** because its binder is spelled `let success{conversion}` — a
+  Rust placeholder inside the identifier. A broader sweep over
+  `let [A-Za-z0-9_{}]*: own` is what found it.
+- `entailment`'s join fixture already wrote `if`, so no v0.22 class fired and
+  the pre-pass gate correctly left it alone — but it wrote the unflattened
+  `else { if … }` that [GRAM-6] now rejects. Flattened; identical control flow,
+  assertion untouched. Swept the tree for the shape: three hits, the other two
+  being `conditionals.rs`'s deliberate negative and a piece of Rust.
+
+Two fixtures were restated, both preserving their assertion **unchanged** and
+both verified by observation rather than inference:
+
+- `driver.rs`'s `region.wf` case put its undeclared region inside a `let`
+  annotation, which A3 deletes along with the violation. Restated as a borrow,
+  which keeps writing its region: `whitefootc` reports `Resolution/Source
+  [OWN-3]`, the same stage and rule the row records.
+- `resolution::tests::semantic_stage_order_…` declared `fn ieq()` to raise a
+  FORM-3 reserved-name rejection. v0.23 shrinks `ReservedLowerNames` by exactly
+  the four dotless comparisons — the sibling test
+  `respelled_comparisons_leave_the_reserved_name_inventory` asserts precisely
+  that — so it reached OP-1 instead. Swapped to `ilt`, which stays named under
+  ruling O1: `whitefootc` reports `Resolution/Source [FORM-3]`.
+
+### The failure-set diff, both directions
+
+**Zero tests newly fail.** 214 left the set. Among the tests failing in both
+runs, **22 changed their reason**, and every one is the same shape: a fixture
+that used to die at *Parsing* because it was v0.22 now reaches a later stage.
+None is a rejection that stayed a rejection under a different rule while its
+test kept passing — every one of the 22 is a visibly failing test, so nothing
+passes for the wrong reason.
+
+```
+# per-test reason, with byte offsets and node paths normalized away
+awk '/^---- .* stdout ----$/ {…}' <log> | sed 's/ByteOffset([0-9]*)/ByteOffset(_)/g' …
+```
+
+### The 39 that remain, per test
+
+Two are the activation-gated `spec::tests` the definition of done excludes.
+The other 37 are **not fixture-spelling** and none is this task's:
+
+**(a) `slice_of` loses its written arguments but the checker still demands them
+— 13 tests.** The candidate's [TYPE-5] names the retained class exactly —
+`cvt`, `reinterpret`, `array_new`, `arena_new`, `finf`/`fnan` — and `slice_of`
+is not in it, so A1 deletes its arguments. The compiler then cites **FN-2
+InvalidOperation**, which [DIAG-1] reserves for a user-generic call and never
+for a table operation. Minimal reproduction with a control that distinguishes
+the cause:
+
+```
+let view = slice_of(&'v data);        # Semantics/Source [FN-2] InvalidOperation
+let view = slice_of<'v, u8>(&'v data);# exit 0 — the form v0.23 deletes
+let n = len(data);                    # exit 0 — de-argumenting is fine in general
+```
+
+Same root cause as the adapter's pre-existing `fn1-pos-returned-slice-const-run`
+and `fn1-pos-returned-slice-inputs-run`. Tests: `semantic::tests::slices` ×9,
+`entailment::a_slice_of_carries_its_source_length`, `backend::tests::slices` ×3.
+
+**(b) `if`/`else` branch blocks do not open declaration scopes — 14 tests.**
+Two `let`s of the same spelling in the two arms of a `match` are two
+declaration events; in the two branches of an `if` they collide. Reproduction
+with its control:
+
+```
+if flag { let length = 0_u64; } else { let length = 1_u64; }
+  # Resolution/Source [TYPE-6] DeclarationCollision
+match signal { Stop() => { let length = 0_u64; } Go() => { let length = 1_u64; } }
+  # exit 0
+```
+
+`semantic::tests::entailment::a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact`
+is the same shape and its own comment states the intended behaviour: "each arm
+declares its own `j`; the second is a distinct declaration event [ENT-2]". The
+migrated `tests/programs/wfgrep.wf` hits it twice (lines 325 and 564, both
+`let length = 0_u64;` in different `else` blocks), which is what fails the ten
+`cost_shape` tests, `effect_attributes`, and
+`semantic::tests::checked_cleanup_edges_…` (`move_through_give` declares
+`temporary` in both arms of a `value_if`). Same class as the adapter's
+`ent5-pos-join-keeps-common-bound`.
+
+**(c) Pre-existing capability gaps — 2.**
+`semantic::tests::slices::slice_value_matches_…` reaches
+`Unsupported { OwnershipJoin }` (the adapter's `own5-neg-slice-value-match`);
+`semantic::tests::borrows::general_borrows_…` reaches
+`Unsupported { RegionsAndBorrows }`.
+
+**(d) The concern died with the deleted bytes, or its citation moved — 4.**
+Hazard 4's class; **no expectation was edited**.
+
+- `semantic::tests::operation_call_shapes_keep_their_exact_rule_owners`. Its
+  first fixture asserted FN-2 for a bare `iadd.wrap(1_i32, 2_i32)`. Measured:
+  **all three named forms now cite `Resolution/Source [OP-1]`** —
+  `iadd.wrap<i32>(left:…, right:…)`, `iadd.wrap(left:…, right:…)`, and
+  `iadd.wrap(a, b)` alike — because [OP-7]'s one-spelling-per-operation rule
+  moves the 20 respelled rows out of the callee-name inventory entirely. The
+  test's second assertion (GRAM-11 for named arguments on an operation call) is
+  masked by the same OP-1; it is still expressible on a row that keeps its name.
+  The first has no v0.23 expression at all, so the test cannot go green without
+  removing an assertion. **Needs the same ruling as round 8's finding 2.**
+- `driver::tests::compiler_independent_negative_cases_keep_their_semantic_rule`.
+  Its hard-coded table demands FN-2 from
+  `tests/conformance/cases/fn2-neg-implicit-instantiation.wf`, which now reads
+  `let a = 40_i32 + 2_i32;` and **compiles clean (exit 0)**. The manifest row is
+  already `status: pending`, so the adapter does not see it — the driver table
+  and the manifest disagree. Conformance material; not touched.
+- `semantic::tests::result_construction_…` reaches TYPE-5 TypeMismatch, the
+  adapter's `x-give-result-aggregate` class.
+- `semantic::tests::buffers::region_bearing_buffer_content_rejects_under_stor5`
+  reaches Op1 where it demands Stor5 — citation moved, reported not edited.
+
+**(e) Coverage fixtures that lost the only form producing a role — 2.**
+Reported rather than restated, because which v0.23 form should now supply the
+role is a statement about the resolver's role model, not a spelling.
+
+- `resolution::tests::complete_role_fixture_…`: `LexicalUseRole::TypeRegion`
+  came only from `let view: own slice<'r, i32> = …`. A3 deletes it, and no
+  other written type in the fixture names a region. Signatures keep their
+  written types, so a signature-borne `slice<'r, T>` would restore it.
+- `resolution::tests::system_lookalike_…`: `LexicalUseRole::Type` for
+  `HostString` came only from `let s: own HostString = HostString();`. The
+  construct use survives; the type use does not.
+
+**(f) A test whose premise the respell falsifies — 2.**
+`every_distinct_op1_family_resolves_through_the_normal_callee_path` and
+`dotless_and_dotted_operations_resolve_by_exact_op1_spelling` build their
+source from `OPERATION_FAMILIES`, which is now v0.23 and holds `+wrap`, `+`,
+`==` … as family spellings. `  +wrap<i32>(1_i32);` is not a call. Deeper than
+the generator: [OP-1] says "infix resolution consults no name domain, and an
+operator token is never a declaration, callee IDENT, or OPNAME", so the 20
+respelled families **have no lexical use at all** and the tests' shared premise
+— that every family resolves through the callee path — is false by design for
+them. What these should assert is a decision, not a migration.
+
+**(g) One fixture left unmigrated behind (a) — 1.**
+`semantic::tests::slices::consuming_a_projection_respects_loans_of_residual_fields`.
+Its four `format!` templates in `semantic/tests/slices.rs` (lines 232, 251, 307,
+354) all call `slice_of<'view, u8>`; migrating them cannot make the test pass
+while (a) stands, and a fixture migration with no passing test to verify it is
+exactly what this batch has been avoiding. They should land with the fix.
+
+### Everything still spelling v0.22 in `compiler/`, and why
+
+```
+git grep -n -e 'let [A-Za-z0-9_{}]*: own ' -e '\.\(trap\|wrap\|sat\|checked\)<' \
+  -e '\b\(ieq\|ine\|ile\|ige\|eeq\)<' -- 'compiler/*.rs' | grep -v 'src/bin/migrate/'
+```
+
+| site | reason |
+|---|---|
+| `driver.rs` ×3 | deliberate pre-parse negatives (`'Bad`, `"bad\t"`, `1e+`) rejected at Lexing or TerminalClassification; the parser never sees the annotation, and the tool cannot render a source that does not classify |
+| `semantic/entailment/flow/sources.rs` ×4, `lowering/builder/probe.rs` ×3 | doc-comment prose describing [ENT-3] fact shapes and the probe's recognized loop, not fixtures. **Stale documentation** — worth a pass, not this one |
+| `semantic/tests.rs:420` | the deliberate GRAM-11 negative in (d); the pre-pass respells it into `left: 1_i32 + right: 2_i32`, which does not parse, so it is correctly blocked |
+| `semantic/tests/slices.rs` ×20 | the four templates in (g) |
+| `src/bin/migrate/` | the tool's own v0.22 test inputs and spelling tables |
+
+The 29 the tool reported blocked reconcile: 13 are the above, and **16 are not
+fixtures at all** — Rust literals holding the word `match` in a panic message
+(`panic!("… must be the match")`), a keyword table (`Self::Match => b"match"`),
+or diagnostic prose, which the Whitefoot lexer reads as the keyword. Each was
+read individually; none is Whitefoot source.
+
+### Validation
+
+- `make -C compiler check`: **exit 2** (`$?`, not through a pipe), lib
+  **533 passed / 39 failed**, from **319 / 253** at `d89af13`.
+- `make check`: **exit 2**, failing at the same compiler step. Earlier stages
+  pass: repository invariants, spec append-only, spec archive integrity at 23,
+  conformance coverage **128/128 rules, 0 uncovered**.
+- Conformance adapter: **`Pass=371 Fail=16 Skip=14` before and after, identical
+  failure set** (`diff` of the two name lists is empty).
+- `cargo clippy --all-targets -D warnings` exit 0; `cargo fmt --check` exit 0.
+- The three activation-gated checks remain red by the definition of done, and
+  nothing was written to make them green.
+
+### What the brief got wrong
+
+- **"the failures are overwhelmingly fixtures written in v0.22 spelling."**
+  True of 214 of the 253, and false of the rest: 27 of the 39 that remain are
+  two compiler defects, (a) and (b), that a fixture migration cannot touch.
+  The gate does not reach green from this task alone.
+- **The three markers are not the complete set, as the brief warned — and the
+  gap was a specific one.** `let [a-z_]*: own ` misses
+  `let success{conversion}: own …`, a binder whose name carries a Rust
+  placeholder. One whole file (`float_conversion.rs`) hid behind it.
+- **"lexeme-walking removes the `format!`-placeholder hazard by construction."**
+  It removes the hazard of a placeholder inside a fixture. It does nothing for a
+  fixture that *is* a `format!` or `$TYPE` template, which is where 15 of the
+  fixtures lived and where all the manual work went.
+
 ## Round 11 (exec-0038k, 2026-08-08) — the copy gate, restored from the derived type
 
 Two commits, on the lead ruling of 2026-08-08 that corrected round 10's: the
