@@ -1727,7 +1727,58 @@ and are left exactly as they were verified — they carry no `(`.
   ```
   BASIS | wc -l
   ```
-- Deleted-class type arguments: **1588** occurrences. The op alternation
+- **AUTHORITATIVE, measured at execution (2026-08-08).** Every figure below
+  this bullet was a regex estimate over text. The migration has now run, and
+  these are its counts, produced by the compiler's own lexer over the **400**
+  files the tool processes — the basis minus the 20 pre-semantic reject cases
+  the 2026-08-08 ruling excludes. Where an estimate and a measurement differ,
+  the measurement governs and the estimate is retained beside it, since the
+  difference is itself evidence.
+
+  | class | measured | estimated below |
+  | --- | --- | --- |
+  | A3 `let` annotations | **1992** | 2003 |
+  | C1 respells | **886** | 897 (378 + 519) |
+  | A1 argument lists | **690** | — (see the reconciliation) |
+  | prelude constructors written | **99** (0 bare) | 103 sites, 101 written |
+  | A4 conditionals | **260** (5 flattened) | 262 `True()` arms |
+  | files changed | **311** of 400 | — |
+
+  ```
+  whitefoot-migrate --check $(the 400 files the tool accepts)
+  ```
+
+  The reproducing command is the tool itself: `--check` reports the same
+  counts without writing, and re-running it over the migrated corpus reports
+  0 changed, which is the idempotence the class figures depend on.
+
+  **The two `<`-counting classes reconcile with the 1588 estimate exactly, and
+  the residual is a units mismatch rather than an error.** 1588 counted
+  *written type arguments* by regex over all 420 files; A1 and C1 count *sites
+  the tool rewrote* in the 400 it processes. Re-running the 1588 command at
+  this revision gives **1587** — the one-argument drop is the ruled
+  restatement of `reject-err2-nonexhaustive`, which also accounts for A1
+  reading 690 rather than the 691 measured before that restatement, and for
+  the `True()` arms reading 261 rather than 262. Of the 1587, **1575** are in
+  the 400 and **12** in the excluded 20. A1's 690 plus C1's 886 remove 1576
+  sites, one more than 1575, because `fn2-neg-implicit-instantiation.wf`
+  writes `iadd.trap(...)` with no argument to delete and is respelled anyway.
+  So 1575 + 12 = 1587 and 690 + 886 = 1575 + 1: both sides close to the site.
+
+  A4 closes the same way: 261 `True()` arms existed, all in the 400, and 260
+  became conditionals. The single survivor is `type5-neg-match-non-enum.wf`,
+  whose scrutinee is an `i32`, so [GRAM-6] never applies and [TYPE-5] fires as
+  recorded — the case the 2026-08-08 ruling examined and deliberately left.
+
+  "0 left bare" counts the constructors the tool *wrote*, not the two this
+  section pins bare. `x-enum-option-context-free-constructor` and
+  `x-enum-result-context-free-constructor` keep their bare `match` scrutinee
+  constructors, were never candidates for the returned-constructor rule, and
+  both still pass.
+- Deleted-class type arguments: **1588** occurrences, **1587** re-run at this
+  revision, of which **1575** are in the 400 the migration processes and 12 in
+  the excluded 20. This counts written arguments, not sites; A1's 690 and C1's
+  886 above are the sites that delete them. The op alternation
   is derived from the active spec's own table, so the command re-derives
   the deleted class rather than hard-coding 77 spellings that could
   drift from it:
@@ -1804,6 +1855,13 @@ and are left exactly as they were verified — they carry no `(`.
   their `doc` reason is re-worded (§4). So **101 sites are rewritten and
   2 are pinned bare**, and the migration asserts that split rather than
   reporting a total.
+
+  Measured at execution: **99** constructors written, **0** of them left
+  bare, and the 2 pinned-bare `match` scrutinees untouched and still passing.
+  The 103/101/2 split above located this class at the `let` right-hand side,
+  where the corpus has exactly 1 of it; 98 are returned, so the arguments come
+  from the enclosing function's declared result type, which A3 does not
+  delete. The returned rule is what writes the other 98.
 - Staleness correction of record, applying to **every** figure in this
   section rather than to one of them. The previously settled numbers —
   1353 deleted-class, 101 retained-class, 1748 let annotations, 257
@@ -1821,21 +1879,23 @@ and are left exactly as they were verified — they carry no `(`.
   retained 101 → **102**, let annotations 1748 → **2003**, `True()` arms
   257 → **262**, `ilt`/`igt` 56 → **207**, and `check` 389 → **406**.
   The migration task sizes its work against 1588.
-- Let annotations deleted: **2003** binders (1748 when settled).
+- Let annotations deleted: **1992** binders measured at execution (2003 by
+  this regex, 1748 when settled).
 
   ```
   BASIS | PREP \
     | grep -oE '[^A-Za-z0-9_]let +[A-Za-z_][A-Za-z0-9_]* *:' | wc -l
   ```
-- Bool matches to `if`/`else`: **262** `True()`-arm matches (257 when
-  settled), including the else-if
-  flattening of the corpus's Bool ladders.
+- Bool matches to `if`/`else`: **260** conditionals written at execution, 5 of
+  them else-if flattened (262 `True()`-arm matches by this regex, 261 after
+  the `reject-err2-nonexhaustive` restatement, of which one is the ruled
+  scalar-scrutinee case that stays a `match`; 257 when settled).
 
   ```
   BASIS | PREP | grep -oE 'True\(\) *=>' | wc -l
   ```
-- Infix respells: **378** add/sub/mul/div/rem sites, plus **519**
-  `== != <= >=` sites; **207**
+- Infix respells: **886** measured at execution, against **378**
+  add/sub/mul/div/rem plus **519** `== != <= >=` by this regex; **207**
   `ilt`/`igt` sites keep named calls under O1, losing only their type
   arguments.
 
