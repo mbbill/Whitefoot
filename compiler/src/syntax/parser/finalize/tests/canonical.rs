@@ -309,7 +309,7 @@ fn only_these_trivia_bytes_render(canonical: &[u8]) {
 
 #[test]
 fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
-    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\nfn main() -> own unit pure {\n  let value: own i32 = 2_i32;\n  return unit;\n}\n");
+    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\nfn main() -> own unit pure {\n  let value = 2_i32;\n  return unit;\n}\n");
 }
 
 /// The one canonical byte sequence [FN-7] states for a complete four-input

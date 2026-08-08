@@ -761,7 +761,7 @@ const value: i32 = 1_i32;
 
 #[test]
 fn dotless_operation_names_are_reserved_from_source_declarations() {
-    with_one_resolution(b"fn ieq() -> own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn ilt() -> own unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("operation name declaration must reject: {outcome:?}");
         };
@@ -770,10 +770,24 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
             issue.kind(),
             ResolutionIssueKind::ReservedName {
                 spelling,
-                inventory_ordinal: 16,
+                inventory_ordinal: 18,
                 ..
-            } if spelling == "ieq"
+            } if spelling == "ilt"
         ));
+    });
+}
+
+/// OP-1 (iii): reservation is derived from the op column, so respelling
+/// `ieq` to `==` takes it out of `DotlessOperationNames` and frees the name
+/// for source. `ilt` keeps its spelling under ruling O1 and stays reserved,
+/// which is what the test above pins.
+#[test]
+fn respelled_comparisons_leave_the_reserved_name_inventory() {
+    with_one_resolution(b"fn ieq() -> own unit pure {\n}\n", |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "a respelled comparison name is declarable: {outcome:?}"
+        );
     });
 }
 

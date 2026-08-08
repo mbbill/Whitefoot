@@ -45,28 +45,28 @@ const fn prelude(
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
 pub(crate) const OPERATION_FAMILIES: [&str; 83] = [
-    "iadd.wrap",
-    "isub.wrap",
-    "imul.wrap",
-    "iadd.trap",
-    "isub.trap",
-    "imul.trap",
-    "iadd.checked",
-    "isub.checked",
-    "imul.checked",
-    "idiv.trap",
-    "irem.trap",
-    "idiv.checked",
-    "irem.checked",
+    "+wrap",
+    "-wrap",
+    "*wrap",
+    "+",
+    "-",
+    "*",
+    "+checked",
+    "-checked",
+    "*checked",
+    "/",
+    "%",
+    "/checked",
+    "%checked",
     "ineg.wrap",
     "ineg.trap",
     "ineg.checked",
-    "ieq",
-    "ine",
+    "==",
+    "!=",
     "ilt",
-    "ile",
+    "<=",
     "igt",
-    "ige",
+    ">=",
     "eeq",
     "ene",
     "fadd.strict",
@@ -105,9 +105,9 @@ pub(crate) const OPERATION_FAMILIES: [&str; 83] = [
     "ictz",
     "ibswap",
     "imulhi",
-    "iadd.sat",
-    "isub.sat",
-    "imul.sat",
+    "+sat",
+    "-sat",
+    "*sat",
     "imin",
     "imax",
     "iabs.wrap",
@@ -1403,9 +1403,21 @@ mod tests {
                 .iter()
                 .all(|word| !OPERATION_FAMILIES.contains(word))
         );
+        // OP-1 (iii)'s derived-set consequence: the four respelled comparisons
+        // leave DotlessOperationNames because an operator spelling is not an
+        // IDENT, while `ilt` and `igt` keep their names under ruling O1 and so
+        // stay reserved.
+        assert_eq!(reserved_name("ieq"), None);
+        assert_eq!(reserved_name("ine"), None);
+        assert_eq!(reserved_name("ile"), None);
+        assert_eq!(reserved_name("ige"), None);
         assert_eq!(
-            reserved_name("ieq"),
-            Some((ReservedNameClass::DotlessOperation, 16))
+            reserved_name("ilt"),
+            Some((ReservedNameClass::DotlessOperation, 18))
+        );
+        assert_eq!(
+            reserved_name("igt"),
+            Some((ReservedNameClass::DotlessOperation, 20))
         );
         assert_eq!(
             reserved_name("cvt"),

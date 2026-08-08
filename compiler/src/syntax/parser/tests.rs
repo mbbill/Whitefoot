@@ -103,12 +103,16 @@ fn shared_prefix_expression_forms_select_without_priority_or_backtracking() {
 struct Value { field: i32; }
 enum Choice { Some(value: i32); }
 fn main() -> own unit pure {
-let atom: own i32 = 0_i32;
-let positional: own i32 = user(atom);
-let named: own i32 = user(arg: atom);
-let generic: own i32 = user<i32>(atom);
-let made: own Value = Value(field: atom);
-let selected: own i32 = match atom { Some(value: payload) => { give payload; } }
+let atom = 0_i32;
+let positional = user(atom);
+let named = user(arg: atom);
+let generic = user<i32>(atom);
+let made = Value(field: atom);
+let selected = match atom { Some(value: payload) => { give payload; } }
+let infix = atom + positional;
+let suffixed = made.field * named;
+let compared = atom <= generic;
+let chosen = if compared { give atom; } else { give named; }
 return unit;
 }
 "#;
@@ -445,7 +449,7 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
 fn sufficient_limits_produce_identical_derivation_metrics() {
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> own unit pure { let x: own unit = unit; return x; }",
+        b"fn main() -> own unit pure { let x = unit; return x; }",
     )];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -503,17 +507,19 @@ return unit;
 }
 fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
 -> own unit reads('r), writes('r), allocates(heap arena 'r), traps
-requires { let pre: own i32 = iadd.wrap(0_i32, 1_i32); check pre else trap "pre"; }
+requires { let pre = 0_i32 +wrap 1_i32; check pre else trap "pre"; }
 {
 doc "body";
-let ordinary: own i32 = iadd.wrap(0_i32, 1_i32);
-let attempted: own i32 = propagate user(arg: ordinary);
-let selected: own i32 = match ordinary { Some(value: payload) => { give payload; } }
-let made: own Name<T> = Name<T>(value: ordinary);
-let moved: own i32 = move ordinary;
-let borrowed: &'r i32 = &'r ordinary;
-let unique_borrow: &uniq 'r i32 = &uniq 'r ordinary;
-let loaded: own i32 = table[ordinary];
+let ordinary = 0_i32 +wrap 1_i32;
+let attempted = propagate user(arg: ordinary);
+let selected = match ordinary { Some(value: payload) => { give payload; } }
+let made = Name<T>(value: ordinary);
+let moved = move ordinary;
+let borrowed = &'r ordinary;
+let unique_borrow = &uniq 'r ordinary;
+let loaded = table[ordinary];
+let compared = ilt(ordinary, moved);
+let chosen = if compared { give ordinary; } else { give moved; }
 set deref(pointer).field = ordinary;
 user<T, 'r, 2>(arg: ordinary);
 return unit;
@@ -522,6 +528,7 @@ region 'inner { give ordinary; }
 check ordinary else trap "check";
 claim named: ordinary because "claim";
 match ordinary { Some(value: payload) => { give payload; } }
+if compared { check ordinary else trap "then"; } else if chosen { break @again; } else { return unit; }
 }
 fn main() -> own unit pure {}
 "#;
@@ -550,7 +557,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 65);
+    assert_eq!(productions().len(), 69);
     assert_eq!(
         parsed
             .tree
@@ -586,12 +593,12 @@ const EXTERNAL_EFFECT_ROW: &[u8] = b"fn probe() -> own unit external {\n  return
 const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> own unit blocks {\n  return unit;\n}\n";
 
 const RESERVED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
-    b"fn external() -> own unit pure {\n  let as: own i32 = blocks;\n  return unit;\n}\n";
+    b"fn external() -> own unit pure {\n  let as = blocks;\n  return unit;\n}\n";
 
-const CLAIM_STATEMENT: &[u8] = b"fn probe() -> own unit traps {\n  let flag: own Bool = True();\n  claim held: flag because \"constructed true\";\n  return unit;\n}\n";
+const CLAIM_STATEMENT: &[u8] = b"fn probe() -> own unit traps {\n  let flag = True();\n  claim held: flag because \"constructed true\";\n  return unit;\n}\n";
 
 const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
-    b"fn probe() -> own unit pure {\n  let claim: own i32 = 0_i32;\n  return unit;\n}\n";
+    b"fn probe() -> own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
