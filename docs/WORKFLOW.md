@@ -294,13 +294,19 @@ instead of restating them.
   **branch**, never a commit id, so the reader resolves the tip and cannot
   inherit a stale or invented one. Every count carries the command that
   reproduces it, and no figure is copied forward without re-measuring.
-- **A failure-set diff cannot see a citation move.** The set of passing and
-  failing tests is the regression oracle for most changes, but a test that
-  asserts pass/fail is blind to *which rule* was cited. So any change to rule
-  ordering, precedence, or diagnostic selection needs a **per-case verdict
-  differential** — every source run against both binaries, comparing exit code
-  and cited rule — not the set diff. An unchanged failure set is exactly where
-  such a change hides.
+- **A failure-set diff sees a citation move only where a test asserts the
+  rule.** The set of passing and failing tests is the regression oracle for
+  most changes, and it does catch a moved citation wherever some case asserts
+  the cited rule. It is blind wherever nothing asserts it at that site — the
+  common condition in a mostly-positive corpus, where cases assert pass/fail
+  and the rule is never named. So the trigger is not "a rank changed" but
+  **any change to which rule is cited in a population that mostly asserts
+  pass/fail**: precedence, ordering, citation selection, and equally anything
+  that reorders checks within a function, since hoisting one check above
+  another moves every citation the second used to win. Those need a **per-case
+  verdict differential** — every source run against both binaries, comparing
+  exit code and cited rule — not the set diff. An unchanged failure set is
+  exactly where such a change hides.
 - **Read exit codes from `$?` directly, never through a pipe.** `make check |
   tail` reports the status of `tail`; a red gate has been committed here that
   way. Write `make check; echo "exit=$?"`.
