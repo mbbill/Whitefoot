@@ -2,18 +2,18 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` — 2026-08-07 round 3. The front end is complete and
-  green for v0.23 (lex, parse, finalize, FORM-2 canonical, including the
-  `} else {` join line). The nine migration figures are independently
-  confirmed by a second method. The semantic path stops at its first site:
-  A3 leaves the nullary prelude construction `None()` with no reconstructible
-  type, which moves the candidate bytes and needs a ruling. See "Round 3
-  blocker".
-- **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
-  fixed delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038 (round 3) / `/Users/bytedance/do_not_scan/wf-0038-sem`
+- **Status:** `WAITING` — 2026-08-08 round 4. The round-3 blocker is ruled and
+  the ruling is **applied**: the delta is amended, the candidate re-assembled
+  at SHA-256 `ab257aa6…`, and all three pins re-keyed. The front end stays
+  complete and green for v0.23. The semantic path, the corpus migration and
+  the conformance work are **not started** — they are one atomic batch and
+  round 4 handed back at the boundary rather than opening it. See "Round 4".
+- **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
+  (`governance/APPROVALS.md`); the amended delta
+  `governance/spec-evolution/spelling-relief-candidate.md`
+- **Owner / workspace:** exec-0038b (round 4) / `/Users/bytedance/do_not_scan/wf0038-exec`
   on branch `task/0036-floor5-grammar-and-migration`
-- **Base revision:** e810ce5 (main), branch rebased onto it
+- **Base revision:** 879c503 (main), branch rebased onto it, 16 commits, clean
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
 ## Goal
@@ -477,7 +477,200 @@ of a class. And ruling (3) was amended before use: its case matches on a
 Bool scrutinee, so a rewrite keeping the `match` form would assert GIVE-1
 and earn GRAM-6; the enum-scrutinee form is now recorded at `e810ce5`.
 
-## Successor brief
+## Round 4 (exec-0038b, 2026-08-08) — the ruling applied; handed back at the boundary
+
+One commit, `9ab2728`. The round-3 blocker is closed and everything it
+gated is re-derived rather than carried forward.
+
+**The amendment.** The prelude variant constructors join [TYPE-5]'s
+retained-argument class, mandatorily and in every position. It adds **no
+site** — it edits replacement text inside the existing TYPE-5 site, exactly
+as the three pattern-7 corrections do — so the totals stay **64 sites across
+34 rules**, and §7's recount is re-derived and says so. §1's version-header
+paragraph also gains a sentence; it is the proposed header rather than a §3
+anchor/replacement pair, so it has never been counted as a site.
+
+**Candidate SHA-256 `ab257aa65874c4e6de167189b97cf706b5ca0045ccab86fdb54da83e2ba613da`**
+(was `a92b4513…`). Re-assembled by a script that reads the replacement bytes
+out of the delta's own blockquotes, and whose unwrap procedure was **first
+validated by reproducing the committed candidate's two lines from the
+previous delta revision** — the round trip is byte-exact, which is what says
+the assembler is faithful. The whole-file diff against the committed
+candidate is exactly the two amended lines.
+
+**Three pins re-keyed, including the byte-array form.** `compiler/src/spec.rs`
+`ACTIVE_KERNEL_SPEC_HASH` (the 32-byte array at line 60 — the one an earlier
+grep missed, re-keyed here from the hex by script rather than by hand),
+`tests/conformance/runner.py`, and `spec/derivation/derivation-ledger.md`.
+`spec::tests::recorded_identity_is_the_computed_identity` **passes**, which is
+the independent check that the array decodes to the new digest.
+`computed_identity_is_the_approved_digest` keeps pinning v0.22's owner-approved
+`b133b793…` and stays red by design.
+
+**Nothing structural moved, verified rather than assumed.** §2's two EBNF
+blocks re-hash to MD5 `00f6095415ba43440367b87d94f06a3e` and
+`cfd44788e1b76e4017271f8e639f2308`, and [EX-1]'s program block to
+`814fdabade0cea99e3879bd5fdc6f892` — the three properties §7 records for
+exactly this purpose. The three frontend-contract ranges are unmoved
+(`[FORM-1]`..`## 4. Types` 26879B both before and after; the other two
+byte-identical to v0.22). The candidate self-verifies at 128 distinct rules
+and 20 sections with zero surviving `let` annotations.
+
+**Two findings the ruling's premises did not contain.**
+
+1. **The expectation sweep's completeness proof was short.** It enumerated
+   five `expr` positions; v0.22's grammar has **nine** (lines 149–161). The
+   four missed are `check_stmt`, `claim_stmt`, `match_stmt` and
+   `value_match`. This does not change the ruling — it strengthens it. Three
+   of the four never had an expectation to lose, so a prelude construction
+   was *already* untypeable there in v0.22, and the corpus proves it: two
+   conformance cases assert exactly that rejection
+   (`x-enum-option-context-free-constructor`,
+   `x-enum-result-context-free-constructor`, `match Some(value: x)` as
+   scrutinee). A repair scoped to "positions A3 breaks" would have fixed
+   `let` and `give` and left those two alone. The mandatory form fixes all
+   nine because it stops the rule quantifying over positions at all.
+2. **The amendment adds no grammar and no new spelling, and resolves a v0.22
+   internal divergence rather than choosing new behaviour.** `construct :=
+   TYPEID targs? "(" fieldinit_list? ")"` already admits the arguments;
+   [FN-2] already calls instantiation arguments for a "PRE-1 nominal generic
+   parameter" always explicit; and [TYPE-6]'s "construction and matching never
+   consult an expected nominal type" already forbade the channel
+   `check_construct` was using. The citation is pinned to **TYPE-5 at the
+   complete `construct`** because that is what `generic_substitution`
+   (`semantic/check/generics.rs:545,550,556`) already reports for source
+   generic nominals, so the two classes report identically instead of
+   diverging by declaration source — and that is what preserves the two
+   conformance cases' verdict, rule and node.
+
+**O1 restated** as "mechanism ruled, deferred for batch hygiene" and moved out
+of the Open list, with the four binding conditions written as conditions on
+these bytes: `<` and `>` reserved; and FORM-2's attachment sets, O5, O9 and
+EX-1's bytes each annotated as **closed over this version's operator set
+only**, with the re-run each owes stated. O1's stale "56 sites" is corrected
+to the measured **207**.
+
+**A fourth ugrep trap, measured.** A negated bracket class followed by a
+literal `(` (either `\(` or `[(]`) silently matches **zero**, and whether it
+does depends on the rest of the pattern: `[^A-Za-z0-9_.](None|Some|Ok|Err)[(][^)]*[)]`
+matches, and the same pattern with a trailing ` *=>` does not. There is no
+defensive pattern-shape rule; the construct is unusable here. Every new
+figure uses `grep -oP` with a true PCRE lookbehind, cross-checked against
+Python `re`. Recorded in §5 with the measurement table.
+
+**All nine migration figures re-measured on this branch after the rebase and
+reproduce to the digit** (420 / 1588 / 102 / 2003 / 262 / 378 / 519 / 207 /
+406). Script at `/Users/bytedance/do_not_scan/wf0038x/recount.py`, re-pointed
+at the live worktree and extended with the new class; exits non-zero on
+divergence.
+
+**A fifth transform class the migration now owes: 103 sites.** 416 tokens of
+the four generic-prelude constructor spellings, of which **313 are `arm`
+patterns and migrate by no rule** (`arm := TYPEID "(" fieldbind_list? ")"
+"=>" …` has no `targs` child; the nominal comes from the scrutinee). The
+remaining **103** are constructions and **0** already carry written
+arguments. The split by position is total and closes exactly: 98 `return` +
+2 `give` + 2 `match` scrutinee + 1 `let` RHS + 0 `set`. **101 are rewritten
+and 2 are pinned bare** — the two scrutinee sites are the negative cases
+above, and writing their arguments would invert them; they keep verdict,
+rule and node, and only their `doc` reason is re-worded.
+
+**Ruling (4) re-checked after the delta moved, not carried.** `ilt` and `igt`
+do survive in the amended candidate — the op-table row reads
+`` | `==` `!=` `ilt` `<=` `igt` `>=` | all int T | ``, and [OP-2]'s comparison
+paragraph and [ENT-3]'s comparison-origin clause both still name them. So
+`gram9-neg-nested-call`'s repair may use a surviving named call, and the
+brief's assumption holds.
+
+**Gate states, exit codes read from `$?` with no pipe.**
+
+- `make -C compiler check`: **exit 2** — lib **257 passed / 271 failed**.
+- `make check`: **exit 2**; earlier stages pass (repository invariants, spec
+  append-only, spec archive integrity at 23, conformance plumbing OK).
+- `make conformance-run`: **exit 2** — adapter **Pass=116 Fail=271 Skip=14**
+  against main's 386/1/14.
+- `cargo test --bin whitefoot-grammar-tables`: **exit 0**.
+- `whitefoot-grammar` against the amended candidate: **exit 0** —
+  **69 productions, 84 decisions, 97 terminal predicates**, unchanged.
+
+**The failure SET is byte-identical to round 3's** — `comm` against
+`/Users/bytedance/do_not_scan/wf0038-baseline-failures.txt` shows zero added
+and zero removed. That is the check that a prose-only amendment plus a digest
+re-key regressed nothing and fixed nothing, which a count alone could not say.
+
+### Why round 4 stops here
+
+The remainder is the atomic batch, and its first transform class is what the
+now-closed blocker gated. Opening it costs more than a round: the semantic
+path, ~3800 corpus sites across five transform classes, 87 `True() =>` arms
+across 12 compiler test files, four repurposed and four new conformance
+cases, and the review packet. Landing a fraction of that leaves the gate
+indistinguishable from a regression, which is the shape round 3 named. The
+amendment, by contrast, is complete, self-verifying, and is what every
+remaining unit is keyed to — so it is a real boundary rather than a pause.
+
+### One finding that changes the migration's shape — read this first
+
+**§5's "All migration is printer-driven" describes a capability the compiler
+does not have.** `compiler/src/syntax/parser/finalize/canonical/` is an
+**auditor**, not a renderer: `audit_canonical` is the only public entry point
+and it answers "are these bytes canonical?", while `bytes_match` and
+`gap_matches` compare against the source rather than emitting anything. There
+is no code path that produces canonical bytes from a tree, so a migration
+cannot "run the printer" — as written it must get every byte of spacing and
+indentation right itself, including the `} else {` join line that no v0.22
+production produced and the else-if flattening.
+
+The repair is small and is the recommended shape rather than a blocker.
+`build_gap_styles` already computes the canonical layout decision per token
+boundary (`GapStyle::{Inline, Break, Blank}`), and `bytes_match` already
+carries the indentation rule off `format_depth`. A renderer is those two
+facts plus the token spellings — a modest addition over existing machinery,
+not a new design. Building it first turns the migration into: a **textual**
+pre-pass that need only produce something that *parses*, then a render pass
+that makes the bytes canonical by construction. That is both far cheaper than
+a layout-exact textual transform and the only form that satisfies O1's
+binding condition 4, because the next version re-runs it rather than re-doing
+it.
+
+## Successor brief (round 4)
+
+Round 4 and everything above it is discharged; do not re-derive it, and in
+particular do not re-assemble the candidate or re-measure the nine figures.
+The base is branch `task/0036-floor5-grammar-and-migration`, rebased onto main
+`879c503`.
+
+1. **Build the canonical renderer** on `build_gap_styles`, per the finding
+   above. Pin it with a round trip: the basis files are canonical under
+   v0.22's rules apart from the fixtures that are deliberately not
+   (`form2-neg-noncanonical-ws` is the one this round measured — enumerate
+   that class from the manifest rather than assuming it is a singleton), so
+   rendering a *parsed* file must reproduce its own bytes exactly for every
+   file outside it. That is a ~420-file byte-exact control available before
+   any migration happens, and it is the cheapest strong evidence on this
+   branch.
+2. **The scripted migration** (O1 binding condition 4 — it must ship
+   re-runnable, not live in scratch). Five transform classes now: A1's
+   deleted-class type arguments (1588), A3's let annotations (2003), A4's
+   Bool matches to `if`/`else` with mandatory else-if flattening (262), C1's
+   infix respells (378 + 519, with 207 `ilt`/`igt` losing only their
+   arguments), and the new prelude-construction class (103, of which 101
+   rewrite and 2 stay bare). Note it has no home yet: there is no `tools/`
+   directory and a new top-level entry needs owner approval, so ask before
+   inventing one — `compiler/src/bin/` is the precedent the grammar-tables
+   generator set.
+3. **The semantic path**, unchanged from the round-3 brief except that
+   `check_construct` now also reads written `targs` for prelude ordinals
+   5/6/11/13 and routes them through the same `generic_substitution` the
+   source nominals use. That is the whole compiler side of the amendment,
+   and it is a re-use rather than a new path.
+4. **MANDATORY, from the 2026-08-08 ruling**: the migration must ASSERT zero
+   surviving Bool-scrutinee matches rather than trust the parse — a missed
+   one becomes a GRAM-6 rejection, i.e. a silent verdict change. Assert the
+   103/101/2 prelude split the same way, for the same reason.
+5. The four repurposed and four new conformance cases, then the review packet.
+
+## Successor brief (round 3)
 
 Rounds 1–5 of 0036 and this round are discharged; do not re-derive them.
 The front end is done. What remains, in order:
