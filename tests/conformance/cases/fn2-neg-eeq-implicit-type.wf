@@ -1,12 +1,15 @@
-enum TagEq {
-  TagFirst();
-  TagSecond();
+struct Held {
+  v: i32;
 }
 
-fn compare(left: own TagEq, right: own TagEq) -> own Bool pure {
-  return eeq(left, right);
+fn pick<T>(value: own T) -> own T pure {
+  doc "A generic fn declaring one type parameter [FN-2].";
+  return move value;
 }
 
 fn main() -> own unit pure {
+  doc "The call states no instantiation argument; instantiation arguments are always explicit [FN-2].";
+  let a = Held(v: 1_i32);
+  let b = pick(value: move a);
   return unit;
 }

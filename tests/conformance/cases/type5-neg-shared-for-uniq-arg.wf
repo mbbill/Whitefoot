@@ -6,7 +6,7 @@ fn main() -> own unit pure {
   let value = 0_u64;
   region 'r {
     let shared = &'r value;
-    mutate(x: shared);
+    mutate<'r>(x: shared);
   }
   return unit;
 }

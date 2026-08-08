@@ -6,6 +6,8 @@ fn takesref['r](x: &'r i32) -> own i32 reads('r) {
 fn main() -> own unit pure {
   doc "Caller passes an own value where the signature declares a shared borrow [FN-1].";
   let a = 5_i32;
-  let r = takesref(x: a);
+  region 'r {
+    let r = takesref<'r>(x: a);
+  }
   return unit;
 }
