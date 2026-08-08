@@ -1,0 +1,247 @@
+const usage_text: array<u8, 33> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 10_u8];
+
+const reason_unreadable: array<u8, 55> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
+
+const reason_empty: array<u8, 45> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 101_u8, 109_u8, 112_u8, 116_u8, 121_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
+
+const reason_too_large: array<u8, 64> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 101_u8, 120_u8, 99_u8, 101_u8, 101_u8, 100_u8, 115_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 32_u8, 98_u8, 117_u8, 102_u8, 102_u8, 101_u8, 114_u8, 10_u8];
+
+fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) {
+  doc "Appends as much of one static message as the destination still holds.";
+  let capacity: own u64 = len<u8>(deref(destination));
+  let length: own u64 = len<u8>(text);
+  let at: own u64 = filled;
+  let taken: own u64 = 0_u64;
+  loop @append {
+    let done: own Bool = ige<u64>(taken, length);
+    match done {
+      True() => {
+        break @append;
+      }
+      False() => {
+      }
+    }
+    let room: own Bool = ilt<u64>(at, capacity);
+    match room {
+      True() => {
+      }
+      False() => {
+        break @append;
+      }
+    }
+    let byte: own u8 = text[taken];
+    set deref(destination)[at] = byte;
+    set at = iadd.wrap<u64>(at, 1_u64);
+    set taken = iadd.wrap<u64>(taken, 1_u64);
+  }
+  return at;
+}
+
+fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> own Result<unit, IoError> reads('o 's), writes('o), external, blocks, traps {
+  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  let sent: own u64 = 0_u64;
+  loop @publish {
+    let pending: own Bool = ilt<u64>(sent, length);
+    match pending {
+      True() => {
+      }
+      False() => {
+        break @publish;
+      }
+    }
+    let remaining: own u64 = isub.wrap<u64>(length, sent);
+    region 'attempt {
+      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, offset: sent, count: remaining) {
+        Ok(value: written) => {
+          set sent = iadd.wrap<u64>(sent, written);
+        }
+        Err(error: problem) => {
+          return Err(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok(value: unit);
+}
+
+fn publish_reason['e, 'r](err: &uniq 'e Output, report: &uniq 'r buffer<u8>, reason: own u8) -> own unit reads('e 'r), writes('e 'r), external, blocks, traps {
+  doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
+  let length: own u64 = 0_u64;
+  match ieq<u8>(reason, 1_u8) {
+    True() => {
+      region 'usage_view {
+        let view: own slice<'usage_view, u8> = slice_of<'usage_view, u8>(&'usage_view usage_text);
+        region 'usage_append {
+          set length = append_slice<'usage_append, 'usage_view>(destination: &uniq 'usage_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 2_u8) {
+    True() => {
+      region 'unreadable_view {
+        let view: own slice<'unreadable_view, u8> = slice_of<'unreadable_view, u8>(&'unreadable_view reason_unreadable);
+        region 'unreadable_append {
+          set length = append_slice<'unreadable_append, 'unreadable_view>(destination: &uniq 'unreadable_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 3_u8) {
+    True() => {
+      region 'empty_view {
+        let view: own slice<'empty_view, u8> = slice_of<'empty_view, u8>(&'empty_view reason_empty);
+        region 'empty_append {
+          set length = append_slice<'empty_append, 'empty_view>(destination: &uniq 'empty_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  match ieq<u8>(reason, 4_u8) {
+    True() => {
+      region 'too_large_view {
+        let view: own slice<'too_large_view, u8> = slice_of<'too_large_view, u8>(&'too_large_view reason_too_large);
+        region 'too_large_append {
+          set length = append_slice<'too_large_append, 'too_large_view>(destination: &uniq 'too_large_append deref(report), filled: length, text: move view);
+        }
+      }
+    }
+    False() => {
+    }
+  }
+  region 'reason_write {
+    match publish_all<'reason_write, 'reason_write>(output: &uniq 'reason_write deref(err), source: &'reason_write deref(report), length: length) {
+      Ok(value: published) => {
+      }
+      Err(error: problem) => {
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {
+  doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
+  let scratch: own buffer<u8> = buffer_new<u8>(4097_u64, 0_u8);
+  let report: own buffer<u8> = buffer_new<u8>(128_u64, 0_u8);
+  let arguments: own u64 = 0_u64;
+  region 'invocation {
+    set arguments = args_count<'invocation>(args: &'invocation args);
+  }
+  let named: own Bool = ige<u64>(arguments, 2_u64);
+  match named {
+    True() => {
+    }
+    False() => {
+      region 'usage_report {
+        publish_reason<'usage_report, 'usage_report>(err: &uniq 'usage_report err, report: &uniq 'usage_report report, reason: 1_u8);
+      }
+      return exit_status(code: 1_u8);
+    }
+  }
+  let status: own u8 = 0_u8;
+  let filled: own u64 = 0_u64;
+  region 'path_lease {
+    match arg_get<'path_lease>(args: &'path_lease args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region 'open_call {
+              match open_read<'open_call, 'open_call>(root: &'open_call cwd, path: &'open_call path) {
+                Ok(value: file) => {
+                  let ended: own u8 = 0_u8;
+                  loop @chunks {
+                    let room: own u64 = isub.wrap<u64>(4097_u64, filled);
+                    let full: own Bool = ieq<u64>(room, 0_u64);
+                    match full {
+                      True() => {
+                        break @chunks;
+                      }
+                      False() => {
+                      }
+                    }
+                    region 'read_call {
+                      match read_once<'read_call, 'read_call>(file: &uniq 'read_call file, destination: &uniq 'read_call scratch, offset: filled, capacity: room) {
+                        ReadBytes(count: taken) => {
+                          set filled = iadd.wrap<u64>(filled, taken);
+                        }
+                        ReadEnd() => {
+                          set ended = 1_u8;
+                        }
+                        ReadFailed(error: problem) => {
+                          set ended = 2_u8;
+                        }
+                      }
+                    }
+                    match ine<u8>(ended, 0_u8) {
+                      True() => {
+                        break @chunks;
+                      }
+                      False() => {
+                      }
+                    }
+                  }
+                  match ieq<u8>(ended, 2_u8) {
+                    True() => {
+                      set status = 2_u8;
+                    }
+                    False() => {
+                    }
+                  }
+                }
+                Err(error: problem) => {
+                  set status = 2_u8;
+                }
+              }
+            }
+          }
+          Err(error: rejected) => {
+            set status = 2_u8;
+          }
+        }
+      }
+      Err(error: absent) => {
+        set status = 1_u8;
+      }
+    }
+  }
+  match ine<u8>(status, 0_u8) {
+    True() => {
+      region 'read_report {
+        publish_reason<'read_report, 'read_report>(err: &uniq 'read_report err, report: &uniq 'read_report report, reason: status);
+      }
+      return exit_status(code: status);
+    }
+    False() => {
+    }
+  }
+  let empty: own Bool = ieq<u64>(filled, 0_u64);
+  match empty {
+    True() => {
+      region 'empty_report {
+        publish_reason<'empty_report, 'empty_report>(err: &uniq 'empty_report err, report: &uniq 'empty_report report, reason: 3_u8);
+      }
+      return exit_status(code: 3_u8);
+    }
+    False() => {
+    }
+  }
+  let too_large: own Bool = igt<u64>(filled, 4096_u64);
+  match too_large {
+    True() => {
+      region 'too_large_report {
+        publish_reason<'too_large_report, 'too_large_report>(err: &uniq 'too_large_report err, report: &uniq 'too_large_report report, reason: 4_u8);
+      }
+      return exit_status(code: 4_u8);
+    }
+    False() => {
+    }
+  }
+  return exit_status(code: 0_u8);
+}
