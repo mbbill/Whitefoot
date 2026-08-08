@@ -2,20 +2,16 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` — 2026-08-08 round 6. The **TYPE-5 and GIVE-1
-  derivation is landed** (`9931e0f`) and the **OP-2 operand-derived row
-  selection is landed** (`9eed20a`). A **new blocker stops the rest of M1**:
-  after A3 deletes the annotation, `box_new(v)` has no interning site for its
-  box nominal, reproduced below with a distinguishing control. It is the same
-  shape as round 3's `None()` blocker and, like it, its likely repair moves
-  candidate bytes. See "Round 6".
+- **Status:** `BLOCKED` — 2026-08-08 round 7. **M2 is landed**
+  (`a79a676`): GRAM-6's three rejections, the `if`/`value_if` semantic path,
+  and all 105 Bool matches in the compiler's own fixtures. The round-6
+  `box_new` blocker is **unchanged and still stops the rest of M1** — it is
+  outside M2's scope and M2 did not touch it. See "Round 7" and "Round 6".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
-- **Owner / workspace:** exec-0038e (round 6) / `/Users/bytedance/do_not_scan/wf0038-r6`
-  on branch `task/0038-floor5-semantic-and-migration`, branched from
-  `task/0036-floor5-grammar-and-migration` at `12d9eb2` because a live
-  worktree still held that branch (see "Round 6")
+- **Owner / workspace:** exec-0038f (round 7) / `/Users/bytedance/do_not_scan/wf0038-r7`
+  on branch `task/0038-floor5-semantic-and-migration`
 - **Base revision:** fb80bb1 (main), already an ancestor; no rebase was owed
 - **Dependency:** 0036 (grammar path + pins green at 69 productions)
 
@@ -738,6 +734,104 @@ understand and then probably discard — the shape rounds 2 and 4 of 0036 both
 named. The render pass makes that tool much smaller than it looks: the
 pre-pass may emit any layout that parses, so it never computes a byte of
 spacing or indentation.
+
+## Round 7 (exec-0038f, 2026-08-08) — M2: GRAM-6, the `if` path, and the fixtures
+
+One commit, `a79a676`. M2 is complete. M1's `box_new` blocker is untouched
+and still open; it is independent of everything here.
+
+**Three claims in the round-6 hand-back brief did not hold.** Branch tip
+`a4d3d33` **does not exist** (`git rev-parse` fatal) — the third fabricated
+commit id on this task, and the lead has since adopted the practice of
+naming the branch and never an id. "M1 is complete" was **false**: at
+`9931e0f` the OP-2 half was still uncommitted working-tree state, and the
+worktree holding the branch was **actively being written** (two files
+modified between two `git status` runs 90 seconds apart). This round held
+rather than racing, and took the branch only after round 6 committed
+`9eed20a` and `4da1717` and released. The fixture figure was wrong in both
+briefs: not 87 across 12 and not 142 across 20, but **105 Bool matches, 210
+arms, 13 files**, cross-checked by True and False counts being equal in
+every one of the 13 — the check neither earlier figure had. A `compiler/src`
+scope silently drops `compiler/tests/programs/wide_scan.rs`, which holds 36
+of the arms. The candidate digest `ab257aa6...` did verify.
+
+### What M2 needed that the brief said was cheap
+
+"Fold `if` into the existing checked Bool match" is true of **lowering** and
+false of the front half. `compiler/src/semantic/` contained **zero**
+occurrences of `IfStmt` or `ValueIf`, `check_statement` had no arm for one,
+and `SemanticRule` had no `Gram6` at all. Adding it moved the definition
+rank of every rule after it up by one, because the rank is machine-checked
+against the active specification text; GRAM-6 sits at rank 2 there.
+
+The lowering claim itself is now **demonstrated rather than asserted**: a
+backend test compiles and runs a program whose every branch is observable,
+so a wrong one traps. `check_if` builds its two arms from the same Bool
+descriptor the `match` used, so both spellings produce one
+`CheckedStatement::Match` over `CheckedEnumType::Bool`.
+
+### The one design trap, found by a compiler failure rather than by reading
+
+[GIVE-1] gives an else-if chain **one** delivery set, belonging to the
+chain's binding. A chained `value_if`'s nested node is itself a `ValueIf`,
+which `check_statement` has no arm for, so routing the alternative through
+it produced `Semantics/Compiler: InvalidCanonicalTree`. The shared body now
+recurses with `opens_delivery = false`: only the outermost `value_if` opens
+the context and each chained one contributes to it, exactly as a statement
+`match` propagates its `give`s. **`opens_delivery` is not "this is a
+`value_if`"**, and a successor changing this code should not collapse them.
+
+### Why M2 cannot be judged by a green count, and what judges it instead
+
+Every test touching those fixtures was **already failing** before this
+round, on the v0.22 annotations, deleted type arguments and prefix
+spellings M3 owns. Migrating Bool matches turns nothing green. Three
+oracles were used instead:
+
+1. **The failure SET is byte-identical** — zero added, zero removed against
+   the 285-entry baseline recomputed at `4da1717` (the brief's 271-entry
+   file predates round 6's commits and is stale). Lib goes 259 -> 271
+   passed on the 12 new tests.
+2. **No test's failure moved to an earlier stage.** A botched fixture would
+   fail at parsing where it used to fail at semantics; across all 285, the
+   stage changed for **none**.
+3. **Zero surviving Bool-scrutinee matches**, the round-5 ruling's own
+   assertion, applied to the Rust fixtures: `True() =>` and `False() =>`
+   occur nowhere outside `semantic/tests/conditionals.rs`, whose fixture
+   must stay a Bool `match` to prove GRAM-6 rejects it.
+
+### Two findings a successor needs
+
+**Arithmetic is currently unusable on this branch, and it is not M2's.**
+The named form is gone — `iadd.wrap` fails resolution with `UnresolvedUse
+{ role: OperationCallee, available: [] }` because round 1 respelled the
+catalog — while the infix form `a +wrap b` parses and then fails
+`Semantics/Compiler: InvalidCanonicalTree`, i.e. the checker has no infix
+path yet. So `let b = a +wrap 1_i32;` compiles under neither spelling. That
+is [OP-1] (ii) infix resolution, which the round-3 brief predicted "wants
+to land together" with the catalog respell and which has not landed. It
+accounts for a large share of the 285 and it blocks any new test that needs
+arithmetic; the backend test here is deliberately written with Bool
+constructors, `set` and `give` only.
+
+**One migration hazard, hit and fixed.** `format!` fixtures spell a
+Whitefoot brace `{{` and a placeholder `{name}`. A first transformer pass
+doubled the placeholders into `{{name}}`, which would have silently stopped
+substituting in three files. It was caught by diffing for that exact
+pattern, reverted, and redone by folding `{{`/`}}` to private markers
+before matching so a placeholder is never seen. A successor migrating the
+420-file corpus does not face this, but a successor touching these Rust
+fixtures again does.
+
+### Validation
+
+`make -C compiler check` exit **2** and `make check` exit **2**, both at the
+`test` step on the pre-existing 285, unchanged from the baseline at
+`4da1717`. `cargo clippy --all-targets` clean; `cargo fmt` applied. The 12
+new tests are 11 in `semantic/tests/conditionals.rs` — the three rejections
+pinned to their cited bytes, the enum scrutinee still taking `match`, the
+flattened chain, the else-free form, the empty then-block, a non-Bool
+condition, and both GIVE-1 carve-outs — plus the executing backend test.
 
 ## Round 6 (exec-0038e, 2026-08-08) — M1's semantic path, and a blocker that stops it
 
