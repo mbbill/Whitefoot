@@ -176,26 +176,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
-            })?;
-        let targs = self.tree.children_with(targs, Production::Targ)?;
-        if targs.len() != 1 {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        }
-        let type_node = self
-            .tree
-            .first_child_with(targs[0], Production::Type)?
-            .ok_or_else(|| {
-                self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
-            })?;
-        let operand_type = self.parse_type_with(type_node, &function.substitution)?;
-        if !operation.accepts_operand_type(operand_type) {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        }
+        self.reject_written_operation_type_argument(node)?;
         let operand_count = operation.operand_count();
         let atoms = self.operation_atoms(node, operand_count)?;
         let mut arguments = Vec::with_capacity(operand_count);
@@ -204,16 +185,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         } else {
             EffectSet::NONE
         };
+        // [OP-2] the selected type is derived from the operands: the first
+        // operand's exact type is it, and every later operand must be
+        // exactly the row's argument type for that selection — which for the
+        // two-operand arithmetic and comparison rows is the selected type
+        // itself, so "both operands must have one identical exact type"
+        // falls out and cites TYPE-5 at the second operand atom.
+        let mut operand_type = None;
         for (index, atom) in atoms.into_iter().enumerate() {
             let argument = self.check_atom(function, atom, bindings, loop_depth)?;
-            if Some(argument.expression.ty()) != operation.argument_type(operand_type, index)
-                || argument.mode != CheckedMode::Own
-            {
+            if argument.mode != CheckedMode::Own {
+                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+            }
+            let selected = match operand_type {
+                Some(selected) => selected,
+                None => {
+                    let selected = argument.expression.ty();
+                    if !operation.accepts_operand_type(selected) {
+                        return self.issue_node(
+                            SemanticRule::Op1,
+                            node,
+                            SemanticIssueKind::InvalidOperation,
+                        );
+                    }
+                    operand_type = Some(selected);
+                    selected
+                }
+            };
+            if Some(argument.expression.ty()) != operation.argument_type(selected, index) {
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
         }
+        // `operation_atoms` already rejected a wrong operand count, and no
+        // integer row is nullary, so the selection is always made by here.
+        let operand_type = operand_type.ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let trap = if operation.traps() {
             Some(TrapSite {
                 rule_id: if matches!(
@@ -326,22 +333,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        self.reject_region_bearing_storage_operation_argument(node, "box_new", function, 1, 0)?;
-        let referent = self.operation_type_argument(node, "box_new", function)?;
-        let nominal = self
-            .box_nominals
-            .get(&referent)
-            .copied()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.reject_named_operation_arguments(node, "box_new")?;
+        self.reject_written_operation_type_argument(node)?;
         let atoms = self.operation_atoms(node, 1)?;
+        // [STOR-2] `box_new(v)` returns `own box<T>` for `v`'s exact type T.
         let value = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if value.expression.ty() != referent || value.mode != CheckedMode::Own {
+        if value.mode != CheckedMode::Own {
             return self.issue_node(
                 SemanticRule::Type5,
                 atoms[0],
                 SemanticIssueKind::TypeMismatch,
             );
         }
+        let referent = value.expression.ty();
+        // [STOR-5] box content may not bear a region. The written referent
+        // type used to carry this judgment; the derived one carries it here.
+        // A directly slice-typed operand is the only way a region reaches
+        // box content: struct fields and enum payloads are held to STOR-5 at
+        // their own declarations, `CheckedFlatElement` cannot be a slice, so
+        // no array, buffer, or nominal referent can smuggle one in.
+        if matches!(referent, CheckedType::Slice { .. }) {
+            return self.issue_node(
+                SemanticRule::Stor5,
+                atoms[0],
+                SemanticIssueKind::RegionBearingStorage {
+                    mechanical_fix:
+                        "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+                },
+            );
+        }
+        let nominal = self
+            .box_nominals
+            .get(&referent)
+            .copied()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         Ok(TypedExpression::owned(
             CheckedExpression::BoxNew {
                 nominal,
@@ -366,9 +391,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "bnot" => CheckedBooleanOperation::Not,
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
-        if self.operation_type_argument(node, spelling, function)? != CheckedType::Bool {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        }
+        self.reject_named_operation_arguments(node, spelling)?;
+        self.reject_written_operation_type_argument(node)?;
+        // The Bool row has no type parameter to select: every operand is
+        // checked against `Bool` below, which is the whole derivation.
         let expected = usize::from(operation != CheckedBooleanOperation::Not) + 1;
         let atoms = self.operation_atoms(node, expected)?;
         let mut arguments = Vec::with_capacity(atoms.len());
@@ -398,8 +424,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        let operand_type =
-            self.operation_type_argument(node, if equal { "eeq" } else { "ene" }, function)?;
+        let spelling = if equal { "eeq" } else { "ene" };
+        self.reject_named_operation_arguments(node, spelling)?;
+        self.reject_written_operation_type_argument(node)?;
+        let atoms = self.operation_atoms(node, 2)?;
+        // [OP-2] the selected tag-only nominal is the first operand's exact
+        // type; the second is then checked against it.
+        let first = self.check_atom(function, atoms[0], bindings, loop_depth)?;
+        if first.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        let operand_type = first.expression.ty();
         let tag_only = match operand_type {
             CheckedType::Bool => true,
             CheckedType::Nominal(id) => matches!(
@@ -412,13 +451,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !tag_only {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
-        let atoms = self.operation_atoms(node, 2)?;
-        let mut arguments = Vec::with_capacity(2);
-        let mut effects = EffectSet::NONE;
-        for atom in atoms {
-            let argument = self.check_atom(function, atom, bindings, loop_depth)?;
+        // The first operand is already checked, and checking an atom can
+        // consume its place, so only the remaining one is checked here.
+        let mut effects = first.effects;
+        let mut arguments = vec![first.expression];
+        for atom in &atoms[1..] {
+            let argument = self.check_atom(function, *atom, bindings, loop_depth)?;
             if argument.expression.ty() != operand_type || argument.mode != CheckedMode::Own {
-                return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    *atom,
+                    SemanticIssueKind::TypeMismatch,
+                );
             }
             effects = effects.union(argument.effects);
             arguments.push(argument.expression);
@@ -433,12 +477,61 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
-    pub(in crate::semantic::check) fn operation_type_argument(
+    /// [TYPE-5] every table operation outside the closed retained-argument
+    /// class carries no written type argument, because its operands supply
+    /// the selected type. [OP-2] a written one is a hard error citing OP-1.
+    pub(in crate::semantic::check) fn reject_written_operation_type_argument(
+        &self,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        if self
+            .tree
+            .first_child_with(node, Production::Targs)?
+            .is_some()
+        {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
+        Ok(())
+    }
+
+    /// Reads the single written type argument of a retained-argument table
+    /// operation. [TYPE-5] keeps these exactly where no operand can supply
+    /// the type — here, `finf` and `fnan`, whose rows are nullary.
+    pub(in crate::semantic::check) fn retained_operation_type_argument(
+        &self,
+        node: NodeId,
+        function: &FunctionSignature,
+    ) -> Result<CheckedType, CheckStop> {
+        let targs = self
+            .tree
+            .first_child_with(node, Production::Targs)?
+            .ok_or_else(|| {
+                self.issue_value(
+                    SemanticRule::Type5,
+                    node,
+                    SemanticIssueKind::InvalidOperation,
+                )
+            })?;
+        let targs = self.tree.children_with(targs, Production::Targ)?;
+        if targs.len() != 1 {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
+        let ty = self
+            .tree
+            .first_child_with(targs[0], Production::Type)?
+            .ok_or_else(|| {
+                self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
+            })?;
+        self.parse_type_with(ty, &function.substitution)
+    }
+
+    /// The [GRAM-11] half of the old type-argument reader: a table operation
+    /// takes positional atom operands, never named arguments.
+    pub(in crate::semantic::check) fn reject_named_operation_arguments(
         &self,
         node: NodeId,
         spelling: &str,
-        function: &FunctionSignature,
-    ) -> Result<CheckedType, CheckStop> {
+    ) -> Result<(), CheckStop> {
         if self
             .tree
             .first_child_with(node, Production::FieldinitList)?
@@ -453,23 +546,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(SemanticRule::Fn2, node, SemanticIssueKind::InvalidOperation)
-            })?;
-        let targs = self.tree.children_with(targs, Production::Targ)?;
-        if targs.len() != 1 {
-            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
-        }
-        let ty = self
-            .tree
-            .first_child_with(targs[0], Production::Type)?
-            .ok_or_else(|| {
-                self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
-            })?;
-        self.parse_type_with(ty, &function.substitution)
+        Ok(())
     }
 
     pub(in crate::semantic::check) fn reject_region_bearing_storage_operation_argument(

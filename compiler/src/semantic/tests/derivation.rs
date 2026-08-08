@@ -2,9 +2,30 @@
 //! from its selected right-hand side, never from a written annotation, and a
 //! value initializer's come from its delivery set.
 
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
 use super::{assert_rule, with_semantics};
+
+/// Asserts a rejection and the exact source bytes it cites, for the rules
+/// that name *which* operand or node they land on.
+fn assert_rule_at(source: &[u8], rule: SemanticRule, cited: &str) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected {rule:?} at {cited:?}, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), rule);
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!(
+                "expected a source-node citation, got {:?}",
+                issue.location()
+            );
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        let actual = std::str::from_utf8(&source[start..end]).expect("cited bytes must be text");
+        assert_eq!(actual, cited, "citation landed on the wrong node");
+    });
+}
 
 #[test]
 fn an_ordinary_let_takes_the_type_its_right_hand_side_produces() {
@@ -191,4 +212,118 @@ fn a_result_construction_writes_both_of_its_arguments() {
             "missing Result instance derived from written arguments: {names:?}"
         );
     });
+}
+
+#[test]
+fn a_table_operation_selects_its_row_from_its_operands() {
+    let source = br#"fn smaller(x: own i32, y: own i32) -> own i32 pure {
+  return imin(x, y);
+}
+
+fn widest(x: own u64, y: own u64) -> own u64 pure {
+  return imin(x, y);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("one spelling must select two rows by operand type: {outcome:?}");
+        };
+    });
+}
+
+/// [OP-2] a written type argument on a deleted-class operation cites OP-1.
+/// This is the judgment that inverted: v0.22 cited FN-2 for its *absence*.
+#[test]
+fn a_written_type_argument_on_a_derived_operation_rejects() {
+    assert_rule(
+        br#"fn smaller(x: own i32, y: own i32) -> own i32 pure {
+  return imin<i32>(x, y);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Op1,
+        SemanticIssueKind::InvalidOperation,
+    );
+}
+
+/// [OP-2] "Operands of two different exact types are a hard error citing
+/// TYPE-5 at the second operand atom in source order" — so the citation is
+/// pinned to those bytes, not merely to the rule.
+#[test]
+fn disagreeing_operands_cite_type5_at_the_second_operand_atom() {
+    assert_rule_at(
+        br#"fn smaller(x: own i32, y: own i64) -> own i32 pure {
+  return imin(x, y);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Type5,
+        "y",
+    );
+}
+
+/// The first operand fixes the row, so an operand type outside the closed
+/// integer set is the *selection* failing, which cites OP-1 rather than the
+/// per-operand TYPE-5.
+#[test]
+fn a_first_operand_outside_the_closed_set_cites_op1() {
+    assert_rule(
+        br#"fn smaller(x: own Bool, y: own Bool) -> own Bool pure {
+  return imin(x, y);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Op1,
+        SemanticIssueKind::InvalidOperation,
+    );
+}
+
+/// [OP-9] `buffer_new(n, v)` is the one deleted-class row that selects from
+/// its second operand, and `len` then derives from the place it is given.
+#[test]
+fn buffer_new_selects_its_element_from_the_fill_value() {
+    let source = br#"fn main() -> own unit allocates(heap), traps {
+  let data = buffer_new(4_u64, 7_u8);
+  let count = len(data);
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("buffer_new must select its element from the fill value: {outcome:?}");
+        };
+    });
+}
+
+/// [STOR-5] the written referent type used to carry the box-content
+/// judgment. With it deleted the derived referent carries it, cited at the
+/// operand that supplied it.
+#[test]
+fn box_content_that_bears_a_region_still_rejects_under_stor5() {
+    assert_rule_at(
+        br#"fn invalid['r](value: own slice<'r, u8>) -> own unit allocates(heap) {
+  box_new(move value);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Stor5,
+        "move value",
+    );
 }

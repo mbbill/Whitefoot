@@ -177,8 +177,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        self.reject_region_bearing_storage_operation_argument(node, "buffer_new", function, 1, 0)?;
-        let element_type = self.operation_type_argument(node, "buffer_new", function)?;
+        self.reject_named_operation_arguments(node, "buffer_new")?;
+        self.reject_written_operation_type_argument(node)?;
+        let atoms = self.operation_atoms(node, 2)?;
+        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
+        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
+            || length.mode != CheckedMode::Own
+        {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        // [OP-9] `buffer_new(n, v)` is the one deleted-class row whose
+        // selected type comes from its *second* operand: the first is the
+        // u64 element count, and the fill value supplies T.
+        let value = self.check_atom(function, atoms[1], bindings, loop_depth)?;
+        if value.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[1],
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        let element_type = value.expression.ty();
         let element = match element_type {
             CheckedType::Unit => CheckedFlatElement::Unit,
             CheckedType::Integer(ty) => CheckedFlatElement::Integer(ty),
@@ -193,25 +216,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         };
-        let atoms = self.operation_atoms(node, 2)?;
-        let length = self.check_atom(function, atoms[0], bindings, loop_depth)?;
-        if length.expression.ty() != CheckedType::Integer(IntegerType::U64)
-            || length.mode != CheckedMode::Own
-        {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::TypeMismatch,
-            );
-        }
-        let value = self.check_atom(function, atoms[1], bindings, loop_depth)?;
-        if value.expression.ty() != element_type || value.mode != CheckedMode::Own {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[1],
-                SemanticIssueKind::TypeMismatch,
-            );
-        }
         Ok(TypedExpression::owned(
             CheckedExpression::BufferFill {
                 element,
@@ -235,20 +239,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(in crate::semantic::check) fn check_flat_length(
         &self,
         node: NodeId,
-        function: &FunctionSignature,
+        _function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         _loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        let element_type = self.operation_type_argument(node, "len", function)?;
+        self.reject_named_operation_arguments(node, "len")?;
+        self.reject_written_operation_type_argument(node)?;
         let atoms = self.operation_atoms(node, 1)?;
+        // [OP-2] `len`'s selected element type is the base place's own; the
+        // result is `own u64` for every row, so nothing else consults it.
         let place = self.check_indexed_atom_place(atoms[0], bindings)?;
-        if place.element_type() != element_type {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::TypeMismatch,
-            );
-        }
         let mut effects = EffectSet::NONE;
         match &place {
             CheckedIndexedPlace::Array(_) => {}
