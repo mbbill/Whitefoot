@@ -4,8 +4,7 @@ use std::collections::BTreeSet;
 
 use whitefoot::{
     ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH,
-    ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, SYNTAX_DATA_SPEC_HASH,
-    TERMINAL_CONTRACT_SPEC_HASH,
+    ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION,
 };
 
 const APPROVED_CANDIDATE: &[u8] =
@@ -107,12 +106,6 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
 fn main() {
     if ACTIVE_KERNEL_SPEC_BYTES != APPROVED_CANDIDATE {
         eprintln!("{ACTIVE_KERNEL_SPEC_PATH} differs from the approved candidate");
-        std::process::exit(1);
-    }
-    if SYNTAX_DATA_SPEC_HASH != ACTIVE_KERNEL_SPEC_HASH
-        || TERMINAL_CONTRACT_SPEC_HASH != ACTIVE_KERNEL_SPEC_HASH
-    {
-        eprintln!("frontend data is not bound to the active specification identity");
         std::process::exit(1);
     }
     let rule_count = match validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER) {

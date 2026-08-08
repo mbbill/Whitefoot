@@ -1,17 +1,18 @@
 #![allow(clippy::panic)]
 
 use super::{
-    DecisionKind, GrammarNodeKind, LookaheadPredicate, Production, SYNTAX_DATA_SPEC_HASH,
-    diagnostic_terminal_order, grammar_node, productions,
+    DecisionKind, GrammarNodeKind, LookaheadPredicate, Production, diagnostic_terminal_order,
+    grammar_node, productions,
 };
-use crate::ACTIVE_KERNEL_SPEC_HASH;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 
 use super::generated::{DECISIONS, SELECT_ROWS};
 
+/// The committed inventory's own shape. That this data belongs to the active
+/// specification is checked by regenerating it from the active grammar, in
+/// `committed_tables_are_derived_from_the_active_grammar`.
 #[test]
-fn complete_inventory_is_bound_to_exact() {
-    assert_eq!(SYNTAX_DATA_SPEC_HASH, ACTIVE_KERNEL_SPEC_HASH);
+fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 65);
     assert_eq!(diagnostic_terminal_order().len(), 76);
     assert_eq!(productions()[0], Production::Program);
