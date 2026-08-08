@@ -2407,6 +2407,118 @@ authorize it. Recommend it as the next slice.
 
 
 
+
+## Round 19 (exec-0038n, 2026-08-08) — the emptied-case sweep
+
+Read-only over the corpus, pinned at `40fe986`. **One new emptied case beyond
+the two known**, plus a third class the framing did not anticipate. Nothing was
+restated; every disposition below is the lead's or the owner's.
+
+### Method, and why the first attempt was thrown away
+
+The tell is a case whose `doc` names a construct its source no longer contains,
+cross-checked against the construct its manifest rule is about. A first pass
+matched operation names as substrings and returned **97** candidates — `ile`
+inside "wh**ile**" and "comp**ile**", `ine` inside "l**ine**" and "def**ine**".
+That list was discarded rather than reported: a sweep whose hits are mostly
+artefacts is worse than no sweep, because it buries the real ones. With
+word-boundary matching the candidate set is **19**, and each was then read by
+hand against its own pre-migration bytes.
+
+### The result
+
+| class | count | what it means |
+|---|---|---|
+| **emptied** — stated subject entirely gone, case green | **2** | `fn2-pos-explicit-instantiation` (known), **`type5-pos-explicit` (new)** |
+| **subject shifted** — still earns its rule, but for a different violation than recorded | 3 | `op1-neg-eeq-integer`, `op1-neg-ene-integer`, `op1-neg-ineg-unsigned` |
+| doc stale only, subject intact | 13 | the respelled arithmetic and comparison cases |
+| false positive | 1 | `stor1-pos-frame-resident` |
+
+Plus the one already retired in round 17, `fn2-neg-implicit-instantiation`,
+which was the red half of the same class.
+
+### The new hit: `type5-pos-explicit`
+
+Its doc is its subject, and both halves of it are gone:
+
+> "Every let states full mode+type; the call states its type arg; types match
+> [TYPE-5]."
+
+```
+pre-migration                          now
+  let a: own i32 = 41_i32;               let a = 41_i32;
+  let b: own i32 = addk(x: a);           let b = addk(x: a);
+  return iadd.trap<i32>(x, 1_i32);       return x + 1_i32;
+```
+
+**No `let` states a mode and type, and no call states a type argument** — the
+two things it exists to demonstrate. It is a `run` case and it passes, so
+nothing sees it. Same class as `fn2-pos-explicit-instantiation`, found the same
+way: by reading, not by a gate.
+
+### The third class the framing did not anticipate: subject shifted
+
+Three OP-1 negatives were written about a **written type argument** and now
+reject on an **operand domain** instead:
+
+```
+op1-neg-eeq-integer     eeq<u32>(left, right)   ->  eeq(left, right)
+op1-neg-ene-integer     ene<u32>(left, right)   ->  ene(left, right)
+op1-neg-ineg-unsigned   ineg.wrap<u8>(1_u8)     ->  ineg.wrap(1_u8)
+```
+
+Each doc says the operation "does not accept an integer type argument" or "has
+exactly one signed integer type argument". A1 deleted the argument, so the
+recorded violation no longer exists — but each still rejects OP-1, because the
+*operands* are outside the row's domain.
+
+**This class is harder to see than an emptied case.** An emptied case can at
+least be caught by asking whether the rule still fires; these still fire, and
+they cite the correct rule, so even a rule-level audit passes them. Only reading
+the doc against the source finds them. They are not urgent — each still tests
+something real that OP-1 owns — but the corpus records three concerns it no
+longer covers, and the reviewer would have no way to know.
+
+### What is stale but sound
+
+Thirteen cases name a respelled operation in their prose while their source uses
+the operator: `iadd.checked` against `+checked`, `ieq` against `==`, and so on.
+The operation is still exercised; only the prose is out of date. **Four of them
+— the `ieq`/`ine` cases — will have correct docs again once the infix comparison
+reversal lands**, so they should not be touched now. The nine arithmetic ones
+will not self-correct.
+
+One candidate is a plain false positive and is named so it is not re-found:
+`stor1-pos-frame-resident`'s doc says there is **no** per-binding storage
+annotation, which is an assertion about absence, not a subject that died.
+
+### For the review packet
+
+The count is small, and the shape is what matters rather than the number.
+Nothing in this repository looks for a case that passes without exercising its
+own concern, and this sweep needed a human reading of 19 docs against 19
+sources. So the corpus's green figure does not distinguish "passes because the
+rule holds" from "passes because the case no longer tests what it says", and
+after this sweep we can say the difference is **at least two cases, plus three
+more that changed what they test**. A reviewer approving bytes is entitled to
+that sentence.
+
+The selection effect is worth stating in the packet too: the red half of this
+class was caught one case at a time over four rounds because failure surfaced
+it, and the green half needed a deliberate search. That asymmetry is a property
+of the process, not of the migration.
+
+### Scope and limits
+
+- Pinned at `40fe986`; the corpus is being re-migrated concurrently by the infix
+  reversal, and the four `ieq`/`ine` doc-stale hits are the ones that change.
+- Conformance cases only (401). `tests/programs/` carries no manifest `doc`, so
+  the tell does not exist there — those 20 files are **not covered** by this
+  sweep and would need a different signal.
+- The sweep detects a doc that names a *construct*. A case whose subject is
+  stated only in prose too general to name one — "types match exactly" — is
+  reachable only by reading, and `type5-pos-explicit` was found that way rather
+  than by the mechanical signal alone.
 ## Round 18 (exec-0038n, 2026-08-08) — the give/propagate positions, OWN-5's ordering, and the A3 sweep
 
 Three commits. The library gate goes **570 passed / 5 failed → 572 / 3** and the
