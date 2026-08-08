@@ -294,6 +294,13 @@ instead of restating them.
   **branch**, never a commit id, so the reader resolves the tip and cannot
   inherit a stale or invented one. Every count carries the command that
   reproduces it, and no figure is copied forward without re-measuring.
+- **A failure-set diff cannot see a citation move.** The set of passing and
+  failing tests is the regression oracle for most changes, but a test that
+  asserts pass/fail is blind to *which rule* was cited. So any change to rule
+  ordering, precedence, or diagnostic selection needs a **per-case verdict
+  differential** — every source run against both binaries, comparing exit code
+  and cited rule — not the set diff. An unchanged failure set is exactly where
+  such a change hides.
 - **Read exit codes from `$?` directly, never through a pipe.** `make check |
   tail` reports the status of `tail`; a red gate has been committed here that
   way. Write `make check; echo "exit=$?"`.
