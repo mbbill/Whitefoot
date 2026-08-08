@@ -2409,6 +2409,76 @@ authorize it. Recommend it as the next slice.
 
 
 
+## Checks worth reaching for by default (exec-0038n, 2026-08-08)
+
+Written at the lead's request for the next executor. None of these came from a
+brief; each came from a slice in rounds 12–21 where the obvious check would
+have passed and been wrong. They are habits, not process — four questions worth
+asking before running something, and the instance that produced each.
+
+**1. Prefer the observation that separates two hypotheses over the one
+consistent with the hypothesis you hold.** Gathering evidence that fits your
+current belief feels like verification and is not, because the same observation
+usually fits the rival. Before running a check, ask what result would make you
+believe the other thing; if no result would, the check is decorative.
+
+- `own5-neg-slice-value-match` looked like a missing capability. Holding
+  everything fixed but the join — two branches moving the *same* binding versus
+  *different* bindings — separated "the rule is unimplemented" from "the rule is
+  implemented and something runs first". The second was true.
+- A mid-session `grep` returned pre-fix source and my commit ids were
+  unreachable, which fits both "my work was reverted" and "a rebase is in
+  flight". `git diff HEAD` being empty *combined with* HEAD containing the fix
+  fits only the second. Either alone would have been consistent with the bad
+  reading, and acting on it would have destroyed real work.
+
+**2. Run a transform against the input it should have handled, never the output
+it produced.** Testing a migrator, renderer, or formatter on its own output is a
+fixed point: it always passes and proves nothing.
+
+- The `give`/`propagate` constructor gap was only diagnosable from the
+  *pre-migration* bytes, because the tool's correct behaviour is defined against
+  what it should have seen. Re-running it on the file it had already broken
+  changed nothing, which looked like correctness.
+
+**3. Probe a check in every direction it can fail, not once.** Different
+failure modes are different hypotheses about what the check is for, so one probe
+demonstrates one of them.
+
+- The rank check has two modes: a wrong rank, and a variant missing from the
+  set. Breaking the value produced a test failure; deleting the variant produced
+  a compile error. Proving only the first would have left the second — the
+  actual defect being fixed — undemonstrated.
+
+**4. When a migrated case behaves oddly, read the diff before reading the
+compiler.** The program may simply have stopped being the program the case was
+written about, in which case there is no compiler defect to find.
+
+- `own3-pos-outlives-store`'s `Unsupported` looked like a capability gap and I
+  located a real predicate defect behind it. The lead read the pre-migration
+  bytes and found the annotation had named `'s` while the right-hand side named
+  `'r` — the case's subject was deleted, and the predicate was not its cause.
+  Correct diagnosis of the wrong question.
+
+**Two more that generalize past their instances.**
+
+**A mask's fix is itself a probe.** A masked failure means the number of hidden
+problems is unknown, never one — so read the run immediately after removing a
+mask carefully rather than treating it as confirmation. That is the moment
+previously unreachable code first executes. Removing the OWN-5 mask surfaced a
+stale expectation nobody was hunting; removing a dead driver-table entry
+surfaced a second stale entry behind it.
+
+**An operation against a stale baseline is invisible from inside the
+operation, because the operation succeeds.** Commit before probing, resolve a
+tip rather than relaying it, and do not write into a tree whose baseline someone
+else is moving. A restore is only as precise as the commit it restores to.
+
+**And the failure mode all of these share:** each one fails by looking like
+success — a green case that tests nothing, a check that cannot fail, a
+transform that agrees with itself, a stale baseline whose operation completes.
+Anything whose failure mode is silence needs a probe designed to make it speak.
+
 ## Round 21 (exec-0038n, 2026-08-08) — the rank check made unskippable
 
 One commit. Library **572 passed / 3 failed**, unchanged; coverage 128/128.
