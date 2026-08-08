@@ -352,7 +352,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// wrap, checked and saturating, and the four nonstrict comparisons
     /// respell here. `ilt` and `igt` keep their named spelling and have no
     /// operator token, so nothing maps to them.
-    fn infix_operation(&self, operator: NodeId) -> Result<CheckedIntegerOperation, CheckStop> {
+    pub(super) fn infix_operation(
+        &self,
+        operator: NodeId,
+    ) -> Result<CheckedIntegerOperation, CheckStop> {
         let [terminal] = self.tree.direct_token_indices(operator)? else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };

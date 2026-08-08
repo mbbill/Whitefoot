@@ -94,10 +94,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(rhs, Production::Expr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let Some(call) = self.tree.first_child_with(expression, Production::Call)? else {
-            return self.invalid_requires(entry);
-        };
-        self.validate_requires_operation(entry, call)
+        // A clause `let` initializer is a computation, so only [FN-8]'s two
+        // operation spellings are admitted. A bare atom is not a computation,
+        // which is what keeps `let candidate = x;` rejected.
+        if self.validate_requires_computation(entry, expression)? {
+            return Ok(());
+        }
+        self.invalid_requires(entry)
     }
 
     fn validate_requires_condition(
@@ -105,13 +108,75 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         entry: NodeId,
         expression: NodeId,
     ) -> Result<(), CheckStop> {
-        if let Some(call) = self.tree.first_child_with(expression, Production::Call)? {
-            return self.validate_requires_operation(entry, call);
+        if self.validate_requires_computation(entry, expression)? {
+            return Ok(());
         }
+        // [FN-8] admits one further shape here that a clause `let` does not:
+        // "the final check condition is either a Bool clause atom or one such
+        // operation returning Bool".
         let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
             return self.invalid_requires(entry);
         };
         self.validate_requires_atom(entry, atom)
+    }
+
+    /// Validates a clause computation, reporting whether the expression was
+    /// one of the two spellings [FN-8] admits for it.
+    ///
+    /// [FN-8] requires "an ANF [GRAM-9] call to, or infix spelling of, a
+    /// non-trapping, total operation-table row with effect `pure`", and
+    /// [GRAM-5] gives those two spellings distinct `expr` shapes. `Ok(false)`
+    /// means the expression is neither, leaving each caller to say whether
+    /// its position admits a bare atom.
+    fn validate_requires_computation(
+        &self,
+        entry: NodeId,
+        expression: NodeId,
+    ) -> Result<bool, CheckStop> {
+        if let Some(tail) = self.tree.first_child_with(expression, Production::InfixTail)? {
+            self.validate_requires_infix(entry, expression, tail)?;
+            return Ok(true);
+        }
+        if let Some(call) = self.tree.first_child_with(expression, Production::Call)? {
+            self.validate_requires_operation(entry, call)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Validates the infix spelling of a row against the same [FN-8] subset
+    /// the named spelling faces.
+    ///
+    /// The operator token selects the row under [OP-1] (ii), so admission
+    /// asks the same `traps` predicate the ordinary checker asks rather than
+    /// re-reading the spelling: the bare `+ - * / %` forms carry the trapping
+    /// mode and no `.trap` suffix, so the named-spelling filter in
+    /// `validate_requires_operation` cannot see them. Both operands are
+    /// clause atoms and both are validated; [GRAM-9] admits exactly one
+    /// operation per expression, so there is no deeper operand to reach.
+    fn validate_requires_infix(
+        &self,
+        entry: NodeId,
+        expression: NodeId,
+        tail: NodeId,
+    ) -> Result<(), CheckStop> {
+        let operator = self
+            .tree
+            .first_child_with(tail, Production::InfixOp)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if self.infix_operation(operator)?.traps() {
+            return self.invalid_requires(entry);
+        }
+        let left = self
+            .tree
+            .first_child_with(expression, Production::Atom)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        self.validate_requires_atom(entry, left)?;
+        let right = self
+            .tree
+            .first_child_with(tail, Production::Atom)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        self.validate_requires_atom(entry, right)
     }
 
     fn validate_requires_operation(&self, entry: NodeId, call: NodeId) -> Result<(), CheckStop> {
