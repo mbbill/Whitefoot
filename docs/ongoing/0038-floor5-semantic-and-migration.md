@@ -2,11 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `BLOCKED` — 2026-08-08 round 7. **M2 is landed**
-  (`a79a676`): GRAM-6's three rejections, the `if`/`value_if` semantic path,
-  and all 105 Bool matches in the compiler's own fixtures. The round-6
-  `box_new` blocker is **unchanged and still stops the rest of M1** — it is
-  outside M2's scope and M2 did not touch it. See "Round 7" and "Round 6".
+- **Status:** `IN PROGRESS` — 2026-08-08 round 7. **M2 is landed**
+  (`4c79e35`) and the **`box_new` interning repair is landed** (`4e68436`),
+  discharging the round-6 blocker under the 2026-08-08 ruling (b). M3 —
+  the remaining v0.22 spelling classes in the fixtures and the corpus — is
+  next, and it is gated on a finding below: arithmetic compiles under
+  neither spelling on this branch. See "Round 7".
 - **Authority:** owner approval 2026-08-07 and the 2026-08-08 rulings
   (`governance/APPROVALS.md`), including the canonical-renderer ruling; the
   amended delta `governance/spec-evolution/spelling-relief-candidate.md`
@@ -823,11 +824,43 @@ before matching so a placeholder is never seen. A successor migrating the
 420-file corpus does not face this, but a successor touching these Rust
 fixtures again does.
 
+### The `box_new` repair (ruling (b), landed `4e68436`)
+
+The blocker round 6 raised is discharged without moving a normative byte.
+`box_new(v)` derives its box nominal from the operand, so after A3 a purely
+local box names `box<T>` nowhere for the written-type interning pass to
+find, and the lookup died with `InvalidResolution` — an implementation
+limitation deciding source acceptability, on a control pair differing only
+in whether another declaration happened to spell `box<u64>`.
+
+`check_box_new` now records the missed referent and returns a private
+`CheckStop::DeferredBoxNominal`; the `&mut self` driver interns the pending
+referents and rechecks that one function. Each attempt must intern at least
+one new nominal, which bounds the loop, and the signal never reaches a
+diagnostic.
+
+**The phase order had to move with it, and that is the part worth knowing.**
+`executable_nominal_count` closed *before* `collect_contracts`, which ran
+*before* function checking — so a nominal discovered while checking a
+function would have landed outside the executable prefix and never been
+lowered, producing an IR referencing a nominal that does not exist.
+Contracts are collected after function checking now, which is safe because
+nothing in the function path reads them: a source contract is rejected as a
+generic bound [FN-3]. The prefix closes after the derived boxes and before
+the contract metadata. The guard asserting function checking interns
+nothing became a guard that it interns only boxes — the invariant it was
+actually protecting.
+
+Two regressions: the control pair, which also asserts the derived nominal is
+inside the executable prefix, and an executing test that allocates a
+`box<Bool>` spelled nowhere, reads it back and releases it.
+
 ### Validation
 
 `make -C compiler check` exit **2** and `make check` exit **2**, both at the
 `test` step on the pre-existing 285, unchanged from the baseline at
-`4da1717`. `cargo clippy --all-targets` clean; `cargo fmt` applied. The 12
+`4da1717` — zero added and zero removed after M2, and again after the
+`box_new` repair. Lib goes 259 -> 273 passed across the two commits. `cargo clippy --all-targets` clean; `cargo fmt` applied. The 12
 new tests are 11 in `semantic/tests/conditionals.rs` — the three rejections
 pinned to their cited bytes, the enum scrutinee still taking `match`, the
 flattened chain, the else-free form, the empty then-block, a non-Bool
