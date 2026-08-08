@@ -311,7 +311,26 @@ The front end is done. What remains, in order:
    `RequiresBlock` precedent at `format.rs:165`, which is already the one
    production exempted from the break-after-close rule. Do this first:
    the corpus migration's FORM-2 canonical audit cannot run without it.
-2. **The semantic path**, unchanged from the card: TYPE-5 derivation,
+2. **The semantic path.** One measured finding sharpens the TYPE-5 half
+   and was not in any earlier brief: **the checker already computes what
+   the annotation declared.** `TypedExpression` (`semantic/check.rs:178`)
+   carries both `mode: CheckedMode` and its expression's type, and
+   `check_let` (`check/control.rs:443`) currently reads `Production::Mode`
+   and `Production::Type`, calls `check_expression_with_expected(...,
+   Some(expected))`, and then *rejects* on
+   `value.expression.ty() != expected`. A3 does not ask for a new
+   derivation engine; it asks that this site **take** `value.mode` and
+   `value.expression.ty()` instead of comparing against written children
+   that no longer parse. That is TYPE-5's "unique reconstruction, not
+   inference" already present in the implementation.
+
+   The consequent work is the plumbing around it, not the derivation:
+   `check_let` must check the expression *before* it can name the
+   binding's type, so the ordinary, propagate, `value_match` and
+   `value_if` arms each need reordering; every `check_match(..,
+   Some(expected))` call inverts to deriving from the delivery set; and
+   the OWN-5 slice guard and `borrow_for_destination` re-key onto the
+   derived mode. The rest is unchanged from the card: TYPE-5 derivation,
    [OP-2] operand-derived row selection reported at the second operand
    atom, [GIVE-1]'s contract inversion in `check/control.rs`'s `check_let`
    and `matches.rs`, `if_stmt`/`value_if` into the existing checked
