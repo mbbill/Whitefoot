@@ -65,9 +65,12 @@ and preserve its exact digest and emitted no-trap shape.
 2. Draft the smallest complete v0.25 stable-file delta, including lexical
    partition, canonical grammar, node/control graph, label/binding scope,
    endpoint snapshots, ownership, cleanup, structural entailment source,
-   counted continuation, and unchanged ordinary-loop boundary. Verify both
-   native grammar paths and hostile seam mutants, then independently review
-   the complete stable-file diff and digest under the owner's delegated
+   counted continuation, and unchanged ordinary-loop boundary. In the same
+   reviewable change, create `spec/kernel-spec-v0.24.md` as the exact outgoing
+   v0.24 stable bytes, failing if the path exists and verifying its digest
+   against the active predecessor. Verify both native grammar paths and hostile
+   seam mutants, then independently review the complete stable-file diff,
+   archive identity, and candidate digest under the owner's delegated
    branch-revision authority before implementation. Freeze that reviewed
    candidate identity; any later spec-byte change returns through this step.
 3. Implement one checked counted-range representation from parser through
