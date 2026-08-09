@@ -268,7 +268,14 @@ Two structural findings remain surfaced up front:
 > field name is rejected — a measured-empty class (zero declarations
 > across the 610-file corpus; the only two `if` tokens are inside
 > `doc` strings), recorded on the same footing as v0.22's
-> measured-empty S8 narrowing. Delivery-type disagreement is a re-citation, not a
+> measured-empty S8 narrowing. Separately, one expressible form is
+> removed rather than narrowed: the region-annotated borrow binder
+> above [TYPE-5], whose written region could name a destination its
+> right-hand side did not. Whether that rejects any program is not
+> established — a borrow at an enclosing region satisfies an inner
+> destination by outlives [OWN-4], so an equivalent program may always
+> be writable — so it is recorded as a removed form rather than counted
+> as a fourth narrowing. Delivery-type disagreement is a re-citation, not a
 > narrowing: a v0.22-accepted program's `give`s each matched the one
 > written annotation and therefore agree with each other, so none is
 > newly rejected there, while `give`s that agreed with each other
@@ -644,7 +651,12 @@ binding."
 > `give`s are inside the same `let_stmt`, so the derivation stays
 > statement-local. This is unique reconstruction, not inference: no
 > binder's type depends on a later statement, an expected type, or any
-> use site, and no two derivations can disagree [FORM-1]. Call sites
+> use site, and no two derivations can disagree [FORM-1]. One v0.22
+> form is removed rather than reconstructed: a body `let` could
+> annotate a borrow with a region its right-hand side did not name,
+> stating a destination the right-hand side satisfies by outlives
+> [OWN-4] rather than equals, and a derived type is always the region
+> the right-hand side itself produces. Call sites
 > state explicitly exactly what their callee class requires: type,
 > region, and const arguments for user generics [FN-2]; region
 > arguments for system operations [SYS-2]; and, for exactly the
@@ -1550,8 +1562,8 @@ match (GRAM-7)" remains.
 
 ## 4. Acceptance-set delta
 
-One canonical respelling, three deliberate narrowings, and one named
-consequence. Respelling:
+One canonical respelling, three deliberate narrowings, one expressible
+form removed, and one named consequence. Respelling:
 every existing program's canonical bytes change and old bytes reject
 under FORM-1 — migrated mechanically (§5). Widening: the error classes
 that lived only in deleted bytes die with them (a wrong let annotation,
@@ -1573,7 +1585,28 @@ legal as a function, const, parameter, let, match-binder, field,
 variant-field, or region name — measured empty across the 610-file
 corpus (the only two `if` tokens are inside `doc` strings, which are
 STRING interiors and not tokens of this class), and recorded on the
-same footing as v0.22's measured-empty S8 narrowing. Note that `else`
+same footing as v0.22's measured-empty S8 narrowing.
+
+**One expressible form is removed, and it is deliberately not counted as a
+fourth narrowing.** A body `let` could annotate a borrow with a region its
+right-hand side did not name — `let q: &'s i32 = &'r a;` inside
+`region 'r { region 's { … } }` — and the annotation was the DESTINATION,
+which the right-hand side satisfies by outlives [OWN-4] rather than equals.
+A3 deletes the annotation and a derived type is always the region the
+right-hand side itself produces, so v0.23 has no spelling for a stated
+destination region on a local binding.
+
+**Whether any program is thereby rejected is NOT established**, and the
+wording is chosen to say only what is known. A borrow at an enclosing region
+satisfies an inner destination by the same outlives judgment, so the
+equivalent program may always be writable; nobody has shown a program that
+v0.22 accepts and v0.23 rejects for this reason. Naming a form that turns out
+not to be a narrowing costs a sentence; failing to name a real one is the
+class this batch spent a day finding, and the asymmetry is why it is named.
+
+Measured at exactly one site corpus-wide: 1954 annotated bindings, 68 whose
+annotation names a region, 1 naming a region its right-hand side does not
+(`tests/conformance/cases/own3-pos-outlives-store.wf`). Note that `else`
 adds no such narrowing: it is already an exact fixed atom in v0.22's
 `check_stmt` and is already excluded from IDENT.
 
@@ -2414,7 +2447,11 @@ STOR-5 1, OP-1 5, OP-2 7, OP-4 1, OP-7 3, OP-8 2, OP-9 1, FN-1 1, FN-4
 2, FN-8
 3, EFF-2 1, ERR-2 1, ERR-3 1, DIAG-1 3, DIAG-3 1, SYS-13 1, ENT-2 1,
 ENT-3 6,
-ENT-5 1, ENT-6 1, EX-1 1 = **62 sites across 34 rules**, reconciling
+ENT-5 1, ENT-6 1, EX-1 1 = **62 sites across 34 rules**, unmoved by the
+A3 wording of 2026-08-08: naming the removed region-annotation form edits
+replacement text INSIDE the existing [TYPE-5] site and adds no anchor, the
+same way the prelude amendment did, and §1's and §4's accounting are not §3
+pairs. Reconciling
 against the previous 64/34 as exactly the two sites the cancellation
 retires, against 61/31 as the three pattern-7 sites
 ([OP-4], [SYS-13], [OWN-13]) and their three rules, and against the
