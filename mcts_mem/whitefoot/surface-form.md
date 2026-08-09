@@ -1,7 +1,7 @@
 - There is exactly one spelling per semantic construct and one legal byte-level formatting; non-canonical input is a hard error and the toolchain never auto-formats.
 - There are no comments; documentation lives in a declaration doc field.
-- Computation is flat three-address form: calls and constructions appear only at expression position, every argument is an atom, and intermediates are named by let with explicit mode and type (GRAM-9).
-- All computation is mode-suffixed prefix table-operation calls; there are no infix operators and no if/while/for — match is the sole conditional and loop-plus-break the sole iteration.
+- Computation is flat three-address form: calls and constructions appear only at expression position, every argument is an atom, and every intermediate is named by a let binding (GRAM-9). See [[binding-annotation]] for what that binder states.
+- Loop-plus-break is the sole iteration form; there is no while and no for. See [[operation-spelling]] for how an operation is spelled and [[match-form]] for how a conditional is.
 - Bool is a prelude enum with no boolean literals; numeric literals are decimal-only with a mandatory type suffix.
 
 ## Facts
