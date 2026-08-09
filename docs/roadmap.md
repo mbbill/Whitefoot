@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 19 (v0.23 activation: FLOOR-5 spelling relief installed as the active language authority)
+Revision: 20 (owner selected complete obligation-discharge delivery before wfgrep resumes)
 
 The active language authority is
 [`spec/kernel-spec-v0.23.md`](../spec/kernel-spec-v0.23.md), SHA-256
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.22]` `[current: safe-Rust compiler]`
+`[current: spec v0.23]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -72,9 +72,10 @@ Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
 
-- CAND-1 records the completed flagship selection. CAND-8 supplies the current
-  ripgrep project pressure; its mapped direction items inform the plan, but
-  none authorizes work by itself.
+- CAND-1 records the completed flagship selection. CAND-8 remains the selected
+  flagship and pressure source, but the owner has parked further wfgrep work
+  until PROOF-8's selected obligation-discharge sequence is complete; mapped
+  direction items inform the plan, but none authorizes work by itself.
 - PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in PROOF-1 through PROOF-4 and PROOF-7 depends
@@ -203,33 +204,43 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[research: complete]` `[next: spec proposal]`
+`[current: items 1–4 shipped]` `[next: ordered completion before wfgrep]`
 
-- **Goal:** replace implicit trap sites with explicit machine-tracked
-  obligations. Every partial operation and `requires` becomes a proof goal;
-  each call site discharges it statically, or by a `claim` (named,
-  justification-carrying runtime check — the sole trap source), or by a
-  branch (mandatory when an externally-derived value sits in the
-  constrained-subject position); callees compile in one uncheck form.
-  Result and trap decouple: Result models expected outcomes, trap is the
-  checker's runtime backstop at its provability frontier.
-- **Current:** design frozen and all four registered falsifiers executed
-  green on 2026-08-06: hand-simulation over three native programs (57–59%
-  of obligations proven at v0.17-strength entailment, every residual one
-  line), two writer-behavior probes (16/16 honest shapes under hostile and
-  perf-gate pressure), taint probe on wfgrep under real v0.18+ boundaries
-  (zero saturation, one structural claim in 723 lines), codegen parity
-  (claim shape equals today's check shape; backend already elides
-  induction-friendly checks).
-- **Missing / next:** spec batches per the dossier's §8 entry-point order —
-  first slice: claim construct, normative L0 entailment fragment, OP-4
-  caller-side discharge with `index` total form; boundary count-bound
-  postconditions coordinate with BOUND-1's SYS rules.
+- **Goal:** replace each selected implicit trap family with explicit
+  machine-tracked obligations. A migrated partial operation or `requires`
+  becomes a proof goal; a call site discharges it statically, by a named and
+  justification-carrying `claim`, or by a value branch where policy requires
+  one. Result and trap decouple: Result models expected outcomes, while a claim
+  is the checker's named runtime backstop at its provability frontier. This
+  direction does not yet dissolve bare trapping arithmetic or ordinary
+  explicit checks, so it makes no language-wide sole-trap-source claim.
+- **Current:** v0.21 and v0.22 shipped the claim construct, normative L0
+  entailment fragment, caller-side OP-4 index discharge, and the SYS-8 transfer
+  count bounds introduced into the fact state by ENT-3 S10. The frozen native
+  acceptance run held for utf8parse, landed one claim over for SHA-256, and
+  exposed an ENT-5 loop-head defect as the dominant cause of deflate's
+  divergence (5 of 29 sites proven, 21 claims). The v0.23-based ENT-5 delta is
+  re-cut and verified but still awaits complete-byte owner approval; task 0042
+  has landed the stable-file-aware archive gate needed by its activation.
+- **Missing / next:** the current rolling step repairs ENT-5, switches the
+  active specification to `spec/kernel-spec.md`, restores the canonical gate,
+  reruns the frozen acceptance sample, and revalidates the already-shipped S10
+  facts on boundary-fed deflate. The owner selected the remaining direction on
+  2026-08-09: provenance measurement first; a counted range loop; a single
+  atomic `requires` goal sufficient to close the provenance candidate's O3 bypass;
+  then provenance activation; proof-feasibility work for the mask and
+  loop-carried facts the real `ensures` examples need; `ensures`; deterministic
+  claim-ledger tooling; and finally a separately designed transitive
+  `deny-claims` marker. Each slice still enters the rolling Current Plan before
+  execution. Wfgrep remains parked until this boundary is complete or a
+  reproduced blocker returns for disposition.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
+  [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
   [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
-  [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md).
+  [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·
+  [stable specification model](../governance/spec-evolution/stable-spec-filename-proposal.md).
 
 ## Verification and compiler trust
 
@@ -252,20 +263,22 @@ facts-off evidence rather than trust in the compiler or writer.
 
 ### VERIFY-2 — Execute the conformance corpus against the compiler
 
-`[current: conformance corpus]` `[next: implement when selected]`
+`[current: native adapter wired, one protected divergence]`
+`[next: preserve independent reporting]`
 
-- **Goal:** compare compiler behavior with compiler-independent v0.17
+- **Goal:** compare compiler behavior with compiler-independent active-spec
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. First full run: 242 pass / 123 pre-existing failures in four
-  recorded buckets (45 pre-semantic rejections without rule ids; 41
-  protected sources that are incomplete units; 35 runnable overclaims; 2
-  real divergences) awaiting owner rulings; the corpus gate lane is
-  ignored-with-reason until they land.
-- **Missing / next:** distinguish correct execution, valid-but-unsupported,
-  wrong rejection, crash, and trap mismatch. Any existing expectation or
-  status weakening remains owner-protected.
+  compiler. The latest protected record is `Pass=389 Fail=1 Skip=13`; the one
+  runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
+  rows remain explicit toolchain gaps. This adapter is deliberately
+  `#[ignore]` and invoked separately; `make check` does not silently include
+  it. The earlier 242/123 run is historical attribution evidence, not current
+  status.
+- **Missing / next:** preserve the independent pass/fail/skip report while the
+  protected OWN-3 wording question remains open. Any expectation, source, or
+  status change remains owner-protected and must report the before/after sets.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
 
 ### VERIFY-3 — Facts-on/facts-off differential trust
@@ -703,15 +716,16 @@ remains as the owner check-in, not as a presumption against the goal.
   near-term-reachability gate. The owner subsequently made comparative
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
-- **Missing / next:** none; `CAND-8` owns the live project sequence.
+- **Missing / next:** none; `CAND-8` owns the preserved flagship sequence, and
+  the Current Plan parks its next slice behind PROOF-8 completion.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
 
 ### CAND-8 — Ripgrep-compatible command-line search
 
-`[selected flagship]` `[current: frame plus inconclusive upstream attempt]`
-`[next: BOUND-1 system-capability architecture]`
+`[selected flagship]` `[current: credited compute-bound win]`
+`[parked: complete PROOF-8 obligation-discharge sequence first]`
 
 - **Goal:** build a Whitefoot-written command-line search tool credible for
   ripgrep's primary line-oriented recursive regex use and reach at least
@@ -722,8 +736,11 @@ remains as the owner check-in, not as a presumption against the goal.
   been audited from CLI and ignore-aware traversal through regex/byte search,
   result construction, parallel publication, and exit status. The frozen
   nine-case suite completed one correctness-green official/native selection
-  attempt, but all cases failed the 3% precision gate; no comparator, selected
-  baseline, profile, Whitefoot result, or performance claim exists.
+  attempt, but all cases failed the 3% precision gate, so it established no
+  full-suite comparison. Separately, sequential wfgrep now compiles and runs
+  through the normal command path and has one credited compute-bound win over
+  the pinned system grep after the check-aware probe. That exact checkpoint is
+  preserved evidence, not the 2x ripgrep flagship claim.
 - **Claim boundary:** the suite must cover real source trees and large text;
   one and many files; several matcher families; ignore/filter work; and normal
   result production. A win on one file, `--sort`, fixed strings, a discarded
@@ -737,13 +754,12 @@ remains as the owner check-in, not as a presumption against the goal.
   compute-bound win, with trap identity oracle-pinned on hostile bounds.
   The probe covers only the recognized byte-walk class; the verify subloop
   and copy loops stay scalar, and bounds traps remain secondary (~18%
-  ceiling). The next slice is owner-selected: widen further shapes, attack
-  the many-small-files host open cost, or resume capability work. Once the
-  next slice passes its
-  project-independent controls and same-slice correctness and cost gate, return
-  to that exact `wfgrep` checkpoint. Each later slice stops on either the next
-  semantic blocker or the first attributed material performance blocker; the
-  full 2x objective remains unchanged.
+  ceiling). On 2026-08-09 the owner parked every further wfgrep slice until the
+  complete PROOF-8 obligation-discharge sequence selected in the Current Plan
+  is implemented and verified, or a reproduced blocker is returned for owner
+  disposition. The exact credited checkpoint and full 2x objective remain
+  unchanged; finishing the language sequence un-parks rather than replaces
+  them.
 - **Directions tested:** PERF-1 owns the baseline and attribution; BOUND-1 and
   VERIFY-1 enter with the real CLI/filesystem path; PAR-1 through PAR-4 enter
   only for measured parallel work and its proof/runtime contract; FLOOR-1

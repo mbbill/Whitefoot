@@ -10,8 +10,10 @@ This is a temporary live coordination record, not execution authority.
   driver delivered.
 - **Owner / workspace:** unclaimed / filled at claim
 - **Base revision:** filled at claim
-- **Dependency:** the ENT-5 loop-fix activation must be terminal first. This
-  is a hard ordering constraint, not a preference — see below.
+- **Dependency:** the ENT-5 loop-fix activation, frozen acceptance rerun, and
+  revalidation of the already-shipped SYS-8/ENT-3 S10 count facts on the
+  boundary-fed path must be terminal first. This is a hard ordering constraint,
+  not a preference — see below.
 
 ## Goal
 
@@ -32,26 +34,27 @@ plainly as a finding that it does.**
 
 ## The ordering constraint (verified 2026-08-08, not assumed)
 
-Do not measure before the ENT-5 loop fix is active. The deflate path's
+Do not measure before the ENT-5 loop fix is active and the existing S10 facts
+have been revalidated on the same boundary-fed consumer. The deflate path's
 discharge is currently dominated by the loop-rule defect that
 `research/investigations/obligation-discharge/ACCEPTANCE.md` isolates as the
 dominant cause of the deflate divergence, so a measurement taken against
 today's compiler would attribute to provenance what the loop rule caused.
 
-The block was confirmed four independent ways rather than taken on trust:
-`git ls-tree --name-only main spec/` lists nothing above v0.22; the roadmap
-names v0.22 as the active authority; `make -C compiler check` reports the
-v0.22 identity and its unbroken activation chain; and
-`governance/spec-evolution/ent5-loop-fix-v024-candidate.md` reads
-owner-approved but awaiting activation, with its own header noting the v0.24
-number is provisional and may become v0.23.
+At registration, the block was confirmed against the then-active specification,
+compiler identity, activation chain, and held ENT-5 candidate rather than taken
+on trust. The active authority is now v0.23 and the ENT-5 delta has been re-cut
+against those bytes, but the same ordering fact remains: the complete v0.24
+candidate still needs owner exact-byte approval and activation before this
+measurement can have valid attribution.
 
 ## Sequence
 
 1. An ENT-5 activation lands.
 2. Re-run the acceptance measurement against it, so the discharge baseline is
    the fixed loop rule rather than the defective one. Compare against
-   `ACCEPTANCE.md`'s recorded buckets and state the delta.
+   `ACCEPTANCE.md`'s recorded buckets, state the delta, and confirm that the
+   active SYS-8/ENT-3 S10 count facts enter and serve the boundary-fed path.
 3. Only then apply the gate rule — by hand or by a scratch prototype — to the
    boundary-fed driver's sites, and record the result beside the acceptance
    evidence in `research/investigations/obligation-discharge/`.
