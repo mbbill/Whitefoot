@@ -22,8 +22,8 @@ absence is what allowed it.
 Steps 1 to 3 only. **The activation is not in this task.**
 
 1. `spec-archive-integrity` learns the stable-file model, on the current
-   model, its own commit, green. — **IN PROGRESS** under the corrected ruling
-   at `5f729d8`.
+   model, its own commit, green. — **DONE on the task branch** under the
+   corrected ruling at `5f729d8`; landing commit pending.
 2. Re-cut `governance/spec-evolution/ent5-loop-fix-v024-candidate.md` against
    v0.23 — non-authoritative, its own commit. — **DONE**, landed as `7009434`.
 3. Re-verify the anchor after those edits and report the digest. The lead
@@ -69,7 +69,20 @@ The original line-prefix discriminator was unsatisfiable and is retained below
 as diagnosis, not as the live direction. The lead corrected the ruling at
 `5f729d8`: file existence selects the current layout, and a present stable file
 names its own recorded version. The gate implementation and its two-direction
-mutation proof are the only remaining work in this task.
+mutation proof were the only remaining work in this task and are now complete
+on the task branch.
+
+The implementation stays in the existing `Makefile` target. It strictly parses
+and globally deduplicates both ledger record forms before using their tokens,
+rejects non-regular specification paths, accepts the current 24-file layout and
+the synthetic one-stable-file layout, and checks the stable file's exact title,
+version, and digest. In an isolated copy both green baselines exited 0. The
+following mutations each exited 2 at the named invariant and were restored
+before the next run: recorded file missing; unrecorded versioned file present;
+stable file missing; outgoing archive missing (two unarchived versions); wrong
+stable version; wrong stable digest; malformed stable title; malformed ledger
+record; and a directory at the stable path. The restored synthetic stable
+layout exited 0 again.
 
 **The ruled discriminator assumes a ledger shape the ledger does not have.**
 Measured on `bfc78ec`: `governance/APPROVALS.md` carries **15

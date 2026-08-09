@@ -36,30 +36,78 @@ spec-append-only-staged:
 
 # landed state, not staged diff: every recorded specification identity still
 # names bytes that hash to it, and every released specification has a record.
+# Before the stable-file switchover every recorded version is archived at its
+# versioned path. Afterwards exactly one recorded version lives at the stable
+# path, and the stable file's own version token selects that identity.
 # `spec-append-only` above only sees what one commit touches, and `pre-commit`
 # is bypassable by `--no-verify`, by merge commits, and by a clone whose
 # `core.hooksPath` points elsewhere, so this is the guard that actually holds.
 # `shasum` is used deliberately: it is the tool the digests were recorded with,
 # and it shares no code with the compiler's own SHA-256.
 spec-archive-integrity:
-	@set -- $$(awk '/^(ACTIVE|ARCHIVE)-SPEC: /{print $$2, $$3}' governance/APPROVALS.md); \
-	recorded=0; \
+	@records="$$(awk 'function fail(message) { print "spec archive integrity: approval record line " NR ": " message > "/dev/stderr"; exit 1 } function is_version(value) { return value ~ /^v[0-9]+\.[0-9]+$$/ } function is_digest(value) { return length(value) == 64 && value ~ /^[0-9a-f]+$$/ } /^ACTIVE-SPEC:/ { if (NF != 4) fail("ACTIVE-SPEC record must have four fields"); if (!is_version($$2)) fail("invalid version " $$2); if (!is_digest($$3)) fail("invalid digest for " $$2); if ($$4 != "-" && !is_digest($$4)) fail("invalid previous digest for " $$2); if (seen[$$2]++) fail($$2 " has more than one recorded identity"); print $$2, $$3; next } /^ARCHIVE-SPEC:/ { if (NF != 3) fail("ARCHIVE-SPEC record must have three fields"); if (!is_version($$2)) fail("invalid version " $$2); if (!is_digest($$3)) fail("invalid digest for " $$2); if (seen[$$2]++) fail($$2 " has more than one recorded identity"); print $$2, $$3 }' governance/APPROVALS.md)" || exit 1; \
+	set -- $$records; \
+	if test $$# -eq 0; then \
+		echo "spec archive integrity: approval record contains no specification identities" >&2; \
+		exit 1; \
+	fi; \
+	recorded=0; missing=0; missing_version=""; missing_digest=""; versions=""; \
+	stable_file="spec/kernel-spec.md"; \
 	while test $$# -ge 2; do \
 		version="$$1"; digest="$$2"; shift 2; \
+		case " $$versions " in \
+			*" $$version "*) echo "spec archive integrity: $$version has more than one recorded identity" >&2; exit 1;; \
+		esac; \
+		versions="$$versions $$version"; \
 		file="spec/kernel-spec-$$version.md"; \
-		if test ! -f "$$file"; then \
-			echo "spec archive integrity: $$version is recorded but $$file is missing" >&2; \
-			exit 1; \
-		fi; \
-		actual="$$(shasum -a 256 "$$file" | cut -d' ' -f1)"; \
-		if test "$$actual" != "$$digest"; then \
-			echo "spec archive integrity: $$file hashes to $$actual, recorded as $$digest" >&2; \
-			exit 1; \
+		if test -e "$$file" || test -L "$$file"; then \
+			if test ! -f "$$file" || test -L "$$file"; then \
+				echo "spec archive integrity: $$file is not a regular archive file" >&2; \
+				exit 1; \
+			fi; \
+			actual="$$(shasum -a 256 "$$file" | cut -d' ' -f1)"; \
+			if test "$$actual" != "$$digest"; then \
+				echo "spec archive integrity: $$file hashes to $$actual, recorded as $$digest" >&2; \
+				exit 1; \
+			fi; \
+		else \
+			missing=$$((missing + 1)); \
+			missing_version="$$version"; missing_digest="$$digest"; \
 		fi; \
 		recorded=$$((recorded + 1)); \
 	done; \
-	versions="$$(awk '/^(ACTIVE|ARCHIVE)-SPEC: /{printf " %s", $$2}' governance/APPROVALS.md)"; \
+	if test -e "$$stable_file" || test -L "$$stable_file"; then \
+		if test ! -f "$$stable_file" || test -L "$$stable_file"; then \
+			echo "spec archive integrity: $$stable_file is not a regular active specification file" >&2; \
+			exit 1; \
+		fi; \
+		if test "$$missing" -ne 1; then \
+			echo "spec archive integrity: stable-file layout requires exactly one recorded version without an archive, found $$missing" >&2; \
+			exit 1; \
+		fi; \
+		stable_version="$$(awk 'NR == 1 && $$0 ~ /^# Kernel Specification v[0-9]+\.[0-9]+$$/ { print $$4 }' "$$stable_file")"; \
+		if test -z "$$stable_version"; then \
+			echo "spec archive integrity: $$stable_file has no exact first-line version token" >&2; \
+			exit 1; \
+		fi; \
+		if test "$$stable_version" != "$$missing_version"; then \
+			echo "spec archive integrity: $$stable_file names $$stable_version, but $$missing_version is the unarchived recorded version" >&2; \
+			exit 1; \
+		fi; \
+		actual="$$(shasum -a 256 "$$stable_file" | cut -d' ' -f1)"; \
+		if test "$$actual" != "$$missing_digest"; then \
+			echo "spec archive integrity: $$stable_file hashes to $$actual, recorded as $$missing_digest" >&2; \
+			exit 1; \
+		fi; \
+	elif test "$$missing" -ne 0; then \
+		echo "spec archive integrity: $$missing_version is recorded but spec/kernel-spec-$$missing_version.md is missing and $$stable_file is absent" >&2; \
+		exit 1; \
+	fi; \
 	for file in spec/kernel-spec-v*.md; do \
+		if test ! -f "$$file" || test -L "$$file"; then \
+			echo "spec archive integrity: $$file is not a regular archive file" >&2; \
+			exit 1; \
+		fi; \
 		version="$${file#spec/kernel-spec-}"; version="$${version%.md}"; \
 		case " $$versions " in \
 			*" $$version "*) ;; \
