@@ -21,11 +21,32 @@ absence is what allowed it.
 Steps 1 to 3 only. **The activation is not in this task.**
 
 1. `spec-archive-integrity` learns the stable-file model, on the current
-   model, its own commit, green.
+   model, its own commit, green. — **BLOCKED**, see below. Nothing written.
 2. Re-cut `governance/spec-evolution/ent5-loop-fix-v024-candidate.md` against
-   v0.23 — non-authoritative, its own commit.
+   v0.23 — non-authoritative, its own commit. — **DONE**, `7dccee7`.
 3. Re-verify the anchor after those edits and report the digest. The lead
-   recomputes it and takes it to the owner.
+   recomputes it and takes it to the owner. — **DONE**; digest reported.
+
+### Step 2 / 3 results
+
+- Re-cut digest, to be recomputed independently before it is used:
+  `9afd7fd57390b688ba0a2c7d91573d9d2cd3cbb8a8244a440e9120b73f73481e`.
+- Anchor, re-checked **after** the edits: **whole-line exact**, exactly one
+  match, `spec/kernel-spec-v0.23.md` line 1053. Upgraded from a substring
+  test, which would have passed even if the specification's paragraph had
+  grown a clause this document does not know about.
+- **A figure I reported earlier was wrong and is corrected here.** The anchor
+  is **547 bytes**, not 470. The earlier extraction was one wrapped line
+  short. The conclusion it supported was unaffected — a substring matching
+  once implies the superstring matches at most once, and it does match once —
+  but the number was wrong and went into a draft before it was caught.
+- Grammar preserved, **measured rather than asserted**: the v0.24 document was
+  assembled in scratch (v0.23 with line 1053 replaced) and verified against
+  v0.23 by the two-path verifier — exit 0, 69 productions / 84 decisions / 93
+  terminal predicates, unchanged. The check was then proved capable of
+  failing: a one-token break to `if_stmt`'s production reds it with exit 1.
+  The first attempt at that break changed **zero** lines, so its green tested
+  nothing; the diff count is what caught it, and is now the guard.
 
 ## Not in this task
 
