@@ -1,25 +1,42 @@
 # ENT-5 loop-rule fix — specification-change candidate
 
-Status: CANDIDATE, OWNER-APPROVED 2026-08-07 (recorded in
-`governance/APPROVALS.md`), ready for activation. This document is the complete
-delta against the exact text of the active `spec/kernel-spec-v0.22.md`
-(installed 8f91ede; SHA-256
-`b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8`; roadmap
-revision 18). Approval covers these exact bytes; a changed byte returns to
-review.
+Status: CANDIDATE, RE-CUT 2026-08-09 against v0.23, AWAITING OWNER RE-APPROVAL.
+The 2026-08-07 owner approval covered bytes anchored to v0.22 and **does not
+carry over**. This document is the complete delta against the exact text of the
+active `spec/kernel-spec-v0.23.md` (installed a01bc70; SHA-256
+`e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`, read from
+the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`; roadmap revision 19).
+Approval covers these exact bytes; a changed byte returns to review.
+
+**The rule text in §4 is unchanged from the approved version.** What changed is
+everything that named the superseded baseline — the version number, the prior
+version and its digest, the roadmap revision, §7's tense, and §8's measurements
+— plus §2's status word, which mandatory amendment 8 of
+`stable-spec-filename-proposal.md` now places inside the approved bytes.
 
 This candidate was split out of `semantics-v024-candidate.md` (drafted and
 withdrawn 2026-08-07) on the lead's ruling. Its companion — the
 subject-position taint gate — is `provenance-gate-candidate.md`, HELD FOR
 MEASUREMENT. The two share no rule text; nothing here depends on that one.
 
-**Numbering.** The file name reserves v0.24 provisionally. This batch is
-approved while the FLOOR-5 spelling batch (`spelling-relief-candidate.md`,
-planned task 0036) is still a draft with open questions, so this may well
-activate first and take v0.23. Per `docs/WORKFLOW.md` step 2 the activation
-task takes the next free number and stops for an owner choice if the canonical
-path is occupied; it does not skip a version to avoid the choice. §7 states the
-ordering interaction with FLOOR-5 in full: it is nil for this batch.
+**Numbering, settled.** The provisional reservation resolved: FLOOR-5 activated
+first and took v0.23 (a01bc70), so this batch is **v0.24**. §7 records the
+ordering interaction with FLOOR-5 as it actually turned out.
+
+**This activation also carries the stable-filename switchover**, per §5 of
+`stable-spec-filename-proposal.md`, which routes it onto the first activation
+with no EBNF change. That is a change to the specification's file model, not to
+this batch's rule text, and it is the activation task's work rather than this
+document's. The one place it reaches these bytes is mandatory amendment 8: the
+status line in §2 must read `Status: ACTIVE v0.24` before approval, because
+under the stable model the status line is part of the bytes the owner approves
+and the file is never edited afterwards.
+
+**O11 does not ride this activation** (ruled 2026-08-09). The ENT boolean-
+composition correction was queued "drafted alongside the approved ENT-5 loop
+fix" before the switchover was sequenced onto the same activation; pairing a
+second semantic correction with the vehicle chosen for being small undercuts
+the reason it was chosen. Nothing here depends on it.
 
 ## 1. What the rule does today, and why it is wrong
 
@@ -56,7 +73,7 @@ loop-head state removes facts no execution can observe as false there.
 
 ## 2. Proposed version-header paragraph
 
-> Status: REVIEW CANDIDATE vNEXT (2026-08-07; the [ENT-5] loop-rule scope-exit
+> Status: ACTIVE v0.24 (2026-08-09; the [ENT-5] loop-rule scope-exit
 > fix). Restates [ENT-5]'s loop rule so that the kill scan at a loop head
 > considers exactly the kill events an execution can carry into a later
 > iteration head of the same loop: an event inside the body is scanned when
@@ -83,15 +100,16 @@ loop-head state removes facts no execution can observe as false there.
 > enumerated non-monotone edge. Selection ground:
 > `research/investigations/obligation-discharge/ACCEPTANCE.md` (2026-08-07),
 > with the `D1h`/`D1i` witness pinning the cause to this rule alone. These
-> bytes are non-authoritative until the derived-material review,
-> full-document hash, exact owner approval, and active-target installation
-> complete.
+> bytes carry `Status: ACTIVE` only in the commit that installs them at the
+> active target, and only with the grammar check, derived-material review,
+> full-document hash, and exact owner approval all complete and recorded in
+> `governance/APPROVALS.md`; the file is not edited after approval.
 
 ## 3. Grammar delta
 
 None. This batch adds, removes, and reshapes no production, terminal
 predicate, token form, operation-table row, or source construct. Its one
-modification site is prose at line 1042 of the active spec, outside every
+modification site is prose at line 1053 of the active spec, outside every
 fenced block. §8 records the mechanical confirmation.
 
 ## 4. The modification (complete replacement delta, verbatim anchor)
@@ -157,11 +175,13 @@ adopted silently**, on three grounds:
    statement edge, so the enumerated reading scans it, while the reachability
    reading does not, because `@l`'s body entry is unreachable from that edge
    without leaving the body. That execution returns; it observes no later head.
-3. It composes with control forms this version does not have. When the FLOOR-5
-   batch adds `if_stmt` and `value_if`, an else-free `if`'s false edge stays
-   inside the body and is continuing, and `value_if`'s delivery edges route to
-   the same three targets `value_match`'s do [FN-1]; the enumerated form would
-   need re-enumeration, the reachability form needs no edit.
+3. It composes with control forms the version it was drafted against did not
+   have — and that prediction has now been tested rather than left standing.
+   FLOOR-5 added `if_stmt` and `value_if` in v0.23. An else-free `if`'s false
+   edge stays inside the body and is continuing; `value_if`'s delivery edges
+   route to the same three targets `value_match`'s do [FN-1]. The enumerated
+   form would have needed re-enumeration at v0.23; this text needed no edit,
+   which is the ground itself coming true. §5.2 records the check.
 
 ## 5. Soundness, the join, and monotonicity
 
@@ -221,28 +241,40 @@ all-derivable state. So:
   the modified loop rule, so the iteration head never sees it.
 
 The three exits are exhaustive over the ways control leaves a loop body in
-v0.22: `break_stmt` reaching `normal_successor` of its resolved target loop,
+**v0.23**: `break_stmt` reaching `normal_successor` of its resolved target loop,
 `return_stmt` and `propagate_let_rhs`'s `Err` edge reaching the function-return
-sink, and `value_match`'s `give`/return/break edges, which [FN-1] routes to
-exactly those same targets. There is no `continue` form.
+sink, and the delivery edges of `value_match` and — added by FLOOR-5 —
+`if_stmt` and `value_if`, which [FN-1] routes to exactly those same targets.
+There is no `continue` form.
+
+The FLOOR-5 control forms were checked against this list rather than assumed to
+fit it. [ENT-5]'s join paragraph in the installed v0.23 states that an
+`if_stmt` or `value_if` branch "every path of which leaves by `return`, `break`
+to an enclosing loop, or `propagate`'s error edge contributes nothing" at the
+continuation — the same three targets, named in the same terms as the
+`match_stmt` clause beside it. An else-free `if_stmt`'s false edge is the one
+new edge, and it reaches the continuation **inside** the body, so it is
+continuing and is scanned. The list therefore grew by two forms and by no new
+target, which is why §4.1's third ground holds: the reachability form needed no
+edit to absorb them, where an enumerated form would have needed re-enumeration.
 
 ### 5.3 Monotonicity under [ENT-1]
 
 The change only removes kills from one scan, so at every loop head the fact
-state is a superset of the state v0.22 computes. [ENT-4]'s closure is monotone
+state is a superset of the state v0.23 computes. [ENT-4]'s closure is monotone
 and derivability is upward-closed in the state, so:
 
-- every obligation v0.22 discharges is still discharged, and more are;
+- every obligation v0.23 discharges is still discharged, and more are;
 - no [OP-4] rejection is newly created on discharge grounds;
-- a claim v0.22 accepts as non-redundant may become redundant, which [CLM-2]
+- a claim v0.23 accepts as non-redundant may become redundant, which [CLM-2]
   makes a non-rejecting advisory precisely so this direction stays monotone.
 
 The one edge that is not monotone is the one [ENT-1] already enumerates.
 [CLM-2] rejects a claim whose exact negation the non-contradictory state
 derives. A pre-loop fact that now survives to the loop head can supply that
-negation, so a program accepted under v0.22 can be newly rejected as a refuted
+negation, so a program accepted under v0.23 can be newly rejected as a refuted
 claim. This is the lifecycle's single deliberate non-monotone edge, already law
-in v0.22 ("Refutation is the lifecycle's one deliberate non-monotone edge"),
+in v0.23 ("Refutation is the lifecycle's one deliberate non-monotone edge"),
 and it fires only on a claim proven to trap on every execution reaching it — a
 defect found at compile time, which is the outcome the rule exists to produce.
 The candidate therefore states the property as: **no program that compiles
@@ -287,26 +319,28 @@ expectation is weakened.
 
 ## 7. Ordering against the FLOOR-5 spelling batch
 
-**This batch's one anchor is disjoint from FLOOR-5's, verified textually
-(2026-08-07).** FLOOR-5's single [ENT-5] site is an *insertion* before the
-join paragraph's sentence "The continuation of a `loop_stmt` is the join over
-the states on its `break` edges"; this batch *replaces* the rule's final
-paragraph. The two do not overlap, and this batch's replacement text contains
-no token FLOOR-5 respells — no `match`, no written type argument, no annotated
-`let`. Either order therefore works with no re-take.
+**FLOOR-5 activated first, and the predicted disjointness held — re-measured
+against v0.23, not carried forward.** FLOOR-5's single [ENT-5] site was an
+*insertion* into the join paragraph; this batch *replaces* the rule's final
+paragraph. In the installed v0.23 those are two distinct lines: the joins
+paragraph is line 1051, the loop paragraph this batch replaces is line 1053.
+No overlap, and no re-take was needed.
 
-Two things the activation task must still do if FLOOR-5 activates first:
+Both cautions this section raised for the activation task were discharged
+mechanically rather than by reading, 2026-08-09:
 
-1. **Re-verify, do not assume.** Re-run the anchor check of §8 against the
-   then-active spec before applying the delta. The anchor is one fixed string
-   and the check is one command; a candidate whose anchor no longer matches
-   exactly one line stops for review rather than being fuzzy-matched.
-2. **Read the inserted sentence.** FLOOR-5's insertion defines the `if_stmt` /
-   `value_if` continuation join and adds an empty-join clause. It does not
-   change which edges leave a loop body, so §5.2's exhaustiveness argument
-   still holds, and §4.1's third ground explains why the reachability form
-   needs no edit for the new control forms. Confirm both when re-reading rather
-   than carrying this sentence forward untested.
+1. **Re-verified, not assumed.** The §4 anchor was re-matched as a fixed
+   string against the active `spec/kernel-spec-v0.23.md`: **exactly one
+   occurrence**, at line 1053. §8 records the command and its result.
+2. **The inserted sentence was read, and its irrelevance checked rather than
+   asserted.** FLOOR-5's insertion defines the `if_stmt` / `value_if`
+   continuation join and adds an empty-join clause. It adds no way for control
+   to leave a loop body, so §5.2's exhaustiveness argument stands unchanged,
+   and §4.1's third ground is what makes the reachability form need no edit for
+   the new control forms — the property it was written to have. Separately
+   confirmed by search: this batch's replacement text contains **no** token
+   FLOOR-5 respells — no `match`, no written type argument, no annotated `let`
+   — so nothing in it was silently left in a superseded spelling.
 
 The anchors that genuinely do need re-taking against FLOOR-5 belong to the
 companion candidate, not to this one: `provenance-gate-candidate.md`'s [ENT-6]
@@ -314,23 +348,37 @@ second site is exactly FLOOR-5's [ENT-6] site. That is recorded there.
 
 ## 8. Verification record
 
-All checks run 2026-08-07 against the active spec at 8f91ede.
+All checks re-run 2026-08-09 against the active spec `spec/kernel-spec-v0.23.md`
+at a01bc70. The v0.22 figures this section previously carried are superseded and
+are not retained: an anchor checked against superseded text is worth nothing.
 
-1. **Anchor exactness.** The §4 anchor was matched as a fixed string against
-   `spec/kernel-spec-v0.22.md`: it matches exactly one line (line 1042). It is
-   quoted verbatim, not paraphrased.
-2. **Grammar containment.** The active spec's fenced blocks span lines 98–126,
-   130–139, 143–165, 169–182, 660–662, 706–740, 766–826, 830–842, and
-   1050–1093. Line 1042 lies outside all of them, so the site touches no
+1. **Anchor exactness.** The §4 anchor spans eight wrapped lines in this
+   document and one line in the specification, so it is unwrapped to a single
+   547-byte string before comparison, never matched line by line. Against
+   `spec/kernel-spec-v0.23.md` it matches **exactly one line, line 1053**, and
+   the match is **whole-line exact** (`grep -x -F`): the anchor is that
+   paragraph in its entirety, not a fragment of it, so the replacement in §4
+   cannot silently leave a tail of the old rule behind. It is quoted verbatim,
+   not paraphrased.
+
+   The whole-line form of the test is deliberate. A substring match proves only
+   that the anchor occurs somewhere; it would pass just as happily if the
+   specification's paragraph had grown a clause this document does not know
+   about. Whole-line equality is what rules that out.
+2. **Grammar containment.** The active spec's fenced blocks span lines 101–129,
+   133–142, 146–171, 175–193, 671–673, 717–751, 777–837, 841–853, and
+   1061–1096. Line 1053 lies outside all of them, so the site touches no
    grammar production, terminal, operation-table row, or worked example.
-3. **Native grammar verifier, baseline:**
+3. **Native grammar verifier, baseline** (the two-path form required by
+   mandatory amendment 5 — both paths read at runtime, so the comparison is not
+   `X != X`):
 
 ```sh
 cargo run -q --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
-  spec/kernel-spec-v0.22.md
+  spec/kernel-spec-v0.23.md spec/kernel-spec-v0.23.md
 # -> grammar-preserving candidate verified by the active compiler:
-#    65 productions, 75 decisions, 76 terminal predicates
-# exit code 0
+#    69 productions, 84 decisions, 93 terminal predicates
+# exit code 0, read from $? and not through a pipe
 ```
 
    This batch introduces no new bytes outside the one prose paragraph, so the
