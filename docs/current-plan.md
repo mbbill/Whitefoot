@@ -8,31 +8,26 @@ boundary.
 
 This ACTIVE plan authorizes only the current independently reviewable step
 below. The owner selected the later capability sequence and its stop condition,
-but each later slice must still replace this rolling plan before execution. The
-owner first authorized branch-local drafting, implementation, and review, then
-on 2026-08-09 gave exact approval for the complete v0.24 digest, the two named
-protected-corpus changes, and the honest S10 evidence boundary. The atomic
-activation is installed; this step remains current until its post-activation
-verification and task closure are recorded.
+but each later slice must still replace this rolling plan before execution.
+Task 0045 closed the exact-approved v0.24 ENT-5 activation and its installed
+acceptance baseline. This plan explicitly carries planned task 0041 into the
+evidence-only provenance measurement that follows.
 
-Derived from: [Direction Outline revision 21](roadmap.md), items `PROOF-8`
+Derived from: [Direction Outline revision 22](roadmap.md), items `PROOF-8`
 (primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
 flagship but is parked by this owner selection.
 
 ## Direction and current milestone
 
-Items 1–4 of the dossier's §8 sequence are already shipped: the claim
-construct, the normative L0 entailment fragment, caller-side OP-4 index
-discharge, and the SYS count postconditions with ENT-3 S10 fact introduction.
-The current milestone corrects the shipped ENT-5 loop rule, switches to the
-stable active-spec filename, restores the native verification gate, and
-revalidates item 4 on its real boundary producer and focused obligation
-consumers. The boundary-fed deflate driver produces `taken <= room` but has no
-natural current entailment obligation that consumes it; the owner accepted
-that limitation rather than adding evidence-shaped program behavior.
+Items 1–4 of the dossier's §8 sequence are shipped: the claim construct, the
+normative L0 entailment fragment, caller-side OP-4 index discharge, and the SYS
+count postconditions with ENT-3 S10 fact introduction. v0.24 corrects ENT-5,
+uses the stable active-spec filename, and has an installed frozen acceptance
+baseline. The current milestone is stage 5a: measure the held provenance rule
+against real boundary-fed deflate sites before any attempt to activate it.
 
-The selected direction after this milestone is provenance measurement and
-gate closure, a counted range loop, `requires` as a call-site goal, `ensures`
+The selected direction after this measurement is a counted range loop,
+`requires` as a call-site goal, provenance gate closure, `ensures`
 with the fact sources its real examples need, and finally claim-ledger tooling
 plus an opt-in `deny-claims` partition. Those entries must reach the normal
 specification, compiler, conformance, and real-program paths or return a
@@ -44,70 +39,53 @@ Further wfgrep attribution or implementation is not part of this milestone.
 It resumes only after the complete selected direction is active and verified,
 or after the owner disposes a reproduced blocker that stops the sequence.
 
-## Current step — ENT-5, stable specification, and restored verification
+## Current step — stage 5a provenance measurement
 
 ### Why
 
-The frozen acceptance run found the v0.23 loop rule to be the dominant measured
-cause of deflate's divergence: only 5 of 29 sites discharged and 21 claims
-remained. That rule counted kill events on `return`, propagated error, and
-other edges that cannot reach another iteration head, deleting pre-loop facts
-no continuing execution can observe as invalid. v0.24 corrects that rule;
-post-activation measurement must confirm the resulting attribution baseline.
+The held subject-position rule was designed before the deflate driver carried
+real external provenance, so its first measurement had zero live instances.
+The boundary-fed driver now supplies those instances, and v0.24 removes the
+ENT-5 confounder. Measurement must establish where the rule actually fires and
+what repair it demands before the language can consider it. The candidate's O3
+bypass — moving a gated claim into a callee `requires` — remains material and
+forbids activation in this step.
 
 ### Do
 
-1. Completed: carry task 0043 unchanged under this replacement plan and repair
-   the native canonical-corpus gate by deriving its exclusions from exact
-   manifest paths and expectations, without changing protected source or
-   verdicts.
-2. Completed: use the stable-aware archive gate completed by task 0042;
-   independently recompute and review the v0.23-based ENT-5 delta, assemble and
-   hash the complete v0.24 specification bytes, inventory every protected
-   conformance rewrite, and prepare the compiler, regression, identity, and
-   live-document changes as one reviewable activation candidate, then complete
-   branch-local rehearsal and lead review.
-3. Completed: the owner approved the complete digest, semantic delta, impact
-   inventory, protected changes, and limitations. The activation atomically
-   installs v0.24 at `spec/kernel-spec.md`, writes the chained `ACTIVE-SPEC:`,
-   and updates every spec pin, generated datum, conformance witness, derivation
-   record, live document, and law/workflow statement required by the approved
-   stable-file model. O11 and the provenance gate do not ride this activation.
-4. Complete the installation confirmation: rerun the preregistered utf8parse,
-   SHA-256, and boundary-fed deflate acceptance sample plus complete gates and
-   the independent adapter. D1h must discharge, D1i must remain discharged,
-   and no previously proven site may regress. Reconfirm that SYS-8/ENT-3 S10
-   produces its relation on the real boundary path and that all four focused
-   actual-obligation consumers and invalidation controls remain green.
+1. After this closure lands, claim planned task 0041 in its own lifecycle
+   commit and refresh it onto the terminal v0.24 acceptance baseline.
+2. Apply the held subject-position rule exactly, by hand or with a disposable
+   scratch probe, to every relevant claim subject on the boundary-fed deflate
+   path. Preserve source order and enough provenance lineage to reproduce each
+   classification.
+3. Report which claims the rule gates, whether the three canonical-Huffman
+   sites are included, every observed false-positive and false-negative
+   boundary, and the honest writer repair cost. A finding that no site fires is
+   a valid result.
+4. Record the measurement in the existing provenance probe evidence and update
+   the outline. Do not edit the specification, compiler, protected corpus, or
+   held candidate, and do not activate the gate.
 
 ### Verify and accept
 
-- The archive gate is green on the stable layout and still fails on missing
-  stable bytes, a forgotten outgoing archive, an unrecorded archive, malformed
-  records, wrong version, and wrong digest.
-- On the installed activation, `whitefoot-spec` reports v0.24, the
-  approved complete digest, and 16 unbroken activations; grammar remains 69
-  productions, 84 decisions, and 93 terminal predicates.
-- Focused ENT-5 controls cover return, propagated error, current/enclosing
-  break, a kill followed only by exit, a real continuing kill, and nested-loop
-  reachability.
-- Focused S10 controls show the four existing transfer-count bounds enter the
-  fact state, invalidate correctly, and discharge actual subscript obligations;
-  the boundary-fed deflate path separately proves the real producer is live.
-- `make -C compiler check` and `make check` are green. The separately invoked,
-  ignored conformance adapter reports its one protected runnable divergence and
-  pending gaps independently; it is not silently counted as part of `make check`.
-- The frozen acceptance report records actual buckets rather than promising a
-  recovered-site count in advance.
+- Pin the measurement to activation `f4c7e60` and the installed acceptance
+  buckets: UTF-8 22/33, SHA-256 0/9, deflate 11/29, dynamic deflate 11/24.
+- Enumerate the examined sites deterministically and show the boundary origin,
+  constrained subject, current claim or value branch, and gate result for each.
+- Name the three canonical-Huffman sites explicitly and report all positive,
+  negative, ambiguous, and repair-cost findings without favorable filtering.
+- An independent review can reproduce the table from the held rule and frozen
+  sources. Scratch tooling leaves no tracked artifact.
+- The held candidate remains unmodified and unactivated; O3 remains assigned to
+  stage 7 rather than being weakened inside this measurement.
 
 ### Accept and stop
 
-This plan is terminal when task 0045 is closed; the approved ENT-5/stable-file
-activation is installed byte-for-byte; focused and complete gates pass; the
-acceptance sample and item-4 revalidation are recorded; and the outline states
-the result. Then replace this plan with the next independently reviewable
-slice. Exact approval and activation are complete; post-activation evidence is
-the remaining boundary before task 0041 may be claimed.
+This plan is terminal when task 0041 records the complete reproducible
+measurement and the outline states its result. A positive prerequisite result
+permits a replacement plan for stage 6; a negative or inconclusive result
+returns for owner disposition. Neither outcome activates the provenance gate.
 
 ## Owner-selected roll-forward — dependency map, not execution authority
 
@@ -117,15 +95,6 @@ Before each slice begins, reread its evidence, make it the sole current step in
 a replacement plan, and preserve the normal candidate, impact, exact-approval,
 activation, and real-program loop. A negative prerequisite measurement returns
 for owner disposition; it is not permission to weaken a feature or skip ahead.
-
-### 5a — provenance measurement
-
-After ENT-5 acceptance and the existing SYS S10 revalidation are terminal,
-claim planned task 0041 and measure the held subject-position rule on
-externally sourced deflate values. This slice produces evidence only. It must
-report the three canonical-Huffman sites and every observed false-positive and
-false-negative boundary. The held candidate's material O3 bypass — moving a
-gated claim into a callee `requires` — forbids gate activation at this point.
 
 ### 6 — counted range loop
 

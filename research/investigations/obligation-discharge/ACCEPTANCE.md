@@ -333,4 +333,37 @@ consumer. Adding an otherwise unnecessary indexed access merely to make the
 measurement green would be evidence-shaped program churn, so this review
 candidate does not do that. On 2026-08-09 the owner accepted this honest
 producer-plus-focused-consumers boundary as the S10 disposition; the milestone
-still requires post-activation confirmation before it is terminal.
+then required the post-activation confirmation recorded immediately below
+before it could become terminal.
+
+## Post-activation v0.24 confirmation (2026-08-09)
+
+Activation commit `f4c7e60` installed the exact-approved v0.24 bytes at
+`spec/kernel-spec.md`, SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+The same frozen sources, dark checker, all-claims-blinded transform, function
+order, and obligation denominators were rerun against that installed authority.
+The temporary in-crate probe was deleted after the run.
+
+The installed results exactly reproduce the pre-activation candidate run, in
+`total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 0 / 9 / 0`;
+- deflate, full denominator: `29 / 11 / 18 / 0`; and
+- deflate, dynamic-path denominator: `24 / 11 / 13 / 0`.
+
+No previously proven site regressed. `D1h` discharges and `D1i` remains
+discharged. UTF-8 retains two claims and SHA-256 retains four. Deflate retains
+sixteen claims; the same five claims remain non-rejecting [CLM-2] redundancy
+advisories — `count_slot_in_counts`, `validate_slot_in_counts`,
+`offsets_slot_in_offsets`, `offsets_slot_in_counts`, and
+`ordered_symbol_in_lengths` — and no claim is refuted. Every synthetic blinded
+claim is retained.
+
+The installed S10 confirmation also passes the focused `read_once`,
+`write_once`, `host_copy_bytes`, and `host_copy_utf8` actual-index consumers
+plus the kill control. The real boundary driver again establishes
+`taken <= room`; it still has no natural entailment obligation that consumes
+that relation. This confirms the owner-approved producer-plus-focused-consumer
+boundary without upgrading it to an end-to-end boundary-consumer claim.

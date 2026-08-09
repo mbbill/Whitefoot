@@ -3,17 +3,18 @@
 This is a temporary live coordination record, not execution authority.
 
 - **Status:** `PLANNED` (unclaimed)
-- **Authority:** owner approval 2026-08-07 (provenance gate advanced in
-  priority); the held candidate
+- **Authority:** the ACTIVE stage-5a plan derived from Direction Outline
+  revision 22; owner approval 2026-08-07 (provenance gate advanced in
+  priority); and the held candidate
   `governance/spec-evolution/provenance-gate-candidate.md`. This record
   carries forward the measurement half of task 0037, which is PARKED with its
   driver delivered.
 - **Owner / workspace:** unclaimed / filled at claim
 - **Base revision:** filled at claim
-- **Dependency:** the ENT-5 loop-fix activation, frozen acceptance rerun, and
-  revalidation of the already-shipped SYS-8/ENT-3 S10 count facts on the
-  boundary-fed path must be terminal first. This is a hard ordering constraint,
-  not a preference — see below.
+- **Dependency:** `SATISFIED` by terminal task 0045, activation `f4c7e60`, and
+  the canonical post-activation confirmation in
+  `research/investigations/obligation-discharge/ACCEPTANCE.md`. Claiming must
+  still refresh onto the closure commit; satisfaction is not a claim.
 
 ## Goal
 
@@ -32,35 +33,43 @@ The deliverable is evidence, not a language change. **A finding that the gate
 does NOT fire on those sites is a successful outcome and must be reported as
 plainly as a finding that it does.**
 
-## The ordering constraint (verified 2026-08-08, not assumed)
+## Direction, method, and scope
 
-Do not measure before the ENT-5 loop fix is active and the existing S10 facts
-have been revalidated at their honest evidence boundary: the real boundary-fed
+Apply the held rule exactly to the frozen boundary-fed deflate path. Enumerate
+every relevant claim subject in deterministic source order and retain the
+boundary-origin and constraint lineage needed to reproduce the classification.
+Report all gated, ungated, ambiguous, false-positive, and false-negative
+findings, plus the honest repair each positive would require. Explicitly name
+the three canonical-Huffman sites.
+
+This task may use hand analysis or one disposable scratch probe. Its expected
+tracked touch set is this task record,
+`research/investigations/obligation-discharge/PROBE-TAINT.md`, and
+`docs/roadmap.md`. It does not edit the specification, compiler, protected
+corpus, active plan, or held candidate, and it cannot activate the gate.
+
+## Satisfied ordering constraint (verified, not assumed)
+
+The measurement may start only because ENT-5 is active and the existing S10
+facts were revalidated at their honest evidence boundary: the real boundary-fed
 path produces the count relation, while focused actual-obligation controls
 consume all four S10 producer families. The deflate path's discharge was
-dominated by the loop-rule defect that
+previously dominated by the loop-rule defect that
 `research/investigations/obligation-discharge/ACCEPTANCE.md` isolates as the
 dominant cause of the deflate divergence, so a measurement taken against the
 pre-fix compiler would attribute to provenance what the loop rule caused.
 
-At registration, the block was confirmed against the then-active specification,
-compiler identity, activation chain, and held ENT-5 candidate rather than taken
-on trust. v0.24 and the ENT-5 correction are now activated at
-`spec/kernel-spec.md`, but the same ordering fact remains: task 0045 must first
-record the post-activation frozen acceptance rerun and approved S10 evidence
-disposition before this measurement can have valid attribution.
+Activation `f4c7e60` and the installed-authority section of `ACCEPTANCE.md`
+close that ordering constraint. They preserve UTF-8 at 22/33, SHA-256 at 0/9,
+and recover deflate from 5/29 to 11/29 without a proven-site regression.
 
 ## Sequence
 
-1. Completed: the ENT-5 activation lands.
-2. Re-run the acceptance measurement against it, so the discharge baseline is
-   the fixed loop rule rather than the defective one. Compare against
-   `ACCEPTANCE.md`'s recorded buckets, state the delta, and confirm that the
-   active SYS-8/ENT-3 S10 count facts enter on the real boundary path and serve
-   actual indexed obligations in all four focused producer-family controls.
-3. Only then apply the gate rule — by hand or by a scratch prototype — to the
-   boundary-fed driver's sites, and record the result beside the acceptance
-   evidence in `research/investigations/obligation-discharge/`.
+1. Completed: ENT-5 activates at `f4c7e60`.
+2. Completed: the frozen acceptance and S10 evidence are confirmed against the
+   installed v0.24 authority.
+3. After a separate claim commit, apply the gate rule to the boundary-fed
+   driver's sites and record the result in `PROBE-TAINT.md` and the outline.
 
 Do not reorder these. Step 3 taken before step 2 produces a number with no
 attribution, which is the failure this constraint exists to prevent.
@@ -68,4 +77,15 @@ attribution, which is the failure this constraint exists to prevent.
 ## Not in this task
 
 No language change, no gate activation, and no edit to the held candidate.
-The gate's activation depends on this measurement and is separate work.
+The gate's activation depends on this measurement and the later stage-7 O3
+closure; it is separate work.
+
+## Validation and done-when
+
+Pin the analysis to `f4c7e60`, the v0.24 digest, the exact driver sources, and
+the held rule text. The result table must cover every relevant site and be
+independently reproducible; any scratch artifact is deleted, and
+`git diff --check` plus repository invariants pass. The task is done when the
+canonical probe and outline record the full result, limitations, and whether
+the prerequisite is positive, negative, or inconclusive. Only a later rolling
+plan may select a language change.

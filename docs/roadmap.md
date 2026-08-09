@@ -1,14 +1,14 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 21 (v0.24 ENT-5 and the stable active-spec path activated)
+Revision: 22 (ENT-5 acceptance closed; provenance measurement is current)
 
 The active language authority is v0.24 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
 Superseded numbered specifications are immutable archives. The current
-execution proposal is [`docs/current-plan.md`](current-plan.md), project law is the
-[`Constitution`](constitution.md), and the operational process is
+execution proposal is [`docs/current-plan.md`](current-plan.md), project law is
+the [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
 ## How to read this outline
@@ -216,20 +216,20 @@ creating writer trust or weakening the checked safety envelope.
   explicit checks, so it makes no language-wide sole-trap-source claim.
 - **Current:** v0.21 and v0.22 shipped the claim construct, normative L0
   entailment fragment, caller-side OP-4 index discharge, and the SYS-8 transfer
-  count bounds introduced into the fact state by ENT-3 S10. The frozen native
-  acceptance run held for utf8parse, landed one claim over for SHA-256, and
-  exposed an ENT-5 loop-head defect as the dominant cause of deflate's
-  divergence (5 of 29 sites proven, 21 claims). v0.24 installs the corrected
-  continuing-kill rule and completes the one-time switch to
-  `spec/kernel-spec.md`; its implementation, protected witnesses, digest chain,
-  and stable-layout gates entered atomically after exact owner approval.
-- **Missing / next:** the current rolling step must rerun the complete gates,
-  independent adapter, frozen acceptance sample, and S10 evidence against the
-  installed v0.24 authority, then close task 0045. The approved S10 disposition
-  is the honest boundary producer plus four focused obligation consumers; the
-  preregistered deflate driver itself has no natural current obligation that
-  consumes the count relation. The owner selected the remaining direction on
-  2026-08-09: provenance measurement first; a counted range loop; a single
+  count bounds introduced into the fact state by ENT-3 S10. v0.24 installs the
+  corrected ENT-5 continuing-kill rule at `spec/kernel-spec.md`. The frozen
+  installed-authority rerun proves 22/33 UTF-8 obligations, 0/9 SHA-256
+  obligations, and 11/29 deflate obligations without claim support (11/24 on
+  the dynamic path), with no proven-site regression and five non-rejecting
+  redundancy advisories. The real boundary path produces its S10 relation; all
+  four focused producer-family consumers and the kill control pass, while the
+  driver itself honestly has no natural current obligation that consumes it.
+- **Missing / next:** the current rolling step is evidence-only provenance
+  measurement under planned task 0041. It must report the held subject-position
+  rule's actual boundary-fed sites, including the three canonical-Huffman sites
+  and false-positive/false-negative boundaries. The held candidate's material
+  O3 `requires` bypass forbids activation in this slice. The owner selected the
+  remaining direction on 2026-08-09: a counted range loop; a single
   atomic `requires` goal sufficient to close the provenance candidate's O3 bypass;
   then provenance activation; proof-feasibility work for the mask and
   loop-carried facts the real `ensures` examples need; `ensures`; deterministic
@@ -273,7 +273,7 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The current v0.24 candidate run is `Pass=390 Fail=1 Skip=13`; the one
+  compiler. The installed-v0.24 run is `Pass=390 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
   rows remain explicit toolchain gaps. This adapter is deliberately
   `#[ignore]` and invoked separately; `make check` does not silently include
