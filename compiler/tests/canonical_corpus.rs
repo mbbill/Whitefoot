@@ -12,7 +12,19 @@
 //! a scripted corpus migration safe: the transform may produce any layout that
 //! parses, because this gate holds the result to FORM-2 for every file.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
+
+#[allow(dead_code)]
+#[path = "conformance/corpus.rs"]
+mod conformance_manifest;
+#[allow(dead_code)]
+#[path = "conformance/json.rs"]
+mod json;
+
+use conformance_manifest::Expectation;
 
 use whitefoot::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, CompilerLimits, FinalizeOutcome, LexOutcome,
@@ -107,27 +119,115 @@ fn file_name(path: &Path) -> String {
         .into_owned()
 }
 
-/// The corpus files that are deliberately not canonical.
+/// Exact conformance source paths and the expectations declared for them.
+fn manifest_expectations() -> BTreeMap<PathBuf, Expectation> {
+    let cases = conformance_manifest::corpus_directory().join("cases");
+    let mut expectations = BTreeMap::new();
+    for case in conformance_manifest::load() {
+        let path = cases.join(format!("{}.wf", case.id));
+        assert!(
+            expectations.insert(path.clone(), case.expect).is_none(),
+            "{} appears more than once in the conformance manifest",
+            path.display()
+        );
+    }
+    assert!(
+        !expectations.is_empty(),
+        "the conformance manifest must declare cases"
+    );
+    expectations
+}
+
+/// The two ways a corpus source may need a manifest-declared exclusion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Exclusion {
+    /// Lexing, terminal classification, parsing, or finalization produced no tree.
+    Underived,
+    /// A tree rendered successfully, but the source bytes were not canonical.
+    Noncanonical,
+}
+
+/// Whether one exact manifest expectation permits an exclusion from this gate.
 ///
-/// Both are FORM-2 negative cases: the corpus needs non-canonical bytes to
-/// assert that FORM-2 rejects them. They are named rather than skipped by a
-/// pattern so that a third one cannot appear unnoticed — a file drifting out
-/// of canonical form is exactly what this gate exists to catch.
-const DELIBERATELY_NONCANONICAL: &[&str] =
-    &["form2-neg-noncanonical-ws.wf", "x-form-form2-tab-indent.wf"];
+/// Any declared rejection may fail before a tree exists. Once a tree does
+/// exist, only a `FORM-*` rejection may deliberately retain non-canonical
+/// bytes. Semantic rejects still have to round-trip like every other derived
+/// source.
+fn manifest_allows_exclusion(exclusion: Exclusion, expectation: Option<&Expectation>) -> bool {
+    match (exclusion, expectation) {
+        (Exclusion::Underived, Some(Expectation::Reject(_))) => true,
+        (Exclusion::Noncanonical, Some(Expectation::Reject(rule))) => rule.starts_with("FORM-"),
+        _ => false,
+    }
+}
+
+#[test]
+fn manifest_exclusions_cover_only_the_declared_failure_edges() {
+    let grammar_reject = Expectation::Reject("GRAM-9".to_owned());
+    let form_reject = Expectation::Reject("FORM-2".to_owned());
+    let semantic_reject = Expectation::Reject("TYPE-5".to_owned());
+
+    assert!(manifest_allows_exclusion(
+        Exclusion::Underived,
+        Some(&grammar_reject)
+    ));
+    assert!(manifest_allows_exclusion(
+        Exclusion::Underived,
+        Some(&form_reject)
+    ));
+    assert!(manifest_allows_exclusion(
+        Exclusion::Underived,
+        Some(&semantic_reject)
+    ));
+    assert!(manifest_allows_exclusion(
+        Exclusion::Noncanonical,
+        Some(&form_reject)
+    ));
+
+    assert!(!manifest_allows_exclusion(
+        Exclusion::Noncanonical,
+        Some(&semantic_reject)
+    ));
+    assert!(!manifest_allows_exclusion(Exclusion::Underived, None));
+    assert!(!manifest_allows_exclusion(Exclusion::Noncanonical, None));
+    for expectation in [
+        Expectation::Accept,
+        Expectation::Run(0),
+        Expectation::Trap,
+        Expectation::Unsupported,
+    ] {
+        assert!(!manifest_allows_exclusion(
+            Exclusion::Underived,
+            Some(&expectation)
+        ));
+        assert!(!manifest_allows_exclusion(
+            Exclusion::Noncanonical,
+            Some(&expectation)
+        ));
+    }
+}
 
 #[test]
 fn every_canonical_corpus_file_re_renders_to_itself() {
+    let files = corpus_files();
+    let expectations = manifest_expectations();
     let mut round_tripped = Vec::new();
-    let mut noncanonical = Vec::new();
-    let mut underived = Vec::new();
+    let mut manifest_noncanonical = Vec::new();
+    let mut manifest_underived = Vec::new();
+    let mut unexpected_noncanonical = Vec::new();
+    let mut unexpected_underived = Vec::new();
 
-    for path in corpus_files() {
-        let name = file_name(&path);
-        let source = std::fs::read(&path)
+    for path in &files {
+        let name = file_name(path);
+        let source = std::fs::read(path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
+        let expectation = expectations.get(path);
         let Some(reading) = read_through_the_tree(&name, &source) else {
-            underived.push(name);
+            if manifest_allows_exclusion(Exclusion::Underived, expectation) {
+                manifest_underived.push(name);
+            } else {
+                unexpected_underived.push((name, expectation.cloned()));
+            }
             continue;
         };
 
@@ -157,31 +257,41 @@ fn every_canonical_corpus_file_re_renders_to_itself() {
                 reading.rendered, source,
                 "{name}: a non-canonical file must render to different bytes"
             );
-            noncanonical.push(name);
+            if manifest_allows_exclusion(Exclusion::Noncanonical, expectation) {
+                manifest_noncanonical.push(name);
+            } else {
+                unexpected_noncanonical.push((name, expectation.cloned()));
+            }
         }
     }
 
-    // Reported together: while the corpus is mid-migration the interesting
-    // number is how many files still fail to derive, and stopping at the first
-    // assertion would hide it.
-    let total = round_tripped.len() + noncanonical.len() + underived.len();
+    // Reported together so one new failure does not hide the rest of the
+    // corpus split. The manifest supplies the exclusions; no filename or
+    // expected count is encoded here.
+    let total = round_tripped.len()
+        + manifest_noncanonical.len()
+        + manifest_underived.len()
+        + unexpected_noncanonical.len()
+        + unexpected_underived.len();
     let report = format!(
-        "{total} corpus files: {} round-tripped, {} deliberately non-canonical, {} did not derive",
+        "{total} corpus files: {} round-tripped, {} manifest-declared non-canonical, {} manifest-declared underived, {} unexpectedly non-canonical, {} unexpectedly underived",
         round_tripped.len(),
-        noncanonical.len(),
-        underived.len(),
+        manifest_noncanonical.len(),
+        manifest_underived.len(),
+        unexpected_noncanonical.len(),
+        unexpected_underived.len(),
     );
     assert!(
-        underived.is_empty(),
-        "{report}\nevery corpus file must derive under the active grammar; these did not: {underived:?}"
+        unexpected_underived.is_empty(),
+        "{report}\na source may fail to derive only when its exact manifest case declares reject; unexpected: {unexpected_underived:?}"
     );
-    assert_eq!(
-        noncanonical, DELIBERATELY_NONCANONICAL,
-        "{report}\nexactly the FORM-2 negative cases may be non-canonical"
+    assert!(
+        unexpected_noncanonical.is_empty(),
+        "{report}\na derived source may be non-canonical only when its exact manifest case declares a FORM-* rejection; unexpected: {unexpected_noncanonical:?}"
     );
     assert_eq!(
         total,
-        corpus_files().len(),
+        files.len(),
         "{report}\nevery corpus file is accounted for"
     );
 }
