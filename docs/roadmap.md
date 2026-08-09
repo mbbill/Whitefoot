@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 22 (ENT-5 acceptance closed; provenance measurement is current)
+Revision: 23 (provenance measurement negative; held rule returns to review)
 
 The active language authority is v0.24 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -204,7 +204,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4 shipped]` `[next: ordered completion before wfgrep]`
+`[current: items 1–4 shipped; stage 5a measured]`
+`[next: owner disposition of the negative prerequisite]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -224,19 +225,28 @@ creating writer trust or weakening the checked safety envelope.
   redundancy advisories. The real boundary path produces its S10 relation; all
   four focused producer-family consumers and the kill control pass, while the
   driver itself honestly has no natural current obligation that consumes it.
-- **Missing / next:** the current rolling step is evidence-only provenance
-  measurement under planned task 0041. It must report the held subject-position
-  rule's actual boundary-fed sites, including the three canonical-Huffman sites
-  and false-positive/false-negative boundaries. The held candidate's material
-  O3 `requires` bypass forbids activation in this slice. The owner selected the
-  remaining direction on 2026-08-09: a counted range loop; a single
-  atomic `requires` goal sufficient to close the provenance candidate's O3 bypass;
-  then provenance activation; proof-feasibility work for the mask and
-  loop-carried facts the real `ensures` examples need; `ensures`; deterministic
-  claim-ledger tooling; and finally a separately designed transitive
-  `deny-claims` marker. Each slice still enters the rolling Current Plan before
-  execution. Wfgrep remains parked until this boundary is complete or a
-  reproduced blocker returns for disposition.
+  Task 0041 then measured the held provenance rule on the four-file
+  boundary-fed DEFLATE unit: 18/33 obligation subjects are external, six prove
+  without S2/S3, and 12 obligations under ten distinct claims would be rejected.
+  The rule catches `order_slot_in_offsets` and `ordered_in_symbols` but launders
+  `destination_in_symbols` through internal RHS values and an internal
+  `offsets` root, so the required canonical result is only 2/3. The same walk
+  records zero formal misclassifications under the drafted whole-root rule,
+  five site-local stored-block precision false positives, and eight
+  noncanonical positive declarations as the broader precision-spill count.
+- **Missing / next:** stage 5a is terminal with a negative prerequisite. The
+  held candidate cannot enter activation review: its own §8 sends the rule back
+  to review, its PRV-2 column does not define how one parameter maps to several
+  protected-obligation diagnostics, and the material O3 `requires` bypass
+  remains open. The current plan authorizes no automatic roll into stage 6 and
+  does not choose the disposition; only a replacement owner-selected plan may
+  sequence later work. The preserved objective remains a counted range loop;
+  a single atomic `requires` goal sufficient to close O3; provenance
+  activation; proof-feasibility work for the mask and loop-carried facts the
+  real `ensures` examples need; `ensures`; deterministic claim-ledger tooling;
+  and a separately designed transitive `deny-claims` marker. Wfgrep remains
+  parked until this boundary is complete or a reproduced blocker returns for
+  disposition.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
