@@ -2,19 +2,21 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
+- **Status:** `IN PROGRESS`
 - **Authority:** the ACTIVE stage-5a plan derived from Direction Outline
   revision 22; owner approval 2026-08-07 (provenance gate advanced in
   priority); and the held candidate
   `governance/spec-evolution/provenance-gate-candidate.md`. This record
   carries forward the measurement half of task 0037, which is PARKED with its
   driver delivered.
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Owner / workspace:** Codex lead /
+  `/Users/bytedance/do_not_scan/wf-0045-final-activation`, branch
+  `codex/0045-ent5-activation`
+- **Base revision:** `e5db43d`
 - **Dependency:** `SATISFIED` by terminal task 0045, activation `f4c7e60`, and
   the canonical post-activation confirmation in
-  `research/investigations/obligation-discharge/ACCEPTANCE.md`. Claiming must
-  still refresh onto the closure commit; satisfaction is not a claim.
+  `research/investigations/obligation-discharge/ACCEPTANCE.md`; this claim is
+  refreshed onto the closure commit.
 
 ## Goal
 
@@ -32,6 +34,15 @@ path, so the decoder's table indices are externally provenanced.
 The deliverable is evidence, not a language change. **A finding that the gate
 does NOT fire on those sites is a successful outcome and must be reported as
 plainly as a finding that it does.**
+
+## Progress
+
+- Completed: v0.24 ENT-5 activation, installed frozen acceptance, and the S10
+  evidence disposition are terminal at `e5db43d`.
+- Current: enumerate and classify every relevant boundary-fed deflate claim
+  subject under the held rule.
+- Next: record the reproducible table, repair costs, limitations, and resulting
+  prerequisite disposition in the canonical probe and outline.
 
 ## Direction, method, and scope
 
@@ -68,8 +79,8 @@ and recover deflate from 5/29 to 11/29 without a proven-site regression.
 1. Completed: ENT-5 activates at `f4c7e60`.
 2. Completed: the frozen acceptance and S10 evidence are confirmed against the
    installed v0.24 authority.
-3. After a separate claim commit, apply the gate rule to the boundary-fed
-   driver's sites and record the result in `PROBE-TAINT.md` and the outline.
+3. Apply the gate rule to the boundary-fed driver's sites and record the result
+   in `PROBE-TAINT.md` and the outline.
 
 Do not reorder these. Step 3 taken before step 2 produces a number with no
 attribution, which is the failure this constraint exists to prevent.
