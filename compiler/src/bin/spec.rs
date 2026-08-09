@@ -273,7 +273,11 @@ mod tests {
                 ACTIVE_KERNEL_SPEC_TEXT,
                 &computed_active_spec_hash().to_string(),
             ),
-            Ok(14)
+            // One link per activation. This literal MUST be bumped by every
+            // activation commit; v0.23's did not, and the failure sat unseen
+            // because two readers each checked one `test result` line and this
+            // crate is not the one they read.
+            Ok(15)
         );
     }
 
