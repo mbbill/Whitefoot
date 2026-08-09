@@ -9,8 +9,9 @@ This is a temporary live coordination record, not execution authority.
   the current ENT-5 goal through restored verification
 - **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`, branch
   `codex/0043-canonical-corpus`
-- **Base revision:** `50e2c35`
-- **Dependency:** v0.23 activation `a01bc70`; independent of terminal task 0042
+- **Base revision:** `ed69ffc`
+- **Dependency:** v0.23 activation `a01bc70`; terminal archive-gate task 0042;
+  refreshed after the replacement plan and task 0044 closed at `ed69ffc`
 
 ## Goal and direction
 
