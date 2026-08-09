@@ -9,11 +9,13 @@ boundary.
 This ACTIVE plan authorizes only the current independently reviewable step
 below. The owner selected the later capability sequence and its stop condition,
 but each later slice must still replace this rolling plan before execution.
-Task 0045 closed the exact-approved v0.24 ENT-5 activation and its installed
-acceptance baseline. This plan explicitly carries planned task 0041 into the
-evidence-only provenance measurement that follows.
+Task 0041 closed the evidence-only provenance measurement with the required
+negative result. Under the owner's 2026-08-09 authorization to revise
+specification designs autonomously while completing this full direction, this
+replacement plan selects one bounded rule-review disposition before the later
+sequence resumes.
 
-Derived from: [Direction Outline revision 22](roadmap.md), items `PROOF-8`
+Derived from: [Direction Outline revision 24](roadmap.md), items `PROOF-8`
 (primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
 flagship but is parked by this owner selection.
 
@@ -23,8 +25,9 @@ Items 1–4 of the dossier's §8 sequence are shipped: the claim construct, the
 normative L0 entailment fragment, caller-side OP-4 index discharge, and the SYS
 count postconditions with ENT-3 S10 fact introduction. v0.24 corrects ENT-5,
 uses the stable active-spec filename, and has an installed frozen acceptance
-baseline. The current milestone is stage 5a: measure the held provenance rule
-against real boundary-fed deflate sites before any attempt to activate it.
+baseline. The current milestone is stage 5a-R: repair only the two defects
+exposed by that measurement, then repeat the same frozen review before any
+attempt to activate the rule.
 
 The selected direction after this measurement is a counted range loop,
 `requires` as a call-site goal, provenance gate closure, `ensures`
@@ -39,53 +42,86 @@ Further wfgrep attribution or implementation is not part of this milestone.
 It resumes only after the complete selected direction is active and verified,
 or after the owner disposes a reproduced blocker that stops the sequence.
 
-## Current step — stage 5a provenance measurement
+## Current step — stage 5a-R provenance rule review
 
 ### Why
 
-The held subject-position rule was designed before the deflate driver carried
-real external provenance, so its first measurement had zero live instances.
-The boundary-fed driver now supplies those instances, and v0.24 removes the
-ENT-5 confounder. Measurement must establish where the rule actually fires and
-what repair it demands before the language can consider it. The candidate's O3
-bypass — moving a gated claim into a callee `requires` — remains material and
-forbids activation in this step.
+The frozen boundary-fed measurement found a narrow direct-dataflow miss rather
+than a need for general taint: `destination = offsets[count_index]` was called
+internal even though the selected value explicitly depends on an external
+subscript offset. It also found that PRV-2 retains only a set of parameter
+positions, so one position cannot identify which of several leaf obligations
+its diagnostic protects. Both defects must be made finite and deterministic
+before the held design can advance. The candidate's O3 bypass — moving a gated
+claim into a callee `requires` — remains material and forbids activation in
+this step.
 
 ### Do
 
-1. After this closure lands, claim planned task 0041 in its own lifecycle
-   commit and refresh it onto the terminal v0.24 acceptance baseline.
-2. Apply the held subject-position rule exactly, by hand or with a disposable
-   scratch probe, to every relevant claim subject on the boundary-fed deflate
-   path. Preserve source order and enough provenance lineage to reproduce each
-   classification.
-3. Report which claims the rule gates, whether the three canonical-Huffman
-   sites are included, every observed false-positive and false-negative
-   boundary, and the honest writer repair cost. A finding that no site fires is
-   a valid result.
-4. Record the measurement in the existing provenance probe evidence and update
-   the outline. Do not edit the specification, compiler, protected corpus, or
-   held candidate, and do not activate the gate.
+1. Register task 0046 directly against the terminal task-0041 measurement.
+2. Revise the held design's place-read rule so a selected value joins the
+   provenance of its storage root and every subscript-offset atom in the
+   resolved place. Fields preserve the accumulated class, and `len(P)` retains
+   its existing internal special case. Do not propagate ordinary branch,
+   match, loop, or write-address implicit flow and do not introduce path- or
+   flow-sensitive storage.
+3. Replace PRV-2's internal-required parameter set with a finite relation from
+   parameter position to a protected leaf identified by its concrete [FN-2]
+   instantiation and exact [ENT-6] obligation occurrence. Define direct and
+   call-composed edges, a finite least fixed point for recursive groups, and a
+   deterministic finite diagnostic witness without putting paths in the
+   lattice.
+4. Repeat the complete frozen 33-obligation/23-claim source walk and the prior
+   boundary-program controls. Record the exact classifications, diagnostic
+   projection, precision spill, and deliberately retained implicit-flow
+   boundary. Update the held research record and canonical probe evidence.
+5. Do not edit `spec/kernel-spec.md`, the compiler, protected corpus, or active
+   identity pins, and do not activate the gate. The old governance candidate is
+   design evidence only; an eventual language candidate edits the stable spec
+   directly under the normal exact-byte workflow.
 
 ### Verify and accept
 
-- Pin the measurement to activation `f4c7e60` and the installed acceptance
-  buckets: UTF-8 22/33, SHA-256 0/9, deflate 11/29, dynamic deflate 11/24.
-- Enumerate the examined sites deterministically and show the boundary origin,
-  constrained subject, current claim or value branch, and gate result for each.
-- Name the three canonical-Huffman sites explicitly and report all positive,
-  negative, ambiguous, and repair-cost findings without favorable filtering.
-- An independent review can reproduce the table from the held rule and frozen
-  sources. Scratch tooling leaves no tracked artifact.
-- The held candidate remains unmodified and unactivated; O3 remains assigned to
-  stage 7 rather than being weakened inside this measurement.
+- Keep activation `f4c7e60`, the four frozen source digests, the 33/23 static
+  denominator, and the installed acceptance buckets unchanged.
+- The revised literal walk includes all three canonical-Huffman sites. Exactly
+  one additional frozen obligation subject, `destination_in_symbols`, becomes
+  external: 19/33 external subjects, six unasserted-state discharges, and 13
+  rejections under 11 claims. Any other obligation-subject change is a finding,
+  not an accepted side effect. The prior 15 claims in the five original
+  boundary-bearing programs still gain no gate.
+- Hostile controls distinguish an external-offset place read from an internal
+  offset, an external root from an internal root, and an external-index table
+  lookup from a branch-laundered literal; nested places join every offset and
+  `len(P)` stays internal. A write-only external address with an internal RHS
+  leaves the root internal and remains an explicit implicit-flow limitation:
+  after a guarded `set a[external_i] = 1`, `a[0]` and a claim it supports stay
+  internal/legal even though an environment choice can make that claim fire.
+- Enumerate every binding, root, result-column, and write-column change outside
+  the 33 subjects. In particular, `build_huffman_table` gains a result
+  dependency on `lengths`, `decode_table_symbol` carries the external selected-
+  offset lineage in its result, and no write-column dependency appears without
+  a written propagation edge.
+- Every PRV-2 protected parameter/obligation pair has the concrete-instance and
+  source-walk occurrence identity above. Direct, multiple-leaf, ordinary-call,
+  recursive, and mutually recursive cases reach one order-independent least
+  fixed point for all three columns. After convergence, one argument forms one
+  event whose simple witness minimizes call boundaries, then orders ties by
+  complete call/argument
+  node paths, leaf node path, and concrete identity; visited relation states
+  make reconstruction terminate. The callee witness joins the caller's PRV-1
+  predecessor chain at the call boundary.
+- Independent review reproduces the classifications and relation from the
+  written rules. Scratch tooling leaves no tracked artifact. O3 remains assigned
+  to stage 7 rather than being weakened here.
 
 ### Accept and stop
 
-This plan is terminal when task 0041 records the complete reproducible
-measurement and the outline states its result. A positive prerequisite result
-permits a replacement plan for stage 6; a negative or inconclusive result
-returns for owner disposition. Neither outcome activates the provenance gate.
+This plan is terminal when task 0046 records a complete reproducible revised
+measurement and the outline states whether the two measured defects are
+closed. A positive result permits a replacement plan for stage 6 while the
+revised provenance design remains held behind stage 7/O3. A negative result is
+a reproduced blocker for disposition. Neither outcome activates the gate.
 
 ## Owner-selected roll-forward — dependency map, not execution authority
 
@@ -123,9 +159,10 @@ synthesized adapter.
 
 Only after 5a supplies positive measurement and stage 7 closes the `requires`
 bypass may a replacement plan propose provenance propagation and the signature
-column. A boundary-originated constrained subject then must be handled by a
-value branch rather than hidden in an aborting claim. Calls and adapters must
-preserve the policy through one ordinary semantic path.
+column. A constrained subject classified external by that explicit-dataflow
+policy then must be handled by a value branch rather than hidden in an aborting
+claim. Calls and adapters must preserve the policy through one ordinary
+semantic path.
 
 ### 8a — postcondition proof-feasibility prerequisites
 

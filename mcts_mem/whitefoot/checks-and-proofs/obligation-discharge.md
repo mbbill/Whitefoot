@@ -1,7 +1,7 @@
 - Every partial operation carries a proof obligation; an index obligation is either discharged at its use site from facts a deterministic no-search entailment fragment derives, carried by an explicit writer-stated claim, or the program is rejected.
 - The entailment fragment is normative specification text rather than an optimizer pass: its fact sources, closure, kill rules, and joins fix source acceptance and are versioned with the language (ENT-1).
 - An undischarged obligation is a compile-time rejection whose diagnostic prints the exact residual obligation and the mechanical repair.
-- A claim is a named, justification-bearing runtime check and the only writer-reachable trap source; its passing predicate is available to dominated code, and its violation aborts with a report carrying the claim name.
+- For obligation families migrated to discharge, a claim is the named, justification-bearing runtime backstop; ordinary explicit checks and bare trapping arithmetic remain separate writer-reachable trap sources.
 - A claim the fragment already proves is a non-rejecting advisory; a claim the fragment refutes is a hard error.
 - A discharged index compiles with no runtime bounds branch in any build mode and contributes no `traps` to its effect row.
 - The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
@@ -21,6 +21,7 @@
 - 2026-08-08 (5188548f) measurement: operand signedness is not the discriminator for arithmetic discharge, though it had been assumed to be the one that mattered — 45 signed against 44 unsigned live trapping sites, and neither group's overflow goal is expressible. (code)
 - 2026-08-08 measurement correcting the entry above: an overflow goal is expressible in the existing fragment whenever one operand is a literal, because the goal folds into a plain difference bound on the other operand against a checker-computed constant, which is the shape the fragment's own constant normalization already fixes; two thirds of live trapping sites are that shape, and the loop-counter case discharges by the same transitive closure the index obligation uses. Only sites with two non-constant operands need a term form the fragment lacks, and those are accumulator patterns whose operands nothing in the program bounds, so no closure rule would prove them either. The earlier entry read the goal as though both operands were always variable. (code)
 - 2026-08-08 (5188548f) measurement: the real programs have already chosen wrapping over trapping arithmetic without being asked to — 228 wrapping against 30 trapping sites in the experiment programs and 214 against 4 in the test programs — so about two thirds of the live trapping sites are conformance cases, and dissolving the trapping arithmetic modes buys real programs almost nothing operationally. (code)
+- 2026-08-09 (5998b879) measurement: the held provenance gate reached only two of its three canonical DEFLATE subjects because a place read ignored its external subscript offset, and its parameter-only internal-required column could not identify which of several leaf obligations a call diagnostic protected. (sourced)
 
 ## Moves
 
