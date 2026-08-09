@@ -4,12 +4,13 @@ This is a temporary live coordination record, not execution authority.
 
 - **Status:** `IN PROGRESS`
 - **Authority:** lead rulings of 2026-08-09 in `governance/APPROVALS.md`
-  (the archive gate resolves by line type; O11 comes out of this activation;
-  condition 8 and the grandfathering of v0.23), over the owner-approved
+  (the corrected archive gate resolves from stable-file existence and its own
+  version token; O11 comes out of this activation; condition 8 and the
+  grandfathering of v0.23), over the owner-approved
   `governance/spec-evolution/stable-spec-filename-proposal.md`
-- **Owner / workspace:** exec-uninfix / `/Users/bytedance/do_not_scan/wf-uninfix`,
-  branch `task/0043-ent5-recut`
-- **Base revision:** `bfc78ec`
+- **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`,
+  branch `codex/0042-ent5-gate`
+- **Base revision:** `5a3ced2`
 - **Dependency:** v0.23 activation (0040) terminal
 
 Registered before substantial work because this slice was briefly claimed by
@@ -21,9 +22,10 @@ absence is what allowed it.
 Steps 1 to 3 only. **The activation is not in this task.**
 
 1. `spec-archive-integrity` learns the stable-file model, on the current
-   model, its own commit, green. — **BLOCKED**, see below. Nothing written.
+   model, its own commit, green. — **IN PROGRESS** under the corrected ruling
+   at `5f729d8`.
 2. Re-cut `governance/spec-evolution/ent5-loop-fix-v024-candidate.md` against
-   v0.23 — non-authoritative, its own commit. — **DONE**, `7dccee7`.
+   v0.23 — non-authoritative, its own commit. — **DONE**, landed as `7009434`.
 3. Re-verify the anchor after those edits and report the digest. The lead
    recomputes it and takes it to the owner. — **DONE**; digest reported.
 
@@ -61,7 +63,13 @@ O11 does not ride this activation (ruled at `cea70f2`). It is unapproved,
 flips a declared conformance verdict, and touches CLM-2 as well as ENT-3;
 the findings are recorded for whoever drafts it.
 
-## Step 1 is blocked, and the blocker is a governance collision
+## Step 1 ruling and implementation state
+
+The original line-prefix discriminator was unsatisfiable and is retained below
+as diagnosis, not as the live direction. The lead corrected the ruling at
+`5f729d8`: file existence selects the current layout, and a present stable file
+names its own recorded version. The gate implementation and its two-direction
+mutation proof are the only remaining work in this task.
 
 **The ruled discriminator assumes a ledger shape the ledger does not have.**
 Measured on `bfc78ec`: `governance/APPROVALS.md` carries **15
@@ -110,8 +118,7 @@ Zero still means the activation forgot to install the stable file and two
 still means it forgot to archive the outgoing one, which is the whole reason
 the assertion exists. Nothing depends on which line is last.
 
-**Awaiting the lead's ruling. No ledger line will be written to make a gate
-green.**
+**Resolved by `5f729d8`. No ledger line will be written to make a gate green.**
 
 ## Step 2 note — one judgment call outside the listed changes
 
