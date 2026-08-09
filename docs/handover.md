@@ -151,6 +151,119 @@ rule** — arithmetic is infix, comparison is a call — and made the delta *sma
 (64 → 62 modification sites), because two replacements became byte-identical to
 v0.22 and stopped being modifications at all.
 
+## 4b. How the language actually changes, and the file-model change in flight
+
+This is the process everything above runs through, so it is worth stating even
+though `docs/WORKFLOW.md` is its authority.
+
+**A language change today.** Copy the active specification to a candidate under
+`governance/spec-evolution/`, apply the smallest complete change, verify the new
+grammar with the **native verifier that reuses the compiler's own lexer and
+parser** (not a hand-written grammar model — that distinction is the whole point
+of it), bring every derived artifact to the change in the same work (conformance
+cases and verdicts, the lexer/parser, generated syntax tables, tests, docs), then
+take the **owner's byte-exact approval of a digest**, then activate in one commit.
+The `ACTIVE-SPEC:` line appended at activation is an **owner approval record** —
+writing one to make a gate green is forbidden, and that prohibition is the only
+thing standing between the chain and being decorative.
+
+Released `spec/kernel-spec-v*.md` files are **append-only, hook-enforced**
+(`make install-hooks`). A released specification is never edited, renamed, or
+deleted. Amending the language is normal; it goes into a *new* version file.
+
+### The rename: what it changes and why
+
+**Approved 2026-08-07, not yet switched over.** The active specification moves to
+one stable path, **`spec/kernel-spec.md`**. A language change edits that file
+directly on a task branch. At activation, in one commit, the superseded bytes are
+archived under their versioned name `spec/kernel-spec-vN.md` — **flat, beside the
+others, never in a subdirectory** — and the version line inside the stable file
+is bumped. Candidate files cease to exist; review becomes `git diff`.
+
+**Why, in the order the reasons actually weigh:**
+
+- **It structurally eliminates the stale path-pin class.** A pinned path plus a
+  pinned digest stay mutually consistent forever when the target is immutable —
+  which is exactly how the conformance runner's pin sat at v0.20 through **two
+  activations** while its own digest check passed. Under one stable path a stale
+  digest raises instead of agreeing.
+- **`git log -L` and `git blame` work across versions for the first time**, at
+  paragraph granularity. Today line history cannot cross a version boundary.
+- **The hand-assembly failure class disappears** — the 57-anchor scratch-script
+  assembly recorded in `docs/ongoing/0036` has no analogue once the file is
+  edited in place.
+
+**Two claims that were refuted and must not be repeated as justification.**
+`git diff` does **not** subsume a rule-partitioning review tool: measured,
+line-start attribution catches 11 of 20 changed rules, and `xfuncname` hunk
+headers name the **wrong rule 52% of the time**, always the preceding one — that
+tool still has to be built. And "there is no diff today" is overstated;
+`git show --stat -C --find-copies-harder` already renders a version step as a
+rename plus diff. The defensible claims are that it is not automatic and that
+line history cannot cross a version boundary.
+
+**Eight conditions of adoption**, all mandatory, from the adversarial review:
+flat archive; computed digest; chained `ACTIVE-SPEC:` record; landed-state
+archive-integrity gate in `make check`; two-path grammar verifier; linear
+activation only (**`-X ours`/`-X theirs` forbidden on the specification** — it was
+measured silently dropping an owner-approved rule change with both proposed gates
+green); archive-creates-or-fails; and the status word inside the approved bytes.
+
+Most are already in place and were exercised this session rather than taken from
+a closure note. **Condition 2 carries a ruled deviation**: the literal const-fn
+digest costs ~12s of constant evaluation *per crate* (compiler gate 40s → 87s),
+so the shipped form computes the digest from the embedded bytes at runtime and
+gate-checks it against the recorded constant. Adoption should **re-affirm or
+close that deviation explicitly rather than inherit it silently**.
+
+**Residue, stated plainly because it is real.** The active specification becomes
+mutable by design, so "alter approved bytes" and "activate a new version" become
+the same filesystem operation, and the filename discriminator that separated them
+is gone. Protection moves entirely into digest bookkeeping — the class this
+project has failed at repeatedly. Conditions 2, 3 and 4 are what compensate;
+nothing else does.
+
+### Where the switchover stands, and the one thing that blocked it
+
+It rides **the ENT-5 activation**, deliberately: pairing a file-model change with
+a 34-rule EBNF-changing corpus-migrating activation was rejected, so v0.23
+activated the old way and ENT-5 — prose-only, no EBNF change — carries it. A
+small first exercise of the new model is also the point: pairing would have made
+the first stable-file activation the first one nobody had rehearsed.
+
+**One gap the approved proposal does not mention, found in orientation and still
+open.** `spec-archive-integrity` walks every recorded specification line and
+requires `spec/kernel-spec-<version>.md` to exist and hash to it. Under the stable
+model the active version's bytes live at `spec/kernel-spec.md`, so the gate looks
+for a versioned file that does not exist and reds the activation commit.
+
+**The lead's first ruling on this was wrong and is recorded as such**: it keyed
+the resolution on line prefixes — `ARCHIVE-SPEC:` means versioned path,
+`ACTIVE-SPEC:`-only means stable path. Measured, the ledger carries **15
+`ACTIVE-SPEC:` lines and 9 `ARCHIVE-SPEC:` lines over disjoint version sets**, and
+the prefixes mark **provenance, not location**: `ACTIVE-SPEC:` is the approved
+activation chain ("this version *was activated*"), `ARCHIVE-SPEC:` is an
+after-the-fact measurement of pre-chain specs that never had exact-byte approval.
+So fifteen versions lack an ARCHIVE line, no back-fill satisfies the shape in
+either direction, and the ruling would have made one prefix mean two unrelated
+things.
+
+**The corrected shape**, and it is what to implement: condition the assertion on
+the stable file's existence, and take the discriminator from **the stable file's
+own version token** rather than from a line prefix.
+
+- `spec/kernel-spec.md` **absent** → every recorded version must have
+  `spec/kernel-spec-<version>.md`. That is 24 versions today and is exactly the
+  check already running, so it is correct and non-vacuous now.
+- `spec/kernel-spec.md` **present** → **exactly one** recorded version lacks a
+  versioned file; the stable file's first-line version token must name that
+  version; and it must hash to that version's recorded digest.
+
+Zero still means the stable file was never installed; two means an archive was
+forgotten; nothing depends on which line is last. **Build it first, in its own
+commit, and prove it reds in both directions** — a gate that has never failed is
+decorative.
+
 ## 5. What is on `main` right now, honestly
 
 `make check` **exits 2**, with two failures, both diagnosed:
