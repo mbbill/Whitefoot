@@ -39,12 +39,10 @@ impl fmt::Display for SpecHash {
 pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.23";
 
 /// Repository-relative path of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_PATH: &str =
-    "governance/spec-evolution/kernel-spec-v0.23-candidate.md";
+pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.23.md";
 
 /// Exact UTF-8 text of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_TEXT: &str =
-    include_str!("../../governance/spec-evolution/kernel-spec-v0.23-candidate.md");
+pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.23.md");
 
 /// Exact bytes of the active immutable kernel specification.
 pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
@@ -80,14 +78,20 @@ mod tests {
         computed_active_spec_hash,
     };
 
-    /// The literal is the `shasum -a 256` value the owner approved for v0.22 in
+    /// The literal is the `shasum -a 256` value the owner approved for v0.23 in
     /// `governance/APPROVALS.md`, so a wrong SHA-256 implementation fails here
     /// instead of agreeing with itself.
+    ///
+    /// It is transcribed FROM the ledger, never from what this code computes.
+    /// That direction is the whole test: the ledger entry is written when the
+    /// owner approves, and this literal follows it at activation. Updating it
+    /// to match a computed value would delete the only independent check that
+    /// the embedded bytes are the approved ones.
     #[test]
     fn computed_identity_is_the_approved_digest() {
         assert_eq!(
             computed_active_spec_hash().to_string(),
-            "b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8"
+            "e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5"
         );
     }
 

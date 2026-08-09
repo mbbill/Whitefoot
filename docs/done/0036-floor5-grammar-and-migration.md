@@ -2,15 +2,16 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `WAITING` — 2026-08-07 round 6. The candidate is re-assembled
-  from the corrected 64-site delta at SHA-256
-  `a92b45138c82c3d19dc2f0bfdfe2d04b5571ccc898d6427c9661bf0903b2918e`, the
-  tables are derived from it and machine-checked, the terminal inventory is
-  76 -> 97, and the identity pins name the candidate path. The grammar path is
-  complete. Both gates are RED at the predicted corpus boundary; every failure
-  is classified below, and the three that are **not** 0038's are the
-  activation-gated spec-identity checks the lead has ruled are correct to be
-  red on an unapproved specification. See "Definition of done for this branch".
+- **Status:** `DONE` — closed by the v0.23 activation on 2026-08-09. The
+  approved bytes are installed at `spec/kernel-spec-v0.23.md`, SHA-256
+  `e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`, and
+  every derived artifact was brought to them in the same commit. Two gate
+  failures survive the activation and neither is this record's: the
+  `RegionsAndBorrows` capability gap in `general_borrows_…`, and
+  `own3-pos-outlives-store`, the A3 counterexample the approved bytes name as
+  a removed expressible form. The rounds below are frozen coordination
+  history, not authority, and the live status they describe is superseded by
+  this line.
 - **Authority:** owner approval 2026-08-07 (`governance/APPROVALS.md`); the
   candidate `governance/spec-evolution/spelling-relief-candidate.md`; the lead's
   2026-08-07 rulings on this task's round-1 blocker report, which re-key FN-4's

@@ -315,6 +315,47 @@ ACTIVE-SPEC: v0.19 01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5
 ACTIVE-SPEC: v0.20 b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1 01fb10d2d61cc87cce72cc98071eda98c7411fdc95af4ef29b79ac9a49cb5398
 ACTIVE-SPEC: v0.21 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1
 ACTIVE-SPEC: v0.22 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f
+ACTIVE-SPEC: v0.23 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8
+
+## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
+- owner: **the owner's exact-byte approval of the digest below.** It was taken
+  by the lead and relayed to this executor for installation; this executor did
+  not witness it and records it as reported, which is stated so the trail shows
+  where the approval entered rather than implying a second witness. The entry
+  immediately above warned that approval must not be inferred from it — this is
+  the entry it was waiting for.
+- APPROVED BYTES:
+  `e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`, verified
+  by this executor with `shasum -a 256` against
+  `governance/spec-evolution/kernel-spec-v0.23-candidate.md` before anything was
+  installed, and again against the installed `spec/kernel-spec-v0.23.md`, with
+  `cmp` reporting the two files byte-identical. Approval covers exactly those
+  bytes; a changed byte returns to review.
+- SCOPE: numbered rules +0/-0; thirty-four existing rules modified at sixty-two
+  verbatim-anchored sites; grammar productions 65 + 4 = 69; sixteen operator
+  terminal spellings; the accepted-program set changing as one canonical
+  respelling, three deliberate narrowings, and one expressible form removed
+  whose effect on the accepted set is not established.
+- INSTALLED AT THE VERSIONED PATH, deliberately. `spec/kernel-spec-v0.23.md`,
+  not the stable filename. The approved stable-filename proposal's §5 sequences
+  that switchover onto the first activation with NO EBNF change, which is the
+  ENT-5 loop-rule fix, never this one.
+- THE CHAINED LINE BELOW IS AN OWNER APPROVAL RECORD. It is written because the
+  owner approved and for no other reason; writing one to make a gate green is
+  forbidden, and the two activation-gated tests were red before this commit
+  precisely so that nothing else could close them.
+- STANDING ACTIVATION ITEM, not a v0.23 finding: the three guards at
+  `compiler/src/backend/qualification.rs` hard-code the active version string.
+  They read `!= "v0.23"` and therefore pass here — verified by reading all
+  three, not assumed — but every future activation must repoint them. They fail
+  CLOSED when stale, so a missed update loses qualification silently rather
+  than loudly, which is why it has recurred at every bump since v0.19.
+- boundary: one specification file installed, the pins that name it, the
+  regenerated grammar tables, the roadmap's authority line and revision, and
+  this ledger. No conformance case, no manifest row, no compiler behaviour.
+- evidence: the digest recomputed from the file rather than copied from any
+  report; `cmp` on the installed bytes; the gate figures in the activation
+  commit message, with failure sets by name.
 
 ## Pre-approval specification digests, as found
 

@@ -2,18 +2,17 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `IN PROGRESS` — 2026-08-08, rounds 9 through 14. Rounds 13 and 14
-  are M3c on `task/0038-m3c-inline-fixtures`, awaiting integration: the inline
-  fixtures are migrated, `slice_of` no longer demands the arguments A1 deletes,
-  and the six ruled residuals are carried out. The library gate is **568 passed
-  / 7 failed**, from 319 / 253 at M3c's base, and the adapter is **383 / 5 /
-  14**, with nothing newly failing at any step. `slice_of` cleared both
-  `fn1-pos-returned-slice-*-run` as well, confirming the shared root by
-  measurement. Of the seven remaining, two are activation-gated and five are
-  owned elsewhere — see "Round 14"'s closing table. One new finding:
-  `slice_of_keeps_nonflat_element_arguments_in_the_op1_domain` has no v0.23
-  expression, with four probes and their controls recorded.
-- **Status (rounds 9–12):** Round 9's blocker is **closed**: the
+- **Status:** `DONE` — closed by the v0.23 activation on 2026-08-09. The
+  approved bytes are installed at `spec/kernel-spec-v0.23.md`, SHA-256
+  `e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`, and
+  every derived artifact was brought to them in the same commit. Two gate
+  failures survive the activation and neither is this record's: the
+  `RegionsAndBorrows` capability gap in `general_borrows_…`, and
+  `own3-pos-outlives-store`, the A3 counterexample the approved bytes name as
+  a removed expressible form. The rounds below are frozen coordination
+  history, not authority, and the live status they describe is superseded by
+  this line.
+- **Historical status at the time of writing (rounds 9–12):** Round 9's blocker is **closed**: the
   requires-block `let` has a legal v0.23 form again, the same pass admits the
   infix spelling [FN-8] requires (`8838150`, `8ccd4d8`, `7e80d92`), and round
   10's copy-gate finding is **closed** by judging [FN-8]'s "own copy value" on

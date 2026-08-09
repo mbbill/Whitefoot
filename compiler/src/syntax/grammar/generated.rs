@@ -1,4 +1,4 @@
-// Generated from the grammar in governance/spec-evolution/kernel-spec-v0.23-candidate.md.
+// Generated from the grammar in spec/kernel-spec-v0.23.md.
 use crate::syntax::grammar::{
     Decision, DecisionContext, DecisionKind, GrammarNode, GrammarNodeId, GrammarNodeKind,
     LookaheadPredicate, NamePredicate, RuleOwner, SelectAtom, SelectRow,
