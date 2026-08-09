@@ -2,11 +2,12 @@
 
 This is a temporary live coordination record, not execution authority.
 
-- **Status:** `PLANNED` (unclaimed)
-- **Authority:** the owner's byte-exact approval of the v0.23 candidate,
-  which does not yet exist and is a precondition of this task
-- **Owner / workspace:** unclaimed / filled at claim
-- **Base revision:** filled at claim
+- **Status:** `IN PROGRESS`
+- **Authority:** the owner's byte-exact approval of the v0.23 candidate at
+  SHA-256 `e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`
+- **Owner / workspace:** exec-uninfix / `/Users/bytedance/do_not_scan/wf-uninfix`,
+  branch `task/0040-v023-activation`
+- **Base revision:** `4474f7c7`
 - **Dependency:** FLOOR-5's M3b, M3c and M4 terminal; owner approval
 
 ## Goal
