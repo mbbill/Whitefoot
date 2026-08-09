@@ -701,10 +701,13 @@ fn general_borrows_keep_their_escape_read_and_exclusivity_rejections() {
         SemanticRule::Own10,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
-    // [OWN-4]: a borrow narrowed to an inner region cannot be returned as the
-    // caller's region.
+    // [OWN-4]: a borrow taken in an inner region cannot be returned as the
+    // caller's region. The witness must be in return position. Writing it as
+    // `let q = &'s deref(x); return q;` rejects OWN-14 instead, because
+    // [OWN-6] admits a reborrow only as a call-argument atom — a plausible
+    // simplification that would silently retarget this case.
     assert_rule(
-        b"fn leak['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    let q = x;\n    return q;\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
+        b"fn leak['r0](x: &'r0 i32) -> &'r0 i32 pure {\n  region 's {\n    return &'s deref(x);\n  }\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
         SemanticRule::Own4,
         SemanticIssueKind::InvalidBorrowLifetime,
     );
