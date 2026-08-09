@@ -56,3 +56,46 @@ The stable-filename switchover (`spec/kernel-spec.md`) is approved but
 rides the NEXT small activation — the ENT-5 loop-rule fix — never this
 one, which is a large EBNF-changing batch. See `governance/APPROVALS.md`
 2026-08-07 and `governance/spec-evolution/stable-spec-filename-proposal.md`.
+
+## Ready state (lead, 2026-08-09) — everything below is verified, not assumed
+
+**The approved bytes.** The candidate is final and its digest was recomputed by
+the lead on `main` rather than copied from any report:
+
+```
+shasum -a 256 governance/spec-evolution/kernel-spec-v0.23-candidate.md
+e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5
+```
+
+Three pins already agree with it — `compiler/src/spec.rs` (as a byte array,
+which a hex grep does not see; decode it to compare), `spec/derivation/
+derivation-ledger.md`, and `tests/conformance/runner.py`. Four independent
+derivations, one value.
+
+**The landmine is defused for this activation and WILL RECUR at the next one.**
+The three guards at `compiler/src/backend/qualification.rs:762,804,862` now read
+`ACTIVE_KERNEL_SPEC_VERSION != "v0.23"`, so they pass here — but they hard-code
+the version string, so **every future activation must update them or they fail
+closed silently**. They are safe rather than unsound when stale (the guarded
+path bails), which is exactly why nobody notices. Treat this as a standing
+activation checklist item, not a v0.23 finding: the ENT-5 activation will meet
+it again at v0.24.
+
+**Gate state entering activation**, measured on `main`: lib 572 passed / 3
+failed, of which **two are the activation-gated `spec::tests` that this commit
+closes**; the third is `semantic::tests::borrows::general_borrows_…`, a
+pre-existing `RegionsAndBorrows` capability gap. Conformance adapter 389 / 1 /
+13, the single failure being `own3-pos-outlives-store` — the A3 counterexample
+the approved bytes now name as a removed expressible form. Coverage 128/128.
+
+**What the activation commit does**, from the approved stable-filename
+proposal's §5, which sequences this activation the OLD way deliberately: install
+the approved bytes at `spec/kernel-spec-v0.23.md` (versioned, because a 34-rule
+EBNF-changing corpus-migrating activation must not be paired with a file-model
+change); append the exact-byte approval entry and the `ACTIVE-SPEC:` chained
+line; repoint the roadmap's authority line and revision; regenerate the grammar
+tables, whose header embeds the source basename. **The `ACTIVE-SPEC:` line is an
+owner approval record — writing one to make a gate green is forbidden.**
+
+The stable-filename switchover does NOT ride this activation. It rides the first
+activation with no EBNF change, which is the approved ENT-5 loop-rule fix.
