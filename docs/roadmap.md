@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 24 (bounded provenance rule review selected after negative measurement)
+Revision: 25 (provenance rule review positive; counted range loop current)
 
 The active language authority is v0.24 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -204,8 +204,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4 shipped; stage 5a measured negative]`
-`[next: bounded explicit-dataflow and diagnostic-relation review]`
+`[current: items 1–4 shipped; provenance design reviewed and held]`
+`[next: counted u64 range loop]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -234,17 +234,26 @@ creating writer trust or weakening the checked safety envelope.
   records zero formal misclassifications under the drafted whole-root rule,
   five site-local stored-block precision false positives, and eight
   noncanonical positive declarations as the broader precision-spill count.
-- **Missing / next:** stage 5a is terminal with a negative prerequisite. Under
-  the owner's 2026-08-09 autonomous-specification authorization, the replacement
-  Current Plan selects one bounded review: place reads add their explicit
-  subscript-offset dependencies without adding control-flow taint, and PRV-2's
-  internal-required set becomes a finite parameter-to-leaf-obligation relation
-  with deterministic diagnostics. The same frozen 33/23 unit and original
-  boundary programs must be remeasured before the design may leave review.
-  This is research/design evidence only: the active specification, compiler,
-  and protected corpus remain unchanged, and the material O3 `requires` bypass
-  still blocks activation. The preserved objective remains a counted range loop;
-  a single atomic `requires` goal sufficient to close O3; provenance
+  Task 0046 repaired the held design without adding implicit-flow analysis:
+  a place read now joins every explicit subscript offset, and PRV-2 relates a
+  finite parameter datum to a concrete protected leaf with a terminating,
+  deterministic witness. The frozen rewalk becomes 19/33 external subjects,
+  six unasserted-state discharges, 13 rejected obligation nodes under eleven
+  claims, and 14 internal subjects; the canonical result is 3/3 and the prior
+  fifteen boundary-program claims remain ungated. The diagnostic projection is
+  fourteen rejecting calls and 24 external actual atoms. Direct enum payload
+  projections preserve success/error provenance while nested payloads expand
+  conservatively one level. The rule remains held design evidence: its explicit
+  write-address/control-flow limitation is recorded and O3 still blocks
+  activation.
+- **Missing / next:** the replacement Current Plan selects the counted `u64`
+  half-open range loop that the writer probe and SHA-256 claim family earned.
+  Its structural endpoint and loop-variable bounds must enter L0 without
+  general induction, its lowering must preserve single endpoint evaluation,
+  cleanup, labelled control flow, and the `u64::MAX` boundary, and the real
+  SHA-256 program must discharge all nine index obligations without its four
+  loop claims. After that, the preserved objective remains a single atomic
+  `requires` goal sufficient to close O3; provenance
   activation; proof-feasibility work for the mask and loop-carried facts the
   real `ensures` examples need; `ensures`; deterministic claim-ledger tooling;
   and a separately designed transitive `deny-claims` marker. Wfgrep remains

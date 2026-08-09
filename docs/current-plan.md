@@ -9,13 +9,12 @@ boundary.
 This ACTIVE plan authorizes only the current independently reviewable step
 below. The owner selected the later capability sequence and its stop condition,
 but each later slice must still replace this rolling plan before execution.
-Task 0041 closed the evidence-only provenance measurement with the required
-negative result. Under the owner's 2026-08-09 authorization to revise
-specification designs autonomously while completing this full direction, this
-replacement plan selects one bounded rule-review disposition before the later
-sequence resumes.
+Task 0046 closed the bounded provenance review positively after task 0041's
+negative measurement. The revised rule remains held behind stage 7 and O3;
+this replacement plan resumes the owner-selected sequence with the smallest
+counted range loop earned by the SHA-256 and writer evidence.
 
-Derived from: [Direction Outline revision 24](roadmap.md), items `PROOF-8`
+Derived from: [Direction Outline revision 25](roadmap.md), items `PROOF-8`
 (primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
 flagship but is parked by this owner selection.
 
@@ -25,9 +24,11 @@ Items 1–4 of the dossier's §8 sequence are shipped: the claim construct, the
 normative L0 entailment fragment, caller-side OP-4 index discharge, and the SYS
 count postconditions with ENT-3 S10 fact introduction. v0.24 corrects ENT-5,
 uses the stable active-spec filename, and has an installed frozen acceptance
-baseline. The current milestone is stage 5a-R: repair only the two defects
-exposed by that measurement, then repeat the same frozen review before any
-attempt to activate the rule.
+baseline. Stage 5a-R now has a positive held design: all three canonical
+provenance sites are classified, the finite call relation retains its concrete
+leaf, and the material `requires` bypass still prevents activation. The current
+milestone is stage 6: add one structural counted `u64` range whose bounds enter
+L0 without general loop induction.
 
 The selected direction after this measurement is a counted range loop,
 `requires` as a call-site goal, provenance gate closure, `ensures`
@@ -42,86 +43,159 @@ Further wfgrep attribution or implementation is not part of this milestone.
 It resumes only after the complete selected direction is active and verified,
 or after the owner disposes a reproduced blocker that stops the sequence.
 
-## Current step — stage 5a-R provenance rule review
+## Current step — stage 6 counted `u64` range loop
 
 ### Why
 
-The frozen boundary-fed measurement found a narrow direct-dataflow miss rather
-than a need for general taint: `destination = offsets[count_index]` was called
-internal even though the selected value explicitly depends on an external
-subscript offset. It also found that PRV-2 retains only a set of parameter
-positions, so one position cannot identify which of several leaf obligations
-its diagnostic protects. Both defects must be made finite and deterministic
-before the held design can advance. The candidate's O3 bypass — moving a gated
-claim into a callee `requires` — remains material and forbids activation in
-this step.
+The installed SHA-256 program has nine index obligations and proves none
+without four loop claims. All nine occur in unit-stride ascending walks whose
+body needs only the structural statement that its loop value lies in one
+half-open range. Three of four hostile writer probes independently chose the
+same `for i in a..b` shape. A counted range can therefore remove the dominant
+claim family without adding general induction, a widening interval engine, or
+another arithmetic term language.
 
 ### Do
 
-1. Register task 0046 directly against the terminal task-0041 measurement.
-2. Revise the held design's place-read rule so a selected value joins the
-   provenance of its storage root and every subscript-offset atom in the
-   resolved place. Fields preserve the accumulated class, and `len(P)` retains
-   its existing internal special case. Do not propagate ordinary branch,
-   match, loop, or write-address implicit flow and do not introduce path- or
-   flow-sensitive storage.
-3. Replace PRV-2's internal-required parameter set with a finite relation from
-   parameter position to a protected leaf identified by its concrete [FN-2]
-   instantiation and exact [ENT-6] obligation occurrence. Define direct and
-   call-composed edges, a finite least fixed point for recursive groups, and a
-   deterministic finite diagnostic witness without putting paths in the
-   lattice.
-4. Repeat the complete frozen 33-obligation/23-claim source walk and the prior
-   boundary-program controls. Record the exact classifications, diagnostic
-   projection, precision spill, and deliberately retained implicit-flow
-   boundary. Update the held research record and canonical probe evidence.
-5. Do not edit `spec/kernel-spec.md`, the compiler, protected corpus, or active
-   identity pins, and do not activate the gate. The old governance candidate is
-   design evidence only; an eventual language candidate edits the stable spec
-   directly under the normal exact-byte workflow.
+1. Register task 0047 from the terminal task-0046 closure before substantive
+   work. Consult the live proof and surface-form design nodes and their real
+   alternatives; ordinary `loop @l` remains available and unchanged.
+2. Add exactly one counted form, canonically
+   `for @label i in lower..upper { ... }`. Both endpoints are `own u64` atoms,
+   each restricted to an [ENT-2] term or constant and evaluated once from left
+   to right into compiler-owned immutable captures. A subscripted or otherwise
+   non-term endpoint must first be rebound through an ordinary checked `let`.
+   Add `..` as one fixed compound terminal with attached canonical rendering.
+   A digit-started numeric candidate stops before `..`; one dot retains its
+   existing float/member behavior. Thus `0_u64..1_u64` partitions as literal,
+   range terminal, literal rather than one NumberForm, with hostile seam tests
+   fixing that maximal-munch boundary. `for` and `in` become fixed lowercase
+   terminals and therefore leave [FORM-3] identifier eligibility. Inventory
+   declaration and use positions across the protected corpus, real programs,
+   and live experiments, record the exact accepted-program narrowing, and do
+   not silently migrate a collision; the expected zero-site result is a
+   measured acceptance condition rather than an assumption.
+   The form is ascending, unit-stride, and half-open; `lower >= upper` executes
+   zero iterations. There is no descending range, step, iterator protocol, or
+   `continue` in this slice.
+3. Make `i` a compiler-updated immutable `own u64` binding visible only in the
+   body. It is not a writable root: source cannot `set` it, form a unique borrow
+   of it, or pass any projection of it to a callee write. Shared reads and
+   borrows retain their ordinary rules. Because the body may execute more than
+   once, it inherits both [OWN-11] repeated-body restrictions: it cannot move an
+   affine binding declared outside the counted loop, and any borrow expression
+   inside it must name a region declared inside that body. This extends the
+   existing judgment to the new production without weakening ordinary loops.
+   The mandatory label participates in the existing label domain and
+   `break @label` rules. A normal body fallthrough advances once; a matching or
+   enclosing `break`, `return`, or `propagate` error edge does not. Body-local
+   cleanup and nested labelled exits use the existing edge-carried release
+   path. On normal fallthrough, body-scope
+   teardown and reverse-order cleanup finish before the hidden increment and
+   backedge. A matching or enclosing break, return, and propagated error each
+   perform their owning cleanup exactly once, while guard-false exhaustion
+   performs no second body cleanup. In particular, a body-local shared borrow
+   of `i` ends before the next hidden update. The hidden increment is defined
+   only after `i < upper`, so `upper = u64::MAX` never wraps or adds a
+   writer-visible trap.
+4. Extend L0 only with finite compiler-owned endpoint-capture terms and the
+   counted-loop structural source: capture equalities at the preheader, then
+   `lower_capture <= i` and `i < upper_capture` at every body entry. Captures
+   have identity derived from the counted-loop node and endpoint side. Existing
+   closure, support, kills, and S7 constant-offset rules do the rest; ordinary
+   loops gain no induction and no fact is attached to a mutable endpoint's
+   later value. Define the counted continuation separately from `loop_stmt`:
+   join the zero-trip/guard-false exhaustion edge with every `break` naming this
+   counted label, after edge cleanup and scope-exit kills. Breaks to enclosing
+   loops and function exits do not join there. The iterator and capture terms
+   leave scope before the join, so no body structural fact or `i = upper`
+   postcondition escapes, and a break-free counted loop has a real exhaustion
+   edge rather than ENT-5's contradictory empty join. The checked/lowered
+   header carries outer state plus captures and `i`; the continuation and every
+   local break carry outer state only, so the existing ordinary-loop carried
+   list cannot leak the new binding or captures.
+5. Follow the stable-spec workflow for the smallest complete v0.25 delta and
+   outgoing immutable v0.24 archive. Verify grammar through both runtime paths,
+   independently review the complete stable-file diff and digest under the
+   owner's 2026-08-09 delegated branch-revision authority, then implement the
+   parser, checked representation, resolution, semantic facts, ownership and
+   effect checks, typed lowering, backend path, diagnostics, and generated data
+   through one general construct. Do not add a governance candidate copy.
+6. Migrate only the three counted index loops in `sha256_abc.wf`; retain its
+   unrelated ordinary loop. Add project-independent positive, negative,
+   near-miss, cleanup, and conformance cases. Update active identity, derivation,
+   writer documentation, outline, plan, and design memory only when the exact
+   candidate is activated. The protected
+   `gram6-pos-no-operators` source doc plus manifest reason/doc are already
+   stale about infix arithmetic and `if`, and would also become false about
+   `for`; rederive those three prose fields from v0.25 as one explicitly
+   reviewed existing-corpus change while keeping the stable id, GRAM-6 rule,
+   and run verdict unchanged. No other protected source or verdict may change
+   silently.
 
 ### Verify and accept
 
-- Keep activation `f4c7e60`, the four frozen source digests, the 33/23 static
-  denominator, and the installed acceptance buckets unchanged.
-- The revised literal walk includes all three canonical-Huffman sites. Exactly
-  one additional frozen obligation subject, `destination_in_symbols`, becomes
-  external: 19/33 external subjects, six unasserted-state discharges, and 13
-  rejections under 11 claims. Any other obligation-subject change is a finding,
-  not an accepted side effect. The prior 15 claims in the five original
-  boundary-bearing programs still gain no gate.
-- Hostile controls distinguish an external-offset place read from an internal
-  offset, an external root from an internal root, and an external-index table
-  lookup from a branch-laundered literal; nested places join every offset and
-  `len(P)` stays internal. A write-only external address with an internal RHS
-  leaves the root internal and remains an explicit implicit-flow limitation:
-  after a guarded `set a[external_i] = 1`, `a[0]` and a claim it supports stay
-  internal/legal even though an environment choice can make that claim fire.
-- Enumerate every binding, root, result-column, and write-column change outside
-  the 33 subjects. In particular, `build_huffman_table` gains a result
-  dependency on `lengths`, `decode_table_symbol` carries the external selected-
-  offset lineage in its result, and no write-column dependency appears without
-  a written propagation edge.
-- Every PRV-2 protected parameter/obligation pair has the concrete-instance and
-  source-walk occurrence identity above. Direct, multiple-leaf, ordinary-call,
-  recursive, and mutually recursive cases reach one order-independent least
-  fixed point for all three columns. After convergence, one argument forms one
-  event whose simple witness minimizes call boundaries, then orders ties by
-  complete call/argument
-  node paths, leaf node path, and concrete identity; visited relation states
-  make reconstruction terminate. The callee witness joins the caller's PRV-1
-  predecessor chain at the call boundary.
-- Independent review reproduces the classifications and relation from the
-  written rules. Scratch tooling leaves no tracked artifact. O3 remains assigned
-  to stage 7 rather than being weakened here.
+- Native grammar verification and canonical round-trip cover the exact new
+  tokens, `for`/`in` fixed-word reservation, numeric/range seams, mandatory
+  label and binding positions, endpoint atoms, nesting, and rejection of every
+  noncanonical or out-of-scope spelling. A lexical-role census records every
+  former identifier declaration/use collision in the protected corpus, real
+  programs, and live experiments; zero is accepted only when the census is
+  reproducible, and any nonzero unplanned narrowing stops review.
+- Runtime controls cover empty and reversed ranges, `0_u64..1_u64`,
+  `18446744073709551614_u64..18446744073709551615_u64`, and
+  `18446744073709551615_u64..18446744073709551615_u64`; endpoint bindings
+  mutated inside the body do not change the captured trip count. Nested
+  current/enclosing breaks, return, propagated error, and body-local affine
+  cleanup follow their existing edges. Hostile [OWN-11] controls reject an
+  outer affine move and a borrow naming an outer region while accepting the
+  corresponding body-local forms. A set targeting `i`, a unique borrow of `i`,
+  a callee write through it, a non-`u64` or non-term endpoint, an endpoint use
+  of `i`, an unknown/duplicate label, shadowing, and a post-loop use of `i`
+  reject at their owning existing or new rule.
+- Semantic controls distinguish the counted form from an ordinary loop. At
+  every counted body entry they derive both structural bounds, retain the
+  safe `u64::MAX` increment argument, compose through S7 constant subtraction,
+  and kill facts only when their real support is invalidated. Mutating an
+  endpoint source binding cannot retarget a capture or manufacture a fact.
+  A carried `j`, an access at `i +wrap 1` against the same upper bound, an
+  upper endpoint wider than storage without an independent
+  `upper_capture <= len(storage)` fact, and an `i -wrap k` whose lower endpoint
+  is too small remain unproved. A counted loop
+  with no break leaves a reachable non-contradictory continuation; a zero-trip
+  path imports no body fact, and an early break creates no exhaustion fact.
+  In particular, an empty or reversed break-free range followed by an otherwise
+  unproved out-of-bounds access still rejects rather than inheriting ordinary
+  loop's empty-join contradiction.
+- The migrated SHA-256 function proves all 9/9 subscript obligations without
+  S2/S3, removes exactly four claims, changes its exhibited effect from
+  `traps` to `pure`, emits no `wf_trap`, and directly validates
+  `sha256_abc_word_zero() == 3128432319_u32` (`0xba7816bf`) rather than relying
+  only on the existing 1024-iteration wrapping aggregate. Its sustained outer
+  loop remains the ordinary-loop control; the existing rotate and
+  schedule-address code-shape checks remain. Rerun the installed acceptance
+  buckets and report the exact residual induction demand rather than
+  extrapolating.
+- Lowered checked IR and native execution contain no counted-loop overflow or
+  bounds fallback for the proved sites. All unrelated real programs and
+  existing conformance rows retain their verdict, cited rule, and observable
+  behavior; additive cases exercise the new form through the normal adapter.
+  The ordinary-loop-only wide-probe recognizer is unchanged and receives no
+  counted-range credit in this stage.
+- The archive-integrity gate, active-spec chain, two grammar paths, focused
+  frontend/semantic/lowering/backend tests, complete compiler check, complete
+  repository gate, ignored adapter tally, and MCTS lint all pass on the final
+  tree.
 
 ### Accept and stop
 
-This plan is terminal when task 0046 records a complete reproducible revised
-measurement and the outline states whether the two measured defects are
-closed. A positive result permits a replacement plan for stage 6 while the
-revised provenance design remains held behind stage 7/O3. A negative result is
-a reproduced blocker for disposition. Neither outcome activates the gate.
+This plan is terminal when the exact counted-range specification and one normal
+compiler path are active, the SHA-256 9/9 result and hostile boundaries are
+recorded, and no other verdict drift remains. If endpoint snapshots cannot be
+given finite checked identity, the `u64::MAX` edge needs a hidden runtime trap,
+or the nine real obligations require general induction, record the smallest
+reproducer as a blocker rather than weakening the range. A positive closure
+advances to stage 7; it does not activate the held provenance gate.
 
 ## Owner-selected roll-forward — dependency map, not execution authority
 
@@ -131,16 +205,6 @@ Before each slice begins, reread its evidence, make it the sole current step in
 a replacement plan, and preserve the normal candidate, impact, exact-approval,
 activation, and real-program loop. A negative prerequisite measurement returns
 for owner disposition; it is not permission to weaken a feature or skip ahead.
-
-### 6 — counted range loop
-
-Select the smallest writer-natural counted range family whose structural
-bounds enter entailment without general induction. Candidate review must
-settle a referencable loop-label form, half-open endpoints evaluated exactly
-once, loop-variable immutability, cleanup and labelled control flow, and the
-`u64::MAX` increment boundary. Acceptance uses normal lowering, hostile range
-boundaries, and the real loop-claim family, then remeasures residual induction
-demand rather than assuming it away.
 
 ### 7 — `requires` as one atomic call-site goal
 
@@ -157,12 +221,12 @@ synthesized adapter.
 
 ### 5b — provenance gate activation
 
-Only after 5a supplies positive measurement and stage 7 closes the `requires`
-bypass may a replacement plan propose provenance propagation and the signature
-column. A constrained subject classified external by that explicit-dataflow
-policy then must be handled by a value branch rather than hidden in an aborting
-claim. Calls and adapters must preserve the policy through one ordinary
-semantic path.
+Task 0046 supplies the positive held rule review, but only after stage 7 closes
+the `requires` bypass may a replacement plan propose provenance propagation and
+the signature column. A constrained subject classified external by that
+explicit-dataflow policy then must be handled by a value branch rather than
+hidden in an aborting claim. Calls and adapters must preserve the policy through
+one ordinary semantic path.
 
 ### 8a — postcondition proof-feasibility prerequisites
 
