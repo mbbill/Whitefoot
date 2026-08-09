@@ -222,6 +222,66 @@ means *outlives*. The slice path already accepts the shape the scalar path
 forbids, so the question inverted: not "is widening safe" but "why is the scalar
 path narrower". Not authorized; a check is removed only by proof.
 
+## 6b. The rest of the trap design — what is deliberately not built yet
+
+The dossier's §8 lists nine entry points, smallest-first, each naming the
+evidence that earned it. **Items 1–3 are shipped** (the claim construct, the L0
+entailment fragment as normative text, caller-side discharge for indexes). The
+rest are ordered on purpose, and the ordering is the design's own argument —
+taking them out of order costs more than it saves.
+
+**4 — SYS boundary-op count postconditions.** `read_once`'s count ≤ capacity,
+`host_copy_bytes`'s copied ≤ capacity, and so on, made normative. Without them
+cursor arithmetic floods with environment magnitudes: the checker has no bound
+on how many bytes came back, so every subsequent index is unprovable. PROBE-TAINT
+marks this **load-bearing** rather than nice-to-have.
+
+**5 — the provenance (taint) gate**, subject-position form, plus a signature
+provenance column. This is the mechanism that forces a *boundary-originated*
+value to a branch rather than a claim — i.e. it is what stops a writer turning
+malformed input into an abort. Its candidate is drafted and **held for
+measurement**, and the measurement was blocked until this batch: the deflate
+programs built their input synthetically, so the gate had zero live instances.
+Task 0037 fixed that (a `command fn main` now reads a real compressed stream), so
+the gate finally has sites to fire on — **but the measurement must not be taken
+until ENT-5 is active**, because the loop-rule defect currently dominates
+deflate's discharge and would be misattributed to provenance. That ordering
+constraint is written into `docs/planned/0041`.
+
+**6 — the counted range loop** (`for i in a..b`) with checker-visible structural
+bounds. This is the sleeper item. It gives structural discharge for the dominant
+loop family with **no induction machinery at all**, it is the shape writers reach
+for unprompted, and the simulation predicts the loop-claim family would *largely
+vanish into it*. It is also why general loop induction is listed as **not yet
+earned**: item 6 removes most of its demand, so induction should be revisited
+only with post-revision numbers.
+
+**7 — requires-as-goal.** The entry check dissolves into call-site discharge and
+the derived predicate becomes callable by branches. Sequenced after 1–3 because
+it only makes sense once discharge exists; the threading tax was measured bounded
+(depth ≤ 3, all clauses free at call sites).
+
+**8 — `ensures`.** Two real cases are queued and waiting: `read_bits`'s mask
+bound and `append_slice`'s result bound. **The deferral is deliberate, not an
+oversight** — it waits until 1–7 settle, because a postcondition language written
+before the fact fragment and the goal machinery have settled would be designed
+against a moving target. This is the item most likely to be proposed early by
+someone who has not read the ordering; the answer is that it is queued, with its
+evidence, behind work that changes what it would have to say.
+
+**9 — deny-claims partition marker**, after the ledger tooling exists. This is
+the opt-in "no claims allowed here" mode — the partition where prove-or-reject is
+law. It was weighed as *global* law and rejected: a deterministic no-search
+checker leaves a large true-but-unprovable residue that would be camouflaged
+inside genuine fallibility. It survives as an opt-in partition, which is a real
+distinction and worth preserving.
+
+**Explicitly not earned by evidence yet:** general loop induction (see item 6),
+the arithmetic-mode dissolution (§2.9 — measured this session: 59 of 89 live trap
+sites carry a literal operand and are dischargeable with no fragment extension,
+while 27 accumulator-shaped sites correctly take a claim), and struct/witness
+invariants (the three deflate branch regions are the entire near-term demand).
+
 ## 7. What this session learned about how to work here
 
 These are in `docs/WORKFLOW.md` under "Evidence discipline" and "The failures
