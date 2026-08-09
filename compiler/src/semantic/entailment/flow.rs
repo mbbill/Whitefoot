@@ -104,15 +104,35 @@ struct GiveFrame {
 #[derive(Default)]
 struct LoopKills {
     events: Vec<KillEvent>,
-    /// Bindings declared outside the loop whose lexical scope some edge
-    /// inside the body leaves (`break`/`give` past the loop).
-    exited_bindings: HashSet<BindingId>,
-    /// A `return` or `propagate` edge occurs in the body: such an edge leaves
-    /// every lexical scope, so every binding-supported fact dies at the head.
-    exits_function: bool,
     /// `set` targets naming a whole binding, which invalidate any comparison
     /// origin held by that binding.
     set_bindings: HashSet<BindingId>,
+}
+
+// A continuing scope-exit edge can close only scopes opened inside the target
+// loop body. No binding from such a scope can support a fact in the pre-loop
+// state this summary filters. An edge that closes a pre-loop binding's scope
+// necessarily leaves the target body and is non-continuing, so kill event (d)
+// needs no payload in `LoopKills`.
+
+/// Non-local successors visible while asking whether an edge inside one loop
+/// body can reach that loop's next iteration head without leaving the body.
+/// Targets outside the body are deliberately absent and therefore do not
+/// reach the head.
+#[derive(Default)]
+struct LoopReachability {
+    breaks: Vec<(CheckedLoopId, bool)>,
+    gives: Vec<bool>,
+}
+
+impl LoopReachability {
+    fn break_reaches(&self, target: CheckedLoopId) -> bool {
+        self.breaks
+            .iter()
+            .rev()
+            .find_map(|(id, reaches)| (*id == target).then_some(*reaches))
+            .unwrap_or(false)
+    }
 }
 
 pub(super) fn analyze(
@@ -1004,11 +1024,16 @@ impl Analyzer<'_, '_> {
             }
             CheckedStatement::Loop { id, body, .. } => {
                 // [ENT-5] no-induction loop rule: the head state is the state
-                // before the loop minus every fact a kill event anywhere in
-                // the body may kill; nothing established inside an iteration
-                // survives to the next head.
+                // before the loop minus every fact a continuing kill event in
+                // the body may kill. The body's normal exit is this loop's
+                // backedge; exits from the body are not.
                 let mut kills = LoopKills::default();
-                self.collect_loop_kills(body, &mut kills);
+                self.collect_continuing_loop_kills(
+                    body,
+                    true,
+                    &mut LoopReachability::default(),
+                    &mut kills,
+                );
                 self.apply_loop_kills(state, &kills);
                 self.loops.push(LoopFrame {
                     id: *id,
@@ -1075,135 +1100,237 @@ impl Analyzer<'_, '_> {
     // Loop kill summary
     // ------------------------------------------------------------------
 
-    fn collect_loop_kills(&mut self, statements: &[CheckedStatement], kills: &mut LoopKills) {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Let { value, .. }
-                | CheckedStatement::Evaluate(value)
-                | CheckedStatement::DropExpression { value, .. }
-                | CheckedStatement::Check {
-                    condition: value, ..
+    /// Returns whether a block entry can reach the loop head whose summary is
+    /// being built. `normal_reaches` describes the containing block's normal
+    /// exit. This is structural reachability over [FN-1], not an executable
+    /// constant-folding judgment.
+    fn loop_block_reaches(
+        &self,
+        statements: &[CheckedStatement],
+        normal_reaches: bool,
+        reachability: &mut LoopReachability,
+    ) -> bool {
+        let mut reaches = normal_reaches;
+        for statement in statements.iter().rev() {
+            reaches = self.loop_statement_reaches(statement, reaches, reachability);
+        }
+        reaches
+    }
+
+    fn loop_statement_reaches(
+        &self,
+        statement: &CheckedStatement,
+        normal_reaches: bool,
+        reachability: &mut LoopReachability,
+    ) -> bool {
+        match statement {
+            CheckedStatement::Let { .. }
+            | CheckedStatement::PropagateLet { .. }
+            | CheckedStatement::Set { .. }
+            | CheckedStatement::Evaluate(_)
+            | CheckedStatement::DropExpression { .. }
+            | CheckedStatement::Check { .. }
+            | CheckedStatement::Claim { .. } => normal_reaches,
+            CheckedStatement::Return { .. } => false,
+            CheckedStatement::Give { .. } => reachability.gives.last().copied().unwrap_or(false),
+            CheckedStatement::Break { target, .. } => reachability.break_reaches(*target),
+            CheckedStatement::Match { arms, .. } => {
+                let mut reaches = false;
+                for arm in arms {
+                    reaches |= self.loop_block_reaches(&arm.body, normal_reaches, reachability);
                 }
-                | CheckedStatement::Claim {
-                    condition: value, ..
+                reaches
+            }
+            CheckedStatement::ValueMatchLet { arms, .. } => {
+                // Arm fallthrough never reaches a value initializer's
+                // continuation. Its `give` edges do, and nested value
+                // initializers shadow this target while they are inspected.
+                reachability.gives.push(normal_reaches);
+                let mut reaches = false;
+                for arm in arms {
+                    reaches |= self.loop_block_reaches(&arm.body, false, reachability);
                 }
-                | CheckedStatement::Give { value, .. } => {
-                    self.collect_expression_kills(value, &mut kills.events);
-                    if matches!(statement, CheckedStatement::Give { .. }) {
-                        self.record_edge_exit_for_give(kills);
-                    }
-                }
-                CheckedStatement::PropagateLet { scrutinee, .. } => {
-                    self.collect_expression_kills(scrutinee, &mut kills.events);
-                    // The propagate Err edge leaves the function.
-                    kills.exits_function = true;
-                }
-                CheckedStatement::Return { value, .. } => {
-                    self.collect_expression_kills(value, &mut kills.events);
-                    kills.exits_function = true;
-                }
-                CheckedStatement::Break { target, .. } => {
-                    // A break to an enclosing loop leaves every scope between
-                    // that loop and here, including scopes outside this loop.
-                    if let Some(frame) = self.loops.iter().find(|frame| frame.id == *target) {
-                        for scope in self.scopes.iter().skip(frame.scope_depth) {
-                            kills.exited_bindings.extend(scope.iter().copied());
-                        }
-                    }
-                }
-                CheckedStatement::Set { target, value } => {
-                    self.collect_expression_kills(value, &mut kills.events);
-                    match target {
-                        CheckedSetTarget::Place(place) => {
-                            let spelled = PlaceTerm {
-                                root: PlaceRoot::Binding(place.binding),
-                                deref: self.is_holder(place.binding),
-                                fields: place.fields.clone(),
-                            };
-                            kills.events.push(KillEvent::Write {
-                                place: self.resolve(&spelled),
-                                element: false,
-                            });
-                            if place.fields.is_empty() {
-                                kills.set_bindings.insert(place.binding);
-                            }
-                        }
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            let spelled = PlaceTerm {
-                                root: PlaceRoot::Binding(target.binding),
-                                deref: self.is_holder(target.binding),
-                                fields: target.fields.clone(),
-                            };
-                            kills.events.push(KillEvent::Write {
-                                place: self.resolve(&spelled),
-                                element: true,
-                            });
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            let spelled = PlaceTerm {
-                                root: PlaceRoot::Binding(target.root.binding),
-                                deref: self.is_holder(target.root.binding),
-                                fields: target.root.fields.clone(),
-                            };
-                            kills.events.push(KillEvent::Write {
-                                place: self.resolve(&spelled),
-                                element: true,
-                            });
-                        }
-                    }
-                }
-                CheckedStatement::Match {
-                    scrutinee, arms, ..
-                } => {
-                    self.collect_expression_kills(scrutinee, &mut kills.events);
-                    for arm in arms {
-                        self.collect_loop_kills(&arm.body, kills);
-                    }
-                }
-                CheckedStatement::ValueMatchLet {
-                    scrutinee, arms, ..
-                } => {
-                    self.collect_expression_kills(scrutinee, &mut kills.events);
-                    for arm in arms {
-                        self.collect_loop_kills(&arm.body, kills);
-                    }
-                }
-                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
-                    self.collect_loop_kills(body, kills);
-                }
+                reachability.gives.pop();
+                reaches
+            }
+            CheckedStatement::Loop { id, body, .. } => {
+                // A nested loop body reaches its successor through its own
+                // break edges, or can escape through another visible target.
+                // A backedge alone cannot create reachability, so evaluating
+                // the body with a false normal exit computes the least fixed
+                // point. Once the body entry reaches the target, its normal
+                // exit can take another iteration and eventually use that
+                // same route.
+                reachability.breaks.push((*id, normal_reaches));
+                let body_reaches = self.loop_block_reaches(body, false, reachability);
+                reachability.breaks.pop();
+                // [FN-1] also keeps a conservative direct edge from the
+                // nested loop statement to its normal successor. That edge
+                // carries no event from inside the body.
+                normal_reaches || body_reaches
+            }
+            CheckedStatement::Region { body, .. } => {
+                self.loop_block_reaches(body, normal_reaches, reachability)
             }
         }
     }
 
-    /// A `give` inside the loop delivers to a `value_match` continuation; when
-    /// that continuation lies outside this loop, the edge leaves the scopes
-    /// between it and here.
-    fn record_edge_exit_for_give(&self, kills: &mut LoopKills) {
-        if let Some(frame) = self.gives.last() {
-            for scope in self.scopes.iter().skip(frame.scope_depth) {
-                kills.exited_bindings.extend(scope.iter().copied());
+    /// Collects exactly the kill events whose carrying edge can reach this
+    /// loop's next head. The return value is the same structural entry
+    /// reachability computed by [`Self::loop_block_reaches`].
+    fn collect_continuing_loop_kills(
+        &self,
+        statements: &[CheckedStatement],
+        normal_reaches: bool,
+        reachability: &mut LoopReachability,
+        kills: &mut LoopKills,
+    ) -> bool {
+        let mut reaches = normal_reaches;
+        for statement in statements.iter().rev() {
+            reaches =
+                self.collect_continuing_statement_kills(statement, reaches, reachability, kills);
+        }
+        reaches
+    }
+
+    fn collect_continuing_statement_kills(
+        &self,
+        statement: &CheckedStatement,
+        normal_reaches: bool,
+        reachability: &mut LoopReachability,
+        kills: &mut LoopKills,
+    ) -> bool {
+        match statement {
+            CheckedStatement::Let { value, .. }
+            | CheckedStatement::Evaluate(value)
+            | CheckedStatement::DropExpression { value, .. }
+            | CheckedStatement::Check {
+                condition: value, ..
+            }
+            | CheckedStatement::Claim {
+                condition: value, ..
+            }
+            | CheckedStatement::PropagateLet {
+                scrutinee: value, ..
+            } => {
+                if normal_reaches {
+                    self.collect_expression_kills(value, &mut kills.events);
+                }
+                normal_reaches
+            }
+            CheckedStatement::Set { target, value } => {
+                if normal_reaches {
+                    self.collect_set_kills(target, value, kills);
+                }
+                normal_reaches
+            }
+            CheckedStatement::Return { .. } => false,
+            CheckedStatement::Give { value, .. } => {
+                let reaches = reachability.gives.last().copied().unwrap_or(false);
+                if reaches {
+                    self.collect_expression_kills(value, &mut kills.events);
+                }
+                reaches
+            }
+            CheckedStatement::Break { target, .. } => reachability.break_reaches(*target),
+            CheckedStatement::Match {
+                scrutinee, arms, ..
+            } => {
+                let mut reaches = false;
+                for arm in arms {
+                    reaches |= self.collect_continuing_loop_kills(
+                        &arm.body,
+                        normal_reaches,
+                        reachability,
+                        kills,
+                    );
+                }
+                if reaches {
+                    self.collect_expression_kills(scrutinee, &mut kills.events);
+                }
+                reaches
+            }
+            CheckedStatement::ValueMatchLet {
+                scrutinee, arms, ..
+            } => {
+                reachability.gives.push(normal_reaches);
+                let mut reaches = false;
+                for arm in arms {
+                    reaches |=
+                        self.collect_continuing_loop_kills(&arm.body, false, reachability, kills);
+                }
+                reachability.gives.pop();
+                if reaches {
+                    self.collect_expression_kills(scrutinee, &mut kills.events);
+                }
+                reaches
+            }
+            CheckedStatement::Loop { id, body, .. } => {
+                reachability.breaks.push((*id, normal_reaches));
+                let body_reaches = self.loop_block_reaches(body, false, reachability);
+                self.collect_continuing_loop_kills(body, body_reaches, reachability, kills);
+                reachability.breaks.pop();
+                normal_reaches || body_reaches
+            }
+            CheckedStatement::Region { body, .. } => {
+                self.collect_continuing_loop_kills(body, normal_reaches, reachability, kills)
+            }
+        }
+    }
+
+    fn collect_set_kills(
+        &self,
+        target: &CheckedSetTarget,
+        value: &CheckedExpression,
+        kills: &mut LoopKills,
+    ) {
+        self.collect_expression_kills(value, &mut kills.events);
+        match target {
+            CheckedSetTarget::Place(place) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(place.binding),
+                    deref: self.is_holder(place.binding),
+                    fields: place.fields.clone(),
+                };
+                kills.events.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: false,
+                });
+                if place.fields.is_empty() {
+                    kills.set_bindings.insert(place.binding);
+                }
+            }
+            CheckedSetTarget::ArrayIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.binding),
+                    deref: self.is_holder(target.binding),
+                    fields: target.fields.clone(),
+                };
+                kills.events.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: true,
+                });
+            }
+            CheckedSetTarget::BufferIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.root.binding),
+                    deref: self.is_holder(target.root.binding),
+                    fields: target.root.fields.clone(),
+                };
+                kills.events.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: true,
+                });
             }
         }
     }
 
     fn apply_loop_kills(&self, state: &mut FactState, kills: &LoopKills) {
         state.kill(|term| {
-            if kills
+            kills
                 .events
                 .iter()
                 .any(|event| self.event_kills_term(term, event))
-            {
-                return true;
-            }
-            if kills.exits_function {
-                return match self.terms.kind(term) {
-                    TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
-                    TermKind::Place(place, _) | TermKind::Length(place) => {
-                        matches!(place.root, PlaceRoot::Binding(_))
-                    }
-                };
-            }
-            self.scope_kills_term(term, &kills.exited_bindings)
         });
         state
             .origins
@@ -1211,17 +1338,6 @@ impl Analyzer<'_, '_> {
         state
             .outcomes
             .retain(|binding, _| !kills.set_bindings.contains(binding));
-        if kills.exits_function {
-            state.origins.clear();
-            state.outcomes.clear();
-        } else {
-            state
-                .origins
-                .retain(|binding, _| !kills.exited_bindings.contains(binding));
-            state
-                .outcomes
-                .retain(|binding, _| !kills.exited_bindings.contains(binding));
-        }
     }
 
     // ------------------------------------------------------------------

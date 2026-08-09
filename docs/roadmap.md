@@ -1,13 +1,13 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 20 (owner selected complete obligation-discharge delivery before wfgrep resumes)
+Revision: 21 (v0.24 ENT-5 and the stable active-spec path activated)
 
-The active language authority is
-[`spec/kernel-spec-v0.23.md`](../spec/kernel-spec-v0.23.md), SHA-256
-`e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`.
-Released numbered specifications are immutable. The current execution proposal
-is [`docs/current-plan.md`](current-plan.md), project law is the
+The active language authority is v0.24 at the stable path
+[`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+Superseded numbered specifications are immutable archives. The current
+execution proposal is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.23]` `[current: safe-Rust compiler]`
+`[current: spec v0.24]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-[v0.23 specification](../spec/kernel-spec-v0.23.md) remains semantic authority.
+active [v0.24 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -219,13 +219,16 @@ creating writer trust or weakening the checked safety envelope.
   count bounds introduced into the fact state by ENT-3 S10. The frozen native
   acceptance run held for utf8parse, landed one claim over for SHA-256, and
   exposed an ENT-5 loop-head defect as the dominant cause of deflate's
-  divergence (5 of 29 sites proven, 21 claims). The v0.23-based ENT-5 delta is
-  re-cut and verified but still awaits complete-byte owner approval; task 0042
-  has landed the stable-file-aware archive gate needed by its activation.
-- **Missing / next:** the current rolling step repairs ENT-5, switches the
-  active specification to `spec/kernel-spec.md`, restores the canonical gate,
-  reruns the frozen acceptance sample, and revalidates the already-shipped S10
-  facts on boundary-fed deflate. The owner selected the remaining direction on
+  divergence (5 of 29 sites proven, 21 claims). v0.24 installs the corrected
+  continuing-kill rule and completes the one-time switch to
+  `spec/kernel-spec.md`; its implementation, protected witnesses, digest chain,
+  and stable-layout gates entered atomically after exact owner approval.
+- **Missing / next:** the current rolling step must rerun the complete gates,
+  independent adapter, frozen acceptance sample, and S10 evidence against the
+  installed v0.24 authority, then close task 0045. The approved S10 disposition
+  is the honest boundary producer plus four focused obligation consumers; the
+  preregistered deflate driver itself has no natural current obligation that
+  consumes the count relation. The owner selected the remaining direction on
   2026-08-09: provenance measurement first; a counted range loop; a single
   atomic `requires` goal sufficient to close the provenance candidate's O3 bypass;
   then provenance activation; proof-feasibility work for the mask and
@@ -270,7 +273,7 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The latest protected record is `Pass=389 Fail=1 Skip=13`; the one
+  compiler. The current v0.24 candidate run is `Pass=390 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
   rows remain explicit toolchain gaps. This adapter is deliberately
   `#[ignore]` and invoked separately; `make check` does not silently include

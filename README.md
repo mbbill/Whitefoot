@@ -30,10 +30,10 @@ structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.17](spec/kernel-spec-v0.17.md), SHA-256
-`19642ffb0ad9c7146a84762ada192ed2a25dc446a93c4d060aa29d9a99f69c93`,
-is the immutable active specification. Exact v0.8 through v0.16 remain
-immutable history.
+[Kernel specification v0.24](spec/kernel-spec.md), SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`,
+is the active specification at its stable path. Exact v0.8 through v0.23
+remain immutable flat archives.
 
 The safe-Rust compiler currently implements one ordinary path:
 
@@ -68,10 +68,10 @@ live next to what they check.
 | Directory | What it is |
 |---|---|
 | [docs/](docs/) | The living [Direction Outline](docs/roadmap.md), rolling [Current Plan](docs/current-plan.md), project law ([constitution](docs/constitution.md)), seeded writer forms ([patterns](docs/patterns.md)), supporting direction notes ([ideas](docs/ideas.md)), and dated design synthesis ([why-whitefoot](docs/why-whitefoot.md)) |
-| [spec/](spec/) | The language: numbered kernel specifications (append-only) and the rule-derivation ledger under `spec/derivation/` |
+| [spec/](spec/) | The language: one stable active kernel specification, immutable flat version archives, and the rule-derivation ledger under `spec/derivation/` |
 | [compiler/](compiler/README.md) | The safe-Rust compiler: frontend, resolver, first semantic/IR slice, LLVM backend, and `whitefootc` |
 | [tests/](tests/) | Test evidence: the active compiler-independent `conformance/` behavior corpus, plus preserved `codegen/` source cases awaiting production-compiler integration |
-| [governance/](governance/) | The protected approval ledger, exact successor candidates, and the tracked spec-append-only hook |
+| [governance/](governance/) | The protected approval ledger, specification-evolution evidence, and the tracked archive-protection hooks |
 | [research/](research/) | Active language and compiler experiments |
 | [mcts_mem/](mcts_mem/) | The live design tree, consulted and maintained only through the `mcts-mem-use` skill |
 | [archive/](archive/) | Retired and superseded material, including the historical [decision log](archive/governance/decision-log.md), Python reference model, and democ-era codegen harness; inert — no active source, build, test, or tool depends on it. Its live disposition map is the [archive promotion audit](research/archive-promotion-audit.md) |
@@ -79,17 +79,17 @@ live next to what they check.
 ## Verification
 
 ```sh
-make install-hooks   # once: enable the spec append-only pre-commit hook
-make check           # the gate: compiler, conformance, spec append-only
+make install-hooks   # once: enable immutable-archive pre-commit protection
+make check           # compiler, conformance, and specification identity gate
 ```
 
 The gate is deliberately small: the compiler builds and passes its tests; the
 conformance corpus has valid active-spec identity, structure, rule coverage,
-and expectations; and numbered specifications remain append-only. The complete
-conformance corpus is not yet executed against the compiler because its
-adapter is not wired. Direction Outline item VERIFY-2 records the gap; an
-owner-selected Current Plan decides when it matters. A green result states only
-what the gate exercises and is not a completeness claim.
+and expectations; and the stable file plus immutable archives match the
+recorded digest chain. The native compile-run adapter is invoked separately by
+`make conformance-run`; its current result is Pass=390, Fail=1,
+Skip=13 and is not silently counted as part of `make check`. A green result
+states only what the selected gate exercises and is not a completeness claim.
 
 ## License
 

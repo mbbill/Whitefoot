@@ -1,5 +1,5 @@
 fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
-  doc "Loops carry no induction: the fact state at each iteration head is the state before the loop minus every fact having a support member that any kill event inside the loop body, at any nesting depth, may kill [ENT-5]. The `set` later in the body kills the checked bound at the head, so the subscript is undischarged [OP-4] even on the first iteration, where the check still dominates it.";
+  doc "Loops carry no induction: the fact state at each iteration head removes every fact a continuing kill event may kill [ENT-5]. The `set` later in the body kills the checked bound and an else-free false edge can carry that kill to the next head, so the subscript is undischarged [OP-4] even on the first iteration, where the check still dominates it.";
   let room = len(b);
   let offset = 0_u64;
   let inside = ilt(offset, room);
@@ -8,7 +8,9 @@ fn get(b: own buffer<u8>, start: own u64) -> own u8 traps {
   loop @walk {
     set sample = b[offset];
     set offset = start;
-    break @walk;
+    if inside {
+      break @walk;
+    }
   }
   return sample;
 }

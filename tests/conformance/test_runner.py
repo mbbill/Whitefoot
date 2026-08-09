@@ -19,7 +19,7 @@ class ActiveSpecificationTests(unittest.TestCase):
         active.write_bytes(SPEC.read_bytes())
         (directory / "spec").mkdir(exist_ok=True)
 
-    def test_higher_version_lookalike_cannot_change_coverage_authority(self):
+    def test_versioned_archive_cannot_change_coverage_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.make_repository(directory)
@@ -32,6 +32,15 @@ class ActiveSpecificationTests(unittest.TestCase):
             self.assertEqual(name, runner.ACTIVE_SPEC.name)
             self.assertIn("PROG-2", rules)
             self.assertNotIn("FAKE-1", rules)
+
+    def test_missing_stable_active_specification_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            (directory / runner.ACTIVE_SPEC).unlink()
+
+            with self.assertRaises(FileNotFoundError):
+                runner.spec_rule_ids(directory)
 
     def test_active_specification_digest_is_exact(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -2,7 +2,7 @@ use core::fmt;
 
 mod sha256;
 
-/// The SHA-256 identity of one immutable numbered kernel specification.
+/// The SHA-256 identity of one exact kernel specification.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SpecHash([u8; 32]);
 
@@ -35,19 +35,19 @@ impl fmt::Display for SpecHash {
     }
 }
 
-/// Version label of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.23";
+/// Version label of the active kernel specification.
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.24";
 
-/// Repository-relative path of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec-v0.23.md";
+/// Repository-relative stable path of the active kernel specification.
+pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec.md";
 
-/// Exact UTF-8 text of the active immutable kernel specification.
-pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec-v0.23.md");
+/// Exact UTF-8 text of the active kernel specification.
+pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec.md");
 
-/// Exact bytes of the active immutable kernel specification.
+/// Exact bytes of the active kernel specification.
 pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 
-/// SHA-256 identity of the active immutable kernel specification.
+/// SHA-256 identity of the active kernel specification.
 ///
 /// Recorded rather than computed here only because a constant is re-evaluated
 /// in every crate that reads it, and hashing the whole specification in the
@@ -56,8 +56,8 @@ pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 /// them at runtime and the `whitefoot-spec` gate rejects any disagreement, so
 /// installing a specification cannot leave this naming the previous one.
 pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
-    0xe0, 0x9b, 0x32, 0xed, 0xb5, 0xa4, 0x91, 0x70, 0xbd, 0x3f, 0xb6, 0x59, 0xe5, 0x27, 0x1e, 0xc4,
-    0xdb, 0xcb, 0x6a, 0xc3, 0xfe, 0xc2, 0xf4, 0x0e, 0x2e, 0x25, 0xb8, 0x49, 0x7a, 0xac, 0xe0, 0xf5,
+    0x53, 0x49, 0x5b, 0x9c, 0x47, 0xb9, 0x29, 0x42, 0x87, 0x6c, 0x90, 0x93, 0x1d, 0x02, 0x96, 0xc7,
+    0x52, 0x85, 0x59, 0x54, 0x56, 0x4e, 0xbf, 0x74, 0x35, 0xa5, 0x49, 0xc4, 0x8c, 0xb2, 0xdc, 0x86,
 ]);
 
 /// SHA-256 of the embedded active specification, computed from its bytes.
@@ -74,24 +74,24 @@ pub fn computed_active_spec_hash() -> SpecHash {
 #[cfg(test)]
 mod tests {
     use super::{
-        ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_VERSION,
-        computed_active_spec_hash,
+        ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_TEXT,
+        ACTIVE_KERNEL_SPEC_VERSION, computed_active_spec_hash,
     };
 
-    /// The literal is the `shasum -a 256` value the owner approved for v0.23 in
-    /// `governance/APPROVALS.md`, so a wrong SHA-256 implementation fails here
-    /// instead of agreeing with itself.
+    /// The literal is the independently measured `shasum -a 256` value for the
+    /// review bytes. The activation chain supplies the protected owner-approved
+    /// value once these bytes are activated, so a wrong SHA-256 implementation
+    /// cannot agree only with itself.
     ///
-    /// It is transcribed FROM the ledger, never from what this code computes.
-    /// That direction is the whole test: the ledger entry is written when the
-    /// owner approves, and this literal follows it at activation. Updating it
-    /// to match a computed value would delete the only independent check that
-    /// the embedded bytes are the approved ones.
+    /// It is transcribed from `shasum`, never from what this code computes. At
+    /// activation the approval ledger must independently name the same digest;
+    /// changing this literal to follow a computed value would delete the
+    /// external check of the runtime implementation.
     #[test]
-    fn computed_identity_is_the_approved_digest() {
+    fn computed_identity_is_the_independently_measured_digest() {
         assert_eq!(
             computed_active_spec_hash().to_string(),
-            "e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5"
+            "53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86"
         );
     }
 
@@ -102,13 +102,14 @@ mod tests {
         assert_eq!(ACTIVE_KERNEL_SPEC_HASH, computed_active_spec_hash());
     }
 
-    /// The path and the version label are maintained separately, so a version
-    /// bump that moves only one of them is caught here.
+    /// The active path is stable, while the embedded title independently names
+    /// the version. A bump that moves only the constant or title is caught.
     #[test]
-    fn path_and_version_label_agree() {
+    fn stable_path_and_version_title_agree() {
+        assert_eq!(ACTIVE_KERNEL_SPEC_PATH, "spec/kernel-spec.md");
         assert_eq!(
-            ACTIVE_KERNEL_SPEC_PATH,
-            format!("spec/kernel-spec-{ACTIVE_KERNEL_SPEC_VERSION}.md")
+            ACTIVE_KERNEL_SPEC_TEXT.lines().next(),
+            Some(format!("# Kernel Specification {ACTIVE_KERNEL_SPEC_VERSION}").as_str())
         );
     }
 }

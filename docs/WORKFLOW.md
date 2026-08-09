@@ -18,8 +18,10 @@ the project that exposed the language gap.
 ## Authorities
 
 - `docs/constitution.md` is project law.
-- The active numbered specification named by `docs/roadmap.md` is the sole
-  language authority.
+- The active specification at `spec/kernel-spec.md`, named by
+  `docs/roadmap.md`, is the sole language authority. Flat
+  `spec/kernel-spec-vN.md` files are immutable archives, not parallel active
+  authorities.
 - `docs/roadmap.md` is the living Direction Outline: the canonical map of
   directions, current facts, gaps, and candidate projects. It does not sequence
   current work.
@@ -617,29 +619,37 @@ explicit owner reordering names the semantic gap it unlocks.
    ownership, effects, runtime behavior, checks, diagnostics, ABI, conformance,
    compiler, examples, and documentation as changed, unchanged, or not
    applicable.
-2. **Draft one candidate.** Copy the active spec to
-   `governance/spec-evolution/kernel-spec-vN-candidate.md` and apply the smallest
-   complete change. A candidate is non-authoritative. Released
-   `spec/kernel-spec-v*.md` files are append-only and are never edited, renamed,
-   or deleted. If the canonical next-version candidate path is already occupied,
-   stop for an owner choice: merge only a coherent delta on the same critical
-   path, supersede only after preserving its still-live constraints and fixing
-   every active link, or defer the new proposal. Never silently overwrite,
-   combine unrelated deltas, or skip a version to avoid the choice.
+2. **Draft one candidate.** Edit `spec/kernel-spec.md` directly on the task
+   branch and apply the smallest complete change. Bump its first-line version
+   and put the final `Status: ACTIVE vN` paragraph inside the bytes before
+   approval; neither spelling makes the branch authoritative. Review the
+   candidate as its exact `git diff` plus the SHA-256 of the complete stable
+   file. Do not create a parallel candidate copy under `governance/`.
+
+   Prepare the outgoing flat archive `spec/kernel-spec-vPREVIOUS.md` from the
+   previously active stable bytes in the same reviewable change, and fail if
+   that path already exists. The one-time stable-file switchover instead uses
+   the already released v0.23 archive and creates no duplicate archive. Every
+   released versioned archive is append-only and is never edited, renamed, or
+   deleted. Concurrent specification branches rebase onto the selected
+   predecessor and recompute their complete digest; never use `-X ours` or
+   `-X theirs` on the stable file, combine unrelated deltas, or skip a version
+   to avoid a conflict.
 3. **Prepare evidence.** Derive positive, negative, and near-miss expectations
    before implementation. For grammar or syntax changes, run the production
    compiler's native verifier:
 
    ```sh
    cargo run --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
-     spec/kernel-spec-vACTIVE.md \
-     governance/spec-evolution/kernel-spec-vN-candidate.md
+     spec/kernel-spec-vPREVIOUS.md \
+     spec/kernel-spec.md
    ```
 
-   Both paths are read at run time, and the first is the baseline the candidate
-   must preserve. Name the active specification explicitly: the verifier does
-   not compare against a compiled-in copy, so it keeps saying something after
-   the candidate is installed.
+   Both paths are read at run time, and the first is the exact outgoing
+   baseline the candidate must preserve. The verifier does not compare against
+   a compiled-in copy, so it keeps saying something after the candidate is
+   installed. A grammar-changing batch uses the same two paths and reviews the
+   intentional derived-table delta rather than assuming preservation.
 
    When performance is part of the selection ground, produce the cheapest
    non-authoritative feasibility evidence available before exact approval. If
@@ -648,25 +658,33 @@ explicit owner reordering names the semantic gap it unlocks.
    closes the project honestly; it does not retroactively invalidate immutable
    approved bytes.
 
-4. **Obtain exact approval.** Present the complete candidate SHA-256, semantic
-   delta, impact inventory, verifier results, requested protected changes, and
-   limitations. Owner approval covers only those exact bytes and named changes;
-   record it in `governance/APPROVALS.md`. A changed byte returns to review.
-5. **Activate atomically.** Copy the approved candidate byte-for-byte to the new
-   numbered spec and, in the same cohesive change, update every active spec
+4. **Obtain exact approval.** Present the complete stable-file SHA-256, semantic
+   delta, `git diff`, impact inventory, verifier results, requested protected
+   changes, and limitations. Owner approval covers only those exact bytes and
+   named changes. Record that approval in `governance/APPROVALS.md`; a changed
+   byte, including a rebase resolution, returns to review.
+5. **Activate atomically.** Land the approved stable bytes in one linear
+   commit. After the one-time v0.23-to-v0.24 switchover, that commit also
+   creates the exact outgoing archive and fails rather than overwriting an
+   occupied path. The switchover itself reuses the already released, digest-
+   checked `spec/kernel-spec-v0.23.md`; it neither recreates nor overwrites that
+   archive. Append exactly one chained record
+   `ACTIVE-SPEC: vN <new-sha256> <previous-sha256>` and update every active spec
    identity, compiler rule and generated datum, conformance expectation or
    status explicitly approved, test, writer form, live doc, outline item, and
    current plan affected by the delta, plus the derivation ledger and any MCTS
    Item made false by the change. Record a paired Move only for a genuine
    re-decision. Valid but still unsupported behavior remains unsupported, never
    rejection.
-6. **Verify and close.** Compare candidate and installed bytes, run focused
-   checks plus the complete gate and MCTS lint when applicable, and inspect
-   every impact row. Rerun the same frozen project slice with the same input
-   class, boundary, and oracle before the specification branch is closed;
-   conformance tests alone do not close the project blocker. Activation may be
-   its own cohesive protected commit, but the Current Plan remains on the same
-   milestone until the project result and limitations are recorded.
+6. **Verify and close.** Recompute the installed stable-file digest and compare
+   it with the exact approval and the final chained record. Run the archive
+   integrity gate, focused checks, the complete gate, and MCTS lint when
+   applicable, then inspect every impact row. Rerun the same frozen project
+   slice with the same input class, boundary, and oracle before the
+   specification branch is closed; conformance tests alone do not close the
+   project blocker. Activation may be its own cohesive protected commit, but
+   the Current Plan remains on the same milestone until the project result and
+   limitations are recorded.
 
 Use MCTS only for a durable re-decision where a real alternative existed; keep
 approval bookkeeping and progress out of the tree. If no dedicated node exists,

@@ -35,26 +35,29 @@ plainly as a finding that it does.**
 ## The ordering constraint (verified 2026-08-08, not assumed)
 
 Do not measure before the ENT-5 loop fix is active and the existing S10 facts
-have been revalidated on the same boundary-fed consumer. The deflate path's
-discharge is currently dominated by the loop-rule defect that
+have been revalidated at their honest evidence boundary: the real boundary-fed
+path produces the count relation, while focused actual-obligation controls
+consume all four S10 producer families. The deflate path's discharge was
+dominated by the loop-rule defect that
 `research/investigations/obligation-discharge/ACCEPTANCE.md` isolates as the
-dominant cause of the deflate divergence, so a measurement taken against
-today's compiler would attribute to provenance what the loop rule caused.
+dominant cause of the deflate divergence, so a measurement taken against the
+pre-fix compiler would attribute to provenance what the loop rule caused.
 
 At registration, the block was confirmed against the then-active specification,
 compiler identity, activation chain, and held ENT-5 candidate rather than taken
-on trust. The active authority is now v0.23 and the ENT-5 delta has been re-cut
-against those bytes, but the same ordering fact remains: the complete v0.24
-candidate still needs owner exact-byte approval and activation before this
-measurement can have valid attribution.
+on trust. v0.24 and the ENT-5 correction are now activated at
+`spec/kernel-spec.md`, but the same ordering fact remains: task 0045 must first
+record the post-activation frozen acceptance rerun and approved S10 evidence
+disposition before this measurement can have valid attribution.
 
 ## Sequence
 
-1. An ENT-5 activation lands.
+1. Completed: the ENT-5 activation lands.
 2. Re-run the acceptance measurement against it, so the discharge baseline is
    the fixed loop rule rather than the defective one. Compare against
    `ACCEPTANCE.md`'s recorded buckets, state the delta, and confirm that the
-   active SYS-8/ENT-3 S10 count facts enter and serve the boundary-fed path.
+   active SYS-8/ENT-3 S10 count facts enter on the real boundary path and serve
+   actual indexed obligations in all four focused producer-family controls.
 3. Only then apply the gate rule — by hand or by a scratch prototype — to the
    boundary-fed driver's sites, and record the result beside the acceptance
    evidence in `research/investigations/obligation-discharge/`.

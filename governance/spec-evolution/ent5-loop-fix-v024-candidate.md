@@ -1,9 +1,12 @@
 # ENT-5 loop-rule fix — specification-change candidate
 
-Status: CANDIDATE, RE-CUT 2026-08-09 against v0.23, AWAITING OWNER RE-APPROVAL.
-The 2026-08-07 owner approval covered bytes anchored to v0.22 and **does not
-carry over**. This document is the complete delta against the exact text of the
-active `spec/kernel-spec-v0.23.md` (installed a01bc70; SHA-256
+Status: **EXACT-APPROVED AND ACTIVATED 2026-08-09 AS v0.24**. The owner approved
+the complete stable-file digest and named protected-corpus changes recorded in
+`governance/APPROVALS.md`; the installed `spec/kernel-spec.md` has SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+The 2026-08-07 owner approval covered bytes anchored to v0.22 and did **not**
+carry over; this document records the re-cut delta that received the later
+exact approval against `spec/kernel-spec-v0.23.md` (installed a01bc70; SHA-256
 `e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`, read from
 the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`; roadmap revision 19).
 Approval covers these exact bytes; a changed byte returns to review.
@@ -85,7 +88,7 @@ loop-head state removes facts no execution can observe as false there.
 > body discards every pre-loop fact at the head, including `requires` axioms
 > and allocation-length equalities that no execution can invalidate; the
 > corrected scan removes only kills, so the fact state at every loop head is a
-> superset of the one this version computes and discharge only widens.
+> superset of the one v0.23 computes and discharge only widens.
 > Specification delta: numbered rules +0/-0; one existing rule modified at one
 > verbatim-anchored modification site: ENT-5 (the loop rule, its final
 > paragraph). Tokens +0/-0; terminal spellings +0/-0; grammar productions
@@ -99,11 +102,23 @@ loop-head state removes facts no execution can observe as false there.
 > a surviving pre-loop fact proves cannot pass, which is [ENT-1]'s already
 > enumerated non-monotone edge. Selection ground:
 > `research/investigations/obligation-discharge/ACCEPTANCE.md` (2026-08-07),
-> with the `D1h`/`D1i` witness pinning the cause to this rule alone. These
-> bytes carry `Status: ACTIVE` only in the commit that installs them at the
-> active target, and only with the grammar check, derived-material review,
-> full-document hash, and exact owner approval all complete and recorded in
-> `governance/APPROVALS.md`; the file is not edited after approval.
+> with the `D1h`/`D1i` witness pinning the cause to this rule alone. The review
+> candidate carries the `Status: ACTIVE v0.24` token as an input to exact
+> approval, but that token names language authority only after the grammar
+> check, derived-material review, full-document hash, exact owner approval,
+> chained `ACTIVE-SPEC:` record, and active-target installation are all
+> complete. Before then the branch remains non-authoritative; after
+> installation those approved bytes remain the active integration bytes until
+> a later exact-approved activation replaces them.
+
+**Header assembly is exact, not inferred.** In the complete v0.24 document,
+replace the first line with `# Kernel Specification v0.24`. Replace the one
+current v0.23 `Status:` paragraph with the paragraph quoted above, one blank
+line, and the exact former v0.23 paragraph after changing only its leading
+`Status:` token to `Prior:`. Every byte after that prefix remains the installed
+v0.23 byte. This is the same history-header transformation used by the prior
+version steps; inserting the new paragraph while leaving a second `Status:`,
+or omitting the v0.23 history paragraph, is not this candidate.
 
 ## 3. Grammar delta
 
@@ -387,5 +402,19 @@ cargo run -q --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
    The full-document assembly and its byte comparison are the activation task's,
    and are authoritative over this record.
 
-No file under `spec/`, `docs/`, `tests/`, or `compiler/` is modified by this
-candidate.
+## 9. Activation disposition
+
+The exact delta was assembled into the complete v0.24 stable-file bytes and
+activated with the continuing-kill implementation, the approved rewrite of
+`ent5-neg-loop-rule-drops-preloop-fact`, and the additive
+`ent5-pos-return-does-not-kill-loop-head-fact` case. There was no existing
+verdict, cited rule, or runnable-status change. The candidate document digest
+`8c520d868b54ff40332ac2c2475a8e4e32fe217b4ab513279420a0a67818c656`
+identifies the historical review record at commit `7e47130`; this disposition
+changes the document and therefore does not reuse that digest as its current
+identity. The complete active specification digest above is the approval and
+activation identity.
+
+As a delta record, this document itself directly modified no file under
+`spec/`, `docs/`, `tests/`, or `compiler/`; task 0045 assembled and installed
+the approved complete tree.

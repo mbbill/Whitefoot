@@ -2,7 +2,8 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-`kernel-spec-v0.23.md`. Requirement (owner + META-6): every rule is provably
+v0.24 authority at `spec/kernel-spec.md`; immutable versioned files retain the
+superseded authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
@@ -836,15 +837,17 @@ existence-only · 0 underived.
 
 ## v0.23 amendment — FLOOR-5 spelling relief (activated 2026-08-09)
 
-Specification binding:
+Specification binding at activation:
 `spec/kernel-spec-v0.23.md` at SHA-256
 `e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5`, assembled
 from the active v0.22 plus the approved FLOOR-5 delta
 (`governance/spec-evolution/spelling-relief-candidate.md`: SWEEP rows A1, A3,
 A4, and C1, with the owner rulings and adversarial-review fixes recorded
-there). Installed as the active immutable language authority on 2026-08-09
-after the owner's exact-byte approval, byte-identical to the approved
-candidate, which is retained for the `whitefoot-spec` comparison.
+there). Installed as the active language authority on 2026-08-09 after the
+owner's exact-byte approval, byte-identical to the approved candidate. After
+the v0.24 stable-path switchover, these bytes remain the immutable outgoing
+archive; compiler identity no longer depends on a parallel full-spec candidate
+copy.
 
 v0.23 adds and removes no rules. It modifies thirty-four existing rules at
 sixty-two verbatim-anchored sites: FORM-2, FORM-3, GRAM-1, GRAM-4, GRAM-5,
@@ -861,3 +864,27 @@ cancelled and all six integer comparisons keep their named calls, so the
 delta loses two sites ([GRAM-1]'s compound-token sentence and [ENT-3] S1's
 comparison-origin clause, both byte-identical to v0.22 again) and four
 terminal spellings. The rule list and the production count are unchanged.
+
+## v0.24 amendment — ENT-5 continuing-loop kills (activated 2026-08-09)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.24, at SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+The superseded v0.23 bytes remain immutable at
+`spec/kernel-spec-v0.23.md`.
+
+v0.24 adds and removes no rules. It modifies one site in ENT-5: a loop-head
+summary now includes only kills on paths that can continue to a later
+iteration of that same loop. A kill on a path that returns, propagates an
+error, or breaks out of the target loop does not invalidate pre-loop facts on
+the continuing path. This refinement is derived from FN-1's structured normal
+control graph together with ENT-5's existing edge-local kill and join rules;
+it does not add reachability, arithmetic, or path-sensitivity beyond that
+graph.
+
+The grammar and rule inventories are unchanged: 69 productions, 84 decisions,
+93 terminal predicates, and 128 rules. Pre-activation
+frozen acceptance measured 22 of 33 UTF-8 obligations, 0 of 9 SHA-256
+obligations, and 11 of 29 deflate obligations as claim-independent. Installed
+post-activation confirmation belongs to the task closure evidence rather than
+this derivation claim. Statistics remain 80 derived · 48 existence-only · 0
+underived.

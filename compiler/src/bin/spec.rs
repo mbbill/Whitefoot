@@ -3,12 +3,10 @@
 use std::collections::BTreeSet;
 
 use whitefoot::{
-    ACTIVE_KERNEL_SPEC_BYTES, ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH,
-    ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, computed_active_spec_hash,
+    ACTIVE_KERNEL_SPEC_HASH, ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_TEXT,
+    ACTIVE_KERNEL_SPEC_VERSION, computed_active_spec_hash,
 };
 
-const APPROVED_CANDIDATE: &[u8] =
-    include_bytes!("../../../governance/spec-evolution/kernel-spec-v0.23-candidate.md");
 const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
 const APPROVAL_RECORD: &str = include_str!("../../../governance/APPROVALS.md");
 
@@ -116,6 +114,16 @@ fn titled_version(spec: &str) -> Option<&str> {
     spec.lines().next()?.strip_prefix("# Kernel Specification ")
 }
 
+/// The version named by the active status line inside the approved bytes.
+fn active_status_version(spec: &str) -> Option<&str> {
+    spec.lines()
+        .skip(1)
+        .find(|line| !line.trim().is_empty())?
+        .strip_prefix("Status: ACTIVE ")?
+        .split_whitespace()
+        .next()
+}
+
 /// Check the activation chain against the specification actually embedded.
 fn validate_activation_chain(
     approvals: &str,
@@ -160,6 +168,14 @@ fn validate_activation_chain(
             active.version
         )),
         None => errors.push("the specification has no title line".to_owned()),
+    }
+    match active_status_version(spec) {
+        Some(status) if status == active.version => {}
+        Some(status) => errors.push(format!(
+            "the chain ends at {} but the specification status names {status}",
+            active.version
+        )),
+        None => errors.push("the specification has no active status line".to_owned()),
     }
     if active.digest != digest {
         errors.push(format!(
@@ -209,10 +225,6 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
 }
 
 fn main() {
-    if ACTIVE_KERNEL_SPEC_BYTES != APPROVED_CANDIDATE {
-        eprintln!("{ACTIVE_KERNEL_SPEC_PATH} differs from the approved candidate");
-        std::process::exit(1);
-    }
     let computed = computed_active_spec_hash();
     if ACTIVE_KERNEL_SPEC_HASH != computed {
         eprintln!("{ACTIVE_KERNEL_SPEC_PATH} does not hash to the recorded active identity");
@@ -259,11 +271,16 @@ mod tests {
     const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     fn chain_of(records: &str) -> Result<usize, Vec<String>> {
-        validate_activation_chain(records, "v0.2", "# Kernel Specification v0.2\n", B)
+        validate_activation_chain(
+            records,
+            "v0.2",
+            "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.2\n",
+            B,
+        )
     }
 
-    /// The record shipped beside this compiler must describe the specification
-    /// this compiler embeds.
+    /// The recorded chain shipped beside this compiler must describe the
+    /// exact active specification bytes and contain every activation link.
     #[test]
     fn recorded_chain_ends_at_the_embedded_specification() {
         assert_eq!(
@@ -273,11 +290,7 @@ mod tests {
                 ACTIVE_KERNEL_SPEC_TEXT,
                 &computed_active_spec_hash().to_string(),
             ),
-            // One link per activation. This literal MUST be bumped by every
-            // activation commit; v0.23's did not, and the failure sat unseen
-            // because two readers each checked one `test result` line and this
-            // crate is not the one they read.
-            Ok(15)
+            Ok(16)
         );
     }
 
@@ -312,7 +325,7 @@ mod tests {
         let errors = validate_activation_chain(
             &format!("ACTIVE-SPEC: v0.3 {B} -\n"),
             "v0.2",
-            "# Kernel Specification v0.2\n",
+            "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.2\n",
             B,
         )
         .expect_err("a chain ending at another version must fail");
@@ -332,6 +345,23 @@ mod tests {
             assert!(
                 chain_of(&records).is_err(),
                 "these records must not pass: {records}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_or_non_active_status_fails() {
+        for spec in [
+            "# Kernel Specification v0.2\n",
+            "# Kernel Specification v0.2\n\nStatus: REVIEW CANDIDATE v0.2\n",
+            "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.3\n",
+        ] {
+            let errors =
+                validate_activation_chain(&format!("ACTIVE-SPEC: v0.2 {B} -\n"), "v0.2", spec, B)
+                    .expect_err("the installed bytes must carry their active status");
+            assert!(
+                errors.iter().any(|error| error.contains("status")),
+                "missing status error for {spec:?}: {errors:?}"
             );
         }
     }

@@ -1,20 +1,21 @@
 # Stable active-specification filename — law amendment proposal
 
-Status: **APPROVED 2026-08-07** (`governance/APPROVALS.md`, "approval (stable
-active-specification filename)"), with all eight mandatory amendments below as
-conditions of adoption; condition 2's implementation form was subsequently read
-down in the same ledger on measured grounds. **Not yet switched over**: by §5 of
-this document, v0.23 activates the old way at `spec/kernel-spec-v0.23.md`, and
-the switchover rides the first activation with no EBNF change — the approved
-ENT-5 loop-rule fix. The line below said "AWAITING OWNER APPROVAL" until
+Status: **APPROVED 2026-08-07; ADOPTED WITH v0.24 ON 2026-08-09**
+(`governance/APPROVALS.md`, "approval (stable active-specification filename)"
+and the v0.24 exact-byte activation), with all eight mandatory amendments below
+as conditions of adoption; condition 2's implementation form was subsequently
+read down in the same ledger on measured grounds. v0.23 activated the old way
+at `spec/kernel-spec-v0.23.md`; the approved ENT-5 loop-rule fix then carried
+the one-time switchover with no EBNF change. The line below said "AWAITING OWNER APPROVAL" until
 2026-08-08, contradicting the ledger for a day; corrected rather than left,
 because a document whose own status disagrees with the record is the defect
 this batch spent a day finding elsewhere.
 
-This amends
+This amended
 project law (`CLAUDE.md` / `AGENTS.md`, which must stay byte-identical) and
 the specification-change workflow (`docs/WORKFLOW.md`). Nothing in it takes
-effect until the owner approves and the switchover commit lands.
+effect before owner approval and the switchover commit; both conditions are now
+satisfied by the v0.24 activation.
 
 Origin: owner proposal 2026-08-07, adversarially reviewed on four lenses
 (append-only guarantee, approval binding, tooling and pins, switchover and
@@ -30,7 +31,9 @@ A language change edits that file directly on a task branch. At activation,
 in one commit, the superseded bytes are archived under their versioned name
 `spec/kernel-spec-vN.md` — **flat, beside the twenty-three that already
 exist, never in a subdirectory** — and the version line inside the stable
-file is bumped. Candidate files cease to exist; review is `git diff`.
+file is bumped. Parallel full-spec candidate copies cease to exist; review is
+`git diff`. Delta proposals and review/evidence records may remain as history,
+but they are not alternate copies of the active specification.
 
 ## 2. Why
 
@@ -74,8 +77,11 @@ history cannot cross a version boundary.
    replaces both mitigations the proposal offered for the version-label
    risks: those compare labels to labels and pass on any bytes carrying
    the right version string, while a digest chain does not.
-4. **Landed-state archive integrity in `make check`.** For every recorded
-   `(version, digest)` pair, the archived file must exist and hash to it.
+4. **Landed-state archive integrity in `make check`.** Every recorded
+   `(version, digest)` pair must be supplied by bytes that hash to it. Once the
+   stable path exists, exactly the active identity is supplied by
+   `spec/kernel-spec.md`; every other identity must have its immutable
+   versioned archive, so exactly one recorded version lacks such an archive.
    `pre-commit` is bypassable by `--no-verify`, by merge commits, and by a
    clone whose `core.hooksPath` points elsewhere, so the landed check is
    the real guard.
@@ -91,10 +97,11 @@ history cannot cross a version boundary.
    change with both proposed gates green. Concurrent drafting stays free;
    a rebase changes the digest and therefore requires re-approval, which
    is correct behaviour rather than friction.
-7. **Archive-creates-or-fails.** The archive step must create
-   `spec/kernel-spec-vN.md` and fail if that path already exists,
-   preserving the free path-occupancy collision detector that a content
-   merge cannot replace.
+7. **Archive-creates-or-fails.** Every activation after the one-time switch
+   must create `spec/kernel-spec-vN.md` for the outgoing stable bytes and fail
+   if that path already exists, preserving the free path-occupancy collision
+   detector that a content merge cannot replace. The one-time switch reuses
+   the already released v0.23 archive and creates no duplicate.
 8. **Status word inside the approved bytes.** The spec's status line
    becomes part of the approved bytes, so it must read `Status: ACTIVE vN`
    before approval, and the file is never edited after approval.
@@ -126,18 +133,18 @@ independent of this proposal — registered as task 0039: repair the three
 existing tautologies; computed digest; chained approval record; archive
 integrity gate plus `pre-merge-commit`; two-path grammar verifier.
 
-Then:
+The adopted switchover executed this sequence:
 
-- **FLOOR-5 / v0.23 activates the old way, unchanged.** A 24-rule,
+- **FLOOR-5 / v0.23 activated the old way, unchanged.** A 34-rule,
   EBNF-changing, corpus-migrating activation must not be paired with a
   file-model change.
-- **The switchover rides the first small activation with no EBNF change** —
-  concretely the approved ENT-5 loop-rule fix. It must ride an activation:
+- **The switchover rode the first small activation with no EBNF change** —
+  concretely the approved ENT-5 loop-rule fix. It had to ride an activation:
   switching between activations would put one version's bytes at two paths
   at HEAD, which is the parallel-versions defect the hygiene rule forbids.
   Riding an activation, the previous version is already the flat archive
   and the new stable file duplicates nothing.
-- That single commit adds `spec/kernel-spec.md` with the approved bytes;
+- That single commit added `spec/kernel-spec.md` with the approved bytes;
   repoints the compiler's path, text, and version constants; deletes the
   now-unnecessary approved-candidate comparison; repoints the conformance
   runner and rewrites (never deletes) the runner tests keyed to the old

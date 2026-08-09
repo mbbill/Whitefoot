@@ -678,6 +678,302 @@ fn main() -> own unit pure {
     );
 }
 
+#[test]
+fn d1h_and_d1i_distinguish_a_return_inside_the_loop_from_one_after_it() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn return_inside(values: own array<i32, count>, i: own u64, stop: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @l {
+    let at_head = values[i];
+    if stop {
+      return at_head;
+    }
+    break @l;
+  }
+  return 0_i32;
+}
+
+fn return_after(values: own array<i32, count>, i: own u64, stop: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @l {
+    let at_head = values[i];
+    break @l;
+  }
+  if stop {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "return_inside"),
+        vec![true],
+        "D1h: a return edge reaches no later head, so it cannot erase the entry fact"
+    );
+    assert_eq!(
+        discharge_flags(source, "return_after"),
+        vec![true],
+        "D1i control: moving the same return after the loop stays discharged"
+    );
+}
+
+#[test]
+fn a_kill_followed_only_by_the_current_loop_break_does_not_poison_the_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @l {
+    let at_head = values[i];
+    set i = i +wrap 1_u64;
+    break @l;
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true],
+        "the set's only successor leaves this loop, so no later head observes it"
+    );
+}
+
+#[test]
+fn a_kill_followed_only_by_an_enclosing_break_does_not_poison_the_inner_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool, leave_inner: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @outer {
+    loop @inner {
+      let at_head = values[i];
+      if leave_outer {
+        set i = i +wrap 1_u64;
+        break @outer;
+      }
+      if leave_inner {
+        break @inner;
+      }
+    }
+    break @outer;
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true],
+        "the assignment reaches only the enclosing loop's continuation, not the inner head"
+    );
+}
+
+#[test]
+fn a_propagate_error_edge_does_not_poison_the_loop_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+enum Fail {
+  Bad();
+}
+
+fn source(fail: own Bool) -> own Result<u64, Fail> pure {
+  if fail {
+    let bad = Bad();
+    return Err<u64, Fail>(error: bad);
+  }
+  return Ok<u64, Fail>(value: 1_u64);
+}
+
+fn read(values: own array<i32, count>, i: own u64, fail: own Bool, leave: own Bool) -> own Result<i32, Fail> pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return Ok<i32, Fail>(value: 0_i32);
+  }
+  loop @l {
+    let value = propagate source(fail: fail);
+    let at_head = values[i];
+    if leave {
+      break @l;
+    }
+  }
+  return Ok<i32, Fail>(value: 0_i32);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true],
+        "only propagate's Ok edge can return to the head; its Err edge leaves the function"
+    );
+}
+
+#[test]
+fn an_else_free_continuing_kill_still_poisons_the_loop_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @l {
+    if mutate {
+      set i = i +wrap 1_u64;
+    }
+    let at_head = values[i];
+    if leave {
+      break @l;
+    }
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "the mutating arm and the else-free false edge both remain inside the body"
+    );
+}
+
+#[test]
+fn a_give_to_an_initializer_inside_the_loop_carries_its_kill_to_the_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64, mutate: own Bool, leave: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @l {
+    let picked = if mutate {
+      set i = i +wrap 1_u64;
+      give 1_i32;
+    } else {
+      give 0_i32;
+    }
+    let at_head = values[i];
+    if leave {
+      break @l;
+    }
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "the give reaches an initializer continuation inside the body and then the backedge"
+    );
+}
+
+#[test]
+fn a_mixed_branch_ignores_the_return_only_kill_but_keeps_the_continuing_one() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(left: own array<i32, count>, right: own array<i32, count>, i: own u64, j: own u64, stop: own Bool, leave: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  if ilt(j, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @l {
+    if stop {
+      set i = i +wrap 1_u64;
+      return 0_i32;
+    } else {
+      set j = j +wrap 1_u64;
+    }
+    let left_value = left[i];
+    let right_value = right[j];
+    if leave {
+      break @l;
+    }
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true, false],
+        "the returning arm's i kill is non-continuing, while the other arm's j kill reaches the backedge"
+    );
+}
+
+#[test]
+fn a_nested_loop_own_break_carries_kills_to_the_outer_loop_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64, leave_outer: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @outer {
+    let at_head = values[i];
+    loop @inner {
+      set i = i +wrap 1_u64;
+      break @inner;
+    }
+    if leave_outer {
+      break @outer;
+    }
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "the inner break reaches a continuation inside the outer body and then its backedge"
+    );
+}
+
 // ---------------------------------------------------------------------
 // [ENT-6] obligations and residual rendering
 // ---------------------------------------------------------------------
@@ -1457,6 +1753,44 @@ command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap
         discharge_flags(source, "main"),
         vec![true, false],
         "only the success arm's binder carries the capacity bound"
+    );
+}
+
+#[test]
+fn a_host_copy_utf8_success_count_is_bounded_by_capacity() {
+    // The UTF-8 copy producer carries the same S10 success-count bound as the
+    // byte-preserving copy producer: copied <= 3 < len(table).
+    let source = br#"const count: u64 = 4_u64;
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  let table = array_new<u8, count>(0_u8);
+  let sink = buffer_new(8_u64, 0_u8);
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 0_u64) {
+      Ok(value: text) => {
+        region 'v {
+          region 'd {
+            match host_copy_utf8<'v, 'd>(value: &'v text, destination: &uniq 'd sink, offset: 0_u64, capacity: 3_u64) {
+              Ok(value: copied) => {
+                let good = table[copied];
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+      }
+      Err(error: missing) => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "main"),
+        vec![true],
+        "host_copy_utf8's Ok payload is at most the capacity actual"
     );
 }
 

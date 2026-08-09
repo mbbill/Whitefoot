@@ -23,19 +23,21 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact bytes of
-`../spec/kernel-spec-v0.18.md`. `cargo run --bin whitefoot-spec` checks that
-those bytes are the approved candidate and that the terminal and grammar data
-name the same specification identity. The committed grammar tables are
-ordinary compiler data. The exact specification identity is versioned data;
-compiler stage, type, and API names remain stable across grammar-preserving
-specification bumps instead of acquiring a `V0_xx` suffix. For a specification
-proposal, run the native verifier through this compiler:
+The frontend targets the exact v0.24 bytes of `../spec/kernel-spec.md`,
+SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+`cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
+activation chain and checks that the terminal and grammar data name the same
+specification identity. The committed grammar tables are ordinary compiler
+data. The exact specification identity is versioned data; compiler stage,
+type, and API names remain stable across grammar-preserving specification
+bumps instead of acquiring a `V0_xx` suffix. For a specification proposal, run
+the native verifier through this compiler:
 
 ```sh
 cargo run --bin whitefoot-grammar -- \
-  ../spec/kernel-spec-vACTIVE.md \
-  ../governance/spec-evolution/kernel-spec-vN-candidate.md
+  ../spec/kernel-spec-vPREVIOUS.md \
+  ../spec/kernel-spec.md
 ```
 
 It verifies that a grammar-preserving proposal keeps the baseline
@@ -239,7 +241,7 @@ capabilities reject under EFF-2. These facts currently stop at semantic
 checking and static-contract compatibility.
 The backend emits no effect-derived LLVM function attributes or alias metadata,
 licenses no check elision from an effect row, and never emits `willreturn`;
-v0.18 has no termination checker.
+Whitefoot currently has no termination checker.
 
 Target qualification is one private stage immediately before LLVM emission.
 The compiler executable fixes an exact aarch64 or x86-64 macOS/Linux triple and
@@ -262,8 +264,8 @@ before the body. Callers do not prove it, and it is never turned into
 program exercises this path through the ordinary loop, buffer, effect, and
 cleanup implementation.
 
-The v0.18 compiler retains the static contract family introduced in v0.16 and
-checks it before checked-program publication.
+The compiler retains the static contract family introduced in v0.16 and checks
+it before checked-program publication.
 A nongeneric source contract contributes its source-ordered unique member
 signatures and laws. Each source conformance has one exact concrete subject,
 one coherent source-contract key, and exactly one declared-order binding for
@@ -278,7 +280,8 @@ That evidence is deliberately non-executable. Lowering reads the same ordinary
 checked functions and operations as before, ignores the contract metadata, and
 creates no contract object, dictionary, vtable, indirect call, runtime check,
 ABI component, or optimizer fact. A bound function is emitted only through its
-normal direct function path. v0.18 has no contract-member call operation, and
+normal direct function path. The language has no contract-member call
+operation, and
 generic source contracts and source-contract generic bounds receive their
 specified FN-3 rejections rather than becoming unsupported compiler features.
 

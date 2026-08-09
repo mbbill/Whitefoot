@@ -46,8 +46,9 @@ probably not the next work.
   authorized work was carried out; neither selects, expands, or resequences
   work by itself, and neither replaces the canonical homes for facts,
   measurements, decisions, or status.
-- The active numbered specification named by `docs/roadmap.md` defines the
-  language. Compiler behavior, tests, archived code, and design prose do not.
+- The active specification at `spec/kernel-spec.md`, named by
+  `docs/roadmap.md`, defines the language. Compiler behavior, tests, archived
+  code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
 - Use the installed `mcts-mem-use` skill to consult the relevant live
@@ -168,7 +169,8 @@ one-time cleanup.
 - Supersede in place. When new material replaces old, update, merge, or delete
   the old in the same change. Do not accumulate parallel versions, stale
   dossiers, or abandoned experiments beside their replacements. The single
-  deliberate exception is `spec/`, which is append-only by design.
+  deliberate retained-history model is `spec/`: its active file is superseded
+  in place, while its flat versioned archives are append-only.
 - Keep important folders as clean as the root. The same discipline applies
   inside `spec/`, `compiler/`, `tools/`, `conformance/`, and the research
   directories. An important folder turning into a junk drawer is the same
@@ -182,8 +184,9 @@ one-time cleanup.
 
 Follow this by judgment and keep moving; it is a standing rule, not a reason to
 pause on every file. The one thing it reserves for the owner is a new top-level
-entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
-`make install-hooks`); everything else is upheld by discipline.
+entry. Append-only versioned specification archives are enforced by a
+pre-commit hook (installed with `make install-hooks`); everything else is
+upheld by discipline.
 
 ## Specification and test integrity
 
@@ -194,12 +197,15 @@ entry. Append-only `spec/` is enforced by a pre-commit hook (installed with
   branch. It also defines bounded parallel research. `governance/`, `spec/`,
   and `tests/conformance/` provide records, resources, and tools; none defines
   an independent update lifecycle.
-- The numbered kernel specification is append-only, enforced by a pre-commit
-  hook (`make install-hooks`): a released `spec/kernel-spec-v*.md` is never
-  edited, renamed, or deleted. Amending the language is allowed, with care — a
-  change batch goes into a new version file. A spec/compiler discrepancy stops
-  the affected work for investigation; implementation convenience never selects
-  language behavior.
+- The active kernel specification lives at `spec/kernel-spec.md` and is
+  superseded in place only through the specification activation workflow. At
+  activation, its outgoing bytes are archived flat as
+  `spec/kernel-spec-vN.md`; every such released archive is absolutely
+  immutable and the pre-commit hook (`make install-hooks`) forbids editing,
+  renaming, or deleting it. The active file's integrity is carried by the
+  chained recorded digest and the landed archive gate. A spec/compiler
+  discrepancy stops the affected work for investigation; implementation
+  convenience never selects language behavior.
 - Before proposing a spec change, verify the new grammar with the native
   grammar verifier that reuses the compiler's own lexer and parser. Follow the
   complete proposal, approval, activation, and closure loop in

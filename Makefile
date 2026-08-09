@@ -1,9 +1,10 @@
 # Whitefoot gate — only what a research compiler needs: the compiler builds and
 # passes its tests, the conformance corpus has valid structure and declared rule
-# coverage, and the numbered spec stays append-only. Everything else is guarded
-# by AGENTS.md/CLAUDE.md. A green gate states only what it exercises: `check`
-# exercises corpus structure and declared coverage, not every case's verdict.
-# Verdicts are `conformance-run`, which is reported and not yet green.
+# coverage, and the active specification plus immutable archives match the
+# recorded chain. Everything else is guarded by AGENTS.md/CLAUDE.md. A green
+# gate states only what it exercises: `check` exercises corpus structure and
+# declared coverage, not every case's verdict. Verdicts are `conformance-run`,
+# which is reported independently and is not yet green.
 
 PY := python3 -B
 
@@ -15,7 +16,8 @@ repository-invariants:
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
 	@grep -q '^Status: CANONICAL DIRECTION OUTLINE' docs/roadmap.md || { echo "docs/roadmap.md is not marked canonical" >&2; exit 1; }
 
-# the one spec protection: released kernel specs are never edited (new version only)
+# Released version archives are never edited; the stable active file is checked
+# against the recorded chain by `spec-archive-integrity` below.
 spec-append-only:
 	@changes="$$(git diff --name-status --diff-filter=MDRCT HEAD -- 'spec/kernel-spec-v*.md')"; \
 	if test -n "$$changes"; then \
@@ -123,10 +125,10 @@ conformance:
 compiler:
 	$(MAKE) -C compiler check
 
-# drive every case through the native adapter: compile, arrange, run, compare.
-# not in `check`: 123 pre-existing runnable cases do not reach their declared
-# verdict through this compiler, and resolving that needs decisions outside the
-# task that built the adapter (docs/ongoing/0014-first-slice-conformance-execution.md).
+# Drive every case through the native adapter: compile, arrange, run, compare.
+# This remains separate from `check`: the current result is
+# Pass=390, Fail=1, Skip=13, and the one runnable attribution divergence is
+# tracked independently rather than hidden inside the repository gate.
 conformance-run:
 	cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture
 

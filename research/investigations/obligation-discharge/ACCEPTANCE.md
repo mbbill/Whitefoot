@@ -280,3 +280,57 @@ two lines per fix, no fix larger than three.
   named.
 - The deflate unit here includes `inflate`, whose stored-block path
   SIMULATION excluded; the dynamic-path-only subset is reported alongside.
+
+## Pre-activation v0.24 candidate rerun (2026-08-09)
+
+This is review evidence, not an activation record. It was run through the same
+dark checker and claim-blinding method against the unapproved v0.24 review
+candidate prepared by commit `00e6ce4`, whose complete specification SHA-256 is
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+The temporary in-crate probe was deleted after the run.
+
+| | utf8parse | deflate full unit | deflate dynamic path | sha256 |
+|---|---:|---:|---:|---:|
+| obligation sites | 33 | 29 | 24 | 9 |
+| proven with all claims blinded | **22** | **11** | **11** | **0** |
+| claim-supported | 11 | 18 | 13 | 9 |
+| baseline-undischarged | 0 | 0 | 0 | 0 |
+
+The frozen utf8parse and sha256 buckets did not move, so no previously proven
+site regressed. Deflate recovered six proven sites: 5 to 11 on both the
+29-site full denominator and the 24-site dynamic-path denominator. The focused
+`D1h` witness now discharges, while `D1i` remains discharged.
+
+Per deflate function, in `obligations / proven / claim-supported` form:
+`read_bits` 1/1/0, `emit_byte` 1/1/0, `inflate` 5/0/5,
+`decode_length` 2/0/2, `copy_distance` 3/2/1,
+`build_huffman_table` 10/5/5, `decode_table_symbol` 2/0/2,
+`store_dynamic_length` 2/1/1, and `decode_dynamic` 3/1/2.
+
+Five existing claims became non-rejecting [CLM-2] redundancy advisories:
+`count_slot_in_counts`, `validate_slot_in_counts`,
+`offsets_slot_in_offsets`, `offsets_slot_in_counts`, and
+`ordered_symbol_in_lengths`. The other 16 deflate claims remain retained; no
+claim is refuted. Baseline and blinded runs retained identical obligation
+counts and source order for every function.
+
+### S10 revalidation and the boundary-path limitation
+
+Focused checker controls now exercise all four shipped [ENT-3] S10 producers:
+`read_once`, `write_once`, `host_copy_bytes`, and `host_copy_utf8`. In each
+success arm the returned count bound discharges an actual indexed-access
+obligation, and the existing mutation controls show that a relevant kill
+invalidates it.
+
+The real `raw_deflate_boundary.wf` path does establish `taken <= room` in the
+`ReadBytes(count: taken)` arm. It does **not** currently consume that relation
+in an entailment obligation: its only use of `taken` is
+`filled = filled +wrap taken`. Thus the plan's earlier stronger wording that
+S10 was both introduced and consumed on this real path was not satisfied by
+the preregistered program. The honest evidence is “real boundary
+producer, focused real-obligation consumers,” not an end-to-end boundary
+consumer. Adding an otherwise unnecessary indexed access merely to make the
+measurement green would be evidence-shaped program churn, so this review
+candidate does not do that. On 2026-08-09 the owner accepted this honest
+producer-plus-focused-consumers boundary as the S10 disposition; the milestone
+still requires post-activation confirmation before it is terminal.

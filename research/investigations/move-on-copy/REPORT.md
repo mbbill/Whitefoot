@@ -18,7 +18,7 @@ Repository at `eca2bec`, `git status --porcelain` → empty. Compiler binary `co
 
 ### M1 — The brief's premise is textually wrong. The one-clause deletion does not do what the brief says.
 
-`sed -n '258p' governance/spec-evolution/kernel-spec-v0.23-candidate.md`, verbatim fragment:
+`sed -n '258p' spec/kernel-spec-v0.23.md`, verbatim fragment:
 
 > "**An affine place** rooted in a live own-mode binding **is consumed** exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], or by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3]."
 
@@ -46,7 +46,7 @@ The **caller is not pinched**: `drop_it<i32>(value: a)` passes OWN-1 (`zerouse_b
 
 ### M3 — The `Int`/`Float` bound escape does not cover Bool, tag-only enums, or shared borrows.
 
-`kernel-spec-v0.23-candidate.md:425` (FN-2), verbatim: *"A generic type parameter's written contract bound is admitted only when it resolves to the prelude `Int` or `Float` marker."*
+`spec/kernel-spec-v0.23.md:425` (FN-2), verbatim: *"A generic type parameter's written contract bound is admitted only when it resolves to the prelude `Int` or `Float` marker."*
 
 - `bound_bool2.wf` — `fn pick<Held: Int>` instantiated at `Bool` → exit 1, **`FN-3` TypeMismatch**.
 - `unbound_bool2.wf` — `fn pick<Held>` at `Bool`, body `return move value;` → exit 1, **`OWN-1 MoveOfCopy` @59–69, in the body**.

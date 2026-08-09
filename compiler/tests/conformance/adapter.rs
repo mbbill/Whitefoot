@@ -251,17 +251,14 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 
 #[test]
 #[ignore = "BLOCKED, not scoped out: 1 runnable case does not reach its declared verdict \
-            through this compiler. own1-neg-match-move-through-borrow expects OWN-1 for \
-            `match move deref(holder)`, but the compiler cites OWN-5, whose active text \
-            owns the move-through-borrow ban; the case awaits a separate owner ruling on \
-            the expected citation and is deliberately untouched until then. The v0.20 \
-            activation settled the other five: the three returned-reborrow cases under \
-            OWN-14's admission, the TYPE-7/OWN-1 same-node order under DIAG-1's \
-            first-definition rank, and the uniq-match payload case under OWN-13's \
-            arm-scoped child reborrow. Run `make conformance-run` for the complete \
-            tally; the per-case history is docs/done/0025-attribution-divergences.md, \
-            docs/done/0024-general-borrow-parameters.md, and \
-            docs/done/0029-v020-activation.md."]
+            through this compiler. own3-pos-outlives-store expects exit 0 for an \
+            enclosing-region borrow stored into an inner-region destination under \
+            OWN-3, but the compiler stops as Unsupported(RegionsAndBorrows). This is \
+            the retained A3 counterexample and open capability/wording question, not a \
+            source rejection or an expectation to rewrite. Run `make conformance-run` \
+            for the complete tally; the current evidence and migration history are in \
+            governance/APPROVALS.md and \
+            docs/done/0038-floor5-semantic-and-migration.md."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {
     let cases = corpus::load();
     assert!(

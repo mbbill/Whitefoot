@@ -9,13 +9,13 @@ boundary.
 This ACTIVE plan authorizes only the current independently reviewable step
 below. The owner selected the later capability sequence and its stop condition,
 but each later slice must still replace this rolling plan before execution. The
-owner separately authorized branch-local specification drafting,
-implementation, and lead review to continue overnight without waiting for
-interactive approval. That delegation permits assembling a reviewable
-candidate; it is not exact-byte approval and does not authorize an
-`ACTIVE-SPEC:` record or a specification activation.
+owner first authorized branch-local drafting, implementation, and review, then
+on 2026-08-09 gave exact approval for the complete v0.24 digest, the two named
+protected-corpus changes, and the honest S10 evidence boundary. The atomic
+activation is installed; this step remains current until its post-activation
+verification and task closure are recorded.
 
-Derived from: [Direction Outline revision 20](roadmap.md), items `PROOF-8`
+Derived from: [Direction Outline revision 21](roadmap.md), items `PROOF-8`
 (primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
 flagship but is parked by this owner selection.
 
@@ -26,7 +26,10 @@ construct, the normative L0 entailment fragment, caller-side OP-4 index
 discharge, and the SYS count postconditions with ENT-3 S10 fact introduction.
 The current milestone corrects the shipped ENT-5 loop rule, switches to the
 stable active-spec filename, restores the native verification gate, and
-revalidates item 4 on its real boundary-fed consumer.
+revalidates item 4 on its real boundary producer and focused obligation
+consumers. The boundary-fed deflate driver produces `taken <= room` but has no
+natural current entailment obligation that consumes it; the owner accepted
+that limitation rather than adding evidence-shaped program behavior.
 
 The selected direction after this milestone is provenance measurement and
 gate closure, a counted range loop, `requires` as a call-site goal, `ensures`
@@ -45,56 +48,52 @@ or after the owner disposes a reproduced blocker that stops the sequence.
 
 ### Why
 
-The frozen acceptance run found the loop rule to be the dominant measured
+The frozen acceptance run found the v0.23 loop rule to be the dominant measured
 cause of deflate's divergence: only 5 of 29 sites discharged and 21 claims
-remained. The current rule counts kill events on `return`, propagated error,
-and other edges that cannot reach another iteration head. It therefore deletes
-pre-loop facts no continuing execution can observe as invalid. Until this is
-fixed, provenance measurement would attribute claims to the wrong cause.
+remained. That rule counted kill events on `return`, propagated error, and
+other edges that cannot reach another iteration head, deleting pre-loop facts
+no continuing execution can observe as invalid. v0.24 corrects that rule;
+post-activation measurement must confirm the resulting attribution baseline.
 
 ### Do
 
-1. Carry task 0043 unchanged under this replacement plan: repair the native
-   canonical-corpus gate by deriving its exclusions from exact manifest paths
-   and expectations, without changing protected source or verdicts.
-2. Use the stable-aware archive gate completed by task 0042. Independently
-   recompute and review the v0.23-based ENT-5 delta, assemble and hash the
-   complete v0.24 specification bytes, inventory every protected conformance
-   rewrite, and prepare the compiler, regression, identity, and live-document
-   changes as one reviewable activation candidate. Branch-local rehearsal and
-   lead review may continue under the overnight delegation.
-3. Present the complete digest, semantic delta, impact inventory, verifier
-   evidence, protected changes, and limitations for owner exact-byte approval.
-   Only after that approval is recorded may the activation atomically install
-   v0.24 at `spec/kernel-spec.md`, write `ACTIVE-SPEC:`, and update every spec
-   pin, generated datum, conformance witness, derivation record, live document,
-   and law/workflow statement required by the approved stable-file model. O11
-   and the provenance gate do not ride this activation.
-4. Implement continuing-kill analysis and add D1h/D1i plus nested-control
-   regressions. Rerun the preregistered utf8parse, SHA-256, and boundary-fed
-   deflate acceptance sample. D1h must discharge, D1i must remain discharged,
-   and no previously proven site may regress. Confirm that the already-shipped
-   SYS-8/ENT-3 S10 count facts are introduced and consumed on the boundary-fed
-   path; this is revalidation, not a new language feature.
-
-No `ACTIVE-SPEC:` line may be written merely to make a gate green, independent
-digest review is not owner exact-byte approval, and the ENT-5 delta digest is
-not a substitute for the complete v0.24 digest. Work may reach a complete
-reviewable tree overnight, but protected activation waits at this boundary.
+1. Completed: carry task 0043 unchanged under this replacement plan and repair
+   the native canonical-corpus gate by deriving its exclusions from exact
+   manifest paths and expectations, without changing protected source or
+   verdicts.
+2. Completed: use the stable-aware archive gate completed by task 0042;
+   independently recompute and review the v0.23-based ENT-5 delta, assemble and
+   hash the complete v0.24 specification bytes, inventory every protected
+   conformance rewrite, and prepare the compiler, regression, identity, and
+   live-document changes as one reviewable activation candidate, then complete
+   branch-local rehearsal and lead review.
+3. Completed: the owner approved the complete digest, semantic delta, impact
+   inventory, protected changes, and limitations. The activation atomically
+   installs v0.24 at `spec/kernel-spec.md`, writes the chained `ACTIVE-SPEC:`,
+   and updates every spec pin, generated datum, conformance witness, derivation
+   record, live document, and law/workflow statement required by the approved
+   stable-file model. O11 and the provenance gate do not ride this activation.
+4. Complete the installation confirmation: rerun the preregistered utf8parse,
+   SHA-256, and boundary-fed deflate acceptance sample plus complete gates and
+   the independent adapter. D1h must discharge, D1i must remain discharged,
+   and no previously proven site may regress. Reconfirm that SYS-8/ENT-3 S10
+   produces its relation on the real boundary path and that all four focused
+   actual-obligation consumers and invalidation controls remain green.
 
 ### Verify and accept
 
 - The archive gate is green on the stable layout and still fails on missing
   stable bytes, a forgotten outgoing archive, an unrecorded archive, malformed
   records, wrong version, and wrong digest.
-- After exact approval and activation, `whitefoot-spec` reports v0.24, the
+- On the installed activation, `whitefoot-spec` reports v0.24, the
   approved complete digest, and 16 unbroken activations; grammar remains 69
   productions, 84 decisions, and 93 terminal predicates.
 - Focused ENT-5 controls cover return, propagated error, current/enclosing
   break, a kill followed only by exit, a real continuing kill, and nested-loop
   reachability.
 - Focused S10 controls show the four existing transfer-count bounds enter the
-  fact state, invalidate correctly, and serve the boundary-fed deflate path.
+  fact state, invalidate correctly, and discharge actual subscript obligations;
+  the boundary-fed deflate path separately proves the real producer is live.
 - `make -C compiler check` and `make check` are green. The separately invoked,
   ignored conformance adapter reports its one protected runnable divergence and
   pending gaps independently; it is not silently counted as part of `make check`.
@@ -103,12 +102,12 @@ reviewable tree overnight, but protected activation waits at this boundary.
 
 ### Accept and stop
 
-This plan is terminal when task 0043 is closed; the approved ENT-5/stable-file
+This plan is terminal when task 0045 is closed; the approved ENT-5/stable-file
 activation is installed byte-for-byte; focused and complete gates pass; the
 acceptance sample and item-4 revalidation are recorded; and the outline states
 the result. Then replace this plan with the next independently reviewable
-slice. If exact approval has not yet been given, stop at the complete review
-packet rather than manufacturing an activation record.
+slice. Exact approval and activation are complete; post-activation evidence is
+the remaining boundary before task 0041 may be claimed.
 
 ## Owner-selected roll-forward — dependency map, not execution authority
 

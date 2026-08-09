@@ -297,9 +297,9 @@ version label, or predecessor disagree with the chain, so an activation that
 forgets a line, or writes the wrong digest into one, fails the gate.
 
 These lines add no approval. Every digest below is the exact-byte value the
-owner already approved in an entry above; the chain begins at v0.9 because
-that is where exact-byte approval began. A new activation appends its line in
-the same change that installs the specification.
+owner approved in an exact-byte entry in this ledger; the chain begins at v0.9
+because that is where exact-byte approval began. A new activation appends its
+line in the same change that installs the specification.
 
 ACTIVE-SPEC: v0.9 bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68 -
 ACTIVE-SPEC: v0.10 71073e25219455896250e15e13d1ffdbfc443c87a9b28cb9906d73a020dc33e9 bdfb461d1901f610633c5cbcd2477d24df3c77ca90599b9580c8289e50b82b68
@@ -316,6 +316,7 @@ ACTIVE-SPEC: v0.20 b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312
 ACTIVE-SPEC: v0.21 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f b082ef3fa8d2ee630b7e5b6ecb55ff004ed2473c566040150a1297a61b312dc1
 ACTIVE-SPEC: v0.22 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f
 ACTIVE-SPEC: v0.23 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8
+ACTIVE-SPEC: v0.24 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5
 
 ## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
 - owner: **the owner's exact-byte approval of the digest below.** It was taken
@@ -356,6 +357,47 @@ ACTIVE-SPEC: v0.23 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace
 - evidence: the digest recomputed from the file rather than copied from any
   report; `cmp` on the installed bytes; the gate figures in the activation
   commit message, with failure sets by name.
+
+## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.24 ENT-5 and stable-path switchover
+- owner: **the owner, in conversation, 2026-08-09** — “批准”. The reply was
+  given directly against the immediately preceding exact request naming all
+  three approval objects below; it is not inferred from the earlier overnight
+  delegation or from the superseded v0.22-anchored ENT-5 approval.
+- APPROVED BYTES: active `spec/kernel-spec.md`, version v0.24, SHA-256
+  `53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+  Relative to immutable v0.23, the complete file has exactly three reviewed
+  diff hunks: title, the new Status paragraph plus byte-preserved v0.23 Prior
+  paragraph, and ENT-5's final-paragraph replacement. A changed byte returns to
+  exact review.
+- SEMANTIC SCOPE: a pre-loop fact is removed at an iteration head only by a
+  continuing kill whose structural normal-control successor can reach a later
+  head of that same loop without leaving its body. Return, propagated-error,
+  and current/enclosing break edges are non-continuing; ordinary fallthrough,
+  else-free false edges, and nested-loop continuations keep their real kills.
+  Rules +0/-0 and grammar remains 69 productions, 84 decisions, 93 terminal
+  predicates.
+- PROTECTED CORPUS: approve the exact changes in review commit `00e6ce4`:
+  rewrite `ent5-neg-loop-rule-drops-preloop-fact` so an else-free false edge
+  carries a continuing kill while preserving runnable `reject OP-4`; and add
+  runnable accepted case `ent5-pos-return-does-not-kill-loop-head-fact`. No
+  existing verdict, cited rejection rule, or runnable status changes.
+- S10 DISPOSITION: accept as item-4 revalidation the real boundary path
+  producing `taken <= room` plus focused actual-index obligations consuming
+  all four S10 transfer producers and covering invalidation. The preregistered
+  raw-deflate driver itself has no natural entailment obligation consuming that
+  relation; no sentinel access, extra copy loop, or other evidence-shaped
+  behavior is added, and no end-to-end consumer is claimed.
+- STABLE-PATH SWITCH: v0.23 remains byte-identical at immutable
+  `spec/kernel-spec-v0.23.md`; v0.24 is active only at
+  `spec/kernel-spec.md`. This first switch creates no archive, creates no
+  `spec/kernel-spec-v0.24.md`, and writes no `ARCHIVE-SPEC: v0.23` record.
+- boundary: the exact specification bytes, ENT-5 implementation and tests,
+  named protected corpus changes, stable-path identity/pins/law, derivation
+  binding, and live authority. O11, provenance activation, later
+  obligation-discharge features, and wfgrep are outside this approval.
+- evidence: review implementation `00e6ce4`; exact packet and frozen candidate
+  acceptance `7e47130`; independent semantic and exact-byte reviews; synthetic
+  activation rehearsal recorded by `0e88b86` and atomicity audit `6f22a7b`.
 
 ## Pre-approval specification digests, as found
 
