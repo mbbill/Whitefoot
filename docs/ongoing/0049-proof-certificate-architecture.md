@@ -76,12 +76,21 @@ cannot be preserved, or the machinery costs more than the capability it serves.
 ## Progress
 
 - **Completed:** owner research boundary understood; workflow, current outline,
-  Current Plan, and task 0048 read; isolated worktree created; the complete
-  uncommitted task-0048 snapshot copied without changing its source workspace.
-- **Current:** register this bounded research and consult the live design tree
-  before delegating the three read-only investigations.
-- **Next:** run and independently reconcile the investigations, then refresh to
-  the landed task-0048 revision before final current-state claims.
+  Current Plan, task 0048, and the relevant live design-memory decisions and
+  real alternatives read; isolated worktree created; the complete uncommitted
+  task-0048 snapshot copied without changing its source workspace; three
+  independent read-only investigations reconciled; current TCB, lowering
+  authority, identity, hostile cases, seven alternatives, and migration gates
+  drafted in `PACKET.md`; candidate release timings and two sampling profiles
+  recorded.
+- **Current:** task 0048's v0.26 activation commit `441cd5b` has landed and its
+  implementation blobs match the captured research snapshot, while its
+  one-shot installed-authority acceptance probe and terminal task disposition
+  are still in flight. The packet therefore remains explicitly draft.
+- **Next:** refresh onto task 0048's terminal revision, re-read its final
+  authority and evidence, rerun affected release profiles and repository gates,
+  obtain the final adversarial challenge, and only then finalize the packet and
+  close this record.
 
 ## Scope and expected touch set
 
