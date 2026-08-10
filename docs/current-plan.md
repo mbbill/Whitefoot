@@ -1,385 +1,292 @@
 # Current Plan
 
-Status: ACTIVE (owner selection 2026-08-09): complete the selected
-obligation-discharge direction before returning to wfgrep. The credited wfgrep
-checkpoint remains intact but PARKED until the direction reaches its completion
-boundary.
+Status: PROPOSED (awaiting owner selection, 2026-08-10): activate the held
+provenance gate as stage 5b of the selected obligation-discharge direction.
+This proposal authorizes no execution. If selected, a separate change must mark
+it ACTIVE before any successor task is registered or substantive work begins.
 
-This rolling plan authorizes only stage 7 below. Exact-approved v0.26 is active
-with the ordinary-caller goal boundary installed; task 0048 remains current
-only through installed acceptance, the complete repository gate, design-memory
-reconciliation, and terminal closure. The later provenance, postcondition,
-ledger, and strict-partition steps remain a dependency map rather than
-execution authority. Before any future specification approval request, the
-lead must first give the owner a complete plain-language explanation, stop,
-and wait for an explicit response.
+Derived from: [Direction Outline revision 29](roadmap.md), item `PROOF-8`
+(primary), with `BOUND-1`, `VERIFY-1`, and `VERIFY-2` as boundary and evidence
+constraints. `CAND-8` remains the selected flagship but stays parked until the
+complete obligation-discharge direction reaches its completion boundary.
 
-Derived from: [Direction Outline revision 28](roadmap.md), items `PROOF-8`
-(primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
-flagship but is parked by this owner selection.
+Before any specification approval request, the lead must first give the owner
+a complete plain-language Chinese explanation of the exact language behavior,
+implementation, protected and accepted-set impact, real-program result,
+archive action, limitations, and complete digest; then stop and wait for an
+explicit response.
 
-## Direction and current milestone
+## Direction and proposed milestone
 
-The shipped path now includes the named claim construct, normative L0
-entailment, caller-side OP-4 discharge, SYS count facts, the corrected ENT-5
-continuing-kill rule, the v0.25 counted `u64` range, and v0.26 atomic
-`requires` goals. The installed SHA-256 worker proves all 9/9 schedule accesses
-without a claim or hidden trap. Ordinary calls now prove a requirement before
-transfer; the body receives it as S4, and the checked program retains the
-subject-only bridge that closes the prior helper-shaped provenance bypass.
+Exact-approved v0.26 is active at `spec/kernel-spec.md`, SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+Task 0048 made each admitted function requirement one atomic typed goal:
+ordinary calls prove it before transfer, bodies receive it as S4, ordinary
+callees execute no requirement prologue, and both real process entries retain
+one checked boundary. Installed acceptance and the complete gate are green.
 
-The current milestone remains stage 7 until task 0048's installed evidence and
-closure are complete. Each admitted FN-8 block is now one atomic call-site
-proof goal. Ordinary source calls prove it before transfer and callee effects;
-the callee body receives the proved predicate and executes no unconditional
-prologue check. Real process entry keeps a checked boundary. This closes
-provenance bypass O3 but does not activate provenance.
+The compiler also retains finite provenance metadata but emits no provenance
+rejection. Task 0046's held review reaches all three canonical Huffman subjects
+with a finite explicit-dataflow rule. v0.26 closes the remaining helper-shaped
+`requires` bypass and records the requirement-to-protected-leaf bridge needed
+to activate that rule without inventing a second goal language.
 
-Further wfgrep work remains outside this milestone. It resumes only after the
-complete selected direction is active and verified, or after the owner
-disposes a reproduced blocker that stops the sequence.
-
-## Current step — stage 7 `requires` as one atomic call-site goal
+## Proposed current step — stage 5b provenance-gate activation
 
 ### Why
 
-The former executable callee prologue admitted every ordinary caller and trapped
-inside the callee. Moving a protected subscript into a helper with a matching
-`requires` therefore preserves the trap while bypassing a caller-side
-provenance policy. Conversely, simply restricting FN-8 to one L0 integer
-relation would delete existing legal declaration forms: the protected equality
-case and the real base64 capacity predicate are pure, total single predicates
-but not both representable as current ENT-2 terms. The smallest compatible
-boundary is one finite typed predicate identity, treated atomically, with an
-optional projection only when that same root already is one L0 relation.
+The current named claims distinguish machine-proven obligations from checked
+writer assertions, but they do not distinguish a local invariant failure from
+malformed external input. In the frozen boundary-fed DEFLATE unit, the held
+rule classifies nineteen of thirty-three protected subjects as external. Six
+already discharge without assertion evidence; thirteen obligation nodes under
+eleven claims instead turn externally controlled failure into an abort.
+
+Task 0046 fixed the held rule's explicit-offset and payload-projection defects
+without adding implicit-flow analysis. Stage 7 then made a function requirement
+an ordinary caller proof obligation and retained finite bridge metadata, so a
+helper can no longer hide the same protected leaf behind a runtime callee
+prologue. The smallest next step is therefore to activate the already bounded
+explicit-dataflow policy and migrate only the real externally controlled
+failures it identifies to value paths.
 
 ### Do
 
-1. After this plan and task-0047 closure land, register task 0048 in a separate
-   lifecycle commit before substantive work. Consult the live
-   `requires-entry-contract` and `obligation-discharge` design nodes plus their
-   real rejected alternatives. The current callee-entry mechanism is a genuine
-   predecessor: if stage 7 activates, move it into design history with the
-   required paired re-decision record rather than silently overwriting it. At
-   the activation has a real commit identity, immediately reconcile the live
-   root, proof-doctrine, and effect nodes whose present Items still say that
-   the executable entry check is never removed or contributes the callee's
-   `traps` effect. In particular, update `whitefoot`, `checks-and-proofs`, and
-   `effects` alongside the two named design nodes, while leaving
-   recognizer-driven elision frozen as a rejected alternative. This is a
-   separate closure commit because every paired Move must cite the preceding
-   activation commit's real eight-character identity; it must land and pass
-   MCTS lint before task closure or stage 5b begins. Do not edit design memory
-   merely because this plan selected the future work; it changes only after
-   the language and compiler change actually become live.
+1. Re-derive the candidate from current authority, not historical wording.
+   Use active v0.26, task 0046's held design review, and the current v0.26
+   requirement bridge as inputs. The held candidate in
+   `governance/spec-evolution/provenance-gate-candidate.md` remains evidence,
+   not specification text, and its v0.24-era anchors must never be fuzzy-patched
+   into the stable file.
 
-2. Preserve the complete current FN-8 declaration surface: zero or more
-   clause-local lets followed by exactly one pure, total, non-trapping Bool
-   check. Alpha-expand those lets into one finite typed `GoalTemplate`, then
-   instantiate its formal datums at each concrete use. Predicate equality is
-   only the resulting typed expression: selected operation rows, type and const
-   arguments actually present in that expression, written operand order,
-   formal-parameter ordinals with field/deref projections before call
-   substitution, named-const declaration identity, and typed literals. A
-   callee-instance id, final-check NodePath, and local spelling are diagnostic
-   or provenance identity, not predicate equality. Two concrete instances may
-   therefore share evidence only when substitution leaves exactly the same
-   typed predicate; an instance whose substitution changes the expression does
-   not match. Do not commute operands, fold
-   constants, reassociate, invert comparisons, apply De Morgan, or eliminate
-   double negation. A complete `band`, `bor`, or `bnot` DAG is one indivisible
-   goal; its children are not facts. When the root itself is exactly one
-   existing ENT-3 integer relation over substituted ENT-2 terms/constants, the
-   ordinary L0 closure may prove that one goal without creating a second goal
+2. Freeze the current consumer before changing semantics. The compilation-unit
+   order and SHA-256 identities are:
+
+   - `raw_deflate.wf` —
+     `c8fa0d58301e5346041c1886eaa3e277f9d3926212b6a5420e52b22eada300f0`;
+   - `raw_deflate_dynamic.wf` —
+     `cca35bbd3c5985c1e6753e0b0ca5311be7287d2021c01b46f14506b06734fcee`;
+   - `raw_deflate_dynamic_decode.wf` —
+     `03bab2ab19d9087bdd4fc3edebb060499a54d388623cab695f8bbdc10cd0ac9c`;
+   - `raw_deflate_boundary.wf` —
+     `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`.
+
+   Freeze the current conformance manifest SHA-256
+   `65393c118817f207ef268a35d8b67931409b30c7c04ea3a2f2ffc7c41b80c73a`,
+   all 407 existing case identities and rows, and all 30 rule-coverage
+   annotations. Additive PRV cases are allowed; changing any existing case or
+   manifest field stops for exact protected review.
+
+3. Draft the smallest complete v0.27 provenance judgment at the stable
+   `spec/kernel-spec.md` path. The candidate may add only the closed PRV-1,
+   PRV-2, and PRV-3 rules needed here. It adds no token, terminal, grammar
+   production, source construct, operation row, trusted assertion, optimizer
+   assumption, or writer-spelled provenance annotation.
+
+4. PRV-1 is one finite two-point explicit-dataflow classification:
+
+   - process-entry inputs are external, while system results and writes follow
+     one closed component table: `args_count` and `host_bytes_len` are
+     external; both `arg_get` payloads are external; `host_copy_bytes` has an
+     internal `Ok(value:)`, external `Err(error:)`, and external
+     `destination`; both `host_utf8_len` payloads are external;
+     `host_copy_utf8` has an internal `Ok(value:)`, external `Err(error:)`, and
+     external `destination`; both `relative_path` and both `open_read`
+     payloads are external; `read_once` has an internal `ReadBytes(count:)`,
+     external `ReadFailed(error:)`, and external `destination` and `file`;
+     `write_once` has an internal `Ok(value:)`, external `Err(error:)`, and
+     external `output`; and `exit_status` is internal. No unlisted component
+     inherits an external class by association;
+   - direct enum payload projections are tracked separately and nested payload
+     joins conservatively seed every direct projection;
+   - storage is per binding and per whole root, flow-insensitive and monotone;
+   - a place read joins its root and every explicit subscript-offset operand,
+     field selection preserves that class, and `len` remains internal;
+   - checked-operation results, propagation, returns, user-call results, and
+     write components compose through one finite least fixed point; and
+   - branch/control dependence, write-address dependence, path-sensitive
+     storage, recursive payload paths, and implicit-flow analysis are absent.
+
+5. PRV-2 retains finite parameter-datum, result, write, and concrete
+   protected-leaf identities plus deterministic witnesses chosen only after
+   convergence. Compose them with v0.26's requirement occurrences and
+   subject-only bridges. Do not replace exact goal identity with a recognizer,
+   mention-all-parameters rule, whole-goal support rule, or a second proof
    language.
 
-3. At an ordinary source call, finish callee resolution, concrete generic
-   instantiation, named-argument and type checks, borrow feasibility, and every
-   obligation belonging to an actual expression first. Then substitute formal
-   parameter datums with the caller's pre-transfer actual images, including
-   resolved referents for borrow formals. Discharge the resulting single goal
-   in the state entering the call, before any argument consume/borrow commit
-   and before the callee's write or other effect kills. A successful call then
-   follows the existing transfer and normal-return order. A failed or refuted
-   goal is a compile-time call-site rejection; never insert an ordinary-caller
-   fallback check.
+6. PRV-3 gates only the constrained subject of a protected obligation:
 
-4. Add a finite signed opaque-goal fact class alongside L0. A true/false branch
-   establishes the corresponding sign; a passed explicit check or claim
-   establishes the exact complete goal as true; and a callee body entry receives
-   its verified requirement as true. Keep both a condition binding's own truth
-   and its valid unique pure/total origin expansion, so a later mutation of an
-   origin does not erase the already-computed Bool value while it does kill a
-   reread predicate. Support is the union of resolved places read by the goal;
-   `len(P)` retains ENT-5's length support boundary. Existing overlap writes,
-   projected callee writes, consumes, holder/region exits, and lexical exits
-   kill supported opaque facts. Joins retain only identical signed facts common
-   to every incoming state, and ordinary/counted continuing-kill behavior is
-   reused without induction. The combined L0/opaque state is contradictory when
-   L0 is contradictory or one goal has both signs. At such an unreachable point
-   every L0 relation and every signed goal is derivable, a call goal is
-   discharged rather than refuted, and an all-derivable input does not constrain
-   a nonempty join; an empty join remains all-derivable. At a non-contradictory
-   call point, true present means discharged, true absent plus false present
-   means refuted, and neither sign means unproved. No opaque fact decomposes
-   into L0 subrelations or composes L0 relations into a Boolean DAG; O11 remains
-   outside this plan.
+   - an internal subject keeps the existing entailment judgment;
+   - an external subject must discharge in the unasserted state with S2/S3
+     removed, so a preceding `check` or `claim` cannot authorize it;
+   - a real value branch may establish the needed fact and pass;
+   - an external value used only as a bound, base, or unrelated goal operand is
+     not the constrained subject and does not trigger rejection; and
+   - call-site gating follows the v0.26 bridge fixed point: an external actual
+     protecting a downstream leaf requires the complete instantiated atomic
+     goal to discharge in the caller's unasserted state. Two-hop and recursive
+     bridges converge; a seedless cycle remains empty.
 
-5. Replace the executable ordinary-function prologue with an admitted-body
-   axiom. S4 supplies the complete atomic goal at body entry and also supplies
-   its one L0 relation when the root has that exact projection. Later body
-   writes and consumes kill it normally. Direct recursion, mutual recursion,
-   forward calls, and concrete generic instances use the same finite inventory:
-   every call edge must prove its own instantiated goal, so no recursive fixed
-   point or caller-order exception is introduced.
+7. Treat real process entries explicitly. Command inputs are PRV-1 external.
+   The compiler-owned entry check and the body's S4 axiom may not launder an
+   external bridged protected leaf: that definition is checked with the
+   retained S4-blinded entry rewalk and must use a value branch in the body.
+   Entry requirements unrelated to a protected leaf retain v0.26's exactly-once
+   wrapper behavior. A source call to the entry follows ordinary call-site
+   gating. Do not implement or simulate a foreign adapter; the existing GATE
+   boundary remains unsupported.
 
-6. Redefine effects consistently. A `requires` declaration is a signature
-   obligation, not an executed body occurrence, and contributes no `traps` or
-   memory effect to the callee row. A pure body with a requirement may therefore
-   remain `pure`. An explicit caller `check` or `claim` still exhibits `traps`
-   in that caller, and a trapping body remains trapping for its own reasons.
-   Neither a proved goal nor S4 becomes `llvm.assume` or another optimizer fact.
+8. Implement the judgment as one ordinary safe-Rust semantic path over the
+   checked metadata already installed in v0.26. Source acceptance and
+   diagnostics consume the finite fixed point directly. Facts-on and facts-off
+   compilation have identical acceptance and required runtime behavior. Do not
+   special-case a project, function, claim name, source path, or test identity.
 
-7. Preserve failure behavior at every implemented entry boundary rather than
-   inventing a foreign path. The compiler currently has exactly two real
-   process wrappers: unlabelled `main()` and command `main(argc, argv)`, each
-   calling one internal Whitefoot body. Lower the typed pure goal directly in
-   the wrapper after ordinary argument/input setup and before the body; do not
-   materialize an ordinary or IR helper function that accepts the source
-   owners. The wrapper remains the sole owner of every `Args`, `DirectoryRead`,
-   and `Output` value while this private evaluation performs only the same
-   non-consuming reads as the admitted FN-8 expression, owns no source value,
-   and carries no drop or release. On success the wrapper transfers each owner
-   exactly once to one body invocation. On false it emits the original OP-5
-   trap, invokes the body zero times, and follows EFF-4 rather than a second
-   cleanup path. Source calls to unlabelled `main` use ordinary static discharge
-   and never the process wrapper check. Keep every Whitefoot function internal
-   and keep one external `@main`.
+9. Migrate only the frozen real failures the gate identifies, with no error
+   choice left to the executor. Remove the eleven gated claim declarations and
+   map them exactly as follows:
 
-   The language's gated-foreign boundary promise remains: if that currently
-   unsupported callable path is implemented later, its compiler-owned adapter
-   must evaluate the same complete goal before the body. Stage 7 adds no FFI,
-   export, or foreign stub and may not present one as boundary evidence.
+   - `stored_header_zero_in_input`, `stored_header_one_in_input`,
+     `stored_header_two_in_input`, `stored_header_three_in_input`, and
+     `stored_copy_in_input` take the existing `Truncated` value path;
+   - `length_symbol_in_tables` takes `InvalidHuffmanCode`;
+   - `match_copy_in_history` takes `InvalidDistance`;
+   - `order_slot_in_offsets`, `destination_in_symbols`, and
+     `ordered_in_symbols` take `InvalidHuffmanTree`; and
+   - `distance_position_in_lengths` takes `InvalidHuffmanTree` inside a changed
+     `store_dynamic_length -> Result<unit, InflateError>`. Its three call sites
+     in `decode_dynamic` use ordinary `propagate` bindings and do not duplicate
+     the guard or move it into another requirement.
 
-8. Close provenance bypass O3 structurally without activating the held gate.
-   Preserve the held protected-leaf identity `(concrete callee instance, exact
-   ENT-6 obligation occurrence, normalized conjunct ordinal)` and add the one
-   requirement identity `(same concrete instance, final-check NodePath,
-   conjunct 0)`. Derive a finite bridge relation from requirement occurrences
-   to protected leaves together with held PRV-2, using exactly two monotone
-   generators:
+   The helper's exact effect row loses only the former claim-derived `traps`
+   contribution and remains `reads('d), writes('l 'd)`; `decode_dynamic` keeps
+   its independently justified row, and all new normal/error cleanup edges are
+   checked explicitly. Preserve every other effect judgment, every successful
+   output, and every stock/boundary/truncated/malformed/oversize/closed-output
+   oracle.
 
-   - For each local protected body leaf, compare its unasserted body state with
-     S4 present against the same state with both the atomic S4 goal and its exact
-     L0 projection omitted. If only the former discharges the leaf, add the
-     local requirement-to-leaf bridge. A leaf proven without S4 needs no bridge;
-     a leaf unproved even with S4 remains an ordinary ENT-6 rejection.
-   - For each ordinary call whose callee requirement already bridges to an
-     inherited protected leaf, perform the same S4-present/S4-blinded comparison
-     for that instantiated call goal in the caller. If only the caller's S4
-     proves it, add a bridge from the caller's requirement occurrence to the
-     inherited leaf and retain the call plus downstream requirement occurrence
-     as its witness predecessor. If the call goal is proved without caller S4,
-     the bridge chain ends at that real evidence; if it needs S2/S3 instead, the
-     later gate owns a local violation at this call rather than manufacturing a
-     bridge.
+10. Update specification-derived data, diagnostics, conformance coverage,
+    compiler documentation, writer guidance, the Direction Outline, and design
+    memory in the same activated slice. The MCTS tree currently records held
+    metadata with no rejection; activation must make its live Items truthful
+    and preserve any real superseded alternative through the skill workflow.
 
-   Solve these generators and ordinary parameter-datum call composition to a
-   least fixed point over the finite concrete instances, requirement
-   occurrences, calls, and protected leaves. A recursive or mutually recursive
-   component with no local protected-leaf seed stays empty, and witness paths
-   are reconstructed after convergence rather than stored in the lattice.
-   This makes a two-hop or longer wrapper expose its own callable goal to its
-   caller without requiring that caller to reconstruct a downstream helper's
-   clause locals.
-
-   Derive parameter datums exclusively from each protected obligation's
-   constrained-subject dependency and compose those datums through calls; never
-   use every place mentioned by a goal. A bound or base operand therefore does
-   not become a subject merely by appearing in `requires`. At a call, retain the
-   current callee requirement occurrence, inherited protected leaf, and composed
-   subject datum. One argument produces one later PRV-2 event even when several
-   datum/leaf pairs explain it. Stage 7 call acceptance uses the full caller
-   state. The subsequent provenance gate will require that current instantiated
-   atomic goal from the caller's unasserted state, excluding S2/S3, whenever the
-   bridged protected subject is external. Thus a caller claim/check cannot regain
-   the helper bypass, while a real dominating value branch or L0 allocation
-   equality may prove the goal. This task must retain the converged bridge
-   metadata and frozen rewalk needed for that next decision, but it must not
-   reject provenance-tainted claims yet.
-
-9. Inventory every active FN-8 declaration, call, effect row, backend prologue
-   assertion, and protected case before fixing exact v0.26 bytes. The selected
-   dispositions are:
-
-   - preserve `fn8-pos-requires-eeq` as a runnable equality requirement and add
-     exact caller evidence rather than narrowing FN-8;
-   - preserve `x-base64-rfc-vectors-run` and its full capacity DAG, adding
-     explicit exact evidence before each call rather than a recognizer or a
-     weakened contract;
-   - repurpose `fn8-neg-requires-missing-traps` so its EFF-2 subject is a
-     caller-executed check/claim whose row omits `traps`;
-   - move `fn8-trap-requires-false` to the real process-entry requirement path,
-     preserving its OP-5 runtime-trap subject rather than fabricating a foreign
-     caller;
-   - change requires-only helper rows to `pure` where the body exhibits no
-     other effect, including the affected positive FN-8/S4 cases; keep
-     `fn3-neg-requires-member` focused on FN-3 by removing the stale incidental
-     prologue effect; and
-   - update `x-requires-output-capacity-run` and backend prose/assertions from
-     “callee prologue” to caller discharge plus the body-entry axiom.
-
-   Any additional protected source, verdict, cited rule, status, or observable
-   behavior change stops the task for explicit review. All named protected
-   changes enter the v0.26 owner packet; none is silently rewritten.
-
-10. Draft the smallest complete v0.26 delta at the stable
-    `spec/kernel-spec.md` path, prepare the exact outgoing v0.25 archive, update
-    compiler, conformance, generated data, derivation, writer documentation,
-    active pins, roadmap, plan, and design memory, and exercise the normal
-    frontend-to-backend path. The branch candidate remains non-authoritative.
-    Before activation, present the owner with a Chinese explanation of the
-    exact language behavior, implementation, real-program result,
-    accepted-set/protected impact, archive action, limitations, and complete
-    digest; then stop and wait. Only explicit approval may append the chain and
-    atomically activate. Never create `kernel-spec-v0.26.md` while v0.26 is
-    active.
+11. Follow the complete specification workflow. Prepare the v0.27 candidate at
+    `spec/kernel-spec.md` and, in the same uncommitted reviewable change before
+    approval, create `spec/kernel-spec-v0.26.md` as a byte-identical copy of the
+    outgoing stable bytes. Hash and independently review both files, failing if
+    the archive path is already occupied. The prepared archive and candidate
+    remain non-authoritative and uncommitted until exact approval; an approved
+    atomic activation lands the archive and stable candidate together.
+    Independently review normative closure, accepted-set impact, compiler
+    implementation, protected boundaries, real-program migration, derivation,
+    and active pins. Then give the owner the required Chinese explanation and
+    exact digest, stop, and wait. No approval-chain or activation-state byte is
+    written before that response.
 
 ### Verify and accept
 
-- Goal identity controls accept alpha-renamed and differently shared local-let
-  DAGs but reject operand swaps, reassociation, comparison inversion, De Morgan,
-  double-negation, different named-const identities, different operation rows,
-  and any concrete generic substitution that changes the typed predicate.
-  Distinct instances whose instantiated predicate bytes and types are identical
-  deliberately share that predicate fact while retaining distinct diagnostic
-  and provenance occurrence identities. Proving both children of `band` does
-  not prove the `band`, and proving the `band` proves neither child.
-- Exact dominating branch, check, and claim evidence discharge the same whole
-  goal. False evidence refutes it; non-dominating or one-arm evidence does not
-  survive a join. Existing L0 may prove an exact single relation. Writes,
-  projected calls, consumes, and holder/scope exits kill only their real
-  support; element writes do not kill an unrelated length fact.
-- Call ordering controls cover moved actuals, borrowed referents, actual
-  subscript obligations, and a first accepted call followed by a killing write
-  and rejected second call. Forward, recursive, mutually recursive, and generic
-  calls are traversal-order independent.
-- Ordinary callee checked IR and LLVM contain no requirement check, entry
-  branch, fallback trap, `llvm.assume`, or body clone. S4 still discharges body
-  obligations. Exact effect rows accept a pure required body and reject both an
-  omitted caller check/claim trap and a padded callee trap row.
-- Both real process entry forms execute the goal once after their existing
-  setup and before the body. A false goal produces the original OP-5 record and
-  runs the body zero times; a true goal runs one goal and one body, with releases
-  exactly once. Command-entry canaries cover true and false goals with owned
-  `Args`, `DirectoryRead`, `command.stdout`, and `command.stderr`, proving no
-  duplicate consume, drop, release, or body call. Startup failure still precedes
-  the goal. The module retains one external `@main`; no fake foreign-boundary
-  test is added.
-- The O3 hostile helper proves the structural bypass is closed: its protected
-  body leaf retains a subject-only bridge to the requirement occurrence, and an
-  ordinary call cannot rely on the callee's old runtime prologue. The frozen
-  later-gate rewalk must show that a caller claim/check proves the goal only in
-  full state, while a real value branch proves it in unasserted state; stage 7
-  still accepts by full-state semantics and does not prematurely emit PRV-3.
-  Two-hop, clause-local-transform, recursive, and mutually recursive wrapper
-  canaries must converge to the nearest acceptance-bearing requirement while a
-  cycle with no protected-leaf seed remains empty.
-  The three real DEFLATE requirement calls must prove the bridged goal from
-  existing unasserted allocation facts with no new claim or computational
-  restructuring. Exact effect rows in installed requires-bearing programs may
-  drop reads formerly attributed solely to executable requirements; the
-  retained distance claim remains unchanged.
-- Every protected disposition above is compared before/after by source,
-  manifest row, verdict, rule, status, and runtime result. Base64 vectors and
-  output-capacity behavior remain exact. In particular,
-  `fn8-neg-requires-noncopy-local` and
-  `fn8-neg-requires-noncopy-cvt-local` remain FN-8 rejections; alpha expansion
-  does not relax the copy-only clause-local rule. No unsupported compiler
-  behavior is rewritten as source rejection.
-- Recompute exact v0.26 and v0.25-archive digests, verify both native grammar
-  paths and generated data, run focused semantic/lowering/backend suites,
-  `make -C compiler check`, `make check`, the complete ignored adapter, the
-  frozen obligation acceptance, and MCTS lint. Facts-off and ordinary modes
-  must have identical source acceptance and required runtime behavior.
+- Before source migration, reproduce the held v0.26 matrix exactly: 33
+  protected obligations and 23 claim declarations; 19 external subjects; six
+  unasserted-state discharges; 13 rejected obligation nodes under eleven
+  claims; 14 internal subjects; canonical Huffman result 3/3; and diagnostic
+  projection 14 rejecting calls / 24 external actual atoms.
+- Preserve the frozen negative boundary controls: wfgrep 0/8 gated claims;
+  `run-sysfile-multichunk` 0/4; and each too-small/invalid copy control 0/1.
+- After the value-path migration, all-claims-blinded acceptance must be UTF-8
+  `33/22/11/0`, SHA-256 `9/9/0/0`, complete DEFLATE `29/24/5/0`, and dynamic
+  DEFLATE `24/19/5/0` in
+  `total/proven/claim-supported/baseline-undischarged` order. The boundary-fed
+  unit has 12 remaining claim declarations. Thirteen formerly claim-supported
+  sites are authorized by real branches, never a retained prologue or hidden
+  assertion.
+- Exercise external+branch accept, external+check reject,
+  external+claim reject, internal+claim accept, external-only-bound accept,
+  allocation-equality call accept, nonexact-goal reject, direct/two-hop/
+  recursive/mutual/seedless bridges, payload sibling isolation, read-offset
+  propagation, the retained control/write-address non-propagation boundary,
+  and an entry external bridged-requirement rejection.
+- Keep every pre-existing protected case byte and manifest field unchanged.
+  New PRV cases and coverage rows are additive. The adapter baseline remains
+  `Pass=393 Fail=1 Skip=13` for existing identities, with only the retained
+  OWN-3 unsupported failure; additive cases report their own dispositions and
+  never hide that baseline.
+- Verify previous-to-candidate and archive-to-stable native grammar paths,
+  generated tables, specification integrity, exact diagnostics, focused
+  semantic/lowering/backend tests, facts-on/facts-off equivalence, the complete
+  adapter, the frozen four-source consumer, `make -C compiler check`,
+  `make check`, and MCTS lint.
+- Acceptance requires exact owner approval and atomic v0.27 activation,
+  installed reruns of every frozen matrix and runtime oracle, no unreviewed
+  protected drift, a green complete gate, truthful design memory, and terminal
+  task closure before stage 8a begins.
 
-### Accept and stop
+### Stop condition
 
-Stage 7 is terminal only when exact-approved v0.26 is active, ordinary calls
-statically discharge one complete goal, callee bodies use the axiom without an
-entry check, both real process entries preserve failure behavior, current FN-8
-declaration forms and named real programs remain supported, O3 has no helper
-bypass, and no unreviewed protected drift remains. If one finite atomic goal
-cannot preserve those boundaries without Boolean decomposition, a duplicate
-body/check path, a fake foreign adapter, or a new general theorem prover, record
-the smallest reproducer as a blocker rather than narrowing the contract
-silently. A positive closure advances to provenance activation; it does not
-activate that gate in the same batch.
+Stop with the smallest reproducer if the current v0.26 sources do not reproduce
+the frozen 19/6/13-under-11/14, 3/3, and 14/24 matrices; if process-entry
+gating needs a new source surface or error protocol; if correct classification
+requires control-flow taint, write-address taint, path-sensitive storage,
+recursive payload paths, Boolean decomposition, general induction, or a new
+theorem prover; if the eleven real repairs cannot use the named existing value
+paths and one `Result` propagation; or if an existing protected case, verdict,
+rule list, status, documentation field, or runtime behavior must change. Return
+that evidence for owner disposition rather than expanding the gate, weakening a
+test, retaining a hidden assertion, or skipping ahead.
 
-## Owner-selected roll-forward — dependency map, not execution authority
+### Approval and task boundary
 
-Before each later slice begins, reread its evidence, make it the sole current
-step in a replacement plan, and preserve the normal candidate, impact,
-owner-explanation, exact-approval, activation, and real-program loop. A
-negative prerequisite measurement returns for owner disposition; it is not
-permission to weaken a feature or skip ahead.
+This proposal becomes executable authority only after the owner explicitly
+selects it and a separate commit changes its status to ACTIVE without expanding
+the written scope. Only then may a separate lifecycle commit register the next
+free task number after refreshing the integration branch. The task registration
+precedes substantive work. Plan selection is not specification approval; the
+later v0.27 candidate still requires its own exact explanation, hard wait, and
+owner response.
 
-### 5b — provenance gate activation
-
-Task 0046 supplies the positive held rule review, but only after stage 7 closes
-the `requires` bypass may a replacement plan propose provenance propagation and
-the signature relation. A constrained subject classified external by that
-explicit-dataflow policy must then be handled by a value branch rather than
-hidden in an aborting claim. Calls and real adapters must preserve the policy
-through one ordinary semantic path.
+## Later dependency map — not execution authority
 
 ### 8a — postcondition proof-feasibility prerequisites
 
-Freeze the smallest additional fact sources required by the two real examples
-before promising `ensures`. `read_bits` needs a verified mask/bitwise bound and
-an outcome-sensitive normal-result form; neither follows from current L0.
-`append_slice` needs a fact connecting its loop-carried result to capacity, and
-counted-range structural bounds alone may be insufficient. Measure first. If a
-small structural rule cannot establish these obligations without the excluded
-general induction or arithmetic entailment, return that reproduced blocker
-instead of hiding a new proof engine inside `ensures`.
+Freeze the smallest fact sources required by the two real `ensures` examples.
+`read_bits` needs a verified mask/bitwise bound and outcome-sensitive normal
+result; `append_slice` needs a fact connecting its loop-carried result to
+capacity. If a small structural rule cannot establish them without general
+induction or arithmetic entailment, return the blocker instead of hiding a new
+proof engine inside postconditions.
 
 ### 8b — `ensures`
 
-Once 8a has an authorized fact fragment, add the smallest postcondition
-language that exposes only verified normal-return facts to callers. Exercise
-branches, early exit, cleanup, generics, unsupported forms, and false
-postconditions. Acceptance requires the real `read_bits` and `append_slice`
-obligations to discharge through the normal compiler path.
+After 8a selects a fact fragment, add the smallest postcondition language that
+exposes only verified normal-return facts to callers. Exercise branches, early
+exit, cleanup, generics, unsupported forms, and false postconditions; the real
+`read_bits` and `append_slice` obligations must discharge normally.
 
 ### 9a — deterministic claim ledger
 
-Generate a deterministic read-only report from checked-program state for every
-remaining named claim: obligation, provenance, justification, and stable source
-identity. Clean builds must reproduce order and counts. This tooling lands
-before any language marker.
+Generate a deterministic read-only checked-program report for every remaining
+named claim: obligation, provenance, justification, and stable source identity.
+Clean builds reproduce its order and counts. Tooling precedes any language
+marker.
 
 ### 9b — opt-in `deny-claims` partition
 
-Design and then implement the language marker using the ledger evidence. Its
-meaning must be transitive across ordinary calls and real generated adapters,
-and must specify how direct `claim`, ordinary trapping `check`, and callees that
-can claim are treated; otherwise the partition is trivially bypassable.
-Ordinary code retains the existing claim lifecycle, while the strict partition
-requires each covered obligation to prove or take a value branch. This is not
-global law and does not eliminate true-but-unprovable residue from the
-no-search checker.
+Design and implement the marker from ledger evidence. Its meaning is
+transitive across ordinary calls and real generated adapters and explicitly
+covers direct `claim`, ordinary trapping `check`, and callees that can claim.
+Ordinary code keeps the existing lifecycle; the strict partition requires each
+covered obligation to prove or take a value branch. This is not global law.
 
 ## Stable specification rule
 
 The active specification stays at `spec/kernel-spec.md`. v0.25 is the current
-immutable outgoing archive and v0.26 has no versioned sibling while active.
-Every later candidate edits the stable file on its task branch and is reviewed
-as a diff plus complete digest. Its approved atomic activation first creates
-the outgoing flat archive `spec/kernel-spec-vN.md`, failing if that path exists,
-and installs the new approved bytes at the unchanged stable path. The active
-specification is never renamed to follow its version; archived files are never
-edited, renamed, or deleted.
+immutable outgoing archive and v0.26 has no committed versioned sibling while
+active. Every later candidate edits the stable file and is reviewed as a diff
+plus complete digest. Its outgoing flat archive is prepared byte-identically in
+the same uncommitted preapproval change, hashed and reviewed with the candidate,
+and rejected if that path already exists. Exact-approved atomic activation
+lands that prepared archive and installs the approved bytes at the stable path.
+Archived specifications are never edited, renamed, or deleted.
 
 ## Cross-stage invariants
 
@@ -389,8 +296,8 @@ edited, renamed, or deleted.
   checks remain unless proof discharges their exact obligation.
 - Expected or externally caused failure is a value path; a claim is reserved
   for a broken program invariant and remains an executed runtime check.
-- Protected conformance expectations never change without explicit owner
-  approval. Unsupported capability never becomes source rejection.
+- Protected expectations never change without explicit owner approval.
+  Unsupported capability never becomes source rejection.
 - Each activated slice restores the complete gate and reruns the real consumer
   that earned it before the next slice begins.
 - Durable decisions and rejected alternatives stay synchronized through the
@@ -398,18 +305,14 @@ edited, renamed, or deleted.
 
 ## Direction completion boundary
 
-Wfgrep remains parked until stages 5b, 8a, 8b, 9a, and 9b above are implemented
-end to end, covered by positive, negative, near-miss, and invalidation evidence,
+Wfgrep remains parked until stages 5b, 8a, 8b, 9a, and 9b are implemented end
+to end, covered by positive, negative, near-miss, and invalidation evidence,
 exercised by their named real programs, and recorded in the outline; the
 complete repository gate is green; and remaining claims and unsupported gaps
 are reported honestly. A reproduced prerequisite blocker returned for owner
-disposition is the only earlier stop. This boundary is narrower than making
-`claim` the language's universal sole trap source.
-
-## Explicitly outside the current step and selected boundary
+disposition is the only earlier stop.
 
 O11 Boolean-composition precision, general loop induction, arithmetic-term
-entailment or arithmetic-mode dissolution, struct/witness invariants, the OWN-3
-predicate widening, and move-on-copy generic policy are not hidden parts of
-this sequence. No wfgrep profiling, optimization, traversal, parallelism, or
-new system-family run occurs while this direction is active.
+entailment or arithmetic-mode dissolution, struct/witness invariants, the
+OWN-3 predicate widening, move-on-copy generic policy, and further wfgrep work
+remain outside this proposal.

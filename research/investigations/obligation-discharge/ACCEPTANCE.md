@@ -476,3 +476,39 @@ judgment without S2/S3 evidence, while the callee retains the same S4 body
 axiom and the `distance_position_in_lengths` claim remains present. Thus the
 new call boundary introduces no regression in the frozen obligation buckets
 and does not disguise one with a retained callee-entry check.
+
+## Post-activation v0.26 confirmation (2026-08-10)
+
+Activation commit `441cd5b833096d558549bb09aeecfcfe63340584` installed
+the exact-approved v0.26 bytes at `spec/kernel-spec.md`, SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`,
+and archived the byte-identical outgoing v0.25 bytes. The same frozen sources,
+dark checker, all-claims-blinded transform, function order, obligation order,
+claim order, and denominators were rebuilt and rerun from that committed tree.
+The temporary in-crate probe was then deleted with its host files restored to
+their pre-probe hashes; the tracked tree and index returned clean at the same
+activation commit.
+
+The installed results exactly reproduce the reviewed candidate, in
+`total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 9 / 0 / 0`;
+- deflate, full denominator: `29 / 11 / 18 / 0`; and
+- deflate, dynamic-path denominator: `24 / 11 / 13 / 0`.
+
+Every synthetic blinded claim remains retained and every baseline obligation
+is discharged. Deflate retains sixteen claims; the same five claims remain
+non-rejecting [CLM-2] redundancy advisories — `count_slot_in_counts`,
+`validate_slot_in_counts`, `offsets_slot_in_offsets`,
+`offsets_slot_in_counts`, and `ordered_symbol_in_lengths` — and no claim is
+refuted. All three real `store_dynamic_length` calls remain discharged in both
+the unasserted and S4-blinded rewalks, while the distance claim remains present.
+
+Independent installed controls confirm that ordinary required functions emit
+no executable callee prologue, real process-entry checks retain their exact
+failure behavior, counted-range maximum-edge execution has no hidden trap, and
+the SHA-256 worker retains its no-`wf_trap` shape and sustained runtime oracle.
+The complete repository gate is green. The separately invoked adapter reports
+`Pass=393 Fail=1 Skip=13`; its sole failure remains the pre-existing OWN-3
+`RegionsAndBorrows` unsupported boundary.

@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 28 (`requires` call-site goals shipped; provenance activation next)
+Revision: 29 (`requires` call-site goals verified; provenance activation proposal next)
 
 The active language authority is v0.26 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -206,8 +206,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, and atomic requires goals shipped; provenance metadata held]`
-`[next: provenance activation]`
+`[current: items 1–4, counted range, and atomic requires goals shipped and verified; provenance metadata held]`
+`[next: owner selection of the provenance activation plan]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -266,7 +266,15 @@ creating writer trust or weakening the checked safety envelope.
   S4-blinded rewalks; recursive and mutually recursive wrappers converge, a
   seedless cycle stays empty, and the three real DEFLATE calls discharge from
   allocation facts. This closes O3 structurally without emitting a provenance
-  rejection.
+  rejection. Installed confirmation at activation `441cd5b8` reproduces UTF-8
+  `33/22/11/0`, SHA-256 `9/9/0/0`, complete DEFLATE `29/11/18/0`, and dynamic
+  DEFLATE `24/11/13/0`; DEFLATE retains sixteen claims, five redundancy
+  advisories, and no refuted claim. The complete repository gate is green, and
+  the separately invoked adapter remains `Pass=393 Fail=1 Skip=13`, with only
+  the pre-existing OWN-3 unsupported boundary. Commit `d495d8c` records the
+  paired requirement-enforcement re-decision and passes MCTS lint. Task 0048 is
+  terminal. The retained provenance metadata remains held and v0.26 still
+  emits no provenance rejection.
 - **Missing / next:** activate the independently reviewed held provenance gate
   over the retained v0.26 bridge metadata and rerun its frozen canonical and
   boundary matrices. The preserved objective then advances through
