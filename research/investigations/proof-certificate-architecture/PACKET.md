@@ -627,11 +627,11 @@ determinism requirement. Calling the producer "untrusted" without this
 qualification would be misleading: it may leave the safety-elision TCB after
 Envelope B, but it remains conformance-critical.
 
-## One lowering capability at Stage 2 and Stage 4
+## One lowering capability at Stage 3 and Stage 5
 
 There should be exactly one unforgeable internal capability, a lifetime-bound
-`EntailmentApprovedProgram<'unit>`, not a serialized proof. Stage 2's canonical
-engine is its first issuer. If Envelope B later succeeds, Stage 4 replaces that
+`EntailmentApprovedProgram<'unit>`, not a serialized proof. Stage 3's canonical
+engine is its first issuer. If Envelope B later succeeds, Stage 5 replaces that
 issuer with the trusted ProofFlow extractor, positive verifier, and atomic
 publisher together; it does not introduce a second lowering interface.
 
@@ -883,7 +883,36 @@ task.
 If a landed case cannot be represented compactly and exactly, stop the split
 and retain the unified engine with better internal factoring only.
 
-### Stage 2: one canonical ProofFlow
+### Stage 2: shadow the complete authorization inventory
+
+- Enumerate every bounds occurrence and required ordinary call directly from
+  the canonical checked semantic unit.
+- Enumerate every S4-bearing body's complete actual incoming-edge set and every
+  program-start or gated-entry wrapper/check and goal-evaluation record.
+- Enumerate every `for_stmt` and cross-check its complete S11 derivation ledger.
+- Compare those independently walked inventories with the entailment outcomes
+  and derivation roots by exact occurrence identity.
+- Publish no new authority and make no lowering or runtime change.
+
+An omission, duplicate, stale identity, or unmatched ingress is an internal
+failure. Do not proceed until the shadow inventories run without drift on the
+protected corpus and real programs.
+
+### Stage 3: canonical capability issuer
+
+After Stage 2 is stable, make the canonical engine atomically issue the one
+private `EntailmentApprovedProgram`. Construction requires the complete bounds,
+call, S4-body ingress, dynamic-entry wrapper/check, entry-goal, and S11
+inventories defined above. Lowering then has no default for an uncovered
+operation or body ingress. This is an architectural binding gate, not
+independent validation; it closes occurrence-omission, ingress-omission, and
+proof-rebinding paths while leaving derivation soundness in the engine's TCB.
+
+Do not extract `ProofFlow` merely to build this gate. Keeping this step small
+tests the lowering boundary independently of the later producer/verifier
+hypothesis.
+
+### Stage 4: one canonical ProofFlow and shadow verifier
 
 - Extract one structured, private proof-flow input from the checked semantic
   unit.
@@ -891,23 +920,6 @@ and retain the unified engine with better internal factoring only.
 - Keep diagnostic text and policy outside it.
 - Make both canonical engine and any shadow verifier consume the same input.
 - Do not create a second source/AST semantic walk under a different name.
-
-The extractor is accepted only if its trusted responsibility is syntax-directed
-and reviewably smaller than the current flow analyzer. In particular, the
-verifier must contain no parser, type checker, source goal builder, full closure
-algorithm, or diagnostic selector.
-
-After the complete inventory and derivation coverage have run in shadow mode
-without drift, the canonical engine may issue the one private
-`EntailmentApprovedProgram`. Construction requires the complete bounds, call,
-S4-body ingress, dynamic-entry wrapper/check, entry-goal, and S11 inventories
-defined above. Lowering then has no default for an uncovered operation or body
-ingress. This is an architectural binding gate, not independent validation; it
-closes occurrence-omission, ingress-omission, and proof-rebinding paths while
-leaving derivation soundness in the engine's TCB. A future positive-authority
-path can replace the issuer without changing the lowering interface.
-
-### Stage 3: shadow positive verifier
 
 - Verify every positive path required by the complete DIAG-2 and lowering
   inventories, including all S11 facts, plus complete site and ingress coverage.
@@ -917,9 +929,14 @@ path can replace the issuer without changing the lowering interface.
   behavior with the pre-migration path.
 - Measure verification time and proof memory separately from producer time.
 
-### Stage 4: replace the capability issuer
+The extractor is accepted only if its trusted responsibility is
+syntax-directed and reviewably smaller than the current flow analyzer. In
+particular, the verifier must contain no parser, type checker, source goal
+builder, full closure algorithm, or diagnostic selector.
 
-Only if Stage 3 remains materially smaller, clear, exact on every landed case,
+### Stage 5: replace the capability issuer
+
+Only if Stage 4 remains materially smaller, clear, exact on every landed case,
 and acceptably cheap:
 
 - make the trusted extractor, verifier, and atomic publisher jointly issue the
@@ -975,14 +992,14 @@ This research supports the following decisions:
    complete shadow inventory, even if Envelope B is ultimately rejected;
    canonical issuance improves binding clarity but does not reduce the TCB.
 4. What compile-time, peak-memory, and proof-size budgets to freeze before any
-   Stage-3 verifier prototype.
+   Stage-4 verifier prototype.
 5. Whether the measured closure/re-walk hotspot should precede certificate
    prototyping as the next compiler-performance experiment.
 
 The recommendation is to repair the complete DIAG-2 derivation ledger first,
 measure the shared parent arena, and make the one local lowering capability
 conditional on complete shadow inventory. The measured closure/re-walk problem
-should be addressed before any Stage-3 independent-verifier prototype, but it
+should be addressed before any Stage-4 independent-verifier prototype, but it
 need not block the mandatory derivation repair. The full producer/verifier split
 remains deferred until those measurements and owner-frozen budgets exist.
 
