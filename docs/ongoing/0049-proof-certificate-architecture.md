@@ -7,11 +7,14 @@
   then compile-time performance. This authority permits research and a
   decision-ready packet only.
 - **Owner / workspace:** Codex lead /
-  `/Users/bytedance/do_not_scan/whitefoot-proof-certificate-research`, branch
-  `codex/0049-proof-certificate-research`
-- **Base revision:** `b11e22f1901dc9e59cac79a9250d709e4a2082a8`, plus a
-  read-only snapshot of task 0048's uncommitted v0.26 candidate taken on
-  2026-08-10. The snapshot is evidence under review, not landed authority.
+  `/Users/bytedance/do_not_scan/whitefoot-proof-certificate-final`, branch
+  `codex/proof-certificate-architecture-final`
+- **Base revision:** final-refresh branch created at active-v0.26 activation
+  `441cd5b8c8081065238cf88740739ade4a8783bf`; the original read-only research
+  snapshot was taken from `b11e22f1901dc9e59cac79a9250d709e4a2082a8` plus
+  task 0048's then-uncommitted candidate. Blob comparison proved that the
+  compiler and specification bytes used for that research are exactly those
+  installed by `441cd5b8`.
 
 ## Goal
 
@@ -83,12 +86,18 @@ cannot be preserved, or the machinery costs more than the capability it serves.
   authority, identity, hostile cases, seven alternatives, and migration gates
   drafted in `PACKET.md`; candidate release timings and two sampling profiles
   recorded.
-- **Current:** task 0048's v0.26 activation commit `441cd5b` has landed and its
-  implementation blobs match the captured research snapshot, while its
-  one-shot installed-authority acceptance probe and terminal task disposition
-  are still in flight. The packet therefore remains explicitly draft.
-- **Next:** refresh onto task 0048's terminal revision, re-read its final
-  authority and evidence, rerun affected release profiles and repository gates,
+- **Current:** task 0048's v0.26 activation `441cd5b8` and paired live-design
+  re-decision `d495d8cc` have landed. The final worktree has rebuilt and timed
+  the active release compiler, rerun both sampling profiles, and re-read the
+  changed design nodes and real alternatives. Final adversarial review exposed
+  and the packet now records the full mandatory DIAG-2 defect: exact
+  derivations are missing not only for accepted subscripts but also for every
+  discharged call and every S11 fact. It also now uses one exhaustive lowering
+  capability covering bounds, calls, S4 ingress, entry checks, and S11, with a
+  joint extractor/verifier/publisher safety boundary. Task 0048's
+  installed-authority acceptance evidence and terminal coordination
+  disposition remain in flight, so the packet remains explicitly draft.
+- **Next:** rebase onto task 0048's terminal revision, record its final evidence,
   obtain the final adversarial challenge, and only then finalize the packet and
   close this record.
 

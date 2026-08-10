@@ -15,17 +15,22 @@ complete producer plus a fully independent exact verifier now.
 
 Retain one canonical, deterministic completeness engine for the normative
 least-closure result, accepted-program set, claim lifecycle, canonical
-residuals, and first diagnostic. The smallest justified next experiment is to
-make that engine record a canonical *used-premise witness* for every positive
-result that matters: discharged bounds obligations, discharged call goals,
-redundant claims, refuted predicates, and contradictions used by those
-judgments. This first witness is internal observational metadata. It does not
-initially become lowering authority and it does not cause a second closure
-pass. Once shadow coverage proves that every checkless site is represented, the
-same canonical engine should seal those site/witness pairs into a private
-`EntailmentApprovedProgram` that lowering must consume. That intermediate gate
-makes authority local and exhaustive, although it does not shrink the TCB: the
-complete engine is still the issuer.
+residuals, and first diagnostic. The immediate prerequisite is a bounded
+DIAG-2 conformance repair: make that engine retain a canonical exact derivation
+for every accepted subscript, every discharged call goal, and every S11 fact of
+every `for_stmt`. That is a complete required derivation ledger, including S11
+facts not used by a later query, not merely a sample of useful proof roots. The
+same parent-recording machinery may additionally retain observational
+used-premise witnesses for redundant claims, refuted predicates, and
+contradictions used by those judgments. It must not cause a second closure
+pass.
+
+After complete shadow inventory proves that every relevant occurrence and
+incoming edge is represented, the same canonical engine should atomically seal
+the successful checked unit, required derivations, and complete authorization
+inventory into one private `EntailmentApprovedProgram<'unit>` that lowering
+must consume. That intermediate gate makes authority local and exhaustive,
+although it does not shrink the TCB: the complete engine is still the issuer.
 
 The recommended responsibility graph, even if no independent verifier is ever
 promoted, is:
@@ -36,14 +41,16 @@ checked semantic unit
     -> one deterministic complete entailment authority
     -> complete EntailmentResult
          -> outcome vector -> canonical acceptance and diagnostics
-         -> used-premise witness -> audit and later provenance consumers
-         -> accepted-site inventory -> seal all sites
-              -> EntailmentApprovedProgram -> lowering
+         -> complete DIAG-2 derivation ledger -> checked-program evidence
+         -> optional used-premise witnesses -> audit/provenance consumers
+         -> complete site, call, ingress, and entry inventory
+              -> atomic seal -> EntailmentApprovedProgram -> lowering
 ```
 
-This is a target boundary, not the migration order: witness recording and site
-inventory come first, and the shared normalization is extracted only after
-those measurements show which information is actually needed.
+This is a target boundary, not the migration order: required derivation
+recording and complete inventory come first, and the shared normalization is
+extracted only after those measurements show which information is actually
+needed.
 
 A later split remains promising, but only in this narrower form:
 
@@ -52,18 +59,21 @@ checked semantic unit
     -> trusted, syntax-directed ProofFlow extraction
     -> one deterministic complete entailment producer
          -> complete outcomes -> canonical acceptance and diagnostics
-         -> sparse used-premise certificate
-    -> small positive verifier
-         -> lifetime-bound VerifiedCheckedProgram
+         -> required positive certificates and complete inventories
+    -> small positive verifier + atomic publisher
+         -> the same lifetime-bound EntailmentApprovedProgram
     -> lowering
 ```
 
-The positive verifier may eventually become the sole authority for omitting a
-source bounds check and admitting a requirement-bearing ordinary call. It
-cannot become the sole authority for exact source acceptance: an absent proof
-does not prove non-derivability. The canonical engine therefore remains
-responsible for completeness unless a future bounded experiment finds a
-non-derivability certificate that covers the complete flow semantics without
+The trusted extractor, positive verifier, and atomic publisher may eventually
+replace the canonical engine as the *joint issuer* of that same lowering
+capability. None is sufficient alone: the verifier cannot detect an occurrence
+or incoming edge omitted by its trusted extractor, and a valid set of local
+proofs grants no authority until publication is complete and failure-atomic.
+This path still cannot become the sole authority for exact source acceptance:
+an absent proof does not prove non-derivability. The canonical engine therefore
+remains responsible for completeness unless a future bounded experiment finds
+a non-derivability certificate that covers the complete flow semantics without
 recreating the analyzer.
 
 This is a deliberate **defer** decision for the full producer/verifier split,
@@ -97,7 +107,7 @@ every source, kill, join, and loop rule. That is a second entailment analyzer,
 not a small proof kernel.
 
 Second, most of the implementation complexity is not algebraic closure. In the
-v0.26 candidate snapshot, the entailment and goal core is 4,922 lines; the
+active v0.26 implementation, the entailment and goal core is 4,922 lines; the
 structured flow walk and source logic alone are 3,649 lines, while the local
 `close` routine occupies roughly `state.rs:333-450`. Term and goal identity,
 effect-projected kills, origin validity, join coverage, scope exits, and the two
@@ -105,28 +115,33 @@ loop rules remain safety-critical even if transitivity is checked from a short
 path. Trusting producer-supplied versions of those facts would only rename the
 TCB.
 
-Third, duplicating closure is already measurably unacceptable. On the captured
-candidate, release profiles of two real compilation units put 96.0% and 99.3%
-of samples below `semantic::entailment::state::close`. Hashing ordered term
-pairs accounts for most self time. The candidate also performs the ordinary
-acceptance walk plus unasserted and S4-blinded counterfactual walks for
-observational provenance. A verifier that recomputes state or closure would
-duplicate the dominant compile-time cost. A sparse used-premise verifier can
-avoid that cost, but it cannot remove the producer's existing cost by itself.
+Third, recomputing closure would duplicate the measured dominant work and is
+presumptively disproportionate. On the active implementation, release profiles
+of two real compilation units put 96.8% and 99.3% of samples below
+`semantic::entailment::state::close`. Hashing ordered term pairs accounts for
+most self time. The implementation also performs the ordinary acceptance walk
+plus unasserted and S4-blinded counterfactual walks for observational
+provenance. No second closure implementation or incremental overhead has been
+measured, so rejection must ultimately rest on a prototype measurement against
+an owner-frozen budget. A sparse positive verifier can avoid a second closure,
+but it cannot remove the producer's existing cost by itself.
 
 The result is a clean responsibility split rather than the misleading claim
-that one small verifier can certify every property of compilation.
+that one small verifier can certify every property of compilation. In the
+conditional path, the safety conclusion belongs jointly to the trusted
+extractor, verifier, and failure-atomic publisher.
 
-| Responsibility | Canonical completeness engine | Small positive verifier |
+| Responsibility | Canonical completeness path | Conditional positive-authority path |
 | --- | --- | --- |
-| Exact normative least closure | Yes | No |
-| Exact accepted-program set | Yes | No |
-| `refuted` versus `unproved` | Yes | Can validate the negative premise, not the complete disposition |
-| `redundant` versus `retained` | Yes | Can validate redundancy only |
-| Canonical residual and first rejection | Yes | No |
-| No invalid bounds-check omission | Producer proposes | Yes, for certified sites |
-| No unjustified ordinary-call/S4 admission | Producer proposes | Yes, for certified sites |
-| Binding proof to the exact lowering site | Outcome identity today | Yes, after a verified-program gate exists |
+| Exact normative least closure | Canonical engine | Canonical engine; the verifier does not recompute it |
+| Exact accepted-program set | Canonical engine | Canonical engine |
+| `refuted` versus `unproved` | Canonical engine | Verifier can validate a negative relation proof, not the complete disposition |
+| `redundant` versus `retained` | Canonical engine | Verifier can validate redundancy, not non-derivability |
+| Canonical residual and first rejection | Canonical engine | Canonical engine |
+| Complete DIAG-2 derivation retention | Engine plus atomic checked-program publication | Trusted extractor, verifier, and atomic publisher jointly |
+| No invalid bounds-check omission | Engine issues the capability only after complete bounds inventory | Trusted extractor, verifier, and atomic publisher jointly |
+| No unjustified ordinary-call/S4 admission | Engine issues only after complete call, ingress, and entry inventory | Trusted extractor, verifier, and atomic publisher jointly |
+| Binding proof to the exact lowering site | One `EntailmentApprovedProgram` gate | The same gate; only its issuer changes |
 
 ## Authority and scope
 
@@ -157,31 +172,33 @@ The repository's live design memory fixes two important boundaries:
 An earlier independent *production semantic verifier* was rejected because it
 duplicated the complete language while still requiring producer-to-artifact
 consistency. The possible future verifier in this packet is narrower: it sees
-only one trusted normalized proof-flow input, checks only used positive proof
-steps, and has no parsing, type, ownership, diagnostic, serialization, or full
-closure responsibility. The prototype must demonstrate that this distinction
-is real rather than verbal.
+only one trusted normalized proof-flow input, checks the positive proofs
+required by the complete DIAG-2 and lowering inventories, and has no parsing,
+type, ownership, diagnostic, serialization, or full closure responsibility.
+The prototype must demonstrate that this distinction is real rather than
+verbal.
 
 ## Revision boundary
 
 The research worktree was created from
 `b11e22f1901dc9e59cac79a9250d709e4a2082a8` and received an exact file snapshot
-of task 0048's uncommitted candidate. At the time of this draft:
+of task 0048's then-uncommitted candidate. Commit
+`441cd5b8c8081065238cf88740739ade4a8783bf` subsequently installed those exact
+compiler and specification bytes as active v0.26, specification SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+Blob comparison confirmed that the implementation inspected and profiled in
+the initial worktree is the implementation that landed. Commit
+`d495d8ccfc14d6089987a77a7728cf2d01121027` then recorded the paired
+requirement-enforcement design re-decision without changing compiler or
+specification bytes.
 
-- landed language authority is v0.25;
-- the copied v0.26 content is candidate evidence, not landed authority;
-- task 0048 owns all v0.26 specification, compiler, provenance, plan, outline,
-  approval, and design-memory changes;
-- task 0049 must refresh against task 0048's terminal revision before this
-  packet becomes final.
-
-Accordingly, every caller-side requirement, opaque-goal, entry-goal, and O3
-provenance statement below describes the candidate until the terminal refresh
-confirms it.
+Task 0048's terminal coordination commit is still pending at this draft point.
+Task 0049 must rebase onto that commit and replace this sentence with the exact
+terminal revision before the packet becomes final.
 
 ## Current pipelines
 
-### Landed v0.25
+### Historical v0.25
 
 ```text
 syntax, resolution, type, ownership, and effect checking
@@ -198,7 +215,7 @@ The ordinary call does not statically prove the callee requirement in v0.25;
 the callee executes it. Accepted OP-4 subscripts nevertheless lower without a
 runtime bounds branch.
 
-### Candidate v0.26
+### Active v0.26
 
 ```text
 Phase A: complete concrete function inventory
@@ -255,7 +272,7 @@ compiler-owned phase or event identity in addition to its source occurrence.
 
 ### Facts, flow, and closure
 
-The candidate analyzer currently owns, in one broad implementation path:
+The active analyzer currently owns, in one broad implementation path:
 
 - term and goal reconstruction and interning;
 - S1-S11 source recognition;
@@ -281,7 +298,7 @@ as a live flow fact is unsound.
 
 ### Outcomes are not certificates
 
-The candidate retains:
+The active implementation retains:
 
 - a bounds `ObligationOutcome` with a boolean `discharged`, a contradiction
   flag, and an optional residual;
@@ -290,11 +307,21 @@ The candidate retains:
 - claim lifecycle outcomes;
 - observational provenance witnesses.
 
-It does not retain a derivation path for each accepted bounds site, and
-lowering does not consume a proof or local authorization. The candidate
-specification's DIAG-2 text requires the checked program to retain the exact
-ENT-4 derivation, so this is also a candidate implementation-evidence gap that
-task 0048's terminal review must settle.
+It does not retain the exact derivations required by active DIAG-2. The defect
+has three independently mandatory parts:
+
+- every accepted subscript must retain its exact ENT-4 derivation;
+- every discharged ordinary-call goal must retain its concrete substitution
+  and exact derivation, while today's `CallGoalEvidence` values are only
+  categories of possible grounds;
+- every `for_stmt` must retain the complete ENT-4 derivation of each S11 fact,
+  including facts not used by a later obligation.
+
+Lowering also consumes neither a local proof nor a local authorization. These
+are landed conformance defects, not an optional evidence improvement. This
+research records their required scope but does not itself authorize or
+implement the repair; owner discretion concerns sequencing and task authority,
+not whether DIAG-2 applies.
 
 ### Actual no-check authority is global and implicit
 
@@ -312,11 +339,12 @@ The actual authorization today is therefore:
 That boundary is failure-atomic, but not local. A missing obligation-discovery
 case, a stale `discharged = true`, or a mismatch between occurrence identity
 and lowering can silently become a checkless address operation. This is the
-strongest reason to investigate a future lifetime-bound verified-program gate.
+strongest reason to investigate the lifetime-bound
+`EntailmentApprovedProgram` gate.
 
 ### O3 is observational and should remain separate
 
-Candidate O3 provenance recomputes entailment without S2/S3 and again without
+Active O3 provenance recomputes entailment without S2/S3 and again without
 S4, then solves dependency and bridge fixed points. It currently affects
 neither acceptance nor lowering. It should not enter a positive safety verifier
 until a later approved gate gives it a semantic consequence. Its current
@@ -349,10 +377,12 @@ an internal, lifetime-bound `ProofFlow` containing:
 - ordinary and counted loop structure;
 - obligations, call goals, and claim queries.
 
-The producer computes the exact normative result and emits only the used proof
-paths. The verifier validates liveness, join coverage, loop carry, algebraic
-steps, contradictions, and complete coverage of every accepted safety site. It
-does not compute the full closure or choose diagnostics.
+The producer computes the exact normative result and emits sparse proof paths,
+but its coverage is complete over the required inventory: every accepted
+subscript, every discharged call goal, every S11 fact, and every positive root
+that will authorize lowering. The verifier validates liveness, join coverage,
+loop carry, algebraic steps, contradictions, and complete coverage of every
+inventoried item. It does not compute the full closure or choose diagnostics.
 
 This is the only future split not ruled out by the current evidence. The
 extractor remains in the safety TCB. It succeeds only if it is one canonical
@@ -371,15 +401,16 @@ the same architectural failure that the older complete production-verifier
 alternative warned about, even if the interchange object is in memory rather
 than serialized.
 
-## Recommended near-term witness
+## Recommended near-term derivation ledger
 
-The first experiment should be specialized to the current fragment rather than
+The mandatory repair should be specialized to the current fragment rather than
 introducing a general theorem language.
 
 ### Contents
 
-For each positive or refuting outcome, record a canonical root into an arena of
-used premises:
+The required root set is exhaustive over every accepted subscript, discharged
+call goal, and S11 fact. The same arena may add observational roots for other
+positive or refuting outcomes. Each root refers to canonical used premises:
 
 - one source or implicit fact identity;
 - one path of difference-bound edges for an L0 bound;
@@ -396,7 +427,7 @@ It must not rerun closure merely to reconstruct a proof. Proof nodes should
 refer to compiler-owned dense identities in the same checked unit; no hash,
 serialization, schema negotiation, or portable name is required.
 
-### What the first witness does not do
+### What the Stage-1 ledger does not do
 
 - It does not shrink the TCB.
 - It does not authorize lowering.
@@ -405,9 +436,11 @@ serialization, schema negotiation, or portable name is required.
 - It does not become optimizer evidence.
 - It does not include O3's seedless fixed-point absence claims.
 
-Its purpose is to establish whether every landed positive judgment has a
-compact, stable, correctly invalidated explanation and to measure the real
-cost. If that fails, the independent-verifier direction stops early.
+Its mandatory purpose is to retain the exact derivations required by DIAG-2.
+It also establishes whether every such derivation has a compact, stable,
+correctly invalidated representation and measures the real cost. If compact
+representation fails, the independent-verifier direction stops early; the
+conformance obligation does not disappear.
 
 ## Worked certificate
 
@@ -539,9 +572,11 @@ step cannot represent already accepted cases faithfully.
 Each ordinary call proves one concrete instantiated goal before transfer and
 callee effects. The callee body then checks under its own S4 axiom. Direct and
 mutual recursion therefore use ordinary local contract reasoning at each edge;
-they do not need a cyclic entailment proof summary. Every real dynamic entry
-must still execute its required entry-goal evaluation. A verified-program gate
-must cover ordinary call sites and separately confirm the retained entry path.
+they do not need a cyclic entailment proof summary. The authorization inventory
+must enumerate the complete actual incoming-edge set of every body that uses
+S4. Each such edge is either an accepted ordinary call with its exact
+discharged-goal derivation or a real dynamic entry with its retained entry-goal
+evaluation and wrapper/check record. An omitted edge prevents publication.
 
 ### Generics and constants
 
@@ -592,24 +627,34 @@ determinism requirement. Calling the producer "untrusted" without this
 qualification would be misleading: it may leave the safety-elision TCB after
 Envelope B, but it remains conformance-critical.
 
-## Lowering gate if Envelope B succeeds
+## One lowering capability at Stage 2 and Stage 4
 
-The future gate should be an unforgeable internal capability such as a
-lifetime-bound `VerifiedCheckedProgram<'unit>`, not a serialized proof.
+There should be exactly one unforgeable internal capability, a lifetime-bound
+`EntailmentApprovedProgram<'unit>`, not a serialized proof. Stage 2's canonical
+engine is its first issuer. If Envelope B later succeeds, Stage 4 replaces that
+issuer with the trusted ProofFlow extractor, positive verifier, and atomic
+publisher together; it does not introduce a second lowering interface.
 
-Before it can be constructed, the verifier must establish coverage of:
+Before the capability can be constructed, its issuer must establish complete
+coverage of:
 
-- every checkless source bounds occurrence;
-- every ordinary call to a requirement-bearing callee;
-- the global entry invariant that every actual path into a body using S4 comes
-  from either a verified ordinary call or a retained dynamic-entry check;
-- every required retained entry-goal evaluation.
+- every source bounds occurrence, with every accepted occurrence carrying its
+  exact ENT-4 derivation;
+- every ordinary call to a requirement-bearing callee, including concrete
+  substitution, disposition, and the exact derivation for each discharge;
+- every S4-bearing body's complete actual incoming-edge set, with each edge
+  accounted for by a discharged ordinary call or a retained dynamic-entry
+  evaluation;
+- every required program-start or gated-entry wrapper/check record and retained
+  entry-goal evaluation;
+- every `for_stmt` and the complete derivation ledger for all of its S11 facts.
 
 Each lowering-visible index or required call carries a private dense occurrence
-ID tied to the same checked unit. The verifier is the only module able to turn
-that occurrence into a `VerifiedDischarge` or `VerifiedCallGoal`. Lowering has
-no default branch for a missing token. The backend need not understand the
-proof; it consumes IR that could only have been built from the verified unit.
+ID tied to the same checked unit, and the sealed capability owns the complete
+maps and ingress inventory. Lowering has no default branch for a missing
+authorization. The backend need not understand the proof; it consumes IR that
+could only have been built from the approved unit. Capability publication is
+failure-atomic: no partial site map, body, or entry record can escape.
 
 This local binding addresses the current global-authority problem without
 inventing portable identities or making proof data a backend protocol.
@@ -630,18 +675,20 @@ source-language disposition.
 
 ## Performance evidence
 
-All measurements in this section are exploratory candidate-snapshot evidence.
-They must be rerun on task 0048's landed terminal revision. They measure the
-whole compiler unless a sample attribution is stated.
+These measurements use the active v0.26 compiler and specification bytes from
+`441cd5b8`. The final refresh worktree rebuilt and reran the release probes after
+activation; task 0048's later design-memory and coordination changes do not
+change the measured binary. Results measure the whole compiler unless a sample
+attribution is stated.
 
 ### Build
 
 ```text
-CARGO_TARGET_DIR=/Users/bytedance/do_not_scan/proof-cert-root-target \
+CARGO_TARGET_DIR=/Users/bytedance/do_not_scan/proof-cert-final-target \
   cargo build --release --bin whitefootc --locked --offline
 ```
 
-The first release build completed in 8.54 seconds. Build time is not used as an
+The clean release build completed in 8.18 seconds. Build time is not used as an
 entailment comparison.
 
 ### Whole-compiler timings
@@ -650,13 +697,13 @@ entailment comparison.
 whitefootc --emit-llvm -o /dev/null tests/programs/sha256_abc.wf
 ```
 
-- 0.81 s real, 0.34 s user, approximately 6.5 MB maximum RSS.
+- 0.62 s real, 0.35 s user, 6.54 MB maximum RSS.
 
 ```text
 whitefootc --emit-llvm -o /dev/null tests/programs/utf8parse.wf
 ```
 
-- 2.50 s real, 2.48 s user, approximately 8.6 MB maximum RSS.
+- 2.30 s real, 2.29 s user, 8.37 MB maximum RSS.
 
 ```text
 whitefootc --emit-llvm -o /dev/null \
@@ -666,7 +713,7 @@ whitefootc --emit-llvm -o /dev/null \
   tests/programs/raw_deflate_boundary.wf
 ```
 
-- 1.43 s real, 1.42 s user, approximately 16.7 MB maximum RSS;
+- 1.47 s real, 1.47 s user, 16.48 MB maximum RSS;
 - five required redundant-claim advisories were emitted.
 
 An independent repetition of the four-file unit observed 1.98 s and 1.47 s
@@ -680,25 +727,26 @@ The profile command shape was:
 ```text
 samply-for-ai record --save-only --main-thread-only --rate 1000 \
   --output /Users/bytedance/do_not_scan/PROFILE.json.gz -- \
-  /Users/bytedance/do_not_scan/proof-cert-root-target/release/whitefootc \
+  /Users/bytedance/do_not_scan/proof-cert-final-target/release/whitefootc \
   --emit-llvm -o /dev/null INPUTS...
 ```
 
-`utf8parse.wf`, 2,288 samples:
+`utf8parse.wf`, 2,393 samples:
 
-- `entailment::state::close`: 99.26% inclusive, 32.60% self;
-- SipHash `Hasher::write`: 36.49% self;
-- `RandomState::hash_one` for a `(TermId, TermId)` pair: 29.94% self;
-- the two observational `rewalk_unasserted` executions account for 67.00% of
+- `entailment::state::close`: 99.29% inclusive, 33.31% self;
+- SipHash `Hasher::write`: 36.98% self;
+- `RandomState::hash_one` for a `(TermId, TermId)` pair: 29.08% self;
+- the two observational `rewalk_unasserted` executions account for 66.44% of
   total samples on their call path.
 
-The four-file deflate unit, 1,401 samples:
+The four-file deflate unit, 1,494 samples:
 
-- `entailment::state::close`: 96.00% inclusive, 28.62% self;
-- SipHash `Hasher::write`: 37.33% self;
-- ordered-term-pair `hash_one`: 30.41% self.
+- `entailment::state::close`: 96.79% inclusive, 31.46% self;
+- SipHash `Hasher::write`: 35.14% self;
+- ordered-term-pair `hash_one`: 30.19% self;
+- the two observational rewalks account for 67.01% of the `run` call path.
 
-These profiles strongly identify repeated hash-based closure as the candidate
+These profiles strongly identify repeated hash-based closure as the active
 hot path. They do not measure certificate construction or verification, and
 they do not prove that a particular replacement algorithm is faster.
 
@@ -723,7 +771,7 @@ they do not prove that a particular replacement algorithm is faster.
 | Alternative | Architectural clarity | Soundness / correctness | Determinism and completeness | Compile/artifact cost | Decision |
 | --- | --- | --- | --- | --- | --- |
 | Unified engine as implemented | One result path, but normalization, flow, closure, diagnostics, and authority are tangled | Full TCB includes all discovery and lowering publication; current proof-to-site binding is implicit | One engine can implement exact negative outcomes | No certificate cost; current closure and rewalk cost is severe | Retain semantics, not structure |
-| Unified engine plus used-premise witness | Makes positive derivations inspectable without another semantic path | Does not shrink TCB; catches no producer bug by itself | Exact behavior remains with the canonical engine | Likely small if parents are recorded in-line; must measure | Recommend as first experiment |
+| Unified engine plus complete derivation ledger | Satisfies DIAG-2 and makes positive derivations inspectable without another semantic path | Does not shrink TCB; catches no producer bug by itself | Exact behavior remains with the canonical engine | Likely small if parents are recorded in-line; must measure | Required conformance repair; measure before further split |
 | Trusted ProofFlow plus positive verifier | Clean separation of normalization, completeness, validation, diagnostics, and lowering authority | Can remove closure/search from the safety TCB; extractor remains trusted | Engine still owns absence and exact accepted set | Avoids a second closure; proof and verifier cost unknown | Best future split candidate, conditional |
 | Full proof-carrying checked IR / exact state verifier | Local authority is explicit | Sound only if complete state transitions and source coverage are checked | Can in principle certify exact outcomes, but recreates analyzer | Large state artifact and duplicate hot work | Reject now |
 | Untrusted SMT producer | Search and validation can be separated in theory | SMT result alone is never authority; proof checker and exact encoding still required | Risks timeout/version-dependent false rejection and violates the current search-free architecture unless constrained to the exact calculus | External dependency and proof-format complexity with no measured need | Reject |
@@ -734,13 +782,14 @@ they do not prove that a particular replacement algorithm is faster.
 
 The status quo wins on having one exact semantic path, but loses on reviewable
 authority and current performance. Keeping it unchanged would leave both the
-candidate DIAG-2 derivation gap and the global implicit no-check boundary.
+landed DIAG-2 derivation gap and the global implicit no-check boundary.
 
-### Derived witness only
+### Complete derivation ledger only
 
-This is the smallest change that yields new evidence. It can fulfill exact
-derivation retention, improve explanations, and reveal whether certificates
-stay compact. It must be described as observability, not verification.
+This is the smallest required conformance repair. It fulfills exact derivation
+retention, improves explanations, and reveals whether certificates stay
+compact. Beyond its mandatory retained-evidence role, it must be described as
+observability, not independent verification.
 
 ### Producer plus verifier
 
@@ -751,9 +800,10 @@ the canonical engine.
 
 ### Proof-carrying checked IR
 
-Local verified tokens are a good *downstream gate* after Envelope B succeeds.
-A full state at every point is not a good certificate. Do not conflate these
-two meanings of proof-carrying IR.
+The single local `EntailmentApprovedProgram` capability is a good downstream
+gate once Stage-2 shadow inventory is complete; Envelope B may later replace
+its issuer. A full state at every point is not a good certificate. Do not
+conflate these two meanings of proof-carrying IR.
 
 ### SMT
 
@@ -815,11 +865,15 @@ task.
   memory, checked model, entailment, provenance, lowering, backend, and tests.
 - Rerun the profiles and replace every candidate-only observation that changed.
 
-### Stage 1: observational used-premise witness
+### Stage 1: complete DIAG-2 derivation ledger
 
 - Keep the existing engine as the sole acceptance authority.
 - Record canonical parents during existing closure and flow work.
-- Retain roots for every positive/refuting outcome and contradiction used.
+- Retain exact roots and derivations for every accepted subscript, every
+  discharged call goal, and every S11 fact of every `for_stmt`, whether or not a
+  later query uses that fact.
+- Optionally retain observational roots for every other positive/refuting
+  outcome and contradiction used by a reported judgment.
 - Do not alter lowering authority or runtime behavior.
 - Measure witness nodes, bytes, peak memory, compile-time delta, and proof depth
   on protected programs.
@@ -843,31 +897,35 @@ and reviewably smaller than the current flow analyzer. In particular, the
 verifier must contain no parser, type checker, source goal builder, full closure
 algorithm, or diagnostic selector.
 
-After the query inventory and witness coverage have run in shadow mode without
-drift, the canonical engine may seal each exact bounds/call occurrence and
-proof root into a private `EntailmentApprovedProgram`. Lowering then has no
-default for an uncovered checkless site. This is an architectural binding gate,
-not independent validation; it closes occurrence-omission and proof-rebinding
-paths while leaving derivation soundness in the engine's TCB. A future positive
-verifier can replace the issuer without changing the lowering interface.
+After the complete inventory and derivation coverage have run in shadow mode
+without drift, the canonical engine may issue the one private
+`EntailmentApprovedProgram`. Construction requires the complete bounds, call,
+S4-body ingress, dynamic-entry wrapper/check, entry-goal, and S11 inventories
+defined above. Lowering then has no default for an uncovered operation or body
+ingress. This is an architectural binding gate, not independent validation; it
+closes occurrence-omission, ingress-omission, and proof-rebinding paths while
+leaving derivation soundness in the engine's TCB. A future positive-authority
+path can replace the issuer without changing the lowering interface.
 
 ### Stage 3: shadow positive verifier
 
-- Verify only used positive paths and complete safety-site coverage.
+- Verify every positive path required by the complete DIAG-2 and lowering
+  inventories, including all S11 facts, plus complete site and ingress coverage.
 - Run after the canonical engine in shadow mode.
 - Treat every failure as internal.
 - Differentially compare the complete outcome bundle, diagnostics, and emitted
   behavior with the pre-migration path.
 - Measure verification time and proof memory separately from producer time.
 
-### Stage 4: verified lowering authority
+### Stage 4: replace the capability issuer
 
 Only if Stage 3 remains materially smaller, clear, exact on every landed case,
 and acceptably cheap:
 
-- introduce the lifetime-bound verified-program gate;
-- require local verified tokens for checkless bounds operations and required
-  ordinary calls;
+- make the trusted extractor, verifier, and atomic publisher jointly issue the
+  existing lifetime-bound `EntailmentApprovedProgram`;
+- require its complete local authorizations for bounds operations, required
+  ordinary calls, S4 body ingress, dynamic-entry checks, and S11 evidence;
 - retain the canonical engine for exact negative outcomes;
 - retain dynamic entry checks and every explicit check/claim;
 - remove transitional shadow-only paths once equivalence evidence is complete.
@@ -895,6 +953,8 @@ Do not promote Envelope B unless all of the following are true:
 - the verifier contains no full closure and no duplicate source semantic walk;
 - proof size, peak memory, producer overhead, and verifier time are measured on
   real programs;
+- before implementation, the owner freezes explicit compile-time, peak-memory,
+  and proof-size budgets, and the measured incremental cost stays within them;
 - the new trusted extractor plus verifier is materially easier to audit than
   the current combined path;
 - no serialization, cache, replay, solver, portable identity, or generalized
@@ -903,22 +963,28 @@ Do not promote Envelope B unless all of the following are true:
 Stop and keep the unified engine if any gate fails. That is a successful
 research result, not a reason to weaken the gate.
 
-## Owner decisions after final refresh
+## Owner decisions
 
-This research supports the following decisions once task 0048 is terminal:
+This research supports the following decisions:
 
-1. Whether to authorize Stage 1, the observational used-premise witness and
-   measurements.
-2. Whether the candidate DIAG-2 exact-derivation gap requires a separate bounded
-   conformance fix before other proof work.
-3. Whether an explicit local lowering token is desired even if Envelope B is
-   ultimately rejected; without an independent verifier it improves binding
-   clarity but does not reduce the TCB.
-4. Whether the measured closure/re-walk hotspot should precede certificate
+1. How to authorize and sequence the mandatory bounded DIAG-2 conformance
+   repair, including its complete bounds, call, and S11 derivation inventory.
+2. Whether to include the additional observational used-premise witnesses and
+   measurements in that task or keep them as a follow-up.
+3. Whether to authorize the single local `EntailmentApprovedProgram` gate after
+   complete shadow inventory, even if Envelope B is ultimately rejected;
+   canonical issuance improves binding clarity but does not reduce the TCB.
+4. What compile-time, peak-memory, and proof-size budgets to freeze before any
+   Stage-3 verifier prototype.
+5. Whether the measured closure/re-walk hotspot should precede certificate
    prototyping as the next compiler-performance experiment.
 
-The recommended answer to (1) is yes, subject to the landed refresh. The full
-producer/verifier split remains deferred until that evidence exists.
+The recommendation is to repair the complete DIAG-2 derivation ledger first,
+measure the shared parent arena, and make the one local lowering capability
+conditional on complete shadow inventory. The measured closure/re-walk problem
+should be addressed before any Stage-3 independent-verifier prototype, but it
+need not block the mandatory derivation repair. The full producer/verifier split
+remains deferred until those measurements and owner-frozen budgets exist.
 
 ## External research context
 
@@ -945,7 +1011,7 @@ External work is analogy, not Whitefoot authority.
 
 ## Evidence inventory
 
-Primary local evidence inspected for this draft includes:
+Primary local evidence inspected for this packet includes:
 
 - `spec/kernel-spec.md`, especially FN-8, DIAG-1/2, CLM-1/2, and ENT-1..6;
 - `compiler/src/semantic/goal.rs`;
@@ -961,8 +1027,9 @@ Primary local evidence inspected for this draft includes:
 - backend array, buffer, slice, system-entry, and target validation;
 - focused entailment, requires, provenance, lowering, and backend tests;
 - `research/investigations/obligation-discharge/ACCEPTANCE.md`;
-- live proof, obligation-discharge, requires-entry, fact-channel, compiler,
-  artifact-authority, and effect MCTS nodes and their real alternatives;
+- live proof, obligation-discharge, requires-entry, requirement-enforcement,
+  fact-channel, compiler, artifact-authority, and effect MCTS nodes and their
+  real alternatives;
 - the task 0048 and 0049 coordination records;
 - two release sampling profiles and whole-compiler timing probes under
   `/Users/bytedance/do_not_scan`.
