@@ -20,7 +20,12 @@ make that engine record a canonical *used-premise witness* for every positive
 result that matters: discharged bounds obligations, discharged call goals,
 redundant claims, refuted predicates, and contradictions used by those
 judgments. This first witness is internal observational metadata. It does not
-yet become lowering authority and it does not cause a second closure pass.
+initially become lowering authority and it does not cause a second closure
+pass. Once shadow coverage proves that every checkless site is represented, the
+same canonical engine should seal those site/witness pairs into a private
+`EntailmentApprovedProgram` that lowering must consume. That intermediate gate
+makes authority local and exhaustive, although it does not shrink the TCB: the
+complete engine is still the issuer.
 
 A later split remains promising, but only in this narrower form:
 
@@ -98,7 +103,7 @@ that one small verifier can certify every property of compilation.
 | --- | --- | --- |
 | Exact normative least closure | Yes | No |
 | Exact accepted-program set | Yes | No |
-| `refuted` versus `unproved` | Yes | Can validate a supplied refutation only |
+| `refuted` versus `unproved` | Yes | Can validate the negative premise, not the complete disposition |
 | `redundant` versus `retained` | Yes | Can validate redundancy only |
 | Canonical residual and first rejection | Yes | No |
 | No invalid bounds-check omission | Producer proposes | Yes, for certified sites |
@@ -818,6 +823,14 @@ The extractor is accepted only if its trusted responsibility is syntax-directed
 and reviewably smaller than the current flow analyzer. In particular, the
 verifier must contain no parser, type checker, source goal builder, full closure
 algorithm, or diagnostic selector.
+
+After the query inventory and witness coverage have run in shadow mode without
+drift, the canonical engine may seal each exact bounds/call occurrence and
+proof root into a private `EntailmentApprovedProgram`. Lowering then has no
+default for an uncovered checkless site. This is an architectural binding gate,
+not independent validation; it closes occurrence-omission and proof-rebinding
+paths while leaving derivation soundness in the engine's TCB. A future positive
+verifier can replace the issuer without changing the lowering interface.
 
 ### Stage 3: shadow positive verifier
 
