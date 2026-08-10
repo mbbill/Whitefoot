@@ -27,6 +27,24 @@ same canonical engine should seal those site/witness pairs into a private
 makes authority local and exhaustive, although it does not shrink the TCB: the
 complete engine is still the issuer.
 
+The recommended responsibility graph, even if no independent verifier is ever
+promoted, is:
+
+```text
+checked semantic unit
+    -> one canonical proof-flow normalization
+    -> one deterministic complete entailment authority
+    -> complete EntailmentResult
+         -> outcome vector -> canonical acceptance and diagnostics
+         -> used-premise witness -> audit and later provenance consumers
+         -> accepted-site inventory -> seal all sites
+              -> EntailmentApprovedProgram -> lowering
+```
+
+This is a target boundary, not the migration order: witness recording and site
+inventory come first, and the shared normalization is extracted only after
+those measurements show which information is actually needed.
+
 A later split remains promising, but only in this narrower form:
 
 ```text
@@ -583,7 +601,8 @@ Before it can be constructed, the verifier must establish coverage of:
 
 - every checkless source bounds occurrence;
 - every ordinary call to a requirement-bearing callee;
-- every S4 body axiom's corresponding ordinary-call or dynamic-entry boundary;
+- the global entry invariant that every actual path into a body using S4 comes
+  from either a verified ordinary call or a retained dynamic-entry check;
 - every required retained entry-goal evaluation.
 
 Each lowering-visible index or required call carries a private dense occurrence
