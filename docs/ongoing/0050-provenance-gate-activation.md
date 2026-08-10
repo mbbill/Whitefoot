@@ -89,12 +89,17 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   `441cd5b`, task 0046 held evidence `5683c85`, ACTIVE plan selection
   `df55e7c`, and the current ACTIVE plan establish the Stage 5b premises. The
   refreshed integration base also contains terminal independent research task
-  0049 at `63e3407`; it supplies no Stage 5b authority. No Stage 5b substantive
-  work has begun.
-- **Current:** publish this registration as the first Stage 5b integration
-  commit and freeze the exact v0.26 baseline.
-- **Next:** reproduce the held matrices and re-derive the exact v0.27 candidate
-  before implementation.
+  0049 at `63e3407`; it supplies no Stage 5b authority. Registration landed at
+  `ecfa57e`. On that exact clean tree an independent scratch rewalk reproduced
+  `33/23`, `19/6/13-under-11/14`, canonical `3/3`, and the symbolic diagnostic
+  projection `14/24`; every frozen boundary control and input identity also
+  matched. The rejected contextual interpretation would double-report two
+  parameter-dependent calls as `16/28` and is not the finite symbolic
+  [PRV-2] judgment.
+- **Current:** re-derive and independently review the smallest complete v0.27
+  normative delta against active v0.26 before changing compiler semantics.
+- **Next:** prepare the byte-identical outgoing v0.26 archive and exact v0.27
+  candidate, then implement only after normative closure review.
 
 ## Scope and expected touch set
 
