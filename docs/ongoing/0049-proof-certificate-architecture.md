@@ -1,6 +1,6 @@
 # 0049 — proof-certificate architecture research
 
-- **Status:** `IN PROGRESS`
+- **Status:** `WAITING`
 - **Authority:** separate owner-approved bounded research, 2026-08-10; the
   temporary `research/investigations/proof-certificate-architecture/HANDOFF.md`
   and the owner's follow-up prioritize architectural clarity, then correctness,
@@ -86,20 +86,21 @@ cannot be preserved, or the machinery costs more than the capability it serves.
   authority, identity, hostile cases, seven alternatives, and migration gates
   drafted in `PACKET.md`; candidate release timings and two sampling profiles
   recorded.
-- **Current:** task 0048's v0.26 activation `441cd5b8` and paired live-design
-  re-decision `d495d8cc` have landed. The final worktree has rebuilt and timed
-  the active release compiler, rerun both sampling profiles, and re-read the
-  changed design nodes and real alternatives. Final adversarial review exposed
-  and the packet now records the full mandatory DIAG-2 defect: exact
-  derivations are missing not only for accepted subscripts but also for every
-  discharged call and every S11 fact. It also now uses one exhaustive lowering
-  capability covering bounds, calls, S4 ingress, entry checks, and S11, with a
-  joint extractor/verifier/publisher safety boundary. Task 0048's
-  installed-authority acceptance evidence and terminal coordination
-  disposition remain in flight, so the packet remains explicitly draft.
-- **Next:** rebase onto task 0048's terminal revision, record its final evidence,
-  obtain the final adversarial challenge, and only then finalize the packet and
-  close this record.
+- **Current:** research and review are complete. The final worktree rebuilt and
+  timed the active release compiler, reran both sampling profiles, and passed
+  `make check` with 675 compiler tests and 30 real-program tests. Two final
+  adversarial reviews found no remaining P1/P2. The packet records the full
+  mandatory DIAG-2 defect and one exhaustive lowering capability covering
+  bounds, calls, S4 ingress, entry checks, and S11, with a joint
+  extractor/verifier/publisher safety boundary. It also decouples that local
+  gate from the later optional ProofFlow/verifier experiment.
+- **Waiting:** task 0048's activation `441cd5b8` and live-design re-decision
+  `d495d8cc` have landed, but its reviewed terminal coordination change remains
+  uncommitted in its owner workspace. Task 0049 will not copy or commit that
+  workspace's dirty files, so the packet remains explicitly draft.
+- **Next:** after task 0048's owner lands the terminal revision, rebase onto it,
+  record and reread its final authority and evidence, lint the refreshed design
+  tree, finalize the packet, and close this record.
 
 ## Scope and expected touch set
 
