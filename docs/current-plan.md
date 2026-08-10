@@ -1,9 +1,9 @@
 # Current Plan
 
-Status: PROPOSED (awaiting owner selection, 2026-08-10): activate the held
+Status: ACTIVE (owner selection 2026-08-10): activate the held
 provenance gate as stage 5b of the selected obligation-discharge direction.
-This proposal authorizes no execution. If selected, a separate change must mark
-it ACTIVE before any successor task is registered or substantive work begins.
+This plan authorizes only the stage-5b work written below. A separate lifecycle
+commit must register the next free task before substantive work begins.
 
 Derived from: [Direction Outline revision 29](roadmap.md), item `PROOF-8`
 (primary), with `BOUND-1`, `VERIFY-1`, and `VERIFY-2` as boundary and evidence
@@ -16,7 +16,7 @@ implementation, protected and accepted-set impact, real-program result,
 archive action, limitations, and complete digest; then stop and wait for an
 explicit response.
 
-## Direction and proposed milestone
+## Direction and current milestone
 
 Exact-approved v0.26 is active at `spec/kernel-spec.md`, SHA-256
 `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
@@ -31,7 +31,7 @@ with a finite explicit-dataflow rule. v0.26 closes the remaining helper-shaped
 `requires` bypass and records the requirement-to-protected-leaf bridge needed
 to activate that rule without inventing a second goal language.
 
-## Proposed current step — stage 5b provenance-gate activation
+## Current step — stage 5b provenance-gate activation
 
 ### Why
 
@@ -234,15 +234,15 @@ rule list, status, documentation field, or runtime behavior must change. Return
 that evidence for owner disposition rather than expanding the gate, weakening a
 test, retaining a hidden assertion, or skipping ahead.
 
-### Approval and task boundary
+### Authority and task boundary
 
-This proposal becomes executable authority only after the owner explicitly
-selects it and a separate commit changes its status to ACTIVE without expanding
-the written scope. Only then may a separate lifecycle commit register the next
-free task number after refreshing the integration branch. The task registration
-precedes substantive work. Plan selection is not specification approval; the
-later v0.27 candidate still requires its own exact explanation, hard wait, and
-owner response.
+The owner selected this written plan on 2026-08-10. Its ACTIVE status is
+execution authority for exactly stage 5b and does not expand the written scope.
+A separate lifecycle commit must register the next free task number after
+refreshing the integration branch, and that registration must precede
+substantive work. Plan selection is not specification approval; the later
+v0.27 candidate still requires its own exact explanation, hard wait, and owner
+response.
 
 ## Later dependency map — not execution authority
 
@@ -315,4 +315,4 @@ disposition is the only earlier stop.
 O11 Boolean-composition precision, general loop induction, arithmetic-term
 entailment or arithmetic-mode dissolution, struct/witness invariants, the
 OWN-3 predicate widening, move-on-copy generic policy, and further wfgrep work
-remain outside this proposal.
+remain outside this ACTIVE step.
