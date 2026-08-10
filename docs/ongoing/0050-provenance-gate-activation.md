@@ -71,8 +71,10 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
    fixed point, subject-only gating, diagnostics, call bridges, entry rewalk,
    and facts-off equivalence through the normal semantic path.
 5. Migrate only the eleven named claims to their exact existing value paths;
-   change only `store_dynamic_length` and its three propagation call sites as
-   directed, and check all cleanup and effect edges.
+   change `store_dynamic_length` and its three propagation call sites as
+   directed; remove only the now-unexhibited `traps` category from
+   `store_dynamic_length`, `decode_length`, `copy_distance`, and
+   `decode_fixed`; and check all cleanup and effect edges.
 6. Add only additive PRV conformance cases and coverage; update generated and
    derived specification data, compiler/writer documentation, acceptance
    evidence, Direction Outline, and relevant design memory.
@@ -100,22 +102,21 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`
   and `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
   Independent normative, mechanical, and implementability reviews report no
-  remaining finding; the bytes remain non-authoritative pending the
-  stop-condition disposition and later exact owner approval.
-- **Current:** stopped before compiler implementation. Two independent
-  read-only consumer migrations reproduced the same exact [EFF-2] cascade:
+  remaining finding; the bytes remain non-authoritative pending later exact
+  owner approval. Two independent read-only consumer migrations reproduced the
+  same exact [EFF-2] cascade:
   after the eleven selected claims become value branches and
   `store_dynamic_length` loses its claim-derived `traps`, `decode_length`, then
   `copy_distance`, then `decode_fixed` each has no remaining trapping source
   and must also lose `traps`; after those three removals all four sources pass
-  semantic checking and no fourth effect row changes. The ACTIVE plan instead
-  requires every other effect judgment to remain unchanged, so an executor
-  cannot honestly continue without owner disposition.
-- **Next:** ask the owner whether to amend the ACTIVE plan by authorizing those
-  three forced effect-row removals in addition to the already selected
-  `store_dynamic_length` change. If selected, record the exact amendment and
-  restart independent normative review before implementation; otherwise
-  terminally dispose the task without activating the frozen candidate.
+  semantic checking and no further effect row changes. The owner approved the
+  exact three-row addition to the existing `store_dynamic_length` change on
+  2026-08-10; every other effect row and runtime oracle remains frozen.
+- **Current:** land that exact ACTIVE-plan amendment as a separate authority
+  commit, without staging or activating the frozen specification bytes.
+- **Next:** add focused regressions and implement the two-stratum PRV judgment,
+  diagnostics, and the eleven selected value-path migrations under the amended
+  authority.
 
 ## Scope and expected touch set
 
@@ -129,7 +130,8 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   `compiler/src/semantic/provenance.rs` and its tests.
 - Consumer: the four frozen `tests/programs/raw_deflate*.wf` compilation-unit
   files and their real-program tests, limited to the eleven prescribed value
-  repairs and one prescribed result propagation.
+  repairs, one prescribed result propagation, and the exact four-row
+  now-unexhibited-`traps` closure above.
 - Conformance/evidence: additive PRV cases and coverage under
   `tests/conformance/`, unchanged existing identities and manifest fields,
   frozen obligation-discharge acceptance, adapter evidence, and exact runtime

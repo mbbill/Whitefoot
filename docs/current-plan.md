@@ -158,12 +158,17 @@ failures it identifies to value paths.
      in `decode_dynamic` use ordinary `propagate` bindings and do not duplicate
      the guard or move it into another requirement.
 
-   The helper's exact effect row loses only the former claim-derived `traps`
-   contribution and remains `reads('d), writes('l 'd)`; `decode_dynamic` keeps
-   its independently justified row, and all new normal/error cleanup edges are
-   checked explicitly. Preserve every other effect judgment, every successful
-   output, and every stock/boundary/truncated/malformed/oversize/closed-output
-   oracle.
+   Exact [EFF-2] closure removes only the now-unexhibited `traps` category from
+   four rows: `store_dynamic_length` remains `reads('d), writes('l 'd)`;
+   `decode_length` remains `reads('s 'i), writes('s)`; and `copy_distance` and
+   `decode_fixed` each remain `reads('s 'i 'o), writes('s 'o)`. The latter
+   three removals are the owner-approved 2026-08-10 amendment forced by two
+   independent migrations: the first two functions lose their sole trapping
+   claims and `decode_fixed` then loses the corresponding callee contribution.
+   `decode_dynamic` keeps its independently justified row, no fifth row
+   changes, and all new normal/error cleanup edges are checked explicitly.
+   Preserve every other effect judgment, every successful output, and every
+   stock/boundary/truncated/malformed/oversize/closed-output oracle.
 
 10. Update specification-derived data, diagnostics, conformance coverage,
     compiler documentation, writer guidance, the Direction Outline, and design
