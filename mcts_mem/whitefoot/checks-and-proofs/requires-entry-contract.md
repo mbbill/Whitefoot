@@ -1,8 +1,10 @@
-- `requires` is an optional prologue on a concrete function after its effect row: zero or more clause-local lets then exactly one final check, all in flat form over pure, total, non-trapping table operations (FN-8).
-- Every invocation executes the block at callee entry — including entries from foreign callers; a false condition traps; a true condition contributes exactly one checked fact, visible only in the dominated body.
-- Ordinary call acceptance never depends on a caller proof, and the entry check itself is never removed by any proof tier.
-- The clause is checked, never trusted: it is not an assume and not a member of the toolchain-gated trusted-assertion family; a clause with no effective statements is rejected.
-- Elision is obligation-driven: the compiler derives the discharging obligation from the body, independently normalizes the requirement, and elides a dominated implicit check only on an exact match; with facts off the identical analysis runs and applies no marker, and diagnostics double as a control oracle.
+- A function requirement admits zero or more copy-only local bindings followed by one final pure, total, non-trapping Boolean check on ordinary and generic declarations; alpha expansion yields one finite typed goal template.
+- Exact goal identity preserves selected operation semantics, concrete written type and const arguments, operand order, formal parameter ordinals and projections, named-constant declaration identity, and typed literals; it ignores local spelling, sharing, occurrence, and callee-instance identity.
+- Goal evidence is atomic: no algebraic or Boolean normalization, decomposition, or composition participates, and only an entire comparison root may project to the existing scalar relation fragment.
+- [[requirement-enforcement]] governs ordinary calls and real process entries.
+- A proved ordinary call supplies the complete positive goal to the body and its exact scalar projection when present; ordinary support, kills, joins, and contradiction govern signed goal evidence.
+- A requirement is a signature obligation with no callee effect, not a trusted assertion or optimizer assumption.
+- Checked metadata retains a finite subject-only bridge from concrete requirement occurrences through calls to protected leaves without activating provenance rejection.
 
 ## Facts
 
@@ -13,6 +15,8 @@
 - 2026-07-11 statement: writer doctrine P9 — a `requires` predicate states an actual invalid-call boundary, never a common-case or worst-case allocator hint; expected shortage is a recoverable value, not a contract trap. (sourced)
 - 2026-07-11 statement: the semantics (existence, callee-entry execution, always-retained check, concrete-only scope) are evidence-selected; the `requires { let* check }` block spelling is minimality-selected and R3-provisional pending a writer-tier comparison against a credible single-predicate alternative. (sourced)
 - 2026-07-11 statement: the obligation-driven replacement preserved the recognizer's exact acceptance set — 176/176 identical acceptance results and byte-identical IR over the full corpus in both facts modes. (sourced)
+- 2026-08-10 (441cd5b8) measurement: protected enum equality and the complete base64 capacity DAG remain admitted as indivisible atomic goals, so the call boundary did not narrow the declaration surface to the scalar relation fragment. (code)
+- 2026-08-10 (441cd5b8) measurement: direct, two-hop, clause-local-transform, seeded self-recursive, and seeded mutually recursive subject bridges converge; a seedless cycle stays empty, while all three canonical DEFLATE calls retain their subject bridge and discharge in both unasserted and S4-blinded rewalks without emitting a provenance rejection. (code)
 
 ## Moves
 

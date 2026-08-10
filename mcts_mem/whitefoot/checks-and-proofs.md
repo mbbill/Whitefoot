@@ -1,11 +1,12 @@
-- Every D1-critical checkable fact is established by a deterministic derivation, by a writer-stated check that runs in every build mode, or the program is rejected; there is no debug/release semantic divergence. Index bounds obligations follow [[obligation-discharge]]; `.trap` arithmetic still carries its check implicitly.
+- Every D1-critical checkable fact is established by a deterministic derivation, by a writer-stated check that runs in every build mode, or the program is rejected; there is no debug/release semantic divergence. Index bounds obligations follow [[obligation-discharge]], function requirements follow [[requires-entry-contract]], and trapping arithmetic still carries its check implicitly.
 - A check is removed only by a deterministic machine-verified proof; a solver may promote performance facts but never licenses elision; nothing writer-stated is trusted unchecked.
 - No writer-accessible syntax removes, weakens, or silences a check; explicit `check` statements are never elided, even when tautological.
-- The active safe-Rust compiler now reaches semantic and ownership checking,
-  exact memory-effect checking, a private checked program, target-independent
-  typed control-flow IR, target qualification, conservative LLVM, and host
-  execution. It retains required runtime checks and implements no proof-driven
-  check elision or effect-derived LLVM attributes.
+- The active safe-Rust compiler reaches semantic and ownership checking, exact
+  memory-effect checking, normative index and ordinary-call requirement
+  discharge, a private checked program, target-independent typed control-flow
+  IR, target qualification, conservative LLVM, and host execution. Explicit
+  checks, claims, and real-entry requirement checks remain runtime checks; no
+  optimizer assumption or effect-derived LLVM attribute is emitted.
 - The archived democ PROOF-1 implementation and accounting reports are historical evidence for a later optimizer experiment, not live compiler capability or acceptance authority.
 
 ## Facts
