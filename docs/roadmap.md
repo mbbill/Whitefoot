@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 26 (v0.25 counted u64 ranges activated; installed confirmation pending)
+Revision: 27 (counted-range confirmation closed; requires-as-goal current)
 
 The active language authority is v0.25 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -205,7 +205,7 @@ creating writer trust or weakening the checked safety envelope.
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
 `[current: items 1–4 and counted range shipped; provenance design reviewed and held]`
-`[next: installed counted-range confirmation]`
+`[next: one atomic requires call-site goal]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -248,19 +248,23 @@ creating writer trust or weakening the checked safety envelope.
   activation. v0.25 adds the evidence-selected counted `u64` half-open range
   and its finite S11 structural source without general induction. The ordinary
   compiler path captures endpoints once, preserves labelled cleanup and the
-  maximum-u64 edge, and the real SHA-256 program now discharges all nine index
+  maximum-u64 edge, and the real SHA-256 program discharges all nine index
   obligations after deleting four claims while its unrelated ordinary loop
-  remains ordinary. The exact activation is installed; the frozen
-  post-activation confirmation remains the current stage-6 gate.
-- **Missing / next:** rerun and record the installed counted-range acceptance,
-  complete every repository gate, and close task 0047. The preserved objective
-  then advances to a single atomic `requires` goal sufficient to close O3;
-  provenance
-  activation; proof-feasibility work for the mask and loop-carried facts the
-  real `ensures` examples need; `ensures`; deterministic claim-ledger tooling;
-  and a separately designed transitive `deny-claims` marker. Wfgrep remains
-  parked until this boundary is complete or a reproduced blocker returns for
-  disposition.
+  remains ordinary. The installed frozen confirmation reproduces UTF-8
+  `22/33`, deflate `11/29`, and dynamic deflate `11/24`, while SHA moves from
+  `0/9` to `9/9` claim-independent obligations; the worker is pure, contains
+  no `wf_trap`, and retains both runtime oracles. Task 0047 is terminal and the
+  complete repository gate is green.
+- **Missing / next:** replace the unconditional executable `requires` prologue
+  with one atomic call-site goal while preserving the full current FN-8
+  pure/total single-predicate declaration surface and real process-entry
+  failure behavior. This closes provenance bypass O3 without activating the
+  held provenance gate. The preserved objective then advances through
+  provenance activation; proof-feasibility work for the mask and loop-carried
+  facts the real `ensures` examples need; `ensures`; deterministic claim-ledger
+  tooling; and a separately designed transitive `deny-claims` marker. Wfgrep
+  remains parked until this boundary is complete or a reproduced blocker
+  returns for disposition.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·

@@ -400,3 +400,40 @@ non-rejecting redundancy advisories — `count_slot_in_counts`,
 `validate_slot_in_counts`, `offsets_slot_in_offsets`,
 `offsets_slot_in_counts`, and `ordered_symbol_in_lengths` — with no refuted
 claim. No previously proven site regresses.
+
+## Post-activation v0.25 confirmation (2026-08-09)
+
+Activation commit `3e2e823` installed the exact-approved v0.25 bytes at
+`spec/kernel-spec.md`, SHA-256
+`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+The same frozen sources, dark checker, all-claims-blinded transform, function
+order, obligation order, claim order, and denominators were rebuilt and rerun
+from that committed tree. The temporary in-crate probe was deleted after the
+run, and the tracked tree returned to the activation commit with no diff.
+
+The installed results exactly reproduce the reviewed candidate, in
+`total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 9 / 0 / 0`;
+- deflate, full denominator: `29 / 11 / 18 / 0`; and
+- deflate, dynamic-path denominator: `24 / 11 / 13 / 0`.
+
+UTF-8 and every deflate per-function bucket remain identical to the installed
+v0.24 baseline, so no previously proven site regresses. Deflate retains
+sixteen claims; the same five claims remain non-rejecting [CLM-2] redundancy
+advisories — `count_slot_in_counts`, `validate_slot_in_counts`,
+`offsets_slot_in_offsets`, `offsets_slot_in_counts`, and
+`ordered_symbol_in_lengths` — and no claim is refuted. Every synthetic blinded
+claim is retained, and every baseline obligation is discharged.
+
+The installed SHA source contains exactly three counted ranges, retains the
+unrelated ordinary `loop @sustained_hashing`, and contains no claim. All nine
+schedule subscripts remain discharged with claims blinded. The backend and
+runtime controls independently confirm that the worker is `pure`, contains no
+`wf_trap`, preserves the rotate and indexed-address shapes, returns the direct
+word `3128432319_u32`, and retains the sustained aggregate oracle. Empty,
+reversed, singleton, maximum-edge, captured-endpoint, and nested-break counted
+ranges execute without a hidden trap. The carried-index, next-index,
+missing-upper-to-length, and insufficient-lower controls remain unproved; the
+installed result still adds no general induction.
