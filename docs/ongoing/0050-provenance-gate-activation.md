@@ -96,11 +96,12 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   matched. The rejected contextual interpretation would double-report two
   parameter-dependent calls as `16/28` and is not the finite symbolic
   [PRV-2] judgment. An uncommitted v0.27 candidate and byte-identical outgoing
-  v0.26 archive are frozen for review at SHA-256
-  `6fa5fcf374f75145ae58005a6ca54f8c62ec87058557a4d3893a9bdcaf8bdcdf`
-  and `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`;
-  they remain non-authoritative and unreviewed pending the stop-condition
-  disposition below.
+  v0.26 archive are frozen at SHA-256
+  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`
+  and `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+  Independent normative, mechanical, and implementability reviews report no
+  remaining finding; the bytes remain non-authoritative pending the
+  stop-condition disposition and later exact owner approval.
 - **Current:** stopped before compiler implementation. Two independent
   read-only consumer migrations reproduced the same exact [EFF-2] cascade:
   after the eleven selected claims become value branches and
