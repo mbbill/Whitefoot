@@ -119,6 +119,9 @@ fn reserved_role(role: &ClassifiedRole) -> Option<(ReservedDeclarationRole, &str
         }
         RawRoleKind::Declaration(DeclarationRole::Parameter) => ReservedDeclarationRole::Parameter,
         RawRoleKind::Declaration(DeclarationRole::Let) => ReservedDeclarationRole::Let,
+        RawRoleKind::Declaration(DeclarationRole::CountedBinder) => {
+            ReservedDeclarationRole::ForBinder
+        }
         RawRoleKind::Declaration(DeclarationRole::MatchBinder) => {
             ReservedDeclarationRole::MatchBinder
         }

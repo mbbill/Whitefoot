@@ -1,8 +1,8 @@
 //! Derives `src/syntax/grammar/generated.rs` from the active specification's
 //! normative EBNF.
 //!
-//! The committed strong-LL(2) tables are not hand-editable: 530 nodes, 75
-//! decisions and roughly two thousand provenance-retaining SELECT rows. They
+//! The committed strong-LL(2) tables are not hand-editable: 600 nodes, 85
+//! decisions and roughly three thousand provenance-retaining SELECT rows. They
 //! have always been produced by a generator, but each grammar task built one
 //! offline and deleted it, so nothing checked that the committed tables were
 //! still the tables the specification implies. Task 0031 added 84 `]`-closing
@@ -106,6 +106,7 @@ const ENUM_ORDER: &[&str] = &[
     "value_if",
     "infix_tail",
     "infix_op",
+    "for_stmt",
 ];
 
 /// The decision index is the second stable dense index, and is historical for
@@ -116,8 +117,9 @@ const ENUM_ORDER: &[&str] = &[
 const DECISION_ORDER: &[usize] = &[
     0, 2, 12, 15, 17, 28, 31, 33, 39, 45, 55, 59, 61, 64, 70, 73, 75, 82, 85, 91, 94, 96, 98, 104,
     107, 118, 122, 129, 137, 140, 142, 165, 171, 174, 187, 195, 201, 212, 226, 262, 273, 279, 283,
-    303, 331, 342, 368, 375, 381, 386, 391, 400, 404, 413, 416, 418, 422, 427, 430, 435, 444, 455,
-    462, 464, 479, 482, 488, 494, 498, 503, 507, 513, 519, 521, 471,
+    457, 492, 532, 534, 302, 311, 314, 319, 323, 330, 335, 339, 366, 389, 415, 422, 428, 433, 438,
+    447, 450, 474, 483, 486, 488, 497, 500, 505, 514, 525, 541, 549, 552, 558, 564, 568, 573, 577,
+    583, 589, 591, 378,
 ];
 
 /// Productions whose entry frontier carries DIAG-1 construct-entry behaviour.

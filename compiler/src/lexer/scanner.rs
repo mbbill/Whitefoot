@@ -83,6 +83,9 @@ impl<'bytes> Scanner<'bytes> {
             b',' => self.fixed(start, 1, RawKind::Token(TokenKind::Comma)),
             b':' => self.fixed(start, 1, RawKind::Token(TokenKind::Colon)),
             b';' => self.fixed(start, 1, RawKind::Token(TokenKind::Semicolon)),
+            b'.' if self.bytes.get(start + 1) == Some(&b'.') => {
+                self.fixed(start, 2, RawKind::Token(TokenKind::DotDot))
+            }
             b'.' => self.fixed(start, 1, RawKind::Token(TokenKind::Dot)),
             b'=' => self.fixed(start, 1, RawKind::Token(TokenKind::Equal)),
             b'&' => self.fixed(start, 1, RawKind::Token(TokenKind::Ampersand)),
@@ -203,6 +206,9 @@ impl<'bytes> Scanner<'bytes> {
     fn number(&self, start: usize) -> RawLexeme {
         let mut end = start + usize::from(self.bytes.get(start) == Some(&b'-'));
         while let Some(byte) = self.bytes.get(end).copied() {
+            if byte == b'.' && self.bytes.get(end + 1) == Some(&b'.') {
+                break;
+            }
             let previous = end.checked_sub(1).and_then(|index| self.bytes.get(index));
             let exponent_sign = matches!(byte, b'+' | b'-')
                 && previous.is_some_and(|value| matches!(value, b'e' | b'E'));

@@ -423,8 +423,11 @@ fn repeated_classification_is_deterministic() {
 }
 
 #[test]
-fn active_contract_reserves_as_external_and_blocks() {
-    let inputs = [SourceInput::new("reserved.wf", b"as external blocks")];
+fn active_contract_reserves_every_recent_fixed_spelling() {
+    let inputs = [SourceInput::new(
+        "reserved.wf",
+        b"as external blocks for in ..",
+    )];
     let Ok(bundle) = source_bundle(&inputs) else {
         panic!("test source bundle must be constructible");
     };
@@ -434,17 +437,22 @@ fn active_contract_reserves_as_external_and_blocks() {
     let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
         ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits { max_tokens: 3 },
+        TerminalLimits { max_tokens: 6 },
     ) else {
         panic!("reserved spellings must classify under the active contract");
     };
     let expected = [
-        FixedTerminal::As,
-        FixedTerminal::External,
-        FixedTerminal::Blocks,
+        b"as".as_slice(),
+        b"external",
+        b"blocks",
+        b"for",
+        b"in",
+        b"..",
     ];
     assert_eq!(classified.tokens().len(), expected.len());
-    for (token, terminal) in classified.tokens().iter().zip(expected) {
+    for (token, spelling) in classified.tokens().iter().zip(expected) {
+        let terminal = FixedTerminal::from_spelling(spelling)
+            .unwrap_or_else(|| panic!("missing fixed terminal for {spelling:?}"));
         assert!(
             token
                 .terminals()

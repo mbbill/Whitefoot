@@ -78,7 +78,7 @@ fn operator_forms_take_their_maximal_lowercase_suffix() {
     );
 }
 
-/// [GRAM-1] the compound set is exactly `->` and `=>`, and the bytes that
+/// [GRAM-1] the compound set is exactly `->`, `=>`, and `..`, and the bytes that
 /// spelled a comparison operator form nothing longer than themselves.
 ///
 /// The comparison halves are the control: `==`, `<=`, and `>=` are here for
@@ -87,7 +87,7 @@ fn operator_forms_take_their_maximal_lowercase_suffix() {
 /// appear at all — `!` is a raw lexical defect, asserted in `hostile.rs`.
 #[test]
 fn compound_punctuation_beats_its_single_byte_prefixes() {
-    let observed = observed(b"a == b <= d >= e -> f => g < h > i = j\n");
+    let observed = observed(b"a == b <= d >= e -> f => g h..i < j > k = l\n");
     let tokens: Vec<_> = observed
         .iter()
         .filter(|(_, label)| label.starts_with("token:"))
@@ -109,6 +109,9 @@ fn compound_punctuation_beats_its_single_byte_prefixes() {
             "token:ThinArrow",
             "token:LowerWordForm",
             "token:FatArrow",
+            "token:LowerWordForm",
+            "token:LowerWordForm",
+            "token:DotDot",
             "token:LowerWordForm",
             "token:LeftAngle",
             "token:LowerWordForm",
@@ -146,7 +149,7 @@ fn dotted_mode_boundary_is_exact_and_dotless_ops_remain_words() {
 
 #[test]
 fn all_fixed_symbols_preserve_longest_two_byte_forms() {
-    let observed = observed(b"(){}[]<>,:;.= -> => &\n");
+    let observed = observed(b"(){}[]<>,:;.= -> => .. &\n");
     let kinds: Vec<_> = observed
         .iter()
         .filter_map(|(_, label)| label.strip_prefix("token:"))
@@ -169,7 +172,49 @@ fn all_fixed_symbols_preserve_longest_two_byte_forms() {
             "Equal",
             "ThinArrow",
             "FatArrow",
+            "DotDot",
             "Ampersand",
+        ]
+    );
+}
+
+#[test]
+fn counted_range_numeric_and_dot_seams_are_partitioned_exactly() {
+    let observed = observed(
+        b"0_u64 -1_i64..0_u64 1.5_f64..2.5_f64 0_u64.1_u64 p.field 0_u64..1_u64 ... 0_u64...1_u64 0_u64....1_u64\n",
+    );
+    let tokens: Vec<_> = observed
+        .into_iter()
+        .filter(|(_, label)| label.starts_with("token:"))
+        .collect();
+    assert_eq!(
+        tokens,
+        [
+            (b"0_u64".to_vec(), "token:NumberForm".into()),
+            (b"-1_i64".to_vec(), "token:NumberForm".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b"0_u64".to_vec(), "token:NumberForm".into()),
+            (b"1.5_f64".to_vec(), "token:NumberForm".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b"2.5_f64".to_vec(), "token:NumberForm".into()),
+            // A single dot retains the pre-v0.25 broad numeric scan.
+            (b"0_u64.1_u64".to_vec(), "token:NumberForm".into()),
+            (b"p".to_vec(), "token:LowerWordForm".into()),
+            (b".".to_vec(), "token:Dot".into()),
+            (b"field".to_vec(), "token:LowerWordForm".into()),
+            (b"0_u64".to_vec(), "token:NumberForm".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b"1_u64".to_vec(), "token:NumberForm".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b".".to_vec(), "token:Dot".into()),
+            (b"0_u64".to_vec(), "token:NumberForm".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b".".to_vec(), "token:Dot".into()),
+            (b"1_u64".to_vec(), "token:NumberForm".into()),
+            (b"0_u64".to_vec(), "token:NumberForm".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b"..".to_vec(), "token:DotDot".into()),
+            (b"1_u64".to_vec(), "token:NumberForm".into()),
         ]
     );
 }

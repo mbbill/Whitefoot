@@ -1,11 +1,11 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 25 (provenance rule review positive; counted range loop current)
+Revision: 26 (v0.25 counted u64 ranges activated; installed confirmation pending)
 
-The active language authority is v0.24 at the stable path
+The active language authority is v0.25 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
 Superseded numbered specifications are immutable archives. The current
 execution proposal is [`docs/current-plan.md`](current-plan.md), project law is
 the [`Constitution`](constitution.md), and the operational process is
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.24]` `[current: safe-Rust compiler]`
+`[current: spec v0.25]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.24 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.25 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -204,8 +204,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4 shipped; provenance design reviewed and held]`
-`[next: counted u64 range loop]`
+`[current: items 1–4 and counted range shipped; provenance design reviewed and held]`
+`[next: installed counted-range confirmation]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -245,15 +245,17 @@ creating writer trust or weakening the checked safety envelope.
   projections preserve success/error provenance while nested payloads expand
   conservatively one level. The rule remains held design evidence: its explicit
   write-address/control-flow limitation is recorded and O3 still blocks
-  activation.
-- **Missing / next:** the replacement Current Plan selects the counted `u64`
-  half-open range loop that the writer probe and SHA-256 claim family earned.
-  Its structural endpoint and loop-variable bounds must enter L0 without
-  general induction, its lowering must preserve single endpoint evaluation,
-  cleanup, labelled control flow, and the `u64::MAX` boundary, and the real
-  SHA-256 program must discharge all nine index obligations without its four
-  loop claims. After that, the preserved objective remains a single atomic
-  `requires` goal sufficient to close O3; provenance
+  activation. v0.25 adds the evidence-selected counted `u64` half-open range
+  and its finite S11 structural source without general induction. The ordinary
+  compiler path captures endpoints once, preserves labelled cleanup and the
+  maximum-u64 edge, and the real SHA-256 program now discharges all nine index
+  obligations after deleting four claims while its unrelated ordinary loop
+  remains ordinary. The exact activation is installed; the frozen
+  post-activation confirmation remains the current stage-6 gate.
+- **Missing / next:** rerun and record the installed counted-range acceptance,
+  complete every repository gate, and close task 0047. The preserved objective
+  then advances to a single atomic `requires` goal sufficient to close O3;
+  provenance
   activation; proof-feasibility work for the mask and loop-carried facts the
   real `ensures` examples need; `ensures`; deterministic claim-ledger tooling;
   and a separately designed transitive `deny-claims` marker. Wfgrep remains
@@ -295,7 +297,7 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.24 run is `Pass=390 Fail=1 Skip=13`; the one
+  compiler. The installed-v0.25 run is `Pass=393 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
   rows remain explicit toolchain gaps. This adapter is deliberately
   `#[ignore]` and invoked separately; `make check` does not silently include

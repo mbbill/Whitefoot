@@ -87,6 +87,9 @@ pub(super) struct SliceLoan {
 /// exclusivity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RequiredReferent {
+    /// A position requires one exact value type, as counted endpoints require
+    /// `own u64` after TYPE-7's implicit-read exclusivity [TYPE-5].
+    Exact(CheckedType),
     /// A `match` scrutinee requires an enum value [OWN-13, ERR-2].
     Enum,
     /// An `index` root requires directly indexable storage [OP-4].
@@ -375,6 +378,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     mechanical_fix: "introduce a new `let` binding before reuse",
                 },
             );
+        }
+        if local.compiler_updated && kind == BorrowKind::Unique {
+            return self.issue_node(SemanticRule::Own11, node, SemanticIssueKind::BorrowConflict);
         }
         if function.region_parameters.contains(&region)
             || !self.scope_is_within(
@@ -721,12 +727,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn enclosing_loops(&self, node: NodeId) -> Result<Vec<NodeId>, CheckStop> {
         let mut loops = Vec::new();
+        let mut child = node;
         let mut cursor = self.tree.parent(node)?;
-        while let Some(node) = cursor {
-            if self.tree.production(node)? == Production::LoopStmt {
-                loops.push(node);
+        while let Some(ancestor) = cursor {
+            let production = self.tree.production(ancestor)?;
+            if production == Production::LoopStmt
+                || (production == Production::ForStmt
+                    && self.tree.production(child)? == Production::Stmt)
+            {
+                loops.push(ancestor);
             }
-            cursor = self.tree.parent(node)?;
+            child = ancestor;
+            cursor = self.tree.parent(ancestor)?;
         }
         loops.reverse();
         Ok(loops)
@@ -838,6 +850,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         required: RequiredReferent,
     ) -> Result<bool, CheckStop> {
         Ok(match required {
+            RequiredReferent::Exact(required) => ty == required,
             RequiredReferent::Enum => match ty {
                 CheckedType::Bool => true,
                 CheckedType::Nominal(nominal) => {

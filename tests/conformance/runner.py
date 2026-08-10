@@ -77,7 +77,7 @@ ROOT = HERE.parent.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec.md")
-ACTIVE_SPEC_SHA256 = "53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86"
+ACTIVE_SPEC_SHA256 = "c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab"
 # The named native adapter is compiler/tests/conformance.rs, reached through
 # `make conformance-run`; this hook stays open for a future non-native
 # toolchain. Keeping it explicit prevents a missing compiler, crash, or broad

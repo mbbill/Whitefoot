@@ -1,7 +1,7 @@
 - There is exactly one spelling per semantic construct and one legal byte-level formatting; non-canonical input is a hard error and the toolchain never auto-formats.
 - There are no comments; documentation lives in a declaration doc field.
 - Computation is flat three-address form: calls and constructions appear only at expression position, every argument is an atom, and every intermediate is named by a let binding (GRAM-9). See [[binding-annotation]] for what that binder states.
-- Loop-plus-break is the sole iteration form; there is no while and no for. See [[operation-spelling]] for how an operation is spelled and [[match-form]] for how a conditional is.
+- Bounded traversal is an evidence-selected iteration class distinct from ordinary labelled loop control. See [[operation-spelling]] for how an operation is spelled and [[match-form]] for how a conditional is.
 - Bool is a prelude enum with no boolean literals; numeric literals are decimal-only with a mandatory type suffix.
 
 ## Facts
@@ -16,3 +16,5 @@
 - 2026-07-20 finding: thirteen v0.8 spellings have competing complete derivations across primitive/unit type arguments, `unit` constant and expression values, and the `deref`/`index` place-versus-call forms; the numbered specification defines no fixed-terminal-versus-IDENT priority or exclusion contract. (code)
 - 2026-07-20 historical intent: `optimizer-language-research/notes/batch1-spec-deltas.md` records primitive and `unit` type arguments resolving as types and grammar-terminal words being reserved from IDENT bindings. That evidence explains the likely intended repair but is nonnormative and cannot authorize compiler behavior for v0.8. (sourced)
 - 2026-07-21 implementation: owner-approved v0.9 excludes every exact fixed lowercase grammar terminal from IDENT, and GRAM-1 defines terminals as byte-and-shape predicates with pairwise-disjoint strong-LL(2) decision languages rather than priority token kinds. The two independent grammar engines report zero v0.9 decision conflicts and one complete derivation for both registered dereference witnesses. (sourced)
+- 2026-08-09 measurement: three real SHA-256 index walks and three of four hostile writer probes independently selected one ascending half-open counted shape, so the counted form is evidence-selected rather than part of the provisional ordinary-loop register item. (sourced)
+- 2026-08-09 measurement: adding only the selected counted class removed four SHA-256 claims while preserving the unrelated ordinary loop. (code)

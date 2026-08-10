@@ -5,6 +5,7 @@ mod base64;
 mod buffers;
 mod checked_division;
 mod cost_shape;
+mod counted_ranges;
 mod deterministic_target;
 mod effect_attributes;
 mod float_conversion;

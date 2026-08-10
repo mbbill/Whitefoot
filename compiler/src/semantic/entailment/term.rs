@@ -1,6 +1,7 @@
 //! [ENT-2] terms: the closed vocabulary the L0 fragment relates.
 //!
-//! A term is a tracked place, a length term over a place, a constant, a
+//! A term is a tracked place, a length term over a place, one of the two
+//! private endpoint captures of a written counted range, a constant, a
 //! symbolic const-generic parameter, or the distinguished zero term Z. Term
 //! identity is declaration-anchored: two places are the same term exactly when
 //! their roots resolve to the same declaration event — one [`BindingId`] in
@@ -15,6 +16,13 @@ use std::collections::HashMap;
 use super::super::model::{BindingId, CheckedConstantId, IntegerType};
 use crate::DeclarationId;
 
+/// Which once-captured endpoint one private counted-range term denotes.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CountedCaptureSide {
+    Lower,
+    Upper,
+}
+
 /// Root of a tracked place: a function-local binding (parameters, `let`
 /// bindings of every right-hand form, and match binders share the dense
 /// [`BindingId`] space) or a named const [CONST-2].
@@ -27,13 +35,32 @@ pub(crate) enum PlaceRoot {
 /// One tracked place [ENT-2](a): a root, an optional `deref` reading through
 /// a borrow or box holder, and field selections — never an index segment.
 ///
-/// The checked tree spells at most one `deref` wrapping per place (reborrows
-/// produce fresh holders), so a single flag represents the written chain.
+/// This compact form represents no deref or one leading deref followed by
+/// fields. Interleaved or repeated derefs use [`ProjectedPlaceTerm`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PlaceTerm {
     pub(crate) root: PlaceRoot,
     pub(crate) deref: bool,
     pub(crate) fields: Vec<u32>,
+}
+
+/// One source-order projection in a tracked place whose spelling cannot be
+/// represented by [`PlaceTerm`]'s legacy "one leading deref, then fields"
+/// shape. Keeping the order makes `deref(h.value)` distinct from
+/// `deref(h).value`, as [ENT-2] requires.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum PlaceProjection {
+    Field(u32),
+    Deref,
+}
+
+/// The exact source-order path of a tracked place with interleaved field and
+/// deref projections. The root remains declaration-anchored; projections are
+/// finite because the checked expression tree is finite.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ProjectedPlaceTerm {
+    pub(crate) root: PlaceRoot,
+    pub(crate) projections: Vec<PlaceProjection>,
 }
 
 /// One [ENT-2] term.
@@ -49,8 +76,18 @@ pub(crate) enum TermKind {
     ConstParameter(DeclarationId),
     /// A tracked place whose final selected type is one fragment type.
     Place(PlaceTerm, IntegerType),
+    /// The same [ENT-2] tracked-place class when field selections precede a
+    /// deref or more than one deref occurs in the canonical spelling.
+    ProjectedPlace(ProjectedPlaceTerm, IntegerType),
     /// The length term `len(P)`, of fragment type u64.
     Length(PlaceTerm),
+    /// One immutable compiler-owned endpoint capture [ENT-2, S11]. The
+    /// finalized `for_stmt` path plus the endpoint side is its complete
+    /// function-local identity; source can neither name nor mutate it.
+    CountedCapture {
+        range_path: Vec<u32>,
+        side: CountedCaptureSide,
+    },
 }
 
 /// Dense identity of one interned term.

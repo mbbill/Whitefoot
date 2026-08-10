@@ -358,7 +358,10 @@ fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
         DeclarationRole::RegionParameter | DeclarationRole::LocalRegion => {
             vec![DeclarationClass::Region]
         }
-        DeclarationRole::Parameter | DeclarationRole::Let | DeclarationRole::MatchBinder => {
+        DeclarationRole::Parameter
+        | DeclarationRole::Let
+        | DeclarationRole::MatchBinder
+        | DeclarationRole::CountedBinder => {
             vec![DeclarationClass::Value]
         }
         DeclarationRole::LoopLabel => vec![DeclarationClass::Label],
@@ -372,9 +375,9 @@ fn declaration_scope(
 ) -> Result<ScopeId, ResolutionCompilerFailure> {
     match declaration_role {
         DeclarationRole::Variant => Ok(ScopeId(0)),
-        DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
-            scopes.declaration_scope(role.owner)
-        }
+        DeclarationRole::LoopLabel
+        | DeclarationRole::CountedBinder
+        | DeclarationRole::LocalRegion => scopes.declaration_scope(role.owner),
         _ => Ok(role.scope),
     }
 }

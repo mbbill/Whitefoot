@@ -975,6 +975,197 @@ fn main() -> own unit pure {
 }
 
 // ---------------------------------------------------------------------
+// [ENT-3] S11 counted-range structural facts
+// ---------------------------------------------------------------------
+
+#[test]
+fn a_counted_range_discharges_its_binder_and_safe_predecessor_indices() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>) -> own i32 pure {
+  let total = 0_i32;
+  for @items i in 1_u64..4_u64 {
+    let previous = i -wrap 1_u64;
+    let current_value = values[i];
+    let previous_value = values[previous];
+    set total = total +wrap current_value;
+    set total = total +wrap previous_value;
+  }
+  return total;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true, true],
+        "S11 proves i < upper and lower <= i; S7 derives the safe predecessor"
+    );
+}
+
+#[test]
+fn a_counted_range_does_not_prove_the_next_index_or_an_unrelated_carried_index() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, j: own u64) -> own i32 pure {
+  let total = 0_i32;
+  for @items i in 0_u64..4_u64 {
+    let next = i +wrap 1_u64;
+    let current_value = values[i];
+    let next_value = values[next];
+    let unrelated = values[j];
+    set total = total +wrap current_value;
+    set total = total +wrap next_value;
+    set total = total +wrap unrelated;
+  }
+  return total;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true, false, false],
+        "S11 is not general induction: next may equal upper and j is unrelated"
+    );
+}
+
+#[test]
+fn a_counted_upper_needs_an_independent_relation_to_the_storage_length() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, upper: own u64) -> own i32 pure {
+  let total = 0_i32;
+  for @items i in 0_u64..upper {
+    let value = values[i];
+    set total = total +wrap value;
+  }
+  return total;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "i < captured upper does not imply upper <= len(values)"
+    );
+}
+
+#[test]
+fn a_counted_preheader_closes_snapshot_consequences_before_body_kills() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>) -> own i32 pure {
+  let upper = 4_u64;
+  let total = 0_i32;
+  for @items i in 0_u64..upper {
+    set upper = 0_u64;
+    let value = values[i];
+    set total = total +wrap value;
+  }
+  return total;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![true],
+        "the capture equals four before the mutable source changes; that closed snapshot consequence remains true"
+    );
+}
+
+#[test]
+fn a_break_free_zero_trip_counted_continuation_is_reachable_not_contradictory() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>) -> own i32 pure {
+  for @empty i in 4_u64..4_u64 {
+    let ignored = i;
+  }
+  return values[9_u64];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "the real false-header edge prevents the ordinary break-free-loop contradictory join"
+    );
+}
+
+#[test]
+fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+  for @maybe n in 0_u64..1_u64 {
+    if ilt(i, 4_u64) {
+      let ignored = n;
+    } else {
+      return 0_i32;
+    }
+  }
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "the structural false edge contributes the pre-body state to the continuation join"
+    );
+}
+
+#[test]
+fn a_nested_counted_loop_kill_can_reach_an_outer_ordinary_loop_head() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> own i32 pure {
+  if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  loop @outer {
+    for @inner n in 0_u64..1_u64 {
+      set i = i +wrap 1_u64;
+      let ignored = n;
+    }
+    let at_head = values[i];
+    if leave {
+      break @outer;
+    }
+  }
+  return 0_i32;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "nested counted exhaustion reaches the outer continuation and then its backedge"
+    );
+}
+
+// ---------------------------------------------------------------------
 // [ENT-6] obligations and residual rendering
 // ---------------------------------------------------------------------
 
@@ -2082,4 +2273,158 @@ fn main() -> own unit pure {
         assert_eq!(function.entailment.obligations.len(), 1);
         assert!(function.entailment.obligations[0].discharged);
     });
+}
+
+#[test]
+fn counted_sha256_discharges_all_nine_indices_without_claims() {
+    let source = include_bytes!("../../../../tests/programs/sha256_abc.wf");
+    let outcomes = obligations(source, "sha256_abc_word_zero");
+    assert_eq!(outcomes.len(), 9);
+    assert!(outcomes.iter().all(|outcome| outcome.discharged));
+    assert!(claims(source, "sha256_abc_word_zero").is_empty());
+}
+
+#[test]
+fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
+    let source = br#"struct Holder {
+  value: box<u64>;
+}
+
+fn probe(holder: own Holder) -> own unit traps {
+  for @items i in deref(holder.value)..1_u64 {
+    claim impossible: ine(i, 0_u64) because "the true edge fixes i to zero";
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = claims(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    assert!(matches!(
+        outcomes[0].disposition,
+        ClaimDisposition::Refuted { .. }
+    ));
+}
+
+#[test]
+fn counted_range_kills_a_borrowed_projected_endpoint_after_a_write() {
+    let source = br#"struct Limit {
+  upper: u64;
+}
+
+fn probe(limit: own Limit) -> own unit traps {
+  region 'r {
+    let holder = &uniq 'r limit;
+    for @items i in 0_u64..deref(holder).upper {
+      set deref(holder).upper = 0_u64;
+      claim safe: ige(i, deref(holder).upper) because "the reread is not the captured endpoint";
+    }
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = claims(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, ClaimDisposition::Retained);
+}
+
+#[test]
+fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
+    let source = br#"fn probe(holder: own box<box<u64>>) -> own unit traps {
+  for @items i in deref(deref(holder))..1_u64 {
+    claim impossible: ine(i, 0_u64) because "the true edge fixes i to zero";
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = claims(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    assert!(matches!(
+        outcomes[0].disposition,
+        ClaimDisposition::Refuted { .. }
+    ));
+}
+
+#[test]
+fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
+    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> own unit reads('r), traps {
+  for @items i in deref(deref(deref(holder)))..1_u64 {
+    claim impossible: igt(deref(deref(deref(holder))), i) because "the header proves the opposite";
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = claims(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    let ClaimDisposition::Refuted {
+        predicate,
+        negation,
+    } = &outcomes[0].disposition
+    else {
+        panic!(
+            "the opposite of the counted guard must be refuted: {:?}",
+            outcomes[0].disposition
+        );
+    };
+    assert!(predicate.contains("deref(deref(deref(holder)))"));
+    assert!(negation.contains("deref(deref(deref(holder)))"));
+}
+
+#[test]
+fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
+    let source = br#"fn probe(holder: own box<u64>) -> own unit traps {
+  for @items i in deref(holder)..1_u64 {
+    claim impossible: igt(deref(holder), i) because "the captured lower endpoint cannot exceed the binder";
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = claims(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    assert!(matches!(
+        outcomes[0].disposition,
+        ClaimDisposition::Refuted { .. }
+    ));
+}
+
+#[test]
+fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
+    let source = br#"fn probe() -> own unit allocates(heap), traps {
+  let holder = box_new(0_u64);
+  for @items i in deref(holder)..1_u64 {
+    claim impossible: igt(deref(holder), i) because "the captured lower endpoint cannot exceed the binder";
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = claims(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    let ClaimDisposition::Refuted { predicate, .. } = &outcomes[0].disposition else {
+        panic!("the opposite of the counted lower bound must be refuted");
+    };
+    assert!(predicate.contains("deref(holder)"));
+    assert!(!predicate.contains("deref(deref(holder))"));
 }

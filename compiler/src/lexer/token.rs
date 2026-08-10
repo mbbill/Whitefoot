@@ -105,6 +105,8 @@ pub enum TokenKind {
     Semicolon,
     /// `.` when it is not part of an operation name.
     Dot,
+    /// `..`.
+    DotDot,
     /// `=` when it is not part of a fat arrow.
     Equal,
     /// `->`.

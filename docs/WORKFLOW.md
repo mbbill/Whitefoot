@@ -658,11 +658,16 @@ explicit owner reordering names the semantic gap it unlocks.
    closes the project honestly; it does not retroactively invalidate immutable
    approved bytes.
 
-4. **Obtain exact approval.** Present the complete stable-file SHA-256, semantic
-   delta, `git diff`, impact inventory, verifier results, requested protected
-   changes, and limitations. Owner approval covers only those exact bytes and
-   named changes. Record that approval in `governance/APPROVALS.md`; a changed
-   byte, including a rebase resolution, returns to review.
+4. **Obtain exact approval.** First present an owner-facing explanation of the
+   language behavior, compiler implementation, real-program result,
+   accepted-set risk, protected changes, stable-file action, limitations, and
+   complete stable-file SHA-256. Then stop and wait for the owner's explicit
+   response; do not continue activation work in the same turn as the
+   walkthrough. The approval packet also carries the exact `git diff`, impact
+   inventory, and verifier results. Owner approval covers only those exact
+   bytes and named changes. Record that approval in
+   `governance/APPROVALS.md`; a changed byte, including a rebase resolution,
+   returns to review.
 5. **Activate atomically.** Land the approved stable bytes in one linear
    commit. After the one-time v0.23-to-v0.24 switchover, that commit also
    creates the exact outgoing archive and fails rather than overwriting an

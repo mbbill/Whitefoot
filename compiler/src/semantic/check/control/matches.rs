@@ -610,6 +610,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ty: field.ty,
                         live: true,
                         loop_depth,
+                        compiler_updated: false,
                         borrow,
                         slice: None,
                         slice_loans: Vec::new(),

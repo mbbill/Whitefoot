@@ -467,6 +467,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ))
             }
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
+            Production::ForStmt => {
+                self.check_counted_range(function, node, bindings, counters, scope)
+            }
             Production::BreakStmt => self.check_break(node, bindings, scope),
             Production::RegionStmt => self.check_region(function, node, bindings, counters, scope),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
@@ -537,6 +540,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ty: expected,
                             live: true,
                             loop_depth: scope.loops.len(),
+                            compiler_updated: false,
                             borrow: None,
                             slice: None,
                             slice_loans: Vec::new(),
@@ -614,6 +618,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ty: expected,
                     live: true,
                     loop_depth: scope.loops.len(),
+                    compiler_updated: false,
                     borrow,
                     slice: value.slice,
                     slice_loans: Vec::new(),

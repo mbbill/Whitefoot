@@ -1,12 +1,12 @@
 # 0047 — counted `u64` range loop
 
 - **Status:** `IN PROGRESS`
-- **Authority:** the ACTIVE stage-6 step in `docs/current-plan.md`, derived from
-  Direction Outline revision 25
+- **Authority:** the ACTIVE stage-6 step in `docs/current-plan.md`, refreshed
+  against Direction Outline revision 26 after atomic activation
 - **Owner / workspace:** Codex lead /
-  `/Users/bytedance/do_not_scan/wf-0045-final-activation`, branch
-  `codex/0045-ent5-activation`
-- **Base revision:** `5683c855f796c2163c36f5e9ca4bcb566c13a6f7`
+  `/Users/bytedance/code/Whitefoot`, branch
+  `codex/0047-counted-range-impl`
+- **Base revision:** `8a44cb111759af87846284adbab2060b199fc861`
 
 ## Goal
 
@@ -95,14 +95,22 @@ and preserve its exact digest and emitted no-trap shape.
 
 - **Completed:** task 0046 closed at `5683c85`; revision 25 selected this slice.
   The proof and surface-form design nodes and the rejected retained-check
-  alternative were consulted. Independent compiler/source walks confirmed the
-  SHA target is three loops, four claims, and nine obligations, and identified
-  the required dedicated exhaustion edge and split carried sets.
-- **Current:** freeze exact v0.24/compiler/corpus baselines and assemble the
-  v0.25 normative delta plus regression-first implementation inventory.
-- **Next:** land hostile frontend and semantic regressions, then implement the
-  general construct without touching the SHA consumer until the mechanism is
-  independently green.
+  alternative were consulted. The exact v0.24 archive, corpus census, hostile
+  inventory, and v0.25 candidate were frozen; two independent reviews passed
+  candidate digest `c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+  The general frontend, resolution, checked-semantic, S11-entailment, lowering,
+  backend, canonical, and conformance paths are implemented. Exactly three
+  SHA-256 loops now use the counted form, all 9/9 index obligations discharge
+  with zero claims, and the pure function retains its direct and sustained
+  runtime oracles. Focused counted tests are 37/37 and the full native adapter
+  reports `Pass=393 Fail=1 Skip=13`, with only the pre-existing OWN-3
+  unsupported case remaining.
+- **Current:** the exact-reviewed specification, outgoing archive,
+  implementation, protected prose delta, pins, approval record, and derived
+  material are atomically installed. Run the frozen acceptance and complete
+  gates from that committed activation tree; stage 7 remains unauthorized.
+- **Next:** record installed results in their canonical owners, close this task,
+  and replace the rolling plan with stage 7 in a separate closure commit.
 
 ## Scope and expected touch set
 

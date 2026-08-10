@@ -2,7 +2,7 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-v0.24 authority at `spec/kernel-spec.md`; immutable versioned files retain the
+v0.25 authority at `spec/kernel-spec.md`; immutable versioned files retain the
 superseded authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -888,3 +888,26 @@ obligations, and 11 of 29 deflate obligations as claim-independent. Installed
 post-activation confirmation belongs to the task closure evidence rather than
 this derivation claim. Statistics remain 80 derived · 48 existence-only · 0
 underived.
+
+## v0.25 amendment — counted ascending u64 ranges (activated 2026-08-09)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.25, at SHA-256
+`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+The superseded v0.24 bytes are immutable at
+`spec/kernel-spec-v0.24.md`, SHA-256
+`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+
+v0.25 adds and removes no numbered rules. It modifies twenty existing rules
+at thirty anchored sites, plus one R3-PROVISIONAL register clarification, to
+admit one ascending, unit-stride, half-open counted form over once-captured
+`own u64` endpoints. S11 supplies only the compiler-executed structural facts
+`lower_capture <= binder < upper_capture`; existing ENT-4 closure and S7
+derive safe predecessor indices, while ordinary loops retain their
+no-induction rule. The form is evidence-selected by the real SHA-256 consumer:
+exactly three index loops replace four claims and discharge all nine array
+obligations without a runtime trap in the pure compression function.
+
+The native grammar inventory is 70 productions, 85 decisions, 96 terminal
+predicates, and 128 rules. Fixed spellings add `for`, `in`, and `..`; the
+scoped 448-file census found no accepted identifier collision. Derivation
+statuses and totals remain 80 derived · 48 existence-only · 0 underived.

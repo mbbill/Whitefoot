@@ -10,11 +10,11 @@ use whitefoot::{
     classify_terminals, diagnostic_terminal_order, grammar_node, lex, parse, productions,
 };
 
-/// The unlabelled entry and the canonical complete command-entry header
-/// ([FN-7]) over the same minimal body.
-const PARSER_PROBES: [&[u8]; 2] = [
+/// Minimal ordinary and command entries plus one complete counted-range body.
+const PARSER_PROBES: [&[u8]; 3] = [
     b"fn main() -> own unit pure {\n  return unit;\n}\n",
     b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n",
+    b"fn range(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n",
 ];
 
 const FRONTEND_SECTIONS: [(&str, &str); 3] = [
@@ -49,7 +49,7 @@ impl fmt::Display for VerifyError {
                 )
             }
             Self::ChangedFrontendContract => formatter.write_str(
-                "candidate changes the lexer or source grammar of the baseline; a structural change must first extend the native grammar path",
+                "candidate changes the lexer or source grammar of the baseline but does not match the compiler's embedded frontend contract",
             ),
             Self::InvalidCompilerGrammar(message) => {
                 write!(formatter, "compiler grammar data is inconsistent: {message}")
@@ -82,8 +82,11 @@ fn run() -> Result<(), VerifyError> {
     let candidate = read_specification(&candidate)?;
     let report = verify_candidate(&baseline, &candidate)?;
     println!(
-        "grammar-preserving candidate verified by the active compiler: {} productions, {} decisions, {} terminal predicates",
-        report.productions, report.decisions, report.terminals
+        "{} candidate verified by the active compiler: {} productions, {} decisions, {} terminal predicates",
+        report.kind.description(),
+        report.productions,
+        report.decisions,
+        report.terminals
     );
     Ok(())
 }
@@ -94,24 +97,48 @@ fn read_specification(path: &std::ffi::OsStr) -> Result<Vec<u8>, VerifyError> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CandidateKind {
+    GrammarPreserving,
+    StructuralGrammar,
+}
+
+impl CandidateKind {
+    const fn description(self) -> &'static str {
+        match self {
+            Self::GrammarPreserving => "grammar-preserving",
+            Self::StructuralGrammar => "structural grammar",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct VerifyReport {
+    kind: CandidateKind,
     productions: usize,
     decisions: usize,
     terminals: usize,
 }
 
-/// Check that `candidate` keeps `baseline`'s frontend contract, then that the
-/// compiler's own grammar data is consistent and parses.
+/// Classify `candidate` relative to `baseline`, then check that the compiler's
+/// own grammar data is consistent and parses.
 ///
-/// Both specifications are arguments because the interesting comparison is
-/// between two files chosen at the call site. Comparing against the compiled-in
-/// active bytes made the check vacuous the moment a candidate was installed as
-/// the active specification, which is exactly when the workflow reruns it.
+/// Equal frontend contracts are grammar-preserving. A changed contract is a
+/// structural candidate and must match the compiler's embedded frontend
+/// contract; the grammar-table generator separately binds the complete table
+/// derivation to the candidate bytes.
 fn verify_candidate(baseline: &[u8], candidate: &[u8]) -> Result<VerifyReport, VerifyError> {
-    if frontend_contract(candidate)? != frontend_contract(baseline)? {
-        return Err(VerifyError::ChangedFrontendContract);
-    }
-    let report = verify_compiler_grammar()?;
+    let baseline_contract = frontend_contract(baseline)?;
+    let candidate_contract = frontend_contract(candidate)?;
+    let kind = if candidate_contract == baseline_contract {
+        CandidateKind::GrammarPreserving
+    } else {
+        if candidate_contract != frontend_contract(whitefoot::ACTIVE_KERNEL_SPEC_BYTES)? {
+            return Err(VerifyError::ChangedFrontendContract);
+        }
+        CandidateKind::StructuralGrammar
+    };
+    let mut report = verify_compiler_grammar()?;
+    report.kind = kind;
     run_parser_probes()?;
     Ok(report)
 }
@@ -221,6 +248,7 @@ fn verify_compiler_grammar() -> Result<VerifyReport, VerifyError> {
         }
     }
     Ok(VerifyReport {
+        kind: CandidateKind::GrammarPreserving,
         productions: productions().len(),
         decisions,
         terminals: order.len(),
@@ -348,7 +376,9 @@ fn run_parser_probe(probe: &[u8]) -> Result<(), VerifyError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{VerifyError, run_parser_probes, verify_candidate, verify_compiler_grammar};
+    use super::{
+        CandidateKind, VerifyError, run_parser_probes, verify_candidate, verify_compiler_grammar,
+    };
     use whitefoot::ACTIVE_KERNEL_SPEC_BYTES;
 
     /// The compiler's own grammar data, checked directly. This used to run
@@ -357,9 +387,9 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 69);
-        assert_eq!(report.decisions, 84);
-        assert_eq!(report.terminals, 93);
+        assert_eq!(report.productions, 70);
+        assert_eq!(report.decisions, 85);
+        assert_eq!(report.terminals, 96);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 
@@ -367,14 +397,23 @@ mod tests {
     fn prose_outside_the_frontend_contract_may_change() {
         let mut proposal = ACTIVE_KERNEL_SPEC_BYTES.to_vec();
         proposal.extend_from_slice(b"\nSemantic-only proposal text.\n");
-        verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, &proposal)
+        let report = verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, &proposal)
             .expect("semantic-only text must preserve the grammar");
+        assert_eq!(report.kind, CandidateKind::GrammarPreserving);
     }
 
-    /// The comparison is between the two arguments, not against the compiled-in
-    /// active bytes. Two files sharing a frontend contract the active
-    /// specification does not have must verify against each other, and the
-    /// active specification must then fail against that baseline.
+    #[test]
+    fn structural_candidate_matching_the_embedded_frontend_verifies() {
+        let baseline = include_bytes!("../../../spec/kernel-spec-v0.24.md");
+        let report = verify_candidate(baseline, ACTIVE_KERNEL_SPEC_BYTES)
+            .expect("the exact embedded structural candidate must verify");
+        assert_eq!(report.kind, CandidateKind::StructuralGrammar);
+    }
+
+    /// The comparison is between the two arguments, while a structural
+    /// candidate is additionally bound to the compiler's embedded contract.
+    /// Two matching non-active files are grammar-preserving; the embedded
+    /// active grammar is structural relative to that baseline.
     #[test]
     fn the_baseline_argument_is_the_one_compared() {
         let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
@@ -384,12 +423,12 @@ mod tests {
             1,
         );
         assert_ne!(changed, active);
-        verify_candidate(changed.as_bytes(), changed.as_bytes())
+        let preserving = verify_candidate(changed.as_bytes(), changed.as_bytes())
             .expect("a candidate matching its own baseline must verify");
-        assert!(matches!(
-            verify_candidate(changed.as_bytes(), ACTIVE_KERNEL_SPEC_BYTES),
-            Err(VerifyError::ChangedFrontendContract)
-        ));
+        assert_eq!(preserving.kind, CandidateKind::GrammarPreserving);
+        let structural = verify_candidate(changed.as_bytes(), ACTIVE_KERNEL_SPEC_BYTES)
+            .expect("the embedded frontend contract must verify structurally");
+        assert_eq!(structural.kind, CandidateKind::StructuralGrammar);
     }
 
     #[test]

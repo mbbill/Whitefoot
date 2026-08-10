@@ -7,6 +7,7 @@ mod buffers;
 mod checked_division;
 mod conditionals;
 mod contracts;
+mod counted_ranges;
 mod derivation;
 mod entailment;
 mod entry_form;

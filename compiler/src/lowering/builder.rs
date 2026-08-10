@@ -473,6 +473,23 @@ impl<'program> IrBuilder<'program> {
                     body,
                     backedge_drops,
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
+                CheckedStatement::CountedRange {
+                    id,
+                    binder,
+                    lower,
+                    upper,
+                    body,
+                    backedge_drops,
+                    ..
+                } => self.lower_counted_range(
+                    *id,
+                    *binder,
+                    lower,
+                    upper,
+                    body,
+                    backedge_drops,
+                    give_target.clone(),
+                )?,
                 CheckedStatement::Break { target, drops } => {
                     let target = self
                         .loops

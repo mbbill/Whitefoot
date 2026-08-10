@@ -134,6 +134,109 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
     drops
 }
 
+#[test]
+fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
+    let source = br#"fn count() -> own u64 pure {
+  let total = 0_u64;
+  for @items i in 0_u64..2_u64 {
+    set total = total +wrap 1_u64;
+  }
+  return total;
+}
+
+command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let counted = function(program, "count");
+        if let Err(error) = crate::emit_llvm(program) {
+            panic!("counted IR must emit: {error:?}\n{counted:#?}");
+        }
+        assert!(counted.blocks().len() >= 6);
+        assert!(counted.blocks().iter().any(|block| {
+            matches!(
+                block.terminator(),
+                IrTerminator::Match {
+                    enum_type: super::IrEnumType::Bool,
+                    ..
+                }
+            )
+        }));
+    });
+}
+
+#[test]
+fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows() {
+    let source = br#"fn count() -> own u64 pure {
+  let total = 0_u64;
+  let upper = 2_u64;
+  for @items i in 0_u64..upper {
+    region 'r {
+      let held = &'r i;
+      let seen = deref(held);
+      set total = total +wrap seen;
+    }
+    set upper = 0_u64;
+  }
+  return total;
+}
+
+command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let counted = function(program, "count");
+        if let Err(error) = crate::emit_llvm(program) {
+            panic!("addressed counted binder IR must emit: {error:?}\n{counted:#?}");
+        }
+        let address_count = counted
+            .blocks()
+            .iter()
+            .flat_map(IrBlock::instructions)
+            .filter(|instruction| {
+                matches!(
+                    instruction,
+                    IrInstruction::Define {
+                        operation: IrOperation::AddressOf { .. },
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(address_count, 1, "the binder storage is allocated once");
+    });
+}
+
+#[test]
+fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
+    let source = br#"fn count() -> own u64 pure {
+  let total = 0_u64;
+  for @outer i in 0_u64..4_u64 {
+    for @inner j in 0_u64..4_u64 {
+      set total = total +wrap 1_u64;
+      break @inner;
+    }
+    if ieq(i, 1_u64) {
+      break @outer;
+    }
+  }
+  return total;
+}
+
+command fn main() -> own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        let counted = function(program, "count");
+        if let Err(error) = crate::emit_llvm(program) {
+            panic!("nested counted IR must emit: {error:?}\n{counted:#?}");
+        }
+    });
+}
+
 /// The [SYS-2] resource identity the IR records for one drop's type.
 fn dropped_resource(program: &IrProgram<'_, '_, '_>, drop: IrDrop) -> Option<SystemResourceType> {
     let IrType::Nominal(id) = drop.ty() else {

@@ -191,6 +191,25 @@ the two-word slice descriptor, or adding a runtime tag.
 Replaces: hidden body-derived return-borrow summaries and caller guesses about
 which same-region argument a returned view references.
 
+## P11. Counted half-open range
+
+Problem: a fixed ascending index walk needs the current index bound inside the
+body without hand-written termination tests, increments, or claims.
+Pattern: write `for @label i in lower..upper { ... }` when both endpoints are
+`own u64` terms or constants. They are evaluated once from left to right; `i`
+is a read-only body binding, the upper endpoint is excluded, and
+`lower >= upper` is zero-trip. A normal fallthrough advances by one; `break`,
+`return`, and propagated errors do not. Use ordinary `loop` when progress is
+not exactly this counted shape. Do not write a claim for `i < upper`; the
+compiler supplies that structural fact, while derived offsets such as `i-k`
+still require the real lower-bound relation.
+Current value: the SHA-256 reference uses this one form for its three index
+walks, removes four claims, and proves all nine schedule accesses. The form
+adds no general induction, iterator protocol, reverse range, step, or
+post-loop equality.
+Replaces: `let i`, `loop`, equality break, index-bound claim, and wrapping
+increment boilerplate for an exact half-open u64 walk.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

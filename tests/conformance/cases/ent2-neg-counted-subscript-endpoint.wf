@@ -1,0 +1,10 @@
+fn probe(bounds: own array<u64, 2>) -> own unit pure {
+  doc "A subscript is a valid atom whose own constant bounds discharge, but ENT-2 deliberately does not admit a subscripted place as a counted endpoint term.";
+  for @items i in bounds[0_u64]..bounds[1_u64] {
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

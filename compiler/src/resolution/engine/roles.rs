@@ -298,6 +298,32 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
+        Production::ForStmt => {
+            let [label, binder] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            if name_predicate(classified, *label) != Some(TerminalPredicate::Label)
+                || name_predicate(classified, *binder) != Some(TerminalPredicate::Identifier)
+            {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            }
+            add_complete(
+                classified,
+                owner,
+                *label,
+                RawRoleKind::Declaration(DeclarationRole::LoopLabel),
+                roles,
+                complete_counts,
+            )?;
+            add_complete(
+                classified,
+                owner,
+                *binder,
+                RawRoleKind::Declaration(DeclarationRole::CountedBinder),
+                roles,
+                complete_counts,
+            )?;
+        }
         Production::RegionStmt => add_single(
             classified,
             owner,

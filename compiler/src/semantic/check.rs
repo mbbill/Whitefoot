@@ -132,6 +132,9 @@ struct LocalBinding {
     ty: CheckedType,
     live: bool,
     loop_depth: usize,
+    /// Compiler-updated counted binders are readable source bindings but are
+    /// never writer-controlled storage [SET-1, OWN-11].
+    compiler_updated: bool,
     borrow: Option<BorrowInfo>,
     slice: Option<SliceInfo>,
     // Source-owned claims outlive any one slice descriptor and end only with
@@ -679,6 +682,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ty: parameter.ty,
                     live: true,
                     loop_depth: 0,
+                    compiler_updated: false,
                     borrow: self.parameter_borrow(parameter),
                     slice: self.parameter_slice(parameter),
                     slice_loans: Vec::new(),

@@ -122,6 +122,7 @@ fn membership(token: Token<'_>) -> Option<TerminalSet> {
         TokenKind::Colon => fixed(&mut set, FixedTerminal::Colon, spelling),
         TokenKind::Semicolon => fixed(&mut set, FixedTerminal::Semicolon, spelling),
         TokenKind::Dot => fixed(&mut set, FixedTerminal::Dot, spelling),
+        TokenKind::DotDot => fixed(&mut set, FixedTerminal::DotDot, spelling),
         TokenKind::Equal => fixed(&mut set, FixedTerminal::Equal, spelling),
         TokenKind::ThinArrow => fixed(&mut set, FixedTerminal::ThinArrow, spelling),
         TokenKind::FatArrow => fixed(&mut set, FixedTerminal::FatArrow, spelling),

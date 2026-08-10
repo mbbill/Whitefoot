@@ -46,6 +46,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if !self.has_fixed(pbase, FixedTerminal::Deref)? && self.tree.children(pbase)?.is_empty() {
+            let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+            if let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Value,
+            } = usage.target()
+                && bindings
+                    .get(&declaration)
+                    .is_some_and(|local| local.compiler_updated)
+            {
+                return self.issue_node(
+                    SemanticRule::Set1,
+                    node,
+                    SemanticIssueKind::InvalidSetTarget {
+                        root_class: "compiler-updated counted binder".to_owned(),
+                        required_classes:
+                            "source-writable live own storage or a live usable &uniq referent",
+                    },
+                );
+            }
+        }
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_indexed_set_target(
@@ -393,6 +414,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             PlaceUseContext::Ordinary,
+            ReborrowPosition::Forbidden,
+        )
+    }
+
+    /// Checks an atom in a position whose owning rule decides whether the
+    /// selected value is admissible. This delays OWN-1's bare-affine spelling
+    /// rejection long enough for an earlier TYPE-7 implicit-read judgment to
+    /// take exclusive ownership of a holder used for its referent.
+    pub(super) fn check_consuming_atom(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        self.check_atom_in_context(
+            function,
+            node,
+            bindings,
+            loop_depth,
+            PlaceUseContext::Consuming,
             ReborrowPosition::Forbidden,
         )
     }

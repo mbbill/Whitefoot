@@ -317,6 +317,7 @@ ACTIVE-SPEC: v0.21 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934d
 ACTIVE-SPEC: v0.22 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8 3c63a6274047ee2f7eceac7ec6b03d0b84d42fb87cc13da7e6b80ed5b934df9f
 ACTIVE-SPEC: v0.23 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8
 ACTIVE-SPEC: v0.24 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5
+ACTIVE-SPEC: v0.25 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86
 
 ## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
 - owner: **the owner's exact-byte approval of the digest below.** It was taken
@@ -398,6 +399,62 @@ ACTIVE-SPEC: v0.24 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2d
 - evidence: review implementation `00e6ce4`; exact packet and frozen candidate
   acceptance `7e47130`; independent semantic and exact-byte reviews; synthetic
   activation rehearsal recorded by `0e88b86` and atomicity audit `6f22a7b`.
+
+## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.25 counted `u64` range
+- owner: **the owner, in conversation, 2026-08-09** — “同意。批准 v0.25
+  c0b3c279（含上述 protected prose 变更）。” The reply followed the complete
+  Chinese owner walkthrough of the language surface, execution and cleanup,
+  S11 proof boundary, real SHA-256 result, accepted-set impact, protected
+  corpus delta, stable-file installation, limitations, and exact full digest.
+  It is an explicit approval, not an inference from the earlier lane approval.
+- APPROVED BYTES: active `spec/kernel-spec.md`, version v0.25, SHA-256
+  `c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+  The outgoing immutable v0.24 archive is byte-identical to the previously
+  active stable file and has SHA-256
+  `53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+  A changed specification or archive byte returns to exact review.
+- SEMANTIC SCOPE: add exactly one ascending, unit-stride, half-open counted
+  source form, `for @label binder in lower..upper { ... }`, over once-captured
+  `own u64` term-or-constant endpoints. The compiler-updated binder is
+  body-local and source-immutable. Normal fallthrough cleans up before the
+  representable hidden increment; `break`, `return`, and propagated error do
+  not increment. S11 establishes only the finite structural body-entry bounds
+  `lower_capture <= binder < upper_capture`; it adds no general induction or
+  exit postcondition, and ordinary `loop_stmt` semantics remain unchanged.
+  Numbered rules remain 128; the native grammar is 70 productions, 85
+  decisions, and 96 terminal predicates.
+- ACCEPTED-SET IMPACT: the new counted form and its S11 facts widen the set.
+  The only v0.24-source narrowing is that exact lowercase `for` and `in` leave
+  IDENT eligibility; the frozen 448-file census found no live declaration or
+  use collision. Compound `..` preserves every prior single-dot numeric and
+  member partition.
+- PROTECTED CORPUS: approve the reviewed source-doc line and manifest
+  reason/doc rederivation for `gram6-pos-no-operators`; its id, cited GRAM-6
+  rule, `Run(0)` verdict, status, and behavior remain unchanged. Also approve
+  three additive cases: `ent2-neg-counted-subscript-endpoint`,
+  `ent3-pos-s11-counted-range-run`, and `set1-neg-counted-binder-write`. No
+  other protected source, verdict, rule, or status changes.
+- REAL-PROGRAM EVIDENCE: exactly three SHA-256 index loops use the counted
+  form, four claims disappear, and all 9/9 subscript obligations discharge
+  without S2/S3. The worker becomes `pure`, emits no `wf_trap`, and retains
+  both the direct `3128432319_u32` result and the sustained runtime oracle.
+- STABLE-PATH INSTALLATION: v0.25 remains at `spec/kernel-spec.md`; the exact
+  outgoing bytes are newly archived at immutable
+  `spec/kernel-spec-v0.24.md`. No `spec/kernel-spec-v0.25.md` is created; that
+  archive is created only when a later approved version supersedes v0.25.
+- boundary: the exact specification and archive bytes, counted-range compiler
+  implementation and tests, named protected prose plus three additive cases,
+  generated data, active pins, derived material, writer documentation, and
+  live authority. Requires-as-goal, provenance activation, ensures, claim
+  ledger, deny-claims, O11, and wfgrep are outside this approval.
+- owner-process instruction: before every future specification approval
+  request, first present an owner-facing explanation at this level, then stop
+  and wait for the owner's explicit response. Never combine the walkthrough
+  and the request with continued activation work.
+- evidence: task 0047's independently reviewed exact candidate and archive;
+  native grammar verification; focused counted tests 37/37; frozen acceptance;
+  and the complete ignored adapter tally `Pass=393 Fail=1 Skip=13`, whose sole
+  failure remains the pre-existing OWN-3 unsupported case.
 
 ## Pre-approval specification digests, as found
 

@@ -443,3 +443,18 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
         b"fn main() -> own unit traps {\n  let flag = True();\n  if flag {\n    check flag else trap \"a\";\n  } else if flag {\n    check flag else trap \"b\";\n  } else if flag {\n    check flag else trap \"c\";\n  } else {\n    check flag else trap \"d\";\n  }\n  return unit;\n}\n",
     );
 }
+
+#[test]
+fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->own unit pure{\nfor @range index in lower .. upper{\nbreak @range;\n}\nreturn unit;\n}\n";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
+        Some(canonical.as_slice())
+    );
+    assert_eq!(
+        rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}

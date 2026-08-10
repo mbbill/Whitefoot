@@ -87,6 +87,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ty: ok_type,
                     live: true,
                     loop_depth: scope.loops.len(),
+                    compiler_updated: false,
                     borrow: None,
                     slice: None,
                     slice_loans: Vec::new(),

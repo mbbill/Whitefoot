@@ -4,6 +4,7 @@
 - For obligation families migrated to discharge, a claim is the named, justification-bearing runtime backstop; ordinary explicit checks and bare trapping arithmetic remain separate writer-reachable trap sources.
 - A claim the fragment already proves is a non-rejecting advisory; a claim the fragment refutes is a hard error.
 - A discharged index compiles with no runtime bounds branch in any build mode and contributes no `traps` to its effect row.
+- Loop-derived admission authority is a construct-owned structural recurrence, not general ordinary-loop induction.
 - The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
 
 ## Facts
@@ -24,6 +25,7 @@
 - 2026-08-09 (5998b879) measurement: the held provenance gate reached only two of its three canonical DEFLATE subjects because a place read ignored its external subscript offset, and its parameter-only internal-required column could not identify which of several leaf obligations a call diagnostic protected. (sourced)
 - 2026-08-09 measurement: joining each place-read offset as an explicit provenance operand moves the frozen boundary-fed DEFLATE result from two to all three canonical subjects with exactly one newly external obligation subject; whole-root write-address taint is not needed for that result and remains a separately visible implicit-flow boundary. (sourced)
 - 2026-08-09 pitfall: one aggregate provenance bit for an enum cannot simultaneously preserve an internal success count and an external error payload, so a finite call summary must retain variant/payload projections and substitute the corresponding parameter projection before deriving the aggregate join. (sourced)
+- 2026-08-09 measurement: finite once-captured counted-range facts discharge all nine SHA-256 schedule accesses without any claim, preserve the direct digest word `3128432319_u32`, and add no trap to the pure compression function; carried-value and next-index controls remain unproved, so the result does not require or imply general loop induction. (code)
 
 ## Moves
 

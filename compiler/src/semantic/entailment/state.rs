@@ -128,7 +128,8 @@ impl FactState {
 
     /// Removes every live fact and origin with a support member the kill
     /// predicate reaches. Closure never resurrects a killed fact: derived
-    /// facts live only inside [`ClosedState`] views and join results.
+    /// facts normally live in [`ClosedState`] views or join results, while
+    /// S11 deliberately materializes its post-capture closure before kills.
     pub(crate) fn kill(&mut self, mut killed: impl FnMut(TermId) -> bool) {
         if self.all_derivable {
             return;
@@ -233,7 +234,7 @@ pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
                 add(&mut bounds, id, ZERO, *value);
                 add(&mut bounds, ZERO, id, -value);
             }
-            TermKind::Place(_, ty) => {
+            TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => {
                 let (minimum, maximum) = type_range(*ty);
                 add(&mut bounds, id, ZERO, maximum);
                 add(&mut bounds, ZERO, id, -minimum);
@@ -253,6 +254,11 @@ pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
                     }
                     None => {}
                 }
+            }
+            TermKind::CountedCapture { .. } => {
+                let (minimum, maximum) = type_range(IntegerType::U64);
+                add(&mut bounds, id, ZERO, maximum);
+                add(&mut bounds, ZERO, id, -minimum);
             }
         }
     }
@@ -307,6 +313,29 @@ pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
         all_derivable: contradictory,
         bounds,
         distinct: state.distinct.clone(),
+    }
+}
+
+/// Materializes the [ENT-4] least closure as a live flow state.
+///
+/// Ordinary queries can keep closure as an ephemeral view. S11 instead fixes
+/// the complete post-capture closure *before* the counted loop's continuing
+/// kill subtraction, so consequences whose support no longer includes a
+/// mutable endpoint source must become independently live facts first.
+pub(crate) fn materialize_closure(state: &FactState, terms: &TermTable) -> FactState {
+    let closed = close(state, terms);
+    if closed.all_derivable {
+        return FactState {
+            all_derivable: true,
+            ..FactState::default()
+        };
+    }
+    FactState {
+        all_derivable: false,
+        bounds: closed.bounds,
+        distinct: closed.distinct,
+        origins: state.origins.clone(),
+        outcomes: state.outcomes.clone(),
     }
 }
 

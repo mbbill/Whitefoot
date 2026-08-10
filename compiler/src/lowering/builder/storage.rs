@@ -59,6 +59,13 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
             CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
                 collect_statements(body, bindings);
             }
+            CheckedStatement::CountedRange {
+                lower, upper, body, ..
+            } => {
+                collect_expression(lower, bindings);
+                collect_expression(upper, bindings);
+                collect_statements(body, bindings);
+            }
             CheckedStatement::Break { .. } => {}
         }
     }

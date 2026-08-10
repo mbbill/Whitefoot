@@ -155,6 +155,9 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("/checked", "SlashChecked"),
         ("%", "Percent"),
         ("%checked", "PercentChecked"),
+        ("for", "For"),
+        ("in", "In"),
+        ("..", "DotDot"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

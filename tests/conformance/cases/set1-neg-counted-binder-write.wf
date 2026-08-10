@@ -1,0 +1,7 @@
+fn main() -> own unit pure {
+  doc "A counted binder is immutable compiler-updated state, never source-writable storage [SET-1].";
+  for @items i in 0_u64..1_u64 {
+    set i = 1_u64;
+  }
+  return unit;
+}

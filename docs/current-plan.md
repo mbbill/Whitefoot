@@ -11,10 +11,12 @@ below. The owner selected the later capability sequence and its stop condition,
 but each later slice must still replace this rolling plan before execution.
 Task 0046 closed the bounded provenance review positively after task 0041's
 negative measurement. The revised rule remains held behind stage 7 and O3;
-this replacement plan resumes the owner-selected sequence with the smallest
-counted range loop earned by the SHA-256 and writer evidence.
+the exact-approved v0.25 counted-range specification and its ordinary compiler
+path are atomically installed. Stage 6 remains current until the installed
+acceptance rerun, complete gates, and task-0047 closure are recorded; stage 7
+remains unauthorized.
 
-Derived from: [Direction Outline revision 25](roadmap.md), items `PROOF-8`
+Derived from: [Direction Outline revision 26](roadmap.md), items `PROOF-8`
 (primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
 flagship but is parked by this owner selection.
 
@@ -22,9 +24,11 @@ flagship but is parked by this owner selection.
 
 Items 1–4 of the dossier's §8 sequence are shipped: the claim construct, the
 normative L0 entailment fragment, caller-side OP-4 index discharge, and the SYS
-count postconditions with ENT-3 S10 fact introduction. v0.24 corrects ENT-5,
-uses the stable active-spec filename, and has an installed frozen acceptance
-baseline. Stage 5a-R now has a positive held design: all three canonical
+count postconditions with ENT-3 S10 fact introduction. v0.24 corrects ENT-5
+and establishes the installed frozen acceptance baseline. v0.25 uses the
+stable active-spec filename and installs the counted `u64` range; its
+post-activation confirmation is the remaining stage-6 work. Stage 5a-R now
+has a positive held design: all three canonical
 provenance sites are classified, the finite call relation retains its concrete
 leaf, and the material `requires` bypass still prevents activation. The current
 milestone is stage 6: add one structural counted `u64` range whose bounds enter
@@ -47,13 +51,15 @@ or after the owner disposes a reproduced blocker that stops the sequence.
 
 ### Why
 
-The installed SHA-256 program has nine index obligations and proves none
+The installed v0.24 SHA-256 baseline had nine index obligations and proved none
 without four loop claims. All nine occur in unit-stride ascending walks whose
 body needs only the structural statement that its loop value lies in one
 half-open range. Three of four hostile writer probes independently chose the
 same `for i in a..b` shape. A counted range can therefore remove the dominant
 claim family without adding general induction, a widening interval engine, or
-another arithmetic term language.
+another arithmetic term language. The v0.25 activation now installs that
+general path and the 9/9 SHA result; the remaining current work is to reproduce
+and record it from the committed activation tree.
 
 ### Do
 
@@ -266,15 +272,15 @@ and does not eliminate true-but-unprovable residue from the no-search checker.
 
 ## Stable specification rule
 
-The ENT-5 activation is the one-time switchover. v0.23 remains immutable at
-`spec/kernel-spec-v0.23.md`; v0.24 becomes the active
-`spec/kernel-spec.md`, with no `spec/kernel-spec-v0.24.md` beside it. Every
-later candidate edits the stable file on its task branch and is reviewed as a
-diff plus complete digest. Its approved atomic activation first creates the
-outgoing flat archive `spec/kernel-spec-vN.md`, failing if that path exists,
-and installs the new approved bytes at the unchanged stable path. The active
-specification is never renamed to follow its version; archived versioned files
-remain absolutely immutable.
+The ENT-5 activation is the one-time switchover. v0.24 remains immutable at
+`spec/kernel-spec-v0.24.md`; v0.25 is active at `spec/kernel-spec.md`, with no
+`spec/kernel-spec-v0.25.md` beside it. Every later candidate edits the stable
+file on its task branch and is reviewed as a diff plus complete digest. Its
+approved atomic activation first creates the outgoing flat archive
+`spec/kernel-spec-vN.md`, failing if that path exists, and installs the new
+approved bytes at the unchanged stable path. The active specification is never
+renamed to follow its version; archived versioned files remain absolutely
+immutable.
 
 ## Cross-stage invariants
 

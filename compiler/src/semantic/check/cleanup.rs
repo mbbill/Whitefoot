@@ -162,6 +162,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_release_sites(body, sites)?;
                     self.collect_drop_release_sites(backedge_drops, sites)?;
                 }
+                CheckedStatement::CountedRange {
+                    lower,
+                    upper,
+                    body,
+                    backedge_drops,
+                    ..
+                } => {
+                    self.collect_expression_release_sites(lower, sites)?;
+                    self.collect_expression_release_sites(upper, sites)?;
+                    self.collect_release_sites(body, sites)?;
+                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                }
                 CheckedStatement::Break { drops, .. } => {
                     self.collect_drop_release_sites(drops, sites)?;
                 }

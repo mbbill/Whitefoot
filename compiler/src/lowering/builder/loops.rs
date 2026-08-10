@@ -1,7 +1,15 @@
-use crate::semantic::{BindingId, CheckedDrop, CheckedLoopId, CheckedStatement};
-use crate::{IrBlockId, IrTerminator, IrValueId, LoweringFailure};
+use crate::semantic::{BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedStatement};
+use crate::{
+    IrBlockId, IrConstant, IrEnumType, IrIntegerOperation, IrMatchTarget, IrOperation,
+    IrTerminator, IrType, IrValueId, LoweringFailure,
+};
 
 use super::{GiveTarget, IrBuilder};
+
+const U64: IrType = IrType::Integer {
+    width: 64,
+    signed: false,
+};
 
 #[derive(Clone)]
 pub(super) struct LoopTarget {
@@ -66,6 +74,233 @@ impl IrBuilder<'_> {
         };
         if target.id != id || target.block != exit {
             return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+
+        self.current = Some(exit);
+        self.bindings = base_bindings;
+        self.bind_parameters(&carried_bindings, &exit_parameters)
+    }
+
+    /// Lowers the compiler-owned [FN-1] counted-range graph without
+    /// desugaring it into source operations. Endpoint values are captured in
+    /// the entry block, the header owns the true/false guard, normal body
+    /// fallthrough runs its drops before reaching the update block, and
+    /// source exits target the continuation directly without an update.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn lower_counted_range(
+        &mut self,
+        id: CheckedLoopId,
+        binder: BindingId,
+        lower: &CheckedExpression,
+        upper: &CheckedExpression,
+        body: &[CheckedStatement],
+        backedge_drops: &[CheckedDrop],
+        give_target: Option<GiveTarget>,
+    ) -> Result<(), LoweringFailure> {
+        // [FN-1] fixes endpoint evaluation order and evaluates each exactly
+        // once. These SSA values are the private immutable captures.
+        let lower_capture = self.expression(lower)?;
+        let upper_capture = self.expression(upper)?;
+        if self.value_type(lower_capture)? != U64 || self.value_type(upper_capture)? != U64 {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+
+        let base_bindings = self.bindings.clone();
+        let mut carried_bindings = base_bindings.keys().copied().collect::<Vec<_>>();
+        carried_bindings.sort_by_key(|binding| binding.0);
+        let mut base_parameter_types = carried_bindings
+            .iter()
+            .map(|binding| {
+                base_bindings
+                    .get(binding)
+                    .copied()
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .and_then(|value| self.value_type(value))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // The binder may need stable storage when the checked body contains a
+        // permitted body-local shared borrow. Allocate that storage once,
+        // before the first header, and carry the address rather than creating
+        // a new address each iteration.
+        if self.bindings.insert(binder, lower_capture).is_some() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        self.promote_binding_if_needed(binder)?;
+        let binder_storage = self
+            .bindings
+            .get(&binder)
+            .copied()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let binder_storage_type = self.value_type(binder_storage)?;
+
+        let base_count = base_parameter_types.len();
+        base_parameter_types.extend([U64, U64, binder_storage_type]);
+        let (header, header_parameters) = self.new_block(&base_parameter_types)?;
+        let (body_block, _) = self.new_block(&[])?;
+        let (exhaustion, _) = self.new_block(&[])?;
+        let exit_types = &base_parameter_types[..base_count];
+        let (exit, exit_parameters) = self.new_block(exit_types)?;
+
+        let mut entry_arguments = self.binding_values(&carried_bindings)?;
+        // `binding_values` above includes the newly inserted binder only when
+        // it is listed; the carried list was frozen from the outer scope, so
+        // append the three counted identities explicitly.
+        entry_arguments.extend([lower_capture, upper_capture, binder_storage]);
+        self.terminate(IrTerminator::Jump {
+            target: header,
+            arguments: entry_arguments,
+            drops: Vec::new(),
+        })?;
+
+        let header_base = header_parameters
+            .get(..base_count)
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let header_lower = *header_parameters
+            .get(base_count)
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let header_upper = *header_parameters
+            .get(base_count + 1)
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let header_binder = *header_parameters
+            .get(base_count + 2)
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+
+        self.current = Some(header);
+        self.bindings = base_bindings.clone();
+        self.bind_parameters(&carried_bindings, header_base)?;
+        if self.bindings.insert(binder, header_binder).is_some() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let binder_value = self.binding_value(binder)?;
+        let guard = self.define(
+            IrType::Bool,
+            IrOperation::Integer {
+                operation: IrIntegerOperation::Less,
+                operand_type: U64,
+                arguments: vec![binder_value, header_upper],
+                trap: None,
+            },
+        )?;
+        self.terminate(IrTerminator::Match {
+            scrutinee: guard,
+            enum_type: IrEnumType::Bool,
+            targets: vec![
+                IrMatchTarget {
+                    tag: 1,
+                    block: body_block,
+                },
+                IrMatchTarget {
+                    tag: 0,
+                    block: exhaustion,
+                },
+            ],
+        })?;
+
+        // The false header edge never enters the body. It therefore performs
+        // no body cleanup and drops the binder/captures from the continuation
+        // interface by forwarding only the incoming bindings.
+        self.current = Some(exhaustion);
+        self.bindings = base_bindings.clone();
+        self.bind_parameters(&carried_bindings, header_base)?;
+        let exhaustion_arguments = self.binding_values(&carried_bindings)?;
+        self.terminate(IrTerminator::Jump {
+            target: exit,
+            arguments: exhaustion_arguments,
+            drops: Vec::new(),
+        })?;
+
+        // The true edge enters with the same header identities. A break uses
+        // the exit interface directly, so it cannot execute the update.
+        self.current = Some(body_block);
+        self.bindings = base_bindings.clone();
+        self.bind_parameters(&carried_bindings, header_base)?;
+        if self.bindings.insert(binder, header_binder).is_some() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        self.loops.push(LoopTarget {
+            id,
+            block: exit,
+            carried_bindings: carried_bindings.clone(),
+        });
+        self.lower_statements(body, give_target)?;
+        let update = if self.current.is_some() {
+            let (update, parameters) = self.new_block(&base_parameter_types)?;
+            let mut arguments = self.binding_values(&carried_bindings)?;
+            arguments.extend([header_lower, header_upper, header_binder]);
+            let drops = self.lower_drops(backedge_drops)?;
+            self.terminate(IrTerminator::Jump {
+                target: update,
+                arguments,
+                drops,
+            })?;
+            Some((update, parameters))
+        } else {
+            None
+        };
+        let Some(target) = self.loops.pop() else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        if target.id != id || target.block != exit {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+
+        if let Some((update, update_parameters)) = update {
+            // Cleanup has completed on the edge into this block. The hidden
+            // update is exact because the true guard established binder <
+            // upper; AddWrap is the target-independent pure operation with
+            // no trap. An all-terminating body creates no update block at all.
+            let update_base = update_parameters
+                .get(..base_count)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let update_lower = *update_parameters
+                .get(base_count)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let update_upper = *update_parameters
+                .get(base_count + 1)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let update_binder = *update_parameters
+                .get(base_count + 2)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            self.current = Some(update);
+            self.bindings = base_bindings.clone();
+            self.bind_parameters(&carried_bindings, update_base)?;
+            if self.bindings.insert(binder, update_binder).is_some() {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            let old = self.binding_value(binder)?;
+            let one = self.define(
+                U64,
+                IrOperation::Constant(IrConstant::Integer { ty: U64, bits: 1 }),
+            )?;
+            let next = self.define(
+                U64,
+                IrOperation::Integer {
+                    operation: IrIntegerOperation::AddWrap,
+                    operand_type: U64,
+                    arguments: vec![old, one],
+                    trap: None,
+                },
+            )?;
+            let next_storage = match binder_storage_type {
+                IrType::Address(referent) => {
+                    self.store_addressed(update_binder, next, referent)?;
+                    update_binder
+                }
+                _ => {
+                    if self.bindings.insert(binder, next) != Some(update_binder) {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    next
+                }
+            };
+            let mut backedge_arguments = self.binding_values(&carried_bindings)?;
+            backedge_arguments.extend([update_lower, update_upper, next_storage]);
+            self.terminate(IrTerminator::Jump {
+                target: header,
+                arguments: backedge_arguments,
+                drops: Vec::new(),
+            })?;
         }
 
         self.current = Some(exit);

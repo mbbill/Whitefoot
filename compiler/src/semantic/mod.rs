@@ -116,6 +116,8 @@ pub enum SemanticRule {
     Clm1,
     /// Claim lifecycle: refutation rejection under the entailment fragment.
     Clm2,
+    /// Counted endpoint admission to the closed term-or-constant vocabulary.
+    Ent2,
 }
 
 impl SemanticRule {
@@ -164,6 +166,7 @@ impl SemanticRule {
             Self::Sys2 => "SYS-2",
             Self::Clm1 => "CLM-1",
             Self::Clm2 => "CLM-2",
+            Self::Ent2 => "ENT-2",
         }
     }
 
@@ -225,7 +228,8 @@ impl SemanticRule {
             Self::Err3 => Self::Sys2,
             Self::Sys2 => Self::Clm1,
             Self::Clm1 => Self::Clm2,
-            Self::Clm2 => return None,
+            Self::Clm2 => Self::Ent2,
+            Self::Ent2 => return None,
         })
     }
 
@@ -281,6 +285,7 @@ impl SemanticRule {
             Self::Sys2 => 38,
             Self::Clm1 => 39,
             Self::Clm2 => 40,
+            Self::Ent2 => 41,
         }
     }
 }
@@ -398,6 +403,12 @@ pub enum SemanticIssueKind {
         /// place, `)`.
         residual: String,
         /// The mechanical fix ENT-6 names.
+        mechanical_fix: &'static str,
+    },
+    /// A counted endpoint produced `own u64` but was not itself one preceding
+    /// ENT-2 term or constant.
+    InvalidCountedEndpoint {
+        /// The exact restructuring required by ENT-2.
         mechanical_fix: &'static str,
     },
     /// The fact state at a claim derives the exact negation of its predicate

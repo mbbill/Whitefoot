@@ -67,6 +67,8 @@ pub enum ScopeKind {
     Arm,
     /// One loop label visible only to that loop body.
     LoopLabel,
+    /// One counted label and binder visible only to that counted body.
+    CountedRange,
     /// One local region visible only to that region body.
     LocalRegion,
 }
@@ -177,7 +179,7 @@ pub enum DeclarationClass {
     NamedConst,
     /// Lexical const generic.
     ConstGeneric,
-    /// Parameter, let binding, or match binder.
+    /// Parameter, let binding, match binder, or counted-range binder.
     Value,
     /// Lexical type generic.
     GenericType,
@@ -227,7 +229,7 @@ impl DeclarationDomain {
     }
 }
 
-/// Source declaration roles D01 through D14.
+/// Source declaration roles D01 through D15.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationRole {
     /// D01: top-level function.
@@ -258,6 +260,8 @@ pub enum DeclarationRole {
     LocalRegion,
     /// D14: match binder.
     MatchBinder,
+    /// D15: counted-range binder.
+    CountedBinder,
 }
 
 /// Dependent declaration roles X01 through X03.
@@ -659,6 +663,8 @@ pub enum ReservedDeclarationRole {
     Parameter,
     /// Lexical let binding.
     Let,
+    /// Counted-range binder.
+    ForBinder,
     /// Match binder.
     MatchBinder,
     /// Struct field.
@@ -886,7 +892,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         self.system.get(usize::from(id.ordinal()))
     }
 
-    /// Returns all source declaration events D01 through D14.
+    /// Returns all source declaration events D01 through D15.
     #[must_use]
     pub fn declarations(&self) -> &[DeclarationRecord] {
         &self.declarations

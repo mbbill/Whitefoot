@@ -23,9 +23,9 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.24 bytes of `../spec/kernel-spec.md`,
+The frontend targets the exact v0.25 bytes of `../spec/kernel-spec.md`,
 SHA-256
-`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`.
+`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -162,6 +162,16 @@ total and return the destination directly; 61 return
 equal-width numeric `reinterpret` pairs preserve source bits. Floats compose
 with calls, loop-carried locals, structs, constants, fixed arrays, primitive
 runtime buffers, checked indexing, and SET-1.
+
+The counted-range path implements one ascending half-open source form,
+`for @label i in lower..upper { ... }`, alongside the unchanged ordinary loop.
+It captures both `own u64` endpoints once from left to right, gives the
+read-only body binder a stable checked identity, carries cleanup on every
+labelled or function exit, and lowers a dedicated preheader/header/body/update
+graph whose representable hidden increment adds no trap. ENT-3 S11 contributes
+only the structural body-entry relation
+`lower_capture <= i < upper_capture`; ordinary loops gain no induction and no
+counted fact escapes the exhaustion/break continuation.
 
 Acyclic source structs and enums, including reachable concrete generic nominal
 instances, flow through the same path with construction, nested projection,

@@ -367,3 +367,36 @@ plus the kill control. The real boundary driver again establishes
 `taken <= room`; it still has no natural entailment obligation that consumes
 that relation. This confirms the owner-approved producer-plus-focused-consumer
 boundary without upgrading it to an end-to-end boundary-consumer claim.
+
+## Pre-activation v0.25 counted-range candidate rerun (2026-08-09)
+
+This is review evidence, not an activation record. The same frozen-source,
+dark-checker, and all-claims-blinded method was rerun against the reviewed v0.25
+candidate at SHA-256
+`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+Every blinded claim became `band(p, p)` under a fresh binding; baseline and
+blinded obligation order, denominators, and claim order were asserted equal.
+The temporary in-crate probe was deleted after the run.
+
+Results in `total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 9 / 0 / 0`;
+- deflate, full denominator: `29 / 11 / 18 / 0`; and
+- deflate, dynamic-path denominator: `24 / 11 / 13 / 0`.
+
+Only the SHA-256 bucket moves. Its three counted index loops delete four
+claims, and S11 plus the existing closure discharges all nine schedule
+accesses without claim support. The compression function is `pure`, emits no
+`wf_trap`, returns the direct word `3128432319_u32`, and retains the sustained
+aggregate oracle and the unrelated ordinary loop. The carried-index,
+next-index, missing-upper-to-length, and insufficient-lower controls remain
+unproved; this result adds no general induction.
+
+UTF-8 and all three deflate sources are byte-identical to the installed v0.24
+baseline, and their aggregate and per-function buckets reproduce it exactly.
+UTF-8 retains two claims. Deflate retains sixteen claims and the same five
+non-rejecting redundancy advisories — `count_slot_in_counts`,
+`validate_slot_in_counts`, `offsets_slot_in_offsets`,
+`offsets_slot_in_counts`, and `ordered_symbol_in_lengths` — with no refuted
+claim. No previously proven site regresses.

@@ -10,8 +10,9 @@ use crate::{
 use super::catalog::OPERATION_FAMILIES;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationOrigin, DeclarationRole, DeferredUseRole,
-    DependentDeclarationRole, LexicalUseRecord, LexicalUseRole, ResolutionIssue,
-    ResolutionIssueKind, ResolutionOutcome, ResolutionRule, ResolvedTarget, resolve,
+    DependentDeclarationRole, LexicalUseRecord, LexicalUseRole, ReservedDeclarationRole,
+    ResolutionIssue, ResolutionIssueKind, ResolutionOutcome, ResolutionRule, ResolvedTarget,
+    resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -848,6 +849,231 @@ fn a_break_label_must_lexically_enclose_the_break() {
     });
 }
 
+#[test]
+fn counted_range_binder_and_label_are_visible_only_in_the_body() {
+    let source = br#"fn main(limit: own u64) -> own unit pure {
+  for @range index in 0_u64..limit {
+    let copied = index;
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("counted binder and label must resolve in their body: {outcome:?}");
+        };
+        let binder = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.role() == DeclarationRole::CountedBinder)
+            .expect("counted binder declaration must exist");
+        assert_eq!(binder.spelling(), "index");
+        let label = resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                declaration.role() == DeclarationRole::LoopLabel
+                    && declaration.spelling() == "@range"
+            })
+            .expect("counted label declaration must exist");
+        let binder_use = resolved
+            .lexical_uses()
+            .iter()
+            .find(|usage| usage.spelling() == "index")
+            .expect("body must use the counted binder");
+        assert_eq!(binder_use.role(), LexicalUseRole::PlaceBase);
+        assert_eq!(
+            binder_use.target(),
+            ResolvedTarget::Source {
+                declaration: binder.id(),
+                class: DeclarationClass::Value,
+            }
+        );
+        let break_use = resolved
+            .lexical_uses()
+            .iter()
+            .find(|usage| usage.spelling() == "@range")
+            .expect("body break must use the counted label");
+        assert_eq!(break_use.role(), LexicalUseRole::BreakLabel);
+        assert_eq!(
+            break_use.target(),
+            ResolvedTarget::Source {
+                declaration: label.id(),
+                class: DeclarationClass::Label,
+            }
+        );
+    });
+}
+
+#[test]
+fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
+    for source in [
+        br#"fn main(limit: own u64) -> own unit pure {
+  for @range index in index..limit {
+    break @range;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn main(limit: own u64) -> own unit pure {
+  for @range index in 0_u64..index {
+    break @range;
+  }
+  return unit;
+}
+"#
+        .as_slice(),
+        br#"fn main(limit: own u64) -> own unit pure {
+  for @range index in 0_u64..limit {
+    break @range;
+  }
+  let after = index;
+  return unit;
+}
+"#
+        .as_slice(),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("counted binder must be invisible outside its body: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Type5);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "index"
+            ));
+        });
+    }
+}
+
+#[test]
+fn counted_range_label_is_non_enclosing_after_the_loop() {
+    let source = br#"fn main(limit: own u64) -> own unit pure {
+  for @range index in 0_u64..limit {
+    break @range;
+  }
+  break @range;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("counted label must not escape its loop: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::NonEnclosingLabel { spelling, .. } if spelling == "@range"
+        ));
+    });
+}
+
+#[test]
+fn counted_range_binder_uses_the_for_binder_reservation_role() {
+    let source = br#"fn main(limit: own u64) -> own unit pure {
+  for @range ilt in 0_u64..limit {
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("reserved counted binder must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Form3);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::ReservedName {
+                spelling,
+                declaration_role: ReservedDeclarationRole::ForBinder,
+                ..
+            } if spelling == "ilt"
+        ));
+    });
+}
+
+#[test]
+fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
+    let live_outer = br#"fn main(limit: own u64) -> own unit pure {
+  let index = 0_u64;
+  for @range index in 0_u64..limit {
+    break @range;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(live_outer, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("counted binder must not shadow a live outer binding: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "index"
+        ));
+    });
+
+    let nested = br#"fn main(limit: own u64) -> own unit pure {
+  for @outer index in 0_u64..limit {
+    for @inner index in 0_u64..limit {
+      break @inner;
+    }
+    break @outer;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(nested, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("nested counted binder must not shadow its live parent: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::DeclarationCollision { spelling, .. } if spelling == "index"
+        ));
+    });
+
+    let nested_distinct = br#"fn main(limit: own u64) -> own unit pure {
+  for @outer outer_index in 0_u64..limit {
+    for @inner inner_index in outer_index..limit {
+      let copied = inner_index;
+      break @inner;
+    }
+    break @outer;
+  }
+  return unit;
+}
+"#;
+    with_one_resolution(nested_distinct, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "distinct nested counted declarations must resolve: {outcome:?}"
+        );
+    });
+
+    let reused = br#"fn main(limit: own u64) -> own unit pure {
+  for @range index in 0_u64..limit {
+    break @range;
+  }
+  for @range index in 0_u64..limit {
+    break @range;
+  }
+  let index = 7_u64;
+  let copied = index;
+  return unit;
+}
+"#;
+    with_one_resolution(reused, |outcome| {
+        assert!(
+            matches!(outcome, ResolutionOutcome::Complete(_)),
+            "expired counted binder and label spellings may be reused: {outcome:?}"
+        );
+    });
+}
+
 /// Whether a family is spelled as an operator rather than as a callee name.
 ///
 /// [OP-7] respelled twenty rows, and an operator token is never a declaration,
@@ -1038,6 +1264,10 @@ fn main() -> own unit traps {
   loop @done {
     break @done;
   }
+  for @counted index in 0_u64..2_u64 {
+    let observed = index;
+    break @counted;
+  }
   match ordinary {
     Present(value: payload) => {
       give payload;
@@ -1073,6 +1303,7 @@ fn main() -> own unit traps {
             DeclarationRole::LoopLabel,
             DeclarationRole::LocalRegion,
             DeclarationRole::MatchBinder,
+            DeclarationRole::CountedBinder,
         ] {
             assert!(
                 declaration_roles.contains(&role),

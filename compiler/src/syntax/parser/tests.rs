@@ -524,6 +524,7 @@ set deref(pointer).field = ordinary;
 user<T, 'r, 2>(arg: ordinary);
 return unit;
 loop @again { break @again; }
+for @range index in 0_u64..1_u64 { break @range; }
 region 'inner { give ordinary; }
 check ordinary else trap "check";
 claim named: ordinary because "claim";
@@ -557,7 +558,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 69);
+    assert_eq!(productions().len(), 70);
     assert_eq!(
         parsed
             .tree
@@ -599,6 +600,8 @@ const CLAIM_STATEMENT: &[u8] = b"fn probe() -> own unit traps {\n  let flag = Tr
 
 const CLAIM_SPELLINGS_AS_IDENTIFIERS: &[u8] =
     b"fn probe() -> own unit pure {\n  let claim = 0_i32;\n  return unit;\n}\n";
+
+const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -682,6 +685,74 @@ fn active_contract_reserves_the_new_fixed_spellings() {
         panic!("as/external/blocks must be reserved spellings excluded from IDENT: {outcome:?}");
     };
     assert_eq!(issue.rule(), SyntaxRule::Form3);
+}
+
+#[test]
+fn active_contract_parses_the_complete_counted_range_statement() {
+    let outcome = parse_active("range.wf", COUNTED_RANGE_STATEMENT);
+    let ParseOutcome::Complete(parsed) = outcome else {
+        panic!("the active tables must derive a counted range: {outcome:?}");
+    };
+    assert!(parsed.tree.elements.iter().any(|element| {
+        matches!(
+            element,
+            DerivationElement::Production { production, .. }
+                if *production == Production::ForStmt
+        )
+    }));
+}
+
+#[test]
+fn counted_range_fixed_words_are_not_identifier_spellings() {
+    for source in [
+        b"fn for() -> own unit pure {\n  return unit;\n}\n".as_slice(),
+        b"fn probe() -> own unit pure {\n  let in = 0_u64;\n  return unit;\n}\n",
+    ] {
+        let ParseOutcome::SourceIssue(issue) = parse_active("reserved-range.wf", source) else {
+            panic!("for/in must be excluded from IDENT");
+        };
+        assert_eq!(issue.rule(), SyntaxRule::Form3);
+    }
+}
+
+#[test]
+fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
+    for (source, boundary) in [
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for index in lower..upper {\n  }\n  return unit;\n}\n".as_slice(),
+            b"index".as_slice(),
+        ),
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range in lower..upper {\n  }\n  return unit;\n}\n",
+            b"in",
+        ),
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index lower..upper {\n  }\n  return unit;\n}\n",
+            b"lower",
+        ),
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in ..upper {\n  }\n  return unit;\n}\n",
+            b"..",
+        ),
+        (
+            b"fn probe() -> own unit pure {\n  for @range index in 0_u64 . 1_u64 {\n  }\n  return unit;\n}\n",
+            b".",
+        ),
+        (
+            b"fn probe(lower: own u64) -> own unit pure {\n  for @range index in lower.. {\n  }\n  return unit;\n}\n",
+            b"{",
+        ),
+        (
+            b"fn probe(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper..upper {\n  }\n  return unit;\n}\n",
+            b"..",
+        ),
+    ] {
+        let outcome = parse_active("malformed-range.wf", source);
+        let ParseOutcome::SourceIssue(issue) = outcome else {
+            panic!("malformed counted range must reject: {outcome:?}");
+        };
+        assert_eq!(issue_bytes(source, issue), boundary);
+    }
 }
 
 /// Returns the exact source bytes a grammar rejection selected.

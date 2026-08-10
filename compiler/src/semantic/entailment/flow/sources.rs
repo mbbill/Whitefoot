@@ -17,10 +17,13 @@ use std::collections::HashMap;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerOperation,
     CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedStatement, CheckedValue,
+    IntegerType,
 };
 use super::super::fragment_type;
 use super::super::state::{FactState, OutcomeFact, OutcomeRelation, Relation, close};
-use super::super::term::{PlaceRoot, PlaceTerm, TermId, TermKind, ZERO, integer_value, type_range};
+use super::super::term::{
+    CountedCaptureSide, PlaceRoot, PlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
+};
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
 
@@ -35,7 +38,88 @@ const BOUNDARY_COUNTS: [(&str, &str, &str); 4] = [
     ("host_copy_utf8", "capacity", "Ok"),
 ];
 
+/// The three S11 terms installed for one counted range.
+pub(super) struct CountedTerms {
+    pub(super) lower: TermId,
+    pub(super) binder: TermId,
+    pub(super) upper: TermId,
+}
+
 impl Analyzer<'_, '_> {
+    // ------------------------------------------------------------------
+    // S11 counted-range structural facts
+    // ------------------------------------------------------------------
+
+    /// Establishes the once-only endpoint snapshots and binder
+    /// initialization, before the caller materializes [ENT-4] closure and
+    /// applies the counted continuing-kill summary.
+    pub(super) fn establish_counted_preheader(
+        &mut self,
+        range_path: &[u32],
+        binder: BindingId,
+        lower: &CheckedExpression,
+        upper: &CheckedExpression,
+        state: &mut FactState,
+    ) -> CountedTerms {
+        let lower_source = self
+            .read_operand(lower)
+            .expect("checked counted lower endpoint must be an ENT-2 term or constant");
+        let upper_source = self
+            .read_operand(upper)
+            .expect("checked counted upper endpoint must be an ENT-2 term or constant");
+        let lower_capture = self.terms.intern(TermKind::CountedCapture {
+            range_path: range_path.to_vec(),
+            side: CountedCaptureSide::Lower,
+        });
+        let upper_capture = self.terms.intern(TermKind::CountedCapture {
+            range_path: range_path.to_vec(),
+            side: CountedCaptureSide::Upper,
+        });
+        let binder = self.terms.intern(TermKind::Place(
+            PlaceTerm {
+                root: PlaceRoot::Binding(binder),
+                deref: false,
+                fields: Vec::new(),
+            },
+            IntegerType::U64,
+        ));
+        state.establish(&Relation::Equal {
+            left: lower_capture,
+            right: lower_source,
+        });
+        state.establish(&Relation::Equal {
+            left: upper_capture,
+            right: upper_source,
+        });
+        state.establish(&Relation::Equal {
+            left: binder,
+            right: lower_capture,
+        });
+        CountedTerms {
+            lower: lower_capture,
+            binder,
+            upper: upper_capture,
+        }
+    }
+
+    /// Adds exactly S11's two facts on an executed true header edge.
+    pub(super) fn establish_counted_body_entry(
+        &self,
+        counted: &CountedTerms,
+        state: &mut FactState,
+    ) {
+        state.establish(&Relation::Bound {
+            left: counted.lower,
+            right: counted.binder,
+            bound: 0,
+        });
+        state.establish(&Relation::Bound {
+            left: counted.binder,
+            right: counted.upper,
+            bound: -1,
+        });
+    }
+
     // ------------------------------------------------------------------
     // S2 check facts and S3 claim facts
     // ------------------------------------------------------------------
@@ -147,7 +231,16 @@ impl Analyzer<'_, '_> {
     fn entry_visible(&self, term: TermId) -> bool {
         match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => true,
+            TermKind::CountedCapture { .. } => false,
             TermKind::Place(place, _) | TermKind::Length(place) => match place.root {
+                PlaceRoot::Constant(_) => true,
+                PlaceRoot::Binding(binding) => self
+                    .function
+                    .parameters
+                    .iter()
+                    .any(|parameter| parameter.binding == binding),
+            },
+            TermKind::ProjectedPlace(place, _) => match place.root {
                 PlaceRoot::Constant(_) => true,
                 PlaceRoot::Binding(binding) => self
                     .function

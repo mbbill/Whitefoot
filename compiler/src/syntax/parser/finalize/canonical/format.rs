@@ -65,6 +65,7 @@ fn is_block_bearing(production: Production) -> bool {
             | Production::FnDecl
             | Production::RequiresBlock
             | Production::LoopStmt
+            | Production::ForStmt
             | Production::RegionStmt
             | Production::MatchStmt
             | Production::ValueMatch
@@ -226,6 +227,7 @@ fn left_attaches(predicate: TerminalPredicate) -> bool {
                 | FixedTerminal::LeftAngle
                 | FixedTerminal::Ampersand
                 | FixedTerminal::Dot
+                | FixedTerminal::DotDot
         )
     )
 }
@@ -244,6 +246,7 @@ fn right_attaches(predicate: TerminalPredicate) -> bool {
                 | FixedTerminal::LeftParen
                 | FixedTerminal::LeftAngle
                 | FixedTerminal::LeftBracket
+                | FixedTerminal::DotDot
         )
     )
 }

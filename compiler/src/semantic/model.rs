@@ -996,6 +996,15 @@ pub(crate) enum CheckedStatement {
         body: Vec<CheckedStatement>,
         backedge_drops: Vec<CheckedDrop>,
     },
+    CountedRange {
+        id: CheckedLoopId,
+        node_path: NodePath,
+        binder: BindingId,
+        lower: CheckedExpression,
+        upper: CheckedExpression,
+        body: Vec<CheckedStatement>,
+        backedge_drops: Vec<CheckedDrop>,
+    },
     Break {
         target: CheckedLoopId,
         drops: Vec<CheckedDrop>,

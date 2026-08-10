@@ -49,30 +49,13 @@ fn sha256_majority(x: own u32, y: own u32, z: own u32) -> own u32 pure {
   return xor_three(x: xy, y: xz, z: yz);
 }
 
-fn sha256_abc_word_zero() -> own u32 traps {
+fn sha256_abc_word_zero() -> own u32 pure {
   let schedule = array_new<u32, 64>(0_u32);
-  let copy_index = 0_u64;
-  loop @copy_block {
-    let copy_done = ieq(copy_index, 16_u64);
-    if copy_done {
-      break @copy_block;
-    }
-    let copy_in_range = ilt(copy_index, 16_u64);
-    claim copy_index_in_block: copy_in_range because "the copy walks 0..16 and breaks at sixteen";
+  for @copy_block copy_index in 0_u64..16_u64 {
     let source_word = sha256_abc_block[copy_index];
     set schedule[copy_index] = source_word;
-    set copy_index = copy_index +wrap 1_u64;
   }
-  let extend_index = 16_u64;
-  loop @extend_schedule {
-    let extend_done = ieq(extend_index, 64_u64);
-    if extend_done {
-      break @extend_schedule;
-    }
-    let extend_lower = ige(extend_index, 16_u64);
-    claim extend_index_from_sixteen: extend_lower because "the extension starts at sixteen and only grows";
-    let extend_upper = ilt(extend_index, 64_u64);
-    claim extend_index_in_schedule: extend_upper because "the extension walks 16..64 and breaks at sixty-four";
+  for @extend_schedule extend_index in 16_u64..64_u64 {
     let index_minus_two = extend_index -wrap 2_u64;
     let word_minus_two = schedule[index_minus_two];
     let sigma_one = sha256_small_one(word: word_minus_two);
@@ -87,7 +70,6 @@ fn sha256_abc_word_zero() -> own u32 traps {
     let second_sum = first_sum +wrap word_minus_seven;
     let extended_word = second_sum +wrap sigma_one;
     set schedule[extend_index] = extended_word;
-    set extend_index = extend_index +wrap 1_u64;
   }
   let a = 1779033703_u32;
   let b = 3144134277_u32;
@@ -97,16 +79,9 @@ fn sha256_abc_word_zero() -> own u32 traps {
   let f = 2600822924_u32;
   let g = 528734635_u32;
   let h = 1541459225_u32;
-  let round = 0_u64;
-  loop @compression_rounds {
-    let rounds_done = ieq(round, 64_u64);
-    if rounds_done {
-      break @compression_rounds;
-    }
+  for @compression_rounds round in 0_u64..64_u64 {
     let big_one = sha256_big_one(word: e);
     let choose = sha256_choose(x: e, y: f, z: g);
-    let round_in_range = ilt(round, 64_u64);
-    claim round_in_schedule: round_in_range because "the compression walks 0..64 and breaks at sixty-four";
     let constant = sha256_round_constants[round];
     let schedule_word = schedule[round];
     let temp_one_a = h +wrap big_one;
@@ -126,12 +101,13 @@ fn sha256_abc_word_zero() -> own u32 traps {
     set c = b;
     set b = a;
     set a = next_a;
-    set round = round +wrap 1_u64;
   }
   return a +wrap 1779033703_u32;
 }
 
 fn main() -> own unit traps {
+  let direct_digest_word = sha256_abc_word_zero();
+  check ieq(direct_digest_word, 3128432319_u32) else trap "sha256 abc digest word zero";
   let iteration = 0_u64;
   let accumulated = 0_u32;
   loop @sustained_hashing {

@@ -22,8 +22,11 @@ use super::super::model::{
     CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
     CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
-use super::state::{FactState, OutcomeFact, Relation, close, join};
-use super::term::{LengthBound, PlaceRoot, PlaceTerm, TermId, TermKind, TermTable, integer_value};
+use super::state::{FactState, OutcomeFact, Relation, close, join, materialize_closure};
+use super::term::{
+    CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
+    TermId, TermKind, TermTable, integer_value,
+};
 use super::{
     ClaimDisposition, ClaimOutcome, EntailmentContext, FunctionEntailment, ObligationOutcome,
     fragment_type,
@@ -75,12 +78,20 @@ enum HolderReferent {
 struct BindingSummary {
     ty: Option<CheckedType>,
     holder: Option<HolderReferent>,
+    /// The checked expression for a read through a borrow holder may retain
+    /// only the referent value. Reconstructing its [ENT-2] source spelling
+    /// must restore that explicit `deref`; an owning box already retains a
+    /// `BoxDeref` node and therefore does not use this flag.
+    implicit_deref: bool,
 }
 
 /// A `loop` frame collecting break-edge states for the continuation join.
 struct LoopFrame {
     id: CheckedLoopId,
     scope_depth: usize,
+    /// Present only for a counted range. A break through this frame leaves
+    /// the private endpoint-capture scope as well as source binding scopes.
+    capture_path: Option<Vec<u32>>,
     breaks: Vec<FactState>,
 }
 
@@ -97,6 +108,7 @@ struct ArmFacts {
 /// A `value_match` frame collecting give-edge states for the continuation.
 struct GiveFrame {
     scope_depth: usize,
+    loop_depth: usize,
     gives: Vec<FactState>,
 }
 
@@ -200,13 +212,16 @@ impl Analyzer<'_, '_> {
     fn collect_bindings(&mut self) {
         let function = self.function;
         for parameter in &function.parameters {
-            let holder = match parameter.mode {
-                CheckedMode::Own => None,
-                CheckedMode::Shared(_) | CheckedMode::Unique(_) => Some(HolderReferent::Opaque),
+            let (holder, implicit_deref) = match parameter.mode {
+                CheckedMode::Own => (None, false),
+                CheckedMode::Shared(_) | CheckedMode::Unique(_) => {
+                    (Some(HolderReferent::Opaque), true)
+                }
             };
             let summary = self.summary_mut(parameter.binding);
             summary.ty = Some(parameter.ty);
             summary.holder = holder;
+            summary.implicit_deref = implicit_deref;
         }
         self.collect_block_bindings(&function.body);
     }
@@ -216,9 +231,11 @@ impl Analyzer<'_, '_> {
             match statement {
                 CheckedStatement::Let { binding, value } => {
                     let holder = holder_from_value(value);
+                    let implicit_deref = value_has_implicit_deref(value);
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
                     summary.holder = holder;
+                    summary.implicit_deref = implicit_deref;
                 }
                 CheckedStatement::PropagateLet {
                     binding, ok_type, ..
@@ -244,6 +261,10 @@ impl Analyzer<'_, '_> {
                 CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
                     self.collect_block_bindings(body);
                 }
+                CheckedStatement::CountedRange { binder, body, .. } => {
+                    self.summary_mut(*binder).ty = Some(CheckedType::Integer(IntegerType::U64));
+                    self.collect_block_bindings(body);
+                }
                 _ => {}
             }
         }
@@ -251,13 +272,16 @@ impl Analyzer<'_, '_> {
 
     fn collect_arm_bindings(&mut self, arm: &CheckedMatchArm) {
         for binder in &arm.binders {
-            let holder = match binder.mode {
-                CheckedMode::Own => None,
-                CheckedMode::Shared(_) | CheckedMode::Unique(_) => Some(HolderReferent::Opaque),
+            let (holder, implicit_deref) = match binder.mode {
+                CheckedMode::Own => (None, false),
+                CheckedMode::Shared(_) | CheckedMode::Unique(_) => {
+                    (Some(HolderReferent::Opaque), true)
+                }
             };
             let summary = self.summary_mut(binder.binding);
             summary.ty = Some(binder.ty);
             summary.holder = holder;
+            summary.implicit_deref = implicit_deref;
         }
         self.collect_block_bindings(&arm.body);
     }
@@ -265,6 +289,11 @@ impl Analyzer<'_, '_> {
     fn is_holder(&self, binding: BindingId) -> bool {
         self.summary(binding)
             .is_some_and(|summary| summary.holder.is_some())
+    }
+
+    fn needs_implicit_deref(&self, binding: BindingId) -> bool {
+        self.summary(binding)
+            .is_some_and(|summary| summary.implicit_deref)
     }
 
     // ------------------------------------------------------------------
@@ -292,6 +321,30 @@ impl Analyzer<'_, '_> {
                 resolved
             }
         }
+    }
+
+    /// Resolves an exact interleaved field/deref spelling for [ENT-5] kills.
+    /// A deref of a direct holder follows the existing holder summary. A
+    /// deref after a field remains anchored at that selected storage path;
+    /// replacing any prefix therefore conservatively kills the fact.
+    fn resolve_projected(&self, place: &ProjectedPlaceTerm) -> ResolvedPlace {
+        let mut resolved = ResolvedPlace {
+            root: place.root,
+            fields: Vec::new(),
+        };
+        for projection in &place.projections {
+            match projection {
+                PlaceProjection::Field(field) => resolved.fields.push(*field),
+                PlaceProjection::Deref => {
+                    if resolved.fields.is_empty()
+                        && let PlaceRoot::Binding(binding) = resolved.root
+                    {
+                        resolved = self.resolve_deref(binding, 0);
+                    }
+                }
+            }
+        }
+        resolved
     }
 
     fn resolve_deref(&self, holder: BindingId, depth: usize) -> ResolvedPlace {
@@ -327,11 +380,21 @@ impl Analyzer<'_, '_> {
     fn event_kills_term(&self, term: TermId, event: &KillEvent) -> bool {
         match self.terms.kind(term).clone() {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
+            // Counted captures are immutable. Their construct-scope exit is
+            // handled separately from source-place write/consume events.
+            TermKind::CountedCapture { .. } => false,
             TermKind::Place(place, _) => match event {
                 KillEvent::Write {
                     place: written,
                     element: _,
                 } => self.resolve(&place).overlaps(written),
+                KillEvent::Consume(root) => place.root == PlaceRoot::Binding(*root),
+            },
+            TermKind::ProjectedPlace(place, _) => match event {
+                KillEvent::Write {
+                    place: written,
+                    element: _,
+                } => self.resolve_projected(&place).overlaps(written),
                 KillEvent::Consume(root) => place.root == PlaceRoot::Binding(*root),
             },
             TermKind::Length(place) => match event {
@@ -360,7 +423,12 @@ impl Analyzer<'_, '_> {
     fn scope_kills_term(&self, term: TermId, exited: &HashSet<BindingId>) -> bool {
         match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
+            TermKind::CountedCapture { .. } => false,
             TermKind::Place(place, _) | TermKind::Length(place) => match place.root {
+                PlaceRoot::Binding(binding) => exited.contains(&binding),
+                PlaceRoot::Constant(_) => false,
+            },
+            TermKind::ProjectedPlace(place, _) => match place.root {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
             },
@@ -393,6 +461,30 @@ impl Analyzer<'_, '_> {
             .retain(|binding, _| !exited.contains(binding));
     }
 
+    /// Applies the private capture-scope kill of one counted construct.
+    fn exit_counted_capture_scope(&self, state: &mut FactState, range_path: &[u32]) {
+        state.kill(|term| {
+            matches!(
+                self.terms.kind(term),
+                TermKind::CountedCapture { range_path: path, .. } if path == range_path
+            )
+        });
+    }
+
+    /// Applies capture-scope kills for every loop frame crossed by a
+    /// non-local edge. Ordinary loop frames carry no private captures.
+    fn exit_counted_loops_from(&self, state: &mut FactState, loop_depth: usize) {
+        let paths: Vec<Vec<u32>> = self
+            .loops
+            .iter()
+            .skip(loop_depth)
+            .filter_map(|frame| frame.capture_path.clone())
+            .collect();
+        for path in paths {
+            self.exit_counted_capture_scope(state, &path);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Terms and relations from checked expressions
     // ------------------------------------------------------------------
@@ -400,92 +492,81 @@ impl Analyzer<'_, '_> {
     /// Reads an expression as a term or constant [ENT-2]; anything else is
     /// no operand and establishes or derives nothing.
     fn read_operand(&mut self, expression: &CheckedExpression) -> Option<TermId> {
-        match expression {
-            CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) => Some(
+        if let CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) = expression {
+            return Some(
                 self.terms
                     .intern(TermKind::Constant(integer_value(*ty, *bits))),
-            ),
-            CheckedExpression::Binding { binding, ty, .. } => {
-                let fragment = fragment_type(*ty)?;
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: false,
-                    fields: Vec::new(),
-                };
-                Some(self.terms.intern(TermKind::Place(place, fragment)))
+            );
+        }
+        let fragment = fragment_type(expression.ty())?;
+        let path = self.read_place_path(expression)?;
+        let kind = match path.projections.as_slice() {
+            projections
+                if projections
+                    .iter()
+                    .all(|projection| matches!(projection, PlaceProjection::Field(_))) =>
+            {
+                TermKind::Place(
+                    PlaceTerm {
+                        root: path.root,
+                        deref: false,
+                        fields: projections
+                            .iter()
+                            .filter_map(|projection| match projection {
+                                PlaceProjection::Field(field) => Some(*field),
+                                PlaceProjection::Deref => None,
+                            })
+                            .collect(),
+                    },
+                    fragment,
+                )
             }
+            _ => TermKind::ProjectedPlace(path, fragment),
+        };
+        Some(self.terms.intern(kind))
+    }
+
+    /// Reconstructs the exact source-order place path retained by the checked
+    /// expression. This is deliberately recursive: field selection may occur
+    /// before or after a deref, and nested boxes may introduce more than one
+    /// deref. [ENT-2] distinguishes those canonical spellings.
+    fn read_place_path(&self, expression: &CheckedExpression) -> Option<ProjectedPlaceTerm> {
+        match expression {
+            CheckedExpression::Binding { binding, .. } => Some(ProjectedPlaceTerm {
+                root: PlaceRoot::Binding(*binding),
+                projections: self
+                    .needs_implicit_deref(*binding)
+                    .then_some(PlaceProjection::Deref)
+                    .into_iter()
+                    .collect(),
+            }),
             CheckedExpression::Project {
                 binding,
                 fields,
-                ty,
                 consume_root: false,
                 ..
-            } => {
-                let fragment = fragment_type(*ty)?;
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: false,
-                    fields: fields.clone(),
-                };
-                Some(self.terms.intern(TermKind::Place(place, fragment)))
+            } => Some(ProjectedPlaceTerm {
+                root: PlaceRoot::Binding(*binding),
+                projections: self
+                    .needs_implicit_deref(*binding)
+                    .then_some(PlaceProjection::Deref)
+                    .into_iter()
+                    .chain(fields.iter().copied().map(PlaceProjection::Field))
+                    .collect(),
+            }),
+            CheckedExpression::DerefAddressed { binding, .. } => Some(ProjectedPlaceTerm {
+                root: PlaceRoot::Binding(*binding),
+                projections: vec![PlaceProjection::Deref],
+            }),
+            CheckedExpression::BoxDeref { value, .. } => {
+                let mut path = self.read_place_path(value)?;
+                path.projections.push(PlaceProjection::Deref);
+                Some(path)
             }
-            CheckedExpression::DerefAddressed { binding, ty } => {
-                let fragment = fragment_type(*ty)?;
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: true,
-                    fields: Vec::new(),
-                };
-                Some(self.terms.intern(TermKind::Place(place, fragment)))
-            }
-            CheckedExpression::BoxDeref {
-                referent, value, ..
-            } => {
-                let fragment = fragment_type(*referent)?;
-                let CheckedExpression::Binding { binding, .. } = value.as_ref() else {
-                    return None;
-                };
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: true,
-                    fields: Vec::new(),
-                };
-                Some(self.terms.intern(TermKind::Place(place, fragment)))
-            }
-            CheckedExpression::ProjectValue {
-                value, field, ty, ..
-            } => {
-                let fragment = fragment_type(*ty)?;
-                let mut fields = vec![*field];
-                let mut cursor = value.as_ref();
-                loop {
-                    match cursor {
-                        CheckedExpression::ProjectValue { value, field, .. } => {
-                            fields.insert(0, *field);
-                            cursor = value.as_ref();
-                        }
-                        CheckedExpression::DerefAddressed { binding, .. } => {
-                            let place = PlaceTerm {
-                                root: PlaceRoot::Binding(*binding),
-                                deref: true,
-                                fields,
-                            };
-                            return Some(self.terms.intern(TermKind::Place(place, fragment)));
-                        }
-                        CheckedExpression::BoxDeref { value, .. } => {
-                            let CheckedExpression::Binding { binding, .. } = value.as_ref() else {
-                                return None;
-                            };
-                            let place = PlaceTerm {
-                                root: PlaceRoot::Binding(*binding),
-                                deref: true,
-                                fields,
-                            };
-                            return Some(self.terms.intern(TermKind::Place(place, fragment)));
-                        }
-                        _ => return None,
-                    }
-                }
+            CheckedExpression::ProjectValue { value, field, .. } => {
+                let mut path = self.read_place_path(value)?;
+                path.projections.push(PlaceProjection::Field(*field));
+                Some(path)
             }
             _ => None,
         }
@@ -600,6 +681,10 @@ impl Analyzer<'_, '_> {
                     events.push(KillEvent::Consume(*binding));
                 }
             }
+            // These wrappers are checked reads of one place. Their nested
+            // expression preserves source spelling and lowering structure;
+            // it is not a second consuming evaluation of an affine holder.
+            CheckedExpression::BoxDeref { .. } | CheckedExpression::ProjectValue { .. } => {}
             CheckedExpression::UserCall {
                 function,
                 arguments,
@@ -957,9 +1042,14 @@ impl Analyzer<'_, '_> {
             }
             CheckedStatement::Give { value, .. } => {
                 self.expression_effects(value, state);
-                if let Some(depth) = self.gives.last().map(|frame| frame.scope_depth) {
+                if let Some((scope_depth, loop_depth)) = self
+                    .gives
+                    .last()
+                    .map(|frame| (frame.scope_depth, frame.loop_depth))
+                {
                     let mut exit = state.clone();
-                    self.exit_scopes_to(&mut exit, depth);
+                    self.exit_scopes_to(&mut exit, scope_depth);
+                    self.exit_counted_loops_from(&mut exit, loop_depth);
                     if let Some(frame) = self.gives.last_mut() {
                         frame.gives.push(exit);
                     }
@@ -971,6 +1061,7 @@ impl Analyzer<'_, '_> {
                     let depth = self.loops[position].scope_depth;
                     let mut exit = state.clone();
                     self.exit_scopes_to(&mut exit, depth);
+                    self.exit_counted_loops_from(&mut exit, position);
                     self.loops[position].breaks.push(exit);
                 }
                 false
@@ -1005,6 +1096,7 @@ impl Analyzer<'_, '_> {
                 let facts = self.arm_facts(scrutinee, *enum_type, state);
                 self.gives.push(GiveFrame {
                     scope_depth: self.scopes.len(),
+                    loop_depth: self.loops.len(),
                     gives: Vec::new(),
                 });
                 for arm in arms {
@@ -1038,6 +1130,7 @@ impl Analyzer<'_, '_> {
                 self.loops.push(LoopFrame {
                     id: *id,
                     scope_depth: self.scopes.len(),
+                    capture_path: None,
                     breaks: Vec::new(),
                 });
                 let mut head = state.clone();
@@ -1049,6 +1142,78 @@ impl Analyzer<'_, '_> {
                 // an unreachable-in-truth continuation the conservative graph
                 // keeps reachable [ENT-5].
                 *state = join(&breaks, &self.terms);
+                true
+            }
+            CheckedStatement::CountedRange {
+                id,
+                node_path,
+                binder,
+                lower,
+                upper,
+                body,
+                ..
+            } => {
+                // [FN-1, ENT-3 S11]: evaluate each endpoint exactly once,
+                // left to right, then install the private captures and the
+                // compiler-updated binder in a construct-owned fact scope.
+                self.expression_effects(lower, state);
+                self.expression_effects(upper, state);
+                let outer_scope_depth = self.scopes.len();
+                self.scopes.push(vec![*binder]);
+                let range_path = node_path.components().to_vec();
+                let counted =
+                    self.establish_counted_preheader(&range_path, *binder, lower, upper, state);
+                // S11 fixes the complete post-capture closure before
+                // continuing kills are subtracted. This preserves sound
+                // snapshot consequences without rereading a mutable endpoint
+                // on later iterations.
+                *state = materialize_closure(state, &self.terms);
+
+                let mut kills = LoopKills::default();
+                let body_reaches_head = self.collect_continuing_loop_kills(
+                    body,
+                    true,
+                    &mut LoopReachability::default(),
+                    &mut kills,
+                );
+                if body_reaches_head {
+                    // The hidden update is a continuing write exactly when
+                    // normal body fallthrough can reach it.
+                    kills.events.push(KillEvent::Write {
+                        place: ResolvedPlace {
+                            root: PlaceRoot::Binding(*binder),
+                            fields: Vec::new(),
+                        },
+                        element: false,
+                    });
+                    kills.set_bindings.insert(*binder);
+                }
+                self.apply_loop_kills(state, &kills);
+
+                let head = state.clone();
+                self.loops.push(LoopFrame {
+                    id: *id,
+                    scope_depth: outer_scope_depth,
+                    capture_path: Some(range_path.clone()),
+                    breaks: Vec::new(),
+                });
+                let mut body_state = head.clone();
+                self.establish_counted_body_entry(&counted, &mut body_state);
+                let _ = self.walk_block(body, &mut body_state);
+                let frame = self.loops.pop();
+                let breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
+
+                // Unlike an ordinary loop, the real false-header edge always
+                // contributes. Binder and captures leave scope before it or
+                // a matching break reaches the continuation.
+                let mut exhaustion = head;
+                self.exit_scopes_to(&mut exhaustion, outer_scope_depth);
+                self.exit_counted_capture_scope(&mut exhaustion, &range_path);
+                let mut exits = Vec::with_capacity(1 + breaks.len());
+                exits.push(exhaustion);
+                exits.extend(breaks);
+                self.scopes.pop();
+                *state = join(&exits, &self.terms);
                 true
             }
             CheckedStatement::Region { body, .. } => self.walk_block(body, state),
@@ -1169,6 +1334,16 @@ impl Analyzer<'_, '_> {
                 // carries no event from inside the body.
                 normal_reaches || body_reaches
             }
+            CheckedStatement::CountedRange { id, body, .. } => {
+                // The false-header edge reaches the normal successor, while
+                // body fallthrough updates and returns to a header that may
+                // then take that same edge. A matching break also reaches the
+                // successor; enclosing exits retain their visible targets.
+                reachability.breaks.push((*id, normal_reaches));
+                let body_reaches = self.loop_block_reaches(body, normal_reaches, reachability);
+                reachability.breaks.pop();
+                normal_reaches || body_reaches
+            }
             CheckedStatement::Region { body, .. } => {
                 self.loop_block_reaches(body, normal_reaches, reachability)
             }
@@ -1271,6 +1446,28 @@ impl Analyzer<'_, '_> {
                 self.collect_continuing_loop_kills(body, body_reaches, reachability, kills);
                 reachability.breaks.pop();
                 normal_reaches || body_reaches
+            }
+            CheckedStatement::CountedRange {
+                id,
+                lower,
+                upper,
+                body,
+                ..
+            } => {
+                reachability.breaks.push((*id, normal_reaches));
+                let body_reaches =
+                    self.collect_continuing_loop_kills(body, normal_reaches, reachability, kills);
+                reachability.breaks.pop();
+                // Both endpoint atoms execute before either the real false
+                // edge or a body path. Their own effects are continuing for
+                // the enclosing target exactly when this statement can reach
+                // that target through one of those successors.
+                let reaches = normal_reaches || body_reaches;
+                if reaches {
+                    self.collect_expression_kills(lower, &mut kills.events);
+                    self.collect_expression_kills(upper, &mut kills.events);
+                }
+                reaches
             }
             CheckedStatement::Region { body, .. } => {
                 self.collect_continuing_loop_kills(body, normal_reaches, reachability, kills)
@@ -1393,6 +1590,63 @@ impl Analyzer<'_, '_> {
         rendered
     }
 
+    fn render_projected_place(&self, place: &ProjectedPlaceTerm) -> String {
+        let (mut rendered, mut ty) = match place.root {
+            PlaceRoot::Binding(binding) => (
+                self.binding_name(binding),
+                self.summary(binding).and_then(|summary| summary.ty),
+            ),
+            PlaceRoot::Constant(id) => (
+                self.context
+                    .constants
+                    .get(id.0 as usize)
+                    .map(|constant| constant.name.clone())
+                    .unwrap_or_else(|| "?".to_owned()),
+                self.context
+                    .constants
+                    .get(id.0 as usize)
+                    .map(|constant| constant.ty),
+            ),
+        };
+        for projection in &place.projections {
+            match projection {
+                PlaceProjection::Field(field) => {
+                    let name = ty
+                        .and_then(|current| self.field_name(current, *field))
+                        .unwrap_or(None);
+                    match name {
+                        Some((field_name, field_ty)) => {
+                            rendered.push('.');
+                            rendered.push_str(&field_name);
+                            ty = Some(field_ty);
+                        }
+                        None => {
+                            rendered.push_str(".?");
+                            ty = None;
+                        }
+                    }
+                }
+                PlaceProjection::Deref => {
+                    rendered = format!("deref({rendered})");
+                    ty = ty.and_then(|current| self.deref_type(current));
+                }
+            }
+        }
+        rendered
+    }
+
+    fn deref_type(&self, ty: CheckedType) -> Option<CheckedType> {
+        let CheckedType::Nominal(id) = ty else {
+            // Borrow bindings retain the referent type in checked form.
+            return Some(ty);
+        };
+        let nominal = self.context.nominals.get(id.0 as usize)?;
+        match nominal.kind {
+            CheckedNominalKind::Box { referent } => Some(referent),
+            _ => Some(ty),
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     fn field_name(&self, ty: CheckedType, field: u32) -> Option<Option<(String, CheckedType)>> {
         let CheckedType::Nominal(id) = ty else {
@@ -1433,7 +1687,12 @@ impl Analyzer<'_, '_> {
             TermKind::Constant(value) => value.to_string(),
             TermKind::ConstParameter(_) => "<const parameter>".to_owned(),
             TermKind::Place(place, _) => self.render_place(place),
+            TermKind::ProjectedPlace(place, _) => self.render_projected_place(place),
             TermKind::Length(place) => format!("len({})", self.render_place(place)),
+            TermKind::CountedCapture { side, .. } => match side {
+                CountedCaptureSide::Lower => "<counted lower capture>".to_owned(),
+                CountedCaptureSide::Upper => "<counted upper capture>".to_owned(),
+            },
         }
     }
 
@@ -1530,6 +1789,17 @@ fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
         CheckedExpression::BoxNew { .. } => Some(HolderReferent::Opaque),
         _ => None,
     }
+}
+
+const fn value_has_implicit_deref(value: &CheckedExpression) -> bool {
+    matches!(
+        value,
+        CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::BorrowBuffer { .. }
+            | CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::ReborrowAddressed { .. }
+    )
 }
 
 /// Every direct subexpression, for uniform recursion.

@@ -9,7 +9,9 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// token predicates. The declaration order is the stable dense predicate
 /// index: the v0.17 inventory, the three spellings v0.18 added, and the two
 /// v0.21 added, less the `index` spelling v0.22 released to IDENT, plus the
-/// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings.
+/// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings —
+/// and the three v0.25 counted-range spellings. New variants append so every
+/// previously released dense index remains stable.
 /// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -185,10 +187,16 @@ pub enum FixedTerminal {
     Percent,
     /// `%checked`.
     PercentChecked,
+    /// `for`.
+    For,
+    /// `in`.
+    In,
+    /// `..`.
+    DotDot,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 85] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 88] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -239,6 +247,9 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 85] = [
     FixedTerminal::Set,
     FixedTerminal::Return,
     FixedTerminal::Loop,
+    FixedTerminal::For,
+    FixedTerminal::In,
+    FixedTerminal::DotDot,
     FixedTerminal::Break,
     FixedTerminal::Region,
     FixedTerminal::Check,
@@ -366,6 +377,9 @@ impl FixedTerminal {
             Self::SlashChecked => b"/checked",
             Self::Percent => b"%",
             Self::PercentChecked => b"%checked",
+            Self::For => b"for",
+            Self::In => b"in",
+            Self::DotDot => b"..",
         }
     }
 
@@ -440,21 +454,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 93] = {
-    let mut predicates = [TerminalPredicate::Identifier; 93];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 96] = {
+    let mut predicates = [TerminalPredicate::Identifier; 96];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[85] = TerminalPredicate::Identifier;
-    predicates[86] = TerminalPredicate::TypeIdentifier;
-    predicates[87] = TerminalPredicate::RegionIdentifier;
-    predicates[88] = TerminalPredicate::Label;
-    predicates[89] = TerminalPredicate::OperationName;
-    predicates[90] = TerminalPredicate::Literal;
-    predicates[91] = TerminalPredicate::String;
-    predicates[92] = TerminalPredicate::Digits;
+    predicates[88] = TerminalPredicate::Identifier;
+    predicates[89] = TerminalPredicate::TypeIdentifier;
+    predicates[90] = TerminalPredicate::RegionIdentifier;
+    predicates[91] = TerminalPredicate::Label;
+    predicates[92] = TerminalPredicate::OperationName;
+    predicates[93] = TerminalPredicate::Literal;
+    predicates[94] = TerminalPredicate::String;
+    predicates[95] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -462,14 +476,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 85,
-            Self::TypeIdentifier => 86,
-            Self::RegionIdentifier => 87,
-            Self::Label => 88,
-            Self::OperationName => 89,
-            Self::Literal => 90,
-            Self::String => 91,
-            Self::Digits => 92,
+            Self::Identifier => 88,
+            Self::TypeIdentifier => 89,
+            Self::RegionIdentifier => 90,
+            Self::Label => 91,
+            Self::OperationName => 92,
+            Self::Literal => 93,
+            Self::String => 94,
+            Self::Digits => 95,
         }
     }
 }
@@ -695,6 +709,10 @@ mod tests {
                 Some(terminal)
             );
         }
+        assert_eq!(FixedTerminal::PercentChecked as u8, 84);
+        assert_eq!(FixedTerminal::For as u8, 85);
+        assert_eq!(FixedTerminal::In as u8, 86);
+        assert_eq!(FixedTerminal::DotDot as u8, 87);
     }
 
     #[test]
