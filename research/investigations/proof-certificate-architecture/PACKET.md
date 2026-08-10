@@ -183,7 +183,7 @@ verbal.
 The research worktree was created from
 `b11e22f1901dc9e59cac79a9250d709e4a2082a8` and received an exact file snapshot
 of task 0048's then-uncommitted candidate. Commit
-`441cd5b8c8081065238cf88740739ade4a8783bf` subsequently installed those exact
+`441cd5b833096d558549bb09aeecfcfe63340584` subsequently installed those exact
 compiler and specification bytes as active v0.26, specification SHA-256
 `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
 Blob comparison confirmed that the implementation inspected and profiled in

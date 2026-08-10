@@ -10,7 +10,7 @@
   `/Users/bytedance/do_not_scan/whitefoot-proof-certificate-final`, branch
   `codex/proof-certificate-architecture-final`
 - **Base revision:** final-refresh branch created at active-v0.26 activation
-  `441cd5b8c8081065238cf88740739ade4a8783bf`; the original read-only research
+  `441cd5b833096d558549bb09aeecfcfe63340584`; the original read-only research
   snapshot was taken from `b11e22f1901dc9e59cac79a9250d709e4a2082a8` plus
   task 0048's then-uncommitted candidate. Blob comparison proved that the
   compiler and specification bytes used for that research are exactly those
