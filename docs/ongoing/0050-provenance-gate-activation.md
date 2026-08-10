@@ -95,11 +95,26 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   projection `14/24`; every frozen boundary control and input identity also
   matched. The rejected contextual interpretation would double-report two
   parameter-dependent calls as `16/28` and is not the finite symbolic
-  [PRV-2] judgment.
-- **Current:** re-derive and independently review the smallest complete v0.27
-  normative delta against active v0.26 before changing compiler semantics.
-- **Next:** prepare the byte-identical outgoing v0.26 archive and exact v0.27
-  candidate, then implement only after normative closure review.
+  [PRV-2] judgment. An uncommitted v0.27 candidate and byte-identical outgoing
+  v0.26 archive are frozen for review at SHA-256
+  `6fa5fcf374f75145ae58005a6ca54f8c62ec87058557a4d3893a9bdcaf8bdcdf`
+  and `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`;
+  they remain non-authoritative and unreviewed pending the stop-condition
+  disposition below.
+- **Current:** stopped before compiler implementation. Two independent
+  read-only consumer migrations reproduced the same exact [EFF-2] cascade:
+  after the eleven selected claims become value branches and
+  `store_dynamic_length` loses its claim-derived `traps`, `decode_length`, then
+  `copy_distance`, then `decode_fixed` each has no remaining trapping source
+  and must also lose `traps`; after those three removals all four sources pass
+  semantic checking and no fourth effect row changes. The ACTIVE plan instead
+  requires every other effect judgment to remain unchanged, so an executor
+  cannot honestly continue without owner disposition.
+- **Next:** ask the owner whether to amend the ACTIVE plan by authorizing those
+  three forced effect-row removals in addition to the already selected
+  `store_dynamic_length` change. If selected, record the exact amendment and
+  restart independent normative review before implementation; otherwise
+  terminally dispose the task without activating the frozen candidate.
 
 ## Scope and expected touch set
 
