@@ -1,6 +1,6 @@
 # Proof-certificate architecture decision packet
 
-Status: **draft pending task 0048 terminal refresh**
+Status: **final**
 
 Research task: `0049-proof-certificate-architecture`
 
@@ -192,9 +192,20 @@ the initial worktree is the implementation that landed. Commit
 requirement-enforcement design re-decision without changing compiler or
 specification bytes.
 
-Task 0048's terminal coordination commit is still pending at this draft point.
-Task 0049 must rebase onto that commit and replace this sentence with the exact
-terminal revision before the packet becomes final.
+Commit `b88248454ee5ecab8d7d0b8f2f1629be8b49baab` made task 0048
+terminal. Commit `df55e7ca60e14fd32983738c92cef4528f0eda0c` then separately
+selected the Stage 5b provenance plan, and task 0049 was rebased exactly onto
+that revision before finalization. From `d495d8c` through `df55e7c`, the only
+changed paths are the Current Plan, Direction Outline, task-0048 record, and
+obligation-discharge acceptance record. The `compiler/` tree and active
+specification blob are byte-identical between `441cd5b8` and `df55e7c`; the
+MCTS tree is byte-identical between `d495d8c` and `df55e7c`. The active
+specification still hashes to
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+Therefore the landed authority refresh changes neither the implementation and
+line references inspected here nor the binary used by the final measurements.
+The newly ACTIVE Stage 5b plan is separate work and grants this research no
+implementation authority.
 
 ## Current pipelines
 
@@ -857,13 +868,18 @@ is not an implementation-only choice.
 Every step below requires separate owner approval and an independently claimed
 task.
 
-### Stage 0: terminal refresh
+### Stage 0: terminal refresh — completed
 
-- Wait for task 0048 to become terminal.
-- Refresh from its landed revision.
-- Re-read the active specification, outline, plan, task record, relevant design
-  memory, checked model, entailment, provenance, lowering, backend, and tests.
-- Rerun the profiles and replace every candidate-only observation that changed.
+- Task 0048 became terminal at `b8824845`; the separate Stage 5b plan
+  selection landed at `df55e7c`.
+- This research branch was rebased exactly onto `df55e7c`.
+- The active specification, outline, plan, terminal task record, acceptance
+  evidence, relevant live design memory, checked model, entailment,
+  provenance, lowering, backend, and tests were rechecked.
+- The release probes and profiles were rerun on the landed active-v0.26
+  compiler/specification bytes. Object comparison after the terminal refresh
+  proves those measured bytes did not change, so no candidate-only result
+  remains.
 
 ### Stage 1: complete DIAG-2 derivation ledger
 
@@ -949,7 +965,7 @@ and acceptably cheap:
 
 ### Separate performance work
 
-The current closure hotspot warrants its own measured task. Candidate
+The current closure hotspot warrants its own measured task. Possible
 directions include deterministic dense storage, sparse shortest-path queries,
 incremental closure, and shared multi-lane computation for full/unasserted/
 blinded states. This packet selects none of them without a benchmark. The
@@ -1057,15 +1073,16 @@ All three converged on the same boundary: a sparse positive verifier can be
 small, but an exact independent acceptance verifier currently becomes a second
 analyzer.
 
-## Finalization checklist
+## Finalization record
 
-Before replacing `draft` with `final`:
-
-- [ ] task 0048 is terminal and its integration revision is recorded;
-- [ ] this work is refreshed onto that exact revision;
-- [ ] active/candidate terminology is corrected to the landed state;
-- [ ] relevant code and specification line references are rechecked;
-- [ ] performance probes are rerun on the landed bytes;
-- [ ] the adversarial reviewer challenges the final recommendation;
-- [ ] repository checks required by `docs/WORKFLOW.md` pass;
-- [ ] task 0049 moves to `docs/done/` with terminal evidence.
+- [x] task 0048 is terminal at `b8824845` and Stage 5b plan selection is
+  recorded at `df55e7c`;
+- [x] this work is rebased exactly onto `df55e7c`;
+- [x] active/candidate terminology reflects the landed state;
+- [x] relevant code and specification references are unchanged and rechecked;
+- [x] performance probes were rerun on the landed compiler/specification
+  bytes, whose Git object identities remain unchanged through `df55e7c`;
+- [x] two independent adversarial reviews challenged the final recommendation
+  and found no remaining P1/P2 issue;
+- [x] the complete repository gate passes on the final tree;
+- [x] task 0049 moves to `docs/done/` in the same terminal change.
