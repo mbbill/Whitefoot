@@ -101,8 +101,9 @@ fn with_ir<ResultValue>(
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("lowering test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
-        panic!("lowering test source must check");
+    let outcome = check_semantics(resolved);
+    let SemanticOutcome::Complete(checked) = outcome else {
+        panic!("lowering test source must check: {outcome:?}");
     };
     let ir = lower_checked(*checked).expect("checked system program must lower");
     run(&ir)
@@ -672,6 +673,7 @@ fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
             panic!("a kind-declaring entry must lower as a command entry");
         };
         assert_eq!(inputs, &vec![2, 3]);
+        assert!(program.entry_goal().is_none());
         // [SYS-12]: redirection may make the two `Output` owners one sink.
         // Nothing here reads the link; it is retained so a later
         // cross-resource reordering fact cannot treat them as disjoint.
@@ -687,6 +689,7 @@ fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
             panic!("a kind-declaring entry must lower as a command entry");
         };
         assert_eq!(inputs, &vec![2]);
+        assert!(program.entry_goal().is_none());
         // One selected sink has nothing to alias with.
         assert!(aliases.is_empty());
     });
@@ -695,8 +698,64 @@ fn the_entry_retains_the_standard_input_rows_and_the_may_alias_pair() {
         b"fn main() -> own unit pure {\n  return unit;\n}\n",
         |program| {
             assert_eq!(program.entry(), &IrEntry::Unlabelled);
+            assert!(program.entry_goal().is_none());
         },
     );
+}
+
+#[test]
+fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
+    let source = br#"fn bounded(value: own u64) -> own u64 pure requires {
+  check ilt(value, 8_u64) else trap "bounded";
+} {
+  return value;
+}
+
+fn main() -> own unit traps {
+  let value = 4_u64;
+  check ilt(value, 8_u64) else trap "caller evidence";
+  let result = bounded(value: value);
+  return unit;
+}
+"#;
+    with_ir(source, |program| {
+        let bounded = function(program, "bounded");
+        assert!(
+            bounded
+                .blocks()
+                .iter()
+                .flat_map(IrBlock::instructions)
+                .all(|instruction| !matches!(instruction, IrInstruction::Check { .. })),
+            "an ordinary requirement is a call-site obligation and S4 axiom, not executable IR"
+        );
+    });
+}
+
+#[test]
+fn program_start_retains_one_private_straight_line_requirement_goal() {
+    let source = br#"const expected: u8 = 7_u8;
+
+fn main() -> own unit pure requires {
+  let same = ieq(expected, 7_u8);
+  check same else trap "entry requirement";
+} {
+  return unit;
+}
+"#;
+    with_ir(source, |program| {
+        let goal = program
+            .entry_goal()
+            .expect("a required entry must retain one wrapper goal");
+        assert_eq!(goal.ty(goal.condition()), Some(IrType::Bool));
+        assert_eq!(goal.trap().rule_id, "OP-5");
+        assert_eq!(goal.trap().message, "entry requirement");
+        assert_eq!(goal.trap().function, "main");
+        assert!(
+            goal.definitions()
+                .iter()
+                .all(|definition| !matches!(definition.operation(), IrOperation::ArrayFill { .. }))
+        );
+    });
 }
 
 #[test]

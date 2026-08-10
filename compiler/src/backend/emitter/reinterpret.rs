@@ -11,7 +11,7 @@ impl FunctionEmitter<'_, '_> {
     ) -> Result<(), BackendFailure> {
         if result_type != destination_type
             || source_type == destination_type
-            || self.function.value_type(value) != Some(source_type)
+            || self.value_type(value) != Some(source_type)
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -29,8 +29,8 @@ impl FunctionEmitter<'_, '_> {
                 return writeln!(
                     self.output,
                     "  {} = or i{source_width} {}, 0",
-                    value_name(result),
-                    value_name(value)
+                    self.value_name(result),
+                    self.value_name(value)
                 )
                 .map_err(|_| BackendFailure::TextEmission);
             }
@@ -57,9 +57,9 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  {} = {opcode} {} {} to {}",
-            value_name(result),
+            self.value_name(result),
             llvm_type(self.program, source_type)?,
-            value_name(value),
+            self.value_name(value),
             llvm_type(self.program, destination_type)?
         )
         .map_err(|_| BackendFailure::TextEmission)

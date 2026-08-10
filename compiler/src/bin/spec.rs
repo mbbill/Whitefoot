@@ -290,7 +290,7 @@ mod tests {
                 ACTIVE_KERNEL_SPEC_TEXT,
                 &computed_active_spec_hash().to_string(),
             ),
-            Ok(17)
+            Ok(18)
         );
     }
 

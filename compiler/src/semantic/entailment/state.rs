@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::super::goal::{GoalExpression, GoalProjection};
 use super::super::model::{BindingId, IntegerType};
 use super::term::{LengthBound, TermId, TermKind, TermTable, ZERO, type_range};
 
@@ -25,6 +26,87 @@ pub(crate) enum Relation {
     Equal { left: TermId, right: TermId },
     /// `left != right`, one disequality.
     Distinct { left: TermId, right: TermId },
+}
+
+/// Dense identity of one finite typed expression in a concrete function's
+/// [ENT-2] goal universe. Only Bool-typed members may carry signed facts;
+/// non-Bool members are retained solely as ordinary-let origin expansions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct GoalId(pub(crate) u32);
+
+/// The two exact opaque facts [ENT-2] admits for one complete goal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum GoalSign {
+    Positive,
+    Negative,
+}
+
+/// One place read by a complete goal. `length` records ENT-5's fixed-length
+/// boundary: an element write does not invalidate a `len(P)` observation.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct GoalSupport {
+    pub(crate) root: BindingId,
+    pub(crate) projections: Vec<GoalProjection>,
+    pub(crate) length: bool,
+}
+
+/// Derived data attached to one exact typed expression.
+#[derive(Clone, Debug)]
+struct GoalRecord {
+    expression: GoalExpression,
+    projection: Option<Relation>,
+    support: Vec<GoalSupport>,
+}
+
+/// Per-function interning table for [ENT-2]'s finite goal universe.
+#[derive(Default)]
+pub(crate) struct GoalTable {
+    ids: HashMap<GoalExpression, GoalId>,
+    records: Vec<GoalRecord>,
+}
+
+impl GoalTable {
+    pub(crate) fn intern(
+        &mut self,
+        expression: GoalExpression,
+        projection: Option<Relation>,
+        support: Vec<GoalSupport>,
+    ) -> GoalId {
+        if let Some(id) = self.ids.get(&expression).copied() {
+            let record = &mut self.records[id.0 as usize];
+            debug_assert_eq!(record.support, support);
+            if record.projection.is_none() {
+                record.projection = projection;
+            } else {
+                debug_assert_eq!(record.projection, projection);
+            }
+            return id;
+        }
+        let id = GoalId(self.records.len() as u32);
+        self.ids.insert(expression.clone(), id);
+        self.records.push(GoalRecord {
+            expression,
+            projection,
+            support,
+        });
+        id
+    }
+
+    pub(crate) fn expression(&self, id: GoalId) -> &GoalExpression {
+        &self.records[id.0 as usize].expression
+    }
+
+    pub(crate) fn projection(&self, id: GoalId) -> Option<&Relation> {
+        self.records[id.0 as usize].projection.as_ref()
+    }
+
+    pub(crate) fn support(&self, id: GoalId) -> &[GoalSupport] {
+        &self.records[id.0 as usize].support
+    }
+
+    pub(crate) fn ids(&self) -> impl Iterator<Item = GoalId> + '_ {
+        (0..self.records.len()).map(|index| GoalId(index as u32))
+    }
 }
 
 impl Relation {
@@ -100,6 +182,11 @@ pub(crate) struct FactState {
     /// checked-arithmetic or bounded boundary call, under the same no-kill,
     /// no-`set` path discipline the comparison origins carry.
     pub(crate) outcomes: HashMap<BindingId, OutcomeFact>,
+    /// Live exact signed whole-goal facts [ENT-2..ENT-4].
+    pub(crate) opaque: HashSet<(GoalId, GoalSign)>,
+    /// Complete still-valid pure/total origin expansion of an ordinary let.
+    /// The binding's own direct value goal is intentionally separate.
+    pub(crate) goal_origins: HashMap<BindingId, GoalId>,
 }
 
 impl FactState {
@@ -116,6 +203,12 @@ impl FactState {
             Relation::Distinct { left, right } => {
                 self.distinct.insert(ordered(*left, *right));
             }
+        }
+    }
+
+    pub(crate) fn establish_goal(&mut self, goal: GoalId, sign: GoalSign) {
+        if !self.all_derivable {
+            self.opaque.insert((goal, sign));
         }
     }
 
@@ -151,6 +244,16 @@ impl FactState {
         });
         self.outcomes.retain(|_, outcome| !killed(outcome.base));
     }
+
+    /// Removes signed facts and ordinary-let origin expansions whose exact
+    /// goal support is invalidated by one ENT-5 event.
+    pub(crate) fn kill_goals(&mut self, mut killed: impl FnMut(GoalId) -> bool) {
+        if self.all_derivable {
+            return;
+        }
+        self.opaque.retain(|(goal, _)| !killed(*goal));
+        self.goal_origins.retain(|_, goal| !killed(*goal));
+    }
 }
 
 fn ordered(left: TermId, right: TermId) -> (TermId, TermId) {
@@ -167,6 +270,7 @@ pub(crate) struct ClosedState {
     all_derivable: bool,
     bounds: HashMap<(TermId, TermId), i128>,
     distinct: HashSet<(TermId, TermId)>,
+    opaque: HashSet<(GoalId, GoalSign)>,
 }
 
 impl ClosedState {
@@ -205,15 +309,35 @@ impl ClosedState {
             }
         }
     }
+
+    /// Exact signed-goal derivability: a retained opaque sign or its one
+    /// comparison-root projection, with no Boolean decomposition.
+    pub(crate) fn derives_goal(&self, goal: GoalId, sign: GoalSign, goals: &GoalTable) -> bool {
+        if self.all_derivable || self.opaque.contains(&(goal, sign)) {
+            return true;
+        }
+        let Some(relation) = goals.projection(goal) else {
+            return false;
+        };
+        match sign {
+            GoalSign::Positive => self.derives(relation),
+            GoalSign::Negative => self.derives(&relation.negated()),
+        }
+    }
+
+    pub(crate) fn holds_opaque(&self, goal: GoalId, sign: GoalSign) -> bool {
+        !self.all_derivable && self.opaque.contains(&(goal, sign))
+    }
 }
 
 /// Computes the [ENT-4] closure of `state` over the registered terms.
-pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
+pub(crate) fn close(state: &FactState, terms: &TermTable, goals: &GoalTable) -> ClosedState {
     if state.all_derivable {
         return ClosedState {
             all_derivable: true,
             bounds: HashMap::new(),
             distinct: HashSet::new(),
+            opaque: HashSet::new(),
         };
     }
     let mut bounds = state.bounds.clone();
@@ -239,7 +363,7 @@ pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
                 add(&mut bounds, id, ZERO, maximum);
                 add(&mut bounds, ZERO, id, -minimum);
             }
-            TermKind::Length(_) => {
+            TermKind::Length(_) | TermKind::ProjectedLength(_) => {
                 let (minimum, maximum) = type_range(IntegerType::U64);
                 add(&mut bounds, id, ZERO, maximum);
                 add(&mut bounds, ZERO, id, -minimum);
@@ -306,14 +430,24 @@ pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
             break;
         }
     }
-    let contradictory = ids
+    let l0_contradictory = ids
         .iter()
         .any(|id| bounds.get(&(*id, *id)).is_some_and(|bound| *bound < 0));
-    ClosedState {
-        all_derivable: contradictory,
+    let mut closed = ClosedState {
+        all_derivable: l0_contradictory,
         bounds,
         distinct: state.distinct.clone(),
+        opaque: state.opaque.clone(),
+    };
+    let goal_contradictory = !closed.all_derivable
+        && goals.ids().any(|goal| {
+            closed.derives_goal(goal, GoalSign::Positive, goals)
+                && closed.derives_goal(goal, GoalSign::Negative, goals)
+        });
+    if goal_contradictory {
+        closed.all_derivable = true;
     }
+    closed
 }
 
 /// Materializes the [ENT-4] least closure as a live flow state.
@@ -322,8 +456,12 @@ pub(crate) fn close(state: &FactState, terms: &TermTable) -> ClosedState {
 /// the complete post-capture closure *before* the counted loop's continuing
 /// kill subtraction, so consequences whose support no longer includes a
 /// mutable endpoint source must become independently live facts first.
-pub(crate) fn materialize_closure(state: &FactState, terms: &TermTable) -> FactState {
-    let closed = close(state, terms);
+pub(crate) fn materialize_closure(
+    state: &FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+) -> FactState {
+    let closed = close(state, terms, goals);
     if closed.all_derivable {
         return FactState {
             all_derivable: true,
@@ -336,6 +474,8 @@ pub(crate) fn materialize_closure(state: &FactState, terms: &TermTable) -> FactS
         distinct: closed.distinct,
         origins: state.origins.clone(),
         outcomes: state.outcomes.clone(),
+        opaque: closed.opaque,
+        goal_origins: state.goal_origins.clone(),
     }
 }
 
@@ -343,15 +483,14 @@ pub(crate) fn materialize_closure(state: &FactState, terms: &TermTable) -> FactS
 /// kills. Each input is closed first; the join keeps, per ordered term pair,
 /// the weakest bound held by all, and each disequality held by all. The empty
 /// join is the contradictory all-derivable state.
-pub(crate) fn join(states: &[FactState], terms: &TermTable) -> FactState {
-    // An all-derivable input contains every fact, so it never narrows the
-    // join; the join is over the remaining states, and with none left it is
-    // the empty join: the contradictory all-derivable state itself.
-    let contributing: Vec<&FactState> =
-        states.iter().filter(|state| !state.all_derivable).collect();
-    let closed: Vec<ClosedState> = contributing
+pub(crate) fn join(states: &[FactState], terms: &TermTable, goals: &GoalTable) -> FactState {
+    // Close before filtering: a contradiction established immediately before
+    // an edge is already the absorbing all-derivable state even when no kill
+    // had occasion to materialize its flag.
+    let closed: Vec<ClosedState> = states
         .iter()
-        .map(|state| close(state, terms))
+        .map(|state| close(state, terms, goals))
+        .filter(|state| !state.contradictory())
         .collect();
     let Some((first, rest)) = closed.split_first() else {
         return FactState {
@@ -380,14 +519,17 @@ pub(crate) fn join(states: &[FactState], terms: &TermTable) -> FactState {
     }
     // Comparison and outcome origins are path conditions, not facts; one
     // survives a join only when every contributing path carries the same one.
-    let mut origins = contributing
-        .first()
-        .map(|state| state.origins.clone())
-        .unwrap_or_default();
-    let mut outcomes = contributing
-        .first()
-        .map(|state| state.outcomes.clone())
-        .unwrap_or_default();
+    let mut opaque = first.opaque.clone();
+    for state in rest {
+        opaque.retain(|fact| state.opaque.contains(fact));
+    }
+    let contributing: Vec<&FactState> = states
+        .iter()
+        .filter(|state| !close(state, terms, goals).contradictory())
+        .collect();
+    let mut origins = contributing[0].origins.clone();
+    let mut outcomes = contributing[0].outcomes.clone();
+    let mut goal_origins = contributing[0].goal_origins.clone();
     for state in contributing.iter().skip(1) {
         origins.retain(|binding, relation| {
             state
@@ -401,6 +543,12 @@ pub(crate) fn join(states: &[FactState], terms: &TermTable) -> FactState {
                 .get(binding)
                 .is_some_and(|other| other == outcome)
         });
+        goal_origins.retain(|binding, goal| {
+            state
+                .goal_origins
+                .get(binding)
+                .is_some_and(|other| other == goal)
+        });
     }
     FactState {
         all_derivable: false,
@@ -408,5 +556,7 @@ pub(crate) fn join(states: &[FactState], terms: &TermTable) -> FactState {
         distinct,
         origins,
         outcomes,
+        opaque,
+        goal_origins,
     }
 }

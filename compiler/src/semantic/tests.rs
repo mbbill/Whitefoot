@@ -20,6 +20,7 @@ mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
 mod options;
+mod provenance;
 mod reinterpret;
 mod requires;
 mod slices;
@@ -85,7 +86,16 @@ fn with_semantics<ResultValue>(
     ) -> ResultValue,
 ) -> ResultValue {
     let inputs = [SourceInput::new("test.wf", source)];
-    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+    with_semantics_inputs(&inputs, run)
+}
+
+fn with_semantics_inputs<ResultValue>(
+    inputs: &[SourceInput<'_>],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        SemanticOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let Ok(bundle) = SourceBundle::with_limits(inputs, SOURCE_LIMITS) else {
         panic!("semantic test bundle must be valid");
     };
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {

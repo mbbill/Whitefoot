@@ -257,7 +257,9 @@ fn statement_is_neutral(
 /// boolean operations, enum equality, numeric conversion, reinterpret.
 fn expression_is_pure(expression: &CheckedExpression) -> bool {
     match expression {
-        CheckedExpression::Constant(_) | CheckedExpression::Binding { .. } => true,
+        CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
+        | CheckedExpression::Binding { .. } => true,
         CheckedExpression::IntegerOperation {
             trap: None,
             arguments,
@@ -314,12 +316,14 @@ fn needle_test(
 }
 
 fn integer_literal(expression: &CheckedExpression) -> Option<u64> {
-    let CheckedExpression::Constant(crate::semantic::CheckedValue::Integer { bits, .. }) =
-        expression
-    else {
-        return None;
-    };
-    Some(*bits)
+    match expression {
+        CheckedExpression::Constant(crate::semantic::CheckedValue::Integer { bits, .. })
+        | CheckedExpression::NamedConstant {
+            value: crate::semantic::CheckedValue::Integer { bits, .. },
+            ..
+        } => Some(*bits),
+        _ => None,
+    }
 }
 
 fn outside_binding(

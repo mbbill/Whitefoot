@@ -11,7 +11,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         destination_type: IrType,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        if source_type == destination_type || self.function.value_type(value) != Some(source_type) {
+        if source_type == destination_type || self.value_type(value) != Some(source_type) {
             return Err(BackendFailure::InvalidIr);
         }
         match (source_type, destination_type) {
@@ -62,7 +62,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             if result_type != destination_type {
                 return Err(BackendFailure::InvalidIr);
             }
-            value_name(result)
+            self.value_name(result)
         } else {
             format!("%{}", self.next_temporary()?)
         };
@@ -113,7 +113,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{ok_tag} = insertvalue {result_ty} zeroinitializer, i32 0, 0\n  %{ok_value} = insertvalue {result_ty} %{ok_tag}, {destination_ty} {converted}, 1\n  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} 0, 2\n  {} = select i1 {valid}, {result_ty} %{ok_value}, {result_ty} %{error_value}",
-            value_name(result)
+            self.value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -127,7 +127,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         destination_width: u8,
         destination_signed: bool,
     ) -> Result<(), BackendFailure> {
-        let source = value_name(value);
+        let source = self.value_name(value);
         let opcode = if source_width > destination_width {
             "trunc"
         } else if source_width < destination_width && source_signed && destination_signed {
@@ -153,7 +153,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         destination_width: u8,
         destination_signed: bool,
     ) -> Result<String, BackendFailure> {
-        let value = value_name(value);
+        let value = self.value_name(value);
         if source_signed == destination_signed {
             if source_width <= destination_width {
                 return Err(BackendFailure::InvalidIr);

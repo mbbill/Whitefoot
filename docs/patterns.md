@@ -161,11 +161,14 @@ of its effects and return a value such as `NeedMoreOutput`; do not turn that
 outcome into a contract trap.  A preflight/exact-allocation API is appropriate
 only when its validated size remains bound to the input it describes.  Never
 put a merely common-case size or a rare worst-case allocation in `requires`.
-Current value: `requires` executes the exact API restriction at callee entry,
-and recoverable boundary control preserves the useful small-buffer domain. The
-current compiler does not discharge repeated bounds checks or produce a proof
-obligation report. Historical proof evidence measured that consumer; any future
-guarded fast region must re-establish it without weakening OP-4 safety.
+Current value: `requires` states one complete API proof goal. Every ordinary
+caller must establish that exact typed predicate before transfer; the callee
+body receives it as an axiom and executes no requirement prologue. A real
+process entry still checks its own goal dynamically. Recoverable boundary
+control preserves the useful small-buffer domain. The current compiler can use
+the body axiom to discharge existing L0 bounds obligations but produces no
+general proof-obligation report or Boolean theorem prover. Any future guarded
+fast region must re-establish its authority without weakening OP-4 safety.
 Replaces: per-store bounds checks in fixed-ratio kernels, unconditional
 maximum-size caller allocation, retry-after-partial-token mutation, and using
 `requires` as an optimizer hint.

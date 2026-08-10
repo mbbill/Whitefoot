@@ -171,6 +171,12 @@ fn main() -> own unit allocates(heap), traps {
   set man_input[2_u64] = 110_u8;
   let man_output = buffer_new(4_u64, 0_u8);
   region 'man_region {
+    let man_required_out_length = len(man_output);
+    let man_required_input_length = len(man_input);
+    let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
+    let man_required_covered_input = man_required_out_groups *wrap 3_u64;
+    let man_capacity = ile(man_required_input_length, man_required_covered_input);
+    claim man_output_capacity: man_capacity because "the four-byte output covers the complete Man input";
     let man_length = encode<'man_region>(out: &uniq 'man_region man_output, input: move man_input);
     check ieq(man_length, 4_u64) else trap "Man length drift";
   }
@@ -185,6 +191,12 @@ fn main() -> own unit allocates(heap), traps {
   let m_input = buffer_new(1_u64, 77_u8);
   let m_output = buffer_new(4_u64, 0_u8);
   region 'm_region {
+    let m_required_out_length = len(m_output);
+    let m_required_input_length = len(m_input);
+    let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
+    let m_required_covered_input = m_required_out_groups *wrap 3_u64;
+    let m_capacity = ile(m_required_input_length, m_required_covered_input);
+    claim m_output_capacity: m_capacity because "the four-byte output covers the complete M input";
     let m_length = encode<'m_region>(out: &uniq 'm_region m_output, input: move m_input);
     check ieq(m_length, 4_u64) else trap "M length drift";
   }
@@ -201,6 +213,12 @@ fn main() -> own unit allocates(heap), traps {
   set ma_input[1_u64] = 97_u8;
   let ma_output = buffer_new(4_u64, 0_u8);
   region 'ma_region {
+    let ma_required_out_length = len(ma_output);
+    let ma_required_input_length = len(ma_input);
+    let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
+    let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
+    let ma_capacity = ile(ma_required_input_length, ma_required_covered_input);
+    claim ma_output_capacity: ma_capacity because "the four-byte output covers the complete Ma input";
     let ma_length = encode<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input);
     check ieq(ma_length, 4_u64) else trap "Ma length drift";
   }

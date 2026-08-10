@@ -13,18 +13,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         referent: IrAddressed,
     ) -> Result<(), BackendFailure> {
         if ty != IrType::Address(referent)
-            || self.function.value_type(value) != Some(referent.ty())
+            || self.value_type(value) != Some(referent.ty())
             || !self.referent_is_stored(referent)?
         {
             return Err(BackendFailure::InvalidIr);
         }
         let referent_type = llvm_type(self.program, referent.ty())?;
-        self.declare_entry_slot(&value_name(result), &referent_type)?;
+        self.declare_entry_slot(&self.value_name(result), &referent_type)?;
         writeln!(
             self.output,
             "  store {referent_type} {}, ptr {}",
-            value_name(value),
-            value_name(result)
+            self.value_name(value),
+            self.value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -36,17 +36,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         address: IrValueId,
         referent: IrAddressed,
     ) -> Result<(), BackendFailure> {
-        if ty != referent.ty()
-            || self.function.value_type(address) != Some(IrType::Address(referent))
-        {
+        if ty != referent.ty() || self.value_type(address) != Some(IrType::Address(referent)) {
             return Err(BackendFailure::InvalidIr);
         }
         writeln!(
             self.output,
             "  {} = load {}, ptr {}",
-            value_name(result),
+            self.value_name(result),
             llvm_type(self.program, ty)?,
-            value_name(address)
+            self.value_name(address)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -57,8 +55,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         value: IrValueId,
         referent: IrAddressed,
     ) -> Result<(), BackendFailure> {
-        if self.function.value_type(address) != Some(IrType::Address(referent))
-            || self.function.value_type(value) != Some(referent.ty())
+        if self.value_type(address) != Some(IrType::Address(referent))
+            || self.value_type(value) != Some(referent.ty())
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -66,8 +64,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output,
             "  store {} {}, ptr {}",
             llvm_type(self.program, referent.ty())?,
-            value_name(value),
-            value_name(address)
+            self.value_name(value),
+            self.value_name(address)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -96,7 +94,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  {} = select i1 true, {llvm_ty} {rendered}, {llvm_ty} {rendered}",
-            value_name(result)
+            self.value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -118,19 +116,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let mut rendered = Vec::with_capacity(arguments.len());
         for (argument, (_, parameter_type)) in arguments.iter().zip(target.parameters()) {
-            if self.function.value_type(*argument) != Some(*parameter_type) {
+            if self.value_type(*argument) != Some(*parameter_type) {
                 return Err(BackendFailure::InvalidIr);
             }
             rendered.push(format!(
                 "{} {}",
                 llvm_type(self.program, *parameter_type)?,
-                value_name(*argument)
+                self.value_name(*argument)
             ));
         }
         writeln!(
             self.output,
             "  {} = call {} @{}({})",
-            value_name(result),
+            self.value_name(result),
             llvm_type(self.program, ty)?,
             source_symbol(target.name()),
             rendered.join(", ")
@@ -148,22 +146,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if ty != IrType::Bool
             || arguments
                 .iter()
-                .any(|argument| self.function.value_type(*argument) != Some(IrType::Bool))
+                .any(|argument| self.value_type(*argument) != Some(IrType::Bool))
         {
             return Err(BackendFailure::InvalidIr);
         }
         let (opcode, left, right) = match (operation, arguments) {
-            (IrBooleanOperation::And, [left, right]) => ("and", *left, value_name(*right)),
-            (IrBooleanOperation::Or, [left, right]) => ("or", *left, value_name(*right)),
-            (IrBooleanOperation::ExclusiveOr, [left, right]) => ("xor", *left, value_name(*right)),
+            (IrBooleanOperation::And, [left, right]) => ("and", *left, self.value_name(*right)),
+            (IrBooleanOperation::Or, [left, right]) => ("or", *left, self.value_name(*right)),
+            (IrBooleanOperation::ExclusiveOr, [left, right]) => {
+                ("xor", *left, self.value_name(*right))
+            }
             (IrBooleanOperation::Not, [value]) => ("xor", *value, "true".to_owned()),
             _ => return Err(BackendFailure::InvalidIr),
         };
         writeln!(
             self.output,
             "  {} = {opcode} i1 {}, {right}",
-            value_name(result),
-            value_name(left)
+            self.value_name(result),
+            self.value_name(left)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -180,18 +180,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             || !is_tag_only_type(self.program, operand_type)?
             || arguments
                 .iter()
-                .any(|argument| self.function.value_type(*argument) != Some(operand_type))
+                .any(|argument| self.value_type(*argument) != Some(operand_type))
         {
             return Err(BackendFailure::InvalidIr);
         }
         writeln!(
             self.output,
             "  {} = icmp {} {} {}, {}",
-            value_name(result),
+            self.value_name(result),
             if equal { "eq" } else { "ne" },
             llvm_type(self.program, operand_type)?,
-            value_name(arguments[0]),
-            value_name(arguments[1])
+            self.value_name(arguments[0]),
+            self.value_name(arguments[1])
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -216,7 +216,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         for (value, field) in fields.iter().zip(declared_fields) {
-            if self.function.value_type(*value) != Some(field.ty()) {
+            if self.value_type(*value) != Some(field.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -254,7 +254,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         for (value, field) in fields.iter().zip(selected.fields()) {
-            if self.function.value_type(*value) != Some(field.ty()) {
+            if self.value_type(*value) != Some(field.ty()) {
                 return Err(BackendFailure::InvalidIr);
             }
         }
@@ -263,7 +263,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             writeln!(
                 self.output,
                 "  {} = or {llvm_ty} 0, {variant}",
-                value_name(result)
+                self.value_name(result)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             return Ok(());
@@ -290,7 +290,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             writeln!(
                 self.output,
                 "  {} = select i1 true, {aggregate_ty} zeroinitializer, {aggregate_ty} zeroinitializer",
-                value_name(result)
+                self.value_name(result)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             return Ok(());
@@ -303,7 +303,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .value_type(value)
                 .ok_or(BackendFailure::InvalidIr)?;
             let output = if ordinal + 1 == total {
-                value_name(result)
+                self.value_name(result)
             } else {
                 format!("%{}", self.next_temporary()?)
             };
@@ -311,7 +311,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.output,
                 "  {output} = insertvalue {aggregate_ty} {base}, {} {}, {index}",
                 llvm_type(self.program, field_ty)?,
-                value_name(value)
+                self.value_name(value)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             base = output;
@@ -331,7 +331,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let total = inserts.len();
         for (ordinal, (index, value)) in inserts.into_iter().enumerate() {
             let output = if ordinal + 1 == total {
-                value_name(result)
+                self.value_name(result)
             } else {
                 format!("%{}", self.next_temporary()?)
             };
@@ -345,7 +345,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         self.output,
                         "  {output} = insertvalue {aggregate_ty} {base}, {} {}, {index}",
                         llvm_type(self.program, field_ty)?,
-                        value_name(value)
+                        self.value_name(value)
                     )
                     .map_err(|_| BackendFailure::TextEmission)?;
                 }
@@ -371,7 +371,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         field: u32,
         consume_root: bool,
     ) -> Result<(), BackendFailure> {
-        if self.function.value_type(aggregate) != Some(IrType::Nominal(nominal)) {
+        if self.value_type(aggregate) != Some(IrType::Nominal(nominal)) {
             return Err(BackendFailure::InvalidIr);
         }
         let IrNominalKind::Struct { fields } = self.nominal(nominal)?.kind() else {
@@ -387,9 +387,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  {} = extractvalue {} {}, {field}",
-            value_name(result),
+            self.value_name(result),
             llvm_type(self.program, IrType::Nominal(nominal))?,
-            value_name(aggregate)
+            self.value_name(aggregate)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -403,7 +403,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         field: u32,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        if ty != IrType::Nominal(nominal) || self.function.value_type(aggregate) != Some(ty) {
+        if ty != IrType::Nominal(nominal) || self.value_type(aggregate) != Some(ty) {
             return Err(BackendFailure::InvalidIr);
         }
         let IrNominalKind::Struct { fields } = self.nominal(nominal)?.kind() else {
@@ -413,17 +413,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .get(field as usize)
             .map(|field| field.ty())
             .ok_or(BackendFailure::InvalidIr)?;
-        if self.function.value_type(value) != Some(field_ty) {
+        if self.value_type(value) != Some(field_ty) {
             return Err(BackendFailure::InvalidIr);
         }
         writeln!(
             self.output,
             "  {} = insertvalue {} {}, {} {}, {field}",
-            value_name(result),
+            self.value_name(result),
             llvm_type(self.program, ty)?,
-            value_name(aggregate),
+            self.value_name(aggregate),
             llvm_type(self.program, field_ty)?,
-            value_name(value)
+            self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -437,7 +437,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         variant: u32,
         field: u32,
     ) -> Result<(), BackendFailure> {
-        if self.function.value_type(aggregate) != Some(IrType::Nominal(nominal)) {
+        if self.value_type(aggregate) != Some(IrType::Nominal(nominal)) {
             return Err(BackendFailure::InvalidIr);
         }
         let IrNominalKind::Enum { variants } = self.nominal(nominal)?.kind() else {
@@ -459,9 +459,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  {} = extractvalue {} {}, {index}",
-            value_name(result),
+            self.value_name(result),
             llvm_type(self.program, IrType::Nominal(nominal))?,
-            value_name(aggregate)
+            self.value_name(aggregate)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

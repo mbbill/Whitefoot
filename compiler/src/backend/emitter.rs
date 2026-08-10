@@ -16,7 +16,7 @@ mod reinterpret;
 mod slice;
 mod system;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
 
 use super::qualification::{
@@ -25,9 +25,10 @@ use super::qualification::{
 use super::target::{TargetLayout, TargetLayoutFailure, validate_program};
 use crate::{
     IrAddressed, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrEntry,
-    IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction, IrIntegerOperation,
-    IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram, IrRuntimeTargetObligations,
-    IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType, IrValueId, SystemResourceType,
+    IrEntryGoal, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue, IrInstruction,
+    IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation, IrProgram,
+    IrRuntimeTargetObligations, IrTargetDomainObligation, IrTerminator, IrTrapSite, IrType,
+    IrValueId, SystemResourceType,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -112,6 +113,16 @@ fn emit_llvm_for(
             .emit()?,
         );
     }
+    // Render the compiler-owned wrapper before declarations are written: an
+    // entry-only goal may be the sole user of one trap record or intrinsic.
+    let entry = system::emit_entry(
+        program,
+        &qualification,
+        main,
+        target,
+        &mut traps,
+        &mut intrinsics,
+    )?;
     let has_matches = program.functions().iter().any(|function| {
         function
             .blocks()
@@ -205,7 +216,7 @@ fn emit_llvm_for(
         text.push('\n');
         text.push_str(&functions);
     }
-    text.push_str(&system::emit_entry(program, &qualification, main)?);
+    text.push_str(&entry);
     Ok(LlvmModule { text })
 }
 
@@ -354,6 +365,8 @@ struct FunctionEmitter<'program, 'state> {
     /// site reads the resolved row; none consults the table again.
     qualification: &'program Qualification,
     function: &'program IrFunction,
+    entry_goal: Option<&'program IrEntryGoal>,
+    entry_value_names: HashMap<IrValueId, String>,
     target: TargetLayout,
     traps: &'state mut Vec<Vec<u8>>,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
@@ -383,6 +396,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             program,
             qualification,
             function,
+            entry_goal: None,
+            entry_value_names: HashMap::new(),
             target,
             traps,
             intrinsics,
@@ -391,6 +406,35 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             entry_prelude: String::new(),
             temporary: 0,
         }
+    }
+
+    fn with_entry_goal(
+        mut self,
+        goal: &'program IrEntryGoal,
+        input_names: Vec<String>,
+    ) -> Result<Self, BackendFailure> {
+        if goal.inputs().len() != input_names.len()
+            || goal.inputs().len() != self.function.parameters().len()
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let mut names = HashMap::new();
+        for (((value, ty), (_, parameter_ty)), name) in goal
+            .inputs()
+            .iter()
+            .zip(self.function.parameters())
+            .zip(input_names)
+        {
+            if ty != parameter_ty
+                || goal.ty(*value) != Some(*ty)
+                || names.insert(*value, name).is_some()
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+        }
+        self.entry_goal = Some(goal);
+        self.entry_value_names = names;
+        Ok(self)
     }
 
     fn emit(mut self) -> Result<String, BackendFailure> {
@@ -410,7 +454,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.output,
                 "{} {}",
                 llvm_type(self.program, *ty)?,
-                value_name(*value)
+                self.value_name(*value)
             )
             .map_err(|_| BackendFailure::TextEmission)?;
         }
@@ -436,6 +480,34 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output.insert_str(anchor, &self.entry_prelude);
         }
         Ok(self.output)
+    }
+
+    fn emit_entry_goal(mut self) -> Result<EntryGoalEmission, BackendFailure> {
+        let goal = self.entry_goal.ok_or(BackendFailure::InvalidIr)?;
+        for (index, definition) in goal.definitions().iter().enumerate() {
+            if !entry_goal_operation(definition.operation()) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            self.emit_definition(
+                IrBlockId::from_index(0).map_err(|_| BackendFailure::CounterOverflow)?,
+                index,
+                definition.result(),
+                definition.ty(),
+                definition.operation(),
+            )?;
+        }
+        if !self.entry_prelude.is_empty() || self.value_type(goal.condition()) != Some(IrType::Bool)
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let condition = self.value_name(goal.condition());
+        let trap = self.register_trap(goal.trap())?;
+        Ok(EntryGoalEmission {
+            definitions: self.output,
+            condition,
+            trap,
+            trap_length: self.traps[trap].len(),
+        })
     }
 
     fn collect_incoming(&self) -> Result<Vec<Vec<Incoming>>, BackendFailure> {
@@ -482,7 +554,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             write!(
                 self.output,
                 "  {} = phi {} ",
-                value_name(*parameter),
+                self.value_name(*parameter),
                 llvm_type(self.program, *ty)?
             )
             .map_err(|_| BackendFailure::TextEmission)?;
@@ -491,7 +563,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .arguments
                     .get(parameter_index)
                     .ok_or(BackendFailure::InvalidIr)?;
-                if self.function.value_type(argument) != Some(*ty) {
+                if self.value_type(argument) != Some(*ty) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 if edge_index != 0 {
@@ -500,7 +572,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 write!(
                     self.output,
                     "[ {}, %{} ]",
-                    value_name(argument),
+                    self.value_name(argument),
                     block_exit_label(edge.predecessor, self.block(edge.predecessor)?)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -523,14 +595,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 operation,
             } => self.emit_definition(block, index, *result, *ty, operation),
             IrInstruction::Check { condition, trap } => {
-                if self.function.value_type(*condition) != Some(IrType::Bool) {
+                if self.value_type(*condition) != Some(IrType::Bool) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let trap_id = self.register_trap(trap)?;
                 writeln!(
                     self.output,
                     "  br i1 {}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-                    value_name(*condition),
+                    self.value_name(*condition),
                     check_continue_label(block, index),
                     check_trap_label(block, index),
                     check_trap_label(block, index),
@@ -561,7 +633,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         ty: IrType,
         operation: &IrOperation,
     ) -> Result<(), BackendFailure> {
-        if self.function.value_type(result) != Some(ty) {
+        if self.value_type(result) != Some(ty) {
             return Err(BackendFailure::InvalidIr);
         }
         match operation {
@@ -715,7 +787,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     return Err(BackendFailure::InvalidIr);
                 }
                 for (argument, (_, ty)) in arguments.iter().zip(target_block.parameters()) {
-                    if self.function.value_type(*argument) != Some(*ty) {
+                    if self.value_type(*argument) != Some(*ty) {
                         return Err(BackendFailure::InvalidIr);
                     }
                 }
@@ -724,7 +796,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .map_err(|_| BackendFailure::TextEmission)
             }
             IrTerminator::Return { value, drops } => {
-                if self.function.value_type(*value) != Some(self.function.result()) {
+                if self.value_type(*value) != Some(self.function.result()) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 self.emit_drops(drops)?;
@@ -732,7 +804,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.output,
                     "  ret {} {}",
                     llvm_type(self.program, self.function.result())?,
-                    value_name(*value)
+                    self.value_name(*value)
                 )
                 .map_err(|_| BackendFailure::TextEmission)
             }
@@ -778,13 +850,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ) -> Result<(String, String), BackendFailure> {
         match enum_type {
             IrEnumType::Bool => {
-                if self.function.value_type(scrutinee) != Some(IrType::Bool) {
+                if self.value_type(scrutinee) != Some(IrType::Bool) {
                     return Err(BackendFailure::InvalidIr);
                 }
-                Ok((value_name(scrutinee), "i1".to_owned()))
+                Ok((self.value_name(scrutinee), "i1".to_owned()))
             }
             IrEnumType::Nominal(nominal) => {
-                if self.function.value_type(scrutinee) != Some(IrType::Nominal(nominal)) {
+                if self.value_type(scrutinee) != Some(IrType::Nominal(nominal)) {
                     return Err(BackendFailure::InvalidIr);
                 }
                 let data = self.nominal(nominal)?;
@@ -793,7 +865,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 };
                 if data.is_tag_only_enum() {
                     return Ok((
-                        value_name(scrutinee),
+                        self.value_name(scrutinee),
                         llvm_type(self.program, IrType::Nominal(nominal))?,
                     ));
                 }
@@ -802,7 +874,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     self.output,
                     "  %{temporary} = extractvalue {} {}, 0",
                     llvm_type(self.program, IrType::Nominal(nominal))?,
-                    value_name(scrutinee)
+                    self.value_name(scrutinee)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 Ok((format!("%{temporary}"), "i32".to_owned()))
@@ -829,9 +901,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn emit_drop(&mut self, drop: IrDrop) -> Result<(), BackendFailure> {
-        if self.function.value_type(drop.value()) != Some(drop.ty()) {
+        if self.value_type(drop.value()) != Some(drop.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
+        let value_name = self.value_name(drop.value());
         match drop.ty() {
             IrType::Array { .. } | IrType::Slice { .. } => {}
             IrType::Buffer { .. } => {
@@ -841,7 +914,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     &mut self.output,
                     &mut self.temporary,
                     drop.ty(),
-                    value_name(drop.value()),
+                    value_name.clone(),
                 )?;
             }
             IrType::Nominal(nominal) if !self.nominal(nominal)?.is_tag_only_enum() => {
@@ -861,7 +934,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                             &mut self.output,
                             &mut self.temporary,
                             contract,
-                            &value_name(drop.value()),
+                            &value_name,
                         )?;
                     }
                     IrNominalKind::Enum { .. } | IrNominalKind::Box { .. } => {
@@ -872,7 +945,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                                 &mut self.output,
                                 &mut self.temporary,
                                 drop.ty(),
-                                value_name(drop.value()),
+                                value_name.clone(),
                             )?;
                         }
                     }
@@ -880,8 +953,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             }
             _ => return Err(BackendFailure::InvalidIr),
         }
-        writeln!(self.output, "  ; drop {}", value_name(drop.value()))
-            .map_err(|_| BackendFailure::TextEmission)
+        writeln!(self.output, "  ; drop {value_name}").map_err(|_| BackendFailure::TextEmission)
     }
 
     fn emit_drops(&mut self, drops: &[IrDrop]) -> Result<(), BackendFailure> {
@@ -916,8 +988,56 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .temporary
             .checked_add(1)
             .ok_or(BackendFailure::CounterOverflow)?;
-        Ok(format!("t{current}"))
+        Ok(if self.entry_goal.is_some() {
+            format!("entry.goal.t{current}")
+        } else {
+            format!("t{current}")
+        })
     }
+
+    fn value_type(&self, value: IrValueId) -> Option<IrType> {
+        self.entry_goal
+            .map_or_else(|| self.function.value_type(value), |goal| goal.ty(value))
+    }
+
+    fn value_name(&self, value: IrValueId) -> String {
+        if self.entry_goal.is_some() {
+            self.entry_value_names
+                .get(&value)
+                .cloned()
+                .unwrap_or_else(|| format!("%entry.goal.v{}", value.ordinal()))
+        } else {
+            value_name(value)
+        }
+    }
+}
+
+struct EntryGoalEmission {
+    definitions: String,
+    condition: String,
+    trap: usize,
+    trap_length: usize,
+}
+
+pub(super) fn entry_goal_operation(operation: &IrOperation) -> bool {
+    matches!(
+        operation,
+        IrOperation::Constant(_)
+            | IrOperation::Integer { trap: None, .. }
+            | IrOperation::Float { .. }
+            | IrOperation::NumericConversion { .. }
+            | IrOperation::Reinterpret { .. }
+            | IrOperation::Boolean { .. }
+            | IrOperation::EnumEquality { .. }
+            | IrOperation::BufferLength { .. }
+            | IrOperation::SliceLength { .. }
+            | IrOperation::BoxDeref { .. }
+            | IrOperation::ProjectStruct {
+                consume_root: false,
+                ..
+            }
+            | IrOperation::Load { .. }
+    )
 }
 
 fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, BackendFailure> {

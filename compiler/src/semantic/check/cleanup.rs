@@ -263,6 +263,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.collect_expression_release_sites(value, sites)?;
             }
             CheckedExpression::Constant(_)
+            | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
             | CheckedExpression::ArrayLength { .. }
             | CheckedExpression::BufferLength { .. }

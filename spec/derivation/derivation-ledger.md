@@ -2,7 +2,7 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-v0.25 authority at `spec/kernel-spec.md`; immutable versioned files retain the
+v0.26 authority at `spec/kernel-spec.md`; immutable versioned files retain the
 superseded authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -911,3 +911,36 @@ The native grammar inventory is 70 productions, 85 decisions, 96 terminal
 predicates, and 128 rules. Fixed spellings add `for`, `in`, and `..`; the
 scoped 448-file census found no accepted identifier collision. Derivation
 statuses and totals remain 80 derived · 48 existence-only · 0 underived.
+
+## v0.26 amendment — `requires` as one atomic call-site goal (activated 2026-08-09)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.26, at SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+The superseded v0.25 bytes are immutable at
+`spec/kernel-spec-v0.25.md`, SHA-256
+`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+
+v0.26 adds and removes no numbered rules. It modifies fifteen existing rules
+at twenty-two anchored sites: OP-5, FN-1, FN-8, EFF-2, PROG-3, DIAG-1,
+DIAG-2, DIAG-3, GATE-1, and ENT-1 through ENT-6. The existing FN-8 clause
+surface alpha-expands into one finite typed goal. Every ordinary call proves
+the exact instantiated goal before transfer and callee effects; the body
+receives it through S4, and no ordinary callee executes a fallback requirement
+check. The two implemented process entries remain checked dynamic boundaries.
+The same amendment makes a requirement effectless, admits otherwise-pure
+required bodies and generic requirement templates, and adds signed opaque goal
+facts without Boolean decomposition or a general theorem prover.
+
+The amendment is evidence-selected by the obligation-discharge direction's O3
+counterexample: an unconditional callee trap could hide a protected bounds
+leaf from any later caller-side subject gate. The checked program therefore
+retains a finite subject-only requirement-to-leaf bridge and its full,
+unasserted, and S4-blinded rewalk evidence, but v0.26 emits no provenance
+rejection and activates no held provenance class. This preserves T1's checked
+safety boundary, W3's proof-only check authority, and the established FN-8
+declaration surface while removing the structural bypass.
+
+The grammar, token, operation-row, source-construct, and rule inventories are
+unchanged: 70 productions, 85 decisions, 96 terminal predicates, and 128
+rules. Derivation statuses and totals remain 80 derived · 48 existence-only ·
+0 underived.

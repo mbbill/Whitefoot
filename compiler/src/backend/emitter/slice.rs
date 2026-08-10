@@ -39,7 +39,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  store {llvm_array_type} {}, ptr {slot}",
-                    value_name(value),
+                    self.value_name(value),
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 slot
@@ -59,7 +59,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         let buffer_type = IrType::Buffer { element };
-        if self.function.value_type(buffer) != Some(buffer_type) {
+        if self.value_type(buffer) != Some(buffer_type) {
             return Err(BackendFailure::InvalidIr);
         }
         let descriptor_type = llvm_type(self.program, ty)?;
@@ -69,9 +69,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{length} = extractvalue {descriptor_type} {}, 1\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
-            value_name(buffer),
-            value_name(buffer),
-            value_name(result),
+            self.value_name(buffer),
+            self.value_name(buffer),
+            self.value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -87,21 +87,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 width: 64,
                 signed: false,
             })
-            || !matches!(self.function.value_type(slice), Some(IrType::Slice { .. }))
+            || !matches!(self.value_type(slice), Some(IrType::Slice { .. }))
         {
             return Err(BackendFailure::InvalidIr);
         }
         writeln!(
             self.output,
             "  {} = extractvalue {} {}, 1",
-            value_name(result),
+            self.value_name(result),
             llvm_type(
                 self.program,
                 self.function
                     .value_type(slice)
                     .ok_or(BackendFailure::InvalidIr)?
             )?,
-            value_name(slice),
+            self.value_name(slice),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -120,11 +120,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if target_domain != IrTargetDomainObligation::ElementAddress {
             return Err(BackendFailure::InvalidIr);
         }
-        let Some(slice_type @ IrType::Slice { element }) = self.function.value_type(slice) else {
+        let Some(slice_type @ IrType::Slice { element }) = self.value_type(slice) else {
             return Err(BackendFailure::InvalidIr);
         };
         if element.ty() != ty
-            || self.function.value_type(offset)
+            || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
                     signed: false,
@@ -139,9 +139,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
-            value_name(slice),
-            value_name(offset),
-            value_name(result),
+            self.value_name(slice),
+            self.value_name(offset),
+            self.value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -158,7 +158,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr {pointer}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 {length}, 1",
-            value_name(result),
+            self.value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

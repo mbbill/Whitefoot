@@ -15,7 +15,6 @@ use super::*;
 
 pub(super) fn collect_addressed_bindings(function: &CheckedFunction) -> HashSet<BindingId> {
     let mut bindings = HashSet::new();
-    collect_statements(&function.requires, &mut bindings);
     collect_statements(&function.body, &mut bindings);
     bindings
 }
@@ -106,6 +105,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             collect_expression(value, bindings);
         }
         CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayLength { .. }
         | CheckedExpression::BufferLength { .. }

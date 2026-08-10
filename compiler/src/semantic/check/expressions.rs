@@ -811,7 +811,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
                 Ok(TypedExpression::owned(
-                    CheckedExpression::Constant(constant.value.clone()),
+                    CheckedExpression::NamedConstant {
+                        declaration,
+                        value: constant.value.clone(),
+                    },
                     EffectSet::NONE,
                 ))
             }

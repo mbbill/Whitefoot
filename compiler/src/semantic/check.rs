@@ -21,12 +21,20 @@ use crate::{
     SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule,
 };
 
-use super::entailment::{EntailmentCallee, EntailmentContext, analyze_function};
-use super::model::{
-    BindingId, CheckedConstant, CheckedConstantId, CheckedContract, CheckedExpression,
-    CheckedFunction, CheckedMode, CheckedNominal, CheckedParameter, CheckedProgramData,
-    CheckedSliceOrigin, CheckedType, ClaimAdvisory, FunctionId, NominalId,
+use super::entailment::{
+    CallGoalDisposition, EntailmentCallee, EntailmentContext, analyze_function,
 };
+use super::goal::{
+    CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
+    GoalOperation, GoalProjection, first_ephemeral_argument, render_goal,
+};
+use super::model::{
+    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
+    CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
+    CheckedNominal, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
+    CheckedStatement, CheckedType, CheckedValue, ClaimAdvisory, FunctionId, NominalId,
+};
+use super::provenance::{ProvenanceContext, analyze_program_provenance};
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
 use borrows::{AccessKind, ResolvedPlace};
@@ -57,6 +65,16 @@ struct FunctionSignature {
     effects_node: NodeId,
     declared_effects: EffectSet,
     substitution: GenericSubstitution,
+}
+
+/// One fully checked concrete function awaiting program-level entailment.
+///
+/// Binding spellings are checker-only diagnostic data. Keeping them beside
+/// the checked function lets phase A finish the complete concrete inventory
+/// before phase B derives or rejects any acceptance-bearing judgment.
+struct CheckedFunctionInventory {
+    function: CheckedFunction,
+    binding_names: Vec<String>,
 }
 
 fn derive_slice_return_ceiling(
@@ -372,6 +390,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
+    generic_requirements: Vec<CheckedGenericRequirement>,
     contracts: Vec<ContractInfo>,
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
@@ -451,6 +470,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions_by_declaration: HashMap::new(),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
+            generic_requirements: Vec::new(),
             contracts: Vec::new(),
             contracts_by_declaration: HashMap::new(),
         })
@@ -475,20 +495,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let nominal_count_before_function_checking = self.nominals.len();
         let main = self.main_id()?;
 
-        // Kill-relevant [EFF-2] projections for the dark entailment engine,
-        // indexed by dense function identity [ENT-5].
-        let mut callees = vec![EntailmentCallee::default(); self.signatures.len()];
-        for signature in &self.signatures {
-            if let Some(slot) = callees.get_mut(signature.id.0 as usize) {
-                *slot = EntailmentCallee::from_signature(
-                    signature.parameters.iter().map(|parameter| parameter.mode),
-                    &signature.declared_effects.writes,
-                );
-            }
-        }
-        let mut functions = Vec::with_capacity(self.signatures.len());
+        // Phase A completes every reachable concrete function before any
+        // acceptance-bearing entailment judgment runs. This makes forward,
+        // recursive, mutually recursive, and concrete generic call summaries
+        // independent of function traversal order.
+        let mut function_inventory = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
-            functions.push(self.check_function_interning_nominals(index, Some(&callees))?);
+            function_inventory.push(self.check_function_interning_nominals(index)?);
         }
         // Function checking discovers only the instances a derived type
         // names, which are box and prelude ones; a *source* nominal instance
@@ -502,6 +515,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         }
+
+        // Phase B reads only the completed inventory. Kill-relevant [EFF-2]
+        // projections are indexed by dense function identity [ENT-5]; later
+        // program-level goal summaries extend this same complete context.
+        let mut callees = vec![EntailmentCallee::default(); self.signatures.len()];
+        for signature in &self.signatures {
+            if let Some(slot) = callees.get_mut(signature.id.0 as usize) {
+                *slot = EntailmentCallee::from_signature(
+                    signature.parameters.iter().map(|parameter| parameter.mode),
+                    &signature.declared_effects.writes,
+                );
+            }
+        }
+        self.install_call_requirements(&mut function_inventory)?;
+        self.analyze_function_inventory(&mut function_inventory, &callees)?;
+        let (functions, binding_names) = function_inventory
+            .into_iter()
+            .map(|checked| (checked.function, checked.binding_names))
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        let provenance = analyze_program_provenance(
+            &functions,
+            &ProvenanceContext {
+                callees: &callees,
+                constants: &self.checked_constants,
+                constant_ids: &self.constants,
+                nominals: &self.nominals,
+                binding_names: &binding_names,
+            },
+        );
+
         // The ordinary function path is complete, so the executable prefix
         // closes here — after the derived box nominals, which executable code
         // allocates and drops, and before the contract metadata, which no
@@ -528,6 +571,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             executable_nominal_count,
             constants: self.checked_constants.clone(),
             functions,
+            provenance,
+            generic_requirements: self.generic_requirements.clone(),
             contracts: self
                 .contracts
                 .iter()
@@ -582,6 +627,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
             self.checked_constants.push(CheckedConstant {
                 id,
+                declaration: declaration_id,
                 name,
                 ty,
                 value,
@@ -600,12 +646,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    /// Checks one function. `callees` carries the [EFF-2] projections the
-    /// dark entailment engine reads; `None` skips the engine, which is the
-    /// symbolic generic-template validation pass — [ENT] judgments are per
-    /// concrete instantiation [ENT-1].
-    /// Checks one function, interning the nominal instances its derived
-    /// types name.
+    /// Checks one concrete function for the phase-A inventory, interning the
+    /// nominal instances its derived types name.
     ///
     /// A derived type has no written form anywhere for the interning pass to
     /// have found — a purely local `box<T>` [STOR-2], the `Result<T, E>` a
@@ -616,10 +658,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn check_function_interning_nominals(
         &mut self,
         index: usize,
-        callees: Option<&[EntailmentCallee]>,
-    ) -> Result<CheckedFunction, CheckStop> {
+    ) -> Result<CheckedFunctionInventory, CheckStop> {
         loop {
-            match self.check_function(index, callees) {
+            match self.check_function_inventory(index) {
                 Err(CheckStop::DeferredNominal) => {
                     let pending = std::mem::take(&mut *self.pending_nominals.borrow_mut());
                     let before = self.nominals.len();
@@ -642,23 +683,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    pub(super) fn check_function(
+    fn check_function_inventory(
         &self,
         index: usize,
-        callees: Option<&[EntailmentCallee]>,
-    ) -> Result<CheckedFunction, CheckStop> {
+    ) -> Result<CheckedFunctionInventory, CheckStop> {
         let signature = self
             .signatures
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.check_function_signature(signature, callees)
+        self.check_function_signature(signature)
     }
 
     fn check_function_signature(
         &self,
         signature: &FunctionSignature,
-        callees: Option<&[EntailmentCallee]>,
-    ) -> Result<CheckedFunction, CheckStop> {
+    ) -> Result<CheckedFunctionInventory, CheckStop> {
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
         let mut next_binding = 0_u32;
@@ -709,12 +748,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             claim_names: &mut claim_names,
         };
         let parameter_bindings = bindings.clone();
-        let requires = if let Some(node) = self
+        let requirement = if let Some(node) = self
             .tree
             .first_child_with(signature.node, Production::RequiresBlock)?
         {
             let mut requires_bindings = parameter_bindings.clone();
-            Some(self.check_requires(signature, node, &mut requires_bindings, &mut counters)?)
+            Some(
+                self.check_requires(signature, node, &mut requires_bindings, &mut counters)?
+                    .requirement,
+            )
         } else {
             None
         };
@@ -742,18 +784,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }));
         }
         // The exhibited row is the union of exactly two contributions
-        // [EFF-2]: the syntactic contribution of the body and optional
-        // requires prologue, and the release contribution of every
-        // compiler-derived release recorded on a normal edge of the checked
-        // program [STOR-3].
-        let syntactic = requires.as_ref().map_or_else(
-            || checked.effects.clone(),
-            |prologue| prologue.effects.clone().union(checked.effects.clone()),
-        );
+        // [EFF-2]: the syntactic contribution of the body and the release
+        // contribution of every compiler-derived release recorded on a normal
+        // body edge [STOR-3]. A requirement is a signature obligation, not an
+        // executed declaration occurrence.
+        let syntactic = checked.effects.clone();
         let mut release_sites = Vec::new();
-        if let Some(prologue) = &requires {
-            self.collect_release_sites(&prologue.statements, &mut release_sites)?;
-        }
         self.collect_release_sites(&checked.statements, &mut release_sites)?;
         let mut release = EffectSet::NONE;
         for site in &release_sites {
@@ -811,7 +847,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::EffectMismatch,
             );
         }
-        let mut function = CheckedFunction {
+        let function = CheckedFunction {
             id: signature.id,
             declaration: signature.declaration,
             name: signature.name.clone(),
@@ -822,105 +858,662 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             declared_traps: signature.declared_effects.traps,
             declared_allocates_heap: signature.declared_effects.allocates_heap,
-            requires: requires
-                .map(|prologue| prologue.statements)
-                .unwrap_or_default(),
+            requirement,
             body: checked.statements,
             entailment: super::entailment::FunctionEntailment::default(),
         };
+        Ok(CheckedFunctionInventory {
+            function,
+            binding_names,
+        })
+    }
+
+    /// Runs acceptance-bearing entailment only after phase A has completed
+    /// every concrete function. All summaries are derived before deterministic
+    /// dense-function-order rejection, so the analysis itself never observes an
+    /// inventory truncated by an earlier diagnostic.
+    fn analyze_function_inventory(
+        &self,
+        functions: &mut [CheckedFunctionInventory],
+        callees: &[EntailmentCallee],
+    ) -> Result<(), CheckStop> {
         // The [ENT] engine is acceptance-bearing [ENT-1]: it computes the
-        // closed fact states, obligation dispositions, and claim lifecycle
-        // dispositions. An undischarged obligation is the [OP-4] rejection
-        // with its residual rendered exactly per [ENT-6]; a refuted claim is
-        // the [CLM-2] rejection. The first offending node in document order
-        // is cited; redundancy advisories never reject and are collected at
-        // the program level.
-        if let Some(callees) = callees {
-            function.entailment = analyze_function(
-                &function,
+        // closed fact states, obligation and ordinary-call goal dispositions,
+        // and claim lifecycle dispositions. The first offending OP-4, FN-8,
+        // or CLM-2 node in document/rule order is cited; redundancy advisories
+        // never reject and are collected at the program level.
+        for checked in &mut *functions {
+            checked.function.entailment = analyze_function(
+                &checked.function,
                 &EntailmentContext {
                     callees,
                     constants: &self.checked_constants,
+                    constant_ids: &self.constants,
                     nominals: &self.nominals,
-                    binding_names: &binding_names,
+                    binding_names: &checked.binding_names,
                 },
             );
-            if self.reject_entailment {
-                self.entailment_rejection(&function)?;
+        }
+        if self.reject_entailment {
+            for checked in functions {
+                self.entailment_rejection(&checked.function)?;
             }
         }
-        Ok(function)
+        Ok(())
+    }
+
+    /// Instantiates every retained user-call requirement from the complete
+    /// phase-A inventory. The subsequent entailment step discharges these
+    /// exact goals in each caller's pre-transfer state.
+    fn install_call_requirements(
+        &self,
+        functions: &mut [CheckedFunctionInventory],
+    ) -> Result<(), CheckStop> {
+        let requirements = functions
+            .iter()
+            .map(|checked| checked.function.requirement.clone())
+            .collect::<Vec<_>>();
+        for checked in functions {
+            self.install_statement_call_requirements(&mut checked.function.body, &requirements)?;
+        }
+        Ok(())
+    }
+
+    fn install_statement_call_requirements(
+        &self,
+        statements: &mut [CheckedStatement],
+        requirements: &[Option<CheckedRequirement>],
+    ) -> Result<(), CheckStop> {
+        for statement in statements {
+            match statement {
+                CheckedStatement::Let { value, .. }
+                | CheckedStatement::Evaluate(value)
+                | CheckedStatement::DropExpression { value, .. }
+                | CheckedStatement::Check {
+                    condition: value, ..
+                }
+                | CheckedStatement::Claim {
+                    condition: value, ..
+                }
+                | CheckedStatement::Return { value, .. }
+                | CheckedStatement::Give { value, .. } => {
+                    self.install_expression_call_requirements(value, requirements)?;
+                }
+                CheckedStatement::PropagateLet { scrutinee, .. } => {
+                    self.install_expression_call_requirements(scrutinee, requirements)?;
+                }
+                CheckedStatement::Set { target, value } => {
+                    match target {
+                        CheckedSetTarget::Place(_) => {}
+                        CheckedSetTarget::ArrayIndex(target) => self
+                            .install_expression_call_requirements(
+                                &mut target.offset,
+                                requirements,
+                            )?,
+                        CheckedSetTarget::BufferIndex(target) => self
+                            .install_expression_call_requirements(
+                                &mut target.offset,
+                                requirements,
+                            )?,
+                    }
+                    self.install_expression_call_requirements(value, requirements)?;
+                }
+                CheckedStatement::Match {
+                    scrutinee, arms, ..
+                }
+                | CheckedStatement::ValueMatchLet {
+                    scrutinee, arms, ..
+                } => {
+                    self.install_expression_call_requirements(scrutinee, requirements)?;
+                    for arm in arms {
+                        self.install_statement_call_requirements(&mut arm.body, requirements)?;
+                    }
+                }
+                CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
+                    self.install_statement_call_requirements(body, requirements)?;
+                }
+                CheckedStatement::CountedRange {
+                    lower, upper, body, ..
+                } => {
+                    self.install_expression_call_requirements(lower, requirements)?;
+                    self.install_expression_call_requirements(upper, requirements)?;
+                    self.install_statement_call_requirements(body, requirements)?;
+                }
+                CheckedStatement::Break { .. } => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn install_expression_call_requirements(
+        &self,
+        expression: &mut CheckedExpression,
+        requirements: &[Option<CheckedRequirement>],
+    ) -> Result<(), CheckStop> {
+        match expression {
+            CheckedExpression::UserCall {
+                function,
+                arguments,
+                goal_arguments,
+                goal_regions,
+                requirement,
+                ..
+            } => {
+                for argument in arguments {
+                    self.install_expression_call_requirements(argument, requirements)?;
+                }
+                let signature = self
+                    .signatures
+                    .get(function.0 as usize)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let boundary = requirements
+                    .get(function.0 as usize)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                *requirement = match boundary {
+                    Some(boundary) => Some(Box::new(CheckedCallRequirement {
+                        final_check: boundary.trap.node_path.clone(),
+                        goal: ConcreteGoal::new(self.instantiate_goal_expression(
+                            &boundary.template.root,
+                            signature,
+                            goal_regions,
+                            goal_arguments,
+                        )?),
+                    })),
+                    None => None,
+                };
+            }
+            CheckedExpression::SystemCall { arguments, .. }
+            | CheckedExpression::IntegerOperation { arguments, .. }
+            | CheckedExpression::FloatOperation { arguments, .. }
+            | CheckedExpression::BooleanOperation { arguments, .. }
+            | CheckedExpression::EnumEquality { arguments, .. }
+            | CheckedExpression::ConstructStruct {
+                fields: arguments, ..
+            }
+            | CheckedExpression::ConstructEnum {
+                fields: arguments, ..
+            } => {
+                for argument in arguments {
+                    self.install_expression_call_requirements(argument, requirements)?;
+                }
+            }
+            CheckedExpression::NumericConversion { value, .. }
+            | CheckedExpression::Reinterpret { value, .. }
+            | CheckedExpression::ArrayFill { value, .. }
+            | CheckedExpression::BoxNew { value, .. }
+            | CheckedExpression::BoxDeref { value, .. }
+            | CheckedExpression::ProjectValue { value, .. } => {
+                self.install_expression_call_requirements(value, requirements)?;
+            }
+            CheckedExpression::ArrayIndex { offset, .. }
+            | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::SliceIndex { offset, .. } => {
+                self.install_expression_call_requirements(offset, requirements)?;
+            }
+            CheckedExpression::BufferFill { length, value, .. } => {
+                self.install_expression_call_requirements(length, requirements)?;
+                self.install_expression_call_requirements(value, requirements)?;
+            }
+            CheckedExpression::Constant(_)
+            | CheckedExpression::NamedConstant { .. }
+            | CheckedExpression::Binding { .. }
+            | CheckedExpression::ArrayLength { .. }
+            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::SliceOf { .. }
+            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::BorrowBuffer { .. }
+            | CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::ReborrowAddressed { .. }
+            | CheckedExpression::DerefAddressed { .. }
+            | CheckedExpression::Project { .. } => {}
+        }
+        Ok(())
+    }
+
+    fn instantiate_goal_expression(
+        &self,
+        expression: &GoalExpression,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+        arguments: &[GoalExpression],
+    ) -> Result<GoalExpression, CheckStop> {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Parameter {
+                ordinal,
+                projections,
+                ty,
+            }) => {
+                let index = usize::try_from(*ordinal)
+                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+                let parameter = signature
+                    .parameters
+                    .get(index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let mut image = arguments
+                    .get(index)
+                    .cloned()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let parameter_type =
+                    self.instantiate_goal_type(parameter.ty, signature, regions)?;
+                if image.ty() != parameter_type {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                let remaining = if parameter.mode == CheckedMode::Own {
+                    projections.as_slice()
+                } else {
+                    let Some((GoalProjection::Deref, remaining)) = projections.split_first() else {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    };
+                    remaining
+                };
+                let final_type = self.instantiate_goal_type(*ty, signature, regions)?;
+                for projection in remaining {
+                    image = image
+                        .with_projection(*projection, final_type)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                }
+                if image.ty() != final_type {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Ok(image)
+            }
+            GoalExpression::Datum(GoalDatum::NamedConst {
+                declaration,
+                projections,
+                ty,
+            }) => Ok(GoalExpression::Datum(GoalDatum::NamedConst {
+                declaration: *declaration,
+                projections: projections.clone(),
+                ty: self.instantiate_goal_type(*ty, signature, regions)?,
+            })),
+            GoalExpression::Datum(GoalDatum::Literal(value)) => Ok(GoalExpression::Datum(
+                GoalDatum::Literal(self.instantiate_goal_value(value, signature, regions)?),
+            )),
+            GoalExpression::Datum(GoalDatum::Place { .. } | GoalDatum::EphemeralActual { .. }) => {
+                Err(SemanticCompilerFailure::InvalidResolution.into())
+            }
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                const_arguments,
+                result,
+                arguments: operands,
+            } => Ok(GoalExpression::Operation {
+                row: self.instantiate_goal_operation(*row, signature, regions)?,
+                type_arguments: type_arguments
+                    .iter()
+                    .map(|ty| self.instantiate_goal_type(*ty, signature, regions))
+                    .collect::<Result<Vec<_>, _>>()?,
+                const_arguments: const_arguments
+                    .iter()
+                    .map(|value| self.instantiate_goal_const(*value, signature))
+                    .collect::<Result<Vec<_>, _>>()?,
+                result: self.instantiate_goal_type(*result, signature, regions)?,
+                arguments: operands
+                    .iter()
+                    .map(|operand| {
+                        self.instantiate_goal_expression(operand, signature, regions, arguments)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            }),
+        }
+    }
+
+    fn instantiate_goal_operation(
+        &self,
+        operation: GoalOperation,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<GoalOperation, CheckStop> {
+        Ok(match operation {
+            GoalOperation::Integer {
+                operation,
+                operand_type,
+            } => GoalOperation::Integer {
+                operation,
+                operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
+            },
+            GoalOperation::Float {
+                operation,
+                operand_type,
+            } => GoalOperation::Float {
+                operation,
+                operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
+            },
+            GoalOperation::NumericConversion {
+                source,
+                destination,
+            } => GoalOperation::NumericConversion {
+                source,
+                destination,
+            },
+            GoalOperation::Reinterpret {
+                source,
+                destination,
+            } => GoalOperation::Reinterpret {
+                source,
+                destination,
+            },
+            GoalOperation::Boolean(operation) => GoalOperation::Boolean(operation),
+            GoalOperation::EnumEquality {
+                equal,
+                operand_type,
+            } => GoalOperation::EnumEquality {
+                equal,
+                operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
+            },
+            GoalOperation::ArrayFill { element, length } => GoalOperation::ArrayFill {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                length: self.instantiate_goal_const(length, signature)?,
+            },
+            GoalOperation::ArrayLength { element, length } => GoalOperation::ArrayLength {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                length: self.instantiate_goal_const(length, signature)?,
+            },
+            GoalOperation::BufferLength { element } => GoalOperation::BufferLength {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+        })
+    }
+
+    fn instantiate_goal_type(
+        &self,
+        ty: CheckedType,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedType, CheckStop> {
+        Ok(match ty {
+            CheckedType::Generic(declaration)
+            | CheckedType::GenericInt(declaration)
+            | CheckedType::GenericFloat(declaration) => signature
+                .substitution
+                .type_argument(declaration)
+                .unwrap_or(ty),
+            CheckedType::Array { element, length } => CheckedType::Array {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                length: self.instantiate_goal_const(length, signature)?,
+            },
+            CheckedType::Slice { region, element } => CheckedType::Slice {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            CheckedType::Buffer { element } => CheckedType::Buffer {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::Nominal(_) => ty,
+        })
+    }
+
+    fn instantiate_goal_flat_element(
+        &self,
+        element: CheckedFlatElement,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedFlatElement, CheckStop> {
+        let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
+        Ok(match ty {
+            CheckedType::Unit => CheckedFlatElement::Unit,
+            CheckedType::Bool => CheckedFlatElement::Bool,
+            CheckedType::Integer(ty) => CheckedFlatElement::Integer(ty),
+            CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
+            CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
+            CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
+            CheckedType::Nominal(nominal) => CheckedFlatElement::TagOnlyNominal(nominal),
+            CheckedType::Generic(_)
+            | CheckedType::Array { .. }
+            | CheckedType::Slice { .. }
+            | CheckedType::Buffer { .. } => {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+        })
+    }
+
+    fn instantiate_goal_const(
+        &self,
+        value: CheckedConst,
+        signature: &FunctionSignature,
+    ) -> Result<CheckedConst, CheckStop> {
+        Ok(match value {
+            CheckedConst::Value(_) => value,
+            CheckedConst::Parameter(declaration) => signature
+                .substitution
+                .const_argument(declaration)
+                .unwrap_or(value),
+        })
+    }
+
+    fn instantiate_goal_region(
+        &self,
+        region: DeclarationId,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<DeclarationId, CheckStop> {
+        let Some(index) = signature
+            .region_parameters
+            .iter()
+            .position(|formal| *formal == region)
+        else {
+            return Ok(region);
+        };
+        regions
+            .get(index)
+            .copied()
+            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    fn instantiate_goal_value(
+        &self,
+        value: &CheckedValue,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedValue, CheckStop> {
+        Ok(match value {
+            CheckedValue::Unit => CheckedValue::Unit,
+            CheckedValue::Bool(value) => CheckedValue::Bool(*value),
+            CheckedValue::Integer { ty, bits } => CheckedValue::Integer {
+                ty: *ty,
+                bits: *bits,
+            },
+            CheckedValue::Float { ty, bits } => CheckedValue::Float {
+                ty: *ty,
+                bits: *bits,
+            },
+            CheckedValue::NumericIdentity { ty, one } => {
+                match self.instantiate_goal_type(*ty, signature, regions)? {
+                    CheckedType::Integer(ty) => CheckedValue::Integer {
+                        ty,
+                        bits: u64::from(*one),
+                    },
+                    CheckedType::Float(super::model::FloatType::F32) => CheckedValue::Float {
+                        ty: super::model::FloatType::F32,
+                        bits: if *one { 0x3f80_0000 } else { 0 },
+                    },
+                    CheckedType::Float(super::model::FloatType::F64) => CheckedValue::Float {
+                        ty: super::model::FloatType::F64,
+                        bits: if *one { 0x3ff0_0000_0000_0000 } else { 0 },
+                    },
+                    ty @ (CheckedType::GenericInt(_) | CheckedType::GenericFloat(_)) => {
+                        CheckedValue::NumericIdentity { ty, one: *one }
+                    }
+                    _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+                }
+            }
+            CheckedValue::Array { ty, elements } => CheckedValue::Array {
+                ty: self.instantiate_goal_type(*ty, signature, regions)?,
+                elements: elements
+                    .iter()
+                    .map(|element| self.instantiate_goal_value(element, signature, regions))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+        })
     }
 
     /// Rejects a checked function whose entailment summary contains an
-    /// undischarged bounds obligation [OP-4] or a refuted claim [CLM-2],
-    /// citing the first offending node in document order.
+    /// undischarged bounds obligation [OP-4], ordinary-call goal [FN-8], or
+    /// refuted claim [CLM-2], citing the first offending node in document
+    /// order and then the least same-node rule rank [DIAG-1].
     fn entailment_rejection(&self, function: &CheckedFunction) -> Result<(), CheckStop> {
+        enum Rejection<'outcome> {
+            Obligation(&'outcome super::entailment::ObligationOutcome),
+            Call(&'outcome super::entailment::CallGoalOutcome),
+            Claim {
+                outcome: &'outcome super::entailment::ClaimOutcome,
+                predicate: &'outcome str,
+                negation: &'outcome str,
+            },
+        }
+
+        impl Rejection<'_> {
+            fn node_path(&self) -> &crate::NodePath {
+                match self {
+                    Self::Obligation(outcome) => &outcome.node_path,
+                    Self::Call(outcome) => &outcome.node_path,
+                    Self::Claim { outcome, .. } => &outcome.node_path,
+                }
+            }
+
+            const fn rule(&self) -> SemanticRule {
+                match self {
+                    Self::Obligation(_) => SemanticRule::Op4,
+                    Self::Call(_) => SemanticRule::Fn8,
+                    Self::Claim { .. } => SemanticRule::Clm2,
+                }
+            }
+        }
+
         let obligation = function
             .entailment
             .obligations
             .iter()
             .filter(|outcome| !outcome.discharged)
-            .min_by_key(|outcome| outcome.node_path.components());
-        let refuted = function
+            .map(Rejection::Obligation);
+        let call = function
             .entailment
-            .claims
+            .call_goals
             .iter()
-            .filter_map(|outcome| match &outcome.disposition {
-                super::entailment::ClaimDisposition::Refuted {
-                    predicate,
-                    negation,
-                } => Some((outcome, predicate, negation)),
-                _ => None,
-            })
-            .min_by_key(|(outcome, ..)| outcome.node_path.components());
-        let obligation_first = match (obligation, refuted) {
-            (None, None) => return Ok(()),
-            (Some(_), None) => true,
-            (None, Some(_)) => false,
-            (Some(obligation), Some((claim, ..))) => {
-                obligation.node_path.components() <= claim.node_path.components()
-            }
+            .filter(|outcome| outcome.disposition != CallGoalDisposition::Discharged)
+            .map(Rejection::Call);
+        let refuted =
+            function
+                .entailment
+                .claims
+                .iter()
+                .filter_map(|outcome| match &outcome.disposition {
+                    super::entailment::ClaimDisposition::Refuted {
+                        predicate,
+                        negation,
+                    } => Some(Rejection::Claim {
+                        outcome,
+                        predicate,
+                        negation,
+                    }),
+                    _ => None,
+                });
+        let rejection = obligation.chain(call).chain(refuted).min_by(|left, right| {
+            left.node_path()
+                .components()
+                .cmp(right.node_path().components())
+                .then_with(|| {
+                    left.rule()
+                        .definition_rank()
+                        .cmp(&right.rule().definition_rank())
+                })
+        });
+        let Some(rejection) = rejection else {
+            return Ok(());
         };
-        if obligation_first {
-            let outcome = obligation.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let residual = outcome
-                .residual
-                .clone()
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let node = self
-                .tree
-                .node_with_path(&outcome.node_path)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            return Err(CheckStop::Issue(SemanticIssue {
-                rule: SemanticRule::Op4,
-                location: SemanticLocation::SourceNode(
-                    outcome.node_path.clone(),
-                    self.tree.coordinate(node)?,
-                ),
-                kind: SemanticIssueKind::UndischargedBoundsObligation {
-                    residual,
-                    mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
-                },
-            }));
+        match rejection {
+            Rejection::Obligation(outcome) => {
+                let residual = outcome
+                    .residual
+                    .clone()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let node = self
+                    .tree
+                    .node_with_path(&outcome.node_path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                Err(CheckStop::Issue(SemanticIssue {
+                    rule: SemanticRule::Op4,
+                    location: SemanticLocation::SourceNode(
+                        outcome.node_path.clone(),
+                        self.tree.coordinate(node)?,
+                    ),
+                    kind: SemanticIssueKind::UndischargedBoundsObligation {
+                        residual,
+                        mechanical_fix: "add a dominating `claim` of the residual or a dominating branch establishing it",
+                    },
+                }))
+            }
+            Rejection::Call(outcome) => {
+                let node = self
+                    .tree
+                    .node_with_path(&outcome.node_path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let signature = self
+                    .signatures
+                    .get(outcome.callee.0 as usize)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let disposition = match outcome.disposition {
+                    CallGoalDisposition::Discharged => {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    CallGoalDisposition::Refuted => crate::CallRequirementDisposition::Refuted,
+                    CallGoalDisposition::Unproved => crate::CallRequirementDisposition::Unproved,
+                };
+                let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
+                    "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
+                } else {
+                    "establish the complete callee requirement with one dominating branch, check, or claim before the call"
+                };
+                Err(CheckStop::Issue(SemanticIssue {
+                    rule: SemanticRule::Fn8,
+                    location: SemanticLocation::SourceNode(
+                        outcome.node_path.clone(),
+                        self.tree.coordinate(node)?,
+                    ),
+                    kind: SemanticIssueKind::UndischargedCallRequirement(Box::new(
+                        crate::UndischargedCallRequirementDetail {
+                            concrete_callee: signature.symbol.clone(),
+                            final_check: outcome.final_check.clone(),
+                            instantiated_goal: render_goal(&outcome.goal.root),
+                            disposition,
+                            mechanical_fix,
+                        },
+                    )),
+                }))
+            }
+            Rejection::Claim {
+                outcome,
+                predicate,
+                negation,
+            } => {
+                let node = self
+                    .tree
+                    .node_with_path(&outcome.node_path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                Err(CheckStop::Issue(SemanticIssue {
+                    rule: SemanticRule::Clm2,
+                    location: SemanticLocation::SourceNode(
+                        outcome.node_path.clone(),
+                        self.tree.coordinate(node)?,
+                    ),
+                    kind: SemanticIssueKind::RefutedClaim(Box::new(crate::RefutedClaimDetail {
+                        name: outcome.name.clone(),
+                        predicate: predicate.to_owned(),
+                        negation: negation.to_owned(),
+                    })),
+                }))
+            }
         }
-        let (outcome, predicate, negation) =
-            refuted.ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let node = self
-            .tree
-            .node_with_path(&outcome.node_path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        Err(CheckStop::Issue(SemanticIssue {
-            rule: SemanticRule::Clm2,
-            location: SemanticLocation::SourceNode(
-                outcome.node_path.clone(),
-                self.tree.coordinate(node)?,
-            ),
-            kind: SemanticIssueKind::RefutedClaim(Box::new(crate::RefutedClaimDetail {
-                name: outcome.name.clone(),
-                predicate: predicate.clone(),
-                negation: negation.clone(),
-            })),
-        }))
     }
 }

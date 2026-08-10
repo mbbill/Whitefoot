@@ -5,15 +5,16 @@ obligation-discharge direction before returning to wfgrep. The credited wfgrep
 checkpoint remains intact but PARKED until the direction reaches its completion
 boundary.
 
-This rolling plan authorizes only stage 7 below. Task 0047 closed the counted
-range milestone positively: exact v0.25 is active, the installed frozen
-acceptance reproduces the reviewed result, and the complete repository gate is
-green. The later provenance, postcondition, ledger, and strict-partition steps
-remain a dependency map rather than execution authority. Before any future
-specification approval request, the lead must first give the owner a complete
-plain-language explanation, stop, and wait for an explicit response.
+This rolling plan authorizes only stage 7 below. Exact-approved v0.26 is active
+with the ordinary-caller goal boundary installed; task 0048 remains current
+only through installed acceptance, the complete repository gate, design-memory
+reconciliation, and terminal closure. The later provenance, postcondition,
+ledger, and strict-partition steps remain a dependency map rather than
+execution authority. Before any future specification approval request, the
+lead must first give the owner a complete plain-language explanation, stop,
+and wait for an explicit response.
 
-Derived from: [Direction Outline revision 27](roadmap.md), items `PROOF-8`
+Derived from: [Direction Outline revision 28](roadmap.md), items `PROOF-8`
 (primary), `BOUND-1`, `VERIFY-1`, and `VERIFY-2`; `CAND-8` remains the selected
 flagship but is parked by this owner selection.
 
@@ -21,17 +22,18 @@ flagship but is parked by this owner selection.
 
 The shipped path now includes the named claim construct, normative L0
 entailment, caller-side OP-4 discharge, SYS count facts, the corrected ENT-5
-continuing-kill rule, and the v0.25 counted `u64` range. The installed SHA-256
-worker proves all 9/9 schedule accesses without a claim or hidden trap. The
-held provenance design reaches all three canonical Huffman subjects but cannot
-activate while a callee `requires` block can hide the same protected obligation
-behind an unconditional entry trap.
+continuing-kill rule, the v0.25 counted `u64` range, and v0.26 atomic
+`requires` goals. The installed SHA-256 worker proves all 9/9 schedule accesses
+without a claim or hidden trap. Ordinary calls now prove a requirement before
+transfer; the body receives it as S4, and the checked program retains the
+subject-only bridge that closes the prior helper-shaped provenance bypass.
 
-The current milestone is stage 7: make each admitted FN-8 block one atomic
-call-site proof goal. Ordinary source calls must prove it before transfer and
-callee effects; the callee body receives the proved predicate and no longer
-executes an unconditional prologue check. Real process entry keeps a checked
-boundary. This closes provenance bypass O3 but does not activate provenance.
+The current milestone remains stage 7 until task 0048's installed evidence and
+closure are complete. Each admitted FN-8 block is now one atomic call-site
+proof goal. Ordinary source calls prove it before transfer and callee effects;
+the callee body receives the proved predicate and executes no unconditional
+prologue check. Real process entry keeps a checked boundary. This closes
+provenance bypass O3 but does not activate provenance.
 
 Further wfgrep work remains outside this milestone. It resumes only after the
 complete selected direction is active and verified, or after the owner
@@ -41,7 +43,7 @@ disposes a reproduced blocker that stops the sequence.
 
 ### Why
 
-The current executable callee prologue admits every ordinary caller and traps
+The former executable callee prologue admitted every ordinary caller and trapped
 inside the callee. Moving a protected subscript into a helper with a matching
 `requires` therefore preserves the trap while bypassing a caller-side
 provenance policy. Conversely, simply restricting FN-8 to one L0 integer
@@ -59,14 +61,17 @@ optional projection only when that same root already is one L0 relation.
    real rejected alternatives. The current callee-entry mechanism is a genuine
    predecessor: if stage 7 activates, move it into design history with the
    required paired re-decision record rather than silently overwriting it. At
-   that same activation boundary, reconcile the live root, proof-doctrine, and
-   effect nodes whose present Items still say that the executable entry check
-   is never removed or contributes the callee's `traps` effect. In particular,
-   update `whitefoot`, `checks-and-proofs`, and `effects` alongside the two
-   named design nodes, while leaving recognizer-driven elision frozen as a
-   rejected alternative. Do not edit design memory merely because this plan
-   selected the future work; it changes only when the language and compiler
-   change actually become live.
+   the activation has a real commit identity, immediately reconcile the live
+   root, proof-doctrine, and effect nodes whose present Items still say that
+   the executable entry check is never removed or contributes the callee's
+   `traps` effect. In particular, update `whitefoot`, `checks-and-proofs`, and
+   `effects` alongside the two named design nodes, while leaving
+   recognizer-driven elision frozen as a rejected alternative. This is a
+   separate closure commit because every paired Move must cite the preceding
+   activation commit's real eight-character identity; it must land and pass
+   MCTS lint before task closure or stage 5b begins. Do not edit design memory
+   merely because this plan selected the future work; it changes only after
+   the language and compiler change actually become live.
 
 2. Preserve the complete current FN-8 declaration surface: zero or more
    clause-local lets followed by exactly one pure, total, non-trapping Bool
@@ -281,8 +286,10 @@ optional projection only when that same root already is one L0 relation.
   canaries must converge to the nearest acceptance-bearing requirement while a
   cycle with no protected-leaf seed remains empty.
   The three real DEFLATE requirement calls must prove the bridged goal from
-  existing unasserted allocation facts with no new claim or source
-  restructuring, while the retained distance claim remains unchanged.
+  existing unasserted allocation facts with no new claim or computational
+  restructuring. Exact effect rows in installed requires-bearing programs may
+  drop reads formerly attributed solely to executable requirements; the
+  retained distance claim remains unchanged.
 - Every protected disposition above is compared before/after by source,
   manifest row, verdict, rule, status, and runtime result. Base64 vectors and
   output-capacity behavior remain exact. In particular,
@@ -365,8 +372,8 @@ no-search checker.
 
 ## Stable specification rule
 
-The active specification stays at `spec/kernel-spec.md`. v0.24 is the current
-immutable outgoing archive and v0.25 has no versioned sibling while active.
+The active specification stays at `spec/kernel-spec.md`. v0.25 is the current
+immutable outgoing archive and v0.26 has no versioned sibling while active.
 Every later candidate edits the stable file on its task branch and is reviewed
 as a diff plus complete digest. Its approved atomic activation first creates
 the outgoing flat archive `spec/kernel-spec-vN.md`, failing if that path exists,

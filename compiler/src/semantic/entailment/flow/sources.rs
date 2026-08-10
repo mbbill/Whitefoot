@@ -12,12 +12,9 @@
 //! shared clause: a passed `check` or `claim` condition), S4, S5, S6, S7,
 //! S9, and S10. The label S8 is retired, not reused [ENT-3].
 
-use std::collections::HashMap;
-
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerOperation,
-    CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedStatement, CheckedValue,
-    IntegerType,
+    CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedValue, IntegerType,
 };
 use super::super::fragment_type;
 use super::super::state::{FactState, OutcomeFact, OutcomeRelation, Relation, close};
@@ -132,6 +129,10 @@ impl Analyzer<'_, '_> {
         condition: &CheckedExpression,
         state: &mut FactState,
     ) {
+        let goals = self.goal_origin_set(condition, state);
+        for goal in goals {
+            state.establish_goal(goal, super::super::state::GoalSign::Positive);
+        }
         if let Some(relation) = self.scrutinee_relation(condition, state) {
             state.establish(&relation);
         }
@@ -141,113 +142,16 @@ impl Analyzer<'_, '_> {
     // S4 requires facts
     // ------------------------------------------------------------------
 
-    /// [ENT-3] S4: at function-body entry, take the final `check` condition of
-    /// the [FN-8] `requires` block and replace every clause local by its
-    /// unique defining right-hand side, repeatedly, until only parameters,
-    /// named consts, literals, and admitted table-operation calls remain. One
-    /// admitted comparison over such operands is established at body entry;
-    /// any other substituted shape establishes nothing.
+    /// [ENT-3] S4: the complete concrete body goal enters as a positive opaque
+    /// fact, with its one exact comparison-root projection when present.
     pub(super) fn establish_requires_facts(&mut self, state: &mut FactState) {
-        let function = self.function;
-        let Some(CheckedStatement::Check { condition, .. }) = function.requires.last() else {
+        let Some(goal) = self.body_requirement_goal() else {
             return;
         };
-        let mut locals: HashMap<BindingId, &CheckedExpression> = HashMap::new();
-        for statement in &function.requires {
-            if let CheckedStatement::Let { binding, value } = statement {
-                locals.insert(*binding, value);
-            }
-        }
-        if let Some(relation) = self.substituted_comparison(condition, &locals, 0) {
+        let goal = self.intern_goal_expression(goal);
+        state.establish_goal(goal, super::super::state::GoalSign::Positive);
+        if let Some(relation) = self.goals.projection(goal).cloned() {
             state.establish(&relation);
-        }
-    }
-
-    /// The comparison-origin shape (a) of a requires condition after clause
-    /// substitution. Substitution is repeated, so a local defined through
-    /// other locals expands completely, and every occurrence expands — a
-    /// local named twice substitutes twice.
-    fn substituted_comparison(
-        &mut self,
-        condition: &CheckedExpression,
-        locals: &HashMap<BindingId, &CheckedExpression>,
-        depth: usize,
-    ) -> Option<Relation> {
-        if depth > SUBSTITUTION_LIMIT {
-            return None;
-        }
-        if let CheckedExpression::Binding { binding, .. } = condition
-            && let Some(definition) = locals.get(binding)
-        {
-            return self.substituted_comparison(definition, locals, depth + 1);
-        }
-        let CheckedExpression::IntegerOperation {
-            operation,
-            operand_type,
-            arguments,
-            ..
-        } = condition
-        else {
-            return None;
-        };
-        fragment_type(*operand_type)?;
-        let [left, right] = arguments.as_slice() else {
-            return None;
-        };
-        let left = self.substituted_operand(left, locals, depth + 1)?;
-        let right = self.substituted_operand(right, locals, depth + 1)?;
-        comparison_relation(*operation, left, right)
-    }
-
-    /// One substituted requires operand: a term over parameters or named
-    /// consts, a constant, or a call `len<T>(P)` over such a place, read as
-    /// the length term len(P). A clause local that survived substitution, or
-    /// a place rooted at one, is no body term and admits nothing.
-    fn substituted_operand(
-        &mut self,
-        operand: &CheckedExpression,
-        locals: &HashMap<BindingId, &CheckedExpression>,
-        depth: usize,
-    ) -> Option<TermId> {
-        if depth > SUBSTITUTION_LIMIT {
-            return None;
-        }
-        if let CheckedExpression::Binding { binding, .. } = operand
-            && let Some(definition) = locals.get(binding)
-        {
-            return self.substituted_operand(definition, locals, depth + 1);
-        }
-        let term = match self.length_operand(operand) {
-            Some(length) => length,
-            None => self.read_operand(operand)?,
-        };
-        self.entry_visible(term).then_some(term)
-    }
-
-    /// Whether a term is one the function body can also name: rooted at a
-    /// parameter or a named const. A requires-clause local is a distinct
-    /// declaration event and therefore a distinct term [ENT-2]; it is not
-    /// visible in the body [FN-8], so no fact may mention it.
-    fn entry_visible(&self, term: TermId) -> bool {
-        match self.terms.kind(term) {
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => true,
-            TermKind::CountedCapture { .. } => false,
-            TermKind::Place(place, _) | TermKind::Length(place) => match place.root {
-                PlaceRoot::Constant(_) => true,
-                PlaceRoot::Binding(binding) => self
-                    .function
-                    .parameters
-                    .iter()
-                    .any(|parameter| parameter.binding == binding),
-            },
-            TermKind::ProjectedPlace(place, _) => match place.root {
-                PlaceRoot::Constant(_) => true,
-                PlaceRoot::Binding(binding) => self
-                    .function
-                    .parameters
-                    .iter()
-                    .any(|parameter| parameter.binding == binding),
-            },
         }
     }
 
@@ -451,7 +355,7 @@ impl Analyzer<'_, '_> {
                 return true;
             };
             let (minimum, maximum) = type_range(ty);
-            let closed = close(state, &self.terms);
+            let closed = close(state, &self.terms, &self.goals);
             // `min(T) <= p + k` and `p + k <= max(T)`, as bounds on p through
             // Z: p - Z <= max(T) - k and Z - p <= k - min(T).
             let within = closed.derives_bound(base, ZERO, maximum.saturating_sub(delta))
@@ -590,6 +494,7 @@ impl Analyzer<'_, '_> {
         if enum_type == CheckedEnumType::Bool {
             return ArmFacts {
                 comparison: self.scrutinee_relation(scrutinee, state),
+                goals: self.goal_origin_set(scrutinee, state),
                 outcome: None,
             };
         }
@@ -603,6 +508,7 @@ impl Analyzer<'_, '_> {
         });
         ArmFacts {
             comparison: None,
+            goals: Vec::new(),
             outcome,
         }
     }
@@ -785,7 +691,3 @@ pub(super) fn comparison_relation(
         _ => return None,
     })
 }
-
-/// Substitution depth cap: clause definitions are acyclic, so the cap only
-/// guards against a malformed tree, never a legal program.
-const SUBSTITUTION_LIMIT: usize = 64;

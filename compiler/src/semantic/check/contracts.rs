@@ -693,7 +693,7 @@ fn discharge_domain(
         || function.result != subject
         || function.declared_traps
         || function.declared_allocates_heap
-        || !function.requires.is_empty()
+        || function.requirement.is_some()
     {
         return None;
     }

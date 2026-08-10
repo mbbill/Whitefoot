@@ -1,11 +1,11 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 27 (counted-range confirmation closed; requires-as-goal current)
+Revision: 28 (`requires` call-site goals shipped; provenance activation next)
 
-The active language authority is v0.25 at the stable path
+The active language authority is v0.26 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
 Superseded numbered specifications are immutable archives. The current
 execution proposal is [`docs/current-plan.md`](current-plan.md), project law is
 the [`Constitution`](constitution.md), and the operational process is
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.25]` `[current: safe-Rust compiler]`
+`[current: spec v0.26]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.25 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.26 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -103,9 +103,11 @@ creating writer trust or weakening the checked safety envelope.
 
 - **Goal:** remove a required bounds check only when a deterministic proof
   establishes the exact proposition that makes the operation safe.
-- **Current:** the compiler executes concrete `requires` prologues but creates
-  no `llvm.assume` and removes no downstream check. A historical base64 study
-  measured a bounded proof consumer; it is not current compiler capability.
+- **Current:** the compiler discharges exact L0 bounds obligations and admits a
+  proved `requires` goal as the callee-body S4 axiom. Ordinary callers prove
+  that complete goal before transfer; no callee prologue or `llvm.assume` is
+  emitted. Opaque Boolean goal identity adds no Boolean decomposition or new
+  optimizer authority.
 - **Missing / next:** a selected workload must first show retained-check
   pressure; then build one finite proof family with exact producers,
   invalidators, negative canaries, facts-off identity, and attribution.
@@ -204,8 +206,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4 and counted range shipped; provenance design reviewed and held]`
-`[next: one atomic requires call-site goal]`
+`[current: items 1–4, counted range, and atomic requires goals shipped; provenance metadata held]`
+`[next: provenance activation]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -254,17 +256,25 @@ creating writer trust or weakening the checked safety envelope.
   `22/33`, deflate `11/29`, and dynamic deflate `11/24`, while SHA moves from
   `0/9` to `9/9` claim-independent obligations; the worker is pure, contains
   no `wf_trap`, and retains both runtime oracles. Task 0047 is terminal and the
-  complete repository gate is green.
-- **Missing / next:** replace the unconditional executable `requires` prologue
-  with one atomic call-site goal while preserving the full current FN-8
-  pure/total single-predicate declaration surface and real process-entry
-  failure behavior. This closes provenance bypass O3 without activating the
-  held provenance gate. The preserved objective then advances through
-  provenance activation; proof-feasibility work for the mask and loop-carried
-  facts the real `ensures` examples need; `ensures`; deterministic claim-ledger
-  tooling; and a separately designed transitive `deny-claims` marker. Wfgrep
-  remains parked until this boundary is complete or a reproduced blocker
-  returns for disposition.
+  complete repository gate is green. v0.26 preserves the complete FN-8
+  declaration surface as one finite typed goal, requires every ordinary caller
+  to prove the instantiated goal before transfer, supplies it to the body as
+  S4, removes the callee prologue and its effect contribution, and retains the
+  original dynamic failure behavior at both real process entries. Signed opaque
+  facts stay atomic. The checked program retains subject-only local and
+  transitive requirement-to-protected-leaf bridges plus full, unasserted, and
+  S4-blinded rewalks; recursive and mutually recursive wrappers converge, a
+  seedless cycle stays empty, and the three real DEFLATE calls discharge from
+  allocation facts. This closes O3 structurally without emitting a provenance
+  rejection.
+- **Missing / next:** activate the independently reviewed held provenance gate
+  over the retained v0.26 bridge metadata and rerun its frozen canonical and
+  boundary matrices. The preserved objective then advances through
+  proof-feasibility work for the mask and loop-carried facts the real `ensures`
+  examples need; `ensures`; deterministic claim-ledger tooling; and a
+  separately designed transitive `deny-claims` marker. Wfgrep remains parked
+  until this boundary is complete or a reproduced blocker returns for
+  disposition.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -301,7 +311,7 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.25 run is `Pass=393 Fail=1 Skip=13`; the one
+  compiler. The installed-v0.26 run is `Pass=393 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
   rows remain explicit toolchain gaps. This adapter is deliberately
   `#[ignore]` and invoked separately; `make check` does not silently include

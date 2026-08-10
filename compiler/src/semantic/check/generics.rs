@@ -5,7 +5,10 @@ use crate::{
     SemanticRule, UnsupportedSemanticFeature,
 };
 
-use super::super::model::{CheckedConst, CheckedType};
+use super::super::goal::{GoalDatum, GoalExpression, GoalOperation};
+use super::super::model::{
+    CheckedConst, CheckedFlatElement, CheckedGenericRequirement, CheckedType, CheckedValue,
+};
 use super::{CheckStop, Checker, FunctionSignature, FunctionTemplate, derive_slice_return_ceiling};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -106,16 +109,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 name: declaration.spelling().to_owned(),
                 generic_parameters: self.parse_generic_parameters(node)?,
             };
-            if !template.generic_parameters.is_empty() {
-                if let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)? {
-                    return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
-                }
-                if let Some(requires) = self
-                    .tree
-                    .first_child_with(node, Production::RequiresBlock)?
-                {
-                    return self.unsupported(UnsupportedSemanticFeature::Generics, requires);
-                }
+            if !template.generic_parameters.is_empty()
+                && let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)?
+            {
+                return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
             }
             let index = self.function_templates.len();
             if self
@@ -334,10 +331,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn validate_generic_templates(&mut self) -> Result<(), CheckStop> {
-        if !self.signatures.is_empty() || !self.functions_by_declaration.is_empty() {
+        if !self.signatures.is_empty()
+            || !self.functions_by_declaration.is_empty()
+            || !self.generic_requirements.is_empty()
+        {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         let nominal_checkpoint = self.nominal_checkpoint();
+        // Record only the initial source-canonical symbolic instance for each
+        // generic. Transitive discovery below may instantiate another
+        // symbolic shape for the same source declaration; those validate the
+        // source call graph but are not a second metadata identity.
+        let mut canonical_generic_signatures = Vec::new();
         for template_index in 0..self.function_templates.len() {
             let template = self
                 .function_templates
@@ -345,12 +350,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .cloned()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let substitution = self.symbolic_generic_substitution(&template.generic_parameters)?;
+            let signature_index = self.signatures.len();
             self.instantiate_function_signature(template_index, substitution)?;
+            if !template.generic_parameters.is_empty() {
+                canonical_generic_signatures.push((signature_index, template.declaration));
+            }
         }
         self.discover_called_function_signatures(false)?;
         for index in 0..self.signatures.len() {
             if !self.signatures[index].substitution.bindings.is_empty() {
-                self.check_function(index, None)?;
+                // Symbolic generic validation may discover a derived box or
+                // prelude nominal (for example the Result produced by a
+                // `+checked` requires-local). Use the same deferred-nominal
+                // retry loop as concrete checking; the checkpoint below
+                // discards these symbolic-only instances afterwards.
+                let checked = self.check_function_interning_nominals(index)?;
+                if let Some((_, declaration)) = canonical_generic_signatures
+                    .iter()
+                    .find(|(canonical, _)| *canonical == index)
+                {
+                    if checked.function.declaration != *declaration {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    if let Some(requirement) = checked.function.requirement {
+                        if !goal_uses_nominal_prefix(&requirement.template.root, nominal_checkpoint)
+                            || self
+                                .generic_requirements
+                                .iter()
+                                .any(|entry| entry.declaration == *declaration)
+                        {
+                            return Err(SemanticCompilerFailure::InvalidResolution.into());
+                        }
+                        self.generic_requirements.push(CheckedGenericRequirement {
+                            declaration: *declaration,
+                            requirement,
+                        });
+                    }
+                }
             }
         }
         self.signatures.clear();
@@ -621,5 +657,106 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings.push((parameter.declaration(), value));
         }
         GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+    }
+}
+
+fn goal_uses_nominal_prefix(expression: &GoalExpression, checkpoint: usize) -> bool {
+    match expression {
+        GoalExpression::Datum(datum) => goal_datum_uses_nominal_prefix(datum, checkpoint),
+        GoalExpression::Operation {
+            row,
+            type_arguments,
+            result,
+            arguments,
+            ..
+        } => {
+            type_arguments
+                .iter()
+                .copied()
+                .all(|ty| type_uses_nominal_prefix(ty, checkpoint))
+                && type_uses_nominal_prefix(*result, checkpoint)
+                && goal_operation_uses_nominal_prefix(*row, checkpoint)
+                && arguments
+                    .iter()
+                    .all(|argument| goal_uses_nominal_prefix(argument, checkpoint))
+        }
+    }
+}
+
+fn goal_datum_uses_nominal_prefix(datum: &GoalDatum, checkpoint: usize) -> bool {
+    match datum {
+        GoalDatum::Parameter { ty, .. }
+        | GoalDatum::NamedConst { ty, .. }
+        | GoalDatum::Place { ty, .. } => type_uses_nominal_prefix(*ty, checkpoint),
+        GoalDatum::EphemeralActual {
+            captured_type, ty, ..
+        } => {
+            type_uses_nominal_prefix(*captured_type, checkpoint)
+                && type_uses_nominal_prefix(*ty, checkpoint)
+        }
+        GoalDatum::Literal(value) => value_uses_nominal_prefix(value, checkpoint),
+    }
+}
+
+fn goal_operation_uses_nominal_prefix(row: GoalOperation, checkpoint: usize) -> bool {
+    match row {
+        GoalOperation::Integer { operand_type, .. }
+        | GoalOperation::Float { operand_type, .. }
+        | GoalOperation::EnumEquality { operand_type, .. } => {
+            type_uses_nominal_prefix(operand_type, checkpoint)
+        }
+        GoalOperation::ArrayFill { element, .. }
+        | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::BufferLength { element }
+        | GoalOperation::SliceLength { element, .. } => {
+            flat_element_uses_nominal_prefix(element, checkpoint)
+        }
+        GoalOperation::NumericConversion { .. }
+        | GoalOperation::Reinterpret { .. }
+        | GoalOperation::Boolean(_) => true,
+    }
+}
+
+fn value_uses_nominal_prefix(value: &CheckedValue, checkpoint: usize) -> bool {
+    match value {
+        CheckedValue::NumericIdentity { ty, .. } => type_uses_nominal_prefix(*ty, checkpoint),
+        CheckedValue::Array { ty, elements } => {
+            type_uses_nominal_prefix(*ty, checkpoint)
+                && elements
+                    .iter()
+                    .all(|element| value_uses_nominal_prefix(element, checkpoint))
+        }
+        CheckedValue::Unit
+        | CheckedValue::Bool(_)
+        | CheckedValue::Integer { .. }
+        | CheckedValue::Float { .. } => true,
+    }
+}
+
+fn type_uses_nominal_prefix(ty: CheckedType, checkpoint: usize) -> bool {
+    match ty {
+        CheckedType::Nominal(id) => (id.0 as usize) < checkpoint,
+        CheckedType::Array { element, .. }
+        | CheckedType::Slice { element, .. }
+        | CheckedType::Buffer { element } => flat_element_uses_nominal_prefix(element, checkpoint),
+        CheckedType::Unit
+        | CheckedType::Bool
+        | CheckedType::Integer(_)
+        | CheckedType::Float(_)
+        | CheckedType::Generic(_)
+        | CheckedType::GenericInt(_)
+        | CheckedType::GenericFloat(_) => true,
+    }
+}
+
+fn flat_element_uses_nominal_prefix(element: CheckedFlatElement, checkpoint: usize) -> bool {
+    match element {
+        CheckedFlatElement::TagOnlyNominal(id) => (id.0 as usize) < checkpoint,
+        CheckedFlatElement::Unit
+        | CheckedFlatElement::Bool
+        | CheckedFlatElement::Integer(_)
+        | CheckedFlatElement::Float(_)
+        | CheckedFlatElement::GenericInt(_)
+        | CheckedFlatElement::GenericFloat(_) => true,
     }
 }

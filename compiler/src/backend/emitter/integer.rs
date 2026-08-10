@@ -34,17 +34,17 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } else {
                 operand_type
             };
-            self.function.value_type(*argument) != Some(expected)
+            self.value_type(*argument) != Some(expected)
         }) {
             return Err(BackendFailure::InvalidIr);
         }
         let ty = llvm_type(self.program, operand_type)?;
         let binary = match arguments {
-            [left, right] => Some((value_name(*left), value_name(*right))),
+            [left, right] => Some((self.value_name(*left), self.value_name(*right))),
             _ => None,
         };
         let unary = match arguments {
-            [argument] => Some(value_name(*argument)),
+            [argument] => Some(self.value_name(*argument)),
             _ => None,
         };
         match operation {
@@ -78,7 +78,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = {opcode} {ty} {left}, {right}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -122,7 +122,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  %{pair} = call {{ {ty}, i1 }} @{intrinsic}({ty} {left}, {ty} {right})\n  {} = extractvalue {{ {ty}, i1 }} %{pair}, 0\n  %{overflow} = extractvalue {{ {ty}, i1 }} %{pair}, 1\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-                    value_name(result),
+                    self.value_name(result),
                     overflow_trap_label(result),
                     overflow_continue_label(result),
                     overflow_trap_label(result),
@@ -178,7 +178,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  %{pair} = call {{ {ty}, i1 }} @{intrinsic}({ty} {left}, {ty} {right})\n  %{value} = extractvalue {{ {ty}, i1 }} %{pair}, 0\n  %{overflow} = extractvalue {{ {ty}, i1 }} %{pair}, 1\n  %{ok_tag} = insertvalue {result_ty} zeroinitializer, i32 0, 0\n  %{ok_value} = insertvalue {result_ty} %{ok_tag}, {ty} %{value}, 1\n  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} 0, 2\n  {} = select i1 %{overflow}, {result_ty} %{error_value}, {result_ty} %{ok_value}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -251,7 +251,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     "  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} {error_operand}, 2\n  br label %{}\n{}:\n  {} = phi {result_ty} [ %{ok_value}, %{} ], [ %{error_value}, %{} ]",
                     integer_continue_label(result),
                     integer_continue_label(result),
-                    value_name(result),
+                    self.value_name(result),
                     integer_safe_label(result),
                     integer_error_label(result),
                 )
@@ -299,7 +299,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     overflow_trap_label(result),
                     self.traps[trap_id].len(),
                     overflow_continue_label(result),
-                    value_name(result),
+                    self.value_name(result),
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -312,7 +312,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 if !signed {
                     return Err(BackendFailure::InvalidIr);
                 }
-                let argument = value_name(*argument);
+                let argument = self.value_name(*argument);
                 let intrinsic = format!("llvm.abs.i{width}");
                 self.intrinsics.insert(IntrinsicDeclaration::UnaryWithFlag {
                     name: intrinsic.clone(),
@@ -326,7 +326,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         writeln!(
                             self.output,
                             "  {} = call {ty} @{intrinsic}({ty} {argument}, i1 false)",
-                            value_name(result)
+                            self.value_name(result)
                         )
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
@@ -341,7 +341,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         writeln!(
                             self.output,
                             "  {} = call {ty} @{intrinsic}({ty} {argument}, i1 false)\n  %{overflow} = icmp eq {ty} {argument}, {minimum}\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:",
-                            value_name(result),
+                            self.value_name(result),
                             overflow_trap_label(result),
                             overflow_continue_label(result),
                             overflow_trap_label(result),
@@ -368,7 +368,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         writeln!(
                             self.output,
                             "  %{absolute} = call {ty} @{intrinsic}({ty} {argument}, i1 false)\n  %{overflow} = icmp eq {ty} {argument}, {minimum}\n  %{ok_tag} = insertvalue {result_ty} zeroinitializer, i32 0, 0\n  %{ok_value} = insertvalue {result_ty} %{ok_tag}, {ty} %{absolute}, 1\n  %{error_tag} = insertvalue {result_ty} zeroinitializer, i32 1, 0\n  %{error_value} = insertvalue {result_ty} %{error_tag}, {error_ty} 0, 2\n  {} = select i1 %{overflow}, {result_ty} %{error_value}, {result_ty} %{ok_value}",
-                            value_name(result)
+                            self.value_name(result)
                         )
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
@@ -391,7 +391,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = {opcode} {ty} {left}, {right}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -403,7 +403,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = xor {ty} {argument}, -1",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -429,7 +429,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         writeln!(
                             self.output,
                             "  {} = {opcode} {ty} {value}, {amount}",
-                            value_name(result)
+                            self.value_name(result)
                         )
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
@@ -447,7 +447,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         writeln!(
                             self.output,
                             "  {} = call {ty} @{intrinsic}({ty} {value}, {ty} {value}, {ty} {amount})",
-                            value_name(result)
+                            self.value_name(result)
                         )
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
@@ -484,7 +484,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = {opcode} {ty} {value}, {amount}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -520,7 +520,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     });
                 }
                 let count = if width == 32 {
-                    value_name(result)
+                    self.value_name(result)
                 } else {
                     format!("%{}", self.next_temporary()?)
                 };
@@ -538,14 +538,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     writeln!(
                         self.output,
                         "  {} = zext {ty} {count} to i32",
-                        value_name(result)
+                        self.value_name(result)
                     )
                     .map_err(|_| BackendFailure::TextEmission)?;
                 } else if width > 32 {
                     writeln!(
                         self.output,
                         "  {} = trunc {ty} {count} to i32",
-                        value_name(result)
+                        self.value_name(result)
                     )
                     .map_err(|_| BackendFailure::TextEmission)?;
                 }
@@ -563,7 +563,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = call {ty} @{intrinsic}({ty} {argument})",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -584,7 +584,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  %{wide_left} = {extension} {ty} {left} to i{wide}\n  %{wide_right} = {extension} {ty} {right} to i{wide}\n  %{product} = mul i{wide} %{wide_left}, %{wide_right}\n  %{high} = {shift} i{wide} %{product}, {width}\n  {} = trunc i{wide} %{high} to {ty}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -614,7 +614,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = call {ty} @{intrinsic}({ty} {left}, {ty} {right})",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -655,7 +655,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 writeln!(
                     self.output,
                     "  {} = icmp {predicate} {ty} {left}, {right}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
             }
@@ -745,7 +745,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  {} = trunc i{wide} %{clamped} to {ty}",
-            value_name(result)
+            self.value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

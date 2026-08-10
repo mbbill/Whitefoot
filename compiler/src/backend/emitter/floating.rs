@@ -17,7 +17,7 @@ impl FunctionEmitter<'_, '_> {
         if arguments.len() != expected_arguments
             || arguments
                 .iter()
-                .any(|argument| self.function.value_type(*argument) != Some(operand_type))
+                .any(|argument| self.value_type(*argument) != Some(operand_type))
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -42,7 +42,7 @@ impl FunctionEmitter<'_, '_> {
         let llvm_ty = llvm_type(self.program, operand_type)?;
         let rendered_arguments = arguments
             .iter()
-            .map(|argument| value_name(*argument))
+            .map(|argument| self.value_name(*argument))
             .collect::<Vec<_>>();
         match operation {
             IrFloatOperation::AddStrict
@@ -61,7 +61,7 @@ impl FunctionEmitter<'_, '_> {
                 writeln!(
                     self.output,
                     "  {} = {opcode} {llvm_ty} {}, {}",
-                    value_name(result),
+                    self.value_name(result),
                     rendered_arguments[0],
                     rendered_arguments[1]
                 )
@@ -85,7 +85,7 @@ impl FunctionEmitter<'_, '_> {
                 writeln!(
                     self.output,
                     "  {} = fcmp {predicate} {llvm_ty} {}, {}",
-                    value_name(result),
+                    self.value_name(result),
                     rendered_arguments[0],
                     rendered_arguments[1]
                 )
@@ -94,7 +94,7 @@ impl FunctionEmitter<'_, '_> {
             IrFloatOperation::Negate => writeln!(
                 self.output,
                 "  {} = fneg {llvm_ty} {}",
-                value_name(result),
+                self.value_name(result),
                 rendered_arguments[0]
             )
             .map_err(|_| BackendFailure::TextEmission),
@@ -121,7 +121,7 @@ impl FunctionEmitter<'_, '_> {
                 writeln!(
                     self.output,
                     "  {} = call {llvm_ty} @{name}({llvm_ty} {})",
-                    value_name(result),
+                    self.value_name(result),
                     rendered_arguments[0]
                 )
                 .map_err(|_| BackendFailure::TextEmission)
@@ -141,7 +141,7 @@ impl FunctionEmitter<'_, '_> {
                 writeln!(
                     self.output,
                     "  {} = call {llvm_ty} @{name}({llvm_ty} {}, {llvm_ty} {})",
-                    value_name(result),
+                    self.value_name(result),
                     rendered_arguments[0],
                     rendered_arguments[1]
                 )
@@ -156,7 +156,7 @@ impl FunctionEmitter<'_, '_> {
                 writeln!(
                     self.output,
                     "  {} = call {llvm_ty} @{name}({llvm_ty} {}, {llvm_ty} {}, {llvm_ty} {})",
-                    value_name(result),
+                    self.value_name(result),
                     rendered_arguments[0],
                     rendered_arguments[1],
                     rendered_arguments[2]
@@ -181,7 +181,7 @@ impl FunctionEmitter<'_, '_> {
                 writeln!(
                     self.output,
                     "  {} = select i1 true, {llvm_ty} {constant}, {llvm_ty} {constant}",
-                    value_name(result)
+                    self.value_name(result)
                 )
                 .map_err(|_| BackendFailure::TextEmission)
             }

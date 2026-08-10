@@ -34,7 +34,7 @@ fn hex_value(byte: own u8) -> own u8 pure {
   return result;
 }
 
-fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
+fn decode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> own u64 writes('r), traps requires {
   let output_length = len(deref(out));
   let source_length = len(src);
   let sufficient = ige(output_length, source_length);

@@ -22,8 +22,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             width: 64,
             signed: false,
         };
-        if self.function.value_type(length) != Some(u64_type)
-            || self.function.value_type(value) != Some(element.ty())
+        if self.value_type(length) != Some(u64_type) || self.value_type(value) != Some(element.ty())
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -54,7 +53,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{product} = call {{ i64, i1 }} @{intrinsic}(i64 {}, i64 {element_size})\n  %{bytes} = extractvalue {{ i64, i1 }} %{product}, 0\n  %{overflow} = extractvalue {{ i64, i1 }} %{product}, 1\n  br i1 %{overflow}, label %{}, label %{}\n{}:\n  call void @wf_trap(ptr @.wf_trap.{trap_id}, i64 {})\n  unreachable\n{}:\n  %{target_in_range} = icmp ule i64 %{bytes}, {}\n  br i1 %{target_in_range}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{pointer} = call ptr @malloc(i64 %{bytes})\n  %{zero_size} = icmp eq i64 %{bytes}, 0\n  %{nonnull} = icmp ne ptr %{pointer}, null\n  %{usable} = or i1 %{zero_size}, %{nonnull}\n  br i1 %{usable}, label %{}, label %{}\n{}:\n  call void @abort()\n  unreachable\n{}:\n  %{index} = phi i64 [ 0, %{} ], [ %{next_index}, %{} ]\n  %{in_range} = icmp ult i64 %{index}, {}\n  br i1 %{in_range}, label %{}, label %{}\n{}:\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 %{index}\n  store {element_type} {}, ptr %{element_pointer}\n  %{next_index} = add i64 %{index}, 1\n  br label %{}\n{}:\n  %{descriptor} = insertvalue {buffer_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {buffer_type} %{descriptor}, i64 {}, 1",
-            value_name(length),
+            self.value_name(length),
             buffer_fill_overflow_label(result),
             buffer_fill_target_check_label(result),
             buffer_fill_overflow_label(result),
@@ -71,15 +70,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             buffer_fill_head_label(result),
             buffer_fill_allocate_label(result),
             buffer_fill_body_label(result),
-            value_name(length),
+            self.value_name(length),
             buffer_fill_body_label(result),
             buffer_fill_done_label(result),
             buffer_fill_body_label(result),
-            value_name(value),
+            self.value_name(value),
             buffer_fill_head_label(result),
             buffer_fill_done_label(result),
-            value_name(result),
-            value_name(length),
+            self.value_name(result),
+            self.value_name(length),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -95,24 +94,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 width: 64,
                 signed: false,
             })
-            || !matches!(
-                self.function.value_type(buffer),
-                Some(IrType::Buffer { .. })
-            )
+            || !matches!(self.value_type(buffer), Some(IrType::Buffer { .. }))
         {
             return Err(BackendFailure::InvalidIr);
         }
         writeln!(
             self.output,
             "  {} = extractvalue {} {}, 1",
-            value_name(result),
+            self.value_name(result),
             llvm_type(
                 self.program,
                 self.function
                     .value_type(buffer)
                     .ok_or(BackendFailure::InvalidIr)?
             )?,
-            value_name(buffer),
+            self.value_name(buffer),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -131,12 +127,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if target_domain != IrTargetDomainObligation::ElementAddress {
             return Err(BackendFailure::InvalidIr);
         }
-        let Some(buffer_type @ IrType::Buffer { element }) = self.function.value_type(buffer)
-        else {
+        let Some(buffer_type @ IrType::Buffer { element }) = self.value_type(buffer) else {
             return Err(BackendFailure::InvalidIr);
         };
         if element.ty() != ty
-            || self.function.value_type(offset)
+            || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
                     signed: false,
@@ -151,9 +146,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
-            value_name(buffer),
-            value_name(offset),
-            value_name(result),
+            self.value_name(buffer),
+            self.value_name(offset),
+            self.value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -166,16 +161,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: IrValueId,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let Some(buffer_type @ IrType::Buffer { element }) = self.function.value_type(buffer)
-        else {
+        let Some(buffer_type @ IrType::Buffer { element }) = self.value_type(buffer) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if self.function.value_type(index)
+        if self.value_type(index)
             != Some(IrType::Integer {
                 width: 64,
                 signed: false,
             })
-            || self.function.value_type(value) != Some(element.ty())
+            || self.value_type(value) != Some(element.ty())
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -186,9 +180,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output,
             "  %{pointer} = extractvalue {} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  store {element_type} {}, ptr %{element_pointer}",
             llvm_type(self.program, buffer_type)?,
-            value_name(buffer),
-            value_name(index),
-            value_name(value),
+            self.value_name(buffer),
+            self.value_name(index),
+            self.value_name(value),
         )
         .map_err(|_| BackendFailure::TextEmission)
     }
@@ -220,19 +214,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             width: 8,
             signed: false,
         };
-        let Some(buffer_type @ IrType::Buffer { element }) = self.function.value_type(buffer)
-        else {
+        let Some(buffer_type @ IrType::Buffer { element }) = self.value_type(buffer) else {
             return Err(BackendFailure::InvalidIr);
         };
         if ty != u64_type
             || element.ty() != u8_type
-            || self.function.value_type(index) != Some(u64_type)
-            || self.function.value_type(limit) != Some(u64_type)
+            || self.value_type(index) != Some(u64_type)
+            || self.value_type(limit) != Some(u64_type)
             || needles.is_empty()
             || needles.len() > 4
             || needles
                 .iter()
-                .any(|needle| self.function.value_type(*needle) != Some(u8_type))
+                .any(|needle| self.value_type(*needle) != Some(u8_type))
         {
             return Err(BackendFailure::InvalidIr);
         }
@@ -253,18 +246,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{length} = extractvalue {descriptor_type} {}, 1\n  %{tighter} = icmp ult i64 {}, %{length}\n  %{window} = select i1 %{tighter}, i64 {}, i64 %{length}\n  %{room} = icmp uge i64 %{window}, 16\n  br i1 %{room}, label %{}, label %{}\n{}:\n  %{edge} = sub i64 %{window}, 16\n  %{fits} = icmp ule i64 {}, %{edge}\n  br i1 %{fits}, label %{}, label %{}\n{}:\n  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{address} = getelementptr inbounds i8, ptr %{pointer}, i64 {}\n  %{vector} = load <16 x i8>, ptr %{address}, align 1",
-            value_name(buffer),
-            value_name(limit),
-            value_name(limit),
+            self.value_name(buffer),
+            self.value_name(limit),
+            self.value_name(limit),
             buffer_probe_room_label(result),
             buffer_probe_zero_label(result),
             buffer_probe_room_label(result),
-            value_name(index),
+            self.value_name(index),
             buffer_probe_load_label(result),
             buffer_probe_zero_label(result),
             buffer_probe_load_label(result),
-            value_name(buffer),
-            value_name(index),
+            self.value_name(buffer),
+            self.value_name(index),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let mut accumulated: Option<String> = None;
@@ -275,7 +268,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             writeln!(
                 self.output,
                 "  %{inserted} = insertelement <16 x i8> poison, i8 {}, i64 0\n  %{splat} = shufflevector <16 x i8> %{inserted}, <16 x i8> poison, <16 x i32> zeroinitializer\n  %{equal} = icmp eq <16 x i8> %{vector}, %{splat}",
-                value_name(*needle),
+                self.value_name(*needle),
             )
             .map_err(|_| BackendFailure::TextEmission)?;
             accumulated = Some(match accumulated {
@@ -308,7 +301,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             buffer_probe_zero_label(result),
             buffer_probe_join_label(result),
             buffer_probe_join_label(result),
-            value_name(result),
+            self.value_name(result),
             buffer_probe_clean_label(result),
             buffer_probe_found_label(result),
             buffer_probe_zero_label(result),

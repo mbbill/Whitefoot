@@ -318,6 +318,7 @@ ACTIVE-SPEC: v0.22 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a
 ACTIVE-SPEC: v0.23 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5 b133b793629d28e7ee1b7ad0ae3d49185932b9390f5c25517f0fb0ea2fc8a6e8
 ACTIVE-SPEC: v0.24 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5
 ACTIVE-SPEC: v0.25 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86
+ACTIVE-SPEC: v0.26 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab
 
 ## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
 - owner: **the owner's exact-byte approval of the digest below.** It was taken
@@ -455,6 +456,87 @@ ACTIVE-SPEC: v0.25 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6b
   native grammar verification; focused counted tests 37/37; frozen acceptance;
   and the complete ignored adapter tally `Pass=393 Fail=1 Skip=13`, whose sole
   failure remains the pre-existing OWN-3 unsupported case.
+
+## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.26 atomic `requires` goals
+- owner: **the owner, in conversation, 2026-08-09** — “批准 v0.26 18aa00e3
+  （含上述 9 个 protected source 变更、8 条 manifest doc 变更，并归档
+  v0.25 c0b3c279）。” The reply followed the complete Chinese owner walkthrough
+  of the ordinary-call proof boundary, atomic goal identity, signed evidence,
+  S4/body effects, real process-entry checks, O3 metadata, accepted-set impact,
+  protected and real-program changes, stable-file action, limitations, exact
+  digests, and verification. It is an explicit approval after the required
+  hard wait, not an inference from the earlier direction selection.
+- APPROVED BYTES: active `spec/kernel-spec.md`, version v0.26, SHA-256
+  `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+  The outgoing immutable v0.25 archive is byte-identical to the previously
+  active stable file and has SHA-256
+  `c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+  A changed specification or archive byte returns to exact review.
+- SEMANTIC SCOPE: preserve the complete FN-8 copy-local plus one pure, total,
+  non-trapping Bool-check declaration surface as one finite typed atomic goal,
+  and admit it on generic function declarations. An ordinary call proves its
+  exact substituted goal after actual obligations and borrow feasibility but
+  before transfer and callee-effect kills; refuted or unproved calls reject,
+  and no ordinary fallback or executable callee prologue remains. S4 supplies
+  the proved goal to the body. Signed opaque facts follow exact support, kill,
+  join, loop, and contradiction rules; only an exact comparison root may
+  project to L0, and Boolean DAGs are never decomposed or composed.
+- ENTRY AND EFFECT BOUNDARY: a requirement is a signature obligation and
+  contributes no callee effect. Explicit source checks and claims retain their
+  ordinary `traps` contribution. The two implemented process wrappers each
+  evaluate the complete requirement exactly once after setup and before owner
+  transfer: false preserves the OP-5 record with zero body calls, while true
+  transfers each owner once to one body call. No FFI, export, foreign stub,
+  owner-taking helper, optimizer assumption, or duplicate cleanup is added.
+- ACCEPTED-SET IMPACT: ordinary calls lacking proof of the complete instantiated
+  goal and effect rows padded solely for the former prologue narrow. Generic
+  functions with requirements, exact `pure` rows for otherwise-pure required
+  bodies, and all-derivable unreachable states exposed by signed contradiction
+  widen. Existing nongeneric FN-8 shapes, enum equality, the complete base64
+  capacity DAG, copy-only clause-local restrictions, ordinary body checks and
+  claims, process-entry behavior, and every non-requirement operation remain.
+- PROTECTED CORPUS: approve exactly nine source changes:
+  `ent3-pos-s4-requires-fact`, `fn3-neg-requires-member`,
+  `fn8-neg-requires-missing-traps`, `fn8-pos-requires-eeq`,
+  `fn8-pos-requires-name-reuse`, `fn8-pos-requires-run`,
+  `fn8-trap-requires-false`, `x-base64-rfc-vectors-run`, and
+  `x-requires-output-capacity-run`. Approve exactly eight corresponding
+  manifest `doc` changes; every id, rules list, verdict, status, and runtime
+  subject remains as reviewed. The two noncopy-local FN-8 controls remain
+  byte-identical. No other protected source or manifest semantic field changes.
+- REAL-PROGRAM EVIDENCE: base64 keeps the exact full capacity DAG and adds the
+  same complete caller evidence before each of three calls. `percent_decode`,
+  `utf8parse`, and `raw_deflate_dynamic_decode` change only one exact effect-row
+  line apiece where the former prologue was the sole read contributor. The
+  frozen buckets remain UTF-8 `33/22/11/0`, SHA-256 `9/9/0/0`, complete
+  DEFLATE `29/11/18/0`, and dynamic DEFLATE `24/11/13/0`; the same five
+  DEFLATE claims are redundant, sixteen are retained, and none is refuted.
+  All three `store_dynamic_length` calls prove their goal in the retained
+  unasserted and S4-blinded rewalk, with the distance claim unchanged.
+- HELD PROVENANCE BOUNDARY: checked metadata retains the finite subject-only
+  requirement-to-protected-leaf bridge, dependency summaries, counterfactual
+  rewalks, fixed-point call composition, and deterministic predecessors. v0.26
+  emits no provenance rejection and does not activate the held PRV gate.
+- STABLE-PATH INSTALLATION: v0.26 remains only at `spec/kernel-spec.md`; the
+  exact outgoing bytes are newly archived at immutable
+  `spec/kernel-spec-v0.25.md`. No `spec/kernel-spec-v0.26.md` is created.
+- boundary: the exact specification and archive bytes, requires-goal compiler
+  implementation and tests, the nine named protected source changes and eight
+  manifest-doc changes, three named real-program effect-row updates, generated
+  data, active pins, derived material, writer documentation, live authority,
+  and the activation-following paired design re-decision. Provenance rejection,
+  ensures, O11, claim ledger, deny-claims, FFI, and wfgrep are outside this
+  approval.
+- activation sequence: atomically install this approved packet first; then use
+  that commit's real eight-character identity in the immediately following
+  paired MCTS re-decision. Installed acceptance, the complete gate, and MCTS
+  lint precede task closure and stage 5b.
+- evidence: task 0048's exact candidate/archive reviews; independent compiler,
+  protected, packet, acceptance, and MCTS-shape reviews; native grammar
+  `70/85/96`; grammar-table identity; focused and complete compiler/program
+  tests; conformance coverage `128/128`; and the complete ignored adapter tally
+  `Pass=393 Fail=1 Skip=13`, whose sole failure remains the pre-existing OWN-3
+  unsupported case.
 
 ## Pre-approval specification digests, as found
 

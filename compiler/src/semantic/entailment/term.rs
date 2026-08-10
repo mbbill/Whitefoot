@@ -81,6 +81,8 @@ pub(crate) enum TermKind {
     ProjectedPlace(ProjectedPlaceTerm, IntegerType),
     /// The length term `len(P)`, of fragment type u64.
     Length(PlaceTerm),
+    /// A length term whose place has interleaved field/deref projections.
+    ProjectedLength(ProjectedPlaceTerm),
     /// One immutable compiler-owned endpoint capture [ENT-2, S11]. The
     /// finalized `for_stmt` path plus the endpoint side is its complete
     /// function-local identity; source can neither name nor mutate it.

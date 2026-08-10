@@ -194,7 +194,7 @@ impl CheckedType {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedValue {
     Unit,
     Bool(bool),
@@ -232,6 +232,8 @@ impl CheckedValue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedConstant {
     pub(crate) id: CheckedConstantId,
+    /// Resolved declaration identity retained for named-const goal leaves.
+    pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) ty: CheckedType,
     pub(crate) value: CheckedValue,
@@ -294,7 +296,7 @@ impl CheckedNominal {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedIntegerOperation {
     AddWrap,
     SubtractWrap,
@@ -343,7 +345,7 @@ pub(crate) enum CheckedIntegerOperation {
     GreaterEqual,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedBooleanOperation {
     And,
     Or,
@@ -351,7 +353,7 @@ pub(crate) enum CheckedBooleanOperation {
     Not,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedFloatOperation {
     AddStrict,
     SubtractStrict,
@@ -606,6 +608,12 @@ pub(crate) enum CheckedSliceSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedExpression {
     Constant(CheckedValue),
+    /// A named const read retains declaration identity for exact goal-origin
+    /// equality while lowering the same immutable value as before.
+    NamedConstant {
+        declaration: DeclarationId,
+        value: CheckedValue,
+    },
     Binding {
         binding: BindingId,
         ty: CheckedType,
@@ -613,7 +621,18 @@ pub(crate) enum CheckedExpression {
     },
     UserCall {
         function: FunctionId,
+        /// Exact source call occurrence and declared-order argument atoms.
+        call: NodePath,
+        argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
+        /// Pre-transfer caller images retained for exact GoalTemplate
+        /// substitution after the complete concrete function inventory exists.
+        goal_arguments: Vec<super::goal::GoalExpression>,
+        /// Concrete caller regions supplied for the callee's formal region
+        /// parameters, in declaration order.
+        goal_regions: Vec<DeclarationId>,
+        /// Filled from the complete phase-A inventory before entailment runs.
+        requirement: Option<Box<super::goal::CheckedCallRequirement>>,
         result: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
     },
@@ -779,6 +798,7 @@ impl CheckedExpression {
     pub(crate) const fn ty(&self) -> CheckedType {
         match self {
             Self::Constant(value) => value.ty(),
+            Self::NamedConstant { value, .. } => value.ty(),
             Self::Binding { ty, .. }
             | Self::UserCall { result: ty, .. }
             | Self::SystemCall { result: ty, .. } => *ty,
@@ -1036,13 +1056,26 @@ pub(crate) struct CheckedFunction {
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
     pub(crate) declared_traps: bool,
     pub(crate) declared_allocates_heap: bool,
-    pub(crate) requires: Vec<CheckedStatement>,
+    /// The callable-boundary predicate and its diagnostic occurrence.
+    pub(crate) requirement: Option<super::goal::CheckedRequirement>,
     pub(crate) body: Vec<CheckedStatement>,
     /// Retained dark [ENT] analysis summary [DIAG-2]. No acceptance,
     /// diagnostic, or lowering behavior reads it in this slice; tests
     /// exercise it directly.
     #[allow(dead_code)]
     pub(crate) entailment: super::entailment::FunctionEntailment,
+}
+
+/// The one source-canonical symbolic requirement retained for a generic
+/// function template.
+///
+/// This is acceptance metadata only. It deliberately has no [`FunctionId`]
+/// and ordinary lowering must not treat it as an executable instance.
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedGenericRequirement {
+    pub(crate) declaration: DeclarationId,
+    pub(crate) requirement: super::goal::CheckedRequirement,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1172,6 +1205,15 @@ pub(crate) struct CheckedProgramData {
     pub(crate) executable_nominal_count: usize,
     pub(crate) constants: Vec<CheckedConstant>,
     pub(crate) functions: Vec<CheckedFunction>,
+    /// Finite subject-only requirement bridge metadata [ENT-6]. It has no
+    /// source-acceptance, lowering, or optimizer authority in this version.
+    #[allow(dead_code)]
+    pub(crate) provenance: super::provenance::ProvenanceMetadata,
+    /// One symbolic requirement per source generic that declares one. These
+    /// entries survive symbolic validation without entering the concrete
+    /// function inventory or executable lowering path.
+    #[allow(dead_code)]
+    pub(crate) generic_requirements: Vec<CheckedGenericRequirement>,
     // Deliberately unread by ordinary lowering: FN-3/FN-4 metadata is
     // source-acceptance evidence and grants no executable authority.
     #[allow(dead_code)]

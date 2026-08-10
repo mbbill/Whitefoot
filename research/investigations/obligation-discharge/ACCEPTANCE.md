@@ -24,7 +24,7 @@ Two runs per program:
 
 - **baseline**: the corpus source as it stands.
 - **claims blinded**: every `claim n: p because "t";` rewritten to
-  `let n_blind: own Bool = band<Bool>(p, p);` followed by
+  `let n_blind = band(p, p);` followed by
   `claim n: n_blind because "t";`. [CLM-2] fixes a `band` result as having no
   comparison origin, so the claim establishes no [ENT-3] S3 fact while the
   statement, its runtime check, its [EFF-2] `traps` contribution, and every
@@ -437,3 +437,42 @@ reversed, singleton, maximum-edge, captured-endpoint, and nested-break counted
 ranges execute without a hidden trap. The carried-index, next-index,
 missing-upper-to-length, and insufficient-lower controls remain unproved; the
 installed result still adds no general induction.
+
+## Pre-activation v0.26 requires-goal candidate rerun (2026-08-09)
+
+This is review evidence, not an activation record. The same frozen-source,
+dark-checker, and all-claims-blinded method was rerun against the reviewed
+v0.26 candidate at SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+Baseline and blinded runs asserted the same function order, obligation count,
+claim count, and claim order; every synthetic blinded claim was retained. The
+temporary in-crate probe was then deleted, and its host file returned to its
+exact pre-probe SHA-256.
+
+Results in `total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 9 / 0 / 0`;
+- deflate, full denominator: `29 / 11 / 18 / 0`; and
+- deflate, dynamic-path denominator: `24 / 11 / 13 / 0`.
+
+Every bucket and every deflate per-function vector is identical to installed
+v0.25: `read_bits` 1/1/0, `emit_byte` 1/1/0, `inflate` 5/0/5,
+`decode_length` 2/0/2, `copy_distance` 3/2/1,
+`build_huffman_table` 10/5/5, `decode_table_symbol` 2/0/2,
+`store_dynamic_length` 2/1/1, and `decode_dynamic` 3/1/2. UTF-8 still splits
+as `parse` 11/0/11 and `main` 22/22/0. SHA-256 remains 9/9 in
+`sha256_abc_word_zero` with no claim.
+
+Deflate retains sixteen claims and the same five non-rejecting redundancy
+advisories — `count_slot_in_counts`, `validate_slot_in_counts`,
+`offsets_slot_in_offsets`, `offsets_slot_in_counts`, and
+`ordered_symbol_in_lengths` — with no refuted claim. The requires migration
+changes exact effect rows where the old executable prologue was their only
+read contributor, but changes no indexed computation or claim in the frozen
+UTF-8/deflate bodies. The three `decode_dynamic` calls to
+`store_dynamic_length` independently pass the new caller-side requirement
+judgment without S2/S3 evidence, while the callee retains the same S4 body
+axiom and the `distance_position_in_lengths` claim remains present. Thus the
+new call boundary introduces no regression in the frozen obligation buckets
+and does not disguise one with a retained callee-entry check.

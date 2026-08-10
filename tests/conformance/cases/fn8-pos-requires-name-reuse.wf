@@ -1,4 +1,4 @@
-fn increment(x: own i32) -> own i32 traps requires {
+fn increment(x: own i32) -> own i32 pure requires {
   let value = ige(x, 0_i32);
   check value else trap "x must be nonnegative";
 } {

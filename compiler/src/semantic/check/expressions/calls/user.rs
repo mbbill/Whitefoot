@@ -6,8 +6,9 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
+use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedType,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSliceOrigin, CheckedType,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
@@ -74,7 +75,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut checked_slices = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
+        let mut argument_nodes = Vec::with_capacity(fields.len());
+        let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
+        let call = self.tree.path(node)?.clone();
         // The payload-free categories transfer by presence at a call
         // boundary [EFF-2]; only region entries are projected below.
         let mut effects = EffectSet {
@@ -86,7 +90,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             blocks: signature.declared_effects.blocks,
             traps: signature.declared_effects.traps,
         };
-        for (field, parameter) in fields.into_iter().zip(&signature.parameters) {
+        for (ordinal, (field, parameter)) in
+            fields.into_iter().zip(&signature.parameters).enumerate()
+        {
             if self.identifier(field)? != parameter.name {
                 return self.issue_node(
                     SemanticRule::Gram11,
@@ -135,6 +141,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             let passed_borrow = self.borrow_for_destination(expected_mode, &argument, atom)?;
+            let ordinal =
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            goal_arguments.push(self.call_goal_argument(
+                function.id,
+                &call,
+                ordinal,
+                atom,
+                expected_mode,
+                expected_type,
+                &argument,
+                passed_borrow.as_ref(),
+                bindings,
+            )?);
+            argument_nodes.push(self.tree.path(atom)?.clone());
             if explicit_borrow && let Some(borrow) = &argument.borrow {
                 call_scoped_borrows.push(borrow.clone());
             }
@@ -167,7 +187,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
+                call,
+                argument_nodes,
                 arguments,
+                goal_arguments,
+                goal_regions: actual_regions,
+                requirement: None,
                 result,
                 slice_origins,
             },
@@ -181,6 +206,216 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             effects,
             accesses: Vec::new(),
         })
+    }
+
+    /// Captures one already-checked actual's pre-transfer goal image.
+    ///
+    /// This runs after the actual expression has acquired all of its checked
+    /// obligations and after borrow feasibility succeeds. It never rechecks or
+    /// reevaluates the source expression. A borrow destination is represented
+    /// by the resolved ultimate referent captured in `passed_borrow` before
+    /// that transient checker metadata disappears.
+    #[allow(clippy::too_many_arguments)]
+    fn call_goal_argument(
+        &self,
+        caller: super::super::super::super::model::FunctionId,
+        call: &crate::NodePath,
+        ordinal: u32,
+        atom: NodeId,
+        expected_mode: CheckedMode,
+        expected_type: CheckedType,
+        argument: &super::super::super::TypedExpression,
+        passed_borrow: Option<&BorrowInfo>,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<GoalExpression, CheckStop> {
+        if expected_mode != CheckedMode::Own {
+            let borrow = passed_borrow.ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            return self.goal_referent_image(&borrow.place, expected_type, bindings);
+        }
+
+        if self
+            .tree
+            .direct_token_with(atom, crate::TerminalPredicate::Literal)?
+            .is_some()
+        {
+            let CheckedExpression::Constant(value) = &argument.expression else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            return Ok(GoalExpression::Datum(GoalDatum::Literal(value.clone())));
+        }
+
+        let place = self
+            .tree
+            .first_child_with(atom, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if self.call_goal_place_contains_subscript(place)? {
+            return Ok(GoalExpression::Datum(GoalDatum::EphemeralActual {
+                caller,
+                call: call.clone(),
+                argument: ordinal,
+                captured_type: expected_type,
+                projections: Vec::new(),
+                ty: expected_type,
+            }));
+        }
+        let (image, holder_pending) = self.call_goal_place_inner(place, bindings)?;
+        if holder_pending || image.ty() != expected_type {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(image)
+    }
+
+    /// A place may nest another place under a `deref` pbase. Search the whole
+    /// source place, not only its outer suffix list, so a future admitted
+    /// `deref(boxes[i])` actual receives the same ephemeral treatment and is
+    /// never misidentified as a rereadable place.
+    fn call_goal_place_contains_subscript(&self, place: NodeId) -> Result<bool, CheckStop> {
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        if self.last_subscript(&suffixes)?.is_some() {
+            return Ok(true);
+        }
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let Some(nested) = self.tree.first_child_with(pbase, Production::Place)? else {
+            return Ok(false);
+        };
+        self.call_goal_place_contains_subscript(nested)
+    }
+
+    /// Forms a caller-visible referent datum. A root that is itself one of the
+    /// caller's borrow parameters remains opaque and therefore retains one
+    /// `Deref`; a local borrow/reborrow has already resolved through its holder
+    /// to an own root and adds no such projection.
+    fn goal_referent_image(
+        &self,
+        place: &ResolvedPlace,
+        ty: CheckedType,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<GoalExpression, CheckStop> {
+        let mut projections = Vec::new();
+        if bindings
+            .get(&place.root)
+            .is_some_and(|binding| binding.mode != CheckedMode::Own)
+        {
+            projections.push(GoalProjection::Deref);
+        }
+        projections.extend(place.fields.iter().copied().map(GoalProjection::Field));
+        let datum = if self.constants.contains_key(&place.root) {
+            GoalDatum::NamedConst {
+                declaration: place.root,
+                projections,
+                ty,
+            }
+        } else {
+            let binding = bindings
+                .get(&place.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            GoalDatum::Place {
+                root: binding.binding,
+                projections,
+                ty,
+            }
+        };
+        Ok(GoalExpression::Datum(datum))
+    }
+
+    /// Resolves one non-indexed own actual to its concrete caller datum while
+    /// preserving own-box dereference and field order. Dereferencing a borrow
+    /// holder consumes the holder boundary exactly once and leaves the
+    /// ultimate referent image produced above.
+    fn call_goal_place_inner(
+        &self,
+        place: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(GoalExpression, bool), CheckStop> {
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let (mut expression, holder_pending) = if self
+            .has_fixed(pbase, crate::FixedTerminal::Deref)?
+        {
+            let nested = self
+                .tree
+                .first_child_with(pbase, Production::Place)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let (nested, nested_holder_pending) = self.call_goal_place_inner(nested, bindings)?;
+            if nested_holder_pending {
+                (nested, false)
+            } else {
+                let CheckedType::Nominal(nominal) = nested.ty() else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                (
+                    nested
+                        .with_projection(GoalProjection::Deref, referent)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                    false,
+                )
+            }
+        } else {
+            let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+            let ResolvedTarget::Source { declaration, class } = usage.target() else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            match class {
+                DeclarationClass::Value => {
+                    let local = bindings
+                        .get(&declaration)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    if let Some(borrow) = &local.borrow {
+                        (
+                            self.goal_referent_image(&borrow.place, local.ty, bindings)?,
+                            true,
+                        )
+                    } else {
+                        (
+                            GoalExpression::Datum(GoalDatum::Place {
+                                root: local.binding,
+                                projections: Vec::new(),
+                                ty: local.ty,
+                            }),
+                            false,
+                        )
+                    }
+                }
+                DeclarationClass::NamedConst => {
+                    let constant = self
+                        .constants
+                        .get(&declaration)
+                        .copied()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    (
+                        GoalExpression::Datum(GoalDatum::NamedConst {
+                            declaration,
+                            projections: Vec::new(),
+                            ty: self.constant(constant)?.ty,
+                        }),
+                        false,
+                    )
+                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            }
+        };
+
+        let suffixes = self.tree.children_with(place, Production::Psuffix)?;
+        if holder_pending && !suffixes.is_empty() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        if !suffixes.is_empty() {
+            let (fields, final_ty) = self.resolve_struct_path(&suffixes, expression.ty())?;
+            for field in fields {
+                expression = expression
+                    .with_projection(GoalProjection::Field(field), final_ty)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            }
+        }
+        Ok((expression, holder_pending))
     }
 
     /// The written type, const, and region arguments of a user-generic call.

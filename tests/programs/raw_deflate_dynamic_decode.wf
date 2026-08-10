@@ -1,4 +1,4 @@
-fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit reads('l 'd), writes('l 'd), traps requires {
+fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit reads('d), writes('l 'd), traps requires {
   let literal_room = len(deref(literal_lengths));
   let enough_literals = ile(literal_count, literal_room);
   check enough_literals else trap "literal lengths shorter than literal_count";

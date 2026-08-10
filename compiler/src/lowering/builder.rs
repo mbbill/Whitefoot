@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 mod buffers;
+mod entry_goal;
 mod loops;
 mod probe;
 mod results;
@@ -16,6 +17,7 @@ use crate::semantic::{
 };
 
 use super::*;
+use entry_goal::lower_entry_goal;
 use loops::LoopTarget;
 use storage::collect_addressed_bindings;
 
@@ -25,6 +27,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let entry = lower_entry(&checked.data.entry);
     let nominals = lower_nominals(&checked.data)?;
     let constants = lower_constants(&checked.data)?;
+    let entry_goal = lower_entry_goal(&checked.data, &nominals)?;
     let functions = checked
         .data
         .functions
@@ -38,6 +41,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         constants,
         functions,
         entry,
+        entry_goal,
     })
 }
 
@@ -189,7 +193,6 @@ fn lower_function(
         builder.parameters.push((value, ty));
         builder.promote_binding_if_needed(parameter.binding)?;
     }
-    builder.lower_statements(&function.requires, None)?;
     builder.lower_statements(&function.body, None)?;
     if builder.current.is_some()
         || builder
@@ -706,6 +709,11 @@ impl<'program> IrBuilder<'program> {
                 Ok(value)
             }
             CheckedExpression::Constant(value) => {
+                let ty = lower_type(value.ty())?;
+                let constant = lower_scalar_constant(value)?;
+                self.define(ty, IrOperation::Constant(constant))
+            }
+            CheckedExpression::NamedConstant { value, .. } => {
                 let ty = lower_type(value.ty())?;
                 let constant = lower_scalar_constant(value)?;
                 self.define(ty, IrOperation::Constant(constant))

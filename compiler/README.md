@@ -23,9 +23,9 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.25 bytes of `../spec/kernel-spec.md`,
+The frontend targets the exact v0.26 bytes of `../spec/kernel-spec.md`,
 SHA-256
-`c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab`.
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -265,14 +265,22 @@ the same; buffer allocation retains an exact non-language guard before
 `malloc`. This is not a language array limit, stack-capacity prediction, hidden
 heap fallback, or optimizer fact.
 
-Concrete `requires` blocks are checked executable prologues. The semantic
-checker admits their restricted own-copy, pure-total ANF subset, retains the
-final OP-5 check separately from the body, and combines prologue and body
-effects exactly. Lowering executes the prologue after parameter binding and
-before the body. Callers do not prove it, and it is never turned into
-`llvm.assume` or used to remove a required check. A borrowed-output capacity
-program exercises this path through the ordinary loop, buffer, effect, and
-cleanup implementation.
+An admitted `requires` block is one finite typed atomic goal. The semantic
+checker alpha-expands its restricted own-copy, pure-total ANF clause into a
+`GoalTemplate`; each ordinary call substitutes concrete pre-transfer actual
+values and must prove that exact goal before argument transfer and callee
+effects. No ordinary callee executes a requirement prologue or fallback trap.
+The proved goal is the body-entry S4 axiom, while the declaration itself adds
+no effect to the callee row and never becomes `llvm.assume`.
+
+The two real process wrappers remain checked boundaries: they evaluate an
+entry function's pure goal once after setup and before the body, trapping with
+the original OP-5 record on false. The checked program also retains finite
+subject-only requirement-to-protected-leaf bridge metadata for the next
+provenance stage; v0.26 does not yet issue a provenance rejection from it. A
+borrowed-output capacity program exercises caller discharge, the body axiom,
+ordinary loop and buffer operations, exact effects, and cleanup through this
+single implementation path.
 
 The compiler retains the static contract family introduced in v0.16 and checks
 it before checked-program publication.

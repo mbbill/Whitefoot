@@ -1,9 +1,19 @@
-fn missing_effect(x: own i32) -> own i32 pure requires {
+fn bounded(x: own i32) -> own i32 pure requires {
   let permitted = ige(x, 0_i32);
   check permitted else trap "x must be nonnegative";
 } {
-  doc "A requirement check exhibits traps, so omitting traps from the function row violates EFF-2.";
   return x;
+}
+
+fn missing_effect() -> own unit pure {
+  doc "A caller-executed check still exhibits traps even though the callee requirement is an effectless proof goal [EFF-2/FN-8].";
+  let x = 7_i32;
+  let permitted = ige(x, 0_i32);
+  check permitted else trap "caller evidence";
+  let value = bounded(x: x);
+  let same = ieq(value, 7_i32);
+  claim expected: same because "the helper returns its input";
+  return unit;
 }
 
 fn main() -> own unit pure {

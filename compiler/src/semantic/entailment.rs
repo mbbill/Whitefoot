@@ -1,14 +1,14 @@
-//! The L0 entailment fragment [ENT-1..ENT-6]: a closed, deterministic,
-//! search-free derivation system over difference-bound facts.
+//! The combined entailment fragment [ENT-1..ENT-6]: a closed, deterministic,
+//! search-free derivation system over L0 difference bounds and finite exact
+//! signed goals.
 //!
 //! The engine is acceptance-bearing: [`analyze_function`] computes the
 //! closed fact state along the [FN-1] structural graph, the [ENT-6]
-//! disposition of every bounds obligation, and the [CLM-2] lifecycle
-//! disposition of every claim. The checker rejects a function whose
-//! summary contains an undischarged obligation ([OP-4], with the residual
-//! rendered exactly per [ENT-6]) or a refuted claim ([CLM-2]), reports a
-//! non-rejecting redundancy advisory for each redundant claim, and retains
-//! the summary on the checked function [DIAG-2].
+//! disposition of every bounds obligation, the [FN-8] disposition of every
+//! ordinary call requirement, and the [CLM-2] lifecycle disposition of every
+//! claim. The checker rejects a function whose summary contains an
+//! undischarged obligation or call goal, or a refuted claim, and retains the
+//! complete summary on the checked function [DIAG-2].
 //!
 //! Judgments are per function body [ENT-2]; the [ENT-3] S4 `requires`
 //! relation is the one fact that enters from outside the body, and no fact
@@ -26,10 +26,14 @@ mod flow;
 mod state;
 mod term;
 
+use std::collections::HashMap;
+
+use super::goal::ConcreteGoal;
 use super::model::{
-    CheckedConstant, CheckedFunction, CheckedMode, CheckedNominal, CheckedType, FunctionId,
+    CheckedConstant, CheckedConstantId, CheckedFunction, CheckedMode, CheckedNominal, CheckedType,
+    FunctionId,
 };
-use crate::NodePath;
+use crate::{DeclarationId, NodePath};
 
 /// Kill-relevant [EFF-2] projection of one callee signature: for each
 /// parameter, whether the callee's declared effect row writes the region that
@@ -66,6 +70,10 @@ pub(crate) struct EntailmentContext<'check> {
     /// Callee projections indexed by [`FunctionId`].
     pub(crate) callees: &'check [EntailmentCallee],
     pub(crate) constants: &'check [CheckedConstant],
+    /// Source declaration identity to dense checked-constant identity. Goal
+    /// equality keeps the former while L0 projection reads the latter's
+    /// mathematical value.
+    pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
     /// Binding names in dense [`super::model::BindingId`] order, for the
     /// [ENT-6] canonical residual rendering.
@@ -75,6 +83,20 @@ pub(crate) struct EntailmentContext<'check> {
 impl EntailmentContext<'_> {
     pub(crate) fn callee(&self, function: FunctionId) -> Option<&EntailmentCallee> {
         self.callees.get(function.0 as usize)
+    }
+
+    pub(crate) fn constant(&self, declaration: DeclarationId) -> Option<&CheckedConstant> {
+        let id = self.constant_ids.get(&declaration)?;
+        self.constants.get(id.0 as usize)
+    }
+
+    pub(crate) fn constant_declaration(
+        &self,
+        constant: CheckedConstantId,
+    ) -> Option<DeclarationId> {
+        self.constant_ids
+            .iter()
+            .find_map(|(declaration, id)| (*id == constant).then_some(*declaration))
     }
 }
 
@@ -124,6 +146,68 @@ pub(crate) struct ClaimOutcome {
     pub(crate) disposition: ClaimDisposition,
 }
 
+/// Complete [FN-8] disposition of one ordinary call requirement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CallGoalDisposition {
+    Discharged,
+    Refuted,
+    Unproved,
+}
+
+/// Every direct derivation ground retained for one call judgment, in the
+/// fixed order documented on [`CallGoalOutcome::evidence`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CallGoalEvidence {
+    AllDerivable,
+    OpaquePositive,
+    ExactL0Projection,
+    OpaqueNegative,
+    NegatedL0Projection,
+}
+
+/// Retained checked metadata for one ordinary call carrying a requirement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallGoalOutcome {
+    /// Exact source `call` occurrence.
+    pub(crate) node_path: NodePath,
+    pub(crate) callee: FunctionId,
+    /// Exact final-check occurrence in the concrete callee.
+    pub(crate) final_check: NodePath,
+    pub(crate) goal: ConcreteGoal,
+    pub(crate) disposition: CallGoalDisposition,
+    /// Deterministic complete evidence. Contradictory states retain only
+    /// `AllDerivable`; positive opaque and projection grounds follow in that
+    /// order, as do negative opaque and negated-projection grounds.
+    pub(crate) evidence: Vec<CallGoalEvidence>,
+}
+
+/// One metadata-only rejudgment of an ordinary call's complete goal.
+///
+/// This is deliberately not a [`CallGoalOutcome`]: the caller's actual
+/// expressions may contain an obligation that the counterfactual state does
+/// not discharge.  `goal_disposition` answers only the isolated FN-8 goal
+/// question after those actuals have been walked.  Full-state analysis remains
+/// the sole source-acceptance judgment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallGoalCounterfactual {
+    pub(crate) node_path: NodePath,
+    pub(crate) callee: FunctionId,
+    pub(crate) final_check: NodePath,
+    pub(crate) goal: ConcreteGoal,
+    pub(crate) actual_obligations_ok: bool,
+    pub(crate) goal_disposition: CallGoalDisposition,
+    pub(crate) goal_evidence: Vec<CallGoalEvidence>,
+}
+
+/// Metadata-only ENT rewalk used by the finite subject bridge [ENT-6].
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct FunctionEntailmentRewalk {
+    /// Every protected leaf under the selected counterfactual fact sources.
+    pub(crate) obligations: Vec<ObligationOutcome>,
+    /// Isolated call-goal results, explicitly separated from actual validity.
+    pub(crate) call_goals: Vec<CallGoalCounterfactual>,
+}
+
 /// Retained summary of one function's entailment analysis [DIAG-2].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailment {
@@ -131,9 +215,11 @@ pub(crate) struct FunctionEntailment {
     pub(crate) obligations: Vec<ObligationOutcome>,
     /// Claim lifecycle outcomes in deterministic source walk order.
     pub(crate) claims: Vec<ClaimOutcome>,
+    /// Ordinary call-goal judgments in deterministic checked-tree walk order.
+    pub(crate) call_goals: Vec<CallGoalOutcome>,
 }
 
-/// Computes the L0 entailment analysis of one checked function body.
+/// Computes the combined entailment analysis of one checked function body.
 ///
 /// The analysis is total: it never rejects, never reports unsupported, and
 /// never fails compilation. A body shape outside the engine's current
@@ -143,6 +229,18 @@ pub(crate) fn analyze_function(
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
     flow::analyze(function, context)
+}
+
+/// Recomputes ENT flow without S2/S3, optionally retaining body-entry S4.
+///
+/// The result is checked metadata only.  No source rejection, advisory, or
+/// lowering decision reads it.
+pub(crate) fn rewalk_function_unasserted(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    include_s4: bool,
+) -> FunctionEntailmentRewalk {
+    flow::rewalk_unasserted(function, context, include_s4)
 }
 
 /// The engine's fragment-type gate: one member of the closed integer set

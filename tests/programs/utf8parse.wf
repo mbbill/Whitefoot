@@ -1,4 +1,4 @@
-fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> own u64 reads('r), writes('r), traps requires {
+fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> own u64 writes('r), traps requires {
   let source_length = len(src);
   let output_length = len(deref(out));
   let enough_output = ige(output_length, source_length);

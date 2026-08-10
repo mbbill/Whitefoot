@@ -4,7 +4,7 @@ enum ClauseEq {
   ClauseThird();
 }
 
-fn guarded(left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
+fn guarded(left: own ClauseEq, right: own ClauseEq) -> own unit pure requires {
   let same = eeq(left, right);
   check same else trap "enum precondition failed";
 } {
@@ -14,6 +14,8 @@ fn guarded(left: own ClauseEq, right: own ClauseEq) -> own unit traps requires {
 fn main() -> own unit traps {
   let left = ClauseSecond();
   let right = ClauseSecond();
+  let same = eeq(left, right);
+  claim guarded_equality: same because "the exact enum equality goal holds before the call";
   guarded(left: left, right: right);
   return unit;
 }

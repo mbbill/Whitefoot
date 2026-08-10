@@ -1,8 +1,8 @@
 # 0048 — make `requires` one atomic call-site goal
 
 - **Status:** `IN PROGRESS`
-- **Authority:** the ACTIVE stage-7 step in `docs/current-plan.md`, derived
-  from Direction Outline revision 27
+- **Authority:** the stage-7 step registered under Direction Outline revision
+  27 and carried unchanged by the revision-28 `docs/current-plan.md`
 - **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`, branch
   `codex/0047-counted-range-impl`
 - **Base revision:** `7eb78ab7ba36bafbb68f1b041104596f1a2d8b21`
@@ -82,8 +82,10 @@ held PRV gate.
    complete Chinese owner explanation and exact digest, then stop and wait.
 7. After explicit approval, atomically install the stable spec, outgoing
    archive, compiler, protected deltas, active pins, approval chain, derivation,
-   docs, and MCTS re-decision. Rerun installed acceptance and close this task in
-   a separate canonical closure change before stage 5b begins.
+   and activation-state docs. Rerun installed acceptance, then immediately
+   record the paired MCTS re-decision in a separate closure commit citing the
+   activation commit's real eight-character identity. MCTS lint and that
+   closure commit must land before this task closes or stage 5b begins.
 
 ## Progress
 
@@ -91,11 +93,18 @@ held PRV gate.
   and the ACTIVE plan fix the Stage-7 semantics, protected dispositions,
   stable-file workflow, and stop boundary. Three independent plan reviews found
   no remaining P1/P2 after the O3 fixed point, contradiction, predicate
-  identity, entry ownership, and MCTS activation scope were closed.
-- **Current:** freeze the v0.25 FN-8 surface and prepare the exact v0.26
-  normative candidate before substantive compiler changes.
-- **Next:** independently review the complete candidate digest and impact, then
-  implement regression-first through the ordinary semantic and backend paths.
+  identity, entry ownership, and MCTS activation scope were closed. The exact
+  v0.26 candidate, compiler, protected migrations, O3 metadata, entry wrappers,
+  frozen acceptance, and independent implementation reviews are complete with
+  no remaining P1/P2.
+- **Current:** exact-approved v0.26
+  `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`
+  is active, including the nine protected source changes, eight manifest `doc`
+  changes, outgoing v0.25 archive, and approval chain. Rerun installed
+  acceptance and the complete gate; stage 5b remains unauthorized.
+- **Next:** record the paired MCTS re-decision in its separate closure commit
+  with the activation commit's real identity, then close this task before stage
+  5b begins.
 
 ## Scope and expected touch set
 

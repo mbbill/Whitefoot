@@ -60,7 +60,7 @@ impl FunctionEmitter<'_, '_> {
             if result_type != destination_type {
                 return Err(BackendFailure::InvalidIr);
             }
-            value_name(result)
+            self.value_name(result)
         } else {
             format!("%{}", self.next_temporary()?)
         };
@@ -70,7 +70,7 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  {converted} = {opcode} {source_ty} {} to {destination_ty}",
-            value_name(value)
+            self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         if total {
@@ -99,8 +99,8 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  %{recovered} = call {source_ty} @{intrinsic}({destination_ty} {converted})\n  %{equal} = icmp eq {source_ty} {}, %{recovered}\n  %{below_maximum} = icmp ne {source_ty} {}, {maximum}\n  %{valid} = and i1 %{equal}, %{below_maximum}",
-            value_name(value),
-            value_name(value)
+            self.value_name(value),
+            self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.emit_narrow_result(
@@ -159,8 +159,8 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  %{converted} = call {destination_ty} @{intrinsic}({source_ty} {})\n  %{reverse} = {return_opcode} {destination_ty} %{converted} to {source_ty}\n  %{equal} = fcmp oeq {source_ty} {}, %{reverse}",
-            value_name(value),
-            value_name(value)
+            self.value_name(value),
+            self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
 
@@ -240,10 +240,10 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  %{converted} = fptrunc {source_ty} {} to {destination_ty}\n  %{widened} = fpext {destination_ty} %{converted} to {source_ty}\n  %{exact} = fcmp oeq {source_ty} {}, %{widened}\n  %{nan} = fcmp uno {source_ty} {}, {}\n  %{valid} = or i1 %{nan}, %{exact}\n  %{selected} = select i1 %{nan}, {destination_ty} {canonical_nan}, {destination_ty} %{converted}",
-            value_name(value),
-            value_name(value),
-            value_name(value),
-            value_name(value)
+            self.value_name(value),
+            self.value_name(value),
+            self.value_name(value),
+            self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.emit_narrow_result(
@@ -270,10 +270,10 @@ impl FunctionEmitter<'_, '_> {
         writeln!(
             self.output,
             "  %{widened} = fpext {source_ty} {} to {destination_ty}\n  %{nan} = fcmp uno {source_ty} {}, {}\n  {} = select i1 %{nan}, {destination_ty} {canonical_nan}, {destination_ty} %{widened}",
-            value_name(value),
-            value_name(value),
-            value_name(value),
-            value_name(result)
+            self.value_name(value),
+            self.value_name(value),
+            self.value_name(value),
+            self.value_name(result)
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

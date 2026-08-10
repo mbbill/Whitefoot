@@ -17,19 +17,24 @@ mod sources;
 
 use std::collections::HashSet;
 
+use super::super::goal::{ConcreteGoal, GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedConst, CheckedExpression, CheckedFunction, CheckedLoopId,
-    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
-    CheckedStatement, CheckedType, CheckedValue, IntegerType,
+    BindingId, CheckedArrayRoot, CheckedConst, CheckedExpression, CheckedFloatOperation,
+    CheckedFunction, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominal,
+    CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
-use super::state::{FactState, OutcomeFact, Relation, close, join, materialize_closure};
+use super::state::{
+    FactState, GoalId, GoalSign, GoalSupport, GoalTable, OutcomeFact, Relation, close, join,
+    materialize_closure,
+};
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
     TermId, TermKind, TermTable, integer_value,
 };
 use super::{
-    ClaimDisposition, ClaimOutcome, EntailmentContext, FunctionEntailment, ObligationOutcome,
-    fragment_type,
+    CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
+    ClaimDisposition, ClaimOutcome, EntailmentContext, FunctionEntailment,
+    FunctionEntailmentRewalk, ObligationOutcome, fragment_type,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -102,6 +107,7 @@ struct LoopFrame {
 #[derive(Default)]
 struct ArmFacts {
     comparison: Option<Relation>,
+    goals: Vec<GoalId>,
     outcome: Option<(u32, OutcomeFact)>,
 }
 
@@ -116,8 +122,10 @@ struct GiveFrame {
 #[derive(Default)]
 struct LoopKills {
     events: Vec<KillEvent>,
-    /// `set` targets naming a whole binding, which invalidate any comparison
-    /// origin held by that binding.
+    /// Every binding named as a `set` target. An ordinary-let origin is valid
+    /// only while its bound value has no intervening whole, field, or element
+    /// mutation; the narrower comparison/outcome origins can only inhabit
+    /// nonprojectable Bool/outcome bindings, so this same set is exact there.
     set_bindings: HashSet<BindingId>,
 }
 
@@ -151,13 +159,53 @@ pub(super) fn analyze(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,
 ) -> FunctionEntailment {
+    let run = run(function, context, true, true, false);
+    FunctionEntailment {
+        obligations: run.obligations,
+        claims: run.claims,
+        call_goals: run.call_goals,
+    }
+}
+
+pub(super) fn rewalk_unasserted(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    include_s4: bool,
+) -> FunctionEntailmentRewalk {
+    let run = run(function, context, false, include_s4, true);
+    FunctionEntailmentRewalk {
+        obligations: run.obligations,
+        call_goals: run.call_counterfactuals,
+    }
+}
+
+struct AnalysisRun {
+    obligations: Vec<ObligationOutcome>,
+    claims: Vec<ClaimOutcome>,
+    call_goals: Vec<CallGoalOutcome>,
+    call_counterfactuals: Vec<CallGoalCounterfactual>,
+}
+
+fn run(
+    function: &CheckedFunction,
+    context: &EntailmentContext<'_>,
+    include_asserted_sources: bool,
+    include_s4: bool,
+    counterfactual_calls: bool,
+) -> AnalysisRun {
     let mut analyzer = Analyzer {
         context,
         function,
+        include_asserted_sources,
+        include_s4,
+        counterfactual_calls,
         bindings: Vec::new(),
         terms: TermTable::new(),
+        goals: GoalTable::default(),
         obligations: Vec::new(),
         claims: Vec::new(),
+        call_goals: Vec::new(),
+        call_counterfactuals: Vec::new(),
         scopes: Vec::new(),
         loops: Vec::new(),
         gives: Vec::new(),
@@ -169,23 +217,37 @@ pub(super) fn analyze(
         .push(function.parameters.iter().map(|p| p.binding).collect());
     // [ENT-3] S4: the substituted `requires` relation enters the body's entry
     // fact state, the one fact that crosses into the body [ENT-2, FN-8].
-    analyzer.establish_requires_facts(&mut state);
+    if analyzer.include_s4 {
+        analyzer.establish_requires_facts(&mut state);
+    }
     analyzer.walk_block(&function.body, &mut state);
     analyzer.scopes.pop();
-    FunctionEntailment {
+    AnalysisRun {
         obligations: analyzer.obligations,
         claims: analyzer.claims,
+        call_goals: analyzer.call_goals,
+        call_counterfactuals: analyzer.call_counterfactuals,
     }
 }
 
 struct Analyzer<'check, 'unit> {
     context: &'check EntailmentContext<'unit>,
     function: &'check CheckedFunction,
+    /// Whether executed writer assertions S2/S3 establish facts in this run.
+    include_asserted_sources: bool,
+    /// Whether the body's proved requirement S4 enters at body entry.
+    include_s4: bool,
+    /// Whether calls retain isolated goal counterfactuals even when an actual
+    /// expression obligation fails under this metadata-only state.
+    counterfactual_calls: bool,
     /// Dense per-binding summaries indexed by [`BindingId`].
     bindings: Vec<BindingSummary>,
     terms: TermTable,
+    goals: GoalTable,
     obligations: Vec<ObligationOutcome>,
     claims: Vec<ClaimOutcome>,
+    call_goals: Vec<CallGoalOutcome>,
+    call_counterfactuals: Vec<CallGoalCounterfactual>,
     /// Lexical scope stack: the bindings declared in each open block.
     scopes: Vec<Vec<BindingId>>,
     loops: Vec<LoopFrame>,
@@ -414,6 +476,14 @@ impl Analyzer<'_, '_> {
                 }
                 KillEvent::Consume(root) => place.root == PlaceRoot::Binding(*root),
             },
+            TermKind::ProjectedLength(place) => match event {
+                KillEvent::Write { element: true, .. } => false,
+                KillEvent::Write {
+                    place: written,
+                    element: false,
+                } => self.resolve_projected(&place).overlaps(written),
+                KillEvent::Consume(root) => place.root == PlaceRoot::Binding(*root),
+            },
         }
     }
 
@@ -428,10 +498,118 @@ impl Analyzer<'_, '_> {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
             },
-            TermKind::ProjectedPlace(place, _) => match place.root {
-                PlaceRoot::Binding(binding) => exited.contains(&binding),
-                PlaceRoot::Constant(_) => false,
-            },
+            TermKind::ProjectedPlace(place, _) | TermKind::ProjectedLength(place) => {
+                match place.root {
+                    PlaceRoot::Binding(binding) => exited.contains(&binding),
+                    PlaceRoot::Constant(_) => false,
+                }
+            }
+        }
+    }
+
+    fn resolve_goal_support(&self, support: &GoalSupport) -> (ResolvedPlace, Vec<BindingId>) {
+        let mut resolved = ResolvedPlace {
+            root: PlaceRoot::Binding(support.root),
+            fields: Vec::new(),
+        };
+        let mut holders = Vec::new();
+        for projection in &support.projections {
+            match projection {
+                GoalProjection::Field(field) => resolved.fields.push(*field),
+                GoalProjection::Deref => {
+                    if resolved.fields.is_empty()
+                        && let PlaceRoot::Binding(binding) = resolved.root
+                    {
+                        resolved = self.resolve_deref_with_holders(binding, 0, &mut holders);
+                    } else if let PlaceRoot::Binding(binding) = resolved.root {
+                        holders.push(binding);
+                    }
+                }
+            }
+        }
+        (resolved, holders)
+    }
+
+    fn resolve_deref_with_holders(
+        &self,
+        holder: BindingId,
+        depth: usize,
+        holders: &mut Vec<BindingId>,
+    ) -> ResolvedPlace {
+        holders.push(holder);
+        let anchored = ResolvedPlace {
+            root: PlaceRoot::Binding(holder),
+            fields: Vec::new(),
+        };
+        if depth > 32 {
+            return anchored;
+        }
+        match self
+            .summary(holder)
+            .and_then(|summary| summary.holder.as_ref())
+        {
+            Some(HolderReferent::Place { binding, fields }) => {
+                let mut resolved = if self.is_holder(*binding) {
+                    self.resolve_deref_with_holders(*binding, depth + 1, holders)
+                } else {
+                    ResolvedPlace {
+                        root: PlaceRoot::Binding(*binding),
+                        fields: Vec::new(),
+                    }
+                };
+                resolved.fields.extend_from_slice(fields);
+                resolved
+            }
+            Some(HolderReferent::Holder(next)) => {
+                self.resolve_deref_with_holders(*next, depth + 1, holders)
+            }
+            Some(HolderReferent::Opaque) | None => anchored,
+        }
+    }
+
+    fn event_kills_goal(&self, goal: GoalId, event: &KillEvent) -> bool {
+        self.goals.support(goal).iter().any(|support| {
+            let (place, holders) = self.resolve_goal_support(support);
+            match event {
+                KillEvent::Write { element: true, .. } if support.length => false,
+                KillEvent::Write { place: written, .. } => place.overlaps(written),
+                KillEvent::Consume(root) => {
+                    holders.contains(root) || place.root == PlaceRoot::Binding(*root)
+                }
+            }
+        })
+    }
+
+    /// An ordinary-let origin is available only while the binding whose
+    /// initializer it describes has not itself been written or consumed.
+    /// This key guard is separate from the goal's value support: invalidating
+    /// it stops future alias expansion without erasing a signed snapshot fact
+    /// that an earlier branch, check, or claim already established.
+    fn event_kills_goal_origin_binding(&self, binding: BindingId, event: &KillEvent) -> bool {
+        match event {
+            KillEvent::Write { place, .. } => ResolvedPlace {
+                root: PlaceRoot::Binding(binding),
+                fields: Vec::new(),
+            }
+            .overlaps(place),
+            KillEvent::Consume(root) => binding == *root,
+        }
+    }
+
+    fn scope_kills_goal(&self, goal: GoalId, exited: &HashSet<BindingId>) -> bool {
+        self.goals.support(goal).iter().any(|support| {
+            let (place, holders) = self.resolve_goal_support(support);
+            holders.iter().any(|holder| exited.contains(holder))
+                || matches!(place.root, PlaceRoot::Binding(binding) if exited.contains(&binding))
+        })
+    }
+
+    /// Contradiction is absorbing. Promote the complete combined closure
+    /// before every kill entry so a write cannot erase one premise and make
+    /// an unreachable point reachable again.
+    fn promote_contradiction(&self, state: &mut FactState) {
+        if !state.all_derivable && close(state, &self.terms, &self.goals).contradictory() {
+            state.all_derivable = true;
         }
     }
 
@@ -439,10 +617,21 @@ impl Analyzer<'_, '_> {
         if events.is_empty() {
             return;
         }
+        self.promote_contradiction(state);
         state.kill(|term| {
             events
                 .iter()
                 .any(|event| self.event_kills_term(term, event))
+        });
+        state.kill_goals(|goal| {
+            events
+                .iter()
+                .any(|event| self.event_kills_goal(goal, event))
+        });
+        state.goal_origins.retain(|binding, _| {
+            !events
+                .iter()
+                .any(|event| self.event_kills_goal_origin_binding(*binding, event))
         });
     }
 
@@ -454,15 +643,21 @@ impl Analyzer<'_, '_> {
         if exited.is_empty() {
             return;
         }
+        self.promote_contradiction(state);
         state.kill(|term| self.scope_kills_term(term, &exited));
+        state.kill_goals(|goal| self.scope_kills_goal(goal, &exited));
         state.origins.retain(|binding, _| !exited.contains(binding));
         state
             .outcomes
+            .retain(|binding, _| !exited.contains(binding));
+        state
+            .goal_origins
             .retain(|binding, _| !exited.contains(binding));
     }
 
     /// Applies the private capture-scope kill of one counted construct.
     fn exit_counted_capture_scope(&self, state: &mut FactState, range_path: &[u32]) {
+        self.promote_contradiction(state);
         state.kill(|term| {
             matches!(
                 self.terms.kind(term),
@@ -492,11 +687,18 @@ impl Analyzer<'_, '_> {
     /// Reads an expression as a term or constant [ENT-2]; anything else is
     /// no operand and establishes or derives nothing.
     fn read_operand(&mut self, expression: &CheckedExpression) -> Option<TermId> {
-        if let CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) = expression {
-            return Some(
-                self.terms
-                    .intern(TermKind::Constant(integer_value(*ty, *bits))),
-            );
+        match expression {
+            CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
+            | CheckedExpression::NamedConstant {
+                value: CheckedValue::Integer { ty, bits },
+                ..
+            } => {
+                return Some(
+                    self.terms
+                        .intern(TermKind::Constant(integer_value(*ty, *bits))),
+                );
+            }
+            _ => {}
         }
         let fragment = fragment_type(expression.ty())?;
         let path = self.read_place_path(expression)?;
@@ -610,6 +812,693 @@ impl Analyzer<'_, '_> {
             return state.origins.get(binding).cloned();
         }
         None
+    }
+
+    // ------------------------------------------------------------------
+    // Finite exact opaque goals [ENT-2..ENT-4]
+    // ------------------------------------------------------------------
+
+    /// Converts one source expression to ENT-3's exact direct pure/total
+    /// origin. Any excluded child excludes the whole expression.
+    fn direct_goal_expression(&self, expression: &CheckedExpression) -> Option<GoalExpression> {
+        // A non-consuming place read is admitted by its final copy value, not
+        // by the mode of every holder traversed on the way there. In
+        // particular, reading through an owning box must retain the box's
+        // explicit Deref projection even though the box binding itself is
+        // affine and cannot be a standalone goal datum.
+        if self.is_copy(expression.ty())
+            && let Some(path) = self.read_place_path(expression)
+            && let PlaceRoot::Binding(root) = path.root
+        {
+            return Some(GoalExpression::Datum(GoalDatum::Place {
+                root,
+                projections: path
+                    .projections
+                    .into_iter()
+                    .map(|projection| match projection {
+                        PlaceProjection::Field(field) => GoalProjection::Field(field),
+                        PlaceProjection::Deref => GoalProjection::Deref,
+                    })
+                    .collect(),
+                ty: expression.ty(),
+            }));
+        }
+        let build_operation = |row, type_arguments, const_arguments, result, arguments: Vec<_>| {
+            Some(GoalExpression::Operation {
+                row,
+                type_arguments,
+                const_arguments,
+                result,
+                arguments,
+            })
+        };
+        match expression {
+            CheckedExpression::Constant(value) => {
+                Some(GoalExpression::Datum(GoalDatum::Literal(value.clone())))
+            }
+            CheckedExpression::NamedConstant { declaration, value } => {
+                Some(GoalExpression::Datum(GoalDatum::NamedConst {
+                    declaration: *declaration,
+                    projections: Vec::new(),
+                    ty: value.ty(),
+                }))
+            }
+            CheckedExpression::Binding { binding, ty, .. } if self.is_copy(*ty) => {
+                Some(GoalExpression::Datum(GoalDatum::Place {
+                    root: *binding,
+                    projections: self
+                        .needs_implicit_deref(*binding)
+                        .then_some(GoalProjection::Deref)
+                        .into_iter()
+                        .collect(),
+                    ty: *ty,
+                }))
+            }
+            CheckedExpression::Project {
+                binding,
+                fields,
+                ty,
+                consume_root: false,
+                ..
+            } if self.is_copy(*ty) => Some(GoalExpression::Datum(GoalDatum::Place {
+                root: *binding,
+                projections: self
+                    .needs_implicit_deref(*binding)
+                    .then_some(GoalProjection::Deref)
+                    .into_iter()
+                    .chain(fields.iter().copied().map(GoalProjection::Field))
+                    .collect(),
+                ty: *ty,
+            })),
+            CheckedExpression::DerefAddressed { binding, ty } if self.is_copy(*ty) => {
+                Some(GoalExpression::Datum(GoalDatum::Place {
+                    root: *binding,
+                    projections: vec![GoalProjection::Deref],
+                    ty: *ty,
+                }))
+            }
+            CheckedExpression::BoxDeref {
+                referent, value, ..
+            } if self.is_copy(*referent) => self
+                .direct_goal_expression(value)?
+                .with_projection(GoalProjection::Deref, *referent),
+            CheckedExpression::ProjectValue {
+                value, field, ty, ..
+            } if self.is_copy(*ty) => self
+                .direct_goal_expression(value)?
+                .with_projection(GoalProjection::Field(*field), *ty),
+            CheckedExpression::IntegerOperation {
+                operation,
+                operand_type,
+                arguments,
+                result,
+                trap,
+            } if trap.is_none() => build_operation(
+                GoalOperation::Integer {
+                    operation: *operation,
+                    operand_type: *operand_type,
+                },
+                Vec::new(),
+                Vec::new(),
+                *result,
+                arguments
+                    .iter()
+                    .map(|argument| self.direct_goal_expression(argument))
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            CheckedExpression::FloatOperation {
+                operation: row,
+                operand_type,
+                arguments,
+            } => build_operation(
+                GoalOperation::Float {
+                    operation: *row,
+                    operand_type: *operand_type,
+                },
+                if matches!(
+                    row,
+                    CheckedFloatOperation::Infinity | CheckedFloatOperation::Nan
+                ) {
+                    vec![*operand_type]
+                } else {
+                    Vec::new()
+                },
+                Vec::new(),
+                row.result_type(*operand_type),
+                arguments
+                    .iter()
+                    .map(|argument| self.direct_goal_expression(argument))
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            CheckedExpression::NumericConversion {
+                source,
+                destination,
+                value,
+                result,
+            } => build_operation(
+                GoalOperation::NumericConversion {
+                    source: *source,
+                    destination: *destination,
+                },
+                vec![source.ty(), destination.ty()],
+                Vec::new(),
+                *result,
+                vec![self.direct_goal_expression(value)?],
+            ),
+            CheckedExpression::Reinterpret {
+                source,
+                destination,
+                value,
+            } => build_operation(
+                GoalOperation::Reinterpret {
+                    source: *source,
+                    destination: *destination,
+                },
+                vec![source.ty(), destination.ty()],
+                Vec::new(),
+                destination.ty(),
+                vec![self.direct_goal_expression(value)?],
+            ),
+            CheckedExpression::BooleanOperation {
+                operation: row,
+                arguments,
+            } => build_operation(
+                GoalOperation::Boolean(*row),
+                Vec::new(),
+                Vec::new(),
+                CheckedType::Bool,
+                arguments
+                    .iter()
+                    .map(|argument| self.direct_goal_expression(argument))
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            CheckedExpression::EnumEquality {
+                equal,
+                operand_type,
+                arguments,
+            } => build_operation(
+                GoalOperation::EnumEquality {
+                    equal: *equal,
+                    operand_type: *operand_type,
+                },
+                Vec::new(),
+                Vec::new(),
+                CheckedType::Bool,
+                arguments
+                    .iter()
+                    .map(|argument| self.direct_goal_expression(argument))
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            CheckedExpression::ArrayFill { ty, value, .. } => {
+                let CheckedType::Array { element, length } = ty else {
+                    return None;
+                };
+                build_operation(
+                    GoalOperation::ArrayFill {
+                        element: *element,
+                        length: *length,
+                    },
+                    vec![element.ty()],
+                    vec![*length],
+                    *ty,
+                    vec![self.direct_goal_expression(value)?],
+                )
+            }
+            CheckedExpression::ArrayLength { root, length } => {
+                let argument = self.goal_array_root(root)?;
+                let CheckedType::Array { element, .. } = argument.ty() else {
+                    return None;
+                };
+                build_operation(
+                    GoalOperation::ArrayLength {
+                        element,
+                        length: *length,
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    CheckedType::Integer(IntegerType::U64),
+                    vec![argument],
+                )
+            }
+            CheckedExpression::BufferLength { root } => {
+                let argument = self.goal_binding_place(
+                    root.binding,
+                    root.fields.iter().copied().map(GoalProjection::Field),
+                    CheckedType::Buffer {
+                        element: root.element,
+                    },
+                );
+                build_operation(
+                    GoalOperation::BufferLength {
+                        element: root.element,
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    CheckedType::Integer(IntegerType::U64),
+                    vec![argument],
+                )
+            }
+            CheckedExpression::SliceLength { root } => {
+                let ty = self.summary(root.binding)?.ty?;
+                let CheckedType::Slice { region, element } = ty else {
+                    return None;
+                };
+                let argument = self.goal_binding_place(root.binding, std::iter::empty(), ty);
+                build_operation(
+                    GoalOperation::SliceLength { region, element },
+                    Vec::new(),
+                    Vec::new(),
+                    CheckedType::Integer(IntegerType::U64),
+                    vec![argument],
+                )
+            }
+            CheckedExpression::Binding { .. }
+            | CheckedExpression::Project { .. }
+            | CheckedExpression::DerefAddressed { .. }
+            | CheckedExpression::BoxDeref { .. }
+            | CheckedExpression::ProjectValue { .. }
+            | CheckedExpression::IntegerOperation { .. }
+            | CheckedExpression::UserCall { .. }
+            | CheckedExpression::SystemCall { .. }
+            | CheckedExpression::ArrayIndex { .. }
+            | CheckedExpression::BufferFill { .. }
+            | CheckedExpression::BufferIndex { .. }
+            | CheckedExpression::SliceOf { .. }
+            | CheckedExpression::SliceIndex { .. }
+            | CheckedExpression::BoxNew { .. }
+            | CheckedExpression::BorrowBuffer { .. }
+            | CheckedExpression::BorrowAddressed { .. }
+            | CheckedExpression::BorrowBox { .. }
+            | CheckedExpression::BorrowSystemResource { .. }
+            | CheckedExpression::ReborrowAddressed { .. }
+            | CheckedExpression::ConstructStruct { .. }
+            | CheckedExpression::ConstructEnum { .. } => None,
+        }
+    }
+
+    fn goal_binding_place(
+        &self,
+        binding: BindingId,
+        projections: impl IntoIterator<Item = GoalProjection>,
+        ty: CheckedType,
+    ) -> GoalExpression {
+        GoalExpression::Datum(GoalDatum::Place {
+            root: binding,
+            projections: self
+                .needs_implicit_deref(binding)
+                .then_some(GoalProjection::Deref)
+                .into_iter()
+                .chain(projections)
+                .collect(),
+            ty,
+        })
+    }
+
+    fn goal_array_root(&self, root: &CheckedArrayRoot) -> Option<GoalExpression> {
+        match root {
+            CheckedArrayRoot::Binding { binding, fields } => {
+                let ty = self.projected_binding_type(*binding, fields)?;
+                Some(self.goal_binding_place(
+                    *binding,
+                    fields.iter().copied().map(GoalProjection::Field),
+                    ty,
+                ))
+            }
+            CheckedArrayRoot::Constant(id) => {
+                let declaration = self.context.constant_declaration(*id)?;
+                let ty = self.context.constants.get(id.0 as usize)?.ty;
+                Some(GoalExpression::Datum(GoalDatum::NamedConst {
+                    declaration,
+                    projections: Vec::new(),
+                    ty,
+                }))
+            }
+        }
+    }
+
+    fn projected_binding_type(&self, binding: BindingId, fields: &[u32]) -> Option<CheckedType> {
+        let mut ty = self.summary(binding)?.ty?;
+        for field in fields {
+            let CheckedType::Nominal(nominal) = ty else {
+                return None;
+            };
+            let CheckedNominalKind::Struct { fields } =
+                &self.context.nominals.get(nominal.0 as usize)?.kind
+            else {
+                return None;
+            };
+            ty = fields.get(*field as usize)?.ty;
+        }
+        Some(ty)
+    }
+
+    /// Replaces every still-valid ordinary-let leaf by its one complete
+    /// origin. Leaves without a valid origin remain direct, so expansion is
+    /// all-or-nothing over exactly the eligible leaves.
+    fn expand_goal_expression(
+        &self,
+        expression: &GoalExpression,
+        state: &FactState,
+    ) -> GoalExpression {
+        self.expand_goal_expression_inner(expression, state, &mut HashSet::new())
+    }
+
+    fn expand_goal_expression_inner(
+        &self,
+        expression: &GoalExpression,
+        state: &FactState,
+        expanding: &mut HashSet<BindingId>,
+    ) -> GoalExpression {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Place {
+                root,
+                projections,
+                ty,
+            }) => {
+                let Some(origin) = state.goal_origins.get(root).copied() else {
+                    return expression.clone();
+                };
+                if !expanding.insert(*root) {
+                    return expression.clone();
+                }
+                let origin = self.goals.expression(origin).clone();
+                let mut expanded = self.expand_goal_expression_inner(&origin, state, expanding);
+                expanding.remove(root);
+                for projection in projections {
+                    let Some(result) = self.goal_projection_type(expanded.ty(), *projection) else {
+                        return expression.clone();
+                    };
+                    let Some(next) = expanded.with_projection(*projection, result) else {
+                        return expression.clone();
+                    };
+                    expanded = next;
+                }
+                if expanded.ty() == *ty {
+                    expanded
+                } else {
+                    expression.clone()
+                }
+            }
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                const_arguments,
+                result,
+                arguments,
+            } => GoalExpression::Operation {
+                row: *row,
+                type_arguments: type_arguments.clone(),
+                const_arguments: const_arguments.clone(),
+                result: *result,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.expand_goal_expression_inner(argument, state, expanding))
+                    .collect(),
+            },
+            GoalExpression::Datum(_) => expression.clone(),
+        }
+    }
+
+    fn goal_projection_type(
+        &self,
+        input: CheckedType,
+        projection: GoalProjection,
+    ) -> Option<CheckedType> {
+        match projection {
+            GoalProjection::Deref => match input {
+                CheckedType::Nominal(nominal) => {
+                    match self.context.nominals.get(nominal.0 as usize)?.kind {
+                        CheckedNominalKind::Box { referent } => Some(referent),
+                        _ => Some(input),
+                    }
+                }
+                // Borrow holders retain the referent type in checked form.
+                _ => Some(input),
+            },
+            GoalProjection::Field(field) => {
+                let CheckedType::Nominal(nominal) = input else {
+                    return None;
+                };
+                let CheckedNominalKind::Struct { fields } =
+                    &self.context.nominals.get(nominal.0 as usize)?.kind
+                else {
+                    return None;
+                };
+                fields.get(field as usize).map(|field| field.ty)
+            }
+        }
+    }
+
+    fn goal_origin_set(
+        &mut self,
+        expression: &CheckedExpression,
+        state: &FactState,
+    ) -> Vec<GoalId> {
+        let Some(direct) = self.direct_goal_expression(expression) else {
+            return Vec::new();
+        };
+        if direct.ty() != CheckedType::Bool {
+            return Vec::new();
+        }
+        let expanded = self.expand_goal_expression(&direct, state);
+        let direct = self.intern_goal_expression(direct);
+        let expanded = self.intern_goal_expression(expanded);
+        if direct == expanded {
+            vec![direct]
+        } else {
+            vec![direct, expanded]
+        }
+    }
+
+    fn record_goal_origin(
+        &mut self,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &mut FactState,
+    ) {
+        let Some(direct) = self.direct_goal_expression(value) else {
+            return;
+        };
+        let origin = self.intern_goal_expression(direct);
+        state.goal_origins.insert(binding, origin);
+    }
+
+    fn intern_goal_expression(&mut self, expression: GoalExpression) -> GoalId {
+        let projection = self.goal_projection(&expression);
+        let mut support = Vec::new();
+        self.collect_goal_support(&expression, false, &mut support);
+        self.goals.intern(expression, projection, support)
+    }
+
+    fn collect_goal_support(
+        &self,
+        expression: &GoalExpression,
+        length: bool,
+        support: &mut Vec<GoalSupport>,
+    ) {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Place {
+                root, projections, ..
+            }) => support.push(GoalSupport {
+                root: *root,
+                projections: projections.clone(),
+                length,
+            }),
+            GoalExpression::Datum(
+                GoalDatum::Parameter { .. }
+                | GoalDatum::NamedConst { .. }
+                | GoalDatum::EphemeralActual { .. }
+                | GoalDatum::Literal(_),
+            ) => {}
+            GoalExpression::Operation { row, arguments, .. } => {
+                let is_length = matches!(
+                    row,
+                    GoalOperation::ArrayLength { .. }
+                        | GoalOperation::BufferLength { .. }
+                        | GoalOperation::SliceLength { .. }
+                );
+                for argument in arguments {
+                    self.collect_goal_support(argument, is_length, support);
+                }
+            }
+        }
+    }
+
+    fn goal_projection(&mut self, expression: &GoalExpression) -> Option<Relation> {
+        let GoalExpression::Operation {
+            row:
+                GoalOperation::Integer {
+                    operation,
+                    operand_type,
+                },
+            arguments,
+            ..
+        } = expression
+        else {
+            return None;
+        };
+        fragment_type(*operand_type)?;
+        let [left, right] = arguments.as_slice() else {
+            return None;
+        };
+        let left = self.goal_operand(left)?;
+        let right = self.goal_operand(right)?;
+        sources::comparison_relation(*operation, left, right)
+    }
+
+    fn goal_operand(&mut self, expression: &GoalExpression) -> Option<TermId> {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer { ty, bits })) => Some(
+                self.terms
+                    .intern(TermKind::Constant(integer_value(*ty, *bits))),
+            ),
+            GoalExpression::Datum(GoalDatum::NamedConst {
+                declaration,
+                projections,
+                ty,
+            }) if projections.is_empty() => {
+                let CheckedValue::Integer {
+                    ty: value_type,
+                    bits,
+                } = &self.context.constant(*declaration)?.value
+                else {
+                    return None;
+                };
+                (*ty == CheckedType::Integer(*value_type)).then(|| {
+                    self.terms
+                        .intern(TermKind::Constant(integer_value(*value_type, *bits)))
+                })
+            }
+            GoalExpression::Datum(datum) => {
+                let fragment = fragment_type(datum.ty())?;
+                let path = self.goal_place_path(datum)?;
+                let kind = if path
+                    .projections
+                    .iter()
+                    .all(|projection| matches!(projection, PlaceProjection::Field(_)))
+                {
+                    TermKind::Place(
+                        PlaceTerm {
+                            root: path.root,
+                            deref: false,
+                            fields: path
+                                .projections
+                                .iter()
+                                .filter_map(|projection| match projection {
+                                    PlaceProjection::Field(field) => Some(*field),
+                                    PlaceProjection::Deref => None,
+                                })
+                                .collect(),
+                        },
+                        fragment,
+                    )
+                } else {
+                    TermKind::ProjectedPlace(path, fragment)
+                };
+                Some(self.terms.intern(kind))
+            }
+            GoalExpression::Operation { row, arguments, .. }
+                if matches!(
+                    row,
+                    GoalOperation::ArrayLength { .. }
+                        | GoalOperation::BufferLength { .. }
+                        | GoalOperation::SliceLength { .. }
+                ) =>
+            {
+                let [place] = arguments.as_slice() else {
+                    return None;
+                };
+                let GoalExpression::Datum(datum) = place else {
+                    return None;
+                };
+                let path = self.goal_place_path(datum)?;
+                let term = if let Some(place) = legacy_place(&path) {
+                    self.terms.intern(TermKind::Length(place))
+                } else {
+                    self.terms.intern(TermKind::ProjectedLength(path))
+                };
+                if let GoalOperation::ArrayLength { length, .. } = row {
+                    let bound = match length {
+                        CheckedConst::Value(value) => LengthBound::Constant(i128::from(*value)),
+                        CheckedConst::Parameter(declaration) => LengthBound::Equal(
+                            self.terms.intern(TermKind::ConstParameter(*declaration)),
+                        ),
+                    };
+                    self.terms.set_length_bound(term, bound);
+                }
+                Some(term)
+            }
+            GoalExpression::Operation { .. } => None,
+        }
+    }
+
+    fn goal_place_path(&self, datum: &GoalDatum) -> Option<ProjectedPlaceTerm> {
+        let (root, projections) = match datum {
+            GoalDatum::Place {
+                root, projections, ..
+            } => (PlaceRoot::Binding(*root), projections),
+            GoalDatum::NamedConst {
+                declaration,
+                projections,
+                ..
+            } => (
+                PlaceRoot::Constant(*self.context.constant_ids.get(declaration)?),
+                projections,
+            ),
+            GoalDatum::Parameter { .. }
+            | GoalDatum::EphemeralActual { .. }
+            | GoalDatum::Literal(_) => return None,
+        };
+        Some(ProjectedPlaceTerm {
+            root,
+            projections: projections
+                .iter()
+                .map(|projection| match projection {
+                    GoalProjection::Deref => PlaceProjection::Deref,
+                    GoalProjection::Field(field) => PlaceProjection::Field(*field),
+                })
+                .collect(),
+        })
+    }
+
+    fn body_requirement_goal(&self) -> Option<GoalExpression> {
+        let requirement = self.function.requirement.as_ref()?;
+        self.body_goal_expression(&requirement.template.root)
+    }
+
+    fn body_goal_expression(&self, expression: &GoalExpression) -> Option<GoalExpression> {
+        match expression {
+            GoalExpression::Datum(GoalDatum::Parameter {
+                ordinal,
+                projections,
+                ty,
+            }) => {
+                let parameter = self.function.parameters.get(*ordinal as usize)?;
+                Some(GoalExpression::Datum(GoalDatum::Place {
+                    root: parameter.binding,
+                    projections: projections.clone(),
+                    ty: *ty,
+                }))
+            }
+            GoalExpression::Datum(GoalDatum::EphemeralActual { .. }) => None,
+            GoalExpression::Datum(datum) => Some(GoalExpression::Datum(datum.clone())),
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                const_arguments,
+                result,
+                arguments,
+            } => Some(GoalExpression::Operation {
+                row: *row,
+                type_arguments: type_arguments.clone(),
+                const_arguments: const_arguments.clone(),
+                result: *result,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.body_goal_expression(argument))
+                    .collect::<Option<Vec<_>>>()?,
+            }),
+        }
     }
 
     // ------------------------------------------------------------------
@@ -736,6 +1625,44 @@ impl Analyzer<'_, '_> {
     /// state at this point, inner offsets before the sites they feed.
     fn judge_expression(&mut self, expression: &CheckedExpression, state: &FactState) {
         match expression {
+            CheckedExpression::UserCall {
+                function,
+                call,
+                arguments,
+                requirement,
+                ..
+            } => {
+                let obligation_start = self.obligations.len();
+                for argument in arguments {
+                    self.judge_expression(argument, state);
+                }
+                let actual_obligations_ok = !self.obligations[obligation_start..]
+                    .iter()
+                    .any(|outcome| !outcome.discharged);
+                // FN-8 begins only after every actual-expression obligation
+                // succeeds. A failed OP-4 actual therefore publishes no call
+                // judgment for diagnostic selection to reorder.
+                if let Some(requirement) = requirement {
+                    if self.counterfactual_calls {
+                        self.judge_call_goal_counterfactual(
+                            *function,
+                            call,
+                            requirement.final_check.clone(),
+                            requirement.goal.clone(),
+                            actual_obligations_ok,
+                            state,
+                        );
+                    } else if actual_obligations_ok {
+                        self.judge_call_goal(
+                            *function,
+                            call,
+                            requirement.final_check.clone(),
+                            requirement.goal.clone(),
+                            state,
+                        );
+                    }
+                }
+            }
             CheckedExpression::ArrayIndex {
                 root,
                 length,
@@ -776,6 +1703,93 @@ impl Analyzer<'_, '_> {
                 for child in expression_children(expression) {
                     self.judge_expression(child, state);
                 }
+            }
+        }
+    }
+
+    fn judge_call_goal(
+        &mut self,
+        callee: super::super::model::FunctionId,
+        node_path: &crate::NodePath,
+        final_check: crate::NodePath,
+        goal: ConcreteGoal,
+        state: &FactState,
+    ) {
+        let (disposition, evidence) = self.call_goal_disposition(&goal, state);
+        self.call_goals.push(CallGoalOutcome {
+            node_path: node_path.clone(),
+            callee,
+            final_check,
+            goal,
+            disposition,
+            evidence,
+        });
+    }
+
+    fn judge_call_goal_counterfactual(
+        &mut self,
+        callee: super::super::model::FunctionId,
+        node_path: &crate::NodePath,
+        final_check: crate::NodePath,
+        goal: ConcreteGoal,
+        actual_obligations_ok: bool,
+        state: &FactState,
+    ) {
+        let (goal_disposition, goal_evidence) = self.call_goal_disposition(&goal, state);
+        self.call_counterfactuals.push(CallGoalCounterfactual {
+            node_path: node_path.clone(),
+            callee,
+            final_check,
+            goal,
+            actual_obligations_ok,
+            goal_disposition,
+            goal_evidence,
+        });
+    }
+
+    fn call_goal_disposition(
+        &mut self,
+        goal: &ConcreteGoal,
+        state: &FactState,
+    ) -> (CallGoalDisposition, Vec<CallGoalEvidence>) {
+        let id = self.intern_goal_expression(goal.root.clone());
+        let closed = close(state, &self.terms, &self.goals);
+        if closed.contradictory() {
+            (
+                CallGoalDisposition::Discharged,
+                vec![CallGoalEvidence::AllDerivable],
+            )
+        } else {
+            let positive_opaque = closed.holds_opaque(id, GoalSign::Positive);
+            let positive_projection = self
+                .goals
+                .projection(id)
+                .is_some_and(|relation| closed.derives(relation));
+            let negative_opaque = closed.holds_opaque(id, GoalSign::Negative);
+            let negative_projection = self
+                .goals
+                .projection(id)
+                .is_some_and(|relation| closed.derives(&relation.negated()));
+            if positive_opaque || positive_projection {
+                let mut evidence = Vec::with_capacity(2);
+                if positive_opaque {
+                    evidence.push(CallGoalEvidence::OpaquePositive);
+                }
+                if positive_projection {
+                    evidence.push(CallGoalEvidence::ExactL0Projection);
+                }
+                (CallGoalDisposition::Discharged, evidence)
+            } else if negative_opaque || negative_projection {
+                let mut evidence = Vec::with_capacity(2);
+                if negative_opaque {
+                    evidence.push(CallGoalEvidence::OpaqueNegative);
+                }
+                if negative_projection {
+                    evidence.push(CallGoalEvidence::NegatedL0Projection);
+                }
+                (CallGoalDisposition::Refuted, evidence)
+            } else {
+                (CallGoalDisposition::Unproved, Vec::new())
             }
         }
     }
@@ -826,7 +1840,7 @@ impl Analyzer<'_, '_> {
     ) {
         let length_term = self.length_term(base.clone(), array_length);
         let offset_term = self.read_operand(offset);
-        let closed = close(state, &self.terms);
+        let closed = close(state, &self.terms, &self.goals);
         let discharged = match offset_term {
             Some(offset_term) => closed.derives_bound(offset_term, length_term, -1),
             // An operand that is not a term or constant leaves the relation
@@ -924,6 +1938,7 @@ impl Analyzer<'_, '_> {
                 {
                     state.origins.insert(*binding, relation);
                 }
+                self.record_goal_origin(*binding, value, state);
                 // Sources S5, S6, S7, and S9 establish at the binding, after
                 // the initializer's own kills [ENT-3, ENT-5].
                 self.establish_binding_facts(*binding, value, state);
@@ -946,6 +1961,7 @@ impl Analyzer<'_, '_> {
                 // the commit kill applies.
                 self.judge_set_target(target, state);
                 self.expression_effects(value, state);
+                invalidate_goal_origin_for_set(state, target);
                 let mut events = Vec::new();
                 match target {
                     CheckedSetTarget::Place(place) => {
@@ -995,7 +2011,9 @@ impl Analyzer<'_, '_> {
             }
             CheckedStatement::Check { condition, .. } => {
                 self.expression_effects(condition, state);
-                self.establish_passed_condition(condition, state);
+                if self.include_asserted_sources {
+                    self.establish_passed_condition(condition, state);
+                }
                 true
             }
             CheckedStatement::Claim {
@@ -1010,21 +2028,21 @@ impl Analyzer<'_, '_> {
                 // derives the predicate (a contradictory state derives
                 // everything and never refutes), refutation when the
                 // non-contradictory state derives the exact negation.
-                let disposition = match self.scrutinee_relation(condition, state) {
-                    None => ClaimDisposition::Retained,
-                    Some(relation) => {
-                        let closed = close(state, &self.terms);
-                        if closed.derives(&relation) {
-                            ClaimDisposition::Redundant
-                        } else if closed.derives(&relation.negated()) {
-                            ClaimDisposition::Refuted {
-                                predicate: self.render_relation(&relation),
-                                negation: self.render_relation(&relation.negated()),
-                            }
-                        } else {
-                            ClaimDisposition::Retained
+                let relation = self.scrutinee_relation(condition, state);
+                let closed = close(state, &self.terms, &self.goals);
+                let disposition = if let Some(relation) = relation {
+                    if closed.derives(&relation) {
+                        ClaimDisposition::Redundant
+                    } else if !closed.contradictory() && closed.derives(&relation.negated()) {
+                        ClaimDisposition::Refuted {
+                            predicate: self.render_relation(&relation),
+                            negation: self.render_relation(&relation.negated()),
                         }
+                    } else {
+                        ClaimDisposition::Retained
                     }
+                } else {
+                    ClaimDisposition::Retained
                 };
                 self.claims.push(ClaimOutcome {
                     node_path: trap.node_path.clone(),
@@ -1033,7 +2051,9 @@ impl Analyzer<'_, '_> {
                 });
                 // [ENT-3] S3: the passed predicate holds on the normal
                 // continuation, exactly as S2 establishes a check's.
-                self.establish_passed_condition(condition, state);
+                if self.include_asserted_sources {
+                    self.establish_passed_condition(condition, state);
+                }
                 true
             }
             CheckedStatement::Return { value, .. } => {
@@ -1082,7 +2102,7 @@ impl Analyzer<'_, '_> {
                 if exits.is_empty() {
                     false
                 } else {
-                    *state = join(&exits, &self.terms);
+                    *state = join(&exits, &self.terms, &self.goals);
                     true
                 }
             }
@@ -1110,7 +2130,7 @@ impl Analyzer<'_, '_> {
                 if gives.is_empty() {
                     false
                 } else {
-                    *state = join(&gives, &self.terms);
+                    *state = join(&gives, &self.terms, &self.goals);
                     true
                 }
             }
@@ -1141,7 +2161,7 @@ impl Analyzer<'_, '_> {
                 // break it is the contradictory all-derivable state, matching
                 // an unreachable-in-truth continuation the conservative graph
                 // keeps reachable [ENT-5].
-                *state = join(&breaks, &self.terms);
+                *state = join(&breaks, &self.terms, &self.goals);
                 true
             }
             CheckedStatement::CountedRange {
@@ -1167,7 +2187,7 @@ impl Analyzer<'_, '_> {
                 // continuing kills are subtracted. This preserves sound
                 // snapshot consequences without rereading a mutable endpoint
                 // on later iterations.
-                *state = materialize_closure(state, &self.terms);
+                *state = materialize_closure(state, &self.terms, &self.goals);
 
                 let mut kills = LoopKills::default();
                 let body_reaches_head = self.collect_continuing_loop_kills(
@@ -1213,7 +2233,7 @@ impl Analyzer<'_, '_> {
                 exits.push(exhaustion);
                 exits.extend(breaks);
                 self.scopes.pop();
-                *state = join(&exits, &self.terms);
+                *state = join(&exits, &self.terms, &self.goals);
                 true
             }
             CheckedStatement::Region { body, .. } => self.walk_block(body, state),
@@ -1237,6 +2257,13 @@ impl Analyzer<'_, '_> {
                 state.establish(relation);
             } else if arm.tag == 0 {
                 state.establish(&relation.negated());
+            }
+        }
+        for goal in &facts.goals {
+            if arm.tag == 1 {
+                state.establish_goal(*goal, GoalSign::Positive);
+            } else if arm.tag == 0 {
+                state.establish_goal(*goal, GoalSign::Negative);
             }
         }
         if let Some((tag, outcome)) = &facts.outcome
@@ -1482,6 +2509,7 @@ impl Analyzer<'_, '_> {
         kills: &mut LoopKills,
     ) {
         self.collect_expression_kills(value, &mut kills.events);
+        kills.set_bindings.insert(target.binding());
         match target {
             CheckedSetTarget::Place(place) => {
                 let spelled = PlaceTerm {
@@ -1493,9 +2521,6 @@ impl Analyzer<'_, '_> {
                     place: self.resolve(&spelled),
                     element: false,
                 });
-                if place.fields.is_empty() {
-                    kills.set_bindings.insert(place.binding);
-                }
             }
             CheckedSetTarget::ArrayIndex(target) => {
                 let spelled = PlaceTerm {
@@ -1523,17 +2548,33 @@ impl Analyzer<'_, '_> {
     }
 
     fn apply_loop_kills(&self, state: &mut FactState, kills: &LoopKills) {
+        self.promote_contradiction(state);
         state.kill(|term| {
             kills
                 .events
                 .iter()
                 .any(|event| self.event_kills_term(term, event))
         });
+        state.kill_goals(|goal| {
+            kills
+                .events
+                .iter()
+                .any(|event| self.event_kills_goal(goal, event))
+        });
+        state.goal_origins.retain(|binding, _| {
+            !kills
+                .events
+                .iter()
+                .any(|event| self.event_kills_goal_origin_binding(*binding, event))
+        });
         state
             .origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
         state
             .outcomes
+            .retain(|binding, _| !kills.set_bindings.contains(binding));
+        state
+            .goal_origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
     }
 
@@ -1689,6 +2730,9 @@ impl Analyzer<'_, '_> {
             TermKind::Place(place, _) => self.render_place(place),
             TermKind::ProjectedPlace(place, _) => self.render_projected_place(place),
             TermKind::Length(place) => format!("len({})", self.render_place(place)),
+            TermKind::ProjectedLength(place) => {
+                format!("len({})", self.render_projected_place(place))
+            }
             TermKind::CountedCapture { side, .. } => match side {
                 CountedCaptureSide::Lower => "<counted lower capture>".to_owned(),
                 CountedCaptureSide::Upper => "<counted upper capture>".to_owned(),
@@ -1701,6 +2745,10 @@ impl Analyzer<'_, '_> {
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) => {
                 format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty))
             }
+            CheckedExpression::NamedConstant {
+                value: CheckedValue::Integer { ty, bits },
+                ..
+            } => format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty)),
             CheckedExpression::Binding { binding, .. } => self.binding_name(*binding),
             CheckedExpression::Project {
                 binding, fields, ..
@@ -1771,6 +2819,14 @@ impl Analyzer<'_, '_> {
     }
 }
 
+/// A let-origin expansion is valid only while the bound value has no `set`
+/// target on the path to its use. The target's projection does not narrow
+/// this invalidation: changing one field or element invalidates the aggregate
+/// value identity even when a separately established length fact survives.
+fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarget) {
+    state.goal_origins.remove(&target.binding());
+}
+
 fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
     match value {
         CheckedExpression::BorrowAddressed { binding, .. }
@@ -1791,6 +2847,27 @@ fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
     }
 }
 
+/// Uses the compact legacy term shape exactly when the complete projection
+/// order is zero-or-one leading deref followed only by fields.
+fn legacy_place(path: &ProjectedPlaceTerm) -> Option<PlaceTerm> {
+    let mut projections = path.projections.iter();
+    let deref = matches!(projections.clone().next(), Some(PlaceProjection::Deref));
+    if deref {
+        projections.next();
+    }
+    let fields = projections
+        .map(|projection| match projection {
+            PlaceProjection::Field(field) => Some(*field),
+            PlaceProjection::Deref => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(PlaceTerm {
+        root: path.root,
+        deref,
+        fields,
+    })
+}
+
 const fn value_has_implicit_deref(value: &CheckedExpression) -> bool {
     matches!(
         value,
@@ -1806,6 +2883,7 @@ const fn value_has_implicit_deref(value: &CheckedExpression) -> bool {
 fn expression_children(expression: &CheckedExpression) -> Vec<&CheckedExpression> {
     match expression {
         CheckedExpression::Constant(_)
+        | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayLength { .. }
         | CheckedExpression::BufferLength { .. }
@@ -1851,5 +2929,28 @@ const fn integer_type_name(ty: IntegerType) -> &'static str {
         IntegerType::U16 => "u16",
         IntegerType::U32 => "u32",
         IntegerType::U64 => "u64",
+    }
+}
+
+#[cfg(test)]
+mod goal_origin_kill_tests {
+    use super::super::state::{FactState, GoalId};
+    use super::invalidate_goal_origin_for_set;
+    use crate::semantic::model::{BindingId, CheckedSetTarget, CheckedType, CheckedWritablePlace};
+
+    #[test]
+    fn a_projected_set_invalidates_the_aggregate_ordinary_let_origin() {
+        let binding = BindingId(0);
+        let mut state = FactState::default();
+        state.goal_origins.insert(binding, GoalId(0));
+        let target = CheckedSetTarget::Place(CheckedWritablePlace {
+            binding,
+            fields: vec![1],
+            ty: CheckedType::Bool,
+        });
+
+        invalidate_goal_origin_for_set(&mut state, &target);
+
+        assert!(!state.goal_origins.contains_key(&binding));
     }
 }

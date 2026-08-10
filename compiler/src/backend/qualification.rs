@@ -759,7 +759,7 @@ fn operation_row(
     kind: ProgramKind,
 ) -> Result<ApprovedImplementation, QualificationFailure> {
     let facility = Facility::Operation(operation);
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.25" || usize::from(operation) >= OPERATION_COUNT {
+    if ACTIVE_KERNEL_SPEC_VERSION != "v0.26" || usize::from(operation) >= OPERATION_COUNT {
         return Err(QualificationFailure::MissingMapping(facility));
     }
     // Every [SYS-2] operation exists only in a system-admitted unit, which is
@@ -801,7 +801,7 @@ fn resource_row(
     kind: ProgramKind,
 ) -> Result<ResourceImplementation, QualificationFailure> {
     let facility = Facility::Resource(contract.resource);
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.25" {
+    if ACTIVE_KERNEL_SPEC_VERSION != "v0.26" {
         return Err(QualificationFailure::MissingMapping(facility));
     }
     if kind != ProgramKind::Command {
@@ -859,7 +859,7 @@ fn resource_row(
 /// supplies command-lifetime argument backing; a target that can supply
 /// neither fails qualification for both IDs.
 fn command_entry_row(target: SystemTarget) -> Result<(), QualificationFailure> {
-    if ACTIVE_KERNEL_SPEC_VERSION != "v0.25" {
+    if ACTIVE_KERNEL_SPEC_VERSION != "v0.26" {
         return Err(QualificationFailure::MissingMapping(Facility::CommandEntry));
     }
     if !target.supplies(TargetGuarantee::CommandLifetimeArgumentBacking) {

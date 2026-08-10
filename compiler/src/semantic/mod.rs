@@ -7,7 +7,9 @@
 
 mod check;
 mod entailment;
+mod goal;
 mod model;
+mod provenance;
 mod tree;
 
 #[cfg(test)]
@@ -17,15 +19,16 @@ use crate::{BundleSourceExtent, NodePath, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
 
+pub(crate) use goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedBufferRoot,
-    CheckedBufferSetTarget, CheckedDrop, CheckedEntryForm, CheckedEnumType, CheckedExpression,
-    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
-    CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedNumericType,
-    CheckedParameter, CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations,
-    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, CheckedValue, NominalId, PropagationContext,
-    TrapSite,
+    CheckedBufferSetTarget, CheckedConst, CheckedDrop, CheckedEntryForm, CheckedEnumType,
+    CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
+    CheckedIntegerOperation, CheckedLoopId, CheckedMatchArm, CheckedMode, CheckedNominalKind,
+    CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, IntegerType,
+    NominalId, PropagationContext, TrapSite,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -85,7 +88,7 @@ pub enum SemanticRule {
     Fn4,
     /// Closed-program `main` contract.
     Fn7,
-    /// Restricted executable function-entry requirement prologue.
+    /// Finite atomic function requirement goal.
     Fn8,
     /// Type-driven conditional form, and the `else` spellings it forbids.
     Gram6,
@@ -311,6 +314,30 @@ pub struct RefutedClaimDetail {
     pub negation: String,
 }
 
+/// One non-discharged [FN-8] ordinary-call goal disposition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallRequirementDisposition {
+    /// The entering state derives the goal's exact negative sign.
+    Refuted,
+    /// The entering state derives neither exact sign.
+    Unproved,
+}
+
+/// The deterministic [FN-8] ordinary-call rejection payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndischargedCallRequirementDetail {
+    /// The resolved concrete, possibly generic, callee instance.
+    pub concrete_callee: String,
+    /// The callee requirement occurrence's final-check path.
+    pub final_check: NodePath,
+    /// Stable structural rendering of the complete instantiated typed goal.
+    pub instantiated_goal: String,
+    /// The exact non-discharged disposition.
+    pub disposition: CallRequirementDisposition,
+    /// The rule-selected mechanical restructuring.
+    pub mechanical_fix: &'static str,
+}
+
 /// Structured reason for one semantic rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SemanticIssueKind {
@@ -405,6 +432,9 @@ pub enum SemanticIssueKind {
         /// The mechanical fix ENT-6 names.
         mechanical_fix: &'static str,
     },
+    /// The complete instantiated requirement at an ordinary call is refuted
+    /// or unproved in the caller's pre-transfer state [FN-8].
+    UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
     /// A counted endpoint produced `own u64` but was not itself one preceding
     /// ENT-2 term or constant.
     InvalidCountedEndpoint {
@@ -445,7 +475,7 @@ pub enum SemanticIssueKind {
     UnreachableStatement,
     /// The function body can reach its closing brace.
     FunctionFallthrough,
-    /// A requirement entry uses a construct outside the FN-8 prologue subset.
+    /// A requirement entry uses a construct outside the admitted FN-8 goal subset.
     InvalidRequires,
     /// The unique source `main` declaration has a header shape FN-7 admits in
     /// neither entry form.

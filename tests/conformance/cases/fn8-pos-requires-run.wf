@@ -1,8 +1,8 @@
-fn bounded(x: own i32) -> own i32 traps requires {
+fn bounded(x: own i32) -> own i32 pure requires {
   let permitted = ige(x, 0_i32);
   check permitted else trap "x must be nonnegative";
 } {
-  doc "A checked, Bool-valued, pure-total requirement is evaluated before the function body [FN-8].";
+  doc "A checked, Bool-valued, pure-total requirement is one complete goal that every ordinary caller proves before the function body [FN-8].";
   return x;
 }
 

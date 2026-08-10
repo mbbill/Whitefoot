@@ -8,9 +8,12 @@
 //! observable. The rejection behavior itself is tested at the end of this
 //! file through the ordinary acceptance path.
 
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{CallRequirementDisposition, SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::super::entailment::{ClaimDisposition, ClaimOutcome, ObligationOutcome};
+use super::super::entailment::{
+    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimDisposition, ClaimOutcome,
+    ObligationOutcome,
+};
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -40,6 +43,21 @@ fn claims(source: &[u8], function: &str) -> Vec<ClaimOutcome> {
             .find(|candidate| candidate.name == function)
             .unwrap_or_else(|| panic!("function {function} must exist"));
         function.entailment.claims.clone()
+    })
+}
+
+fn call_goals(source: &[u8], function: &str) -> Vec<CallGoalOutcome> {
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("call-goal test source must check completely: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|candidate| candidate.name == function)
+            .unwrap_or_else(|| panic!("function {function} must exist"));
+        function.entailment.call_goals.clone()
     })
 }
 
@@ -1481,9 +1499,9 @@ fn main() -> own unit pure {
 }
 
 #[test]
-fn a_check_without_comparison_origin_establishes_nothing() {
-    // `band` has no comparison origin in this version [ENT-3], so its passed
-    // check contributes no fact even though it constrains the run.
+fn a_check_without_comparison_origin_establishes_no_l0_fact() {
+    // `band` has no comparison projection [ENT-3], so its passed check
+    // establishes the exact whole goal but no child comparison relation.
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> own i32 traps {
@@ -1754,7 +1772,7 @@ fn main() -> own unit pure {
 fn a_requires_check_establishes_its_substituted_relation_at_body_entry() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps requires {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
   let ok = ilt(i, 4_u64);
   check ok else trap "i must be in range";
 } {
@@ -1768,7 +1786,7 @@ fn main() -> own unit pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "the prologue's checked relation enters the body's entry state"
+        "the requirement relation is available at body entry"
     );
 }
 
@@ -1776,7 +1794,7 @@ fn main() -> own unit pure {
 fn a_requires_chain_substitutes_repeatedly_and_reads_a_length_call() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps requires {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
   let n = len(values);
   let ok = ilt(i, n);
   check ok else trap "i must be in range";
@@ -1802,7 +1820,7 @@ fn every_occurrence_of_a_requires_local_substitutes() {
     // len(values) < len(values), a contradictory entry state [ENT-4].
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>) -> own i32 traps requires {
+fn read(values: own array<i32, count>) -> own i32 pure requires {
   let n = len(values);
   let ok = ilt(n, n);
   check ok else trap "unsatisfiable by construction";
@@ -1824,10 +1842,10 @@ fn main() -> own unit pure {
 }
 
 #[test]
-fn a_requires_shape_outside_the_admitted_comparison_establishes_nothing() {
+fn a_noncomparison_s4_goal_establishes_no_child_l0_fact() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 traps requires {
+fn read(values: own array<i32, count>, i: own u64) -> own i32 pure requires {
   let low = ilt(i, 4_u64);
   let high = ige(i, 0_u64);
   let ok = band(low, high);
@@ -1843,7 +1861,7 @@ fn main() -> own unit pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![false],
-        "a band result has no comparison origin; the prologue still executes"
+        "S4 establishes the atomic band, not either comparison child"
     );
 }
 
@@ -2427,4 +2445,831 @@ fn main() -> own unit pure {
     };
     assert!(predicate.contains("deref(holder)"));
     assert!(!predicate.contains("deref(deref(holder))"));
+}
+
+// ---------------------------------------------------------------------
+// [ENT-2..ENT-5, FN-8] exact signed goals and ordinary calls
+// ---------------------------------------------------------------------
+
+#[test]
+fn whole_goal_sources_discharge_atomically_while_children_do_not() {
+    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn from_branch(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  if complete {
+    guarded(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn from_check(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+  guarded(value: value);
+  return unit;
+}
+
+fn from_claim(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  claim established: complete because "complete";
+  guarded(value: value);
+  return unit;
+}
+
+fn from_children(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  if positive {
+    if small {
+      guarded(value: value);
+    } else {
+      return unit;
+    }
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn from_false(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  if complete {
+    return unit;
+  } else {
+    guarded(value: value);
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+
+    for function in ["from_branch", "from_check", "from_claim"] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+        assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+    }
+    assert_eq!(
+        claims(source, "from_claim")[0].disposition,
+        ClaimDisposition::Retained,
+        "CLM-2 remains comparison-origin-only even though S3 establishes +G"
+    );
+
+    let children = call_goals(source, "from_children");
+    assert_eq!(children[0].disposition, CallGoalDisposition::Unproved);
+    assert!(children[0].evidence.is_empty());
+
+    let negative = call_goals(source, "from_false");
+    assert_eq!(negative[0].disposition, CallGoalDisposition::Refuted);
+    assert_eq!(negative[0].evidence, vec![CallGoalEvidence::OpaqueNegative]);
+}
+
+#[test]
+fn an_exact_comparison_call_retains_every_positive_derivation_ground() {
+    let source = br#"fn below(value: own u64) -> own unit traps requires {
+  check ilt(value, 10_u64) else trap "small";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn exact(value: own u64) -> own unit traps {
+  let small = ilt(value, 10_u64);
+  if small {
+    below(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn projected(value: own u64) -> own unit traps {
+  let at_most_nine = ile(value, 9_u64);
+  if at_most_nine {
+    below(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let exact = call_goals(source, "exact");
+    assert_eq!(exact[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        exact[0].evidence,
+        vec![
+            CallGoalEvidence::OpaquePositive,
+            CallGoalEvidence::ExactL0Projection,
+        ]
+    );
+    let projected = call_goals(source, "projected");
+    assert_eq!(projected[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        projected[0].evidence,
+        vec![CallGoalEvidence::ExactL0Projection]
+    );
+}
+
+#[test]
+fn joined_whole_goals_require_the_same_sign_on_every_reachable_input() {
+    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn both(value: own u64, choose: own Bool) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  if choose {
+    check complete else trap "left";
+  } else {
+    check complete else trap "right";
+  }
+  guarded(value: value);
+  return unit;
+}
+
+fn one(value: own u64, choose: own Bool) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  if choose {
+    check complete else trap "left";
+  } else {
+    check True() else trap "other";
+  }
+  guarded(value: value);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let both = call_goals(source, "both");
+    assert_eq!(both[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(both[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+    let one = call_goals(source, "one");
+    assert_eq!(one[0].disposition, CallGoalDisposition::Unproved);
+}
+
+#[test]
+fn a_computed_bool_truth_survives_an_origin_write_but_its_expansion_does_not() {
+    let source = br#"fn need_true(value: own Bool) -> own unit traps requires {
+  check value else trap "true";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn below(value: own u64) -> own unit traps requires {
+  check ilt(value, 10_u64) else trap "small";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn probe(value: own u64) -> own unit traps {
+  let small = ilt(value, 10_u64);
+  if small {
+    set value = 20_u64;
+    need_true(value: small);
+    below(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "probe");
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+}
+
+#[test]
+fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
+    let source = br#"fn observe['r](value: &'r box<i32>) -> own unit reads('r), traps requires {
+  let positive = igt(deref(deref(value)), 0_i32);
+  let small = ilt(deref(deref(value)), 10_i32);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+} {
+  let seen = deref(deref(value));
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller() -> own unit allocates(heap), traps {
+  let owner = box_new(5_i32);
+  let positive = igt(deref(owner), 0_i32);
+  let small = ilt(deref(owner), 10_i32);
+  let complete = band(positive, small);
+  if complete {
+    region 'r {
+      observe<'r>(value: &'r owner);
+    }
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+}
+
+#[test]
+fn setting_an_intermediate_bool_binding_stops_later_origin_expansion() {
+    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+  check igt(value, 0_u64) else trap "positive";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let alias = positive;
+  set positive = False();
+  if alias {
+    guarded(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Unproved);
+    assert!(outcomes[0].evidence.is_empty());
+}
+
+#[test]
+fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
+    let source = br#"fn need() -> own unit traps requires {
+  let first = ilt(0_u64, 1_u64);
+  let second = ilt(1_u64, 2_u64);
+  let complete = band(first, second);
+  check complete else trap "complete";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn mutate['r](value: &uniq 'r Bool) -> own unit writes('r) {
+  set deref(value) = False();
+  return unit;
+}
+
+fn through_holder() -> own unit traps {
+  let first = ilt(0_u64, 1_u64);
+  let second = ilt(1_u64, 2_u64);
+  let source = band(first, second);
+  region 'r {
+    let holder = &uniq 'r source;
+    set deref(holder) = False();
+  }
+  let alias = source;
+  if alias {
+    need();
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn through_call() -> own unit traps {
+  let first = ilt(0_u64, 1_u64);
+  let second = ilt(1_u64, 2_u64);
+  let source = band(first, second);
+  region 'r {
+    mutate<'r>(value: &uniq 'r source);
+  }
+  let alias = source;
+  if alias {
+    need();
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for function in ["through_holder", "through_call"] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].disposition, CallGoalDisposition::Unproved);
+        assert!(outcomes[0].evidence.is_empty());
+    }
+}
+
+#[test]
+fn combined_contradiction_is_absorbing_before_goal_and_l0_support_kills() {
+    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn signed(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "first";
+  if complete {
+    return unit;
+  } else {
+    set value = 20_u64;
+    guarded(value: value);
+    claim unreachable: ilt(value, 1_u64) because "combined contradiction";
+  }
+  return unit;
+}
+
+fn l0(value: own u64) -> own unit traps {
+  check ilt(value, 5_u64) else trap "low";
+  check ige(value, 5_u64) else trap "high";
+  set value = 20_u64;
+  guarded(value: value);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for function in ["signed", "l0"] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+        assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::AllDerivable]);
+    }
+    assert!(!matches!(
+        claims(source, "signed")[0].disposition,
+        ClaimDisposition::Refuted { .. }
+    ));
+}
+
+#[test]
+fn a_discharged_whole_goal_is_accepted_on_the_ordinary_path() {
+    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(value: own u64) -> own unit traps {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  if complete {
+    guarded(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the established whole goal must accept its call: {outcome:?}");
+        };
+        let caller = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "caller")
+            .expect("caller function");
+        assert_eq!(caller.entailment.call_goals.len(), 1);
+        assert_eq!(
+            caller.entailment.call_goals[0].disposition,
+            CallGoalDisposition::Discharged
+        );
+    });
+}
+
+#[test]
+fn fn8_call_rejection_carries_the_complete_deterministic_payload() {
+    let source = br#"fn guarded(value: own u64) -> own unit traps requires {
+  let positive = igt(value, 0_u64);
+  let small = ilt(value, 10_u64);
+  let complete = band(positive, small);
+  check complete else trap "complete";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(value: own u64) -> own unit traps {
+  guarded(value: value);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an unproved complete goal must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!(
+                "FN-8 must carry the ordinary-call payload: {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(detail.concrete_callee, "guarded");
+        assert!(!detail.final_check.components().is_empty());
+        assert!(detail.instantiated_goal.contains("Boolean(And)"));
+        assert!(detail.instantiated_goal.contains("Integer(U64)"));
+        assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
+        assert_eq!(
+            detail.mechanical_fix,
+            "establish the complete callee requirement with one dominating branch, check, or claim before the call"
+        );
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("FN-8 must cite the source call");
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        assert_eq!(&source[start..end], b"guarded(value: value)");
+    });
+}
+
+#[test]
+fn actual_obligations_precede_fn8_and_ephemeral_goals_use_the_stronger_fix() {
+    let admitted_actual = br#"fn positive(value: own u8) -> own unit traps requires {
+  check ilt(value, 10_u8) else trap "small";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller() -> own unit traps {
+  let values = array_new<u8, 2>(3_u8);
+  positive(value: values[0_u64]);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(admitted_actual, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the ephemeral goal is not source-establishable: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("expected FN-8 payload, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
+        assert!(
+            detail
+                .instantiated_goal
+                .contains("argument #0 pre-transfer value")
+        );
+        assert_eq!(
+            detail.mechanical_fix,
+            "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
+        );
+    });
+
+    let failed_actual = br#"fn positive(value: own u8) -> own unit traps requires {
+  check ilt(value, 10_u8) else trap "small";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller() -> own unit traps {
+  let values = array_new<u8, 2>(3_u8);
+  positive(value: values[9_u64]);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(failed_actual, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the actual's own OP-4 failure must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::UndischargedBoundsObligation { .. }
+        ));
+    });
+    assert!(
+        call_goals(failed_actual, "caller").is_empty(),
+        "FN-8 judgment begins only after every actual obligation succeeds"
+    );
+}
+
+#[test]
+fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
+    let source =
+        br#"fn update['r](value: &uniq 'r u64) -> own unit reads('r), writes('r), traps requires {
+  check ilt(deref(value), 10_u64) else trap "small";
+} {
+  let old = deref(value);
+  set deref(value) = old;
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(value: own u64) -> own unit traps {
+  let small = ilt(value, 10_u64);
+  if small {
+    region 'first {
+      update<'first>(value: &uniq 'first value);
+    }
+    region 'second {
+      update<'second>(value: &uniq 'second value);
+    }
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[0].evidence,
+        vec![
+            CallGoalEvidence::OpaquePositive,
+            CallGoalEvidence::ExactL0Projection,
+        ]
+    );
+    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+}
+
+#[test]
+fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
+    let source = br#"fn observe['r](value: &'r u64) -> own unit reads('r), traps requires {
+  check ilt(deref(value), 10_u64) else trap "small";
+} {
+  let seen = deref(value);
+  check True() else trap "body";
+  return unit;
+}
+
+fn update['r](value: &uniq 'r u64) -> own unit reads('r), writes('r), traps requires {
+  check ilt(deref(value), 10_u64) else trap "small";
+} {
+  region 'first {
+    observe<'first>(value: &'first deref(value));
+  }
+  let old = deref(value);
+  set deref(value) = old;
+  region 'second {
+    observe<'second>(value: &'second deref(value));
+  }
+  check True() else trap "body";
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "update");
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[0].evidence,
+        vec![
+            CallGoalEvidence::OpaquePositive,
+            CallGoalEvidence::ExactL0Projection,
+        ]
+    );
+    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+}
+
+#[test]
+fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
+    let source = br#"fn sized(values: own array<u8, 2>) -> own unit traps requires {
+  let size = len(values);
+  let exact = ieq(size, 2_u64);
+  let complete = band(exact, exact);
+  check complete else trap "sized";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(values: own array<u8, 2>) -> own unit traps {
+  let size = len(values);
+  let exact = ieq(size, 2_u64);
+  let complete = band(exact, exact);
+  if complete {
+    set values[0_u64] = 9_u8;
+    sized(values: move values);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "length-only support survives the element commit: {outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn array_fill_participates_only_in_body_origin_expansion() {
+    let source = br#"fn need_true(value: own Bool) -> own unit traps requires {
+  check value else trap "true";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn probe() -> own unit traps {
+  let values = array_new<u8, 4>(0_u8);
+  let first_size = len(values);
+  let first_exact = ieq(first_size, 4_u64);
+  let first = band(first_exact, first_exact);
+  if first {
+    let second_size = len(values);
+    let second_exact = ieq(second_size, 4_u64);
+    let second = band(second_exact, second_exact);
+    if second {
+      return unit;
+    } else {
+      let impossible = False();
+      need_true(value: impossible);
+    }
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "probe");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::AllDerivable]);
+}
+
+#[test]
+fn s4_is_independent_of_forward_and_mutually_recursive_traversal_order() {
+    let source = br#"fn first(value: own u64) -> own unit traps requires {
+  check ilt(value, 10_u64) else trap "small";
+} {
+  second(value: value);
+  check True() else trap "body";
+  return unit;
+}
+
+fn second(value: own u64) -> own unit traps requires {
+  check ilt(value, 10_u64) else trap "small";
+} {
+  first(value: value);
+  check True() else trap "body";
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for function in ["first", "second"] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+        assert_eq!(
+            outcomes[0].evidence,
+            vec![
+                CallGoalEvidence::OpaquePositive,
+                CallGoalEvidence::ExactL0Projection,
+            ]
+        );
+    }
+}
+
+#[test]
+fn a_forward_concrete_generic_call_uses_its_substituted_goal() {
+    let source = br#"fn main() -> own unit pure {
+  return unit;
+}
+
+fn caller(value: own i32) -> own unit traps {
+  let positive = igt(value, 0_i32);
+  if positive {
+    let result = guarded<i32>(value: value);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn guarded<T: Int>(value: own T) -> own T traps requires {
+  check igt(value, 0_T) else trap "positive";
+} {
+  check True() else trap "body";
+  return value;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[0].evidence,
+        vec![
+            CallGoalEvidence::OpaquePositive,
+            CallGoalEvidence::ExactL0Projection,
+        ],
+        "concrete generic goal: {:#?}",
+        outcomes[0].goal
+    );
 }

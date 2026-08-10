@@ -912,6 +912,66 @@ impl IrFunction {
     }
 }
 
+/// One definition in the private straight-line program-start requirement.
+///
+/// This is deliberately not a general control-flow function: the entry
+/// wrapper owns its source parameters until the final Bool is known, and the
+/// closed FN-8 operation subset can only define immutable SSA values.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IrEntryGoalDefinition {
+    result: IrValueId,
+    ty: IrType,
+    operation: IrOperation,
+}
+
+impl IrEntryGoalDefinition {
+    pub(crate) const fn result(&self) -> IrValueId {
+        self.result
+    }
+
+    pub(crate) const fn ty(&self) -> IrType {
+        self.ty
+    }
+
+    pub(crate) const fn operation(&self) -> &IrOperation {
+        &self.operation
+    }
+}
+
+/// The one retained [FN-8] goal evaluated by the compiler-owned entry
+/// wrapper [PROG-3]. Inputs are the source `main` parameters in declaration
+/// order; definitions form one dense, straight-line SSA sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IrEntryGoal {
+    inputs: Vec<(IrValueId, IrType)>,
+    values: Vec<IrType>,
+    definitions: Vec<IrEntryGoalDefinition>,
+    condition: IrValueId,
+    trap: IrTrapSite,
+}
+
+impl IrEntryGoal {
+    pub(crate) fn inputs(&self) -> &[(IrValueId, IrType)] {
+        &self.inputs
+    }
+
+    pub(crate) fn definitions(&self) -> &[IrEntryGoalDefinition] {
+        &self.definitions
+    }
+
+    pub(crate) const fn condition(&self) -> IrValueId {
+        self.condition
+    }
+
+    pub(crate) const fn trap(&self) -> &IrTrapSite {
+        &self.trap
+    }
+
+    pub(crate) fn ty(&self, value: IrValueId) -> Option<IrType> {
+        self.values.get(value.index()).copied()
+    }
+}
+
 /// One retained conservative alias link between two of the entry's
 /// standard-input resource owners, by [FN-7] table ordinal.
 ///
@@ -965,6 +1025,7 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     functions: Vec<IrFunction>,
     main: u32,
     entry: IrEntry,
+    entry_goal: Option<IrEntryGoal>,
 }
 
 impl IrProgram<'_, '_, '_> {
@@ -975,6 +1036,10 @@ impl IrProgram<'_, '_, '_> {
     /// The entry form program start must implement.
     pub const fn entry(&self) -> &IrEntry {
         &self.entry
+    }
+
+    pub(crate) const fn entry_goal(&self) -> Option<&IrEntryGoal> {
+        self.entry_goal.as_ref()
     }
 
     pub fn nominal(&self, id: IrNominalId) -> Option<&IrNominal> {

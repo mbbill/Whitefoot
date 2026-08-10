@@ -1,8 +1,8 @@
 contract CheckedMember {
-  fn apply(x: own i32) -> own i32 traps;
+  fn apply(x: own i32) -> own i32 pure;
 }
 
-fn checked_apply(x: own i32) -> own i32 traps requires {
+fn checked_apply(x: own i32) -> own i32 pure requires {
   let valid = ige(x, 0_i32);
   check valid else trap "nonnegative input";
 } {

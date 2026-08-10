@@ -1,13 +1,7 @@
-fn positive(x: own i32) -> own i32 traps requires {
-  let permitted = igt(x, 0_i32);
+fn main() -> own unit pure requires {
+  let permitted = igt(0_i32, 0_i32);
   check permitted else trap "x must be positive";
 } {
-  doc "A false requirement traps at the call boundary before this body executes [FN-8/SCOPE-4].";
-  return x;
-}
-
-fn main() -> own unit traps {
-  let value = positive(x: 0_i32);
-  check ieq(value, 0_i32) else trap "unreachable body result";
+  doc "A false process-entry requirement traps in the real entry wrapper before this body executes [FN-8/SCOPE-4].";
   return unit;
 }
