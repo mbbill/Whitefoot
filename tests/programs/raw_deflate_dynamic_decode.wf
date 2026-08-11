@@ -1,4 +1,4 @@
-fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own unit reads('d), writes('l 'd), traps requires {
+fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_lengths: &uniq 'd buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> own Result<unit, InflateError> reads('d), writes('l 'd) requires {
   let literal_room = len(deref(literal_lengths));
   let enough_literals = ile(literal_count, literal_room);
   check enough_literals else trap "literal lengths shorter than literal_count";
@@ -10,10 +10,14 @@ fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_l
     let distance_index = position -wrap literal_count;
     let distance_room = len(deref(distance_lengths));
     let distance_ok = ilt(distance_index, distance_room);
-    claim distance_position_in_lengths: distance_ok because "callers stop at literal_count plus the distance count";
+    if distance_ok {
+    } else {
+      let error = InvalidHuffmanTree();
+      return Err<unit, InflateError>(error: error);
+    }
     set deref(distance_lengths)[distance_index] = value;
   }
-  return unit;
+  return Ok<unit, InflateError>(value: unit);
 }
 
 fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
@@ -124,7 +128,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
         match cvt<u64, u8>(length_symbol) {
           Ok(value: length) => {
             region 'direct_length_store {
-              store_dynamic_length<'direct_length_store, 'direct_length_store>(literal_lengths: &uniq 'direct_length_store literal_lengths, distance_lengths: &uniq 'direct_length_store distance_lengths, literal_count: literal_count, position: position, value: length);
+              let stored = propagate store_dynamic_length<'direct_length_store, 'direct_length_store>(literal_lengths: &uniq 'direct_length_store literal_lengths, distance_lengths: &uniq 'direct_length_store distance_lengths, literal_count: literal_count, position: position, value: length);
             }
             set previous_length = length;
             set position = position +wrap 1_u64;
@@ -167,7 +171,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
               break @repeat_previous_length;
             } else {
               region 'previous_length_store {
-                store_dynamic_length<'previous_length_store, 'previous_length_store>(literal_lengths: &uniq 'previous_length_store literal_lengths, distance_lengths: &uniq 'previous_length_store distance_lengths, literal_count: literal_count, position: position, value: previous_length);
+                let stored = propagate store_dynamic_length<'previous_length_store, 'previous_length_store>(literal_lengths: &uniq 'previous_length_store literal_lengths, distance_lengths: &uniq 'previous_length_store distance_lengths, literal_count: literal_count, position: position, value: previous_length);
               }
               set position = position +wrap 1_u64;
               set repeated = repeated +wrap 1_u64;
@@ -222,7 +226,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
               break @repeat_zero_length;
             } else {
               region 'zero_length_store {
-                store_dynamic_length<'zero_length_store, 'zero_length_store>(literal_lengths: &uniq 'zero_length_store literal_lengths, distance_lengths: &uniq 'zero_length_store distance_lengths, literal_count: literal_count, position: position, value: 0_u8);
+                let stored = propagate store_dynamic_length<'zero_length_store, 'zero_length_store>(literal_lengths: &uniq 'zero_length_store literal_lengths, distance_lengths: &uniq 'zero_length_store distance_lengths, literal_count: literal_count, position: position, value: 0_u8);
               }
               set position = position +wrap 1_u64;
               set repeated = repeated +wrap 1_u64;

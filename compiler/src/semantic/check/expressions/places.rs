@@ -34,7 +34,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.is_direct_borrow_holder(pbase, bindings)? {
             return self.check_direct_borrowed_place_use(use_node, node, pbase, bindings, options);
         }
-        let place = self.resolve_explicit_place(node, bindings)?;
+        let place = self.resolve_explicit_place(use_node, node, bindings)?;
         if place.holder_pending {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
@@ -199,6 +199,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let expression = if !fields.is_empty() {
             CheckedExpression::Project {
+                carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
                 fields: fields.clone(),
                 ty,
@@ -207,11 +208,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         } else if self.borrow_addresses_storage(ty)? {
             CheckedExpression::DerefAddressed {
+                carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
                 ty,
             }
         } else {
             CheckedExpression::Binding {
+                carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
                 ty,
                 slice_origins: Vec::new(),
@@ -245,6 +248,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn resolve_explicit_place(
         &self,
+        carrier: NodeId,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<ExplicitPlace, CheckStop> {
@@ -257,7 +261,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(pbase, Production::Place)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let mut inner = self.resolve_explicit_place(inner, bindings)?;
+            let mut inner = self.resolve_explicit_place(carrier, inner, bindings)?;
             if inner.holder_pending {
                 inner.holder_pending = false;
                 inner
@@ -281,6 +285,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 };
                 inner.expression = CheckedExpression::BoxDeref {
+                    carrier: self.tree.path(carrier)?.clone(),
                     nominal,
                     referent,
                     value: Box::new(inner.expression),
@@ -320,6 +325,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 borrow: local.borrow.clone(),
                 holder_pending: local.mode != CheckedMode::Own,
                 expression: CheckedExpression::Binding {
+                    carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     ty: local.ty,
                     slice_origins: local
@@ -384,6 +390,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let field_index =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
             place.expression = CheckedExpression::ProjectValue {
+                carrier: self.tree.path(carrier)?.clone(),
                 value: Box::new(place.expression),
                 nominal,
                 field: field_index,

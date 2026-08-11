@@ -697,7 +697,7 @@ fn discharge_domain(
     {
         return None;
     }
-    let [CheckedStatement::Return { value, drops }] = function.body.as_slice() else {
+    let [CheckedStatement::Return { value, drops, .. }] = function.body.as_slice() else {
         return None;
     };
     if !drops.is_empty() {
@@ -709,6 +709,7 @@ fn discharge_domain(
         arguments,
         result,
         trap: None,
+        ..
     } = value
     else {
         return None;

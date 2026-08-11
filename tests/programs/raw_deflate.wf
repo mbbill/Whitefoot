@@ -125,7 +125,7 @@ fn emit_byte['s, 'o](state: &uniq 's InflateState, out: &uniq 'o buffer<u8>, val
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
+fn decode_fixed['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o) {
   loop @fixed_codes {
     let symbol = 0_u64;
     region 'symbol_call {
@@ -242,16 +242,32 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
       let nlen_high_offset = state.input_offset +wrap 3_u64;
       let header_room = len(input);
       let header_zero_ok = ilt(state.input_offset, header_room);
-      claim stored_header_zero_in_input: header_zero_ok because "the guard proved four header bytes remain";
+      if header_zero_ok {
+      } else {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
+      }
       let len_low_byte = input[state.input_offset];
       let header_one_ok = ilt(len_high_offset, header_room);
-      claim stored_header_one_in_input: header_one_ok because "the guard proved four header bytes remain";
+      if header_one_ok {
+      } else {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
+      }
       let len_high_byte = input[len_high_offset];
       let header_two_ok = ilt(nlen_low_offset, header_room);
-      claim stored_header_two_in_input: header_two_ok because "the guard proved four header bytes remain";
+      if header_two_ok {
+      } else {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
+      }
       let nlen_low_byte = input[nlen_low_offset];
       let header_three_ok = ilt(nlen_high_offset, header_room);
-      claim stored_header_three_in_input: header_three_ok because "the guard proved four header bytes remain";
+      if header_three_ok {
+      } else {
+        let error = Truncated();
+        return Err<u64, InflateError>(error: error);
+      }
       let nlen_high_byte = input[nlen_high_offset];
       set state.input_offset = state.input_offset +wrap 4_u64;
       let len_low = cvt<u8, u16>(len_low_byte);
@@ -291,7 +307,11 @@ fn inflate['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> own Result<u6
           let source_index = state.input_offset +wrap copied;
           let stored_room = len(input);
           let source_in_input = ilt(source_index, stored_room);
-          claim stored_copy_in_input: source_in_input because "the guard proved copy_length bytes remain past the offset";
+          if source_in_input {
+          } else {
+            let error = Truncated();
+            return Err<u64, InflateError>(error: error);
+          }
           let byte = input[source_index];
           region 'stored_emit {
             match emit_byte<'stored_emit, 'stored_emit>(state: &uniq 'stored_emit state, out: &uniq 'stored_emit deref(out), value: byte) {

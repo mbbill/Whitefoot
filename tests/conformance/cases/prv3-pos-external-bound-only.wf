@@ -1,0 +1,17 @@
+fn internal_zero() -> own u64 pure {
+  return 0_u64;
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "External provenance in a buffer length and bound does not gate a subscript whose constrained offset subject is internal.";
+  region 'a {
+    let external_length = args_count<'a>(args: &'a args);
+    let bytes = buffer_new(external_length, 0_u8);
+    let index = internal_zero();
+    let room = len(bytes);
+    let inside = ilt(index, room);
+    claim nonempty_arguments: inside because "the native argument vector contains its invoked name";
+    let value = bytes[index];
+    return exit_status(code: 0_u8);
+  }
+}

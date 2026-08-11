@@ -1,0 +1,20 @@
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "A selected place read joins every explicit subscript offset, so an externally selected internal stored value remains external when reused as a protected offset.";
+  region 'a {
+    let external_offset = args_count<'a>(args: &'a args);
+    let offsets = buffer_new(4_u64, 0_u64);
+    let offset_count = len(offsets);
+    let selectable = ilt(external_offset, offset_count);
+    if selectable {
+      let derived_offset = offsets[external_offset];
+      let bytes = buffer_new(1_u64, 0_u8);
+      let room = len(bytes);
+      let inside = ilt(derived_offset, room);
+      claim derived_index_in_bytes: inside because "the read offset remains an explicit provenance predecessor";
+      let value = bytes[derived_offset];
+      return exit_status(code: 0_u8);
+    } else {
+      return exit_status(code: 0_u8);
+    }
+  }
+}

@@ -1,0 +1,12 @@
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "A body check may establish complete-state bounds but cannot authorize a protected subscript whose constrained subject comes from an external system result.";
+  region 'a {
+    let index = args_count<'a>(args: &'a args);
+    let bytes = buffer_new(4_u64, 0_u8);
+    let room = len(bytes);
+    let inside = ilt(index, room);
+    check inside else trap "external index";
+    let value = bytes[index];
+    return exit_status(code: 0_u8);
+  }
+}

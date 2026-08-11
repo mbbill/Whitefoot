@@ -1,53 +1,50 @@
 # Current Plan
 
-Status: ACTIVE (owner selection 2026-08-10): activate the held
-provenance gate as stage 5b of the selected obligation-discharge direction.
-This plan authorizes only the stage-5b work written below. A separate lifecycle
-commit must register the next free task before substantive work begins.
+Status: ACTIVE (owner selection 2026-08-10): finish installed validation and
+closure of the exact-approved and activated provenance gate as stage 5b of the
+selected obligation-discharge direction. This plan authorizes only the
+remaining stage-5b work written below; it does not authorize stage 8a.
 
-Derived from: [Direction Outline revision 29](roadmap.md), item `PROOF-8`
+Derived from: [Direction Outline revision 30](roadmap.md), item `PROOF-8`
 (primary), with `BOUND-1`, `VERIFY-1`, and `VERIFY-2` as boundary and evidence
 constraints. `CAND-8` remains the selected flagship but stays parked until the
 complete obligation-discharge direction reaches its completion boundary.
 
-Before any specification approval request, the lead must first give the owner
-a complete plain-language Chinese explanation of the exact language behavior,
-implementation, protected and accepted-set impact, real-program result,
-archive action, limitations, and complete digest; then stop and wait for an
-explicit response.
+The required complete plain-language Chinese explanation and hard wait are
+complete. On 2026-08-10 the owner explicitly approved exact v0.27 digest
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`
+with the protected consumer, additive-conformance, effect-row, and outgoing
+v0.26 archive scope stated in that explanation.
 
 ## Direction and current milestone
 
-Exact-approved v0.26 is active at `spec/kernel-spec.md`, SHA-256
-`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
-Task 0048 made each admitted function requirement one atomic typed goal:
-ordinary calls prove it before transfer, bodies receive it as S4, ordinary
-callees execute no requirement prologue, and both real process entries retain
-one checked boundary. Installed acceptance and the complete gate are green.
+Exact-approved v0.27 is active at `spec/kernel-spec.md`, SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`;
+the exact outgoing v0.26 bytes are archived at
+`spec/kernel-spec-v0.26.md`. It preserves task 0048's atomic typed requirement
+goals and activates the retained requirement-to-protected-leaf bridge as the
+bounded PRV-1/PRV-2/PRV-3 explicit-dataflow rejection. This atomic activation
+packet also contains the exact approved consumer, effect-row, and additive
+conformance changes. Installed acceptance, the complete gate, the live MCTS
+update, and task 0050 closure remain to be completed under this plan.
 
-The compiler also retains finite provenance metadata but emits no provenance
-rejection. Task 0046's held review reaches all three canonical Huffman subjects
-with a finite explicit-dataflow rule. v0.26 closes the remaining helper-shaped
-`requires` bypass and records the requirement-to-protected-leaf bridge needed
-to activate that rule without inventing a second goal language.
-
-## Current step — stage 5b provenance-gate activation
+## Current step — installed stage 5b validation and closure
 
 ### Why
 
-The current named claims distinguish machine-proven obligations from checked
-writer assertions, but they do not distinguish a local invariant failure from
-malformed external input. In the frozen boundary-fed DEFLATE unit, the held
-rule classifies nineteen of thirty-three protected subjects as external. Six
-already discharge without assertion evidence; thirteen obligation nodes under
-eleven claims instead turn externally controlled failure into an abort.
+Before v0.27 activation, the named claims distinguished machine-proven
+obligations from checked writer assertions, but not a local invariant failure
+from malformed external input. In the frozen boundary-fed DEFLATE unit, the
+held rule classified nineteen of thirty-three protected subjects as external.
+Six already discharged without assertion evidence; thirteen obligation nodes
+under eleven claims instead turned externally controlled failure into an abort.
 
 Task 0046 fixed the held rule's explicit-offset and payload-projection defects
 without adding implicit-flow analysis. Stage 7 then made a function requirement
 an ordinary caller proof obligation and retained finite bridge metadata, so a
 helper can no longer hide the same protected leaf behind a runtime callee
-prologue. The smallest next step is therefore to activate the already bounded
-explicit-dataflow policy and migrate only the real externally controlled
+prologue. Exact-approved v0.27 therefore activates that bounded
+explicit-dataflow policy and migrates only the real externally controlled
 failures it identifies to value paths.
 
 ### Do
@@ -245,9 +242,10 @@ The owner selected this written plan on 2026-08-10. Its ACTIVE status is
 execution authority for exactly stage 5b and does not expand the written scope.
 A separate lifecycle commit must register the next free task number after
 refreshing the integration branch, and that registration must precede
-substantive work. Plan selection is not specification approval; the later
-v0.27 candidate still requires its own exact explanation, hard wait, and owner
-response.
+substantive work. The required exact v0.27 explanation, hard wait, and owner
+approval are complete, and this packet atomically activates those exact bytes.
+Remaining authority is limited to installed validation, the truthful live MCTS
+update, and task closure; stage 8a still requires a separately ACTIVE plan.
 
 ## Later dependency map — not execution authority
 
@@ -284,8 +282,8 @@ covered obligation to prove or take a value branch. This is not global law.
 
 ## Stable specification rule
 
-The active specification stays at `spec/kernel-spec.md`. v0.25 is the current
-immutable outgoing archive and v0.26 has no committed versioned sibling while
+The active specification stays at `spec/kernel-spec.md`. v0.26 is the current
+immutable outgoing archive and v0.27 has no committed versioned sibling while
 active. Every later candidate edits the stable file and is reviewed as a diff
 plus complete digest. Its outgoing flat archive is prepared byte-identically in
 the same uncommitted preapproval change, hashed and reviewed with the candidate,

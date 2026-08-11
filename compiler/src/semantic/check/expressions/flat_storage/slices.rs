@@ -176,6 +176,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(TypedExpression {
             expression: CheckedExpression::SliceOf {
+                carrier: self.tree.path(node)?.clone(),
                 source,
                 region,
                 element,

@@ -1,0 +1,38 @@
+fn bridge_leaf(bytes: own buffer<u8>, index: own u64) -> own u8 pure requires {
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  check inside else trap "leaf index";
+} {
+  return bytes[index];
+}
+
+fn bridge_middle(bytes: own buffer<u8>, index: own u64) -> own u8 pure requires {
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  check inside else trap "middle index";
+} {
+  let value = bridge_leaf(bytes: move bytes, index: index);
+  return value;
+}
+
+fn bridge_top(bytes: own buffer<u8>, index: own u64) -> own u8 pure requires {
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  check inside else trap "top index";
+} {
+  let value = bridge_middle(bytes: move bytes, index: index);
+  return value;
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "Two requirement-to-leaf call boundaries compose before the external entry actual is rejected under PRV-2; neither intermediate S4 axiom is a proof repair.";
+  region 'a {
+    let index = args_count<'a>(args: &'a args);
+    let bytes = buffer_new(4_u64, 0_u8);
+    let room = len(bytes);
+    let inside = ilt(index, room);
+    check inside else trap "entry call precondition";
+    let value = bridge_top(bytes: move bytes, index: index);
+    return exit_status(code: 0_u8);
+  }
+}

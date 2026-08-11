@@ -1,0 +1,25 @@
+enum PrvChoice {
+  PrvExternal(value: u64);
+  PrvInternal(value: u64);
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "An external enum payload seeds only its direct projection; the unseeded sibling binder stays internal and may use a claim to protect its subscript.";
+  region 'a {
+    let external_value = args_count<'a>(args: &'a args);
+    let choice = PrvExternal(value: external_value);
+    match choice {
+      PrvExternal(value: selected_external) => {
+        return exit_status(code: 0_u8);
+      }
+      PrvInternal(value: selected_internal) => {
+        let bytes = buffer_new(1_u64, 0_u8);
+        let room = len(bytes);
+        let inside = ilt(selected_internal, room);
+        claim sibling_index_in_bytes: inside because "the unseeded direct projection is internal";
+        let value = bytes[selected_internal];
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}

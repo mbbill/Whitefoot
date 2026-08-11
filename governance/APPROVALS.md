@@ -319,6 +319,7 @@ ACTIVE-SPEC: v0.23 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace
 ACTIVE-SPEC: v0.24 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86 e09b32edb5a49170bd3fb659e5271ec4dbcb6ac3fec2f40e2e25b8497aace0f5
 ACTIVE-SPEC: v0.25 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86
 ACTIVE-SPEC: v0.26 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab
+ACTIVE-SPEC: v0.27 bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476
 
 ## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
 - owner: **the owner's exact-byte approval of the digest below.** It was taken
@@ -537,6 +538,37 @@ ACTIVE-SPEC: v0.26 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e
   tests; conformance coverage `128/128`; and the complete ignored adapter tally
   `Pass=393 Fail=1 Skip=13`, whose sole failure remains the pre-existing OWN-3
   unsupported case.
+
+## 2026-08-10 — OWNER EXACT-BYTE APPROVAL: v0.27 provenance gate
+- owner: **the owner, in conversation, 2026-08-10** — “批准 v0.27 bbd72500
+  （含上述 11 个 raw-DEFLATE claim→branch 迁移、store_dynamic_length Result
+  与 3 个 propagate、仅四条 traps 删除、16 个 additive conformance case，
+  并归档 v0.26 18aa00e3）。” The reply followed the complete Chinese owner
+  walkthrough and the required hard wait. It is an explicit approval of the
+  exact bytes and named protected changes, not an inference from the earlier
+  Stage 5b direction or plan approval.
+- APPROVED BYTES: active `spec/kernel-spec.md`, version v0.27, SHA-256
+  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+  The outgoing immutable v0.26 archive is byte-identical to the previously
+  active stable file and has SHA-256
+  `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+  A changed specification or archive byte returns to exact review.
+- APPROVED CONSUMER MIGRATION: exactly eleven raw-DEFLATE claims become real
+  value branches with the reviewed existing error mappings;
+  `store_dynamic_length` returns `Result<unit, InflateError>` and exactly three
+  callers use `propagate`. The only `traps` deletions are from
+  `store_dynamic_length`, `decode_length`, `copy_distance`, and `decode_fixed`;
+  every other effect row, error mapping, and runtime oracle remains unchanged.
+- PROTECTED CORPUS: approve exactly sixteen additive provenance conformance
+  cases and their additive manifest rows. No existing conformance case source,
+  manifest row, or annotation changes.
+- STABLE-PATH INSTALLATION: v0.27 remains only at `spec/kernel-spec.md`; the
+  exact outgoing bytes are newly archived at immutable
+  `spec/kernel-spec-v0.26.md`. No `spec/kernel-spec-v0.27.md` is created.
+- boundary: this approval covers the exact v0.27 specification and outgoing
+  v0.26 archive bytes, the named raw-DEFLATE migration, and the sixteen
+  additive conformance cases. Stage 8a is not approved; this commit performs
+  no MCTS activation and creates no v0.27 archive.
 
 ## Pre-approval specification digests, as found
 

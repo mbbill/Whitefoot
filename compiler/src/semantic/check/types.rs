@@ -44,6 +44,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             parameters.push(ParameterSignature {
                 declaration: declaration.id(),
+                node_path: self.tree.path(node)?.clone(),
                 name: declaration.spelling().to_owned(),
                 mode,
                 ty,

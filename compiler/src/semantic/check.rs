@@ -34,7 +34,10 @@ use super::model::{
     CheckedNominal, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
     CheckedStatement, CheckedType, CheckedValue, ClaimAdvisory, FunctionId, NominalId,
 };
-use super::provenance::{ProvenanceContext, analyze_program_provenance};
+use super::provenance::{
+    DatumSelector, ProvenanceContext, ProvenanceDemandKind as InternalDemandKind,
+    ProvenanceFailures, ProvenanceMetadata, ProvenanceTarget, analyze_program_provenance,
+};
 use super::tree::TreeView;
 use super::{CheckStop, CheckedProgram};
 use borrows::{AccessKind, ResolvedPlace};
@@ -45,6 +48,7 @@ use generics::{GenericParameter, GenericSubstitution};
 #[derive(Clone)]
 struct ParameterSignature {
     declaration: DeclarationId,
+    node_path: crate::NodePath,
     name: String,
     mode: CheckedMode,
     ty: CheckedType,
@@ -534,7 +538,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .into_iter()
             .map(|checked| (checked.function, checked.binding_names))
             .unzip::<_, _, Vec<_>, Vec<_>>();
-        let provenance = analyze_program_provenance(
+        let provenance_analysis = analyze_program_provenance(
             &functions,
             &ProvenanceContext {
                 callees: &callees,
@@ -542,8 +546,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 constant_ids: &self.constants,
                 nominals: &self.nominals,
                 binding_names: &binding_names,
+                external_entry: matches!(&entry, super::model::CheckedEntryForm::Command { .. })
+                    .then_some(main),
             },
-        );
+        )?;
+        if self.reject_entailment {
+            self.provenance_rejection(
+                &functions,
+                &provenance_analysis.metadata,
+                &provenance_analysis.failures,
+            )?;
+        }
+        let provenance = provenance_analysis.metadata;
 
         // The ordinary function path is complete, so the executable prefix
         // closes here — after the derived box nominals, which executable code
@@ -730,6 +744,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
             parameters.push(CheckedParameter {
                 name: parameter.name.clone(),
+                node_path: parameter.node_path.clone(),
                 binding,
                 mode: parameter.mode,
                 ty: parameter.ty,
@@ -942,7 +957,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
                 }
-                CheckedStatement::Set { target, value } => {
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => self
@@ -1356,6 +1371,400 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect::<Result<Vec<_>, _>>()?,
             },
         })
+    }
+
+    fn provenance_selector(selector: DatumSelector) -> crate::ProvenanceDatumSelector {
+        match selector {
+            DatumSelector::Plain => crate::ProvenanceDatumSelector::Plain,
+            DatumSelector::EnumPayload { variant, field } => {
+                crate::ProvenanceDatumSelector::EnumPayload { variant, field }
+            }
+        }
+    }
+
+    fn provenance_datum(
+        datum: super::provenance::ParameterDatum,
+    ) -> crate::ProvenanceParameterDatumDetail {
+        crate::ProvenanceParameterDatumDetail {
+            ordinal: datum.ordinal,
+            selector: Self::provenance_selector(datum.selector),
+        }
+    }
+
+    fn provenance_carrier(
+        &self,
+        route: &super::provenance::CarrierRoute,
+    ) -> Result<Vec<crate::ProvenanceCarrierStepDetail>, CheckStop> {
+        route
+            .steps()
+            .iter()
+            .map(|step| {
+                let node = self
+                    .tree
+                    .node_with_path(&step.path)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let write_context = step
+                    .write_context
+                    .as_ref()
+                    .map(|context| -> Result<_, CheckStop> {
+                        let actual = self
+                            .tree
+                            .node_with_path(&context.actual)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        Ok(crate::ProvenanceWriteContextDetail {
+                            parameter: context.parameter,
+                            actual: context.actual.clone(),
+                            actual_coordinate: self.tree.coordinate(actual)?,
+                        })
+                    })
+                    .transpose()?;
+                Ok(crate::ProvenanceCarrierStepDetail {
+                    path: step.path.clone(),
+                    selector: Self::provenance_selector(step.selector),
+                    call_role: step.call_role.map(|role| match role {
+                        super::provenance::CarrierCallRole::SystemResult => {
+                            crate::ProvenanceCarrierCallRole::SystemResult
+                        }
+                        super::provenance::CarrierCallRole::SystemWrite => {
+                            crate::ProvenanceCarrierCallRole::SystemWrite
+                        }
+                        super::provenance::CarrierCallRole::UserResult => {
+                            crate::ProvenanceCarrierCallRole::UserResult
+                        }
+                        super::provenance::CarrierCallRole::UserWrite => {
+                            crate::ProvenanceCarrierCallRole::UserWrite
+                        }
+                        super::provenance::CarrierCallRole::UserSubstitution => {
+                            crate::ProvenanceCarrierCallRole::UserSubstitution
+                        }
+                    }),
+                    write_context,
+                    coordinate: self.tree.coordinate(node)?,
+                })
+            })
+            .collect()
+    }
+
+    fn provenance_residual(
+        provenance: &ProvenanceMetadata,
+        leaf: &super::provenance::ProtectedLeaf,
+    ) -> Option<String> {
+        let residual = |rewalks: &[super::entailment::FunctionEntailmentRewalk]| {
+            rewalks
+                .get(leaf.function.0 as usize)
+                .and_then(|rewalk| {
+                    rewalk
+                        .obligations
+                        .iter()
+                        .find(|outcome| outcome.node_path == leaf.obligation)
+                })
+                .and_then(|outcome| outcome.residual.clone())
+        };
+        residual(&provenance.s4_blinded).or_else(|| residual(&provenance.unasserted))
+    }
+
+    fn provenance_demand_state(
+        functions: &[CheckedFunction],
+        state: &super::provenance::DemandState,
+    ) -> Result<crate::ProvenanceDemandStateDetail, CheckStop> {
+        let (demand_kind, function, parameter, requirement, leaf) = match state {
+            super::provenance::DemandState::Direct {
+                function,
+                subject,
+                leaf,
+            } => (
+                crate::ProvenanceDemandKind::Direct,
+                *function,
+                *subject,
+                None,
+                leaf,
+            ),
+            super::provenance::DemandState::Bridge {
+                requirement,
+                subject,
+                leaf,
+            } => (
+                crate::ProvenanceDemandKind::RequirementBridge,
+                requirement.function,
+                *subject,
+                Some(requirement),
+                leaf,
+            ),
+        };
+        let owner = functions
+            .get(function.0 as usize)
+            .filter(|candidate| candidate.id == function)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let protected = functions
+            .get(leaf.function.0 as usize)
+            .filter(|candidate| candidate.id == leaf.function)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(crate::ProvenanceDemandStateDetail {
+            demand_kind,
+            function: owner.symbol.clone(),
+            parameter: Self::provenance_datum(parameter),
+            requirement: requirement.map(|requirement| requirement.final_check.clone()),
+            requirement_conjunct: requirement.map(|requirement| requirement.conjunct),
+            protected_function: protected.symbol.clone(),
+            protected_leaf: leaf.obligation.clone(),
+            protected_conjunct: leaf.conjunct,
+        })
+    }
+
+    fn provenance_boundary(
+        functions: &[CheckedFunction],
+        boundary: &super::provenance::DemandBoundary,
+    ) -> Result<crate::ProvenanceBoundaryDetail, CheckStop> {
+        Ok(crate::ProvenanceBoundaryDetail {
+            call: boundary.call.clone(),
+            argument_node: boundary.argument_node.clone(),
+            argument: boundary.argument,
+            callee: Self::provenance_demand_state(functions, &boundary.callee)?,
+            caller_continuation: boundary
+                .caller_continuation
+                .as_ref()
+                .map(|state| Self::provenance_demand_state(functions, state))
+                .transpose()?,
+        })
+    }
+
+    fn provenance_target_detail(
+        &self,
+        functions: &[CheckedFunction],
+        provenance: &ProvenanceMetadata,
+        target: &ProvenanceTarget,
+    ) -> Result<crate::ProvenanceTargetDetail, CheckStop> {
+        let protected = functions
+            .get(target.leaf.function.0 as usize)
+            .filter(|candidate| candidate.id == target.leaf.function)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let residual = Self::provenance_residual(provenance, &target.leaf)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let (demand_kind, target_repair) = match target.kind {
+            InternalDemandKind::Direct => (
+                crate::ProvenanceDemandKind::Direct,
+                "add a dominating real value branch in the protected leaf's owning body and take the domain outcome on its false edge",
+            ),
+            InternalDemandKind::Bridge => (
+                crate::ProvenanceDemandKind::RequirementBridge,
+                "add a real value branch in the rejecting caller that establishes the complete bridged call goal in the unasserted state",
+            ),
+        };
+        let requirement_function = target
+            .requirement
+            .as_ref()
+            .map(|requirement| {
+                functions
+                    .get(requirement.function.0 as usize)
+                    .filter(|function| function.id == requirement.function)
+                    .map(|function| function.symbol.clone())
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)
+            })
+            .transpose()?;
+        let mut witness = vec![target.leaf.obligation.clone()];
+        for boundary in &target.boundaries {
+            if let super::provenance::DemandState::Bridge { requirement, .. } = &boundary.callee {
+                witness.push(requirement.final_check.clone());
+            }
+            witness.push(boundary.call.clone());
+            witness.push(boundary.argument_node.clone());
+        }
+        witness.extend(target.carrier.paths());
+        let carrier = self.provenance_carrier(&target.carrier)?;
+        let origin_coordinate = carrier
+            .last()
+            .map(|step| step.coordinate)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(crate::ProvenanceTargetDetail {
+            demand_kind,
+            callee_parameter: Some(Self::provenance_datum(target.callee_subject)),
+            protected_function: protected.symbol.clone(),
+            protected_leaf: target.leaf.obligation.clone(),
+            protected_conjunct: target.leaf.conjunct,
+            requirement_function,
+            requirement: target
+                .requirement
+                .as_ref()
+                .map(|requirement| requirement.final_check.clone()),
+            requirement_conjunct: target
+                .requirement
+                .as_ref()
+                .map(|requirement| requirement.conjunct),
+            local_bridge_predecessor: None,
+            residual,
+            companion_parameter_datums: target
+                .companions
+                .datums
+                .iter()
+                .copied()
+                .map(Self::provenance_datum)
+                .collect(),
+            boundaries: target
+                .boundaries
+                .iter()
+                .map(|boundary| Self::provenance_boundary(functions, boundary))
+                .collect::<Result<Vec<_>, _>>()?,
+            carrier,
+            origin_coordinate,
+            witness,
+            target_repair,
+        })
+    }
+
+    /// Applies PRV-2/PRV-3 only after every OP-4/FN-8 base judgment has
+    /// succeeded.  Events are already coalesced and deterministically ordered
+    /// by the two-stratum provenance analysis.
+    fn provenance_rejection(
+        &self,
+        functions: &[CheckedFunction],
+        provenance: &ProvenanceMetadata,
+        failures: &ProvenanceFailures,
+    ) -> Result<(), CheckStop> {
+        enum Rejection<'metadata> {
+            Local(
+                &'metadata super::provenance::ProtectedLeaf,
+                &'metadata super::provenance::ProvenanceDependency,
+                Option<&'metadata super::provenance::RequirementOccurrence>,
+                &'metadata super::provenance::CarrierRoute,
+            ),
+            Call(&'metadata super::provenance::ProvenanceCallEvent),
+        }
+
+        impl Rejection<'_> {
+            fn node_path(&self) -> &crate::NodePath {
+                match self {
+                    Self::Local(leaf, _, _, _) => &leaf.obligation,
+                    Self::Call(event) => &event.argument_node,
+                }
+            }
+
+            const fn rule(&self) -> SemanticRule {
+                match self {
+                    Self::Local(_, _, _, _) => SemanticRule::Prv3,
+                    Self::Call(_) => SemanticRule::Prv2,
+                }
+            }
+        }
+
+        let local =
+            failures
+                .local_rejections
+                .iter()
+                .map(|(leaf, dependency, requirement, carrier)| {
+                    Rejection::Local(leaf, dependency, requirement.as_ref(), carrier)
+                });
+        let calls = failures.call_events.iter().map(Rejection::Call);
+        let rejection = local.chain(calls).min_by(|left, right| {
+            left.node_path()
+                .components()
+                .cmp(right.node_path().components())
+                .then_with(|| {
+                    left.rule()
+                        .definition_rank()
+                        .cmp(&right.rule().definition_rank())
+                })
+        });
+        let Some(rejection) = rejection else {
+            return Ok(());
+        };
+        let node = self
+            .tree
+            .node_with_path(rejection.node_path())
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let location = SemanticLocation::SourceNode(
+            rejection.node_path().clone(),
+            self.tree.coordinate(node)?,
+        );
+        let restructure_alternative = "restructure the explicit dataflow so the external value no longer reaches the constrained-subject position";
+        match rejection {
+            Rejection::Local(leaf, dependency, requirement, carrier) => {
+                let function = functions
+                    .get(leaf.function.0 as usize)
+                    .filter(|function| function.id == leaf.function)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let residual = Self::provenance_residual(provenance, leaf)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let mut witness = vec![leaf.obligation.clone()];
+                if let Some(requirement) = requirement {
+                    witness.push(requirement.final_check.clone());
+                }
+                witness.extend(carrier.paths());
+                let carrier = self.provenance_carrier(carrier)?;
+                let origin_coordinate = carrier
+                    .last()
+                    .map(|step| step.coordinate)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let requirement_function = requirement
+                    .map(|requirement| {
+                        functions
+                            .get(requirement.function.0 as usize)
+                            .filter(|function| function.id == requirement.function)
+                            .map(|function| function.symbol.clone())
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)
+                    })
+                    .transpose()?;
+                Err(CheckStop::Issue(SemanticIssue {
+                    rule: SemanticRule::Prv3,
+                    location,
+                    kind: SemanticIssueKind::ExternalProtectedSubject(Box::new(
+                        crate::ProvenanceGateDetail {
+                            targets: vec![crate::ProvenanceTargetDetail {
+                                demand_kind: crate::ProvenanceDemandKind::LocalLeaf,
+                                callee_parameter: None,
+                                protected_function: function.symbol.clone(),
+                                protected_leaf: leaf.obligation.clone(),
+                                protected_conjunct: leaf.conjunct,
+                                requirement_function,
+                                requirement: requirement
+                                    .map(|requirement| requirement.final_check.clone()),
+                                requirement_conjunct: requirement
+                                    .map(|requirement| requirement.conjunct),
+                                local_bridge_predecessor: requirement
+                                    .map(|_| crate::ProvenanceLocalBridgePredecessor::Local),
+                                residual,
+                                companion_parameter_datums: dependency
+                                    .parameters
+                                    .datums
+                                    .iter()
+                                    .copied()
+                                    .map(Self::provenance_datum)
+                                    .collect(),
+                                boundaries: Vec::new(),
+                                carrier,
+                                origin_coordinate,
+                                witness,
+                                target_repair: "add a dominating real value branch in this body and take the domain outcome on its false edge",
+                            }],
+                            selected_target: 0,
+                            restructure_alternative,
+                        },
+                    )),
+                }))
+            }
+            Rejection::Call(event) => {
+                let targets = event
+                    .targets
+                    .iter()
+                    .map(|target| self.provenance_target_detail(functions, provenance, target))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let selected_target = usize::try_from(event.selected_target)
+                    .map_err(|_| SemanticCompilerFailure::InvalidResolution)?;
+                if targets.is_empty() || selected_target >= targets.len() {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Err(CheckStop::Issue(SemanticIssue {
+                    rule: SemanticRule::Prv2,
+                    location,
+                    kind: SemanticIssueKind::ExternalProtectedCallArgument(Box::new(
+                        crate::ProvenanceGateDetail {
+                            targets,
+                            selected_target: event.selected_target,
+                            restructure_alternative,
+                        },
+                    )),
+                }))
+            }
+        }
     }
 
     /// Rejects a checked function whose entailment summary contains an

@@ -2,16 +2,15 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-v0.26 authority at `spec/kernel-spec.md`; immutable versioned files retain the
+v0.27 authority at `spec/kernel-spec.md`; released versioned files retain the
 superseded authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
-**Current statistics: 80 derived · 48 existence-only · 0 underived**
-(128 rules: 120 inherited from v0.20 plus the eight added in v0.21, all
-additions)
+**Current statistics: 83 derived · 48 existence-only · 0 underived**
+(131 rules: v0.26's 128 plus the three v0.27 PRV additions).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -155,6 +154,9 @@ additions)
 | QUAL-3 | Static selection; required emitted shape; bootstrap-owned one-time normalization | ✅ derived | P0/R0 directly, through the performance review's two required changes and the dossier's rejection gates: no per-call dispatch table, operation-ID switch, target tag, instance handle table, or handle lookup on the static native hot path; no heap allocation, no copy of the transferred data, no global system lock, and no per-call signal-disposition operation. A synchronous transfer lowers to its required source and target checks (STOR-6), at most one direct host call, one count or outcome check, and a cold outcome mapper reached only on failure. The bootstrap clause has an independent ground: a per-call signal operation would be a per-call cost, while a broken pipe must reach source as a recoverable outcome under ERR-4 rather than killing the process — so the ignored write-to-closed-pipe disposition is installed once, before entry, by a bootstrap that owns the process, and a program kind whose process the bootstrap does not own obtains an equivalent guarantee under its own qualification. | The rule states its own evidentiary limit and it should be read at that strength: 'the evidence establishing it is inspection of emitted code and symbols, not a machine-checked language judgment.' No target slice exists yet, so the pre-registered cost gates have zero measured instances, and review decision 19 records that the remaining 'material' judgments are structural inspections carrying no threshold by design. Same debt class as OWN-9: the chain is sound and the magnitude is unpriced. |
 | TRAP-1 | Trap under held system resources: whole-process abort, unchanged | ✅ derived | Preservation rather than extension, which is why it derives cleanly: SCOPE-4 and EFF-4 are retained exactly — the runtime attempts the mandatory DIAG-3 record, then aborts the whole process without unwinding and without language cleanup, and PROG-3 produces no status. That no release, close, flush, detach, or completion action runs after a contract violation is not a new rule but EFF-2's existing statement that release actions run only on normal edges; SYS-5's table therefore contributes nothing on a trap. SCOPE-3 places operating-system process teardown of memory and descriptors inside the declared TCB rather than presenting it as a language cleanup guarantee — the distinction W3 requires between what the language promises and what the host happens to do. The not-rolled-back clause is honesty about external effects: bytes already written remain written, an object already created remains created. R5-style boundary: a host requiring an instance to fail without ending its process runs that instance in a separate process. | The payoff is structural: because a trap ends the owning process, no instance resource table, per-instance reaper, or pending-operation transfer is required, and none appears on a synchronous transfer path (QUAL-3). Host-surviving in-process trap containment is a DEFERRED amendment whose own cost is recorded in the dossier (instance resource table, pending-operation transfer to a reaper, delayed reclamation until quiescence). Provenance caveat: TRAP-1 is an addition beyond the dossier's own delta inventory, ratified at exact approval (2026-08-05) rather than reviewed as a numbered rule in the thirty-one-issue pass; its chain rests on the retained SCOPE-4/EFF-4 law, not on independent review provenance. |
 | GATE-2 | The system domain is not the gated boundary family; the separation is exact in both directions | ✅ derived | LEDGER-1's literal text forces it: there is exactly one boundary-construct family (unsafe regions, FFI extern frames, trusted primitive imports) sharing one per-fact soundness-obligation ledger, so housing compiler-owned system operations there would merge them with general FFI — the ground on which the dossier rejects Route B outright. A system operation holds no ledger entry and is not writer-authored, writer-approved, or gate-edited (GATE-1), so SCOPE-1's conclusion follows mechanically: a program calling system operations contains no gated construct and remains a kernel program, and SCOPE-3's foreign-code condition is not engaged because an approved target entry is not foreign code. The converse half is equally forced by the same 'exactly one family' discipline: general FFI, arbitrary imported or exported foreign calls, raw host-ABI calls, and writer-declared external signatures remain reserved to LEDGER-1 and are unreachable through the system domain. META-5 keeps the boundary from eroding: adding a system operation is a specification amendment, never a gate approval, a ledger entry, or a target-implementation act. | Same provenance caveat as TRAP-1: an addition beyond the dossier's own delta inventory, ratified at exact approval. Its content is an analytic separation over LEDGER-1/GATE-1/SCOPE-1, so the chain does not depend on review provenance. The dossier records that the SCOPE-1 and SCOPE-3 objections often raised against Route B do not hold cleanly and were not relied on; this row follows that discipline and rests on LEDGER-1 alone. |
+| PRV-1 | Finite two-class explicit-dataflow provenance over retained value, storage, result, write, and call components | ✅ derived | R4 puts an explicit domain/value path above a runtime assertion trap when correct external input may falsify an obligation, while W3 forbids the writer from asserting or annotating a provenance class to escape that policy. R1 therefore requires the smallest mechanically derived classifier that serves this distinction, and R3 selects its form from the recorded evidence: PROBE-W1's subject-position correction rejects predicate-wide taint; PROBE-TAINT and task 0046 select the two classes, internal `len`, internal program-bounded transfer counts, explicit data edges only, root-plus-explicit-offset place reads, and direct payload projections needed for canonical 3/3 without sibling-error contamination. Reusing ENT-6's already-retained positive dependency transfer avoids a second fact or goal language. Command inputs and the environment-origin [SYS-2] cells are the only unconditional external seeds; SYS-9 and the transfer contracts derive the internal success-count cells. Boolean disjunction and finite datum-set union over the closed component/call domain are monotone, so the first least fixed point exists, terminates, is unique, and satisfies ENT-1/W3 implementation agreement. | The explicit-flow boundary deliberately excludes control choice, write-address choice, path-sensitive storage, recursive payload paths, and implicit flow; those are measured scope exclusions rather than unstated exceptions or a claim of noninterference. SYS-2 remains existence-only overall because its operation inventory and `IoError` membership retain their prior form debt; the new component classifications themselves are theorem- or evidence-derived. |
+| PRV-2 | Derived caller-visible provenance column, finite protected-demand composition, and deterministic call-argument rejection | ✅ derived | FN-1's derived caller-locality boundary requires a caller-visible summary rather than body inspection, and W3 requires that summary to be compiler-derived rather than writer-authored. Task 0041 showed that a parameter-position set loses the protected leaf needed for a truthful diagnostic; task 0046's independent rewalk selected the exact `(parameter datum, protected leaf)` relation and reproduced canonical 3/3 plus the 14-call/24-argument projection. v0.26's derived ENT-6 requirement occurrence, complete/U/B outcomes, and subject-only bridge supply the exact O3 closure without a recognizer, mention-all-parameters rule, whole-goal support, or second proof language. With PRV-1 pairs frozen, the remaining transfers only union finite direct-demand, bridge, target, and event sets over PROG-1/FN-2's closed finite instances, so the second least fixed point is unique, terminating, recursion-safe, and traversal-order independent. FN-8 full-state acceptance remains first. DIAG-1/DIAG-2 plus R4 require one actionable event at each existing argument atom while retaining every target; post-convergence NodePath/declaration ordering makes the witness deterministic without entering either lattice. | Multiple leaves or routes at one `(call, argument)` enlarge its retained target set rather than duplicating the rejection. Witness ordering is diagnostic closure over existing canonical orders and changes neither acceptance nor provenance. |
+| PRV-3 | Local constrained-subject gate over complete, unasserted, and S4-blinded states | ✅ derived | W3's no-trust rule and R4's shift-left ladder require an externally controlled protected subject not to become legal solely because a writer-authored `check` or `claim` will trap at runtime; the honest repair is a real branch/value outcome or removal of the external value from constrained-subject position. PROBE-W1 rejected predicate-wide taint and selected the obligation's constrained subject, while PROBE-TAINT and task 0046 measured the resulting 19 external / 6 branch-discharged / 13-under-11 rejected / 14 internal split and preserved the hostile controls. OP-4 complete-state discharge runs first, preserving every existing base rejection. Removing exactly S2/S3 forms the unasserted judgment; v0.26's requirement bridge and O3 counterexample force the additional S4-blinded judgment so neither a requirement nor the command wrapper launders the same leaf. The exhaustive B/external-bit/U/parameter-datum partition assigns local leaves only to PRV-3 and call arguments only to PRV-2, including entries, with no fallback check or runtime change. R4 and DIAG-1/DIAG-2 derive the exact protected-node attribution, residual, provenance chain, and two legal repairs. | A claim remains legal in its own right; this rule constrains only its downstream authorization of the offset in `i < len(P)`. Bounds, bases, target addresses, and unrelated operands remain outside the gate by the evidence-selected subject rule. |
 
 ## OWN-1 amendment: tag-only enums are copy (2026-07-10)
 
@@ -944,3 +946,45 @@ The grammar, token, operation-row, source-construct, and rule inventories are
 unchanged: 70 productions, 85 decisions, 96 terminal predicates, and 128
 rules. Derivation statuses and totals remain 80 derived · 48 existence-only ·
 0 underived.
+
+## v0.27 amendment — finite provenance and constrained-subject gate (activated 2026-08-10)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.27, at SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+The superseded v0.26 bytes are immutable at `spec/kernel-spec-v0.26.md`,
+SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`
+and byte-identical to the exact outgoing v0.26 authority.
+
+v0.27 adds three rules and removes none: PRV-1, PRV-2, and PRV-3,
+whose independently reviewed derivation rows appear in the ledger above. It
+modifies nine existing rules at sixteen verbatim-anchored sites: OP-4, FN-1,
+FN-8, SYS-2, DIAG-2, CLM-1, ENT-1, ENT-3, and ENT-6. The exact stable-file
+diff is +62/-18 lines. Tokens +0/-0; terminal spellings +0/-0; grammar
+productions +0/-0; operation-table rows +0/-0; source constructs +0/-0;
+exception clauses +0/-0; and sections +0. The native inventories remain 70
+productions, 85 decisions, and 96 terminal predicates. The rule inventory is
+131.
+
+The accepted set narrows only after the existing OP-4 or FN-8 full-state
+judgment succeeds: an external constrained offset may not rely solely on S2
+`check`, S3 `claim`, or an S4 requirement bridge. A real branch/value outcome
+or removal of that external value from constrained-subject position remains
+the repair. The gate widens no acceptance and changes no runtime operation,
+effect rule, trusted assertion, or optimizer authority. Its exact current
+subject is only the offset `i` in the protected leaf `i < len(P)`. Internal
+subjects keep ordinary entailment; external values used only as bounds, bases,
+write addresses, or unrelated operands remain outside the gate.
+
+The selected classifier is deliberately finite explicit dataflow. Control
+choice and write-address choice add no edge; storage is flow-insensitive per
+whole root; payload selectors are direct rather than recursive; `len` remains
+internal; and there is no path-sensitive storage, implicit-flow analysis,
+Boolean decomposition, induction, arithmetic theorem prover, writer-spelled
+provenance annotation, new goal language, or foreign adapter. The two fixed
+points and diagnostic witnesses reuse the finite checked metadata already
+retained by v0.26. These limits are the amendment's boundary, not a
+noninterference claim.
+
+The active totals are **83 derived · 48 existence-only · 0 underived** across
+131 rules.

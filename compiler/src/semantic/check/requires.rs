@@ -74,7 +74,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // subset pass still reports a malformed clause first.
             let expression = self.requires_statement_expression(statement)?;
             match &checked.statement {
-                CheckedStatement::Let { binding, value } => {
+                CheckedStatement::Let { binding, value, .. } => {
                     self.validate_requires_copy_local(entry, *binding, bindings)?;
                     let expanded = self.build_goal_expression(
                         expression,
@@ -152,6 +152,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 operation,
                 operand_type,
                 arguments,
+                ..
             } => Some((
                 GoalOperation::Float {
                     operation: *operation,
@@ -174,6 +175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 destination,
                 value,
                 result,
+                ..
             } => Some((
                 GoalOperation::NumericConversion {
                     source: *source,
@@ -188,6 +190,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 source,
                 destination,
                 value,
+                ..
             } => Some((
                 GoalOperation::Reinterpret {
                     source: *source,
@@ -201,6 +204,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::BooleanOperation {
                 operation,
                 arguments,
+                ..
             } => Some((
                 GoalOperation::Boolean(*operation),
                 Vec::new(),
@@ -212,6 +216,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 equal,
                 operand_type,
                 arguments,
+                ..
             } => Some((
                 GoalOperation::EnumEquality {
                     equal: *equal,
@@ -265,13 +270,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     element,
                     length: *length,
                 },
-                (CheckedExpression::BufferLength { root }, CheckedType::Buffer { element })
+                (CheckedExpression::BufferLength { root, .. }, CheckedType::Buffer { element })
                     if element == root.element =>
                 {
                     GoalOperation::BufferLength { element }
                 }
                 (
-                    CheckedExpression::SliceLength { root },
+                    CheckedExpression::SliceLength { root, .. },
                     CheckedType::Slice { region, element },
                 ) if expanded_bindings.get(&root.binding).is_some_and(|source| {
                     source.ty() == CheckedType::Slice { region, element }

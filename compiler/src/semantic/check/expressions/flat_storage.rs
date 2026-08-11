@@ -169,6 +169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(TypedExpression::owned(
             CheckedExpression::ArrayFill {
+                carrier: self.tree.path(node)?.clone(),
                 ty: CheckedType::Array { element, length },
                 value: Box::new(value.expression),
                 target_domain: CheckedTargetDomainObligation::ElementAddress,
@@ -225,6 +226,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(TypedExpression::owned(
             CheckedExpression::BufferFill {
+                carrier: self.tree.path(node)?.clone(),
                 element,
                 length: Box::new(length.expression),
                 value: Box::new(value.expression),
@@ -431,6 +433,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let expression = match indexed {
             CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayIndex {
+                carrier: self.tree.path(use_node)?.clone(),
                 root: array.root,
                 element_type: array.element_type,
                 length: array.length,
@@ -443,6 +446,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     effects.add_read(region);
                 }
                 CheckedExpression::BufferIndex {
+                    carrier: self.tree.path(use_node)?.clone(),
                     root: buffer.root,
                     offset: Box::new(offset.expression),
                     trap,
@@ -459,6 +463,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     effects.add_read(region);
                 }
                 CheckedExpression::SliceIndex {
+                    carrier: self.tree.path(use_node)?.clone(),
                     root: slice.root,
                     offset: Box::new(offset.expression),
                     trap,

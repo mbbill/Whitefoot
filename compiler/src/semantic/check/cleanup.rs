@@ -105,7 +105,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_expression_release_sites(scrutinee, sites)?;
                     self.collect_drop_release_sites(error_drops, sites)?;
                 }
-                CheckedStatement::Set { target, value } => {
+                CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
@@ -134,7 +134,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::Claim { condition, .. } => {
                     self.collect_expression_release_sites(condition, sites)?;
                 }
-                CheckedStatement::Return { value, drops } => {
+                CheckedStatement::Return { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
                     self.collect_drop_release_sites(drops, sites)?;
                 }
@@ -150,7 +150,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.collect_drop_release_sites(&arm.fallthrough_drops, sites)?;
                     }
                 }
-                CheckedStatement::Give { value, drops } => {
+                CheckedStatement::Give { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
                     self.collect_drop_release_sites(drops, sites)?;
                 }

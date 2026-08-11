@@ -1,0 +1,32 @@
+fn seedless_left(index: own u64, limit: own u64, remaining: own u64) -> own u64 pure requires {
+  let permitted = ile(index, limit);
+  check permitted else trap "seedless bound";
+} {
+  let finished = ieq(remaining, 0_u64);
+  if finished {
+    return index;
+  } else {
+    let next = remaining -wrap 1_u64;
+    let value = seedless_right(index: index, limit: limit, remaining: next);
+    return value;
+  }
+}
+
+fn seedless_right(index: own u64, limit: own u64, remaining: own u64) -> own u64 pure requires {
+  let permitted = ile(index, limit);
+  check permitted else trap "seedless bound";
+} {
+  let value = seedless_left(index: index, limit: limit, remaining: remaining);
+  return value;
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  doc "A mutually recursive requirement cycle with no protected-leaf seed remains empty, so an external actual does not manufacture a PRV-2 target.";
+  region 'a {
+    let index = args_count<'a>(args: &'a args);
+    let permitted = ile(index, 8_u64);
+    check permitted else trap "entry call precondition";
+    let value = seedless_right(index: index, limit: 8_u64, remaining: 0_u64);
+    return exit_status(code: 0_u8);
+  }
+}

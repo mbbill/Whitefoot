@@ -160,7 +160,7 @@ fn main() -> own unit allocates(heap), traps {
         assert!(matches!(
             &main.body[7],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { root },
+                value: CheckedExpression::BufferLength { root, .. },
                 ..
             } if root.fields == [1]
         ));

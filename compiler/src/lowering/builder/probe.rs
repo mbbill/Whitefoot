@@ -83,7 +83,7 @@ fn recognize_guard(
     guard_match: &CheckedStatement,
     declared_outside: &HashSet<BindingId>,
 ) -> Option<(BindingId, BindingId)> {
-    let CheckedStatement::Let { binding, value } = guard_let else {
+    let CheckedStatement::Let { binding, value, .. } = guard_let else {
         return None;
     };
     let CheckedExpression::IntegerOperation {
@@ -141,7 +141,7 @@ fn recognize_load(
     induction: BindingId,
     declared_outside: &HashSet<BindingId>,
 ) -> Option<(BindingId, BindingId)> {
-    let CheckedStatement::Let { binding, value } = load else {
+    let CheckedStatement::Let { binding, value, .. } = load else {
         return None;
     };
     let CheckedExpression::BufferIndex { root, offset, .. } = value else {
@@ -168,7 +168,7 @@ fn recognize_load(
 
 /// The trailing step: `set i = iadd.wrap<u64>(i, 1_u64)`.
 fn recognize_increment(increment: &CheckedStatement, induction: BindingId) -> bool {
-    let CheckedStatement::Set { target, value } = increment else {
+    let CheckedStatement::Set { target, value, .. } = increment else {
         return false;
     };
     let crate::semantic::CheckedSetTarget::Place(place) = target else {
@@ -217,7 +217,7 @@ fn statement_is_neutral(
     needles: &mut Vec<(BindingId, Needle)>,
 ) -> bool {
     match statement {
-        CheckedStatement::Let { binding, value } => {
+        CheckedStatement::Let { binding, value, .. } => {
             if !expression_is_pure(value) {
                 return false;
             }

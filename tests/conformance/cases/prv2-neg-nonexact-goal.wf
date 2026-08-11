@@ -1,0 +1,20 @@
+fn read_strict(bytes: own buffer<u8>, index: own u64) -> own u8 pure requires {
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  check inside else trap "index must be strictly below the length";
+} {
+  return bytes[index];
+}
+
+fn call_with_nonstrict_goal(bytes: own buffer<u8>, index: own u64) -> own u8 traps {
+  doc "A non-strict check is not the callee's exact strict goal; full-state FN-8 rejection runs before any PRV-2 target is formed.";
+  let room = len(bytes);
+  let maybe_inside = ile(index, room);
+  check maybe_inside else trap "index may equal the length";
+  let value = read_strict(bytes: move bytes, index: index);
+  return value;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

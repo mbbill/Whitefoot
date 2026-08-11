@@ -23,16 +23,15 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.26 bytes of `../spec/kernel-spec.md`,
-SHA-256
-`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+The frontend targets the exact v0.27 bytes of `../spec/kernel-spec.md`, SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
-data. The exact specification identity is versioned data; compiler stage,
-type, and API names remain stable across grammar-preserving specification
-bumps instead of acquiring a `V0_xx` suffix. For a specification proposal, run
-the native verifier through this compiler:
+data. The exact specification identity is versioned data; compiler stage, type,
+and API names remain stable across grammar-preserving specification bumps
+instead of acquiring a `V0_xx` suffix. For a specification proposal, run the
+native verifier through this compiler:
 
 ```sh
 cargo run --bin whitefoot-grammar -- \
@@ -222,7 +221,7 @@ calls and nominal discovery, forwarded const parameters, generic arrays and
 primitive buffers, and symbolic and concrete `Option` and `Result` instances
 use that same path. There is no argument inference, backend-level generic IR,
 or cross-instance body sharing. Generic call cycles, generic functions with
-region parameters or `requires`, and type-dependent generic `cvt` or
+region parameters, and type-dependent generic `cvt` or
 `reinterpret` are explicit unsupported capabilities. Generic source contracts,
 source-contract bounds, and region-bearing generic arguments instead receive
 their v0.18-specified source rejections.
@@ -275,12 +274,41 @@ no effect to the callee row and never becomes `llvm.assume`.
 
 The two real process wrappers remain checked boundaries: they evaluate an
 entry function's pure goal once after setup and before the body, trapping with
-the original OP-5 record on false. The checked program also retains finite
-subject-only requirement-to-protected-leaf bridge metadata for the next
-provenance stage; v0.26 does not yet issue a provenance rejection from it. A
-borrowed-output capacity program exercises caller discharge, the body axiom,
-ordinary loop and buffer operations, exact effects, and cleanup through this
-single implementation path.
+the original OP-5 record on false. A borrowed-output capacity program exercises
+caller discharge, the body axiom, ordinary loop and buffer operations, exact
+effects, and cleanup through this single implementation path.
+
+The v0.27 implementation activates the retained
+requirement-to-protected-leaf bridge as one two-stratum provenance judgment.
+The first finite fixed point derives explicit-dataflow component pairs for
+values, whole storage roots, direct enum payload projections, user-call
+results, and writes. Command inputs and only the environment-origin cells in
+the closed system result/write table are unconditional external seeds. A place
+read joins its root with every explicit subscript offset; `len` remains
+internal. After those pairs freeze, a second finite fixed point composes direct
+protected demands, S4
+bridges, call targets, and one rejection event per call argument. Checked
+metadata retains complete target sets and post-convergence deterministic
+NodePath witnesses; no witness choice participates in either lattice.
+
+Existing acceptance keeps precedence. A complete-state local failure remains
+OP-4, and an unproved or refuted ordinary-call goal remains FN-8. After base
+success, PRV-3 rejects only a local protected subscript whose constrained
+offset is unconditionally external and whose relation needs a body `check`,
+`claim`, or S4 requirement fact; PRV-2 owns the corresponding downstream call
+argument. A real branch/value outcome remains visible in the unasserted and
+S4-blinded states and is accepted. The command entry is rewalked by the same
+rule, so its checked wrapper cannot launder an external protected leaf.
+
+This gate is deliberately narrower than taint or noninterference. Control
+choice, write-address choice, path-sensitive storage, recursive payload paths,
+and implicit flow add no provenance edge. An external value used only as a
+bound, base, write address, or unrelated operand is outside the gate, and an
+internal constrained subject may still rely on an ordinary claim. The sole
+current protected subject is the offset in `i < len(P)`. Provenance changes no
+runtime operation, effect row by itself, optimizer fact, or check-elision
+license, and facts-on/facts-off acceptance and required runtime behavior use
+the same semantic path.
 
 The compiler retains the static contract family introduced in v0.16 and checks
 it before checked-program publication.

@@ -294,6 +294,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(TypedExpression::owned(
             CheckedExpression::IntegerOperation {
+                carrier: self.tree.path(node)?.clone(),
                 operation,
                 operand_type,
                 arguments,
@@ -410,6 +411,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         Ok(TypedExpression::owned(
             CheckedExpression::BoxNew {
+                carrier: self.tree.path(node)?.clone(),
                 nominal,
                 value: Box::new(value.expression),
             },
@@ -450,6 +452,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(TypedExpression::owned(
             CheckedExpression::BooleanOperation {
+                carrier: self.tree.path(node)?.clone(),
                 operation,
                 arguments,
             },
@@ -510,6 +513,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(TypedExpression::owned(
             CheckedExpression::EnumEquality {
+                carrier: self.tree.path(node)?.clone(),
                 equal,
                 operand_type,
                 arguments,

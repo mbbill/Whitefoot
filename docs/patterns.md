@@ -213,6 +213,31 @@ post-loop equality.
 Replaces: `let i`, `loop`, equality break, index-bound claim, and wrapping
 increment boilerplate for an exact half-open u64 walk.
 
+## P12. External constrained subject takes a value path
+
+Problem: a protected storage access uses an offset derived from process or
+system input, so valid hostile input may falsify its bound. Pattern status:
+active v0.27 guidance. Test the relation with a real branch and return the
+domain's normal error value on the false edge. A body `check`, a `claim`, an
+ordinary callee requirement/prologue, or a process-entry wrapper check is not a
+repair: each turns expected external failure into a trap.
+
+Place the branch where the protected relation belongs. For a local protected
+access, branch in the function that owns that access. For a call rejection,
+branch in the rejecting caller before the call so its unasserted state proves
+the complete bridged goal; alternatively restructure the dataflow so the
+external value no longer reaches the callee's constrained subject. An internal
+constrained subject may still use an honest invariant `claim` under its
+ordinary lifecycle. External values used only as a bound, storage base,
+write-address choice, or unrelated goal operand do not taint the constrained
+subject and need no repair merely for being external. This does not exempt a
+write address's own protected offset obligation when that offset is itself the
+constrained subject.
+
+Replaces: assertion-backed bounds on malformed input, moving the same trap
+behind a helper, and relying on a checked entry wrapper to authorize a body
+access.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

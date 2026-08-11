@@ -512,3 +512,73 @@ the SHA-256 worker retains its no-`wf_trap` shape and sustained runtime oracle.
 The complete repository gate is green. The separately invoked adapter reports
 `Pass=393 Fail=1 Skip=13`; its sole failure remains the pre-existing OWN-3
 `RegionsAndBorrows` unsupported boundary.
+
+## Pre-activation v0.27 provenance-gate candidate rerun (2026-08-10)
+
+This is candidate review evidence, not an installed-language or activation
+record. The rerun used the prepared v0.27 bytes at `spec/kernel-spec.md`,
+SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
+and the byte-identical prepared outgoing-v0.26 archive at
+`spec/kernel-spec-v0.26.md`, SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+At that review checkpoint both remained non-authoritative and uncommitted
+pending the required explanation, hard wait, exact owner approval, and atomic
+activation.
+
+The same frozen-source dark-checker and all-claims-blinded method reports, in
+`total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 9 / 0 / 0`;
+- deflate, full denominator: `29 / 24 / 5 / 0`; and
+- deflate, dynamic-path denominator: `24 / 19 / 5 / 0`.
+
+The frozen four-source boundary-fed unit now contains twelve claim
+declarations. Seven remain load-bearing and five are non-rejecting CLM-2
+redundancy advisories; none is refuted:
+
+- retained: `copy_read_in_source`, `copy_write_in_destination`,
+  `count_symbol_in_lengths`, `order_symbol_in_lengths`,
+  `walk_length_in_counts`, `code_index_in_order`, and
+  `end_symbol_in_literals`;
+- redundant: `count_slot_in_counts`, `validate_slot_in_counts`,
+  `offsets_slot_in_offsets`, `offsets_slot_in_counts`, and
+  `ordered_symbol_in_lengths`.
+
+Exactly thirteen formerly claim-supported protected sites now discharge through
+real branches and the existing domain error values. Their function breakdown
+is: `inflate` 5 (the four stored-header reads and stored-copy read),
+`decode_length` 2 (the two length-table reads), `copy_distance` 1 (the history
+read), `build_huffman_table` 3 (the offset read, offset write, and symbol
+write), `decode_table_symbol` 1 (the ordered-symbol read), and
+`store_dynamic_length` 1 (the distance-length write). The selected outcomes
+are five `Truncated`, one `InvalidHuffmanCode`, one `InvalidDistance`, and four
+`InvalidHuffmanTree` branch repairs. The thirteen-site count exceeds the eleven
+removed claims because `length_symbol_in_tables` and `order_slot_in_offsets`
+each supported two indexed accesses.
+
+The PRV gate's S2/S3-off rewalk covers the same obligation identities, while
+the complete-state outcomes remain the base acceptance judgment. All thirteen
+repaired sites remain discharged with S2 and S3 absent because their real
+branches establish the relation. The five remaining claim-supported sites
+have internal subjects, so PRV-3 leaves their ordinary full-state S3
+authorization intact; this is not a claim that those five become
+proof-independent. The three
+`store_dynamic_length` calls also establish the exact instantiated requirement
+in the complete, unasserted, and S4-blinded rewalks. Its distance write now has
+its own `InvalidHuffmanTree` value branch, so neither the callee S4 axiom nor an
+entry wrapper supplies provenance authorization.
+
+The frozen raw-DEFLATE program test reports 3/3. Stored, fixed, and dynamic
+success vectors; boundary, truncated, malformed, and oversize errors; closed
+output; semantic checking; LLVM lowering; cleanup; and facts-on/facts-off
+runtime behavior retain their existing oracles. The only exact effect-row
+change is removal of the now-unexhibited `traps` category from
+`store_dynamic_length`, `decode_length`, `copy_distance`, and `decode_fixed`;
+all other effect categories and rows remain unchanged.
+
+The complete native adapter over the unchanged 407 prior identities plus
+sixteen additive PRV cases reports `Pass=409 Fail=1 Skip=13`. The sole failure
+remains the pre-existing OWN-3 `RegionsAndBorrows` unsupported boundary; the
+additive cases all pass and do not hide that retained result.

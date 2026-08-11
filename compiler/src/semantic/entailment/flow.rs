@@ -291,7 +291,7 @@ impl Analyzer<'_, '_> {
     fn collect_block_bindings(&mut self, statements: &[CheckedStatement]) {
         for statement in statements {
             match statement {
-                CheckedStatement::Let { binding, value } => {
+                CheckedStatement::Let { binding, value, .. } => {
                     let holder = holder_from_value(value);
                     let implicit_deref = value_has_implicit_deref(value);
                     let summary = self.summary_mut(*binding);
@@ -890,7 +890,7 @@ impl Analyzer<'_, '_> {
                     .collect(),
                 ty: *ty,
             })),
-            CheckedExpression::DerefAddressed { binding, ty } if self.is_copy(*ty) => {
+            CheckedExpression::DerefAddressed { binding, ty, .. } if self.is_copy(*ty) => {
                 Some(GoalExpression::Datum(GoalDatum::Place {
                     root: *binding,
                     projections: vec![GoalProjection::Deref],
@@ -913,6 +913,7 @@ impl Analyzer<'_, '_> {
                 arguments,
                 result,
                 trap,
+                ..
             } if trap.is_none() => build_operation(
                 GoalOperation::Integer {
                     operation: *operation,
@@ -930,6 +931,7 @@ impl Analyzer<'_, '_> {
                 operation: row,
                 operand_type,
                 arguments,
+                ..
             } => build_operation(
                 GoalOperation::Float {
                     operation: *row,
@@ -955,6 +957,7 @@ impl Analyzer<'_, '_> {
                 destination,
                 value,
                 result,
+                ..
             } => build_operation(
                 GoalOperation::NumericConversion {
                     source: *source,
@@ -969,6 +972,7 @@ impl Analyzer<'_, '_> {
                 source,
                 destination,
                 value,
+                ..
             } => build_operation(
                 GoalOperation::Reinterpret {
                     source: *source,
@@ -982,6 +986,7 @@ impl Analyzer<'_, '_> {
             CheckedExpression::BooleanOperation {
                 operation: row,
                 arguments,
+                ..
             } => build_operation(
                 GoalOperation::Boolean(*row),
                 Vec::new(),
@@ -996,6 +1001,7 @@ impl Analyzer<'_, '_> {
                 equal,
                 operand_type,
                 arguments,
+                ..
             } => build_operation(
                 GoalOperation::EnumEquality {
                     equal: *equal,
@@ -1024,7 +1030,7 @@ impl Analyzer<'_, '_> {
                     vec![self.direct_goal_expression(value)?],
                 )
             }
-            CheckedExpression::ArrayLength { root, length } => {
+            CheckedExpression::ArrayLength { root, length, .. } => {
                 let argument = self.goal_array_root(root)?;
                 let CheckedType::Array { element, .. } = argument.ty() else {
                     return None;
@@ -1040,7 +1046,7 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
-            CheckedExpression::BufferLength { root } => {
+            CheckedExpression::BufferLength { root, .. } => {
                 let argument = self.goal_binding_place(
                     root.binding,
                     root.fields.iter().copied().map(GoalProjection::Field),
@@ -1058,7 +1064,7 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
-            CheckedExpression::SliceLength { root } => {
+            CheckedExpression::SliceLength { root, .. } => {
                 let ty = self.summary(root.binding)?.ty?;
                 let CheckedType::Slice { region, element } = ty else {
                     return None;
@@ -1524,7 +1530,7 @@ impl Analyzer<'_, '_> {
     /// whether a callee write through it is an element write.
     fn argument_referent(&self, argument: &CheckedExpression) -> Option<(ResolvedPlace, bool)> {
         match argument {
-            CheckedExpression::BorrowBuffer { root } => {
+            CheckedExpression::BorrowBuffer { root, .. } => {
                 let place = PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),
@@ -1930,7 +1936,7 @@ impl Analyzer<'_, '_> {
 
     fn walk_statement(&mut self, statement: &CheckedStatement, state: &mut FactState) -> bool {
         match statement {
-            CheckedStatement::Let { binding, value } => {
+            CheckedStatement::Let { binding, value, .. } => {
                 self.expression_effects(value, state);
                 self.declare(*binding);
                 if value.ty() == CheckedType::Bool
@@ -1955,7 +1961,7 @@ impl Analyzer<'_, '_> {
                 self.declare(*binding);
                 true
             }
-            CheckedStatement::Set { target, value } => {
+            CheckedStatement::Set { target, value, .. } => {
                 // [SET-1]: the target's base and offset are evaluated before
                 // the right-hand side; both are judged at this point, then
                 // the commit kill applies.
@@ -2420,7 +2426,7 @@ impl Analyzer<'_, '_> {
                 }
                 normal_reaches
             }
-            CheckedStatement::Set { target, value } => {
+            CheckedStatement::Set { target, value, .. } => {
                 if normal_reaches {
                     self.collect_set_kills(target, value, kills);
                 }
@@ -2835,7 +2841,7 @@ fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
             binding: *binding,
             fields: Vec::new(),
         }),
-        CheckedExpression::BorrowBuffer { root } => Some(HolderReferent::Place {
+        CheckedExpression::BorrowBuffer { root, .. } => Some(HolderReferent::Place {
             binding: root.binding,
             fields: root.fields.clone(),
         }),

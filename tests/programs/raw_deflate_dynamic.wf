@@ -7,7 +7,7 @@ struct HuffmanTable {
 
 const code_length_order: array<u8, 19> =[16_u8, 17_u8, 18_u8, 0_u8, 8_u8, 7_u8, 9_u8, 6_u8, 10_u8, 5_u8, 11_u8, 4_u8, 12_u8, 3_u8, 13_u8, 2_u8, 14_u8, 1_u8, 15_u8];
 
-fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, symbol: own u64) -> own Result<u64, InflateError> reads('s 'i), writes('s), traps {
+fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, symbol: own u64) -> own Result<u64, InflateError> reads('s 'i), writes('s) {
   let before_lengths = ilt(symbol, 257_u64);
   let after_lengths = ige(symbol, 286_u64);
   let invalid_symbol = bor(before_lengths, after_lengths);
@@ -17,7 +17,11 @@ fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, sy
   }
   let length_index = symbol -wrap 257_u64;
   let length_in_tables = ilt(length_index, 29_u64);
-  claim length_symbol_in_tables: length_in_tables because "the symbol guard admits 257..285 and the bor keeps its bounds out of the fact state";
+  if length_in_tables {
+  } else {
+    let error = InvalidHuffmanCode();
+    return Err<u64, InflateError>(error: error);
+  }
   let length_base_word = length_bases[length_index];
   let length_base = cvt<u16, u64>(length_base_word);
   let length_extra_byte = length_extras[length_index];
@@ -37,7 +41,7 @@ fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, sy
   return Ok<u64, InflateError>(value: copy_length);
 }
 
-fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>, copy_length: own u64, distance_symbol: own u64) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), traps {
+fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>, copy_length: own u64, distance_symbol: own u64) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o) {
   let invalid_distance_symbol = ige(distance_symbol, 30_u64);
   if invalid_distance_symbol {
     let error = InvalidDistance();
@@ -73,7 +77,11 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
       let source_index = deref(state).output_offset -wrap distance;
       let history_room = len(deref(out));
       let source_in_history = ilt(source_index, history_room);
-      claim match_copy_in_history: source_in_history because "the copy reads distance bytes behind the emitted prefix";
+      if source_in_history {
+      } else {
+        let error = InvalidDistance();
+        return Err<unit, InflateError>(error: error);
+      }
       let byte = deref(out)[source_index];
       region 'match_emit {
         match emit_byte<'match_emit, 'match_emit>(state: &uniq 'match_emit deref(state), out: &uniq 'match_emit deref(out), value: byte) {
@@ -203,11 +211,19 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         let count_index = cvt<u32, u64>(symbol_length);
         let order_offsets_room = len(offsets);
         let order_slot_ok = ilt(count_index, order_offsets_room);
-        claim order_slot_in_offsets: order_slot_ok because "the first pass admitted only lengths at most max_bits";
+        if order_slot_ok {
+        } else {
+          let error = InvalidHuffmanTree();
+          return Err<HuffmanTable, InflateError>(error: error);
+        }
         let destination = offsets[count_index];
         let order_symbols_room = len(symbols);
         let destination_ok = ilt(destination, order_symbols_room);
-        claim destination_in_symbols: destination_ok because "the canonical offsets stay below the symbol count";
+        if destination_ok {
+        } else {
+          let error = InvalidHuffmanTree();
+          return Err<HuffmanTable, InflateError>(error: error);
+        }
         set symbols[destination] = symbol;
         set offsets[count_index] = destination +wrap 1_u64;
       }
@@ -256,7 +272,11 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
       let ordered = symbol_index +wrap offset;
       let table_symbols_room = len(deref(table).symbols);
       let ordered_ok = ilt(ordered, table_symbols_room);
-      claim ordered_in_symbols: ordered_ok because "a canonical table keeps every code offset below its symbol count";
+      if ordered_ok {
+      } else {
+        let error = InvalidHuffmanTree();
+        return Err<u64, InflateError>(error: error);
+      }
       set decoded = deref(table).symbols[ordered];
       break @table_code_lengths;
     }

@@ -24,6 +24,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn check_propagate_let(
         &self,
         function: &FunctionSignature,
+        let_statement: NodeId,
         propagate: NodeId,
         declaration: DeclarationId,
         binding: BindingId,
@@ -100,6 +101,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(Self::continuing_statement(
             CheckedStatement::PropagateLet {
+                node_path: self.tree.path(let_statement)?.clone(),
                 binding,
                 scrutinee: value.expression,
                 result_nominal,

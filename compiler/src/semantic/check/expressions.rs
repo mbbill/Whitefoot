@@ -654,6 +654,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .unwrap_or_default();
                     return Ok(TypedExpression {
                         expression: CheckedExpression::Binding {
+                            carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             ty: local.ty,
                             slice_origins,
@@ -752,6 +753,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .unwrap_or_default();
                     let mut expression = TypedExpression::owned_with_access(
                         CheckedExpression::Binding {
+                            carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             ty,
                             slice_origins,
@@ -765,6 +767,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } else {
                     Ok(TypedExpression::owned_with_access(
                         CheckedExpression::Project {
+                            carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
                             fields,
                             ty,
@@ -1057,8 +1060,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             fields.push(value.expression);
         }
         let expression = match constructor {
-            Constructor::Struct(nominal) => CheckedExpression::ConstructStruct { nominal, fields },
+            Constructor::Struct(nominal) => CheckedExpression::ConstructStruct {
+                carrier: self.tree.path(node)?.clone(),
+                nominal,
+                fields,
+            },
             Constructor::Enum { nominal, variant } => CheckedExpression::ConstructEnum {
+                carrier: self.tree.path(node)?.clone(),
                 nominal,
                 variant,
                 fields,

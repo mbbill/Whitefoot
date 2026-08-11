@@ -59,6 +59,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let mut arguments = Vec::with_capacity(fields.len());
+        let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
@@ -83,6 +84,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(field, Production::Atom)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            argument_nodes.push(self.tree.path(atom)?.clone());
             let explicit_borrow = self
                 .tree
                 .first_child_with(atom, Production::BorrowExpr)?
@@ -164,6 +166,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
+                call: self.tree.path(node)?.clone(),
+                argument_nodes,
                 arguments,
                 result,
                 trap,

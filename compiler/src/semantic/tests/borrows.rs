@@ -34,14 +34,14 @@ fn buffer_borrows_keep_modes_provenance_effects_and_distinct_field_loans() {
         assert!(matches!(
             &body[0],
             CheckedStatement::Let {
-                value: CheckedExpression::BorrowBuffer { root },
+                value: CheckedExpression::BorrowBuffer { root, .. },
                 ..
             } if root.fields == [0]
         ));
         assert!(matches!(
             &body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::BorrowBuffer { root },
+                value: CheckedExpression::BorrowBuffer { root, .. },
                 ..
             } if root.fields == [1]
         ));

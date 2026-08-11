@@ -1,0 +1,23 @@
+fn recursive_read(bytes: own buffer<u8>, index: own u64, remaining: own u64) -> own u8 traps {
+  let finished = ieq(remaining, 0_u64);
+  if finished {
+    let room = len(bytes);
+    let inside = ilt(index, room);
+    claim recursive_index_in_bytes: inside because "the recursive demand still reaches this protected leaf";
+    return bytes[index];
+  } else {
+    let next = remaining -wrap 1_u64;
+    let value = recursive_read(bytes: move bytes, index: index, remaining: next);
+    return value;
+  }
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "A recursive demand fixed point terminates and preserves the protected-leaf demand until the external actual at the entry call is rejected under PRV-2.";
+  region 'a {
+    let index = args_count<'a>(args: &'a args);
+    let bytes = buffer_new(4_u64, 0_u8);
+    let value = recursive_read(bytes: move bytes, index: index, remaining: 0_u64);
+    return exit_status(code: 0_u8);
+  }
+}

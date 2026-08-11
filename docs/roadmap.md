@@ -1,14 +1,14 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 29 (`requires` call-site goals verified; provenance activation proposal next)
+Revision: 30 (exact v0.27 provenance activation landed; installed closure pending)
 
-The active language authority is v0.26 at the stable path
+The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
-Superseded numbered specifications are immutable archives. The current
-execution proposal is [`docs/current-plan.md`](current-plan.md), project law is
-the [`Constitution`](constitution.md), and the operational process is
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+Exact v0.8 through v0.26 are immutable flat archives. The current execution
+proposal is [`docs/current-plan.md`](current-plan.md), project law is the
+[`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
 ## How to read this outline
@@ -52,7 +52,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.26]` `[current: safe-Rust compiler]`
+`[current: spec v0.27]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -64,7 +64,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.26 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.27 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -206,8 +206,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, and atomic requires goals shipped and verified; provenance metadata held]`
-`[next: owner selection of the provenance activation plan]`
+`[current: items 1–4, counted range, atomic requires goals, and exact v0.27 provenance activation landed]`
+`[next: installed stage-5b validation, design-memory update, and task closure]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -273,16 +273,27 @@ creating writer trust or weakening the checked safety envelope.
   the separately invoked adapter remains `Pass=393 Fail=1 Skip=13`, with only
   the pre-existing OWN-3 unsupported boundary. Commit `d495d8c` records the
   paired requirement-enforcement re-decision and passes MCTS lint. Task 0048 is
-  terminal. The retained provenance metadata remains held and v0.26 still
-  emits no provenance rejection.
-- **Missing / next:** activate the independently reviewed held provenance gate
-  over the retained v0.26 bridge metadata and rerun its frozen canonical and
-  boundary matrices. The preserved objective then advances through
-  proof-feasibility work for the mask and loop-carried facts the real `ensures`
-  examples need; `ensures`; deterministic claim-ledger tooling; and a
-  separately designed transitive `deny-claims` marker. Wfgrep remains parked
-  until this boundary is complete or a reproduced blocker returns for
-  disposition.
+  terminal. Exact-approved v0.27 is now active at
+  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
+  with byte-identical outgoing v0.26 archived at
+  `spec/kernel-spec-v0.26.md`. It activates the bounded PRV-1/PRV-2/PRV-3
+  explicit-dataflow gate over the retained requirement bridge. The approved
+  real-program migration replaces eleven DEFLATE claims with value branches,
+  adds the one `store_dynamic_length -> Result` change and its three
+  propagations, removes only the four now-unexhibited `traps` categories, and
+  adds sixteen conformance cases without changing any existing case or manifest
+  row. The
+  terminal-reviewed preactivation tree reproduced UTF-8 `33/22/11/0`, SHA-256
+  `9/9/0/0`, complete DEFLATE `29/24/5/0`, dynamic DEFLATE `24/19/5/0`, twelve
+  remaining claims, and thirteen former claim-supported sites established by
+  real branches. Those are explicitly preactivation results: the atomic
+  activation has landed, while its installed full validation, live MCTS
+  update, and task 0050 closure remain pending.
+- **Missing / next:** complete every installed frozen matrix, runtime oracle,
+  adapter, compiler, and repository gate; update the live design memory; and
+  close task 0050 only on green closure evidence. Stage 8a is still only a
+  later dependency map in the ACTIVE plan and has no execution authority;
+  wfgrep remains parked.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -321,10 +332,12 @@ facts-off evidence rather than trust in the compiler or writer.
   `make conformance-run` compiles and runs every case through the real
   compiler. The installed-v0.26 run is `Pass=393 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
-  rows remain explicit toolchain gaps. This adapter is deliberately
-  `#[ignore]` and invoked separately; `make check` does not silently include
-  it. The earlier 242/123 run is historical attribution evidence, not current
-  status.
+  rows remain explicit toolchain gaps. The terminal-reviewed preactivation
+  v0.27 tree is `Pass=409 Fail=1 Skip=13`, with the same sole failure; the
+  installed-v0.27 rerun remains part of stage-5b closure. This adapter is
+  deliberately `#[ignore]` and invoked separately; `make check` does not
+  silently include it. The earlier 242/123 run is historical attribution
+  evidence, not current status.
 - **Missing / next:** preserve the independent pass/fail/skip report while the
   protected OWN-3 wording question remains open. Any expectation, source, or
   status change remains owner-protected and must report the before/after sets.
@@ -407,7 +420,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 - **Goal:** teach a small set of patterns that are both expressive enough for
   real systems work and aligned with fast machine shapes.
-- **Current:** `docs/patterns.md` contains ten entries of mixed maturity plus a
+- **Current:** `docs/patterns.md` contains twelve entries of mixed maturity plus a
   known-gaps list. Some have measurements or current witnesses; P5 is deferred,
   P6 is validation-only, and the catalog is not normative language doctrine.
 - **Missing / next:** validate individual patterns in candidate projects;

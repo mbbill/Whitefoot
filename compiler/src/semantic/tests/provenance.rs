@@ -1,10 +1,14 @@
+use std::cmp::Ordering;
+
 use crate::{SemanticOutcome, SourceInput};
 
 use super::super::entailment::CallGoalDisposition;
 use super::super::model::{CheckedProgramData, CheckedStatement, FunctionId};
 use super::super::provenance::{
-    DatumSelector, FunctionDependencies, ParameterDatum, StructuralPredecessor, SubjectPredecessor,
-    ValueDependencies,
+    CallArgumentProvenanceDisposition, CarrierCallRole, CarrierRoute, CarrierWriteContext,
+    DatumDependencies, DatumSelector, FunctionDependencies, LocalLeafProvenanceDisposition,
+    ParameterDatum, ProvenanceDependency, ProvenanceGoalObservation, StructuralPredecessor,
+    SubjectPredecessor, ValueDependencies, carrier_route_cmp,
 };
 use super::{with_semantics, with_semantics_inputs};
 
@@ -128,6 +132,14 @@ fn main() -> own unit pure {
             CallGoalDisposition::Discharged
         );
         assert!(call.upstream_requirement.is_none());
+
+        assert_eq!(metadata.call_argument_dispositions.len(), 6);
+        assert!(metadata.call_argument_dispositions.iter().all(|argument| {
+            argument.disposition == CallArgumentProvenanceDisposition::NoEvent
+                && matches!(argument.complete, ProvenanceGoalObservation::Evaluated(_))
+                && matches!(argument.unasserted, ProvenanceGoalObservation::Evaluated(_))
+                && matches!(argument.s4_blinded, ProvenanceGoalObservation::Evaluated(_))
+        }));
     });
 }
 
@@ -159,8 +171,929 @@ fn projection(value: &ValueDependencies, selector: DatumSelector) -> &[Parameter
         .iter()
         .find(|component| component.selector == selector)
         .unwrap_or_else(|| panic!("missing value projection {selector:?}"))
+        .dependency
         .parameters
         .datums
+}
+
+#[test]
+fn an_exact_missing_component_selector_fails_closed() {
+    let value = ValueDependencies {
+        components: vec![DatumDependencies {
+            selector: DatumSelector::Plain,
+            dependency: ProvenanceDependency::default(),
+        }],
+    };
+    assert_eq!(
+        value.selected(DatumSelector::EnumPayload {
+            variant: 0,
+            field: 0,
+        }),
+        Err(crate::SemanticCompilerFailure::InvalidResolution)
+    );
+}
+
+#[test]
+fn system_result_and_write_origins_are_each_one_edge_and_tie_only_by_call_path() {
+    let result = CarrierRoute::call_terminal(
+        crate::NodePath {
+            components: vec![1],
+        },
+        DatumSelector::Plain,
+        CarrierCallRole::SystemResult,
+        None,
+    );
+    let write = CarrierRoute::call_terminal(
+        crate::NodePath {
+            components: vec![2],
+        },
+        DatumSelector::Plain,
+        CarrierCallRole::SystemWrite,
+        Some(CarrierWriteContext {
+            parameter: 1,
+            actual: crate::NodePath {
+                components: vec![9],
+            },
+        }),
+    );
+    assert_eq!(result.steps().len(), 1);
+    assert_eq!(write.steps().len(), 1);
+    assert_eq!(carrier_route_cmp(&result, &write), Ordering::Less);
+
+    let same_path_result = CarrierRoute::call_terminal(
+        crate::NodePath {
+            components: vec![2],
+        },
+        DatumSelector::Plain,
+        CarrierCallRole::SystemResult,
+        None,
+    );
+    assert_eq!(
+        carrier_route_cmp(&same_path_result, &write),
+        Ordering::Equal,
+        "role and write context are diagnostic identity, not extra edges or tie keys"
+    );
+}
+
+fn assert_provenance_rule_at(source: &[u8], rule: &str, located: &[u8]) {
+    inspect_provenance_issue(source, rule, located, |_| {});
+}
+
+fn inspect_provenance_issue(
+    source: &[u8],
+    rule: &str,
+    located: &[u8],
+    run: impl FnOnce(&crate::SemanticIssueKind),
+) {
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected {rule} provenance rejection, got {outcome:?}");
+        };
+        assert_eq!(issue.rule_id(), rule);
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("{rule} must cite a source node, got {:?}", issue.location());
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits usize");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits usize");
+        assert_eq!(&source[start..end], located);
+        run(issue.kind());
+    });
+}
+
+fn coordinate_bytes<'source>(
+    source: &'source [u8],
+    coordinate: &crate::SyntaxCoordinate,
+) -> &'source [u8] {
+    let start = usize::try_from(coordinate.start().value()).expect("offset fits usize");
+    let end = usize::try_from(coordinate.end().value()).expect("offset fits usize");
+    &source[start..end]
+}
+
+#[test]
+fn an_external_system_result_cannot_use_a_claim_to_authorize_a_local_subscript() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let room = len(values);
+    claim bounded: ilt(position, room) because "claimed external bound";
+    let selected = values[position];
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    assert_provenance_rule_at(source, "PRV-3", b"[position]");
+}
+
+#[test]
+fn an_external_nested_give_reaches_the_outer_value_binding_and_is_rejected() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let derived = if True() {
+      if True() {
+        give position;
+      } else {
+        give 0_u64;
+      }
+    } else {
+      give 0_u64;
+    }
+    let room = len(values);
+    claim bounded: ilt(derived, room) because "claimed external bound";
+    let selected = values[derived];
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    assert_provenance_rule_at(source, "PRV-3", b"[derived]");
+}
+
+#[test]
+fn a_direct_parameter_demand_rejects_the_external_actual_at_its_argument() {
+    let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> own u8 traps {
+  let room = len(values);
+  claim bounded: ilt(position, room) because "claimed parameter bound";
+  return values[position];
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let selected = read(values: move values, position: position);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    assert_provenance_rule_at(source, "PRV-2", b"position");
+}
+
+#[test]
+fn base_op4_precedes_a_local_prv3_candidate() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let selected = values[position];
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    assert_provenance_rule_at(source, "OP-4", b"[position]");
+}
+
+#[test]
+fn base_fn8_precedes_a_call_argument_prv2_candidate() {
+    let source = br#"fn read(values: own array<u8, 4>, position: own u64) -> own u8 pure requires {
+  let room = len(values);
+  check ilt(position, room) else trap "bound";
+} {
+  return values[position];
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let selected = read(values: move values, position: position);
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    assert_provenance_rule_at(
+        source,
+        "FN-8",
+        b"read(values: move values, position: position)",
+    );
+}
+
+#[test]
+fn a_bridge_converts_to_direct_and_crosses_a_requirement_free_call() {
+    let source = br#"fn leaf(values: own array<u8, 4>, position: own u64) -> own u8 pure requires {
+  let room = len(values);
+  check ilt(position, room) else trap "leaf bound";
+} {
+  return values[position];
+}
+
+fn wrapper(values: own array<u8, 4>, position: own u64) -> own u8 traps {
+  let room = len(values);
+  check ilt(position, room) else trap "wrapper assertion";
+  return leaf(values: move values, position: position);
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let selected = wrapper(values: move values, position: position);
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-2", b"position", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+            panic!("expected structured PRV-2 detail: {kind:?}");
+        };
+        assert_eq!(detail.targets.len(), 1);
+        let target = &detail.targets[detail.selected_target as usize];
+        assert_eq!(target.demand_kind, crate::ProvenanceDemandKind::Direct);
+        assert_eq!(target.boundaries.len(), 2);
+        assert_eq!(
+            target.boundaries[0].callee.demand_kind,
+            crate::ProvenanceDemandKind::RequirementBridge
+        );
+        assert_eq!(
+            target.boundaries[0]
+                .caller_continuation
+                .as_ref()
+                .expect("bridge converts to a caller state")
+                .demand_kind,
+            crate::ProvenanceDemandKind::Direct
+        );
+        assert_eq!(
+            target.boundaries[1].callee.demand_kind,
+            crate::ProvenanceDemandKind::Direct
+        );
+        assert!(target.boundaries[1].caller_continuation.is_none());
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_two_hop_bridge_diagnostic_retains_every_boundary_and_terminal_origin() {
+    let source = include_bytes!("../../../../tests/conformance/cases/prv2-neg-two-hop-bridge.wf");
+    inspect_provenance_issue(source, "PRV-2", b"index", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+            panic!("expected structured PRV-2 detail: {kind:?}");
+        };
+        let target = &detail.targets[detail.selected_target as usize];
+        assert_eq!(
+            target.demand_kind,
+            crate::ProvenanceDemandKind::RequirementBridge
+        );
+        assert_eq!(target.boundaries.len(), 3);
+        assert!(
+            target.boundaries[..2]
+                .iter()
+                .all(|boundary| boundary.caller_continuation.is_some())
+        );
+        assert!(target.boundaries[2].caller_continuation.is_none());
+        assert!(target.boundaries.iter().all(|boundary| {
+            boundary.callee.demand_kind == crate::ProvenanceDemandKind::RequirementBridge
+                && boundary.callee.requirement.is_some()
+                && boundary.callee.parameter.ordinal == 1
+        }));
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+        assert!(target.witness.len() > target.carrier.len());
+        assert!(target.target_repair.contains("rejecting caller"));
+        assert!(detail.restructure_alternative.contains("explicit dataflow"));
+    });
+}
+
+#[test]
+fn a_command_entry_bridge_terminates_at_its_call_argument_without_upstream_continuation() {
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/prv2-neg-entry-system-result-bridge.wf"
+    );
+    inspect_provenance_issue(source, "PRV-2", b"index", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+            panic!("expected structured PRV-2 detail: {kind:?}");
+        };
+        let target = &detail.targets[detail.selected_target as usize];
+        assert_eq!(
+            target.demand_kind,
+            crate::ProvenanceDemandKind::RequirementBridge
+        );
+        assert_eq!(target.boundaries.len(), 1);
+        assert!(target.boundaries[0].caller_continuation.is_none());
+        assert_eq!(target.boundaries[0].callee.parameter.ordinal, 1);
+        assert!(target.boundaries[0].callee.requirement.is_some());
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_recursive_direct_route_uses_complete_state_identity_and_stays_finite() {
+    let source = br#"fn rotate(values: own array<u8, 4>, current: own u64, future: own u64, again: own Bool) -> own u8 traps {
+  if again {
+    let stop = False();
+    return rotate(values: move values, current: future, future: current, again: stop);
+  } else {
+    let room = len(values);
+    claim bounded: ilt(current, room) because "recursive direct leaf";
+    return values[current];
+  }
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let go = True();
+    let selected = rotate(values: move values, current: 0_u64, future: position, again: go);
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-2", b"position", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedCallArgument(detail) = kind else {
+            panic!("expected structured PRV-2 detail: {kind:?}");
+        };
+        let target = &detail.targets[detail.selected_target as usize];
+        assert_eq!(target.demand_kind, crate::ProvenanceDemandKind::Direct);
+        assert_eq!(target.boundaries.len(), 2);
+        assert!(target.boundaries.iter().all(|boundary| {
+            boundary.callee.demand_kind == crate::ProvenanceDemandKind::Direct
+        }));
+        assert_eq!(target.boundaries[0].callee.parameter.ordinal, 1);
+        assert_eq!(
+            target.boundaries[0]
+                .caller_continuation
+                .as_ref()
+                .expect("recursive permutation continues")
+                .parameter
+                .ordinal,
+            2
+        );
+        assert_eq!(target.boundaries[1].callee.parameter.ordinal, 2);
+        assert!(target.boundaries[1].caller_continuation.is_none());
+    });
+}
+
+#[test]
+fn a_cross_function_system_result_retains_every_result_and_let_carrier() {
+    let source = br#"fn count_arguments(args: own Args) -> own u64 pure {
+  region 'a {
+    let total = args_count<'a>(args: &'a args);
+    return total;
+  }
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  let position = count_arguments(args: move args);
+  let room = len(values);
+  claim bounded: ilt(position, room) because "cross-function result";
+  let selected = values[position];
+  return exit_status(code: selected);
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate) == b"count_arguments(args: move args)"
+        }));
+        assert!(
+            target
+                .carrier
+                .iter()
+                .any(|step| { coordinate_bytes(source, &step.coordinate) == b"return total;" })
+        );
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate)
+                == b"let total = args_count<'a>(args: &'a args);"
+        }));
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_cross_function_system_write_keeps_write_context_before_the_true_origin() {
+    let source = br#"fn copy_host['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>) -> own u64 reads('v 'd), writes('d), traps {
+  region 'c {
+    match host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64) {
+      Ok(value: copied) => {
+        return copied;
+      }
+      Err(error: problem) => {
+        return 0_u64;
+      }
+    }
+  }
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  let bytes = buffer_new(4_u64, 0_u8);
+  region 'a {
+    match arg_get<'a>(args: &'a args, position: 0_u64) {
+      Ok(value: text) => {
+        region 'v {
+          region 'd {
+            let copied = copy_host<'v, 'd>(value: &'v text, destination: &uniq 'd bytes);
+          }
+        }
+      }
+      Err(error: absent) => {
+      }
+    }
+  }
+  let raw = bytes[0_u64];
+  let position = cvt<u8, u64>(raw);
+  let room = len(bytes);
+  claim bounded: ilt(position, room) because "cross-function write";
+  let selected = bytes[position];
+  return exit_status(code: selected);
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64)"
+        );
+        assert!(target.carrier.last().is_some_and(|step| {
+            step.call_role == Some(crate::ProvenanceCarrierCallRole::SystemWrite)
+                && coordinate_bytes(source, &step.coordinate)
+                    == b"host_copy_bytes<'v, 'c>(value: value, destination: &uniq 'c deref(destination), offset: 0_u64, capacity: 4_u64)"
+        }));
+        let system_write = target.carrier.last().expect("system write origin");
+        let system_context = system_write
+            .write_context
+            .as_ref()
+            .expect("system write context");
+        assert_eq!(system_context.parameter, 1);
+        assert_eq!(
+            coordinate_bytes(source, &system_context.actual_coordinate),
+            b"&uniq 'c deref(destination)"
+        );
+        let user_write = target
+            .carrier
+            .iter()
+            .find(|step| step.call_role == Some(crate::ProvenanceCarrierCallRole::UserWrite))
+            .expect("cross-function projected-write edge");
+        let user_context = user_write
+            .write_context
+            .as_ref()
+            .expect("user write context");
+        assert_eq!(user_context.parameter, 1);
+        assert_eq!(
+            coordinate_bytes(source, &user_context.actual_coordinate),
+            b"&uniq 'd bytes"
+        );
+        assert_eq!(
+            target
+                .carrier
+                .iter()
+                .filter(|step| {
+                    step.call_role == Some(crate::ProvenanceCarrierCallRole::SystemWrite)
+                })
+                .count(),
+            1,
+            "the exact writable actual is nested context, not a second edge"
+        );
+    });
+}
+
+#[test]
+fn an_alias_whole_place_write_taints_the_resolved_owner_and_retains_its_set_carrier() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  let values = buffer_new(4_u64, 0_u8);
+  let position = 0_u64;
+  region 'a {
+    let external_value = args_count<'a>(args: &'a args);
+    region 'write {
+      let holder = &uniq 'write position;
+      set deref(holder) = external_value;
+    }
+    let room = len(values);
+    claim bounded: ilt(position, room) because "borrowed whole write";
+    let selected = values[position];
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate) == b"set deref(holder) = external_value;"
+        }));
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate)
+                == b"let external_value = args_count<'a>(args: &'a args);"
+        }));
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_simple_borrow_holder_route_keeps_the_holder_let_and_borrow_atom() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  region 'a {
+    let raw = args_count<'a>(args: &'a args);
+    region 'r {
+      let holder = &'r raw;
+      let position = deref(holder);
+      let values = array_new<u8, 4>(0_u8);
+      let room = len(values);
+      claim bounded: ilt(position, room) because "borrowed scalar";
+      let selected = values[position];
+      return exit_status(code: selected);
+    }
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate) == b"let holder = &'r raw;"
+        }));
+        assert!(
+            target
+                .carrier
+                .iter()
+                .any(|step| coordinate_bytes(source, &step.coordinate) == b"&'r raw")
+        );
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_borrowed_match_payload_deref_reconstructs_a_prv3_carrier() {
+    let source = br#"enum Choice {
+  Item(value: u64);
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  region 'a {
+    let raw = args_count<'a>(args: &'a args);
+    let choice = Item(value: raw);
+    region 'r {
+      let holder = &'r choice;
+      match deref(holder) {
+        Item(value: selected) => {
+          let index = deref(selected);
+          let values = array_new<u8, 4>(0_u8);
+          let room = len(values);
+          claim bounded: ilt(index, room) because "borrowed payload";
+          let value = values[index];
+          return exit_status(code: value);
+        }
+      }
+    }
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[index]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate) == b"let holder = &'r choice;"
+        }));
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate) == b"let index = deref(selected);"
+        }));
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_value_match_payload_storage_route_keeps_its_fieldbind_carrier() {
+    let source = br#"const count: u64 = 4_u64;
+
+enum Wrap {
+  Data(values: array<u64, count>);
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  region 'a {
+    let raw = args_count<'a>(args: &'a args);
+    let seeded = array_new<u64, count>(raw);
+    let wrapped = Data(values: move seeded);
+    let selected = match move wrapped {
+      Data(values: payload) => {
+        let position = payload[0_u64];
+        let output = array_new<u8, count>(0_u8);
+        let room = len(output);
+        claim bounded: ilt(position, room) because "value-match payload";
+        let value = output[position];
+        give value;
+      }
+    }
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert!(
+            target
+                .carrier
+                .iter()
+                .any(|step| { coordinate_bytes(source, &step.coordinate) == b"values: payload" })
+        );
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_parameter_backed_user_result_keeps_distinct_result_and_substitution_edges() {
+    let source = br#"fn relay(value: own u64) -> own u64 pure {
+  let copied = value;
+  return copied;
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let outside = args_count<'a>(args: &'a args);
+    let position = relay(value: outside);
+    let room = len(values);
+    claim bounded: ilt(position, room) because "user result carrier";
+    let selected = values[position];
+    return exit_status(code: selected);
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[detail.selected_target as usize];
+        let call_steps = target
+            .carrier
+            .iter()
+            .filter(|step| coordinate_bytes(source, &step.coordinate) == b"relay(value: outside)")
+            .collect::<Vec<_>>();
+        assert_eq!(call_steps.len(), 2);
+        assert_eq!(
+            call_steps[0].call_role,
+            Some(crate::ProvenanceCarrierCallRole::UserResult)
+        );
+        assert_eq!(
+            call_steps[1].call_role,
+            Some(crate::ProvenanceCarrierCallRole::UserSubstitution)
+        );
+        assert!(call_steps.iter().all(|step| step.write_context.is_none()));
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_parameter_backed_user_write_keeps_distinct_write_and_substitution_edges() {
+    let source = br#"fn store['r](output: &uniq 'r u64, value: own u64) -> own unit writes('r) {
+  set deref(output) = value;
+  return unit;
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  let values = array_new<u8, 4>(0_u8);
+  let saved = 0_u64;
+  region 'a {
+    let outside = args_count<'a>(args: &'a args);
+    region 'w {
+      store<'w>(output: &uniq 'w saved, value: outside);
+    }
+  }
+  let position = saved;
+  let room = len(values);
+  claim bounded: ilt(position, room) because "user write carrier";
+  let selected = values[position];
+  return exit_status(code: selected);
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[position]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[detail.selected_target as usize];
+        let call_steps = target
+            .carrier
+            .iter()
+            .filter(|step| {
+                coordinate_bytes(source, &step.coordinate)
+                    == b"store<'w>(output: &uniq 'w saved, value: outside)"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(call_steps.len(), 2);
+        assert_eq!(
+            call_steps[0].call_role,
+            Some(crate::ProvenanceCarrierCallRole::UserWrite)
+        );
+        let context = call_steps[0]
+            .write_context
+            .as_ref()
+            .expect("the projected-write edge retains its destination context");
+        assert_eq!(context.parameter, 0);
+        assert_eq!(
+            coordinate_bytes(source, &context.actual_coordinate),
+            b"&uniq 'w saved"
+        );
+        assert_eq!(
+            call_steps[1].call_role,
+            Some(crate::ProvenanceCarrierCallRole::UserSubstitution)
+        );
+        assert!(call_steps[1].write_context.is_none());
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_selected_payload_witness_never_uses_an_external_sibling_root_path() {
+    let source = br#"enum Choice {
+  First(value: u64);
+  Second(value: u64);
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  region 'a {
+    let first = args_count<'a>(args: &'a args);
+    let second = args_count<'a>(args: &'a args);
+    let choose_first = True();
+    let choice = if choose_first {
+      give First(value: first);
+    } else {
+      give Second(value: second);
+    }
+    match choice {
+      First(value: selected) => {
+        let values = array_new<u8, 4>(0_u8);
+        let room = len(values);
+        claim bounded: ilt(selected, room) because "selected sibling only";
+        let value = values[selected];
+        return exit_status(code: value);
+      }
+      Second(value: ignored) => {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[selected]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        let first_call = source
+            .windows(b"args_count<'a>(args: &'a args)".len())
+            .position(|window| window == b"args_count<'a>(args: &'a args)")
+            .expect("first system call") as u64;
+        assert_eq!(target.origin_coordinate.start().value(), first_call);
+        assert!(target.carrier.iter().any(|step| {
+            step.selector
+                == crate::ProvenanceDatumSelector::EnumPayload {
+                    variant: 0,
+                    field: 0,
+                }
+        }));
+    });
+}
+
+#[test]
+fn an_external_result_payload_keeps_selectors_through_value_delivery_and_outer_enum() {
+    let source = br#"enum Wrapped {
+  Present(value: u64);
+  Missing();
+}
+
+command fn main(command.args as args: own Args) -> own ExitStatus traps {
+  region 'a {
+    let raw = args_count<'a>(args: &'a args);
+    let wrapped = match cvt<u64, u8>(raw) {
+      Ok(value: small) => {
+        let widened = cvt<u8, u64>(small);
+        give Present(value: widened);
+      }
+      Err(error: narrow) => {
+        give Missing();
+      }
+    }
+    match wrapped {
+      Present(value: selected) => {
+        let values = array_new<u8, 4>(0_u8);
+        let room = len(values);
+        claim bounded: ilt(selected, room) because "payload carrier";
+        let value = values[selected];
+        return exit_status(code: value);
+      }
+      Missing() => {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}
+"#;
+
+    inspect_provenance_issue(source, "PRV-3", b"[selected]", |kind| {
+        let crate::SemanticIssueKind::ExternalProtectedSubject(detail) = kind else {
+            panic!("expected structured PRV-3 detail: {kind:?}");
+        };
+        let target = &detail.targets[0];
+        assert!(
+            target
+                .carrier
+                .iter()
+                .filter(|step| matches!(
+                    step.selector,
+                    crate::ProvenanceDatumSelector::EnumPayload { .. }
+                ))
+                .count()
+                >= 3
+        );
+        assert!(target.carrier.iter().any(|step| {
+            coordinate_bytes(source, &step.coordinate) == b"give Present(value: widened);"
+        }));
+        assert_eq!(
+            coordinate_bytes(source, &target.origin_coordinate),
+            b"args_count<'a>(args: &'a args)"
+        );
+    });
+}
+
+#[test]
+fn a_real_branch_discharges_the_same_external_subject_without_a_provenance_rejection() {
+    let source = br#"command fn main(command.args as args: own Args) -> own ExitStatus pure {
+  let values = array_new<u8, 4>(0_u8);
+  region 'a {
+    let position = args_count<'a>(args: &'a args);
+    let room = len(values);
+    if ilt(position, room) {
+      let selected = values[position];
+      return exit_status(code: selected);
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+}
+"#;
+
+    checked(source, |program| {
+        assert_eq!(program.provenance.local_leaf_dispositions.len(), 1);
+        let disposition = &program.provenance.local_leaf_dispositions[0];
+        assert!(disposition.complete_discharged);
+        assert!(disposition.unasserted_discharged);
+        assert!(disposition.s4_blinded_discharged);
+        assert_eq!(
+            disposition.disposition,
+            LocalLeafProvenanceDisposition::BlindedDischarged
+        );
+    });
 }
 
 #[test]
@@ -319,6 +1252,90 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn an_equal_length_bridge_diamond_derives_its_legacy_predecessor_from_the_full_route() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn leaf(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+  let room = len(values);
+  check ilt(position, room) else trap "leaf bound";
+} {
+  return values[position];
+}
+
+fn left(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+  let room = len(values);
+  check ilt(position, room) else trap "left bound";
+} {
+  return leaf(values: move values, position: position);
+}
+
+fn right(values: own array<u8, count>, position: own u64) -> own u8 pure requires {
+  let room = len(values);
+  check ilt(position, room) else trap "right bound";
+} {
+  return leaf(values: move values, position: position);
+}
+
+fn diamond(values: own array<u8, count>, position: own u64, choose_left: own Bool) -> own u8 pure requires {
+  let room = len(values);
+  check ilt(position, room) else trap "diamond bound";
+} {
+  if choose_left {
+    return left(values: move values, position: position);
+  } else {
+    return right(values: move values, position: position);
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+
+    checked(source, |program| {
+        let diamond = function(program, "diamond");
+        let leaf = function(program, "leaf");
+        let bridge = program
+            .provenance
+            .subject_bridges
+            .iter()
+            .find(|bridge| bridge.requirement.function == diamond && bridge.leaf.function == leaf)
+            .expect("diamond bridge to the shared leaf");
+        assert_eq!(bridge.boundaries.len(), 2);
+        let boundary = bridge.boundaries.last().expect("immediate predecessor");
+        let SubjectPredecessor::Call {
+            call,
+            argument,
+            downstream_requirement,
+            downstream_subject,
+        } = &bridge.predecessor
+        else {
+            panic!("diamond must select one call predecessor");
+        };
+        assert_eq!(call, &boundary.call);
+        assert_eq!(*argument, boundary.argument);
+        let super::super::provenance::DemandState::Bridge {
+            requirement,
+            subject,
+            ..
+        } = &boundary.callee
+        else {
+            panic!("subject bridge boundary must retain a bridge callee state");
+        };
+        assert_eq!(downstream_requirement, requirement);
+        assert_eq!(downstream_subject, subject);
+        assert_eq!(
+            boundary.caller_continuation,
+            Some(super::super::provenance::DemandState::Bridge {
+                requirement: bridge.requirement.clone(),
+                subject: bridge.subject,
+                leaf: bridge.leaf.clone(),
+            })
+        );
+    });
+}
+
+#[test]
 fn recursive_and_mutually_recursive_bridges_converge_from_local_seeds() {
     let source = br#"const count: u64 = 4_u64;
 
@@ -422,7 +1439,11 @@ fn main() -> own unit pure {
                 .find(|dependencies| dependencies.function == id)
                 .expect("recursive dependency summary");
             assert_eq!(
-                dependencies.result.components[0].parameters.datums, result_parameters,
+                dependencies.result.components[0]
+                    .dependency
+                    .parameters
+                    .datums,
+                result_parameters,
                 "result composition reaches the seeded read but excludes the control Bool"
             );
         }
@@ -525,9 +1546,22 @@ fn main() -> own unit pure {
                 .iter()
                 .find(|dependencies| dependencies.function == id)
                 .unwrap_or_else(|| panic!("missing dependencies for {name}"));
-            assert_eq!(dependencies.writes[0].datums, expected);
-            assert!(dependencies.writes[1].datums.is_empty());
+            assert_eq!(dependencies.writes[0].parameters.datums, expected);
+            assert!(dependencies.writes[1].parameters.datums.is_empty());
         }
+        assert_eq!(program.provenance.call_argument_dispositions.len(), 2);
+        assert!(
+            program
+                .provenance
+                .call_argument_dispositions
+                .iter()
+                .all(|argument| {
+                    argument.disposition == CallArgumentProvenanceDisposition::NoEvent
+                        && argument.complete == ProvenanceGoalObservation::NotApplicable
+                        && argument.unasserted == ProvenanceGoalObservation::NotApplicable
+                        && argument.s4_blinded == ProvenanceGoalObservation::NotApplicable
+                })
+        );
     });
 }
 
@@ -560,13 +1594,13 @@ fn main() -> own unit pure {
             .find(|dependencies| dependencies.function == update)
             .expect("update dependencies");
         assert_eq!(
-            dependencies.writes[0].datums,
+            dependencies.writes[0].parameters.datums,
             vec![ParameterDatum {
                 ordinal: 1,
                 selector: DatumSelector::Plain,
             }]
         );
-        assert!(dependencies.writes[1].datums.is_empty());
+        assert!(dependencies.writes[1].parameters.datums.is_empty());
     });
 }
 
@@ -605,13 +1639,13 @@ fn main() -> own unit pure {
                 .find(|dependencies| dependencies.function == function)
                 .unwrap_or_else(|| panic!("missing dependencies for {name}"));
             assert_eq!(
-                dependencies.writes[0].datums,
+                dependencies.writes[0].parameters.datums,
                 vec![ParameterDatum {
                     ordinal: 1,
                     selector: DatumSelector::Plain,
                 }]
             );
-            assert!(dependencies.writes[1].datums.is_empty());
+            assert!(dependencies.writes[1].parameters.datums.is_empty());
         }
     });
 }
@@ -666,7 +1700,10 @@ fn main() -> own unit pure {
                 .find(|dependencies| dependencies.function == id)
                 .unwrap_or_else(|| panic!("missing dependencies for {name}"));
             assert_eq!(
-                dependencies.result.components[0].parameters.datums,
+                dependencies.result.components[0]
+                    .dependency
+                    .parameters
+                    .datums,
                 expected
             );
         }
@@ -899,20 +1936,32 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
         };
         let dependencies = dependencies(program, "publish");
         assert!(
-            dependencies.writes[0].datums.is_empty(),
+            dependencies.writes[0].parameters.datums.is_empty(),
             "a system write does not derive the written resource from call arguments"
         );
-        for binder in arms.iter().flat_map(|arm| &arm.binders) {
-            let value = dependencies.bindings[binder.binding.0 as usize]
-                .as_ref()
-                .expect("system result binder dependencies");
-            assert!(
-                value
-                    .components
-                    .iter()
-                    .all(|component| component.parameters.datums.is_empty()),
-                "a system result payload does not derive from call arguments"
-            );
+        assert!(
+            dependencies.writes[0].unconditional_external,
+            "the SYS-2 write_once output component is unconditional external"
+        );
+        for arm in arms {
+            for binder in &arm.binders {
+                let value = dependencies.bindings[binder.binding.0 as usize]
+                    .as_ref()
+                    .expect("system result binder dependencies");
+                assert!(
+                    value.components.iter().all(|component| component
+                        .dependency
+                        .parameters
+                        .datums
+                        .is_empty()),
+                    "a system result payload does not derive from call arguments"
+                );
+                assert_eq!(
+                    value.components[0].dependency.unconditional_external,
+                    arm.tag == 1,
+                    "write_once Ok(value:) is internal and only Err(error:) is SYS-2 external"
+                );
+            }
         }
     });
 }
@@ -991,11 +2040,20 @@ fn canonical_deflate_retains_one_subject_bridge_and_three_unasserted_calls() {
             .find(|function| function.id == store)
             .expect("store_dynamic_length function");
         assert!(
-            store_function
+            !store_function
                 .entailment
                 .claims
                 .iter()
-                .any(|claim| { claim.name == "distance_position_in_lengths" })
+                .any(|claim| claim.name == "distance_position_in_lengths")
+        );
+        assert_eq!(
+            program
+                .data
+                .functions
+                .iter()
+                .map(|function| function.entailment.claims.len())
+                .sum::<usize>(),
+            12
         );
     });
 }

@@ -298,6 +298,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
         position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
+        let carrier = self
+            .tree
+            .parent(node)?
+            .filter(|parent| self.tree.production(*parent) == Ok(Production::Atom))
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let usage = self.use_at(node, LexicalUseRole::BorrowRegion)?;
         let ResolvedTarget::Source {
             declaration: region,
@@ -419,6 +424,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let slice = local.slice.clone();
         let expression = match ty {
             CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
+                carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedBufferRoot {
                     binding: local.binding,
                     fields,
@@ -430,6 +436,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     && matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. }) =>
             {
                 CheckedExpression::BorrowBox {
+                    carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     nominal,
                 }
@@ -442,11 +449,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ) =>
             {
                 CheckedExpression::BorrowSystemResource {
+                    carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     nominal,
                 }
             }
             CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
+                carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
                 ty,
                 slice_origins: slice
@@ -456,6 +465,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
                 CheckedExpression::BorrowAddressed {
+                    carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     ty,
                 }
@@ -525,6 +535,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
         position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
+        let carrier = self
+            .tree
+            .parent(node)?
+            .filter(|parent| self.tree.production(*parent) == Ok(Production::Atom))
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         match position {
             ReborrowPosition::Forbidden => {
                 return self.issue_node(
@@ -631,6 +646,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         let expression = match ty {
             CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
+                carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedBufferRoot {
                     binding: local.binding,
                     fields,
@@ -648,12 +664,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ) =>
             {
                 CheckedExpression::BorrowSystemResource {
+                    carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     nominal,
                 }
             }
             _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
                 CheckedExpression::ReborrowAddressed {
+                    carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     ty,
                 }

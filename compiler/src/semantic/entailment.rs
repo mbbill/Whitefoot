@@ -199,7 +199,7 @@ pub(crate) struct CallGoalCounterfactual {
     pub(crate) goal_evidence: Vec<CallGoalEvidence>,
 }
 
-/// Metadata-only ENT rewalk used by the finite subject bridge [ENT-6].
+/// Counterfactual ENT rewalk consumed by the PRV bridge and gate [ENT-6].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailmentRewalk {
     /// Every protected leaf under the selected counterfactual fact sources.
@@ -233,8 +233,8 @@ pub(crate) fn analyze_function(
 
 /// Recomputes ENT flow without S2/S3, optionally retaining body-entry S4.
 ///
-/// The result is checked metadata only.  No source rejection, advisory, or
-/// lowering decision reads it.
+/// PRV-2/PRV-3 source acceptance reads this counterfactual result after the
+/// complete base judgment succeeds. Lowering and optimization do not read it.
 pub(crate) fn rewalk_function_unasserted(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,

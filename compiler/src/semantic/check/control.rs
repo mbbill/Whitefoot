@@ -247,6 +247,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Ok(StatementResult {
                     statement: CheckedStatement::Return {
+                        node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
                         drops: self.live_affine_drops(bindings, &HashSet::new())?,
                     },
@@ -358,6 +359,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Ok(StatementResult {
                     statement: CheckedStatement::Give {
+                        node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
                         drops: self.live_affine_drops(bindings, &context.preserved)?,
                     },
@@ -407,6 +409,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Ok(Self::continuing_statement(
                     CheckedStatement::Set {
+                        node_path: self.tree.path(node)?.clone(),
                         target,
                         value: value.expression,
                     },
@@ -553,6 +556,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Ok(StatementResult {
                 statement: CheckedStatement::ValueMatchLet {
+                    node_path: self.tree.path(node)?.clone(),
                     binding,
                     result_type: expected,
                     scrutinee: matched.scrutinee,
@@ -574,6 +578,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return self.check_propagate_let(
                 function,
+                node,
                 propagate,
                 declaration_id,
                 binding,
@@ -631,6 +636,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(Self::continuing_statement(
             CheckedStatement::Let {
+                node_path: self.tree.path(node)?.clone(),
                 binding,
                 value: value.expression,
             },

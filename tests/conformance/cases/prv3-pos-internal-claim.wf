@@ -1,0 +1,14 @@
+fn hide_index(value: own u64) -> own u64 pure {
+  return value;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  doc "A claim may still discharge a protected leaf when the constrained subject is internal; provenance narrows assertion use only for external subjects.";
+  let index = hide_index(value: 1_u64);
+  let bytes = buffer_new(4_u64, 0_u8);
+  let room = len(bytes);
+  let inside = ilt(index, room);
+  claim index_in_bytes: inside because "the internal subject keeps ordinary entailment";
+  let value = bytes[index];
+  return unit;
+}

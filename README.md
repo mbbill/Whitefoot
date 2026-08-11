@@ -30,9 +30,9 @@ structure discipline future agents must apply.
 
 ## Current state
 
-[Kernel specification v0.26](spec/kernel-spec.md), SHA-256
-`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`,
-is the active specification at its stable path. Exact v0.8 through v0.25
+[Kernel specification v0.27](spec/kernel-spec.md), SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
+is the active specification at its stable path. Exact v0.8 through v0.26
 remain immutable flat archives.
 
 The safe-Rust compiler currently implements one ordinary path:
@@ -87,7 +87,7 @@ The gate is deliberately small: the compiler builds and passes its tests; the
 conformance corpus has valid active-spec identity, structure, rule coverage,
 and expectations; and the stable file plus immutable archives match the
 recorded digest chain. The native compile-run adapter is invoked separately by
-`make conformance-run`; its current result is Pass=393, Fail=1,
+`make conformance-run`; its current result is Pass=409, Fail=1,
 Skip=13 and is not silently counted as part of `make check`. A green result
 states only what the selected gate exercises and is not a completeness claim.
 

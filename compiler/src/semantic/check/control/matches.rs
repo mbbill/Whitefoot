@@ -622,6 +622,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
             binders.push(CheckedMatchBinder {
+                node_path: self.tree.path(written)?.clone(),
                 binding,
                 field: u32::try_from(index)
                     .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,

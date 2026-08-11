@@ -306,10 +306,10 @@ impl Analyzer<'_, '_> {
     /// obligation judgment forms for P, so both name one term [ENT-2].
     pub(super) fn length_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
         let (place, array_length) = match value {
-            CheckedExpression::ArrayLength { root, length } => {
+            CheckedExpression::ArrayLength { root, length, .. } => {
                 (self.array_root_place(root), Some(*length))
             }
-            CheckedExpression::BufferLength { root } => (
+            CheckedExpression::BufferLength { root, .. } => (
                 PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),
@@ -317,7 +317,7 @@ impl Analyzer<'_, '_> {
                 },
                 None,
             ),
-            CheckedExpression::SliceLength { root } => (
+            CheckedExpression::SliceLength { root, .. } => (
                 PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),

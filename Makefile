@@ -127,7 +127,7 @@ compiler:
 
 # Drive every case through the native adapter: compile, arrange, run, compare.
 # This remains separate from `check`: the current result is
-# Pass=393, Fail=1, Skip=13, and the one runnable attribution divergence is
+# Pass=409, Fail=1, Skip=13, and the one runnable attribution divergence is
 # tracked independently rather than hidden inside the repository gate.
 conformance-run:
 	cd compiler && cargo test --test conformance --locked --offline -- --ignored --nocapture

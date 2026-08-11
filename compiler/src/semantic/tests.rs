@@ -1077,6 +1077,7 @@ fn main() -> own unit pure {
                     residual_drops,
                     ..
                 },
+            ..
         } = &projection.body[5]
         else {
             panic!("affine field move must consume its root");

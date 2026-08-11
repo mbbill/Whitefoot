@@ -381,7 +381,7 @@ impl<'program> IrBuilder<'program> {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
             match statement {
-                CheckedStatement::Let { binding, value } => {
+                CheckedStatement::Let { binding, value, .. } => {
                     let value = self.expression(value)?;
                     if self.bindings.insert(*binding, value).is_some() {
                         return Err(LoweringFailure::InvalidCheckedProgram);
@@ -397,6 +397,7 @@ impl<'program> IrBuilder<'program> {
                     error_type,
                     error_drops,
                     context,
+                    ..
                 } => self.lower_propagate(
                     *binding,
                     scrutinee,
@@ -407,7 +408,7 @@ impl<'program> IrBuilder<'program> {
                     error_drops,
                     context,
                 )?,
-                CheckedStatement::Set { target, value } => self.set(target, value)?,
+                CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
                 }
@@ -448,12 +449,12 @@ impl<'program> IrBuilder<'program> {
                             trap: trap.clone().into(),
                         });
                 }
-                CheckedStatement::Return { value, drops } => {
+                CheckedStatement::Return { value, drops, .. } => {
                     let value = self.expression(value)?;
                     let drops = self.lower_drops(drops)?;
                     self.terminate(IrTerminator::Return { value, drops })?;
                 }
-                CheckedStatement::Give { value, drops } => {
+                CheckedStatement::Give { value, drops, .. } => {
                     let target = give_target
                         .as_ref()
                         .ok_or(LoweringFailure::InvalidCheckedProgram)?;
@@ -543,6 +544,7 @@ impl<'program> IrBuilder<'program> {
                     enum_type,
                     arms,
                     continues,
+                    ..
                 } => {
                     self.lower_match(
                         scrutinee,
@@ -743,6 +745,7 @@ impl<'program> IrBuilder<'program> {
                 arguments,
                 result,
                 trap,
+                ..
             } => {
                 let arguments = arguments
                     .iter()
@@ -760,7 +763,9 @@ impl<'program> IrBuilder<'program> {
             // An opaque resource value is its own borrow: it has no
             // source-visible content and needs no stable address, exactly as
             // a `box` borrow does.
-            CheckedExpression::BorrowSystemResource { binding, nominal } => {
+            CheckedExpression::BorrowSystemResource {
+                binding, nominal, ..
+            } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -792,6 +797,7 @@ impl<'program> IrBuilder<'program> {
                 operation,
                 operand_type,
                 arguments,
+                ..
             } => {
                 let arguments = arguments
                     .iter()
@@ -826,6 +832,7 @@ impl<'program> IrBuilder<'program> {
                 source,
                 destination,
                 value,
+                ..
             } => {
                 let value = self.expression(value)?;
                 self.define(
@@ -840,6 +847,7 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::BooleanOperation {
                 operation,
                 arguments,
+                ..
             } => {
                 let arguments = arguments
                     .iter()
@@ -857,6 +865,7 @@ impl<'program> IrBuilder<'program> {
                 equal,
                 operand_type,
                 arguments,
+                ..
             } => {
                 let [left, right] = arguments.as_slice() else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -876,6 +885,7 @@ impl<'program> IrBuilder<'program> {
                 ty,
                 value,
                 target_domain,
+                ..
             } => {
                 let IrType::Array { element, .. } = lower_type(*ty)? else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -892,7 +902,7 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::ArrayLength { root, length } => {
+            CheckedExpression::ArrayLength { root, length, .. } => {
                 let (_, ty) = self.array_root(root)?;
                 let IrType::Array { length: actual, .. } = ty else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -963,8 +973,9 @@ impl<'program> IrBuilder<'program> {
                 value,
                 trap,
                 target_domains,
+                ..
             } => self.lower_buffer_fill(*element, length, value, trap, *target_domains),
-            CheckedExpression::BufferLength { root } => self.lower_buffer_length(root),
+            CheckedExpression::BufferLength { root, .. } => self.lower_buffer_length(root),
             CheckedExpression::BufferIndex {
                 root,
                 offset,
@@ -974,14 +985,14 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::SliceOf {
                 source, element, ..
             } => self.lower_slice_of(source, *element),
-            CheckedExpression::SliceLength { root } => self.lower_slice_length(root),
+            CheckedExpression::SliceLength { root, .. } => self.lower_slice_length(root),
             CheckedExpression::SliceIndex {
                 root,
                 offset,
                 target_domain,
                 ..
             } => self.lower_slice_index(root, offset, *target_domain),
-            CheckedExpression::BoxNew { nominal, value } => {
+            CheckedExpression::BoxNew { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = IrNominalId(nominal.0);
                 self.define(
@@ -1002,26 +1013,30 @@ impl<'program> IrBuilder<'program> {
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
-            CheckedExpression::BorrowBuffer { root } => self.lower_buffer_borrow(root),
-            CheckedExpression::BorrowBox { binding, nominal } => {
+            CheckedExpression::BorrowBuffer { root, .. } => self.lower_buffer_borrow(root),
+            CheckedExpression::BorrowBox {
+                binding, nominal, ..
+            } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
             }
-            CheckedExpression::BorrowAddressed { binding, ty }
-            | CheckedExpression::ReborrowAddressed { binding, ty } => {
+            CheckedExpression::BorrowAddressed { binding, ty, .. }
+            | CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
                 self.lower_addressed_borrow(*binding, lower_type(*ty)?)
             }
-            CheckedExpression::DerefAddressed { binding, ty } => {
+            CheckedExpression::DerefAddressed { binding, ty, .. } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != lower_type(*ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
             }
-            CheckedExpression::ConstructStruct { nominal, fields } => {
+            CheckedExpression::ConstructStruct {
+                nominal, fields, ..
+            } => {
                 let fields = fields
                     .iter()
                     .map(|field| self.expression(field))
@@ -1036,6 +1051,7 @@ impl<'program> IrBuilder<'program> {
                 nominal,
                 variant,
                 fields,
+                ..
             } => {
                 let fields = fields
                     .iter()
@@ -1057,6 +1073,7 @@ impl<'program> IrBuilder<'program> {
                 ty,
                 consume_root,
                 residual_drops,
+                ..
             } => {
                 let root = self.binding_value(*binding)?;
                 let mut lowered_drops = Vec::with_capacity(residual_drops.len());
@@ -1079,6 +1096,7 @@ impl<'program> IrBuilder<'program> {
                 nominal,
                 field,
                 ty,
+                ..
             } => {
                 let aggregate = self.expression(value)?;
                 let nominal = IrNominalId(nominal.0);
@@ -1100,7 +1118,9 @@ impl<'program> IrBuilder<'program> {
         root: &CheckedArrayRoot,
     ) -> Result<(IrArrayRoot, IrType), LoweringFailure> {
         match root {
-            CheckedArrayRoot::Binding { binding, fields } => {
+            CheckedArrayRoot::Binding {
+                binding, fields, ..
+            } => {
                 let storage = self
                     .bindings
                     .get(binding)

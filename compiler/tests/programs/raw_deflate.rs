@@ -108,9 +108,13 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
     let length = emitted_function(&llvm, "decode_length");
     let distance = emitted_function(&llvm, "copy_distance");
     assert!(length.contains("icmp ult i64"));
-    assert!(length.contains("call void @wf_trap"));
+    assert!(!length.contains("call void @wf_trap"));
     assert!(distance.contains("icmp ult i64"));
-    assert!(distance.contains("call void @wf_trap"));
+    assert!(!distance.contains("call void @wf_trap"));
+    let store = emitted_function(&llvm, "store_dynamic_length");
+    assert!(!store.contains("call void @wf_trap"));
+    let fixed = emitted_function(&llvm, "decode_fixed");
+    assert!(!fixed.contains("call void @wf_trap"));
     let table = emitted_function(&llvm, "build_huffman_table");
     assert!(table.contains("call ptr @malloc"));
     assert!(table.contains("call void @wf_trap"));

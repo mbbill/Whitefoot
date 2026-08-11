@@ -121,6 +121,10 @@ pub enum SemanticRule {
     Clm2,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
+    /// External actual protecting one downstream constrained subject.
+    Prv2,
+    /// External local constrained subject authorized only by assertion state.
+    Prv3,
 }
 
 impl SemanticRule {
@@ -170,6 +174,8 @@ impl SemanticRule {
             Self::Clm1 => "CLM-1",
             Self::Clm2 => "CLM-2",
             Self::Ent2 => "ENT-2",
+            Self::Prv2 => "PRV-2",
+            Self::Prv3 => "PRV-3",
         }
     }
 
@@ -232,7 +238,9 @@ impl SemanticRule {
             Self::Sys2 => Self::Clm1,
             Self::Clm1 => Self::Clm2,
             Self::Clm2 => Self::Ent2,
-            Self::Ent2 => return None,
+            Self::Ent2 => Self::Prv2,
+            Self::Prv2 => Self::Prv3,
+            Self::Prv3 => return None,
         })
     }
 
@@ -289,6 +297,8 @@ impl SemanticRule {
             Self::Clm1 => 39,
             Self::Clm2 => 40,
             Self::Ent2 => 41,
+            Self::Prv2 => 42,
+            Self::Prv3 => 43,
         }
     }
 }
@@ -336,6 +346,158 @@ pub struct UndischargedCallRequirementDetail {
     pub disposition: CallRequirementDisposition,
     /// The rule-selected mechanical restructuring.
     pub mechanical_fix: &'static str,
+}
+
+/// Public finite spelling of one PRV-1 parameter component selector.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProvenanceDatumSelector {
+    /// A non-payload value's sole component.
+    Plain,
+    /// One direct enum payload projection, never a recursive payload path.
+    EnumPayload {
+        /// Zero-based variant declaration ordinal.
+        variant: u32,
+        /// Zero-based payload-field declaration ordinal.
+        field: u32,
+    },
+}
+
+/// One exact finite parameter datum rendered in a provenance diagnostic.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProvenanceParameterDatumDetail {
+    /// Zero-based value-parameter ordinal.
+    pub ordinal: u32,
+    /// Exact plain or direct-payload selector.
+    pub selector: ProvenanceDatumSelector,
+}
+
+/// The identity class of one ordered provenance target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProvenanceDemandKind {
+    /// The protected leaf is local to the rejected function [PRV-3].
+    LocalLeaf,
+    /// A direct caller-visible parameter demand [PRV-2].
+    Direct,
+    /// An exact S4 requirement occurrence bridges to the leaf [PRV-2].
+    RequirementBridge,
+}
+
+/// One complete direct or requirement-bridge demand state retained at a
+/// diagnostic call boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvenanceDemandStateDetail {
+    pub demand_kind: ProvenanceDemandKind,
+    /// Concrete function that owns this boundary state.
+    pub function: String,
+    pub parameter: ProvenanceParameterDatumDetail,
+    /// Exact occurrence identity for a requirement-bridge state.
+    pub requirement: Option<NodePath>,
+    pub requirement_conjunct: Option<u32>,
+    pub protected_function: String,
+    pub protected_leaf: NodePath,
+    pub protected_conjunct: u32,
+}
+
+/// One ordered call boundary in a post-convergence provenance witness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvenanceBoundaryDetail {
+    pub call: NodePath,
+    pub argument_node: NodePath,
+    pub argument: u32,
+    pub callee: ProvenanceDemandStateDetail,
+    /// Absent only at the real true-bit terminal boundary.
+    pub caller_continuation: Option<ProvenanceDemandStateDetail>,
+}
+
+/// One exact PRV-1 predecessor edge and its complete checked source extent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvenanceWriteContextDetail {
+    /// Exact writable formal ordinal at the system/user call boundary.
+    pub parameter: u32,
+    /// Exact caller actual atom paired with the writable formal.
+    pub actual: NodePath,
+    pub actual_coordinate: SyntaxCoordinate,
+}
+
+/// The positive transfer represented by a call carrier.  A parameter-backed
+/// user result/write has a distinct receiving edge and substitution edge even
+/// though both use the same source call NodePath.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProvenanceCarrierCallRole {
+    SystemResult,
+    SystemWrite,
+    UserResult,
+    UserWrite,
+    UserSubstitution,
+}
+
+/// One exact PRV-1 predecessor edge and its complete checked source extent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvenanceCarrierStepDetail {
+    pub path: NodePath,
+    pub selector: ProvenanceDatumSelector,
+    pub call_role: Option<ProvenanceCarrierCallRole>,
+    /// Explanation-only write identity attached to this one call edge.
+    pub write_context: Option<ProvenanceWriteContextDetail>,
+    pub coordinate: SyntaxCoordinate,
+}
+
+/// The entry-local S4 bridge is rooted directly at the retained requirement;
+/// it has no source call boundary or caller continuation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProvenanceLocalBridgePredecessor {
+    Local,
+}
+
+/// One complete ordered target retained by a PRV-2/PRV-3 diagnostic.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvenanceTargetDetail {
+    /// Local, direct, or exact requirement-bridge identity.
+    pub demand_kind: ProvenanceDemandKind,
+    /// Exact selected callee datum for PRV-2; absent only for a PRV-3 leaf.
+    pub callee_parameter: Option<ProvenanceParameterDatumDetail>,
+    /// Concrete function instance that owns the protected leaf.
+    pub protected_function: String,
+    /// Exact protected obligation occurrence.
+    pub protected_leaf: NodePath,
+    /// Normalized conjunct ordinal (zero for the current bounds family).
+    pub protected_conjunct: u32,
+    /// Concrete function owning an exact requirement occurrence, if bridged.
+    pub requirement_function: Option<String>,
+    /// Exact final-check occurrence for a requirement bridge.
+    pub requirement: Option<NodePath>,
+    /// Requirement conjunct ordinal when `requirement` is present.
+    pub requirement_conjunct: Option<u32>,
+    /// Present only for an entry-local PRV-3 leaf whose U success came from
+    /// its own S4 requirement while B failed.
+    pub local_bridge_predecessor: Option<ProvenanceLocalBridgePredecessor>,
+    /// Exact ENT-6 residual at the downstream protected leaf.
+    pub residual: String,
+    /// Ordered parameter-only explanations beside a terminating true bit.
+    pub companion_parameter_datums: Vec<ProvenanceParameterDatumDetail>,
+    /// Complete ordered call boundaries; their full state identities are also
+    /// the deterministic cycle-cut and tie-break key.
+    pub boundaries: Vec<ProvenanceBoundaryDetail>,
+    /// Selector-preserving PRV-1 suffix used for deterministic tie-breaking
+    /// and source rendering.
+    pub carrier: Vec<ProvenanceCarrierStepDetail>,
+    /// Coordinate of the labelled-entry or system origin (the final carrier).
+    pub origin_coordinate: SyntaxCoordinate,
+    /// Deterministic carrier chain ending at a command-param or SYS-2 call.
+    pub witness: Vec<NodePath>,
+    /// Repair specific to this target's direct/bridge/local identity.
+    pub target_repair: &'static str,
+}
+
+/// Complete coalesced target set for one provenance rejection event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProvenanceGateDetail {
+    /// Ordered nonempty target set. One call argument can carry both kinds.
+    pub targets: Vec<ProvenanceTargetDetail>,
+    /// Target whose deterministic witness and target-specific repair render.
+    pub selected_target: u32,
+    /// Alternative common to every target: remove the external subject route.
+    pub restructure_alternative: &'static str,
 }
 
 /// Structured reason for one semantic rejection.
@@ -435,6 +597,12 @@ pub enum SemanticIssueKind {
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
+    /// A full-state-accepted call passes an unconditionally external actual
+    /// into one or more protected downstream subjects [PRV-2].
+    ExternalProtectedCallArgument(Box<ProvenanceGateDetail>),
+    /// A full-state-discharged local leaf relies on assertion state for an
+    /// unconditionally external constrained subject [PRV-3].
+    ExternalProtectedSubject(Box<ProvenanceGateDetail>),
     /// A counted endpoint produced `own u64` but was not itself one preceding
     /// ENT-2 term or constant.
     InvalidCountedEndpoint {

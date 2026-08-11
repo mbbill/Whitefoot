@@ -88,6 +88,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(TypedExpression::owned(
             CheckedExpression::FloatOperation {
+                carrier: self.tree.path(node)?.clone(),
                 operation,
                 operand_type,
                 arguments,

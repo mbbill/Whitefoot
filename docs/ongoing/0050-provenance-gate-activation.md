@@ -1,9 +1,9 @@
 # 0050 — activate the bounded provenance gate
 
 - **Status:** `IN PROGRESS`
-- **Authority:** the ACTIVE `Current step — stage 5b provenance-gate
-  activation` in `docs/current-plan.md`, owner-selected on 2026-08-10 and
-  derived from Direction Outline revision 29 item `PROOF-8`, with `BOUND-1`,
+- **Authority:** the ACTIVE `Current step — installed stage 5b validation and
+  closure` in `docs/current-plan.md`, owner-selected on 2026-08-10 and
+  derived from Direction Outline revision 30 item `PROOF-8`, with `BOUND-1`,
   `VERIFY-1`, and `VERIFY-2` as boundary and evidence constraints
 - **Owner / workspace:** Codex lead / `/Users/bytedance/code/Whitefoot`, branch
   `codex/0047-counted-range-impl`
@@ -97,14 +97,14 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   projection `14/24`; every frozen boundary control and input identity also
   matched. The rejected contextual interpretation would double-report two
   parameter-dependent calls as `16/28` and is not the finite symbolic
-  [PRV-2] judgment. An uncommitted v0.27 candidate and byte-identical outgoing
-  v0.26 archive are frozen at SHA-256
+  [PRV-2] judgment. The preactivation packet froze an uncommitted v0.27
+  candidate and byte-identical outgoing v0.26 archive at SHA-256
   `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`
   and `18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
-  Independent normative, mechanical, and implementability reviews report no
-  remaining finding; the bytes remain non-authoritative pending later exact
-  owner approval. Two independent read-only consumer migrations reproduced the
-  same exact [EFF-2] cascade:
+  Independent normative, mechanical, and implementability reviews reported no
+  remaining finding; at that checkpoint the bytes remained non-authoritative
+  pending exact owner approval. Two independent read-only consumer migrations
+  reproduced the same exact [EFF-2] cascade:
   after the eleven selected claims become value branches and
   `store_dynamic_length` loses its claim-derived `traps`, `decode_length`, then
   `copy_distance`, then `decode_fixed` each has no remaining trapping source
@@ -112,11 +112,17 @@ oracle, unaffected effect judgment, and facts-on/facts-off behavior.
   semantic checking and no further effect row changes. The owner approved the
   exact three-row addition to the existing `store_dynamic_length` change on
   2026-08-10; every other effect row and runtime oracle remains frozen.
-- **Current:** land that exact ACTIVE-plan amendment as a separate authority
-  commit, without staging or activating the frozen specification bytes.
-- **Next:** add focused regressions and implement the two-stratum PRV judgment,
-  diagnostics, and the eleven selected value-path migrations under the amended
-  authority.
+- **Current:** the owner gave the required exact approval on 2026-08-10 after
+  the complete Chinese explanation and hard wait. This atomic packet makes
+  v0.27 active at
+  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`
+  and releases the byte-identical outgoing-v0.26 archive. This is not a
+  terminal claim: installed acceptance, the complete gate, MCTS, and task
+  closure are still pending.
+- **Next:** run every installed frozen matrix, runtime oracle, adapter,
+  compiler, and repository gate; then update the live design memory through
+  the required skill workflow and close task 0050 only if all closure evidence
+  is green. Stage 8a remains unauthorized.
 
 ## Scope and expected touch set
 

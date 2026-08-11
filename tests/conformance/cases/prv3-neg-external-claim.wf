@@ -1,0 +1,12 @@
+command fn main(command.args as args: own Args) -> own ExitStatus allocates(heap), traps {
+  doc "A named claim remains an executable assertion, not proof that an externally controlled constrained subject is safe.";
+  region 'a {
+    let index = args_count<'a>(args: &'a args);
+    let bytes = buffer_new(4_u64, 0_u8);
+    let room = len(bytes);
+    let inside = ilt(index, room);
+    claim index_in_bytes: inside because "the claim is deliberately not proof";
+    let value = bytes[index];
+    return exit_status(code: 0_u8);
+  }
+}
