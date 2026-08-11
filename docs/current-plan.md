@@ -1,46 +1,102 @@
 # Current Plan
 
-Status: PROPOSED (AI proposal 2026-08-10): measure two local
-proof-feasibility prerequisites for future normal-return postconditions and
-audit, without closing, their real caller prerequisites as Stage 8a of the
-selected obligation-discharge direction.
+Status: **PROPOSED** (AI proposal 2026-08-11): complete the remaining selected
+obligation-discharge direction as one high-level undertaking, decomposed into
+Stage 8a proof-feasibility evidence, a bounded existing-DIAG-2 conformance
+repair, Stage 8b verified normal-return postconditions, Stage 9a deterministic
+claim-ledger tooling, and Stage 9b an opt-in strict no-claim partition.
 
-This proposal authorizes no execution, research run, task registration,
-specification change, compiler change, source migration, or protected-material
-change. Owner selection must change this file to `ACTIVE` in a separate plan
-selection commit before any work below begins. Stage 8b, stages 9a/9b, and
-further wfgrep work remain unauthorized.
+This proposal authorizes no execution or task registration. One owner approval
+may make the whole plan `ACTIVE`; after that, the lead may autonomously create,
+claim, execute, integrate, and close every decision-complete task inside the
+boundaries below. That approval will not approve any future specification or
+protected-conformance bytes. Each exact protected batch still follows its own
+explanation-first hard wait.
 
-Derived from: [Direction Outline revision 31](roadmap.md), item `PROOF-8`
-(primary), with `VERIFY-1` and `VERIFY-2` as safety and evidence constraints.
-`CAND-8` remains the selected flagship but stays parked until the complete
-obligation-discharge direction reaches its completion boundary.
+Derived from [Direction Outline revision 32](roadmap.md), primarily `PROOF-8`,
+with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
+constraints. `CAND-8` remains the selected flagship pressure source but stays
+parked until this plan reaches its terminal boundary.
 
-## Proposed milestone — bounded postcondition proof feasibility
+## Objective
 
-### Why
+Finish the already selected obligation-discharge sequence without repeatedly
+returning for task-level approval:
 
-Future Stage 8b may expose verified normal-return facts to callers, but two
-real helpers first need local facts the active v0.27 entailment fragment does
-not establish. `read_bits` needs a bit-mask bound on its successful result.
-`append_slice` needs a truthful bound on its returned filled length. Stage 8a
-does not claim that those two local facts suffice for either real caller
-sequence: it separately audits every mapped call prerequisite and records any
-remaining caller-side gap before Stage 8b can be proposed.
+1. establish or falsify the two local facts needed by the real `read_bits` and
+   `append_slice` consumers, and inventory every caller-side gap;
+2. independently repair the checked program's already-required exact
+   derivation retention before adding another normative fact family;
+3. if those prerequisites close, design and activate the smallest verified
+   normal-return postcondition mechanism that closes the real call sequences;
+4. expose a deterministic, complete review ledger for the resulting claims;
+   and
+5. only after that ledger exists, add an opt-in strict partition in which
+   obligations must be proved or handled by value control flow rather than by
+   claims.
 
-This stage measures whether two deliberately small structural additions and an
-existing counted-range form suffice. It does not design or implement
-`ensures`, select syntax, or leave a production fact source behind. A negative
-result is useful evidence: it stops Stage 8b instead of hiding general
-induction, arithmetic entailment, a solver, or a source-shape recognizer inside
-the postcondition work.
+The authentic consumers are the four-source raw-DEFLATE unit and `wfgrep`.
+The plan ends by making the obligation-discharge direction terminal and
+unparking the existing wfgrep checkpoint. It does not begin a new wfgrep
+optimization or performance project.
 
-The historical unconditional target `append_slice result <= capacity` is
-false: when `filled > len(deref(destination))` and `len(text) = 0`, the current
-body returns `filled`. This proposal therefore selects the truthful future
-boundary `filled <= len(deref(destination))` and measures the result fact only
-inside that admitted domain. The proof-only scratch helper must express that
-boundary with this exact existing-language clause and trap payload:
+## Installed baseline and frozen boundaries
+
+- Active language authority: v0.27 at `spec/kernel-spec.md`, SHA-256
+  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+- Raw-DEFLATE sources, in compilation order:
+  - `raw_deflate.wf`:
+    `5e87885a519de539736b0ad6a619a2c92bdf659623e3f39ded31116e63adb585`;
+  - `raw_deflate_dynamic.wf`:
+    `2606ae0b81039b0ecc787df2fa9cb87279ba44663744540d48f6abeea984d4c5`;
+  - `raw_deflate_dynamic_decode.wf`:
+    `72129284c60a6eacbe2bb86d7d3a82375ed2270ea457c49d8e1db95064fc960f`;
+  - `raw_deflate_boundary.wf`:
+    `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`.
+- `wfgrep.wf`:
+  `a1e49bcb9ffd353e707d4bbafe1eb4a2b634b9177c6916b2ff7b503ec5dff0bd`.
+- Installed acceptance: UTF-8 `33/22/11/0`, SHA-256 `9/9/0/0`, complete
+  DEFLATE `29/24/5/0`, dynamic DEFLATE `24/19/5/0`; twelve DEFLATE
+  claims are seven retained, five redundant, zero refuted.
+- Installed tests: provenance `41/41`, raw-DEFLATE `3/3`, complete compiler
+  library `698/698`, real programs `30/30`, rule coverage `131/131`.
+- Protected conformance boundary: 423 cases, 30 coverage annotations, and the
+  installed adapter result `Pass=409 Fail=1 Skip=13`; the sole failure remains
+  the existing OWN-3 unsupported boundary.
+
+Every task must resolve these identities before using them. A changed real
+consumer is permitted only when its task states the exact behavior-preserving
+reason and replays the frozen output, error, cleanup, and status oracles.
+Protected conformance and canonical compliance machinery use their separate
+approval gate.
+
+## Workstream 8a — bounded proof-feasibility evidence
+
+Stage 8a is a removable experiment, not a language or compiler installation.
+It first freezes the baseline, then may split into parallel bit-bound and
+counted-append probes, followed by one synthesis task.
+
+### Local facts
+
+For `read_bits`, use a temporary in-crate harness over production checked and
+entailment representations to test exactly these two unsigned fact sources:
+
+- `result = iand(left, right)` establishes `result <= left` and
+  `result <= right` only for the corresponding admitted term or checked
+  constant; and
+- `high = ishl.wrap(one, count)` establishes `high != 0` only when `one` is a
+  checked unsigned constant with mathematical value one.
+
+Together with existing closure and the existing `mask = high -wrap 1` fact,
+measure whether every `Ok(value:)` return of `read_bits` establishes
+`value < high`; `Err` establishes no result fact. Cover unsigned widths,
+signed and operation near misses, boundary counts, operand order, and
+per-support mutation kills. In particular, the real later mutation of
+`state.hold` must preserve the bound through `mask`, while mutation of a fact's
+own supported term kills only that fact.
+
+For `append_slice`, use the truthful admitted domain expressed by this exact
+existing-language requirement in the proof-only scratch helper:
 
 ```whitefoot
 requires {
@@ -50,277 +106,299 @@ requires {
 }
 ```
 
-It does not select a conditional postcondition or change invalid-domain
-runtime behavior.
+Rewrite only the scratch/runtime variant to the existing counted form
+`for @append at in filled..capacity`. An early return uses the counted body
+fact `at < capacity`; exhaustion returns `capacity` directly. Do not invent a
+post-loop binder equality or a variable-subtraction fact. Exhaustively compare
+result and every written byte with the current body for capacities and text
+lengths `0..=8`, all admitted filled values, two destination fills, and zero,
+maximum, and ascending text patterns. Preserve the wfgrep `9/9` and
+raw-DEFLATE `3/3` program oracles.
 
-### Do
+### Caller audit
 
-1. Freeze the installed authority and real witnesses before probing:
+Before hypothetical facts, reproduce that v0.27 proves neither local result
+goal and that unconditional `append_slice result <= capacity` is false for
+`filled > capacity && len(text) = 0`.
 
-   - active v0.27 at `spec/kernel-spec.md`, SHA-256
-     `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`;
-   - the four-source raw-DEFLATE unit, in compilation order:
-     `raw_deflate.wf`
-     `5e87885a519de539736b0ad6a619a2c92bdf659623e3f39ded31116e63adb585`,
-     `raw_deflate_dynamic.wf`
-     `2606ae0b81039b0ecc787df2fa9cb87279ba44663744540d48f6abeea984d4c5`,
-     `raw_deflate_dynamic_decode.wf`
-     `72129284c60a6eacbe2bb86d7d3a82375ed2270ea457c49d8e1db95064fc960f`,
-     and `raw_deflate_boundary.wf`
-     `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`;
-   - `wfgrep.wf`, SHA-256
-     `a1e49bcb9ffd353e707d4bbafe1eb4a2b634b9177c6916b2ff7b503ec5dff0bd`;
-   - the fourteen real calls to `read_bits`, the twelve wfgrep calls and eight
-     raw-DEFLATE boundary calls to `append_slice`, their output/error oracles,
-     the current 423 conformance cases, all existing verdicts and rows, and all
-     30 coverage annotations.
+Inventory all fourteen real `read_bits` calls and all twenty real
+`append_slice` calls. With only the hypothetical local result fact, classify
+each future caller requirement as `discharged` or `unproved`; an unexpected
+refutation is a blocker. The audit must reproduce at least these known gaps:
 
-2. Establish the negative baseline before adding hypothetical facts:
+- all fourteen `read_bits` `Ok` payloads are assigned with `set` into an outer
+  binding, while current ENT-3 transfers no fact through that assignment and
+  the inner support expires; and
+- in wfgrep, `length <= len(deref(report))` survives the host-copy element
+  write, but `set length = length +wrap copied` kills the scalar relation and
+  current S7 creates no variable-offset replacement.
 
-   - show that active v0.27 cannot derive the exact local successful-result
-     bound `value < mask_high` at the `read_bits` return;
-   - enumerate the fourteen caller mappings from the returned `Ok(value:)`
-     payload and formal `count` to their exact actuals, and show that v0.27 has
-     no normal-result carrier that could publish a callee-local term or
-     substitute a result relation at those callers; additionally reproduce the
-     common source seam at all fourteen calls: the `Ok` payload binder is
-     assigned with `set` into a predeclared outer binding, active ENT-3 has no
-     fact transfer for that `set` right-hand side, the assignment kills the
-     outer binding's prior facts, and arm/region exit kills the inner binder's
-     support, so even a hypothetical fact attached to the `Ok` binder does not
-     reach the later outer use;
-   - show that the ordinary `append_slice` loop carries no accepted fact from
-     one mutation of `at` to the next or to its return;
-   - audit all twenty mapped `append_slice` calls under the hypothetical result
-     fact alone, without installing it, and reproduce the known wfgrep
-     prerequisite gap: after the prefix append in `report_failure`, the
-     prior `length <= len(deref(report))` relation correctly survives the
-     `host_copy_bytes` element write under ENT-5, and the success arm
-     establishes only `copied <= 256`; then
-     `set length = length +wrap copied` kills the old scalar `length` relation
-     and has no variable-offset S7 equality to rebuild it, so the separator
-     append cannot prove `length <= len(deref(report))` from the candidate
-     summary and active v0.27 facts; and
-   - execute the `filled > capacity && len(text) = 0` counterexample and retain
-     its exact returned value, proving that no unconditional result bound may
-     be proposed.
+Stage 8a leaves no tracked compiler, source, specification, conformance,
+generated, or MCTS change. It appends measured evidence to the existing
+acceptance record only after temporary files are removed and host hashes are
+restored. Local success is not a claim that either complete caller sequence is
+feasible.
 
-3. Test exactly two unsigned bit-operation fact sources for `read_bits` in a
-   temporary dark-checker harness:
+### Stage 8a stop
 
-   - after `let result = iand(left, right)`, independently derive
-     `result <= left` or `result <= right` only when that corresponding operand
-     is an [ENT-2] term or checked constant; and
-   - after `let high = ishl.wrap(one, count)` for an unsigned integer `T`,
-     derive `high != 0_T` only when `one` is a checked unsigned constant whose
-     mathematical value is exactly one. A typed literal one and a named const
-     of the same checked value are positive forms; a non-term expression is
-     not converted into a term merely because it evaluates to one.
-
-   Use only existing scalar closure and the existing subtraction fact for
-   `mask = high -wrap 1_T` to test whether
-   `value = iand(hold, mask)` yields `value < high` at the successful return.
-   Record that relation as a candidate normal-result fact only for
-   `Ok(value:)`; `Err(error:)` carries none. Do not install a caller summary or
-   substitution rule, add an arithmetic term, decompose a Boolean, invoke a
-   solver, or add a source-, function-, corpus-, or test-shaped recognizer.
-
-4. Challenge the bit candidate with exact negative and near-miss controls.
-   Exercise unsigned `u8`, `u16`, `u32`, and `u64`; for each width `W`, test
-   counts `{0, 1, W-2, W-1, W, W+1}`. Test the corresponding signed types; a
-   left shift operand other than typed one, including zero, two, and the type's
-   maximum; `ior` and `ixor`; and an arbitrary shifted value. Swapping the two
-   `iand` operands must preserve both unsigned bounds.
-
-   Invalidation is per derived bound, not per operation origin. Mutating the
-   operand named by `result <= left` kills that bound but retains
-   `result <= right`; mutating the right operand does the converse; mutating
-   `result` kills both. The real `read_bits` mutation of `state.hold` after the
-   `iand` is a positive control: it kills the unused hold bound while
-   `value <= mask` survives to the return. An unrelated mutation also preserves
-   both. Mutating `high` kills `high != 0_T`; mutating `count` after `high` was
-   bound preserves that disequality because its support is only `high` and
-   zero. The `Err` arm publishes neither bound. Every negative candidate fails
-   by absence of the hypothetical fact, never by changing source acceptance.
-
-5. Test one existing-structure route for `append_slice`, only in throwaway
-   proof and runtime variants:
-
-   - put the proof-only variant in a standalone scratch compilation unit with
-     a valid noncalling entry; give the helper the truthful existing-language
-     requirement clause fixed above and analyze its body and returns without
-     bypassing call checking or treating any real caller as accepted;
-   - replace the ordinary mutation loop with the existing counted range
-     `for @append at in filled..capacity`;
-   - in each iteration compute and bind `taken = at -wrap filled`, without
-     requiring or claiming a variable-subtraction fact; return `at` when
-     `taken >= len(text)`, and otherwise copy `text[taken]` into
-     `destination[at]`; and
-   - return `capacity` at range exhaustion.
-
-   Measure whether the counted-range interior fact proves `at < capacity` on
-   the early return and the value branch proves `taken < len(text)`. The
-   exhaustion path returns `capacity` directly; it neither relies on nor
-   invents a binder-equals-upper postcondition after the counted construct.
-   Record `result <= len(deref(destination))` as the candidate normal-result
-   fact at each proved return. Enumerate the exact result, destination, and filled
-   mapping at all twenty real calls, but do not install a result summary,
-   substitute the relation, establish a caller fact, or change call acceptance.
-
-6. Prove the counted-range body behaviorally equivalent to the current body on
-   its admitted domain. The runtime variant uses that counted body but retains
-   the current signature without a requirement, so this stage does not need a
-   caller-summary bypass to compile either real program. Exhaustively test
-   capacity and text length in `0..=8` and every filled value in
-   `0..=capacity`. For each tuple, compare returned length and every destination
-   byte with destination fills `0x00` and `0xa5`, and text patterns all-`0x00`,
-   all-`0xff`, and ascending byte ordinals. Then run exactly
-   `cargo test --manifest-path compiler/Cargo.toml --test programs wfgrep`
-   (9/9) and
-   `cargo test --manifest-path compiler/Cargo.toml --test programs raw_deflate`
-   (3/3), preserving every existing status and byte oracle. Inputs violating
-   the selected requirement are caller rejections in a future design and
-   receive no equivalence claim.
-
-7. Keep the experiment bounded and removable. A temporary in-crate probe may
-   use the production resolver, type/effect checker, checked representations,
-   and entailment machinery, but it must be deleted after the run and every
-   host-file hash restored. No tracked specification, compiler, source,
-   conformance, MCTS, or generated byte may remain changed. Append the exact
-   measurements and minimal reproducers to the existing obligation-discharge
-   acceptance record only after the run; do not create a new framework or
-   evidence bundle.
-
-8. Report proof dispositions and deterministic witnesses for the two local
-   normal-return goals and every negative canary. Separately report the exact
-   fourteen and twenty caller mapping inventories as non-deriving Stage 8b
-   inputs, including each mapped caller's future requirement disposition when
-   only the candidate result fact is assumed. Classify each mapped requirement
-   as `discharged` or `unproved`; an unexpected refutation is a blocker. The
-   audit must identify both pre-registered seams: every raw-DEFLATE
-   `Ok`-binder-to-outer-binding `set`, and wfgrep's `length +wrap copied`
-   transition as at least one `unproved` append premise. It may report more. Do
-   not call any mapping a proof, use one for acceptance, claim either real
-   consumer sequence feasible, or treat a positive local result as authority
-   to begin Stage 8b. Record
-   compile-time delta as a bounded measurement only; do not infer or build a
-   certificate architecture from it. Task 0049's proof-certificate research
-   supplies no production authority to this plan.
-
-### Verify and accept
-
-- The frozen hashes, call counts, conformance identities, and runtime oracles
-  match before and after the temporary run.
-- The negative baseline reproduces: neither exact result goal is available in
-  active v0.27, and the unconditional `append_slice` bound has the stated
-  concrete counterexample.
-- The `read_bits` candidate proves the exact local goal on every `Ok(value:)`
-  return; it publishes nothing on `Err`, the per-bound kill controls behave as
-  specified, and every hostile or near-miss control remains unproved. The
-  fourteen caller mappings are complete and well typed but derive no fact, and
-  their common result-through-`set` seam is reproduced rather than hidden.
-- The `append_slice` candidate proves `result <= len(deref(destination))` on every
-  normal return under the selected requirement, preserves result and bytes on
-  its complete tested admitted domain, and records all twenty caller mappings
-  without injecting the result fact at any call. Its caller audit reproduces
-  the wfgrep post-copy premise gap and reports every other unproved premise;
-  local proof success is not real-sequence feasibility. Both real program
-  oracle suites remain byte-for-byte and status-for-status unchanged at
-  wfgrep 9/9 and raw-DEFLATE 3/3.
-- A complete per-disposition differential reports any new proof, redundancy,
-  refutation, rejection, or unsupported result. No existing case, verdict,
-  status, source byte, or acceptance result changes.
-- Focused checks and `make check` are green, the temporary probe is absent, the
-  worktree and index are clean, and no production or normative file changed.
-
-Acceptance is evidence-only. A positive result supplies two decision-ready
-local fact prerequisites, one counted-range source rewrite, and complete
-caller-prerequisite inventories for a later owner decision; it does not prove
-either real sequence feasible, authorize `ensures`, define result-summary
-substitution, select how a result fact crosses the fourteen payload-to-outer
-`set` transitions, select the source repair or additional fact needed after
-`length +wrap copied`, or make either hypothetical fact normative. Stage 8b
-does not begin automatically after any Stage 8a outcome. A later proposal must
-dispose of every recorded caller gap explicitly, and if either local witness
-cannot close within this exact boundary Stage 8a returns the smallest
-reproducer.
-
-### Stop condition
-
-Stop and return evidence to the owner if either goal requires general loop
+Stop with the smallest reproducer if either local goal needs general loop
 induction or a loop fixed point, arithmetic-expression terms, Boolean
-decomposition, a solver, a source/function recognizer, invariant syntax, a
-postcondition language, an unproved trusted premise, or any fact source beyond
-the exactly two candidate operation-semantic sources above; if the
-counted-range variant is not behaviorally equivalent in the admitted domain;
-if either caller mapping inventory is incomplete or ill typed; if
-invalid-domain behavior would need to change; or if any
-protected source, verdict, row, annotation, runtime oracle, active-spec byte,
-or production compiler byte must change. Do not broaden the experiment or
-silently proceed to Stage 8b.
+decomposition, a solver, source/function recognition, invariant or
+postcondition syntax, an unproved premise, a third fact-source family,
+invalid-domain behavior changes, or an incomplete or ill-typed caller map.
+Do not start Stage 8b after a stopped result.
 
-### Explicit exclusions
+## Trust prerequisite — bounded existing-DIAG-2 repair
 
-This proposal does not select `ensures` spelling, grammar, effects,
-diagnostics, generic substitution, early-exit semantics, or any other Stage 8b
-language rule. It does not authorize a proof certificate, ProofFlow or DIAG-2
-architecture, general induction, arithmetic entailment, O11 Boolean
-composition, claim-ledger work, `deny-claims`, optimizer facts, or wfgrep
-performance work.
+Independently of the Stage 8a outcome, repair a present implementation gap
+against active DIAG-2. The active specification already requires the checked
+program to retain the exact ENT-4 derivation for every accepted subscript,
+every discharged ordinary-call goal, and every S11 fact of every counted
+statement, including S11 facts not used by a later query. This work may run in
+parallel with Stage 8a, remains required if Stage 8a stops, and must be terminal
+before Stage 8b.
 
-### Authority and task boundary
+Fold in only task 0049's bounded Stage 1 result. While the canonical entailment
+engine performs its existing closure and flow work, record canonical parents
+and exact roots for that complete required set. Cover source identity,
+invalidation, joins, contradiction, ordinary and counted loops, substitutions,
+generics, recursion, and root completeness. Record parents during the existing
+pass; do not rerun closure to reconstruct a proof. Measure parent nodes, bytes,
+proof depth, compile time, and peak memory on the frozen programs.
 
-This file is an AI proposal and grants zero execution authority. If the owner
-selects it, a separate commit changes only its status and stale proposal
-wording to `ACTIVE` without expanding the written scope. Only after that commit
-may the integration branch be refreshed and the next free task number be
-registered in another lifecycle commit. This proposal does not reserve a task
-number, create a planned or ongoing record, or authorize substantive work.
+This is an implementation of already-active semantics, not a new proof system.
+It changes neither accepted source nor runtime behavior and grants no new
+lowering authority. It creates no certificate format, portable identity,
+serialized artifact, ProofFlow, shadow verifier, or second semantic walk. If
+the complete required derivations cannot be represented compactly and exactly
+without one of those expansions, stop with the smallest missing case. Ordinary
+compiler tests are autonomous; any protected conformance change enters the
+separate approval gate.
 
-## Later dependency map — not execution authority
+## Workstream 8b — verified normal-return postconditions
 
-### Stage 8b — normal-return postconditions
+Stage 8b begins only after Stage 8a establishes both local witnesses, every
+caller gap has the fixed disposition below, and the trust prerequisite
+correctly retains the complete existing derivation set. General arithmetic,
+induction, solvers, recognizers, trusted writer assertions, general `set` fact
+transfer, and variable-offset S7 are outside the plan. Every new postcondition
+or operation-derived fact extends the same exact derivation representation
+rather than creating a parallel proof channel.
 
-Only after positive local Stage 8a evidence, owner disposition of every caller
-gap, and a separately owner-selected ACTIVE plan may Whitefoot propose the
-smallest `ensures` language that exposes verified normal-return facts to
-callers. That proposal must first dispose of every Stage 8a caller-prerequisite
-gap, including wfgrep's post-copy
-`length +wrap copied` transition and raw-DEFLATE's fourteen
-payload-to-outer-`set` transitions, by explicitly selecting a real source
-repair or a separately justified finite fact source for each class; local
-Stage 8a success alone is insufficient. Stage 8b owns result-summary identity,
-outcome selection, formal/result substitution, support, kills, and call-site
-establishment; none is selected by the Stage 8a mapping inventory. Any exact
-specification bytes still require the complete explanation, hard wait, digest
-approval, archive, and atomic activation workflow.
+Prepare the smallest normal-return postcondition design and implementation:
 
-### Stages 9a and 9b — claim ledger and strict partition
+- install only the measured bit-operation fact sources needed by `read_bits`;
+- adopt the truthful counted `append_slice` body and admitted-domain
+  requirement rather than the refuted unconditional contract;
+- define verified normal-return postconditions, including result/outcome
+  selection, body proof at every normal return, formal and result
+  substitution, support and kills, branch and early-return behavior, cleanup,
+  concrete generic instantiation, false-postcondition rejection, unsupported
+  boundaries, deterministic diagnostics, and caller fact establishment;
+- replace the fourteen payload-to-outer-`set` shapes with existing-language
+  value-producing matches, using one bounded immutable-delivery rule shared by
+  `value_match` and `value_if`: on each reaching `give` edge, substitute the
+  delivered copy atom for the receiving binding in an L0 relation, apply the
+  ordinary scope kills to every other support, and establish the substituted
+  relation only when every reaching edge yields that same typed relation. The
+  result relation is supported by the receiving binding plus the surviving
+  exact support. A non-atom delivery, a missing edge relation, or unequal arm
+  relations yields no result fact. This transfers the instantiated
+  normal-result fact without adding general assignment equality;
+- repair wfgrep's post-copy transition in source: bind the candidate next
+  length, take an explicit value-producing branch on
+  `next_length <= len(deref(report))`, give the candidate only on the
+  established true edge, and otherwise give the prior length exactly as the
+  existing failed-copy path leaves it unchanged; bind that result immutably
+  for the next append. Do not add variable-addition entailment or a trusted
+  system-result arithmetic premise; and
+- exercise the complete raw-DEFLATE and wfgrep call sequences through the one
+  ordinary compiler path with unchanged output, errors, cleanup, effects, and
+  required runtime checks.
 
-After Stage 8b is terminal, generate a deterministic read-only claim ledger
-before proposing an opt-in `deny-claims` partition. Neither stage is authorized
-here.
+This workstream is expected to change language semantics and protected
+conformance. Candidate design, implementation, ordinary tests, real-program
+repair, measurement, and independent review may proceed autonomously on task
+branches. Before any protected bytes land, present one combined owner packet
+with the exact full specification SHA/diff/impact/verifier results and the
+exact conformance before/after inventory, then hard-wait. Changed bytes or
+scope require renewed explanation and approval. Activation is atomic with the
+outgoing archive, digest chain, compiler, approved corpus, docs, and real
+consumer migration.
 
-## Stable specification and cross-stage invariants
+Stage 8b is terminal only when every mapped real caller sequence derives its
+intended fact. An unresolved or refuted mapping, a hidden runtime fallback, or
+a changed error, cleanup, effect, or output contract is a stop.
 
-- The active specification remains `spec/kernel-spec.md`; v0.27 has no
-  versioned sibling while active. Released archives are immutable.
-- One normal compiler path; no project-, function-, source-, or test-shaped
-  behavior.
-- Facts widen discharge only when normative entailment derives them. A
-  temporary hypothetical fact never becomes acceptance authority.
-- Expected failure is a value path; claims remain executed runtime backstops
-  for broken program invariants.
-- Protected material never changes without exact owner approval, and
-  unsupported capability never becomes source rejection.
-- Durable design decisions and rejected alternatives follow the
-  `mcts-mem-use` workflow only when a later selected plan changes them.
+## Workstream 9a — deterministic claim ledger
 
-## Direction completion boundary
+Run this workstream after Stage 8b so it describes the final fact sources,
+postcondition edges, and remaining claim population rather than a transitional
+compiler.
 
-Wfgrep remains parked until Stages 8a, 8b, 9a, and 9b are implemented end to
-end, covered by positive, negative, near-miss, and invalidation evidence,
-exercised by their named real programs, and recorded in the Direction Outline;
-the complete repository gate is green; and remaining claims and unsupported
-gaps are reported honestly. A reproduced Stage 8a stop condition returned for
-owner disposition is the only earlier terminal outcome.
+Expose a deterministic read-only claim ledger from the checked program. Reuse
+the trust prerequisite's exact derivation parents and retain only the additional
+observational used-premise links actually needed to connect a named claim to a
+reported obligation and provenance. For every remaining named claim the report
+includes stable source identity, name and predicate, justification, lifecycle
+disposition, the obligation or obligations it supports, the used derivation,
+and provenance. Ordering and counts must be identical across clean builds and
+complete for UTF-8, raw-DEFLATE, and wfgrep. Synthetic retained, redundant,
+refuted, kill, join, call, and loop controls challenge the mapping.
+
+This is ordinary compiler/tooling work and changes neither language acceptance
+nor lowering authority. It creates no serialized artifact, portable identity,
+replay protocol, second semantic engine, optimizer fact, or compliance
+baseline. If exact completeness requires re-analysis per claim, a second
+closure, guessed support, or a durable identity framework, stop and report the
+smallest gap. Any protected compliance change still enters its own owner gate.
+
+## Workstream 9b — opt-in strict no-claim partition
+
+Stage 9b begins only after Stage 9a deterministically enumerates the actual
+remaining claims and their transitive support.
+
+Design and implement the smallest opt-in `deny-claims` partition semantics.
+The marker is carried by a function declaration; its exact spelling is left to
+the later specification candidate. Each marked concrete function instance is
+one strict root. Its outgoing transitive closure contains every concrete user
+function instance reached by an ordinary call, each recursive strongly
+connected component, and the generated entry wrapper or adapter when the root
+has one. The closure does not flow upward into unrelated callers.
+
+One function may therefore be used by both ordinary and strict callers. It has
+one runtime body and ordinary acceptance remains unchanged; strict membership
+is an additional unasserted semantic rewalk and finite summary, not a second
+lowering or specialization. A call from outside into a marked root must prove
+that root's requirement in the caller's unasserted state. Calls within the
+strict closure are likewise judged unasserted, and their callees must have a
+successful strict summary.
+
+The closure's complete transitive claim ledger must be empty. Every checked
+direct claim counts, including one in a structurally unreachable arm. A finite
+may-claim fixed point propagates through ordinary calls, recursion, concrete
+generic instances, and generated boundaries. A direct claim rejects at its
+claim node; the first source-ordered call that imports a may-claim summary
+rejects at that call node. The exact rule id and payload are fixed by the later
+specification candidate, but those two ownership locations may not change.
+
+All protected obligations and ordinary required calls inside the partition are
+judged in the unasserted state: a body `check` may remain as an executed check
+for an unrelated invariant, but neither it nor a claim grants authorization.
+A real branch, proved requirement, verified normal-return fact, structural fact,
+or other non-asserted source may still discharge. Outside the opt-in partition,
+the existing claim lifecycle and runtime checks remain unchanged. This is not
+a global claim ban, a universal sole-trap-source law, or permission to erase
+explicit runtime checks.
+
+Prepare direct and transitive positive, negative, near-miss, recursion,
+adapter, generic, and bypass evidence, plus claim-free acceptance,
+claim-bearing rejection, and value-branch repair on a real path. This
+workstream is expected to require a second exact specification and protected
+conformance packet. Candidate work is autonomous; landing waits for the
+explanation, exact candidate SHA/diff/impact/verifier results, exact corpus
+before/after audit, and explicit owner approval.
+
+Stop if the partition cannot be finite and deterministic without a generalized
+effect/proof framework, if a transitive bypass remains, or if ordinary code's
+existing acceptance or required runtime behavior changes.
+
+## Cross-workstream invariants
+
+- The active specification remains sole language authority; tests and plans do
+  not select semantics.
+- There is one normal compiler path with no project-, function-, source-,
+  corpus-, or test-shaped exception.
+- No writer statement becomes trusted unchecked. A required runtime check is
+  removed only by the exact machine proof authorized by the active spec.
+- Expected external failure remains a value path. Claims remain named executed
+  runtime backstops for internal invariants outside an opt-in strict partition.
+- Real-program success, error, cleanup, ownership, effect, and byte oracles are
+  preserved unless a later material plan revision explicitly says otherwise.
+- Specification and protected-conformance changes always use their separate
+  explanation-first approval workflows; this plan never preapproves their
+  bytes.
+- Bounded subordinate compiler defects, diagnostics, probes, ordinary tests,
+  docs, integration, and closure may proceed autonomously when they preserve
+  this strategy and these boundaries.
+
+## Approval checkpoints
+
+The expected successful path has three owner decisions, not one decision per
+task:
+
+1. approve this high-level plan once;
+2. after Stage 8a and the trust prerequisite, approve Stage 8b's exact
+   specification plus protected-conformance activation packet; and
+3. after Stage 9a, approve Stage 9b's exact specification plus
+   protected-conformance activation packet.
+
+Stage 8a, the existing-DIAG-2 repair, Stage 9a, ordinary implementation and
+tests, real-source repair, documentation, integration, task lifecycle, and
+closure require no further owner approval while they stay inside this plan.
+Splitting an exact protected batch creates another protected checkpoint; a
+material strategy change creates a revised high-level-plan checkpoint.
+
+## Explicit exclusions
+
+Task 0049's complete shadow authorization inventory,
+`EntailmentApprovedProgram` lowering capability, ProofFlow extraction, shadow
+or independent verifier, capability-issuer replacement, and closure
+performance work are separate architectural directions and are not required
+by this plan; only its bounded Stage 1 parent-retention repair is included.
+Also excluded are serialized proof artifacts, cache/replay,
+portable proof identities, SMT authority, general theorem or arithmetic
+frameworks, general loop induction, O11 Boolean composition, language-wide
+claim removal, Stage 9 performance work, and new wfgrep optimization.
+
+## Verification and terminal acceptance
+
+Each task runs focused checks and the complete gates owed by its touch set.
+Each installed language stage additionally verifies archive identity, chained
+activation digests, grammar and generated data, exact protected differentials,
+independent adapter totals, and the same frozen real-program oracles.
+
+The successful terminal boundary requires:
+
+- Stage 8a's two local witnesses, hostile controls, and complete 14/20 caller
+  inventories;
+- the trust prerequisite's complete exact derivations for every accepted subscript,
+  discharged call goal, and S11 fact, with bounded measured cost and no second
+  authority;
+- Stage 8b's verified postconditions working through every mapped real caller,
+  with no unresolved prerequisite or behavior drift;
+- Stage 9a's complete deterministic claim ledger, with bounded overhead and no
+  second authority;
+- Stage 9b's finite transitive strict-partition semantics with no bypass and no
+  change to ordinary claim behavior;
+- positive, negative, near-miss, invalidation, recursion, generic, entry, and
+  facts-on/off evidence appropriate to each installed capability;
+- the complete repository gate and independent conformance report green or
+  carrying only explicitly recorded unchanged unsupported boundaries; and
+- roadmap, compiler documentation, canonical acceptance evidence, durable
+  design memory where a real decision changed, and all task records reconciled
+  once at closure.
+
+Remaining ordinary claims are reported honestly; terminal does not mean every
+claim has disappeared or that claim is the language's sole possible trap.
+After closure, `PROOF-8` is terminal and the existing `CAND-8` wfgrep checkpoint
+is unparked. Beginning the next wfgrep undertaking requires a new high-level
+plan rather than extending this one silently.
+
+An honest Stage 8a prerequisite failure is an earlier terminal stopped result
+after the independent DIAG-2 trust repair has completed. Any later blocker that
+requires a material change to this objective, strategy, principal consumer
+boundary, acceptance, risk, or stop conditions has the same disposition. The
+lead records the evidence and returns a revised `PROPOSED` plan instead of
+weakening the gate or accumulating side tasks around it. A stopped outcome
+does not mark `PROOF-8` complete or unpark `CAND-8`.
+
+## Authority after selection
+
+If the owner approves this proposal, a separate commit changes it to `ACTIVE`
+without expanding the strategy. Only then may the lead register the next free
+planned or ongoing task. Workstreams may be decomposed, parallelized where
+their premises allow, reordered within the written dependencies, and supported
+by bounded side tasks without further plan approval. Material direction change
+returns here; exact specification and protected-conformance bytes always stop
+at their own approval boundaries.

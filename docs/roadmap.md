@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 31 (Stage 5b bounded provenance gate terminal; Stage 8a awaits owner selection)
+Revision: 32 (Stage 5b terminal; remaining PROOF-8 high-level plan proposed)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -21,10 +21,11 @@ This file is the owner-facing map of Whitefoot's live directions. It answers:
 - what is missing before a direction can advance.
 
 It does **not** choose the current execution order. Candidate projects determine
-when a direction matters. `current-plan.md` contains the only execution
-proposal; after owner selection, it becomes the rolling plan for that one
-milestone. A project can expose a missing capability, but cannot by itself
-change the language or justify a project-shaped compiler special case.
+when a direction matters. `current-plan.md` contains the only high-level
+execution proposal or approved plan; after owner selection, it may coordinate
+several workstreams and many planned, ongoing, and done tasks inside one
+approved undertaking. A project can expose a missing capability, but cannot by
+itself change the language or justify a project-shaped compiler special case.
 
 Each item has one canonical home. Other directions link to its ID instead of
 copying its status. Tags are scanning aids. The `Current` sentence is this
@@ -207,7 +208,7 @@ creating writer trust or weakening the checked safety envelope.
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
 `[current: items 1–4, counted range, atomic requires goals, and bounded provenance gate]`
-`[next: owner selection of Stage 8a]`
+`[next: owner selection of the remaining PROOF-8 high-level plan]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -293,9 +294,11 @@ creating writer trust or weakening the checked safety envelope.
   installed adapter is `Pass=409 Fail=1 Skip=13`, with only the retained OWN-3
   unsupported boundary. Commit `74512309` makes the live design memory
   truthful and passes MCTS lint; task 0050 is terminal.
-- **Missing / next:** Stage 8a awaits separate owner selection and has no task
-  number or execution authority. No successor work is registered; wfgrep
-  remains parked until the complete selected PROOF-8 sequence is terminal.
+- **Missing / next:** the one high-level completion proposal covers Stage 8a,
+  the existing DIAG-2 trust repair, Stage 8b, Stage 9a, and Stage 9b; it awaits
+  owner selection and has no task number or execution authority. No successor
+  work is registered; wfgrep remains parked until the complete selected
+  PROOF-8 sequence is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
