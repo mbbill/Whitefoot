@@ -582,3 +582,58 @@ The complete native adapter over the unchanged 407 prior identities plus
 sixteen additive PRV cases reports `Pass=409 Fail=1 Skip=13`. The sole failure
 remains the pre-existing OWN-3 `RegionsAndBorrows` unsupported boundary; the
 additive cases all pass and do not hide that retained result.
+
+## Post-activation v0.27 confirmation (2026-08-10)
+
+Activation commit `5ab45aa73a1a713e994773d2c04c34400795950a` installed
+the exact-approved v0.27 bytes at `spec/kernel-spec.md`, SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
+and archived the byte-identical outgoing v0.26 bytes at
+`spec/kernel-spec-v0.26.md`, SHA-256
+`18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476`.
+The installed dark-checker probe used the same all-claims-blinded transform,
+function order, obligation order, claim order, and denominators as candidate
+review. Its frozen source identities were
+`55ae93bae65216e495a0dc4f87ef245b25c8731a807f8b27d85a244b4c0095e1`
+for `utf8parse.wf`,
+`a0a493bb6dd23c542a22e0fee775a5eabedc71d10fd91084cf90637447de03e1`
+for `sha256_abc.wf`, and, in the frozen four-source compilation order,
+`raw_deflate.wf`
+`5e87885a519de539736b0ad6a619a2c92bdf659623e3f39ded31116e63adb585`,
+`raw_deflate_dynamic.wf`
+`2606ae0b81039b0ecc787df2fa9cb87279ba44663744540d48f6abeea984d4c5`,
+`raw_deflate_dynamic_decode.wf`
+`72129284c60a6eacbe2bb86d7d3a82375ed2270ea457c49d8e1db95064fc960f`,
+and `raw_deflate_boundary.wf`
+`3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`.
+The installed conformance manifest identity is
+`04d2562f41eecbd3af5770c96ccad9a4fcfa8cd9f9d849c414f1cccbb89d072d`.
+
+The installed results exactly reproduce the reviewed candidate, in
+`total / proven / claim-supported / baseline-undischarged` form:
+
+- utf8parse: `33 / 22 / 11 / 0`;
+- SHA-256: `9 / 9 / 0 / 0`;
+- deflate, full denominator: `29 / 24 / 5 / 0`; and
+- deflate, dynamic-path denominator: `24 / 19 / 5 / 0`.
+
+The boundary-fed unit retains twelve claims: seven are load-bearing, five are
+non-rejecting CLM-2 redundancy advisories, and none is refuted. All thirteen
+formerly claim-supported sites remain authorized by their real value branches
+with S2 and S3 absent. The three `store_dynamic_length` callers continue to
+prove the exact instantiated requirement, including in the unasserted and
+S4-blinded rewalks; no retained prologue or hidden assertion supplies the
+protected-leaf authorization.
+
+The focused provenance suite passes 41/41 and the frozen raw-DEFLATE runtime
+oracle passes 3/3. The separately invoked native adapter reports
+`Pass=409 Fail=1 Skip=13`; its sole failure remains the pre-existing OWN-3
+`RegionsAndBorrows` unsupported boundary. The complete `make check` gate is
+green with 698/698 library tests, 30/30 real-program tests, 131/131 rule
+coverage, and all 19 activation-chain entries verified. Commit
+`7451230944524b03f6b95900b46e129e9dab809e` records the installed bounded
+provenance decision in the live design memory, whose lint also passes.
+The temporary in-crate probe and its host-module declaration were removed,
+their exact pre-probe bytes were restored, the detached activation worktree
+and scratch artifacts were deleted, and both the activation tree before
+removal and the shared tree after the run had clean worktree and index state.

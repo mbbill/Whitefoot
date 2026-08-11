@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 30 (exact v0.27 provenance activation landed; installed closure pending)
+Revision: 31 (Stage 5b bounded provenance gate terminal; Stage 8a awaits owner selection)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -206,8 +206,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, and exact v0.27 provenance activation landed]`
-`[next: installed stage-5b validation, design-memory update, and task closure]`
+`[current: items 1–4, counted range, atomic requires goals, and bounded provenance gate]`
+`[next: owner selection of Stage 8a]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -282,18 +282,20 @@ creating writer trust or weakening the checked safety envelope.
   adds the one `store_dynamic_length -> Result` change and its three
   propagations, removes only the four now-unexhibited `traps` categories, and
   adds sixteen conformance cases without changing any existing case or manifest
-  row. The
-  terminal-reviewed preactivation tree reproduced UTF-8 `33/22/11/0`, SHA-256
-  `9/9/0/0`, complete DEFLATE `29/24/5/0`, dynamic DEFLATE `24/19/5/0`, twelve
-  remaining claims, and thirteen former claim-supported sites established by
-  real branches. Those are explicitly preactivation results: the atomic
-  activation has landed, while its installed full validation, live MCTS
-  update, and task 0050 closure remain pending.
-- **Missing / next:** complete every installed frozen matrix, runtime oracle,
-  adapter, compiler, and repository gate; update the live design memory; and
-  close task 0050 only on green closure evidence. Stage 8a is still only a
-  later dependency map in the ACTIVE plan and has no execution authority;
-  wfgrep remains parked.
+  row. Activation commit `5ab45aa7` installed those exact bytes and the
+  byte-identical archive. Its installed rerun reproduces UTF-8 `33/22/11/0`,
+  SHA-256 `9/9/0/0`, complete DEFLATE `29/24/5/0`, and dynamic DEFLATE
+  `24/19/5/0`; twelve claims remain, seven load-bearing and five redundant,
+  with no refuted claim, and all thirteen migrated sites discharge through
+  real branches. Focused provenance is 41/41 and the frozen raw-DEFLATE oracle
+  is 3/3. The complete gate is green with 698/698 library tests, 30/30 real
+  programs, 131/131 rule coverage, and all 19 activation-chain entries. The
+  installed adapter is `Pass=409 Fail=1 Skip=13`, with only the retained OWN-3
+  unsupported boundary. Commit `74512309` makes the live design memory
+  truthful and passes MCTS lint; task 0050 is terminal.
+- **Missing / next:** Stage 8a awaits separate owner selection and has no task
+  number or execution authority. No successor work is registered; wfgrep
+  remains parked until the complete selected PROOF-8 sequence is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -330,14 +332,13 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.26 run is `Pass=393 Fail=1 Skip=13`; the one
-  runnable divergence is `own3-pos-outlives-store`, while the thirteen pending
-  rows remain explicit toolchain gaps. The terminal-reviewed preactivation
-  v0.27 tree is `Pass=409 Fail=1 Skip=13`, with the same sole failure; the
-  installed-v0.27 rerun remains part of stage-5b closure. This adapter is
-  deliberately `#[ignore]` and invoked separately; `make check` does not
-  silently include it. The earlier 242/123 run is historical attribution
-  evidence, not current status.
+  compiler. The installed-v0.27 run is `Pass=409 Fail=1 Skip=13`; the one
+  runnable divergence is `own3-pos-outlives-store` at the retained
+  `RegionsAndBorrows` unsupported boundary, while the thirteen pending rows
+  remain explicit toolchain gaps. This adapter is deliberately `#[ignore]` and
+  invoked separately; `make check` does not silently include it. The earlier
+  v0.26 `393/1/13` and 242/123 runs are historical attribution evidence, not
+  current status.
 - **Missing / next:** preserve the independent pass/fail/skip report while the
   protected OWN-3 wording question remains open. Any expectation, source, or
   status change remains owner-protected and must report the before/after sets.

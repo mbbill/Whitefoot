@@ -1,321 +1,326 @@
 # Current Plan
 
-Status: ACTIVE (owner selection 2026-08-10): finish installed validation and
-closure of the exact-approved and activated provenance gate as stage 5b of the
-selected obligation-discharge direction. This plan authorizes only the
-remaining stage-5b work written below; it does not authorize stage 8a.
+Status: PROPOSED (AI proposal 2026-08-10): measure two local
+proof-feasibility prerequisites for future normal-return postconditions and
+audit, without closing, their real caller prerequisites as Stage 8a of the
+selected obligation-discharge direction.
 
-Derived from: [Direction Outline revision 30](roadmap.md), item `PROOF-8`
-(primary), with `BOUND-1`, `VERIFY-1`, and `VERIFY-2` as boundary and evidence
-constraints. `CAND-8` remains the selected flagship but stays parked until the
-complete obligation-discharge direction reaches its completion boundary.
+This proposal authorizes no execution, research run, task registration,
+specification change, compiler change, source migration, or protected-material
+change. Owner selection must change this file to `ACTIVE` in a separate plan
+selection commit before any work below begins. Stage 8b, stages 9a/9b, and
+further wfgrep work remain unauthorized.
 
-The required complete plain-language Chinese explanation and hard wait are
-complete. On 2026-08-10 the owner explicitly approved exact v0.27 digest
-`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`
-with the protected consumer, additive-conformance, effect-row, and outgoing
-v0.26 archive scope stated in that explanation.
+Derived from: [Direction Outline revision 31](roadmap.md), item `PROOF-8`
+(primary), with `VERIFY-1` and `VERIFY-2` as safety and evidence constraints.
+`CAND-8` remains the selected flagship but stays parked until the complete
+obligation-discharge direction reaches its completion boundary.
 
-## Direction and current milestone
-
-Exact-approved v0.27 is active at `spec/kernel-spec.md`, SHA-256
-`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`;
-the exact outgoing v0.26 bytes are archived at
-`spec/kernel-spec-v0.26.md`. It preserves task 0048's atomic typed requirement
-goals and activates the retained requirement-to-protected-leaf bridge as the
-bounded PRV-1/PRV-2/PRV-3 explicit-dataflow rejection. This atomic activation
-packet also contains the exact approved consumer, effect-row, and additive
-conformance changes. Installed acceptance, the complete gate, the live MCTS
-update, and task 0050 closure remain to be completed under this plan.
-
-## Current step — installed stage 5b validation and closure
+## Proposed milestone — bounded postcondition proof feasibility
 
 ### Why
 
-Before v0.27 activation, the named claims distinguished machine-proven
-obligations from checked writer assertions, but not a local invariant failure
-from malformed external input. In the frozen boundary-fed DEFLATE unit, the
-held rule classified nineteen of thirty-three protected subjects as external.
-Six already discharged without assertion evidence; thirteen obligation nodes
-under eleven claims instead turned externally controlled failure into an abort.
+Future Stage 8b may expose verified normal-return facts to callers, but two
+real helpers first need local facts the active v0.27 entailment fragment does
+not establish. `read_bits` needs a bit-mask bound on its successful result.
+`append_slice` needs a truthful bound on its returned filled length. Stage 8a
+does not claim that those two local facts suffice for either real caller
+sequence: it separately audits every mapped call prerequisite and records any
+remaining caller-side gap before Stage 8b can be proposed.
 
-Task 0046 fixed the held rule's explicit-offset and payload-projection defects
-without adding implicit-flow analysis. Stage 7 then made a function requirement
-an ordinary caller proof obligation and retained finite bridge metadata, so a
-helper can no longer hide the same protected leaf behind a runtime callee
-prologue. Exact-approved v0.27 therefore activates that bounded
-explicit-dataflow policy and migrates only the real externally controlled
-failures it identifies to value paths.
+This stage measures whether two deliberately small structural additions and an
+existing counted-range form suffice. It does not design or implement
+`ensures`, select syntax, or leave a production fact source behind. A negative
+result is useful evidence: it stops Stage 8b instead of hiding general
+induction, arithmetic entailment, a solver, or a source-shape recognizer inside
+the postcondition work.
+
+The historical unconditional target `append_slice result <= capacity` is
+false: when `filled > len(deref(destination))` and `len(text) = 0`, the current
+body returns `filled`. This proposal therefore selects the truthful future
+boundary `filled <= len(deref(destination))` and measures the result fact only
+inside that admitted domain. The proof-only scratch helper must express that
+boundary with this exact existing-language clause and trap payload:
+
+```whitefoot
+requires {
+  let capacity = len(deref(destination));
+  let admitted = ile(filled, capacity);
+  check admitted else trap "append filled exceeds destination";
+}
+```
+
+It does not select a conditional postcondition or change invalid-domain
+runtime behavior.
 
 ### Do
 
-1. Re-derive the candidate from current authority, not historical wording.
-   Use active v0.26, task 0046's held design review, and the current v0.26
-   requirement bridge as inputs. The held candidate in
-   `governance/spec-evolution/provenance-gate-candidate.md` remains evidence,
-   not specification text, and its v0.24-era anchors must never be fuzzy-patched
-   into the stable file.
+1. Freeze the installed authority and real witnesses before probing:
 
-2. Freeze the current consumer before changing semantics. The compilation-unit
-   order and SHA-256 identities are:
+   - active v0.27 at `spec/kernel-spec.md`, SHA-256
+     `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`;
+   - the four-source raw-DEFLATE unit, in compilation order:
+     `raw_deflate.wf`
+     `5e87885a519de539736b0ad6a619a2c92bdf659623e3f39ded31116e63adb585`,
+     `raw_deflate_dynamic.wf`
+     `2606ae0b81039b0ecc787df2fa9cb87279ba44663744540d48f6abeea984d4c5`,
+     `raw_deflate_dynamic_decode.wf`
+     `72129284c60a6eacbe2bb86d7d3a82375ed2270ea457c49d8e1db95064fc960f`,
+     and `raw_deflate_boundary.wf`
+     `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`;
+   - `wfgrep.wf`, SHA-256
+     `a1e49bcb9ffd353e707d4bbafe1eb4a2b634b9177c6916b2ff7b503ec5dff0bd`;
+   - the fourteen real calls to `read_bits`, the twelve wfgrep calls and eight
+     raw-DEFLATE boundary calls to `append_slice`, their output/error oracles,
+     the current 423 conformance cases, all existing verdicts and rows, and all
+     30 coverage annotations.
 
-   - `raw_deflate.wf` —
-     `c8fa0d58301e5346041c1886eaa3e277f9d3926212b6a5420e52b22eada300f0`;
-   - `raw_deflate_dynamic.wf` —
-     `cca35bbd3c5985c1e6753e0b0ca5311be7287d2021c01b46f14506b06734fcee`;
-   - `raw_deflate_dynamic_decode.wf` —
-     `03bab2ab19d9087bdd4fc3edebb060499a54d388623cab695f8bbdc10cd0ac9c`;
-   - `raw_deflate_boundary.wf` —
-     `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`.
+2. Establish the negative baseline before adding hypothetical facts:
 
-   Freeze the current conformance manifest SHA-256
-   `65393c118817f207ef268a35d8b67931409b30c7c04ea3a2f2ffc7c41b80c73a`,
-   all 407 existing case identities and rows, and all 30 rule-coverage
-   annotations. Additive PRV cases are allowed; changing any existing case or
-   manifest field stops for exact protected review.
+   - show that active v0.27 cannot derive the exact local successful-result
+     bound `value < mask_high` at the `read_bits` return;
+   - enumerate the fourteen caller mappings from the returned `Ok(value:)`
+     payload and formal `count` to their exact actuals, and show that v0.27 has
+     no normal-result carrier that could publish a callee-local term or
+     substitute a result relation at those callers; additionally reproduce the
+     common source seam at all fourteen calls: the `Ok` payload binder is
+     assigned with `set` into a predeclared outer binding, active ENT-3 has no
+     fact transfer for that `set` right-hand side, the assignment kills the
+     outer binding's prior facts, and arm/region exit kills the inner binder's
+     support, so even a hypothetical fact attached to the `Ok` binder does not
+     reach the later outer use;
+   - show that the ordinary `append_slice` loop carries no accepted fact from
+     one mutation of `at` to the next or to its return;
+   - audit all twenty mapped `append_slice` calls under the hypothetical result
+     fact alone, without installing it, and reproduce the known wfgrep
+     prerequisite gap: after the prefix append in `report_failure`, the
+     prior `length <= len(deref(report))` relation correctly survives the
+     `host_copy_bytes` element write under ENT-5, and the success arm
+     establishes only `copied <= 256`; then
+     `set length = length +wrap copied` kills the old scalar `length` relation
+     and has no variable-offset S7 equality to rebuild it, so the separator
+     append cannot prove `length <= len(deref(report))` from the candidate
+     summary and active v0.27 facts; and
+   - execute the `filled > capacity && len(text) = 0` counterexample and retain
+     its exact returned value, proving that no unconditional result bound may
+     be proposed.
 
-3. Draft the smallest complete v0.27 provenance judgment at the stable
-   `spec/kernel-spec.md` path. The candidate may add only the closed PRV-1,
-   PRV-2, and PRV-3 rules needed here. It adds no token, terminal, grammar
-   production, source construct, operation row, trusted assertion, optimizer
-   assumption, or writer-spelled provenance annotation.
+3. Test exactly two unsigned bit-operation fact sources for `read_bits` in a
+   temporary dark-checker harness:
 
-4. PRV-1 is one finite two-point explicit-dataflow classification:
+   - after `let result = iand(left, right)`, independently derive
+     `result <= left` or `result <= right` only when that corresponding operand
+     is an [ENT-2] term or checked constant; and
+   - after `let high = ishl.wrap(one, count)` for an unsigned integer `T`,
+     derive `high != 0_T` only when `one` is a checked unsigned constant whose
+     mathematical value is exactly one. A typed literal one and a named const
+     of the same checked value are positive forms; a non-term expression is
+     not converted into a term merely because it evaluates to one.
 
-   - process-entry inputs are external, while system results and writes follow
-     one closed component table: `args_count` and `host_bytes_len` are
-     external; both `arg_get` payloads are external; `host_copy_bytes` has an
-     internal `Ok(value:)`, external `Err(error:)`, and external
-     `destination`; both `host_utf8_len` payloads are external;
-     `host_copy_utf8` has an internal `Ok(value:)`, external `Err(error:)`, and
-     external `destination`; both `relative_path` and both `open_read`
-     payloads are external; `read_once` has an internal `ReadBytes(count:)`,
-     external `ReadFailed(error:)`, and external `destination` and `file`;
-     `write_once` has an internal `Ok(value:)`, external `Err(error:)`, and
-     external `output`; and `exit_status` is internal. No unlisted component
-     inherits an external class by association;
-   - direct enum payload projections are tracked separately and nested payload
-     joins conservatively seed every direct projection;
-   - storage is per binding and per whole root, flow-insensitive and monotone;
-   - a place read joins its root and every explicit subscript-offset operand,
-     field selection preserves that class, and `len` remains internal;
-   - checked-operation results, propagation, returns, user-call results, and
-     write components compose through one finite least fixed point; and
-   - branch/control dependence, write-address dependence, path-sensitive
-     storage, recursive payload paths, and implicit-flow analysis are absent.
+   Use only existing scalar closure and the existing subtraction fact for
+   `mask = high -wrap 1_T` to test whether
+   `value = iand(hold, mask)` yields `value < high` at the successful return.
+   Record that relation as a candidate normal-result fact only for
+   `Ok(value:)`; `Err(error:)` carries none. Do not install a caller summary or
+   substitution rule, add an arithmetic term, decompose a Boolean, invoke a
+   solver, or add a source-, function-, corpus-, or test-shaped recognizer.
 
-5. PRV-2 retains finite parameter-datum, result, write, and concrete
-   protected-leaf identities plus deterministic witnesses chosen only after
-   convergence. Compose them with v0.26's requirement occurrences and
-   subject-only bridges. Do not replace exact goal identity with a recognizer,
-   mention-all-parameters rule, whole-goal support rule, or a second proof
-   language.
+4. Challenge the bit candidate with exact negative and near-miss controls.
+   Exercise unsigned `u8`, `u16`, `u32`, and `u64`; for each width `W`, test
+   counts `{0, 1, W-2, W-1, W, W+1}`. Test the corresponding signed types; a
+   left shift operand other than typed one, including zero, two, and the type's
+   maximum; `ior` and `ixor`; and an arbitrary shifted value. Swapping the two
+   `iand` operands must preserve both unsigned bounds.
 
-6. PRV-3 gates only the constrained subject of a protected obligation:
+   Invalidation is per derived bound, not per operation origin. Mutating the
+   operand named by `result <= left` kills that bound but retains
+   `result <= right`; mutating the right operand does the converse; mutating
+   `result` kills both. The real `read_bits` mutation of `state.hold` after the
+   `iand` is a positive control: it kills the unused hold bound while
+   `value <= mask` survives to the return. An unrelated mutation also preserves
+   both. Mutating `high` kills `high != 0_T`; mutating `count` after `high` was
+   bound preserves that disequality because its support is only `high` and
+   zero. The `Err` arm publishes neither bound. Every negative candidate fails
+   by absence of the hypothetical fact, never by changing source acceptance.
 
-   - an internal subject keeps the existing entailment judgment;
-   - an external subject must discharge in the unasserted state with S2/S3
-     removed, so a preceding `check` or `claim` cannot authorize it;
-   - a real value branch may establish the needed fact and pass;
-   - an external value used only as a bound, base, or unrelated goal operand is
-     not the constrained subject and does not trigger rejection; and
-   - call-site gating follows the v0.26 bridge fixed point: an external actual
-     protecting a downstream leaf requires the complete instantiated atomic
-     goal to discharge in the caller's unasserted state. Two-hop and recursive
-     bridges converge; a seedless cycle remains empty.
+5. Test one existing-structure route for `append_slice`, only in throwaway
+   proof and runtime variants:
 
-7. Treat real process entries explicitly. Command inputs are PRV-1 external.
-   The compiler-owned entry check and the body's S4 axiom may not launder an
-   external bridged protected leaf: that definition is checked with the
-   retained S4-blinded entry rewalk and must use a value branch in the body.
-   Entry requirements unrelated to a protected leaf retain v0.26's exactly-once
-   wrapper behavior. A source call to the entry follows ordinary call-site
-   gating. Do not implement or simulate a foreign adapter; the existing GATE
-   boundary remains unsupported.
+   - put the proof-only variant in a standalone scratch compilation unit with
+     a valid noncalling entry; give the helper the truthful existing-language
+     requirement clause fixed above and analyze its body and returns without
+     bypassing call checking or treating any real caller as accepted;
+   - replace the ordinary mutation loop with the existing counted range
+     `for @append at in filled..capacity`;
+   - in each iteration compute and bind `taken = at -wrap filled`, without
+     requiring or claiming a variable-subtraction fact; return `at` when
+     `taken >= len(text)`, and otherwise copy `text[taken]` into
+     `destination[at]`; and
+   - return `capacity` at range exhaustion.
 
-8. Implement the judgment as one ordinary safe-Rust semantic path over the
-   checked metadata already installed in v0.26. Source acceptance and
-   diagnostics consume the finite fixed point directly. Facts-on and facts-off
-   compilation have identical acceptance and required runtime behavior. Do not
-   special-case a project, function, claim name, source path, or test identity.
+   Measure whether the counted-range interior fact proves `at < capacity` on
+   the early return and the value branch proves `taken < len(text)`. The
+   exhaustion path returns `capacity` directly; it neither relies on nor
+   invents a binder-equals-upper postcondition after the counted construct.
+   Record `result <= len(deref(destination))` as the candidate normal-result
+   fact at each proved return. Enumerate the exact result, destination, and filled
+   mapping at all twenty real calls, but do not install a result summary,
+   substitute the relation, establish a caller fact, or change call acceptance.
 
-9. Migrate only the frozen real failures the gate identifies, with no error
-   choice left to the executor. Remove the eleven gated claim declarations and
-   map them exactly as follows:
+6. Prove the counted-range body behaviorally equivalent to the current body on
+   its admitted domain. The runtime variant uses that counted body but retains
+   the current signature without a requirement, so this stage does not need a
+   caller-summary bypass to compile either real program. Exhaustively test
+   capacity and text length in `0..=8` and every filled value in
+   `0..=capacity`. For each tuple, compare returned length and every destination
+   byte with destination fills `0x00` and `0xa5`, and text patterns all-`0x00`,
+   all-`0xff`, and ascending byte ordinals. Then run exactly
+   `cargo test --manifest-path compiler/Cargo.toml --test programs wfgrep`
+   (9/9) and
+   `cargo test --manifest-path compiler/Cargo.toml --test programs raw_deflate`
+   (3/3), preserving every existing status and byte oracle. Inputs violating
+   the selected requirement are caller rejections in a future design and
+   receive no equivalence claim.
 
-   - `stored_header_zero_in_input`, `stored_header_one_in_input`,
-     `stored_header_two_in_input`, `stored_header_three_in_input`, and
-     `stored_copy_in_input` take the existing `Truncated` value path;
-   - `length_symbol_in_tables` takes `InvalidHuffmanCode`;
-   - `match_copy_in_history` takes `InvalidDistance`;
-   - `order_slot_in_offsets`, `destination_in_symbols`, and
-     `ordered_in_symbols` take `InvalidHuffmanTree`; and
-   - `distance_position_in_lengths` takes `InvalidHuffmanTree` inside a changed
-     `store_dynamic_length -> Result<unit, InflateError>`. Its three call sites
-     in `decode_dynamic` use ordinary `propagate` bindings and do not duplicate
-     the guard or move it into another requirement.
+7. Keep the experiment bounded and removable. A temporary in-crate probe may
+   use the production resolver, type/effect checker, checked representations,
+   and entailment machinery, but it must be deleted after the run and every
+   host-file hash restored. No tracked specification, compiler, source,
+   conformance, MCTS, or generated byte may remain changed. Append the exact
+   measurements and minimal reproducers to the existing obligation-discharge
+   acceptance record only after the run; do not create a new framework or
+   evidence bundle.
 
-   Exact [EFF-2] closure removes only the now-unexhibited `traps` category from
-   four rows: `store_dynamic_length` remains `reads('d), writes('l 'd)`;
-   `decode_length` remains `reads('s 'i), writes('s)`; and `copy_distance` and
-   `decode_fixed` each remain `reads('s 'i 'o), writes('s 'o)`. The latter
-   three removals are the owner-approved 2026-08-10 amendment forced by two
-   independent migrations: the first two functions lose their sole trapping
-   claims and `decode_fixed` then loses the corresponding callee contribution.
-   `decode_dynamic` keeps its independently justified row, no fifth row
-   changes, and all new normal/error cleanup edges are checked explicitly.
-   Preserve every other effect judgment, every successful output, and every
-   stock/boundary/truncated/malformed/oversize/closed-output oracle.
-
-10. Update specification-derived data, diagnostics, conformance coverage,
-    compiler documentation, writer guidance, the Direction Outline, and design
-    memory in the same activated slice. The MCTS tree currently records held
-    metadata with no rejection; activation must make its live Items truthful
-    and preserve any real superseded alternative through the skill workflow.
-
-11. Follow the complete specification workflow. Prepare the v0.27 candidate at
-    `spec/kernel-spec.md` and, in the same uncommitted reviewable change before
-    approval, create `spec/kernel-spec-v0.26.md` as a byte-identical copy of the
-    outgoing stable bytes. Hash and independently review both files, failing if
-    the archive path is already occupied. The prepared archive and candidate
-    remain non-authoritative and uncommitted until exact approval; an approved
-    atomic activation lands the archive and stable candidate together.
-    Independently review normative closure, accepted-set impact, compiler
-    implementation, protected boundaries, real-program migration, derivation,
-    and active pins. Then give the owner the required Chinese explanation and
-    exact digest, stop, and wait. No approval-chain or activation-state byte is
-    written before that response.
+8. Report proof dispositions and deterministic witnesses for the two local
+   normal-return goals and every negative canary. Separately report the exact
+   fourteen and twenty caller mapping inventories as non-deriving Stage 8b
+   inputs, including each mapped caller's future requirement disposition when
+   only the candidate result fact is assumed. Classify each mapped requirement
+   as `discharged` or `unproved`; an unexpected refutation is a blocker. The
+   audit must identify both pre-registered seams: every raw-DEFLATE
+   `Ok`-binder-to-outer-binding `set`, and wfgrep's `length +wrap copied`
+   transition as at least one `unproved` append premise. It may report more. Do
+   not call any mapping a proof, use one for acceptance, claim either real
+   consumer sequence feasible, or treat a positive local result as authority
+   to begin Stage 8b. Record
+   compile-time delta as a bounded measurement only; do not infer or build a
+   certificate architecture from it. Task 0049's proof-certificate research
+   supplies no production authority to this plan.
 
 ### Verify and accept
 
-- Before source migration, reproduce the held v0.26 matrix exactly: 33
-  protected obligations and 23 claim declarations; 19 external subjects; six
-  unasserted-state discharges; 13 rejected obligation nodes under eleven
-  claims; 14 internal subjects; canonical Huffman result 3/3; and diagnostic
-  projection 14 rejecting calls / 24 external actual atoms.
-- Preserve the frozen negative boundary controls: wfgrep 0/8 gated claims;
-  `run-sysfile-multichunk` 0/4; and each too-small/invalid copy control 0/1.
-- After the value-path migration, all-claims-blinded acceptance must be UTF-8
-  `33/22/11/0`, SHA-256 `9/9/0/0`, complete DEFLATE `29/24/5/0`, and dynamic
-  DEFLATE `24/19/5/0` in
-  `total/proven/claim-supported/baseline-undischarged` order. The boundary-fed
-  unit has 12 remaining claim declarations. Thirteen formerly claim-supported
-  sites are authorized by real branches, never a retained prologue or hidden
-  assertion.
-- Exercise external+branch accept, external+check reject,
-  external+claim reject, internal+claim accept, external-only-bound accept,
-  allocation-equality call accept, nonexact-goal reject, direct/two-hop/
-  recursive/mutual/seedless bridges, payload sibling isolation, read-offset
-  propagation, the retained control/write-address non-propagation boundary,
-  and an entry external bridged-requirement rejection.
-- Keep every pre-existing protected case byte and manifest field unchanged.
-  New PRV cases and coverage rows are additive. The adapter baseline remains
-  `Pass=393 Fail=1 Skip=13` for existing identities, with only the retained
-  OWN-3 unsupported failure; additive cases report their own dispositions and
-  never hide that baseline.
-- Verify previous-to-candidate and archive-to-stable native grammar paths,
-  generated tables, specification integrity, exact diagnostics, focused
-  semantic/lowering/backend tests, facts-on/facts-off equivalence, the complete
-  adapter, the frozen four-source consumer, `make -C compiler check`,
-  `make check`, and MCTS lint.
-- Acceptance requires exact owner approval and atomic v0.27 activation,
-  installed reruns of every frozen matrix and runtime oracle, no unreviewed
-  protected drift, a green complete gate, truthful design memory, and terminal
-  task closure before stage 8a begins.
+- The frozen hashes, call counts, conformance identities, and runtime oracles
+  match before and after the temporary run.
+- The negative baseline reproduces: neither exact result goal is available in
+  active v0.27, and the unconditional `append_slice` bound has the stated
+  concrete counterexample.
+- The `read_bits` candidate proves the exact local goal on every `Ok(value:)`
+  return; it publishes nothing on `Err`, the per-bound kill controls behave as
+  specified, and every hostile or near-miss control remains unproved. The
+  fourteen caller mappings are complete and well typed but derive no fact, and
+  their common result-through-`set` seam is reproduced rather than hidden.
+- The `append_slice` candidate proves `result <= len(deref(destination))` on every
+  normal return under the selected requirement, preserves result and bytes on
+  its complete tested admitted domain, and records all twenty caller mappings
+  without injecting the result fact at any call. Its caller audit reproduces
+  the wfgrep post-copy premise gap and reports every other unproved premise;
+  local proof success is not real-sequence feasibility. Both real program
+  oracle suites remain byte-for-byte and status-for-status unchanged at
+  wfgrep 9/9 and raw-DEFLATE 3/3.
+- A complete per-disposition differential reports any new proof, redundancy,
+  refutation, rejection, or unsupported result. No existing case, verdict,
+  status, source byte, or acceptance result changes.
+- Focused checks and `make check` are green, the temporary probe is absent, the
+  worktree and index are clean, and no production or normative file changed.
+
+Acceptance is evidence-only. A positive result supplies two decision-ready
+local fact prerequisites, one counted-range source rewrite, and complete
+caller-prerequisite inventories for a later owner decision; it does not prove
+either real sequence feasible, authorize `ensures`, define result-summary
+substitution, select how a result fact crosses the fourteen payload-to-outer
+`set` transitions, select the source repair or additional fact needed after
+`length +wrap copied`, or make either hypothetical fact normative. Stage 8b
+does not begin automatically after any Stage 8a outcome. A later proposal must
+dispose of every recorded caller gap explicitly, and if either local witness
+cannot close within this exact boundary Stage 8a returns the smallest
+reproducer.
 
 ### Stop condition
 
-Stop with the smallest reproducer if the current v0.26 sources do not reproduce
-the frozen 19/6/13-under-11/14, 3/3, and 14/24 matrices; if process-entry
-gating needs a new source surface or error protocol; if correct classification
-requires control-flow taint, write-address taint, path-sensitive storage,
-recursive payload paths, Boolean decomposition, general induction, or a new
-theorem prover; if the eleven real repairs cannot use the named existing value
-paths and one `Result` propagation; or if an existing protected case, verdict,
-rule list, status, documentation field, or runtime behavior must change. Return
-that evidence for owner disposition rather than expanding the gate, weakening a
-test, retaining a hidden assertion, or skipping ahead.
+Stop and return evidence to the owner if either goal requires general loop
+induction or a loop fixed point, arithmetic-expression terms, Boolean
+decomposition, a solver, a source/function recognizer, invariant syntax, a
+postcondition language, an unproved trusted premise, or any fact source beyond
+the exactly two candidate operation-semantic sources above; if the
+counted-range variant is not behaviorally equivalent in the admitted domain;
+if either caller mapping inventory is incomplete or ill typed; if
+invalid-domain behavior would need to change; or if any
+protected source, verdict, row, annotation, runtime oracle, active-spec byte,
+or production compiler byte must change. Do not broaden the experiment or
+silently proceed to Stage 8b.
+
+### Explicit exclusions
+
+This proposal does not select `ensures` spelling, grammar, effects,
+diagnostics, generic substitution, early-exit semantics, or any other Stage 8b
+language rule. It does not authorize a proof certificate, ProofFlow or DIAG-2
+architecture, general induction, arithmetic entailment, O11 Boolean
+composition, claim-ledger work, `deny-claims`, optimizer facts, or wfgrep
+performance work.
 
 ### Authority and task boundary
 
-The owner selected this written plan on 2026-08-10. Its ACTIVE status is
-execution authority for exactly stage 5b and does not expand the written scope.
-A separate lifecycle commit must register the next free task number after
-refreshing the integration branch, and that registration must precede
-substantive work. The required exact v0.27 explanation, hard wait, and owner
-approval are complete, and this packet atomically activates those exact bytes.
-Remaining authority is limited to installed validation, the truthful live MCTS
-update, and task closure; stage 8a still requires a separately ACTIVE plan.
+This file is an AI proposal and grants zero execution authority. If the owner
+selects it, a separate commit changes only its status and stale proposal
+wording to `ACTIVE` without expanding the written scope. Only after that commit
+may the integration branch be refreshed and the next free task number be
+registered in another lifecycle commit. This proposal does not reserve a task
+number, create a planned or ongoing record, or authorize substantive work.
 
 ## Later dependency map — not execution authority
 
-### 8a — postcondition proof-feasibility prerequisites
+### Stage 8b — normal-return postconditions
 
-Freeze the smallest fact sources required by the two real `ensures` examples.
-`read_bits` needs a verified mask/bitwise bound and outcome-sensitive normal
-result; `append_slice` needs a fact connecting its loop-carried result to
-capacity. If a small structural rule cannot establish them without general
-induction or arithmetic entailment, return the blocker instead of hiding a new
-proof engine inside postconditions.
+Only after positive local Stage 8a evidence, owner disposition of every caller
+gap, and a separately owner-selected ACTIVE plan may Whitefoot propose the
+smallest `ensures` language that exposes verified normal-return facts to
+callers. That proposal must first dispose of every Stage 8a caller-prerequisite
+gap, including wfgrep's post-copy
+`length +wrap copied` transition and raw-DEFLATE's fourteen
+payload-to-outer-`set` transitions, by explicitly selecting a real source
+repair or a separately justified finite fact source for each class; local
+Stage 8a success alone is insufficient. Stage 8b owns result-summary identity,
+outcome selection, formal/result substitution, support, kills, and call-site
+establishment; none is selected by the Stage 8a mapping inventory. Any exact
+specification bytes still require the complete explanation, hard wait, digest
+approval, archive, and atomic activation workflow.
 
-### 8b — `ensures`
+### Stages 9a and 9b — claim ledger and strict partition
 
-After 8a selects a fact fragment, add the smallest postcondition language that
-exposes only verified normal-return facts to callers. Exercise branches, early
-exit, cleanup, generics, unsupported forms, and false postconditions; the real
-`read_bits` and `append_slice` obligations must discharge normally.
+After Stage 8b is terminal, generate a deterministic read-only claim ledger
+before proposing an opt-in `deny-claims` partition. Neither stage is authorized
+here.
 
-### 9a — deterministic claim ledger
+## Stable specification and cross-stage invariants
 
-Generate a deterministic read-only checked-program report for every remaining
-named claim: obligation, provenance, justification, and stable source identity.
-Clean builds reproduce its order and counts. Tooling precedes any language
-marker.
-
-### 9b — opt-in `deny-claims` partition
-
-Design and implement the marker from ledger evidence. Its meaning is
-transitive across ordinary calls and real generated adapters and explicitly
-covers direct `claim`, ordinary trapping `check`, and callees that can claim.
-Ordinary code keeps the existing lifecycle; the strict partition requires each
-covered obligation to prove or take a value branch. This is not global law.
-
-## Stable specification rule
-
-The active specification stays at `spec/kernel-spec.md`. v0.26 is the current
-immutable outgoing archive and v0.27 has no committed versioned sibling while
-active. Every later candidate edits the stable file and is reviewed as a diff
-plus complete digest. Its outgoing flat archive is prepared byte-identically in
-the same uncommitted preapproval change, hashed and reviewed with the candidate,
-and rejected if that path already exists. Exact-approved atomic activation
-lands that prepared archive and installs the approved bytes at the stable path.
-Archived specifications are never edited, renamed, or deleted.
-
-## Cross-stage invariants
-
-- One normal semantic and lowering path; no program-, corpus-, function-, or
-  test-shaped behavior.
-- A fact widens discharge only when normative entailment derives it. Required
-  checks remain unless proof discharges their exact obligation.
-- Expected or externally caused failure is a value path; a claim is reserved
-  for a broken program invariant and remains an executed runtime check.
-- Protected expectations never change without explicit owner approval.
-  Unsupported capability never becomes source rejection.
-- Each activated slice restores the complete gate and reruns the real consumer
-  that earned it before the next slice begins.
-- Durable decisions and rejected alternatives stay synchronized through the
-  `mcts-mem-use` workflow; task records carry progress, not authority.
+- The active specification remains `spec/kernel-spec.md`; v0.27 has no
+  versioned sibling while active. Released archives are immutable.
+- One normal compiler path; no project-, function-, source-, or test-shaped
+  behavior.
+- Facts widen discharge only when normative entailment derives them. A
+  temporary hypothetical fact never becomes acceptance authority.
+- Expected failure is a value path; claims remain executed runtime backstops
+  for broken program invariants.
+- Protected material never changes without exact owner approval, and
+  unsupported capability never becomes source rejection.
+- Durable design decisions and rejected alternatives follow the
+  `mcts-mem-use` workflow only when a later selected plan changes them.
 
 ## Direction completion boundary
 
-Wfgrep remains parked until stages 5b, 8a, 8b, 9a, and 9b are implemented end
-to end, covered by positive, negative, near-miss, and invalidation evidence,
-exercised by their named real programs, and recorded in the outline; the
-complete repository gate is green; and remaining claims and unsupported gaps
-are reported honestly. A reproduced prerequisite blocker returned for owner
-disposition is the only earlier stop.
-
-O11 Boolean-composition precision, general loop induction, arithmetic-term
-entailment or arithmetic-mode dissolution, struct/witness invariants, the
-OWN-3 predicate widening, move-on-copy generic policy, and further wfgrep work
-remain outside this ACTIVE step.
+Wfgrep remains parked until Stages 8a, 8b, 9a, and 9b are implemented end to
+end, covered by positive, negative, near-miss, and invalidation evidence,
+exercised by their named real programs, and recorded in the Direction Outline;
+the complete repository gate is green; and remaining claims and unsupported
+gaps are reported honestly. A reproduced Stage 8a stop condition returned for
+owner disposition is the only earlier terminal outcome.
