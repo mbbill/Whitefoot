@@ -1,4 +1,4 @@
-- Every partial operation carries a proof obligation; an index obligation is either discharged at its use site from facts a deterministic no-search entailment fragment derives, carried by an explicit writer-stated claim, or the program is rejected.
+- Every partial operation carries a proof obligation; an index obligation first passes complete-state discharge at its use site and then the constrained-subject provenance gate, or the program is rejected.
 - The entailment fragment is normative specification text rather than an optimizer pass: its fact sources, closure, kill rules, and joins fix source acceptance and are versioned with the language (ENT-1).
 - An undischarged obligation is a compile-time rejection whose diagnostic prints the exact residual obligation and the mechanical repair.
 - For obligation families migrated to discharge, a claim is the named, justification-bearing runtime backstop; ordinary explicit checks and bare trapping arithmetic remain separate writer-reachable trap sources.
@@ -8,7 +8,8 @@
 - The fact state combines the scalar relation fragment with finite signed atomic goal evidence; only an exact comparison root may project into the scalar fragment.
 - An ordinary call requirement has exactly three outcomes: discharged, refuted, or unproved; refuted and unproved calls reject before transfer, while a discharged call supplies its complete positive goal to the body.
 - Signed goal support follows resolved reads; writes, ownership events, scope exits, loop summaries, intersection joins, and combined contradiction govern its lifetime without decomposing the goal.
-- A finite subject-only bridge from concrete requirement occurrences through calls to protected leaves is retained as checked metadata but issues no provenance rejection.
+- A finite two-stratum explicit-dataflow provenance judgment freezes value, storage, result, and write component pairs before subject-only protected demands, requirement bridges, call targets, and rejection events converge.
+- After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a body check, claim, or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
 - The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
 
 ## Facts
@@ -31,6 +32,7 @@
 - 2026-08-09 pitfall: one aggregate provenance bit for an enum cannot simultaneously preserve an internal success count and an external error payload, so a finite call summary must retain variant/payload projections and substitute the corresponding parameter projection before deriving the aggregate join. (sourced)
 - 2026-08-09 measurement: finite once-captured counted-range facts discharge all nine SHA-256 schedule accesses without any claim, preserve the direct digest word `3128432319_u32`, and add no trap to the pure compression function; carried-value and next-index controls remain unproved, so the result does not require or imply general loop induction. (code)
 - 2026-08-10 (441cd5b8) measurement: installed all-claims-blinded acceptance is UTF-8 33/22/11/0, SHA-256 9/9/0/0, complete DEFLATE 29/11/18/0, and dynamic DEFLATE 24/11/13/0; the three real requirement calls remain discharged in both unasserted and S4-blinded rewalks. (code)
+- 2026-08-10 (5ab45aa7) measurement: after eleven boundary-fed DEFLATE claims were replaced by real value branches, thirteen protected sites discharge in the unasserted rewalk and the five remaining claim-supported protected sites all have internal constrained subjects; UTF-8 remains 33/22/11/0, SHA-256 remains 9/9/0/0, and the stored, fixed, and dynamic raw-DEFLATE runtime paths remain 3/3. (code)
 
 ## Moves
 

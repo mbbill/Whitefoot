@@ -4,7 +4,7 @@
 - [[requirement-enforcement]] governs ordinary calls and real process entries.
 - A proved ordinary call supplies the complete positive goal to the body and its exact scalar projection when present; ordinary support, kills, joins, and contradiction govern signed goal evidence.
 - A requirement is a signature obligation with no callee effect, not a trusted assertion or optimizer assumption.
-- Checked metadata retains a finite subject-only bridge from concrete requirement occurrences through calls to protected leaves without activating provenance rejection.
+- The finite subject-only bridge is active acceptance authority after ordinary-call requirement success: an unconditionally external selected actual rejects at its call argument for a downstream direct demand, or for a requirement bridge whose complete instantiated goal fails in the caller's S4-blinded state; the command-entry runtime requirement check supplies no provenance authority to a protected leaf.
 
 ## Facts
 
@@ -17,6 +17,7 @@
 - 2026-07-11 statement: the obligation-driven replacement preserved the recognizer's exact acceptance set — 176/176 identical acceptance results and byte-identical IR over the full corpus in both facts modes. (sourced)
 - 2026-08-10 (441cd5b8) measurement: protected enum equality and the complete base64 capacity DAG remain admitted as indivisible atomic goals, so the call boundary did not narrow the declaration surface to the scalar relation fragment. (code)
 - 2026-08-10 (441cd5b8) measurement: direct, two-hop, clause-local-transform, seeded self-recursive, and seeded mutually recursive subject bridges converge; a seedless cycle stays empty, while all three canonical DEFLATE calls retain their subject bridge and discharge in both unasserted and S4-blinded rewalks without emitting a provenance rejection. (code)
+- 2026-08-10 (5ab45aa7) measurement: the active bridge gate rejects direct, command-entry-bridge, two-hop, self-recursive, and mutually recursive external demand routes at the call argument; exact allocation evidence ends a bridge, a seedless mutual cycle creates no target, and a nonexact complete goal remains an earlier FN-8 rejection. (code)
 
 ## Moves
 
