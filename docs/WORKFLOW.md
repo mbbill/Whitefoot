@@ -151,12 +151,12 @@ claiming; the claim commit must land before substantive work begins. The first
 claim to land wins. Work registered directly in `ongoing` supplies the same
 fields in its registration commit. `ACTIVE` is reserved for the Current Plan.
 
-Claim only when each listed premise is terminal, its exact required premise
-commit or canonical result has landed, or cross-linked records explicitly
-permit concurrent execution and state the integration order. A parent task may
-create a subordinate task that runs alongside it; link the parent and child
-with an explicit integration order rather than falsely requiring the parent to
-finish first.
+Claim only when each listed premise is terminal, or when cross-linked records
+explicitly permit overlap after the exact required premise commit or canonical
+result has landed and state the integration order. A parent task may create a
+subordinate task that runs alongside it; link the parent and child with an
+explicit integration order rather than falsely requiring the parent to finish
+first.
 
 ### Dependencies and side tasks
 
