@@ -38,8 +38,8 @@ probably not the next work.
 - `docs/current-plan.md` is the sole current execution proposal or approved
   plan and the sole source of plan-derived authority and sequencing. It must be
   derived from one outline revision and cannot authorize a direction the
-  outline has not selected. `PROPOSED` authorizes no execution; only `ACTIVE`
-  or separate owner approval does.
+  outline has not selected. `PROPOSED` authorizes no execution; the owner
+  approves a high-level plan before it becomes `ACTIVE`.
 - `docs/ongoing/` contains one numbered temporary coordination record per
   substantial in-flight task or distinct handoff boundary. `docs/done/`
   retains the same numbered record after terminal disposition. Both report how
@@ -63,13 +63,31 @@ probably not the next work.
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
 
+## Owner-approval boundary
+
+Owner approval is required for a new or materially revised high-level Current
+Plan, any batch that will land different `spec/kernel-spec.md` bytes, and any
+addition or change to protected conformance or equivalent compliance evidence,
+including any behavioral or identity change to canonical compliance gates and
+their collection or invocation wiring. Present the appropriate explanation and
+exact change boundary, then stop and wait for explicit approval. Specification
+requests additionally carry the complete candidate SHA-256, diff, impact
+inventory, and verifier results; a changed byte returns to that hard wait.
+
+After a plan is `ACTIVE`, its task decomposition, claiming, implementation,
+ordinary tests, documentation, bounded supporting probes, integration, and
+closure proceed autonomously. The lead may register subordinate side tasks that
+support the plan without changing its direction. Task autonomy never permits a
+specification or protected-compliance change, or a material plan expansion,
+without the corresponding approval above.
+
 ## Goal discipline
 
 Before starting or expanding work, answer:
 
 1. What concrete compiler capability or experiment will this unlock?
-2. Why is it authorized by an `ACTIVE` `docs/current-plan.md` (or separate
-   owner-approved bounded research), and which outline item does it advance?
+2. Why is it authorized by an `ACTIVE` `docs/current-plan.md`, and which plan
+   item and outline direction does it advance?
 3. What is the smallest correct implementation?
 4. Is it exercising a real compiler path or inventing machinery for a
    hypothetical one?
@@ -101,10 +119,11 @@ decomposed from an `ACTIVE` plan but not yet claimed, `docs/ongoing/` holds
 claimed in-flight tasks, and `docs/done/` holds terminal history. Claiming is
 one commit that moves the file from `docs/planned/` to `docs/ongoing/`
 unchanged in number and fills in owner, workspace, and base revision; the
-first claim to land on the integration branch wins. A planned task may be
-claimed only when its listed dependencies are terminal. Planned files
-authorize nothing; when their plan is replaced, unclaimed tasks are deleted in
-the same change unless the new plan carries them.
+first claim to land on the integration branch wins. Claim only when each listed
+premise is terminal, or when cross-linked records explicitly allow overlap
+after a named premise commit has landed and state the integration order.
+Planned files authorize nothing; when their plan is replaced, unclaimed tasks
+are deleted in the same change unless the new plan carries them.
 
 Names use `NNNN-short-slug.md`, with one zero-padded monotonically increasing
 sequence shared by `docs/planned/`, `docs/ongoing/`, and `docs/done/`. After
@@ -120,8 +139,9 @@ changes only through lead review. A blocker, plan defect, or discovery outside
 the cited authority stops the task and is reported honestly with reproduction
 evidence — never hacked around, absorbed by weakening a check or test, or
 quietly narrowed. An honest blocked report is a successful executor outcome.
-The owner and the lead agent own direction, decomposition, review, and
-integration; see the Execution agents section of `docs/WORKFLOW.md`.
+The owner approves high-level direction and protected changes; the lead owns
+task decomposition, review, and integration inside the `ACTIVE` plan. See the
+Execution discipline section of `docs/WORKFLOW.md`.
 
 At terminal disposition, move the same numbered file to `docs/done/` in the
 integration change. Use final status `DONE`, `PARKED`, `REPLACED`, or
@@ -147,9 +167,10 @@ reader expects it. Keeping that legible is a standing obligation, not a
 one-time cleanup.
 
 - Do not add a new top-level entry — a directory or file at the repository
-  root — without owner approval. A new root entry is a structural decision,
-  not an implementation detail. Put new material in the existing directory
-  that already owns its kind; if none fits, ask rather than invent a folder.
+  root — unless an `ACTIVE` plan requires it and lead review establishes that
+  no existing directory owns its kind. A new root entry is a structural
+  decision, not an implementation detail; stop and review it rather than
+  inventing a folder opportunistically.
 - Every new file, directory, script, or document earns its place before it is
   created. Be able to state what compiler capability or experiment it serves,
   which existing home it belongs in, and the condition under which it is
@@ -183,9 +204,9 @@ one-time cleanup.
   legibility — a clear map, a good name, a stated purpose — over relocation.
 
 Follow this by judgment and keep moving; it is a standing rule, not a reason to
-pause on every file. The one thing it reserves for the owner is a new top-level
-entry. Append-only versioned specification archives are enforced by a
-pre-commit hook (installed with `make install-hooks`); everything else is
+pause on every file. A new top-level entry still requires an explicit reviewed
+structural decision. Append-only versioned specification archives are enforced
+by a pre-commit hook (installed with `make install-hooks`); everything else is
 upheld by discipline.
 
 ## Specification and test integrity
@@ -216,9 +237,15 @@ upheld by discipline.
   responsibility and is deliberately not machine-enforced.
 - Do not silently weaken derived material to make a check pass. Editing a
   conformance verdict, deleting a failing test, or regenerating evidence to go
-  green is a governance breach even though no script blocks it. Add tests
-  freely; change or remove existing conformance material only with owner
-  agreement and an approval-ledger entry.
+  green is a governance breach even though no script blocks it. Add ordinary
+  compiler tests freely. Any addition, modification, deletion, or rename
+  involving protected conformance or equivalent compliance evidence requires
+  an exact before/after audit, owner explanation and approval, and an
+  approval-ledger entry. This includes any change to canonical compliance
+  gates, their collection or invocation wiring, or gate-integrity tests that
+  can alter collection, interpretation, verdict, coverage, baseline identity,
+  or whether the gate runs. If the correction requires different language
+  semantics, include it in the exact specification approval packet instead.
 - Compiler capability, an internal error, a timeout, or an unimplemented
   feature is not a source-language rejection and must not rewrite normative
   expectations.
