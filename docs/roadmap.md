@@ -1,13 +1,13 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 32 (Stage 5b terminal; remaining PROOF-8 high-level plan proposed)
+Revision: 33 (Stage 5b terminal; remaining PROOF-8 high-level plan active)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
 `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
 Exact v0.8 through v0.26 are immutable flat archives. The current execution
-proposal is [`docs/current-plan.md`](current-plan.md), project law is the
+plan is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -208,7 +208,7 @@ creating writer trust or weakening the checked safety envelope.
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
 `[current: items 1–4, counted range, atomic requires goals, and bounded provenance gate]`
-`[next: owner selection of the remaining PROOF-8 high-level plan]`
+`[next: execute active Stage 8a and existing-DIAG-2 trust repair]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -294,11 +294,11 @@ creating writer trust or weakening the checked safety envelope.
   installed adapter is `Pass=409 Fail=1 Skip=13`, with only the retained OWN-3
   unsupported boundary. Commit `74512309` makes the live design memory
   truthful and passes MCTS lint; task 0050 is terminal.
-- **Missing / next:** the one high-level completion proposal covers Stage 8a,
-  the existing DIAG-2 trust repair, Stage 8b, Stage 9a, and Stage 9b; it awaits
-  owner selection and has no task number or execution authority. No successor
-  work is registered; wfgrep remains parked until the complete selected
-  PROOF-8 sequence is terminal.
+- **Missing / next:** the active high-level completion plan covers Stage 8a,
+  the existing DIAG-2 trust repair, Stage 8b, Stage 9a, and Stage 9b. The owner
+  selected it on 2026-08-12; execution begins with parallel Stage 8a and
+  DIAG-2 work after task registration. Wfgrep remains parked until the complete
+  selected PROOF-8 sequence is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -756,9 +756,10 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 Ripgrep is the owner-selected umbrella project. Selection fixes the external
 pressure source and the headline objective, **2x ripgrep**; it does not
 authorize a favorable subset, a monolithic rewrite, or any particular
-language, compiler, proof, runtime, or optimizer change. The rolling
-`current-plan.md` still proposes one bounded evidence-producing step at a time,
-and every step must state how it returns to the unchanged product comparison.
+language, compiler, proof, runtime, or optimizer change. The active
+`current-plan.md` sequences the remaining PROOF-8 undertaking into bounded
+workstreams, and every task must state how it returns to the unchanged product
+comparison.
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
 about the language's functional and performance ceiling — resolved general

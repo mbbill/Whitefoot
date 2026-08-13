@@ -1,17 +1,16 @@
 # Current Plan
 
-Status: **PROPOSED** (AI proposal 2026-08-11): complete the remaining selected
+Status: **ACTIVE** (owner selection 2026-08-12): complete the remaining selected
 obligation-discharge direction as one high-level undertaking, decomposed into
 Stage 8a proof-feasibility evidence, a bounded existing-DIAG-2 conformance
 repair, Stage 8b verified normal-return postconditions, Stage 9a deterministic
 claim-ledger tooling, and Stage 9b an opt-in strict no-claim partition.
 
-This proposal authorizes no execution or task registration. One owner approval
-may make the whole plan `ACTIVE`; after that, the lead may autonomously create,
-claim, execute, integrate, and close every decision-complete task inside the
-boundaries below. That approval will not approve any future specification or
-protected-conformance bytes. Each exact protected batch still follows its own
-explanation-first hard wait.
+The owner selected this complete written plan on 2026-08-12. Its `ACTIVE`
+status authorizes the lead to create, claim, execute, integrate, and close every
+decision-complete task inside the boundaries below. This selection does not
+approve any future specification or protected-conformance bytes. Each exact
+protected batch still follows its own explanation-first hard wait.
 
 Derived from [Direction Outline revision 32](roadmap.md), primarily `PROOF-8`,
 with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
@@ -327,7 +326,7 @@ existing acceptance or required runtime behavior changes.
 The expected successful path has three owner decisions, not one decision per
 task:
 
-1. approve this high-level plan once;
+1. **complete (2026-08-12):** approve this high-level plan once;
 2. after Stage 8a and the trust prerequisite, approve Stage 8b's exact
    specification plus protected-conformance activation packet; and
 3. after Stage 9a, approve Stage 9b's exact specification plus
@@ -393,12 +392,13 @@ lead records the evidence and returns a revised `PROPOSED` plan instead of
 weakening the gate or accumulating side tasks around it. A stopped outcome
 does not mark `PROOF-8` complete or unpark `CAND-8`.
 
-## Authority after selection
+## Active authority
 
-If the owner approves this proposal, a separate commit changes it to `ACTIVE`
-without expanding the strategy. Only then may the lead register the next free
-planned or ongoing task. Workstreams may be decomposed, parallelized where
-their premises allow, reordered within the written dependencies, and supported
-by bounded side tasks without further plan approval. Material direction change
-returns here; exact specification and protected-conformance bytes always stop
-at their own approval boundaries.
+The owner approved this written plan on 2026-08-12. Its `ACTIVE` status is
+execution authority without expanding the strategy. The lead may now register
+the next free planned or ongoing task. Workstreams may be decomposed,
+parallelized where their premises allow, reordered within the written
+dependencies, and supported by bounded side tasks without further plan
+approval. A material direction change returns the plan to `PROPOSED`; exact
+specification and protected-conformance bytes always stop at their own approval
+boundaries.
