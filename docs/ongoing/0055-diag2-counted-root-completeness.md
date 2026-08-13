@@ -1,13 +1,14 @@
 # 0055 — DIAG-2 counted-root completeness
 
-**Planned task.** Decomposed from the `ACTIVE` Current Plan selected
-2026-08-12, `Trust prerequisite — bounded existing-DIAG-2 repair`. It is not
-yet claimed; claiming fills in status, owner, workspace, and base revision and
-moves this number unchanged to `docs/ongoing/`.
-
+- **Status:** `IN PROGRESS`
 - **Authority:** active v0.27 DIAG-2, ENT-3 S11, ENT-4, ENT-5, and the Current
   Plan's requirement to retain every S11 derivation whether or not later
   queried
+- **Owner / workspace:** Codex executor /
+  `/Users/bytedance/do_not_scan/whitefoot-0055-diag2-counted-roots`, branch
+  `codex/0055-diag2-counted-root-completeness`
+- **Base revision:**
+  `1eb6b555ee55ba28c9871d760cae8731f189d297`
 
 ## Goal
 
@@ -77,10 +78,9 @@ for another file stops for lead review.
 ## Dependencies and integration order
 
 Task 0054 is terminal at implementation commit
-`0e9a206188d8cc37ec3bb248889e42109122246a`; this task may be claimed only
-after the 0054 `DONE` record lands, and that terminal closure revision is its
-base. Task 0056 follows this task. Stage 8b waits for task 0056 plus positive
-task 0053.
+`0e9a206188d8cc37ec3bb248889e42109122246a` and closure revision
+`1eb6b555ee55ba28c9871d760cae8731f189d297`, which is this task's base. Task
+0056 follows this task. Stage 8b waits for task 0056 plus positive task 0053.
 
 ## Validation
 
@@ -116,8 +116,17 @@ enumerated exactly once. If the SHA-256 3/15/24 inventory does not match the
 actual checked model, stop with a reproduction rather than changing semantics
 or the expected count.
 
-## Done-when
+## Progress and closure
 
-All accepted subscripts, discharged call goals, and all S11 facts now have
-complete retained roots on one canonical derivation channel, with task 0056
-remaining only for cost and terminal evidence.
+- **Completed:** task 0054 landed its exact shared-DAG derivation arena and
+  terminal closure; read-only hook audit confirmed the SHA-256 3/15/24
+  inventory and a single-walk implementation path.
+- **Current:** claim landed; create the isolated worktree and run the clean
+  focused and compiler pre-gates before implementation.
+- **Next:** retain the five semantic/eight atomic S11 roots through the sole
+  ledger channel, complete hostile/root-mutation coverage, and run both full
+  gates before lead review.
+
+Close only through lead review by moving this record to `docs/done/` with the
+landed commit and validation. Task 0056 remains the terminal cost/evidence
+boundary.
