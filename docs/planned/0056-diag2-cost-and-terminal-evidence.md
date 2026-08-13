@@ -63,16 +63,22 @@ second authority or extending its architecture.
    slowdown or RSS budget, so do not invent a percentage threshold.
 5. Run acceptance/disposition/diagnostic comparisons, all real-program oracles,
    focused semantic tests, `make -C compiler check`, and `make check`.
-6. Prepare the complete append-only
-   `research/investigations/obligation-discharge/ACCEPTANCE.md` candidate in
-   scratch, preserving the installed file as an exact prefix. Present its full
-   SHA-256, diff, byte/line counts, impact boundary, and verification results,
-   then stop for explicit owner approval under the protected equivalent-
-   compliance workflow. Only the exact approved bytes may be installed and
-   recorded in `governance/APPROVALS.md`; any changed candidate byte returns to
-   the hard wait. Update `compiler/README.md` only as needed after that
-   approval. Close the DIAG-2 prerequisite only after the exact evidence lands;
-   do not advance Stage 8b unless task 0053 is also terminal positive.
+6. Prepare this task's complete append-only
+   `research/investigations/obligation-discharge/ACCEPTANCE.md` section in
+   scratch. On the positive Stage 8a path, after task 0053 produces its complete
+   hash-locked PASS or STOP section, compose a second independent evidence owner
+   packet preserving the installed file as an exact prefix in fixed order:
+   0053, then this task. If tasks 0051/0052 stop and 0053 therefore cannot be
+   claimed, compose this task's section as its own exact protected evidence
+   packet instead. Present the applicable candidate's full SHA-256, diff,
+   byte/line counts, impact boundary, and verification results, then stop for
+   explicit owner approval. Only the exact approved evidence bytes may be
+   installed and recorded in the corresponding `governance/APPROVALS.md`
+   entry; any changed candidate byte returns to the hard wait. Update
+   `compiler/README.md` only as needed after that approval. Close every task
+   whose evidence lands. Only if tasks 0053 and 0056 are both terminal positive
+   may the separate Stage 8b specification/protected activation candidate be
+   prepared.
 
 ## Scope and expected touch set
 
@@ -91,10 +97,16 @@ second authority or extending its architecture.
 
 Task 0054's implementation is fixed at
 `0e9a206188d8cc37ec3bb248889e42109122246a`. Task 0055 must be terminal, and
-its terminal closure revision is this task's candidate base. This task may
-integrate after Stage 8a evidence, but it must refresh onto every landed
-entailment change. Stage 8b is claimable only when both this task and task 0053
-are terminal positive results.
+its terminal closure revision is this task's candidate base. After that
+closure, this task may measure in parallel with the required 0051/0052 refresh
+and may wait with a complete hash-locked result. Once 0051/0052's first exact
+batch is approved, installed, and terminal, task 0053 may run in parallel with
+this task. Their protected sections integrate together in a second independent
+evidence packet, in order 0053 then 0056, whether 0053 reports PASS or STOP. If
+0053 cannot be claimed because 0051/0052 stopped, this task's evidence uses its
+own exact packet so the independent DIAG-2 prerequisite can still become
+terminal. Stage 8b candidate work is permitted only after tasks 0053 and 0056
+both become terminal positive on approved evidence revisions.
 
 ## Validation
 

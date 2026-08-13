@@ -1,9 +1,10 @@
 # 0051 — Stage 8a bit-bound proof probe
 
-- **Status:** `IN PROGRESS`
+- **Status:** `WAITING`
 - **Authority:** the `ACTIVE` Current Plan selected 2026-08-12, Workstream 8a
-  `Local facts` and `Caller audit`, derived from Direction Outline revision 33
-  item `PROOF-8` with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` constraints
+  `Local facts` and `Caller audit`, derived from Direction Outline revision 32;
+  current Direction Outline revision 33 records the same `PROOF-8` direction
+  with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` constraints
 - **Owner / workspace:** Codex executor /
   `/Users/bytedance/do_not_scan/whitefoot-0051-stage8a-bit-bound`, branch
   `codex/0051-stage8a-bit-bound`
@@ -66,30 +67,42 @@ MCTS bytes behind.
    scope exit, and the real `state.hold` mutation. Record the exact surviving
    path through `mask`.
 7. Remove every temporary change, prove the host identities are restored, and
-   rerun focused and complete gates. Append the commands, matrix, result,
-   limitations, and exact revision to the existing obligation-discharge
-   acceptance record.
+   rerun focused and complete gates. Prepare the complete append-only section
+   in scratch with its commands, matrix, result, limitations, exact revision,
+   SHA-256, and byte/line counts. Do not modify the installed acceptance
+   record until the fixed combined 0051/0052 candidate receives explicit owner
+   approval; any changed byte returns to the hard wait.
 
 ## Scope and expected touch set
 
 - Temporary only: `compiler/src/semantic/entailment/flow/sources.rs`,
   `compiler/src/semantic/tests/entailment.rs`, and scratch inputs below
   `/Users/bytedance/do_not_scan`.
-- Persistent: this task record and
-  `research/investigations/obligation-discharge/ACCEPTANCE.md` only.
+- Persistent after exact approval: this task record,
+  `research/investigations/obligation-discharge/ACCEPTANCE.md`, and the one
+  combined approval entry in `governance/APPROVALS.md` only.
 - Read-only: active specification, frozen real consumers, compiler model and
   goal machinery, and the consulted proof design memory.
 
 ## Dependencies and integration order
 
-- The plan activation at `c2c4092` is the sole premise. This task may execute
-  in parallel with tasks 0052 and 0054.
-- Tasks 0051 and 0052 both append to `ACCEPTANCE.md`; canonical integration is
-  fixed as 0051, then a refreshed/rebased 0052, then task 0053.
-- If task 0054 lands first, refresh onto its canonical entailment changes and
-  rerun the complete matrix before integrating this result.
-- Task 0053 is claimable only after both 0051 and 0052 have terminal positive
-  results. Stage 8b additionally requires the complete DIAG-2 prerequisite.
+- The original probe ran from the plan-activation premise at `c2c4092` in
+  parallel with tasks 0052 and 0054. Task 0054 subsequently changed the
+  canonical entailment engine, and task 0055 extends the same retained root
+  path; this task must wait for 0055's terminal closure, refresh onto that exact
+  revision, and rerun the complete proof, near-miss, support/kill, real-body,
+  determinism, restoration, and gate matrix once.
+- Tasks 0051 and 0052 share their first protected equivalent-compliance batch.
+  Its fixed append order is installed base, refreshed 0051 section, then
+  refreshed 0052 section, with one exact before/after audit and
+  approval-ledger entry. Neither may install or close until that exact combined
+  candidate receives explicit owner approval.
+- Task 0053 is claimable only after 0051 and 0052 are terminal positive on that
+  combined evidence revision. It may then execute in parallel with task 0056;
+  on that positive path their later evidence belongs to a second independent
+  protected evidence packet that must land before any Stage 8b candidate work
+  begins. If this task or 0052 stops, 0053 is not claimed and 0056 closes its
+  independent DIAG-2 evidence separately.
 
 ## Validation
 
@@ -99,8 +112,10 @@ MCTS bytes behind.
   all have explicit expected dispositions and deterministic repeats.
 - The real `state.hold` write kills only its supported relation and the
   `value <= mask < high` route remains live.
-- After restoration, `git diff` contains only the acceptance record and task
-  lifecycle change; all frozen source and spec digests match the Current Plan.
+- Before approval, restoration leaves the repository worktree clean and only
+  the exact scratch section differs. After approved combined integration, the
+  diff is limited to the fixed acceptance append, approval entry, and task
+  lifecycle changes; all frozen source and spec digests match the Current Plan.
 - `env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-cargo-tmp make -C compiler check`
   and `env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-cargo-tmp make check`
   pass from the persistent result tree.
@@ -116,11 +131,16 @@ task 0053 and Stage 8b while the independent DIAG-2 work continues.
 
 ## Progress and closure
 
-- **Completed:** plan activation and exact task registration.
-- **Current:** create the isolated worktree, refresh it through this
-  registration commit, and reproduce the unmodified negative witness.
-- **Next:** run the two-source matrix and restore all temporary changes.
+- **Completed:** the original removable probe produced positive local,
+  near-miss, support/kill, and restoration results with full gates green.
+- **Current:** the former scratch section and combined candidate ending in
+  SHA-256 `78ce0073244e810c1acb1b094c86d58d0522800ce025fc1f197c369fb84d53d5`
+  are withdrawn and must not be installed because later DIAG-2 entailment
+  changes make their revision identity stale; wait for task 0055 terminal.
+- **Next:** refresh once onto task 0055's terminal closure, rerun the complete
+  matrix, and produce a new exact scratch section for the combined protected
+  candidate.
 
-Close by moving this record to `docs/done/` in the lead-reviewed integration
-change after the canonical acceptance evidence is complete and all temporary
-bytes are absent.
+Close by moving this record to `docs/done/` in the lead-reviewed combined
+integration change after the exact owner-approved canonical acceptance bytes
+and approval entry land and all temporary bytes are absent.

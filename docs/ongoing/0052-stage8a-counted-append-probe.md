@@ -1,9 +1,10 @@
 # 0052 — Stage 8a counted append proof probe
 
-- **Status:** `IN PROGRESS`
+- **Status:** `WAITING`
 - **Authority:** the `ACTIVE` Current Plan selected 2026-08-12, Workstream 8a
-  `Local facts` and `Caller audit`, derived from Direction Outline revision 33
-  item `PROOF-8` with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` constraints
+  `Local facts` and `Caller audit`, derived from Direction Outline revision 32;
+  current Direction Outline revision 33 records the same `PROOF-8` direction
+  with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` constraints
 - **Owner / workspace:** Codex executor /
   `/Users/bytedance/do_not_scan/whitefoot-0052-stage8a-counted-append`, branch
   `codex/0052-stage8a-counted-append`
@@ -76,28 +77,42 @@ compiler, real-program, specification, conformance, generated, or MCTS change.
      produce the desired proof.
 7. Replay the complete wfgrep `9/9` and raw-DEFLATE `3/3` program oracles on
    the unchanged real sources.
-8. Remove every scratch/compiler/program change, restore all hashes, rerun the
-   gates, and append the exact commands, matrix, and result to the existing
-   obligation-discharge acceptance record.
+8. Remove every scratch/compiler/program change, restore all hashes, and rerun
+   the gates. Prepare the complete append-only section in scratch with its
+   exact commands, matrix, result, revision, SHA-256, and byte/line counts. Do
+   not modify the installed acceptance record until the fixed combined
+   0051/0052 candidate receives explicit owner approval; any changed byte
+   returns to the hard wait.
 
 ## Scope and expected touch set
 
 - Temporary only: scratch Whitefoot sources and harness data under
   `/Users/bytedance/do_not_scan`, focused semantic tests as needed, and local
   runtime variants of `append_slice` in the isolated worktree.
-- Persistent: this task record and
-  `research/investigations/obligation-discharge/ACCEPTANCE.md` only.
+- Persistent after exact approval: this task record,
+  `research/investigations/obligation-discharge/ACCEPTANCE.md`, and the one
+  combined approval entry in `governance/APPROVALS.md` only.
 - The real `tests/programs/wfgrep.wf` and
   `tests/programs/raw_deflate_boundary.wf` remain byte-identical.
 
 ## Dependencies and integration order
 
-- The plan activation at `c2c4092` is the sole premise. This task may execute
-  in parallel with tasks 0051 and 0054.
-- Because 0051 and 0052 share the acceptance record, 0052 refreshes/rebases
-  after 0051 and integrates second. Task 0053 follows both positive results.
-- If DIAG-2 changes the entailment engine before this task closes, refresh and
-  rerun every proof and hostile case before integration.
+- The original probe ran from the plan-activation premise at `c2c4092` in
+  parallel with tasks 0051 and 0054. Tasks 0054 and 0055 change the canonical
+  entailment/root path; this task must wait for 0055's terminal closure,
+  refresh onto that exact revision, and rerun every proof, hostile control,
+  2,430-case differential, real-program oracle, restoration check, and gate.
+- Tasks 0051 and 0052 share their first protected equivalent-compliance batch.
+  Its fixed append order is installed base, refreshed 0051 section, then
+  refreshed 0052 section, with one exact before/after audit and
+  approval-ledger entry. Neither may install or close until that exact combined
+  candidate receives explicit owner approval.
+- Task 0053 is claimable only after 0051 and 0052 are terminal positive on that
+  combined evidence revision. It may then execute in parallel with task 0056;
+  on that positive path their later evidence belongs to a second independent
+  protected evidence packet that must land before any Stage 8b candidate work
+  begins. If this task or 0051 stops, 0053 is not claimed and 0056 closes its
+  independent DIAG-2 evidence separately.
 
 ## Validation
 
@@ -111,8 +126,10 @@ compiler, real-program, specification, conformance, generated, or MCTS change.
   genuinely out-of-bound and unrelated-value variants remain unproved. No
   control gains a fallback check or hidden premise.
 - Unchanged real programs pass wfgrep `9/9` and raw-DEFLATE `3/3`.
-- After restoration, only the acceptance record and task lifecycle differ;
-  exact consumer and spec digests match the Current Plan.
+- Before approval, restoration leaves the repository worktree clean and only
+  the exact scratch section differs. After approved combined integration, the
+  diff is limited to the fixed acceptance append, approval entry, and task
+  lifecycle changes; exact consumer and spec digests match the Current Plan.
 - `env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-cargo-tmp make -C compiler check`
   and `env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-cargo-tmp make check`
   pass.
@@ -137,14 +154,17 @@ admitted domain, behavioral oracle, acceptance boundary, or stop conditions.
 
 ## Progress and closure
 
-- **Completed:** plan activation, exact task registration, frozen-identity and
-  compiler pre-gates, the ordinary-loop `unproved` witness, the exact
-  `capacity=3, filled=4` behavioral counterexample, both positive return
-  proofs, and the executor's honest stop on the two misclassified controls.
-- **Current:** refresh the isolated worktree onto the lead's falsifier-only
-  task correction and rerun the corrected proof/behavior controls.
-- **Next:** run the 2,430-case differential matrix, real-program oracles,
-  restoration audit, and complete gates.
+- **Completed:** the corrected original probe produced both positive return
+  proofs, all proof/behavior controls, 2,430/2,430 admitted differential cases,
+  unchanged real-program oracles, exact restoration, and full green gates.
+- **Current:** the former scratch section and combined candidate ending in
+  SHA-256 `78ce0073244e810c1acb1b094c86d58d0522800ce025fc1f197c369fb84d53d5`
+  are withdrawn and must not be installed because later DIAG-2 entailment
+  changes make their revision identity stale; wait for task 0055 terminal.
+- **Next:** refresh once onto task 0055's terminal closure, rerun the complete
+  matrix, and produce a new exact scratch section for the combined protected
+  candidate.
 
-Close by moving this record to `docs/done/` in the lead-reviewed integration
-change after durable evidence is complete and every temporary byte is absent.
+Close by moving this record to `docs/done/` in the lead-reviewed combined
+integration change after the exact owner-approved canonical acceptance bytes
+and approval entry land and every temporary byte is absent.
