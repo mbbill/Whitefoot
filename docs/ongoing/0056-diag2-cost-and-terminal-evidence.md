@@ -1,13 +1,16 @@
 # 0056 — DIAG-2 cost and terminal evidence
 
-**Planned task.** Decomposed from the `ACTIVE` Current Plan selected
-2026-08-12, `Trust prerequisite — bounded existing-DIAG-2 repair`. It is not
-yet claimed; claiming fills in status, owner, workspace, and base revision and
-moves this number unchanged to `docs/ongoing/`.
-
-- **Authority:** the Current Plan's exact-root completeness, hostile evidence,
+- **Status:** `IN PROGRESS`
+- **Authority:** the `ACTIVE` Current Plan selected 2026-08-12,
+  `Trust prerequisite — bounded existing-DIAG-2 repair`, including its
+  exact-root completeness, hostile evidence,
   and measured parent-node, byte, proof-depth, compile-time, and peak-memory
   acceptance boundary
+- **Owner / workspace:** Codex executor /
+  `/Users/bytedance/do_not_scan/whitefoot-0056-diag2-cost-evidence`, branch
+  `codex/0056-diag2-cost-evidence`
+- **Base revision:**
+  `a94ddd8a4bdaabf0a4e739c6409cc09402e60790`
 
 ## Goal
 
@@ -38,9 +41,9 @@ second authority or extending its architecture.
 1. Claim only after task 0055 is terminal, building on task 0054 implementation
    commit `0e9a206188d8cc37ec3bb248889e42109122246a` and task 0055 implementation
    commit `491446af053bfe8db95941e6093b30f4ff9cfb7a`. Use two clean detached
-   worktrees at baseline `c2c4092` and the exact task-0055 terminal closure
-   revision; verify frozen source/spec digests and record rustc, cargo, OS,
-   architecture, and SHAs.
+   worktrees at baseline `c2c4092` and exact task-0055 terminal closure
+   `a94ddd8a4bdaabf0a4e739c6409cc09402e60790`; verify frozen source/spec digests
+   and record rustc, cargo, OS, architecture, and SHAs.
 2. Build both release compilers once with `--locked --offline`. For SHA-256,
    UTF-8, four-source raw-DEFLATE, and wfgrep, use the Current Plan's real
    release invocation, one warmup, then seven alternating baseline/candidate
@@ -99,10 +102,10 @@ second authority or extending its architecture.
 Task 0054's implementation is fixed at
 `0e9a206188d8cc37ec3bb248889e42109122246a`; task 0055's implementation is
 fixed at `491446af053bfe8db95941e6093b30f4ff9cfb7a`. Task 0055 becomes terminal in
-the integration change that moves its record to `docs/done/`; that exact
-closure revision is this task's candidate base. After that closure, this task
-may measure in parallel with the required 0051/0052 refresh
-and may wait with a complete hash-locked result. Once 0051/0052's first exact
+closure revision `a94ddd8a4bdaabf0a4e739c6409cc09402e60790`; that exact revision is
+this task's candidate base. After that closure, this task may measure in
+parallel with the required 0051/0052 refresh and may wait with a complete
+hash-locked result. Once 0051/0052's first exact
 batch is approved, installed, and terminal, task 0053 may run in parallel with
 this task. Their protected sections integrate together in a second independent
 evidence packet, in order 0053 then 0056, whether 0053 reports PASS or STOP. If
@@ -142,3 +145,20 @@ The active compiler retains the complete DIAG-2 derivation set with bounded
 measured cost, all hostile and complete gates pass, the exact owner-approved
 canonical evidence and approval record are installed, and the trust
 prerequisite is terminal for the Stage 8b decision.
+
+## Progress and closure
+
+- **Completed:** tasks 0054 and 0055 landed the shared derivation ledger and
+  complete counted-statement root groups. Task 0055 closed at exact revision
+  `a94ddd8a4bdaabf0a4e739c6409cc09402e60790` with focused, compiler, repository,
+  hostile, mutation, determinism, and real-program gates green.
+- **Current:** establish clean detached baseline and candidate worktrees,
+  verify every frozen identity, and independently audit the terminal root set.
+- **Next:** build both release compilers, execute the alternating seven-run
+  measurement protocol, remove all temporary instrumentation, rerun complete
+  gates, and prepare but do not install the hash-locked protected evidence
+  section.
+
+Close only after the applicable exact owner-approved acceptance append and
+approval-ledger entry land. Until then this task may wait with clean repository
+bytes and a complete scratch-only evidence packet.
