@@ -341,6 +341,7 @@ pub(crate) fn close(state: &FactState, terms: &TermTable, goals: &GoalTable) -> 
         };
     }
     let mut bounds = state.bounds.clone();
+    let mut distinct = state.distinct.clone();
     let add = |map: &mut HashMap<(TermId, TermId), i128>, left, right, bound: i128| {
         let entry = map.entry((left, right)).or_insert(bound);
         if bound < *entry {
@@ -418,7 +419,16 @@ pub(crate) fn close(state: &FactState, terms: &TermTable, goals: &GoalTable) -> 
                 }
             }
         }
-        for (left, right) in &state.distinct {
+        // ENT-4 makes every strict bound a disequality in either
+        // orientation. Retain that derived fact in this same fixed point so
+        // it can strengthen an available weak bound and so ENT-5 joins can
+        // intersect the complete closed disequality set.
+        for ((left, right), bound) in &bounds {
+            if left != right && *bound <= -1 && distinct.insert(ordered(*left, *right)) {
+                changed = true;
+            }
+        }
+        for (left, right) in &distinct {
             for (from, to) in [(*left, *right), (*right, *left)] {
                 if bounds.get(&(from, to)).is_some_and(|bound| *bound == 0) {
                     bounds.insert((from, to), -1);
@@ -436,7 +446,7 @@ pub(crate) fn close(state: &FactState, terms: &TermTable, goals: &GoalTable) -> 
     let mut closed = ClosedState {
         all_derivable: l0_contradictory,
         bounds,
-        distinct: state.distinct.clone(),
+        distinct,
         opaque: state.opaque.clone(),
     };
     let goal_contradictory = !closed.all_derivable
@@ -558,5 +568,16 @@ pub(crate) fn join(states: &[FactState], terms: &TermTable, goals: &GoalTable) -
         outcomes,
         opaque,
         goal_origins,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_join_remains_the_contradictory_all_derivable_state() {
+        let joined = join(&[], &TermTable::new(), &GoalTable::default());
+        assert!(joined.all_derivable);
     }
 }

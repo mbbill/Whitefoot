@@ -427,6 +427,366 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn a_join_keeps_a_disequality_derived_in_opposite_strict_orientations() {
+    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+  check ine(left, right) else trap "distinct";
+} {
+  return unit;
+}
+
+fn need_left_below_right(left: own u64, right: own u64) -> own unit pure requires {
+  check ilt(left, right) else trap "left below right";
+} {
+  return unit;
+}
+
+fn need_right_below_left(left: own u64, right: own u64) -> own unit pure requires {
+  check ilt(right, left) else trap "right below left";
+} {
+  return unit;
+}
+
+fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "left below right";
+  } else {
+    check ilt(right, left) else trap "right below left";
+  }
+  need_distinct(left: left, right: right);
+  need_left_below_right(left: left, right: right);
+  need_right_below_left(left: left, right: right);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 3);
+    assert_eq!(
+        outcomes[0].disposition,
+        CallGoalDisposition::Discharged,
+        "each strict orientation derives the same disequality, so ENT-5 keeps it"
+    );
+    assert_eq!(
+        outcomes[0].evidence,
+        vec![CallGoalEvidence::ExactL0Projection]
+    );
+    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+    assert_eq!(outcomes[2].disposition, CallGoalDisposition::Unproved);
+    assert!(outcomes[1].evidence.is_empty());
+    assert!(outcomes[2].evidence.is_empty());
+}
+
+#[test]
+fn a_joined_derived_disequality_strengthens_a_later_weak_bound() {
+    let source =
+        br#"fn need_left_below_right(left: own u64, right: own u64) -> own unit pure requires {
+  check ilt(left, right) else trap "left below right";
+} {
+  return unit;
+}
+
+fn caller(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "left below right";
+  } else {
+    check ilt(right, left) else trap "right below left";
+  }
+  check ile(left, right) else trap "later weak bound";
+  need_left_below_right(left: left, right: right);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[0].evidence,
+        vec![CallGoalEvidence::ExactL0Projection],
+        "the joined disequality and later weak bound strengthen to the strict requirement"
+    );
+}
+
+#[test]
+fn a_write_kills_a_disequality_materialized_by_a_join() {
+    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+  check ine(left, right) else trap "distinct";
+} {
+  return unit;
+}
+
+fn kept(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "left below right";
+  } else {
+    check ilt(right, left) else trap "right below left";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn killed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "left below right";
+  } else {
+    check ilt(right, left) else trap "right below left";
+  }
+  set left = left +wrap 1_u64;
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let kept = call_goals(source, "kept");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(kept[0].evidence, vec![CallGoalEvidence::ExactL0Projection]);
+
+    let killed = call_goals(source, "killed");
+    assert_eq!(killed.len(), 1);
+    assert_eq!(killed[0].disposition, CallGoalDisposition::Unproved);
+    assert!(killed[0].evidence.is_empty());
+}
+
+#[test]
+fn joins_keep_disequality_across_same_strict_explicit_and_mixed_grounds() {
+    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+  check ine(left, right) else trap "distinct";
+} {
+  return unit;
+}
+
+fn same_strict(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "first strict";
+  } else {
+    check ilt(left, right) else trap "second strict";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn both_explicit(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ine(left, right) else trap "first distinct";
+  } else {
+    check ine(right, left) else trap "second distinct";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn mixed(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ine(left, right) else trap "explicit";
+  } else {
+    check ilt(right, left) else trap "strict";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for function in ["same_strict", "both_explicit", "mixed"] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1, "{function}");
+        assert_eq!(
+            outcomes[0].disposition,
+            CallGoalDisposition::Discharged,
+            "{function} establishes the same normalized disequality on every input"
+        );
+        assert_eq!(
+            outcomes[0].evidence,
+            vec![CallGoalEvidence::ExactL0Projection],
+            "{function} discharges through the common L0 relation"
+        );
+    }
+}
+
+#[test]
+fn a_many_way_join_keeps_mixed_disequality_and_ignores_a_contradictory_input() {
+    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+  check ine(left, right) else trap "distinct";
+} {
+  return unit;
+}
+
+fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, third: own Bool) -> own unit traps {
+  if first {
+    check ilt(left, right) else trap "left below right";
+  } else if second {
+    check ine(left, right) else trap "explicit distinct";
+  } else if third {
+    check ilt(right, left) else trap "right below left";
+  } else {
+    check ilt(0_u64, 0_u64) else trap "contradictory input";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let outcomes = call_goals(source, "caller");
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[0].evidence,
+        vec![CallGoalEvidence::ExactL0Projection]
+    );
+}
+
+#[test]
+fn equality_missing_relation_and_a_kill_each_prevent_disequality_survival() {
+    let source = br#"fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+  check ine(left, right) else trap "distinct";
+} {
+  return unit;
+}
+
+fn equality_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "strict";
+  } else {
+    check ieq(left, right) else trap "equal";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn missing_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "strict";
+  } else {
+    check True() else trap "no relation";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn killed_input(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, right) else trap "strict then killed";
+    set left = left +wrap 1_u64;
+  } else {
+    check ilt(right, left) else trap "other strict";
+  }
+  need_distinct(left: left, right: right);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for function in ["equality_input", "missing_input", "killed_input"] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1, "{function}");
+        assert_eq!(
+            outcomes[0].disposition,
+            CallGoalDisposition::Unproved,
+            "{function} has at least one reaching input without the same live disequality"
+        );
+        assert!(outcomes[0].evidence.is_empty(), "{function}");
+    }
+}
+
+#[test]
+fn derived_disequality_closure_preserves_contradiction_and_no_loop_induction() {
+    let source = br#"fn impossible() -> own unit pure requires {
+  check ilt(1_u64, 0_u64) else trap "impossible";
+} {
+  return unit;
+}
+
+fn reverse_weak_transitivity_control(left: own u64, right: own u64) -> own unit traps {
+  check ile(left, right) else trap "weak";
+  check ilt(right, left) else trap "strict reverse";
+  impossible();
+  return unit;
+}
+
+fn both_strict(left: own u64, right: own u64) -> own unit traps {
+  check ilt(left, right) else trap "first strict";
+  check ilt(right, left) else trap "second strict";
+  impossible();
+  return unit;
+}
+
+fn all_contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, left) else trap "left contradiction";
+  } else {
+    check ilt(right, right) else trap "right contradiction";
+  }
+  impossible();
+  return unit;
+}
+
+fn no_induction(left: own u64, right: own u64, leave: own Bool) -> own unit traps {
+  loop @again {
+    need_distinct(left: left, right: right);
+    check ilt(left, right) else trap "inside only";
+    if leave {
+      break @again;
+    }
+  }
+  return unit;
+}
+
+fn need_distinct(left: own u64, right: own u64) -> own unit pure requires {
+  check ine(left, right) else trap "distinct";
+} {
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for function in [
+        "reverse_weak_transitivity_control",
+        "both_strict",
+        "all_contradictory",
+    ] {
+        let outcomes = call_goals(source, function);
+        assert_eq!(outcomes.len(), 1, "{function}");
+        assert_eq!(
+            outcomes[0].disposition,
+            CallGoalDisposition::Discharged,
+            "{function} reaches an all-derivable state; the reverse-weak case is a transitivity contradiction control"
+        );
+        assert_eq!(
+            outcomes[0].evidence,
+            vec![CallGoalEvidence::AllDerivable],
+            "{function}"
+        );
+    }
+    let loop_outcomes = call_goals(source, "no_induction");
+    assert_eq!(loop_outcomes.len(), 1);
+    assert_eq!(
+        loop_outcomes[0].disposition,
+        CallGoalDisposition::Unproved,
+        "a relation established inside one ordinary iteration is not induced at its head"
+    );
+    assert!(loop_outcomes[0].evidence.is_empty());
+}
+
+#[test]
 fn an_arm_that_leaves_by_return_contributes_nothing_to_the_join() {
     let source = br#"const count: u64 = 4_u64;
 
