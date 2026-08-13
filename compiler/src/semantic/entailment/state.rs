@@ -366,6 +366,23 @@ pub(crate) struct DerivationMetrics {
 pub(crate) enum DerivationRootKind {
     BoundsObligation(u32),
     CallGoal(u32),
+    CountedS11 {
+        occurrence: u32,
+        atom: CountedRootAtom,
+    },
+}
+
+/// The fixed eight directed atomic bounds in one normative S11 group.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CountedRootAtom {
+    LowerCaptureToEndpoint,
+    LowerEndpointToCapture,
+    UpperCaptureToEndpoint,
+    UpperEndpointToCapture,
+    BinderToLowerCapture,
+    LowerCaptureToBinder,
+    LowerCaptureLeBinder,
+    BinderLtUpperCapture,
 }
 
 /// One mandatory query root into the function-local arena.
@@ -904,6 +921,52 @@ pub(crate) struct FactState {
 }
 
 impl FactState {
+    /// Establishes one normalized source bound and returns that exact source
+    /// parent even when a stronger fact was already live. S11 uses this at a
+    /// true body entry so the retained root names the executed header proof
+    /// point instead of whichever equivalent bound won fact-state
+    /// canonicalization.
+    pub(crate) fn establish_bound_with_proof(
+        &mut self,
+        left: TermId,
+        right: TermId,
+        bound: i128,
+        ledger: &mut DerivationLedger,
+        event: FlowEventId,
+    ) -> DerivationId {
+        let relation = Relation::Bound { left, right, bound };
+        let proof = ledger.intern(DerivationNode::SourceBound {
+            relation,
+            left,
+            right,
+            bound,
+            event,
+        });
+        if !self.all_derivable {
+            self.add_bound(left, right, bound, proof, ledger);
+        }
+        proof
+    }
+
+    /// Returns the live parent proving this directed bound without rerunning
+    /// closure. Immediately after S11 materializes its preheader snapshot,
+    /// this is either the exact materialized bound or the materialized
+    /// contradiction that proves every requested relation.
+    pub(crate) fn bound_parent(
+        &self,
+        left: TermId,
+        right: TermId,
+        requested: i128,
+    ) -> Option<DerivationId> {
+        if self.all_derivable {
+            return self.contradiction;
+        }
+        self.bounds
+            .get(&(left, right))
+            .is_some_and(|held| *held <= requested)
+            .then(|| self.bound_proofs[&(left, right)])
+    }
+
     pub(crate) fn establish(
         &mut self,
         relation: &Relation,
@@ -915,14 +978,7 @@ impl FactState {
         }
         match relation {
             Relation::Bound { left, right, bound } => {
-                let proof = ledger.intern(DerivationNode::SourceBound {
-                    relation: relation.clone(),
-                    left: *left,
-                    right: *right,
-                    bound: *bound,
-                    event,
-                });
-                self.add_bound(*left, *right, *bound, proof, ledger);
+                self.establish_bound_with_proof(*left, *right, *bound, ledger, event);
             }
             Relation::Equal { left, right } => {
                 let forward = ledger.intern(DerivationNode::SourceBound {

@@ -24,9 +24,9 @@ use super::super::model::{
     CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::state::{
-    DerivationId, DerivationInventory, DerivationLedger, DerivationRootKind, FactState,
-    FlowEventId, FlowEventKind, GoalId, GoalSign, GoalSupport, GoalTable, OutcomeFact, Relation,
-    close, join, materialize_closure,
+    CountedRootAtom, DerivationId, DerivationInventory, DerivationLedger, DerivationRootKind,
+    FactState, FlowEventId, FlowEventKind, GoalId, GoalSign, GoalSupport, GoalTable, OutcomeFact,
+    Relation, close, join, materialize_closure,
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
@@ -34,7 +34,7 @@ use super::term::{
 };
 use super::{
     BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
-    ClaimDisposition, ClaimOutcome, EntailmentContext, FunctionEntailment,
+    ClaimDisposition, ClaimOutcome, CountedDerivationSet, EntailmentContext, FunctionEntailment,
     FunctionEntailmentRewalk, ObligationOutcome, RewalkObligationOutcome, fragment_type,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
@@ -166,6 +166,7 @@ pub(super) fn analyze(
         obligations: run.obligations,
         claims: run.claims,
         call_goals: run.call_goals,
+        counted_derivations: run.counted_derivations,
         derivations: run.derivations,
         inventory: run.inventory,
     }
@@ -196,6 +197,7 @@ struct AnalysisRun {
     claims: Vec<ClaimOutcome>,
     call_goals: Vec<CallGoalOutcome>,
     call_counterfactuals: Vec<CallGoalCounterfactual>,
+    counted_derivations: Vec<CountedDerivationSet>,
     derivations: DerivationLedger,
     inventory: DerivationInventory,
 }
@@ -221,6 +223,9 @@ fn run(
         claims: Vec::new(),
         call_goals: Vec::new(),
         call_counterfactuals: Vec::new(),
+        counted_derivations: Vec::new(),
+        encountered_counted: 0,
+        completed_counted_roots: 0,
         scopes: Vec::new(),
         loops: Vec::new(),
         gives: Vec::new(),
@@ -237,6 +242,10 @@ fn run(
     }
     analyzer.walk_block(&function.body, &mut state);
     analyzer.scopes.pop();
+    assert_eq!(
+        analyzer.completed_counted_roots, analyzer.encountered_counted,
+        "every encountered counted statement must publish one complete S11 root group"
+    );
     let remap = analyzer.derivations.finish();
     for outcome in &mut analyzer.obligations {
         outcome.derivation = outcome
@@ -247,6 +256,9 @@ fn run(
         outcome.derivation = outcome
             .derivation
             .and_then(|id| remap.get(id.0 as usize).copied().flatten());
+    }
+    for counted in &mut analyzer.counted_derivations {
+        remap_counted_derivations(counted, &remap);
     }
     let (terms, length_bounds) = analyzer.terms.into_inventory();
     let inventory = DerivationInventory {
@@ -259,8 +271,31 @@ fn run(
         claims: analyzer.claims,
         call_goals: analyzer.call_goals,
         call_counterfactuals: analyzer.call_counterfactuals,
+        counted_derivations: analyzer.counted_derivations,
         derivations: analyzer.derivations,
         inventory,
+    }
+}
+
+fn remap_counted_derivations(counted: &mut CountedDerivationSet, remap: &[Option<DerivationId>]) {
+    let remap_parent = |parent: &mut DerivationId| {
+        *parent = remap
+            .get(parent.0 as usize)
+            .copied()
+            .flatten()
+            .expect("counted S11 root parent retained by the sole ledger root channel");
+    };
+    for parent in [
+        &mut counted.lower_capture_eq_endpoint.forward.parent,
+        &mut counted.lower_capture_eq_endpoint.reverse.parent,
+        &mut counted.upper_capture_eq_endpoint.forward.parent,
+        &mut counted.upper_capture_eq_endpoint.reverse.parent,
+        &mut counted.binder_eq_lower_capture.forward.parent,
+        &mut counted.binder_eq_lower_capture.reverse.parent,
+        &mut counted.lower_capture_le_binder.atomic.parent,
+        &mut counted.binder_lt_upper_capture.atomic.parent,
+    ] {
+        remap_parent(parent);
     }
 }
 
@@ -283,6 +318,9 @@ struct Analyzer<'check, 'unit> {
     claims: Vec<ClaimOutcome>,
     call_goals: Vec<CallGoalOutcome>,
     call_counterfactuals: Vec<CallGoalCounterfactual>,
+    counted_derivations: Vec<CountedDerivationSet>,
+    encountered_counted: u32,
+    completed_counted_roots: u32,
     /// Lexical scope stack: the bindings declared in each open block.
     scopes: Vec<Vec<BindingId>>,
     loops: Vec<LoopFrame>,
@@ -290,6 +328,56 @@ struct Analyzer<'check, 'unit> {
 }
 
 impl Analyzer<'_, '_> {
+    fn retain_counted_derivations(&mut self, occurrence: u32, counted: CountedDerivationSet) {
+        assert_eq!(
+            occurrence, self.completed_counted_roots,
+            "counted S11 groups must complete in statement-walk order"
+        );
+        let atoms = [
+            (
+                CountedRootAtom::LowerCaptureToEndpoint,
+                counted.lower_capture_eq_endpoint.forward.parent,
+            ),
+            (
+                CountedRootAtom::LowerEndpointToCapture,
+                counted.lower_capture_eq_endpoint.reverse.parent,
+            ),
+            (
+                CountedRootAtom::UpperCaptureToEndpoint,
+                counted.upper_capture_eq_endpoint.forward.parent,
+            ),
+            (
+                CountedRootAtom::UpperEndpointToCapture,
+                counted.upper_capture_eq_endpoint.reverse.parent,
+            ),
+            (
+                CountedRootAtom::BinderToLowerCapture,
+                counted.binder_eq_lower_capture.forward.parent,
+            ),
+            (
+                CountedRootAtom::LowerCaptureToBinder,
+                counted.binder_eq_lower_capture.reverse.parent,
+            ),
+            (
+                CountedRootAtom::LowerCaptureLeBinder,
+                counted.lower_capture_le_binder.atomic.parent,
+            ),
+            (
+                CountedRootAtom::BinderLtUpperCapture,
+                counted.binder_lt_upper_capture.atomic.parent,
+            ),
+        ];
+        for (atom, parent) in atoms {
+            self.derivations
+                .add_root(DerivationRootKind::CountedS11 { occurrence, atom }, parent);
+        }
+        self.counted_derivations.push(counted);
+        self.completed_counted_roots = self
+            .completed_counted_roots
+            .checked_add(1)
+            .expect("counted S11 root groups exceed the u32 identity space");
+    }
+
     fn proof_event(
         &mut self,
         kind: FlowEventKind,
@@ -2287,6 +2375,11 @@ impl Analyzer<'_, '_> {
                 body,
                 ..
             } => {
+                let occurrence = self.encountered_counted;
+                self.encountered_counted = self
+                    .encountered_counted
+                    .checked_add(1)
+                    .expect("counted statements exceed the u32 identity space");
                 // [FN-1, ENT-3 S11]: evaluate each endpoint exactly once,
                 // left to right, then install the private captures and the
                 // compiler-updated binder in a construct-owned fact scope.
@@ -2295,7 +2388,7 @@ impl Analyzer<'_, '_> {
                 let outer_scope_depth = self.scopes.len();
                 self.scopes.push(vec![*binder]);
                 let range_path = node_path.components().to_vec();
-                let counted = self.establish_counted_preheader(
+                let counted_terms = self.establish_counted_preheader(
                     node_path,
                     &range_path,
                     *binder,
@@ -2309,6 +2402,7 @@ impl Analyzer<'_, '_> {
                 // on later iterations.
                 *state =
                     materialize_closure(state, &self.terms, &self.goals, &mut self.derivations);
+                let counted = self.capture_counted_preheader(counted_terms, state);
 
                 let mut kills = LoopKills::default();
                 let body_reaches_head = self.collect_continuing_loop_kills(
@@ -2339,7 +2433,9 @@ impl Analyzer<'_, '_> {
                     breaks: Vec::new(),
                 });
                 let mut body_state = head.clone();
-                self.establish_counted_body_entry(node_path, &counted, &mut body_state);
+                let counted =
+                    self.establish_counted_body_entry(node_path, counted, &mut body_state);
+                self.retain_counted_derivations(occurrence, counted);
                 let _ = self.walk_block(body, &mut body_state);
                 let frame = self.loops.pop();
                 let breaks = frame.map(|frame| frame.breaks).unwrap_or_default();

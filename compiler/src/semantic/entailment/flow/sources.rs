@@ -24,6 +24,10 @@ use super::super::state::{
 use super::super::term::{
     CountedCaptureSide, PlaceRoot, PlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
 };
+use super::super::{
+    CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
+    CountedEqualityDerivation, CountedProofPoint,
+};
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
 
@@ -40,9 +44,20 @@ const BOUNDARY_COUNTS: [(&str, &str, &str); 4] = [
 
 /// The three S11 terms installed for one counted range.
 pub(super) struct CountedTerms {
+    pub(super) lower_source: TermId,
     pub(super) lower: TermId,
     pub(super) binder: TermId,
     pub(super) upper: TermId,
+    pub(super) upper_source: TermId,
+}
+
+/// The three preheader relations after their complete S11 snapshot has been
+/// materialized, but before continuing kills are applied.
+pub(super) struct CountedPreheader {
+    terms: CountedTerms,
+    lower_capture_eq_endpoint: CountedEqualityDerivation,
+    upper_capture_eq_endpoint: CountedEqualityDerivation,
+    binder_eq_lower_capture: CountedEqualityDerivation,
 }
 
 impl Analyzer<'_, '_> {
@@ -110,9 +125,55 @@ impl Analyzer<'_, '_> {
             event,
         );
         CountedTerms {
+            lower_source,
             lower: lower_capture,
             binder,
             upper: upper_capture,
+            upper_source,
+        }
+    }
+
+    /// Captures the three once-only S11 equality roots from the already
+    /// materialized post-capture state. This does not close or walk again.
+    pub(super) fn capture_counted_preheader(
+        &self,
+        terms: CountedTerms,
+        state: &FactState,
+    ) -> CountedPreheader {
+        let equality = |left: TermId, right: TermId| {
+            let forward = Relation::Bound {
+                left,
+                right,
+                bound: 0,
+            };
+            let reverse = Relation::Bound {
+                left: right,
+                right: left,
+                bound: 0,
+            };
+            CountedEqualityDerivation {
+                relation: Relation::Equal { left, right },
+                forward: CountedAtomicDerivation {
+                    relation: forward,
+                    proof_point: CountedProofPoint::PreheaderSnapshot,
+                    parent: state
+                        .bound_parent(left, right, 0)
+                        .expect("materialized S11 equality must retain its forward parent"),
+                },
+                reverse: CountedAtomicDerivation {
+                    relation: reverse,
+                    proof_point: CountedProofPoint::PreheaderSnapshot,
+                    parent: state
+                        .bound_parent(right, left, 0)
+                        .expect("materialized S11 equality must retain its reverse parent"),
+                },
+            }
+        };
+        CountedPreheader {
+            lower_capture_eq_endpoint: equality(terms.lower, terms.lower_source),
+            upper_capture_eq_endpoint: equality(terms.upper, terms.upper_source),
+            binder_eq_lower_capture: equality(terms.binder, terms.lower),
+            terms,
         }
     }
 
@@ -120,28 +181,56 @@ impl Analyzer<'_, '_> {
     pub(super) fn establish_counted_body_entry(
         &mut self,
         node_path: &crate::NodePath,
-        counted: &CountedTerms,
+        counted: CountedPreheader,
         state: &mut FactState,
-    ) {
+    ) -> CountedDerivationSet {
         let event = self.proof_event(FlowEventKind::S11, Some(node_path));
-        state.establish(
-            &Relation::Bound {
-                left: counted.lower,
-                right: counted.binder,
-                bound: 0,
-            },
+        let lower_relation = Relation::Bound {
+            left: counted.terms.lower,
+            right: counted.terms.binder,
+            bound: 0,
+        };
+        let lower_parent = state.establish_bound_with_proof(
+            counted.terms.lower,
+            counted.terms.binder,
+            0,
             &mut self.derivations,
             event,
         );
-        state.establish(
-            &Relation::Bound {
-                left: counted.binder,
-                right: counted.upper,
-                bound: -1,
-            },
+        let upper_relation = Relation::Bound {
+            left: counted.terms.binder,
+            right: counted.terms.upper,
+            bound: -1,
+        };
+        let upper_parent = state.establish_bound_with_proof(
+            counted.terms.binder,
+            counted.terms.upper,
+            -1,
             &mut self.derivations,
             event,
         );
+        CountedDerivationSet {
+            counted_node_path: node_path.clone(),
+            lower_capture_eq_endpoint: counted.lower_capture_eq_endpoint,
+            upper_capture_eq_endpoint: counted.upper_capture_eq_endpoint,
+            binder_eq_lower_capture: counted.binder_eq_lower_capture,
+            lower_capture_le_binder: CountedBoundDerivation {
+                relation: lower_relation.clone(),
+                atomic: CountedAtomicDerivation {
+                    relation: lower_relation,
+                    proof_point: CountedProofPoint::BodyEntry,
+                    parent: lower_parent,
+                },
+            },
+            binder_lt_upper_capture: CountedBoundDerivation {
+                relation: upper_relation.clone(),
+                atomic: CountedAtomicDerivation {
+                    relation: upper_relation,
+                    proof_point: CountedProofPoint::BodyEntry,
+                    parent: upper_parent,
+                },
+            },
+        }
     }
 
     // ------------------------------------------------------------------

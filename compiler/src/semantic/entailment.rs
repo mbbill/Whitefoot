@@ -34,11 +34,13 @@ use term::TermId;
 
 #[cfg(test)]
 pub(crate) use state::{
-    DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
-    GoalId, GoalSign, ImplicitBoundKind, JoinParent, Relation,
+    CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
+    FlowEventKind, GoalId, GoalSign, ImplicitBoundKind, JoinParent, Relation,
 };
 #[cfg(test)]
-pub(crate) use term::{LengthBound, TermId, TermKind, ZERO, type_range};
+pub(crate) use term::{
+    CountedCaptureSide, LengthBound, PlaceProjection, TermId, TermKind, ZERO, type_range,
+};
 
 use std::collections::HashMap;
 
@@ -147,6 +149,54 @@ pub(crate) struct BoundsRequest {
     pub(crate) left: Option<TermId>,
     pub(crate) right: TermId,
     pub(crate) bound: i128,
+}
+
+/// The two exact S11 proof points retained for one counted statement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CountedProofPoint {
+    /// The complete post-capture closure, before continuing kills.
+    PreheaderSnapshot,
+    /// The executed true-header edge entering the counted body.
+    BodyEntry,
+}
+
+/// One directed normalized bound and its exact parent in the sole
+/// function-local derivation ledger.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CountedAtomicDerivation {
+    pub(crate) relation: state::Relation,
+    pub(crate) proof_point: CountedProofPoint,
+    pub(crate) parent: DerivationId,
+}
+
+/// One normative S11 equality and both of its directed atomic bounds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CountedEqualityDerivation {
+    pub(crate) relation: state::Relation,
+    pub(crate) forward: CountedAtomicDerivation,
+    pub(crate) reverse: CountedAtomicDerivation,
+}
+
+/// One normative S11 ordering relation and its directed atomic bound.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CountedBoundDerivation {
+    pub(crate) relation: state::Relation,
+    pub(crate) atomic: CountedAtomicDerivation,
+}
+
+/// The complete fixed S11 root group for one concrete counted statement.
+///
+/// Field order is normative S11 order: the two endpoint captures, binder
+/// initialization, and the two true-header bounds. The three equalities each
+/// retain both directions, for exactly eight atomic ledger roots.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CountedDerivationSet {
+    pub(crate) counted_node_path: NodePath,
+    pub(crate) lower_capture_eq_endpoint: CountedEqualityDerivation,
+    pub(crate) upper_capture_eq_endpoint: CountedEqualityDerivation,
+    pub(crate) binder_eq_lower_capture: CountedEqualityDerivation,
+    pub(crate) lower_capture_le_binder: CountedBoundDerivation,
+    pub(crate) binder_lt_upper_capture: CountedBoundDerivation,
 }
 
 /// [CLM-2] lifecycle disposition of one claim, judged at its statement node
@@ -267,6 +317,9 @@ pub(crate) struct FunctionEntailment {
     pub(crate) claims: Vec<ClaimOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
+    /// One complete five-relation/eight-atomic S11 group per counted
+    /// statement, in deterministic statement-walk order.
+    pub(crate) counted_derivations: Vec<CountedDerivationSet>,
     /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
     pub(crate) derivations: DerivationLedger,
     /// Canonical term and goal identities moved from the analyzer so every

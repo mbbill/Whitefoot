@@ -8,16 +8,19 @@
 //! observable. The rejection behavior itself is tested at the end of this
 //! file through the ordinary acceptance path.
 
-use crate::{CallRequirementDisposition, SemanticIssueKind, SemanticOutcome, SemanticRule};
+use crate::{
+    CallRequirementDisposition, SemanticIssueKind, SemanticOutcome, SemanticRule, SourceInput,
+};
 
 use super::super::entailment::{
     CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimDisposition, ClaimOutcome,
-    DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
-    FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent, LengthBound,
-    ObligationOutcome, Relation, TermId, TermKind, ZERO, type_range,
+    CountedAtomicDerivation, CountedCaptureSide, CountedDerivationSet, CountedProofPoint,
+    CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
+    FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
+    LengthBound, ObligationOutcome, PlaceProjection, Relation, TermId, TermKind, ZERO, type_range,
 };
 use super::super::model::{CheckedExpression, CheckedStatement, IntegerType};
-use super::{assert_rule, with_semantics, with_semantics_dark};
+use super::{assert_rule, with_semantics, with_semantics_dark, with_semantics_inputs};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
     with_semantics_dark(source, |outcome| {
@@ -77,6 +80,21 @@ fn entailment(source: &[u8], function: &str) -> FunctionEntailment {
             .unwrap_or_else(|| panic!("function {function} must exist"))
             .entailment
             .clone()
+    })
+}
+
+fn entailments(source: &[u8], function: &str) -> Vec<FunctionEntailment> {
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("entailment test source must check completely: {outcome:?}");
+        };
+        checked
+            .data
+            .functions
+            .iter()
+            .filter(|candidate| candidate.name == function)
+            .map(|candidate| candidate.entailment.clone())
+            .collect()
     })
 }
 
@@ -218,6 +236,7 @@ fn normalized_derivation_dump(summary: &FunctionEntailment) -> Vec<u8> {
             &summary.derivations.events,
             &summary.derivations.nodes,
             &summary.derivations.roots,
+            &summary.counted_derivations,
             &summary.inventory,
         )
     )
@@ -315,6 +334,223 @@ fn assert_array_length_bound(
             .is_some_and(|length_bound| relation_matches(candidate, length_bound))
     });
     assert!(matched, "array-length implicit bound must resolve exactly");
+}
+
+fn counted_atoms(
+    counted: &CountedDerivationSet,
+) -> [(CountedRootAtom, &CountedAtomicDerivation); 8] {
+    [
+        (
+            CountedRootAtom::LowerCaptureToEndpoint,
+            &counted.lower_capture_eq_endpoint.forward,
+        ),
+        (
+            CountedRootAtom::LowerEndpointToCapture,
+            &counted.lower_capture_eq_endpoint.reverse,
+        ),
+        (
+            CountedRootAtom::UpperCaptureToEndpoint,
+            &counted.upper_capture_eq_endpoint.forward,
+        ),
+        (
+            CountedRootAtom::UpperEndpointToCapture,
+            &counted.upper_capture_eq_endpoint.reverse,
+        ),
+        (
+            CountedRootAtom::BinderToLowerCapture,
+            &counted.binder_eq_lower_capture.forward,
+        ),
+        (
+            CountedRootAtom::LowerCaptureToBinder,
+            &counted.binder_eq_lower_capture.reverse,
+        ),
+        (
+            CountedRootAtom::LowerCaptureLeBinder,
+            &counted.lower_capture_le_binder.atomic,
+        ),
+        (
+            CountedRootAtom::BinderLtUpperCapture,
+            &counted.binder_lt_upper_capture.atomic,
+        ),
+    ]
+}
+
+const fn counted_atom_index(atom: CountedRootAtom) -> usize {
+    match atom {
+        CountedRootAtom::LowerCaptureToEndpoint => 0,
+        CountedRootAtom::LowerEndpointToCapture => 1,
+        CountedRootAtom::UpperCaptureToEndpoint => 2,
+        CountedRootAtom::UpperEndpointToCapture => 3,
+        CountedRootAtom::BinderToLowerCapture => 4,
+        CountedRootAtom::LowerCaptureToBinder => 5,
+        CountedRootAtom::LowerCaptureLeBinder => 6,
+        CountedRootAtom::BinderLtUpperCapture => 7,
+    }
+}
+
+fn assert_counted_atomic_parent(
+    summary: &FunctionEntailment,
+    conclusions: &[DerivationConclusion],
+    counted: &CountedDerivationSet,
+    atomic: &CountedAtomicDerivation,
+) {
+    let Relation::Bound { left, right, bound } = atomic.relation else {
+        panic!("every counted atomic root must name one normalized bound");
+    };
+    retained_term(summary, left);
+    retained_term(summary, right);
+    match retained_conclusion(conclusions, atomic.parent) {
+        DerivationConclusion::Relation(Relation::Bound {
+            left: parent_left,
+            right: parent_right,
+            bound: parent_bound,
+        }) => {
+            assert_eq!((*parent_left, *parent_right), (left, right));
+            assert_eq!(
+                *parent_bound, bound,
+                "the retained parent must prove the exact normalized S11 relation"
+            );
+        }
+        DerivationConclusion::Contradiction => {}
+        conclusion => panic!("counted atomic parent is incompatible: {conclusion:?}"),
+    }
+    let parent = &summary.derivations.nodes[atomic.parent.0 as usize];
+    match atomic.proof_point {
+        CountedProofPoint::PreheaderSnapshot => assert!(matches!(
+            parent,
+            DerivationNode::MaterializedBound { .. }
+                | DerivationNode::MaterializedContradiction { .. }
+        )),
+        CountedProofPoint::BodyEntry => {
+            let DerivationNode::SourceBound { event, .. } = parent else {
+                panic!("a non-reconstructed body-entry root must be its S11 source bound");
+            };
+            let event = retained_event(summary, *event);
+            assert_eq!(event.kind, FlowEventKind::S11);
+            assert_eq!(event.node_path.as_ref(), Some(&counted.counted_node_path));
+        }
+    }
+}
+
+fn validate_counted_derivation_set(
+    summary: &FunctionEntailment,
+    conclusions: &[DerivationConclusion],
+    counted: &CountedDerivationSet,
+) {
+    assert!(!counted.counted_node_path.components().is_empty());
+    let Relation::Equal {
+        left: lower_capture,
+        right: lower_endpoint,
+    } = counted.lower_capture_eq_endpoint.relation
+    else {
+        panic!("the first counted semantic root must be the lower capture equality");
+    };
+    let Relation::Equal {
+        left: upper_capture,
+        right: upper_endpoint,
+    } = counted.upper_capture_eq_endpoint.relation
+    else {
+        panic!("the second counted semantic root must be the upper capture equality");
+    };
+    let Relation::Equal {
+        left: binder,
+        right: binder_lower_capture,
+    } = counted.binder_eq_lower_capture.relation
+    else {
+        panic!("the third counted semantic root must be binder initialization");
+    };
+    assert_eq!(binder_lower_capture, lower_capture);
+    assert!(matches!(
+        retained_term(summary, lower_capture),
+        TermKind::CountedCapture {
+            range_path,
+            side: CountedCaptureSide::Lower,
+        } if range_path == counted.counted_node_path.components()
+    ));
+    assert!(matches!(
+        retained_term(summary, upper_capture),
+        TermKind::CountedCapture {
+            range_path,
+            side: CountedCaptureSide::Upper,
+        } if range_path == counted.counted_node_path.components()
+    ));
+    assert!(matches!(
+        retained_term(summary, binder),
+        TermKind::Place(_, IntegerType::U64)
+    ));
+    assert!(!matches!(
+        retained_term(summary, lower_endpoint),
+        TermKind::CountedCapture { .. }
+    ));
+    assert!(!matches!(
+        retained_term(summary, upper_endpoint),
+        TermKind::CountedCapture { .. }
+    ));
+
+    let equality_atoms = [
+        (
+            &counted.lower_capture_eq_endpoint,
+            lower_capture,
+            lower_endpoint,
+        ),
+        (
+            &counted.upper_capture_eq_endpoint,
+            upper_capture,
+            upper_endpoint,
+        ),
+        (&counted.binder_eq_lower_capture, binder, lower_capture),
+    ];
+    for (equality, left, right) in equality_atoms {
+        assert_eq!(
+            equality.forward.relation,
+            Relation::Bound {
+                left,
+                right,
+                bound: 0,
+            }
+        );
+        assert_eq!(
+            equality.reverse.relation,
+            Relation::Bound {
+                left: right,
+                right: left,
+                bound: 0,
+            }
+        );
+        assert_eq!(
+            equality.forward.proof_point,
+            CountedProofPoint::PreheaderSnapshot
+        );
+        assert_eq!(
+            equality.reverse.proof_point,
+            CountedProofPoint::PreheaderSnapshot
+        );
+    }
+    let lower_bound = Relation::Bound {
+        left: lower_capture,
+        right: binder,
+        bound: 0,
+    };
+    let upper_bound = Relation::Bound {
+        left: binder,
+        right: upper_capture,
+        bound: -1,
+    };
+    assert_eq!(counted.lower_capture_le_binder.relation, lower_bound);
+    assert_eq!(counted.lower_capture_le_binder.atomic.relation, lower_bound);
+    assert_eq!(counted.binder_lt_upper_capture.relation, upper_bound);
+    assert_eq!(counted.binder_lt_upper_capture.atomic.relation, upper_bound);
+    assert_eq!(
+        counted.lower_capture_le_binder.atomic.proof_point,
+        CountedProofPoint::BodyEntry
+    );
+    assert_eq!(
+        counted.binder_lt_upper_capture.atomic.proof_point,
+        CountedProofPoint::BodyEntry
+    );
+    for (_, atomic) in counted_atoms(counted) {
+        assert_counted_atomic_parent(summary, conclusions, counted, atomic);
+    }
 }
 
 fn validate_derivations(summary: &FunctionEntailment) {
@@ -817,8 +1053,14 @@ fn validate_derivations(summary: &FunctionEntailment) {
         assert!(summary.derivations.metrics.retained_bytes > 0);
     }
 
+    for counted in &summary.counted_derivations {
+        validate_counted_derivation_set(summary, &conclusions, counted);
+    }
+
     let mut seen_obligations = vec![false; summary.obligations.len()];
     let mut seen_calls = vec![false; summary.call_goals.len()];
+    let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
+    let mut counted_root_order = Vec::new();
     let mut class_counts = [0u32; 4];
     for root in &summary.derivations.roots {
         let conclusion = retained_conclusion(&conclusions, root.node);
@@ -893,6 +1135,25 @@ fn validate_derivations(summary: &FunctionEntailment) {
                     }
                 }
             }
+            DerivationRootKind::CountedS11 { occurrence, atom } => {
+                counted_root_order.push((occurrence, atom));
+                let occurrence = occurrence as usize;
+                let counted = summary
+                    .counted_derivations
+                    .get(occurrence)
+                    .expect("counted-root occurrence must resolve");
+                let index = counted_atom_index(atom);
+                assert!(
+                    !seen_counted[occurrence][index],
+                    "one exact root per counted atomic relation"
+                );
+                seen_counted[occurrence][index] = true;
+                let expected = counted_atoms(counted)
+                    .into_iter()
+                    .find_map(|(candidate, atomic)| (candidate == atom).then_some(atomic.parent))
+                    .expect("the fixed counted atom must exist");
+                assert_eq!(root.node, expected);
+            }
         }
 
         match &summary.derivations.nodes[root.node.0 as usize] {
@@ -937,6 +1198,29 @@ fn validate_derivations(summary: &FunctionEntailment) {
         assert_eq!(outcome.derivation.is_some(), discharged);
         assert_eq!(seen_calls[ordinal], discharged);
     }
+    assert!(
+        seen_counted
+            .iter()
+            .all(|occurrence| occurrence.iter().all(|seen| *seen)),
+        "every counted statement must retain all eight atomic roots"
+    );
+    let expected_counted_order: Vec<_> = summary
+        .counted_derivations
+        .iter()
+        .enumerate()
+        .flat_map(|(occurrence, counted)| {
+            counted_atoms(counted).map(|(atom, _)| {
+                (
+                    u32::try_from(occurrence).expect("counted test occurrence fits u32"),
+                    atom,
+                )
+            })
+        })
+        .collect();
+    assert_eq!(
+        counted_root_order, expected_counted_order,
+        "counted ledger roots stay grouped in source occurrence and normative atom order"
+    );
     assert_eq!(
         class_counts,
         [
@@ -945,6 +1229,21 @@ fn validate_derivations(summary: &FunctionEntailment) {
             summary.derivations.metrics.projected_goal_roots,
             summary.derivations.metrics.contradiction_roots,
         ]
+    );
+}
+
+fn assert_derivation_mutation_rejected(
+    summary: &FunctionEntailment,
+    mutate: impl FnOnce(&mut FunctionEntailment),
+) {
+    let mut mutant = summary.clone();
+    mutate(&mut mutant);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            validate_derivations(&mutant);
+        }))
+        .is_err(),
+        "the hostile counted-root mutation must fail the structural checker"
     );
 }
 
@@ -2877,6 +3176,16 @@ fn read(values: own array<i32, count>) -> own i32 pure {
   return total;
 }
 
+fn ordinary(values: own array<i32, count>, i: own u64) -> own i32 pure {
+  let upper = 4_u64;
+  if ilt(i, upper) {
+    set upper = 0_u64;
+    return values[i];
+  } else {
+    return 0_i32;
+  }
+}
+
 fn main() -> own unit pure {
   return unit;
 }
@@ -2900,6 +3209,360 @@ fn main() -> own unit pure {
         |node| matches!(node, DerivationNode::MaterializedBound { .. }),
         "the counted preheader materialization marker",
     );
+    assert_eq!(
+        discharge_flags(source, "ordinary"),
+        vec![false],
+        "without S11's preheader materialization, the same write kills the ordinary query-derived relation"
+    );
+}
+
+#[test]
+fn counted_roots_cover_hostile_control_edges_and_unused_s11_facts() {
+    let source = br#"enum Stop {
+  Failed();
+}
+
+fn maybe(fail: own Bool) -> own Result<unit, Stop> pure {
+  if fail {
+    let stopped = Failed();
+    return Err<unit, Stop>(error: stopped);
+  }
+  return Ok<unit, Stop>(value: unit);
+}
+
+fn hostile(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> own Result<unit, Stop> pure {
+  for @zero zero in 0_u64..0_u64 {
+  }
+  for @reversed reversed in 2_u64..1_u64 {
+  }
+  for @singleton singleton in 0_u64..1_u64 {
+  }
+  for @maximum maximum in 18446744073709551614_u64..18446744073709551615_u64 {
+  }
+  let mutable_lower = lower;
+  let mutable_upper = upper;
+  for @mutated at in mutable_lower..mutable_upper {
+    set mutable_lower = 0_u64;
+    set mutable_upper = 0_u64;
+    if leave {
+      break @mutated;
+    }
+  }
+  for @returning at in 0_u64..1_u64 {
+    if leave {
+      return Ok<unit, Stop>(value: unit);
+    }
+  }
+  for @propagating at in 0_u64..1_u64 {
+    let ignored = propagate maybe(fail: fail);
+  }
+  for @outer_counted outer in 0_u64..1_u64 {
+    for @inner_counted inner in 0_u64..1_u64 {
+      if leave {
+        break @inner_counted;
+      }
+    }
+  }
+  loop @ordinary {
+    for @breaking at in 0_u64..1_u64 {
+      if leave {
+        break @ordinary;
+      } else {
+        break @breaking;
+      }
+    }
+    break @ordinary;
+  }
+  return Ok<unit, Stop>(value: unit);
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let summary = entailment(source, "hostile");
+    validate_derivations(&summary);
+    assert_eq!(summary.counted_derivations.len(), 10);
+    assert_eq!(
+        summary
+            .derivations
+            .roots
+            .iter()
+            .filter(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
+            .count(),
+        80
+    );
+    let paths: std::collections::HashSet<_> = summary
+        .counted_derivations
+        .iter()
+        .map(|counted| counted.counted_node_path.clone())
+        .collect();
+    assert_eq!(paths.len(), 10, "every counted occurrence is retained once");
+    let mutated = &summary.counted_derivations[4];
+    for equality in [
+        &mutated.lower_capture_eq_endpoint,
+        &mutated.upper_capture_eq_endpoint,
+    ] {
+        assert!(matches!(
+            retained_term(
+                &summary,
+                match equality.relation {
+                    Relation::Equal { right, .. } => right,
+                    _ => unreachable!(),
+                }
+            ),
+            TermKind::Place(_, IntegerType::U64)
+        ));
+        assert_eq!(
+            equality.forward.proof_point,
+            CountedProofPoint::PreheaderSnapshot,
+            "both mutable endpoint identities remain rooted at the once-only snapshot"
+        );
+    }
+}
+
+#[test]
+fn counted_roots_cover_contradictory_preheaders_and_neutral_join_predecessors() {
+    let source = br#"const count: u64 = 1_u64;
+
+fn contradictory(left: own u64, right: own u64, choose: own Bool) -> own unit traps {
+  if choose {
+    check ilt(left, left) else trap "left contradiction";
+  } else {
+    check ilt(right, right) else trap "right contradiction";
+  }
+  for @impossible i in 0_u64..1_u64 {
+  }
+  return unit;
+}
+
+fn joined(values: own array<i32, count>, x: own u64) -> own i32 pure {
+  let upper = 1_u64;
+  if ilt(x, 0_u64) {
+    let impossible = x;
+  }
+  let total = 0_i32;
+  for @items i in 0_u64..upper {
+    let item = values[i];
+    set total = total +wrap item;
+  }
+  return total;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let contradictory = entailment(source, "contradictory");
+    validate_derivations(&contradictory);
+    assert_eq!(contradictory.counted_derivations.len(), 1);
+    for (_, atomic) in counted_atoms(&contradictory.counted_derivations[0])
+        .into_iter()
+        .take(6)
+    {
+        assert!(matches!(
+            contradictory.derivations.nodes[atomic.parent.0 as usize],
+            DerivationNode::MaterializedContradiction { .. }
+        ));
+        assert_eq!(atomic.proof_point, CountedProofPoint::PreheaderSnapshot);
+    }
+    for (_, atomic) in counted_atoms(&contradictory.counted_derivations[0])
+        .into_iter()
+        .skip(6)
+    {
+        assert!(matches!(
+            contradictory.derivations.nodes[atomic.parent.0 as usize],
+            DerivationNode::SourceBound { event, .. }
+                if contradictory.derivations.events[event.0 as usize].kind == FlowEventKind::S11
+        ));
+        assert_eq!(atomic.proof_point, CountedProofPoint::BodyEntry);
+    }
+    assert_root_contains(
+        &contradictory,
+        contradictory.counted_derivations[0]
+            .lower_capture_eq_endpoint
+            .forward
+            .parent,
+        |node| matches!(node, DerivationNode::JoinContradiction { parents, .. } if parents.len() == 2),
+        "the counted statement follows the binary all-contradictory join",
+    );
+
+    let joined = entailment(source, "joined");
+    validate_derivations(&joined);
+    assert_eq!(joined.counted_derivations.len(), 1);
+    assert_eq!(joined.obligations.len(), 1);
+    assert!(joined.obligations[0].discharged);
+    assert_root_contains(
+        &joined,
+        obligation_root(&joined, 0),
+        |node| {
+            let DerivationNode::JoinBound { parents, .. } = node else {
+                return false;
+            };
+            let contradictory = parents
+                .iter()
+                .filter(|parent| {
+                    matches!(
+                        joined.derivations.nodes[parent.parent.0 as usize],
+                        DerivationNode::L0Contradiction { .. }
+                            | DerivationNode::GoalContradiction { .. }
+                            | DerivationNode::JoinContradiction { .. }
+                            | DerivationNode::MaterializedContradiction { .. }
+                    )
+                })
+                .count();
+            parents.len() == 2 && contradictory == 1
+        },
+        "the counted snapshot consequence's join with its contradictory-neutral predecessor",
+    );
+}
+
+#[test]
+fn counted_root_mutations_fail_the_structural_checker() {
+    let source = br#"fn probe(upper: own u64) -> own unit pure {
+  for @items i in 0_u64..upper {
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let summary = entailment(source, "probe");
+    validate_derivations(&summary);
+    assert_eq!(summary.counted_derivations.len(), 1);
+
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        let index = mutant
+            .derivations
+            .roots
+            .iter()
+            .position(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
+            .expect("counted root");
+        mutant.derivations.roots.remove(index);
+    });
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        let root = *mutant
+            .derivations
+            .roots
+            .iter()
+            .find(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
+            .expect("counted root");
+        mutant.derivations.roots.push(root);
+    });
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        mutant.counted_derivations[0]
+            .counted_node_path
+            .components
+            .push(999);
+    });
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        let relation = &mut mutant.counted_derivations[0]
+            .lower_capture_eq_endpoint
+            .forward
+            .relation;
+        let Relation::Bound { bound, .. } = relation else {
+            unreachable!();
+        };
+        *bound = 1;
+    });
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        mutant.counted_derivations[0]
+            .upper_capture_eq_endpoint
+            .reverse
+            .parent = DerivationId(u32::MAX);
+    });
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        let parent = mutant.counted_derivations[0]
+            .lower_capture_eq_endpoint
+            .forward
+            .parent;
+        let event = match mutant.derivations.nodes[parent.0 as usize] {
+            DerivationNode::MaterializedBound { event, .. }
+            | DerivationNode::MaterializedContradiction { event, .. } => event,
+            ref node => panic!("snapshot root has the wrong node: {node:?}"),
+        };
+        mutant.derivations.events[event.0 as usize].kind = FlowEventKind::Join;
+    });
+    assert_derivation_mutation_rejected(&summary, |mutant| {
+        let killed_preheader_parent = mutant.counted_derivations[0]
+            .binder_eq_lower_capture
+            .reverse
+            .parent;
+        mutant.counted_derivations[0]
+            .lower_capture_le_binder
+            .atomic
+            .parent = killed_preheader_parent;
+    });
+}
+
+#[test]
+fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
+    let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> own unit pure {
+  let upper = len(values);
+  for @first i in 0_u64..upper {
+  }
+  for @second j in 1_u64..upper {
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  let small = array_new<u8, 2>(0_u8);
+  ranges<2>(values: move small);
+  let large = array_new<u8, 5>(0_u8);
+  ranges<5>(values: move large);
+  return unit;
+}
+"#;
+    let normalized_instances = || {
+        let instances = entailments(source, "ranges");
+        assert_eq!(instances.len(), 2);
+        let mut normalized = Vec::new();
+        for summary in instances {
+            validate_derivations(&summary);
+            assert_eq!(summary.counted_derivations.len(), 2);
+            assert!(
+                summary
+                    .inventory
+                    .terms
+                    .iter()
+                    .all(|term| !matches!(term, TermKind::ConstParameter(_))),
+                "concrete instances retain no symbolic const term"
+            );
+            let mut lengths: Vec<_> = summary
+                .inventory
+                .length_bounds
+                .iter()
+                .filter_map(|bound| match bound {
+                    Some(LengthBound::Constant(value)) => Some(*value),
+                    Some(LengthBound::Equal(_)) | None => None,
+                })
+                .collect();
+            lengths.sort_unstable();
+            lengths.dedup();
+            assert_eq!(lengths.len(), 1);
+            normalized.push((lengths[0], normalized_derivation_dump(&summary)));
+        }
+        normalized.sort_by_key(|(length, _)| *length);
+        normalized
+    };
+    let expected = normalized_instances();
+    assert_eq!(
+        expected
+            .iter()
+            .map(|(length, _)| *length)
+            .collect::<Vec<_>>(),
+        vec![2, 5]
+    );
+    for run in 1..20 {
+        assert_eq!(
+            normalized_instances(),
+            expected,
+            "normalized concrete counted S11 ledgers changed on run {run}"
+        );
+    }
 }
 
 #[test]
@@ -4187,12 +4850,145 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn counted_counterfactual_rewalks_publish_only_exact_outcome_shape() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>) -> own i32 pure {
+  let total = 0_i32;
+  for @items i in 0_u64..4_u64 {
+    let value = values[i];
+    set total = total +wrap value;
+  }
+  return total;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("the counted counterfactual fixture must accept: {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "read")
+            .expect("read must exist");
+        validate_derivations(&function.entailment);
+        assert_eq!(function.entailment.counted_derivations.len(), 1);
+        assert_eq!(
+            function
+                .entailment
+                .derivations
+                .roots
+                .iter()
+                .filter(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
+                .count(),
+            8
+        );
+        let expected_path = &function.entailment.obligations[0].node_path;
+        let function_index = function.id.0 as usize;
+        for (name, rewalks) in [
+            ("unasserted", &program.data.provenance.unasserted),
+            ("S4-blinded", &program.data.provenance.s4_blinded),
+        ] {
+            let rewalk = &rewalks[function_index];
+            assert_eq!(rewalk.obligations.len(), 1, "{name}");
+            assert_eq!(&rewalk.obligations[0].node_path, expected_path, "{name}");
+            assert!(rewalk.obligations[0].discharged, "{name}");
+            assert_eq!(rewalk.obligations[0].residual, None, "{name}");
+            assert!(rewalk.call_goals.is_empty(), "{name}");
+            let dump = format!("{rewalk:?}");
+            assert!(!dump.contains("DerivationId"), "{name}: {dump}");
+            assert!(!dump.contains("TermId"), "{name}: {dump}");
+            assert!(!dump.contains("CountedDerivation"), "{name}: {dump}");
+        }
+    });
+}
+
+#[test]
 fn counted_sha256_discharges_all_nine_indices_without_claims() {
     let source = include_bytes!("../../../../tests/programs/sha256_abc.wf");
-    let outcomes = obligations(source, "sha256_abc_word_zero");
-    assert_eq!(outcomes.len(), 9);
-    assert!(outcomes.iter().all(|outcome| outcome.discharged));
-    assert!(claims(source, "sha256_abc_word_zero").is_empty());
+    let summary = entailment(source, "sha256_abc_word_zero");
+    validate_derivations(&summary);
+    assert_eq!(summary.obligations.len(), 9);
+    assert!(summary.obligations.iter().all(|outcome| outcome.discharged));
+    assert!(summary.claims.is_empty());
+    assert_eq!(summary.counted_derivations.len(), 3);
+    assert_eq!(
+        summary.counted_derivations.len() * 5,
+        15,
+        "the three SHA-256 ranges retain all five semantic S11 relations"
+    );
+    assert_eq!(
+        summary
+            .derivations
+            .roots
+            .iter()
+            .filter(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
+            .count(),
+        24,
+        "the three SHA-256 ranges retain all eight directed atomic roots"
+    );
+    assert_eq!(
+        summary
+            .derivations
+            .roots
+            .iter()
+            .filter(|root| matches!(root.kind, DerivationRootKind::BoundsObligation(_)))
+            .count(),
+        9,
+        "all nine existing accepted bounds obligations retain exact roots"
+    );
+}
+
+#[test]
+fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_positives() {
+    let bundles: [&[SourceInput<'_>]; 3] = [
+        &[SourceInput::new(
+            "utf8parse.wf",
+            include_bytes!("../../../../tests/programs/utf8parse.wf"),
+        )],
+        &[
+            SourceInput::new(
+                "raw_deflate.wf",
+                include_bytes!("../../../../tests/programs/raw_deflate.wf"),
+            ),
+            SourceInput::new(
+                "raw_deflate_dynamic.wf",
+                include_bytes!("../../../../tests/programs/raw_deflate_dynamic.wf"),
+            ),
+            SourceInput::new(
+                "raw_deflate_dynamic_decode.wf",
+                include_bytes!("../../../../tests/programs/raw_deflate_dynamic_decode.wf"),
+            ),
+            SourceInput::new(
+                "raw_deflate_boundary.wf",
+                include_bytes!("../../../../tests/programs/raw_deflate_boundary.wf"),
+            ),
+        ],
+        &[SourceInput::new(
+            "wfgrep.wf",
+            include_bytes!("../../../../tests/programs/wfgrep.wf"),
+        )],
+    ];
+    for inputs in bundles {
+        with_semantics_inputs(inputs, |outcome| {
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("frozen real source bundle must remain accepted: {outcome:?}");
+            };
+            for function in &program.data.functions {
+                validate_derivations(&function.entailment);
+                assert!(
+                    function.entailment.counted_derivations.is_empty(),
+                    "ordinary loops in {} must not acquire counted induction roots",
+                    function.name
+                );
+            }
+        });
+    }
 }
 
 #[test]
@@ -4212,7 +5008,24 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = claims(source, "probe");
+    let summary = entailment(source, "probe");
+    validate_derivations(&summary);
+    assert_eq!(summary.counted_derivations.len(), 1);
+    let Relation::Equal { right, .. } = summary.counted_derivations[0]
+        .lower_capture_eq_endpoint
+        .relation
+    else {
+        panic!("the lower capture identity must be an equality");
+    };
+    let TermKind::ProjectedPlace(endpoint, IntegerType::U64) = retained_term(&summary, right)
+    else {
+        panic!("deref(holder.value) must retain its exact projected-place endpoint identity");
+    };
+    assert_eq!(
+        endpoint.projections,
+        vec![PlaceProjection::Field(0), PlaceProjection::Deref]
+    );
+    let outcomes = &summary.claims;
     assert_eq!(outcomes.len(), 1);
     assert!(matches!(
         outcomes[0].disposition,
@@ -4241,7 +5054,10 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = claims(source, "probe");
+    let summary = entailment(source, "probe");
+    validate_derivations(&summary);
+    assert_eq!(summary.counted_derivations.len(), 1);
+    let outcomes = &summary.claims;
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].disposition, ClaimDisposition::Retained);
 }
@@ -4259,7 +5075,10 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = claims(source, "probe");
+    let summary = entailment(source, "probe");
+    validate_derivations(&summary);
+    assert_eq!(summary.counted_derivations.len(), 1);
+    let outcomes = &summary.claims;
     assert_eq!(outcomes.len(), 1);
     assert!(matches!(
         outcomes[0].disposition,
