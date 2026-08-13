@@ -5,8 +5,9 @@
 yet claimed; claiming fills in status, owner, workspace, and base revision and
 moves this number unchanged to `docs/ongoing/`.
 
-- **Authority:** active v0.27 DIAG-2, ENT-3 S11, ENT-4, and the Current Plan's
-  requirement to retain every S11 derivation whether or not later queried
+- **Authority:** active v0.27 DIAG-2, ENT-3 S11, ENT-4, ENT-5, and the Current
+  Plan's requirement to retain every S11 derivation whether or not later
+  queried
 
 ## Goal
 
@@ -23,6 +24,10 @@ continuing kills, body-entry roots, and deterministic occurrence coverage.
 - Each set retains the two capture equalities, binder initialization equality,
   and two true-header bounds in normative S11 order. This is exactly five
   semantic roots and eight directed atomic-bound roots per occurrence.
+- All eight atomic roots enter the existing sole `DerivationLedger` root
+  channel. `DerivationLedger::finish()` must retain and remap every referenced
+  parent together with the published set; no second retention list or
+  pre-remap ID may survive.
 - The dedicated counted-preheader snapshot occurs after capture establishment
   and closure, before continuing-kill subtraction. No other new
   materialization boundary is admitted.
@@ -39,8 +44,9 @@ continuing kills, body-entry roots, and deterministic occurrence coverage.
    lower_capture_eq_endpoint, upper_capture_eq_endpoint,
    binder_eq_lower_capture, lower_capture_le_binder,
    binder_lt_upper_capture }`. Each equality holds both directed atomic roots.
-   Populate it during existing S11 preheader and body-entry operations, not in
-   a post-pass.
+   Populate it during existing S11 preheader and body-entry operations, add all
+   eight atomic parents through the sole ledger root channel, and remap those
+   IDs during the existing finalization, not in a post-pass.
 3. Record snapshot/materialization parents for every materialized consequence
    used by continuing state, then apply the existing kill summary to both facts
    and parents. Retain the normative S11 roots observationally even when their
@@ -60,9 +66,9 @@ continuing kills, body-entry roots, and deterministic occurrence coverage.
 
 ## Scope and expected touch set
 
-Only task 0054's seven implementation/test files:
-`compiler/src/semantic/entailment.rs`, `model.rs`, `state.rs`, `term.rs`,
-`flow.rs`, `flow/sources.rs`, and
+Only task 0054's six implementation/test files:
+`compiler/src/semantic/entailment.rs`, `state.rs`, `term.rs`, `flow.rs`,
+`flow/sources.rs`, and
 `compiler/src/semantic/tests/entailment.rs`, plus this lifecycle record. No
 README, research, specification, protected corpus, consumer source, lowering,
 backend, provenance, generated, plan, roadmap, approval, or MCTS bytes. A need
@@ -70,8 +76,11 @@ for another file stops for lead review.
 
 ## Dependencies and integration order
 
-Task 0054 must be terminal and its commit is the exact base. Task 0056 follows
-this task. Stage 8b waits for task 0056 plus positive task 0053.
+Task 0054 is terminal at implementation commit
+`0e9a206188d8cc37ec3bb248889e42109122246a`; this task may be claimed only
+after the 0054 `DONE` record lands, and that terminal closure revision is its
+base. Task 0056 follows this task. Stage 8b waits for task 0056 plus positive
+task 0053.
 
 ## Validation
 
