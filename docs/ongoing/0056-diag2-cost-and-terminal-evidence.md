@@ -51,7 +51,9 @@ second authority or extending its architecture.
    report median, min/max, and absolute/percentage deltas while preserving the
    expected status/advisories.
 3. Collect candidate mandatory roots by class, unique nodes, parent edges,
-   maximum reachable depth, and ledger-owned retained bytes. That byte count is
+   retained events, event paths, logical event-path components, capacity-
+   charged event-path component slots, maximum event-path depth, maximum
+   reachable proof depth, and ledger-owned retained bytes. That byte count is
    the capacity-based heap storage of retained node, event, root, and depth
    buffers, nested join-predecessor buffers, and retained `FlowEvent`
    `NodePath.components`. It excludes `DerivationInventory`, nested
@@ -60,11 +62,21 @@ second authority or extending its architecture.
    not the complete retained representation or total process-memory footprint.
    Peak RSS separately measures the latter. Temporary instrumentation is
    removed from the final diff; add no CLI or script.
-4. Audit the structural bound `O(S + P + R)`, where `S` is unique proof nodes
-   created by existing source/closure/materialization, `P` real parent edges,
-   and `R` mandatory roots. Root-local DAG copying, full program-point states,
-   and query-triggered reclosure fail. There is no owner-approved numeric
-   slowdown or RSS budget, so do not invent a percentage threshold.
+4. Audit the structural bound `O(S + P + R + C)`, where `S` is unique proof
+   nodes created by existing source/closure/materialization, `P` real parent
+   edges, `R` mandatory roots, and `C` the sum of capacity-charged component
+   slots across exact `NodePath` identities retained by proof-producing event
+   occurrences. Report logical path components and maximum path length as
+   separate utilization measures. Each retained event may own at most one such
+   path; repeated identity payload is counted in `C` at each exact event
+   occurrence. Event pruning must leave no orphan event, establishing retained
+   event count `E <= S`; the fixed-size event buffer is therefore charged to
+   `S`. This is a ledger-owned storage bound, not a claim about excluded
+   inventories or the complete checked representation. Root-local DAG copying,
+   additional ledger-owned copies of one event's path, full program-point
+   states, and query-triggered reclosure fail.
+   There is no owner-approved numeric slowdown or RSS budget, so do not invent
+   a percentage threshold.
 5. Run acceptance/disposition/diagnostic comparisons, all real-program oracles,
    focused semantic tests, `make -C compiler check`, and `make check`.
 6. Prepare this task's complete append-only
@@ -122,8 +134,9 @@ both become terminal positive on approved evidence revisions.
 - Each mutation control fails at the intended audit boundary.
 - Baseline/result acceptance, claim lifecycle, call dispositions, residuals,
   diagnostics, runtime output, effects, cleanup, and required checks match.
-- Node/edge/byte/depth, release-time, and peak-RSS results are exact and
-  reproducible enough to support the Current Plan's bounded-cost judgment.
+- Node/edge/root/event/event-path/logical-component/capacity-slot/byte/depth,
+  release-time, and peak-RSS results are exact and reproducible enough to
+  support the Current Plan's bounded-cost judgment.
 - `make -C compiler check` and `make check` are green; any existing independent
   adapter outside that gate is invoked read-only and no protected bytes or
   wiring change.
@@ -134,7 +147,10 @@ Stop if root completeness cannot be audited without a second closure or
 semantic walk; cost or representation requires serialization, portable
 identity, cache/replay, ProofFlow, a shadow verifier, or lowering authority;
 any source digest or frozen acceptance/diagnostic/runtime behavior changes;
-roots are nondeterministic; storage violates `O(S + P + R)`; measurement
+roots are nondeterministic; ledger-owned storage violates
+`O(S + P + R + C)` or retains more than one path payload per exact event;
+event pruning leaves an orphan event or fails to establish `E <= S`;
+measurement
 OOMs/times out; or a gate fails. A production fix, numeric policy, persistent
 benchmark framework, specification change, or protected conformance/gate
 change is outside this task and stops for the applicable task or approval.
@@ -154,10 +170,14 @@ prerequisite is terminal for the Stage 8b decision.
   hostile, mutation, determinism, and real-program gates green.
 - **Current:** establish clean detached baseline and candidate worktrees,
   verify every frozen identity, and independently audit the terminal root set.
-- **Next:** build both release compilers, execute the alternating seven-run
-  measurement protocol, remove all temporary instrumentation, rerun complete
-  gates, and prepare but do not install the hash-locked protected evidence
-  section.
+  The first cost report correctly measured event-path bytes but its
+  three-variable asymptotic formula omitted their variable payload. Lead
+  review corrected only that task-local mathematical definition to
+  `O(S + P + R + C)`; the ACTIVE plan's exact-and-compact direction and the
+  implementation are unchanged.
+- **Next:** report retained event/path-component counts under the corrected
+  bound, freeze the independently rerun cost evidence, and prepare but do not
+  install the hash-locked protected section.
 
 Close only after the applicable exact owner-approved acceptance append and
 approval-ledger entry land. Until then this task may wait with clean repository
