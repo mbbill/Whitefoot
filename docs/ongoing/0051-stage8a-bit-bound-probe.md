@@ -1,6 +1,6 @@
 # 0051 — Stage 8a bit-bound proof probe
 
-- **Status:** `WAITING`
+- **Status:** `IN PROGRESS` (resumed 2026-08-13)
 - **Authority:** the `ACTIVE` Current Plan selected 2026-08-12, Workstream 8a
   `Local facts` and `Caller audit`, derived from Direction Outline revision 32;
   current Direction Outline revision 33 records the same `PROOF-8` direction
@@ -10,6 +10,8 @@
   `codex/0051-stage8a-bit-bound`
 - **Base revision:**
   `c2c40924b5b7a4ac4fbcb54a3b88b9d025285e7d`
+- **Resume premise revision:**
+  `2d5ebf4fa42418830cb8cb0533b69078c883cb11`
 
 ## Goal
 
@@ -137,11 +139,16 @@ task 0053 and Stage 8b while the independent DIAG-2 work continues.
   SHA-256 `78ce0073244e810c1acb1b094c86d58d0522800ce025fc1f197c369fb84d53d5`
   are withdrawn and must not be installed because later DIAG-2 entailment
   changes make their revision identity stale. Task 0055 implementation
-  `491446af053bfe8db95941e6093b30f4ff9cfb7a` is integrated. This task remains
-  `WAITING`; the commit containing this lifecycle update is the exact closure
-  revision to record in the subsequent resume change.
-- **Next:** resume from that closure revision, rerun the complete matrix once,
-  and produce a new exact scratch section for the combined protected candidate.
+  `491446af053bfe8db95941e6093b30f4ff9cfb7a` and terminal closure
+  `a94ddd8a4bdaabf0a4e739c6409cc09402e60790` are integrated. This resume
+  coordination change has parent
+  `2d5ebf4fa42418830cb8cb0533b69078c883cb11`, which only adds the independent
+  task-0056 claim after that closure.
+- **Next:** before recreating any probe, refresh and rebase onto the landed
+  commit containing this `IN PROGRESS` transition and record that resolved
+  commit as the exact execution/evidence revision. Rerun the complete matrix
+  once, restore every temporary byte, and produce a new exact scratch section
+  for the combined protected candidate.
 
 Close by moving this record to `docs/done/` in the lead-reviewed combined
 integration change after the exact owner-approved canonical acceptance bytes
