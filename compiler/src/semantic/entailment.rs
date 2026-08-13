@@ -26,6 +26,20 @@ mod flow;
 mod state;
 mod term;
 
+#[cfg(not(test))]
+use state::DerivationId;
+use state::{DerivationInventory, DerivationLedger};
+#[cfg(not(test))]
+use term::TermId;
+
+#[cfg(test)]
+pub(crate) use state::{
+    DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
+    GoalId, GoalSign, ImplicitBoundKind, JoinParent, Relation,
+};
+#[cfg(test)]
+pub(crate) use term::{LengthBound, TermId, TermKind, ZERO, type_range};
+
 use std::collections::HashMap;
 
 use super::goal::ConcreteGoal;
@@ -106,6 +120,13 @@ pub(crate) struct ObligationOutcome {
     /// The subscript's `psuffix` node the obligation is attached to, by its
     /// trap record's path — one record per subscript in a chain [ENT-6].
     pub(crate) node_path: NodePath,
+    /// The current bounds obligation has one upper-bound conjunct, numbered
+    /// zero in the same source-subscript query namespace later tasks extend.
+    pub(crate) conjunct: u8,
+    /// Normalized `offset - len(base) <= -1`. `left` is absent only when the
+    /// checked offset is outside ENT-2's term vocabulary; the exact checked
+    /// expression remains recoverable from `node_path` in the same function.
+    pub(crate) requested: BoundsRequest,
     /// The closed fact state at the node derives the normalized relation.
     pub(crate) discharged: bool,
     /// The state at the node was contradictory, discharging everything.
@@ -114,6 +135,18 @@ pub(crate) struct ObligationOutcome {
     /// offset atom's canonical source bytes, ` < len(`, the base place's
     /// canonical source bytes, `)`.
     pub(crate) residual: Option<String>,
+    /// Exact ENT-4 derivation for an accepted obligation. Failed judgments
+    /// deliberately carry no positive root.
+    pub(crate) derivation: Option<DerivationId>,
+}
+
+/// Exact normalized identity of one bounds query in the function-local term
+/// inventory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BoundsRequest {
+    pub(crate) left: Option<TermId>,
+    pub(crate) right: TermId,
+    pub(crate) bound: i128,
 }
 
 /// [CLM-2] lifecycle disposition of one claim, judged at its statement node
@@ -179,6 +212,9 @@ pub(crate) struct CallGoalOutcome {
     /// `AllDerivable`; positive opaque and projection grounds follow in that
     /// order, as do negative opaque and negated-projection grounds.
     pub(crate) evidence: Vec<CallGoalEvidence>,
+    /// One exact positive or contradiction root for a discharged call.
+    /// Refuted and unproved calls carry none.
+    pub(crate) derivation: Option<DerivationId>,
 }
 
 /// One metadata-only rejudgment of an ordinary call's complete goal.
@@ -199,11 +235,25 @@ pub(crate) struct CallGoalCounterfactual {
     pub(crate) goal_evidence: Vec<CallGoalEvidence>,
 }
 
+/// One bounds result retained from a counterfactual ENT rewalk [ENT-6].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RewalkObligationOutcome {
+    /// The exact protected subscript occurrence consumed by provenance.
+    pub(crate) node_path: NodePath,
+    /// Whether the selected counterfactual fact sources discharge it.
+    pub(crate) discharged: bool,
+    /// The ordinary canonical residual when it remains undischarged.
+    pub(crate) residual: Option<String>,
+}
+
 /// Counterfactual ENT rewalk consumed by the PRV bridge and gate [ENT-6].
+///
+/// This metadata deliberately strips normal-analysis term and derivation IDs:
+/// the rewalk discards its private inventories and is not a DIAG-2 authority.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailmentRewalk {
     /// Every protected leaf under the selected counterfactual fact sources.
-    pub(crate) obligations: Vec<ObligationOutcome>,
+    pub(crate) obligations: Vec<RewalkObligationOutcome>,
     /// Isolated call-goal results, explicitly separated from actual validity.
     pub(crate) call_goals: Vec<CallGoalCounterfactual>,
 }
@@ -217,6 +267,11 @@ pub(crate) struct FunctionEntailment {
     pub(crate) claims: Vec<ClaimOutcome>,
     /// Ordinary call-goal judgments in deterministic checked-tree walk order.
     pub(crate) call_goals: Vec<CallGoalOutcome>,
+    /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
+    pub(crate) derivations: DerivationLedger,
+    /// Canonical term and goal identities moved from the analyzer so every
+    /// retained dense ID remains exact and interpretable after analysis.
+    pub(crate) inventory: DerivationInventory,
 }
 
 /// Computes the combined entailment analysis of one checked function body.

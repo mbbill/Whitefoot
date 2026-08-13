@@ -17,7 +17,10 @@ use super::super::super::model::{
     CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedValue, IntegerType,
 };
 use super::super::fragment_type;
-use super::super::state::{FactState, OutcomeFact, OutcomeRelation, Relation, close};
+use super::super::state::{
+    DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact, OutcomeRelation,
+    Relation, close,
+};
 use super::super::term::{
     CountedCaptureSide, PlaceRoot, PlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
 };
@@ -52,12 +55,14 @@ impl Analyzer<'_, '_> {
     /// applies the counted continuing-kill summary.
     pub(super) fn establish_counted_preheader(
         &mut self,
+        node_path: &crate::NodePath,
         range_path: &[u32],
         binder: BindingId,
         lower: &CheckedExpression,
         upper: &CheckedExpression,
         state: &mut FactState,
     ) -> CountedTerms {
+        let event = self.proof_event(FlowEventKind::S11, Some(node_path));
         let lower_source = self
             .read_operand(lower)
             .expect("checked counted lower endpoint must be an ENT-2 term or constant");
@@ -80,18 +85,30 @@ impl Analyzer<'_, '_> {
             },
             IntegerType::U64,
         ));
-        state.establish(&Relation::Equal {
-            left: lower_capture,
-            right: lower_source,
-        });
-        state.establish(&Relation::Equal {
-            left: upper_capture,
-            right: upper_source,
-        });
-        state.establish(&Relation::Equal {
-            left: binder,
-            right: lower_capture,
-        });
+        state.establish(
+            &Relation::Equal {
+                left: lower_capture,
+                right: lower_source,
+            },
+            &mut self.derivations,
+            event,
+        );
+        state.establish(
+            &Relation::Equal {
+                left: upper_capture,
+                right: upper_source,
+            },
+            &mut self.derivations,
+            event,
+        );
+        state.establish(
+            &Relation::Equal {
+                left: binder,
+                right: lower_capture,
+            },
+            &mut self.derivations,
+            event,
+        );
         CountedTerms {
             lower: lower_capture,
             binder,
@@ -101,20 +118,30 @@ impl Analyzer<'_, '_> {
 
     /// Adds exactly S11's two facts on an executed true header edge.
     pub(super) fn establish_counted_body_entry(
-        &self,
+        &mut self,
+        node_path: &crate::NodePath,
         counted: &CountedTerms,
         state: &mut FactState,
     ) {
-        state.establish(&Relation::Bound {
-            left: counted.lower,
-            right: counted.binder,
-            bound: 0,
-        });
-        state.establish(&Relation::Bound {
-            left: counted.binder,
-            right: counted.upper,
-            bound: -1,
-        });
+        let event = self.proof_event(FlowEventKind::S11, Some(node_path));
+        state.establish(
+            &Relation::Bound {
+                left: counted.lower,
+                right: counted.binder,
+                bound: 0,
+            },
+            &mut self.derivations,
+            event,
+        );
+        state.establish(
+            &Relation::Bound {
+                left: counted.binder,
+                right: counted.upper,
+                bound: -1,
+            },
+            &mut self.derivations,
+            event,
+        );
     }
 
     // ------------------------------------------------------------------
@@ -126,15 +153,23 @@ impl Analyzer<'_, '_> {
     /// continuation.
     pub(super) fn establish_passed_condition(
         &mut self,
+        event_kind: FlowEventKind,
+        node_path: &crate::NodePath,
         condition: &CheckedExpression,
         state: &mut FactState,
     ) {
+        let event = self.proof_event(event_kind, Some(node_path));
         let goals = self.goal_origin_set(condition, state);
         for goal in goals {
-            state.establish_goal(goal, super::super::state::GoalSign::Positive);
+            state.establish_goal(
+                goal,
+                super::super::state::GoalSign::Positive,
+                &mut self.derivations,
+                event,
+            );
         }
         if let Some(relation) = self.scrutinee_relation(condition, state) {
-            state.establish(&relation);
+            state.establish(&relation, &mut self.derivations, event);
         }
     }
 
@@ -149,9 +184,20 @@ impl Analyzer<'_, '_> {
             return;
         };
         let goal = self.intern_goal_expression(goal);
-        state.establish_goal(goal, super::super::state::GoalSign::Positive);
+        let node_path = self
+            .function
+            .requirement
+            .as_ref()
+            .map(|requirement| requirement.trap.node_path.clone());
+        let event = self.proof_event(FlowEventKind::S4, node_path.as_ref());
+        state.establish_goal(
+            goal,
+            super::super::state::GoalSign::Positive,
+            &mut self.derivations,
+            event,
+        );
         if let Some(relation) = self.goals.projection(goal).cloned() {
-            state.establish(&relation);
+            state.establish(&relation, &mut self.derivations, event);
         }
     }
 
@@ -163,21 +209,22 @@ impl Analyzer<'_, '_> {
     /// place because they are mutually exclusive on the initializer's shape.
     pub(super) fn establish_binding_facts(
         &mut self,
+        node_path: &crate::NodePath,
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
     ) {
-        if self.establish_length_facts(binding, value, state) {
+        if self.establish_length_facts(node_path, binding, value, state) {
             return;
         }
-        if self.establish_element_range(binding, value, state) {
+        if self.establish_element_range(node_path, binding, value, state) {
             return;
         }
-        if self.establish_offset_fact(binding, value, state) {
+        if self.establish_offset_fact(node_path, binding, value, state) {
             return;
         }
         self.record_outcome_origin(binding, value, state);
-        self.establish_copy_fact(binding, value, state);
+        self.establish_copy_fact(node_path, binding, value, state);
     }
 
     /// The term of a freshly bound integer place, when its type is one
@@ -208,6 +255,7 @@ impl Analyzer<'_, '_> {
     /// establishes y = p, the conversion being exactly value-preserving.
     fn establish_copy_fact(
         &mut self,
+        node_path: &crate::NodePath,
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
@@ -232,10 +280,15 @@ impl Analyzer<'_, '_> {
         let Some(bound) = self.bound_term(binding, value) else {
             return;
         };
-        state.establish(&Relation::Equal {
-            left: bound,
-            right: source,
-        });
+        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+        state.establish(
+            &Relation::Equal {
+                left: bound,
+                right: source,
+            },
+            &mut self.derivations,
+            event,
+        );
     }
 
     /// [ENT-3] S6: `buffer_new<T>(n, v)` establishes len(b) = n;
@@ -247,6 +300,7 @@ impl Analyzer<'_, '_> {
     /// array-typed place, registered wherever that term is interned.
     fn establish_length_facts(
         &mut self,
+        node_path: &crate::NodePath,
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
@@ -258,10 +312,15 @@ impl Analyzer<'_, '_> {
                 };
                 let place = self.bound_place(binding);
                 let length_term = self.length_term(place, None);
-                state.establish(&Relation::Equal {
-                    left: length_term,
-                    right: allocated,
-                });
+                let event = self.proof_event(FlowEventKind::S6, Some(node_path));
+                state.establish(
+                    &Relation::Equal {
+                        left: length_term,
+                        right: allocated,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
                 true
             }
             CheckedExpression::SliceOf { source, .. } => {
@@ -281,19 +340,29 @@ impl Analyzer<'_, '_> {
                 let source_length = self.length_term(place, array_length);
                 let slice_place = self.bound_place(binding);
                 let slice_length = self.length_term(slice_place, None);
-                state.establish(&Relation::Equal {
-                    left: slice_length,
-                    right: source_length,
-                });
+                let event = self.proof_event(FlowEventKind::S6, Some(node_path));
+                state.establish(
+                    &Relation::Equal {
+                        left: slice_length,
+                        right: source_length,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
                 true
             }
             _ => match self.length_operand(value) {
                 Some(source_length) => {
                     if let Some(bound) = self.bound_term(binding, value) {
-                        state.establish(&Relation::Equal {
-                            left: bound,
-                            right: source_length,
-                        });
+                        let event = self.proof_event(FlowEventKind::S6, Some(node_path));
+                        state.establish(
+                            &Relation::Equal {
+                                left: bound,
+                                right: source_length,
+                            },
+                            &mut self.derivations,
+                            event,
+                        );
                     }
                     true
                 }
@@ -340,6 +409,7 @@ impl Analyzer<'_, '_> {
     /// the executed contract check is the proof [OP-2].
     fn establish_offset_fact(
         &mut self,
+        node_path: &crate::NodePath,
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
@@ -355,7 +425,7 @@ impl Analyzer<'_, '_> {
                 return true;
             };
             let (minimum, maximum) = type_range(ty);
-            let closed = close(state, &self.terms, &self.goals);
+            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
             // `min(T) <= p + k` and `p + k <= max(T)`, as bounds on p through
             // Z: p - Z <= max(T) - k and Z - p <= k - min(T).
             let within = closed.derives_bound(base, ZERO, maximum.saturating_sub(delta))
@@ -364,7 +434,8 @@ impl Analyzer<'_, '_> {
                 return true;
             }
         }
-        establish_shifted(state, bound, base, delta);
+        let event = self.proof_event(FlowEventKind::S7, Some(node_path));
+        establish_shifted(state, bound, base, delta, &mut self.derivations, event);
         true
     }
 
@@ -416,6 +487,7 @@ impl Analyzer<'_, '_> {
     /// const shapes establish nothing.
     fn establish_element_range(
         &mut self,
+        node_path: &crate::NodePath,
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
@@ -447,16 +519,25 @@ impl Analyzer<'_, '_> {
         let (Some((low, high)), Some(bound)) = (range, self.bound_term(binding, value)) else {
             return true;
         };
-        state.establish(&Relation::Bound {
-            left: ZERO,
-            right: bound,
-            bound: -low,
-        });
-        state.establish(&Relation::Bound {
-            left: bound,
-            right: ZERO,
-            bound: high,
-        });
+        let event = self.proof_event(FlowEventKind::S9, Some(node_path));
+        state.establish(
+            &Relation::Bound {
+                left: ZERO,
+                right: bound,
+                bound: -low,
+            },
+            &mut self.derivations,
+            event,
+        );
+        state.establish(
+            &Relation::Bound {
+                left: bound,
+                right: ZERO,
+                bound: high,
+            },
+            &mut self.derivations,
+            event,
+        );
         true
     }
 
@@ -491,8 +572,10 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
     ) -> ArmFacts {
         self.expression_effects(scrutinee, state);
+        let node_path = Self::expression_node_path(scrutinee).cloned();
         if enum_type == CheckedEnumType::Bool {
             return ArmFacts {
+                node_path,
                 comparison: self.scrutinee_relation(scrutinee, state),
                 goals: self.goal_origin_set(scrutinee, state),
                 outcome: None,
@@ -507,6 +590,7 @@ impl Analyzer<'_, '_> {
                 .map(|tag| (tag, outcome))
         });
         ArmFacts {
+            node_path,
             comparison: None,
             goals: Vec::new(),
             outcome,
@@ -564,6 +648,7 @@ impl Analyzer<'_, '_> {
             variant: "Ok",
             base,
             relation: OutcomeRelation::Shifted(delta),
+            event_kind: FlowEventKind::S7,
         })
     }
 
@@ -608,6 +693,7 @@ impl Analyzer<'_, '_> {
             variant,
             base,
             relation: OutcomeRelation::AtMost,
+            event_kind: FlowEventKind::S10,
         })
     }
 
@@ -631,31 +717,58 @@ impl Analyzer<'_, '_> {
             fields: Vec::new(),
         };
         let bound = self.terms.intern(TermKind::Place(place, fragment));
+        let event = self.proof_event(outcome.event_kind, Some(&binder.node_path));
         match outcome.relation {
             OutcomeRelation::Shifted(delta) => {
-                establish_shifted(state, bound, outcome.base, delta);
+                establish_shifted(
+                    state,
+                    bound,
+                    outcome.base,
+                    delta,
+                    &mut self.derivations,
+                    event,
+                );
             }
-            OutcomeRelation::AtMost => state.establish(&Relation::Bound {
-                left: bound,
-                right: outcome.base,
-                bound: 0,
-            }),
+            OutcomeRelation::AtMost => state.establish(
+                &Relation::Bound {
+                    left: bound,
+                    right: outcome.base,
+                    bound: 0,
+                },
+                &mut self.derivations,
+                event,
+            ),
         }
     }
 }
 
 /// `bound = base + delta`, as the difference-bound pair over that term pair.
-fn establish_shifted(state: &mut FactState, bound: TermId, base: TermId, delta: i128) {
-    state.establish(&Relation::Bound {
-        left: bound,
-        right: base,
-        bound: delta,
-    });
-    state.establish(&Relation::Bound {
-        left: base,
-        right: bound,
-        bound: -delta,
-    });
+fn establish_shifted(
+    state: &mut FactState,
+    bound: TermId,
+    base: TermId,
+    delta: i128,
+    ledger: &mut DerivationLedger,
+    event: FlowEventId,
+) {
+    state.establish(
+        &Relation::Bound {
+            left: bound,
+            right: base,
+            bound: delta,
+        },
+        ledger,
+        event,
+    );
+    state.establish(
+        &Relation::Bound {
+            left: base,
+            right: bound,
+            bound: -delta,
+        },
+        ledger,
+        event,
+    );
 }
 
 /// The normalized relation of one comparison operation over two read

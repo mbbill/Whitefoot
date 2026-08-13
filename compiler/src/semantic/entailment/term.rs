@@ -99,7 +99,7 @@ pub(crate) struct TermId(pub(crate) u32);
 /// The implicit [ENT-2] length equality of one length term whose place has
 /// type `array<T, N>`: concrete N is a constant, const-generic N a symbolic
 /// constant term. Implicit facts hold at every program point and never die.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LengthBound {
     Constant(i128),
     Equal(TermId),
@@ -145,7 +145,10 @@ impl TermTable {
         if let Some(id) = self.ids.get(&kind) {
             return *id;
         }
-        let id = TermId(u32::try_from(self.terms.len()).unwrap_or(u32::MAX));
+        let id = TermId(
+            u32::try_from(self.terms.len())
+                .expect("ENT term inventory exceeds the u32 identity space"),
+        );
         self.terms.push(kind.clone());
         self.ids.insert(kind, id);
         id
@@ -157,7 +160,22 @@ impl TermTable {
 
     /// Every registered term, for implicit-fact materialization [ENT-4].
     pub(crate) fn ids(&self) -> impl Iterator<Item = TermId> {
-        (0..self.terms.len()).map(|index| TermId(u32::try_from(index).unwrap_or(u32::MAX)))
+        (0..self.terms.len()).map(|index| {
+            TermId(u32::try_from(index).expect("ENT term inventory exceeds the u32 identity space"))
+        })
+    }
+
+    pub(crate) fn into_inventory(self) -> (Vec<TermKind>, Vec<Option<LengthBound>>) {
+        let length_bounds = (0..self.terms.len())
+            .map(|index| {
+                let id = TermId(
+                    u32::try_from(index)
+                        .expect("ENT term inventory exceeds the u32 identity space"),
+                );
+                self.length_bounds.get(&id).copied()
+            })
+            .collect();
+        (self.terms, length_bounds)
     }
 }
 

@@ -12,8 +12,11 @@ use crate::{CallRequirementDisposition, SemanticIssueKind, SemanticOutcome, Sema
 
 use super::super::entailment::{
     CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimDisposition, ClaimOutcome,
-    ObligationOutcome,
+    DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind,
+    FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent, LengthBound,
+    ObligationOutcome, Relation, TermId, TermKind, ZERO, type_range,
 };
+use super::super::model::{CheckedExpression, CheckedStatement, IntegerType};
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -61,11 +64,1044 @@ fn call_goals(source: &[u8], function: &str) -> Vec<CallGoalOutcome> {
     })
 }
 
+fn entailment(source: &[u8], function: &str) -> FunctionEntailment {
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("entailment test source must check completely: {outcome:?}");
+        };
+        checked
+            .data
+            .functions
+            .iter()
+            .find(|candidate| candidate.name == function)
+            .unwrap_or_else(|| panic!("function {function} must exist"))
+            .entailment
+            .clone()
+    })
+}
+
 fn discharge_flags(source: &[u8], function: &str) -> Vec<bool> {
     obligations(source, function)
         .iter()
         .map(|outcome| outcome.discharged)
         .collect()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DerivationConclusion {
+    Relation(Relation),
+    Goal { goal: GoalId, sign: GoalSign },
+    Contradiction,
+}
+
+fn retained_term(summary: &FunctionEntailment, id: TermId) -> &TermKind {
+    summary
+        .inventory
+        .terms
+        .get(id.0 as usize)
+        .unwrap_or_else(|| panic!("retained term ID {id:?} must resolve"))
+}
+
+fn assert_relation_terms_resolve(summary: &FunctionEntailment, relation: &Relation) {
+    for term in relation.terms() {
+        retained_term(summary, term);
+    }
+}
+
+fn retained_conclusion(
+    conclusions: &[DerivationConclusion],
+    id: DerivationId,
+) -> &DerivationConclusion {
+    conclusions
+        .get(id.0 as usize)
+        .unwrap_or_else(|| panic!("retained derivation ID {id:?} must resolve"))
+}
+
+fn retained_event(summary: &FunctionEntailment, id: FlowEventId) -> &FlowEvent {
+    summary
+        .derivations
+        .events
+        .get(id.0 as usize)
+        .unwrap_or_else(|| panic!("retained flow event ID {id:?} must resolve"))
+}
+
+fn node_event(node: &DerivationNode) -> Option<FlowEventId> {
+    match node {
+        DerivationNode::SourceBound { event, .. }
+        | DerivationNode::SourceDistinct { event, .. }
+        | DerivationNode::SourceGoal { event, .. }
+        | DerivationNode::JoinBound { event, .. }
+        | DerivationNode::JoinDistinct { event, .. }
+        | DerivationNode::JoinGoal { event, .. }
+        | DerivationNode::JoinContradiction { event, .. }
+        | DerivationNode::MaterializedBound { event, .. }
+        | DerivationNode::MaterializedDistinct { event, .. }
+        | DerivationNode::MaterializedGoal { event, .. }
+        | DerivationNode::MaterializedContradiction { event, .. } => Some(*event),
+        _ => None,
+    }
+}
+
+fn root_contains(
+    summary: &FunctionEntailment,
+    root: DerivationId,
+    predicate: impl Fn(&DerivationNode) -> bool,
+) -> bool {
+    let mut seen = vec![false; summary.derivations.nodes.len()];
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        let index = id.0 as usize;
+        if seen[index] {
+            continue;
+        }
+        seen[index] = true;
+        let node = &summary.derivations.nodes[index];
+        if predicate(node) {
+            return true;
+        }
+        stack.extend(node.parent_ids());
+    }
+    false
+}
+
+fn obligation_root(summary: &FunctionEntailment, ordinal: usize) -> DerivationId {
+    summary.obligations[ordinal]
+        .derivation
+        .unwrap_or_else(|| panic!("obligation {ordinal} must have one exact root"))
+}
+
+fn call_root(summary: &FunctionEntailment, ordinal: usize) -> DerivationId {
+    summary.call_goals[ordinal]
+        .derivation
+        .unwrap_or_else(|| panic!("call goal {ordinal} must have one exact root"))
+}
+
+fn assert_root_contains(
+    summary: &FunctionEntailment,
+    root: DerivationId,
+    predicate: impl Fn(&DerivationNode) -> bool,
+    description: &str,
+) {
+    assert!(
+        root_contains(summary, root, predicate),
+        "root {root:?} must contain {description}: {:#?}",
+        summary.derivations.nodes
+    );
+}
+
+fn root_has_event_kind(
+    summary: &FunctionEntailment,
+    root: DerivationId,
+    kind: FlowEventKind,
+) -> bool {
+    root_contains(summary, root, |node| {
+        node_event(node).is_some_and(|event| retained_event(summary, event).kind == kind)
+    })
+}
+
+fn assert_root_has_event_kind(
+    summary: &FunctionEntailment,
+    root: DerivationId,
+    kind: FlowEventKind,
+) {
+    assert!(
+        root_has_event_kind(summary, root, kind),
+        "root {root:?} must descend from {kind:?}: {:#?}",
+        summary.derivations.nodes
+    );
+}
+
+fn normalized_derivation_dump(summary: &FunctionEntailment) -> Vec<u8> {
+    format!(
+        "{:#?}",
+        (
+            &summary.derivations.events,
+            &summary.derivations.nodes,
+            &summary.derivations.roots,
+            &summary.inventory,
+        )
+    )
+    .into_bytes()
+}
+
+fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut [bool]) {
+    let event = retained_event(summary, id);
+    used[id.0 as usize] = true;
+    assert!(matches!(
+        event.kind,
+        FlowEventKind::S1
+            | FlowEventKind::S2
+            | FlowEventKind::S3
+            | FlowEventKind::S4
+            | FlowEventKind::S5
+            | FlowEventKind::S6
+            | FlowEventKind::S7
+            | FlowEventKind::S9
+            | FlowEventKind::S10
+            | FlowEventKind::S11
+    ));
+}
+
+fn assert_synthetic_event(
+    summary: &FunctionEntailment,
+    id: FlowEventId,
+    kind: FlowEventKind,
+    used: &mut [bool],
+) {
+    let event = retained_event(summary, id);
+    used[id.0 as usize] = true;
+    assert_eq!(event.kind, kind);
+    assert!(event.node_path.is_none());
+}
+
+fn assert_join_parents(
+    parents: &[JoinParent],
+    conclusions: &[DerivationConclusion],
+    accepts: impl Fn(&DerivationConclusion) -> bool,
+    require_contributor: bool,
+) {
+    let mut has_noncontradictory_parent = false;
+    for (ordinal, parent) in parents.iter().enumerate() {
+        assert_eq!(
+            parent.ordinal,
+            u32::try_from(ordinal).expect("test join ordinal fits u32")
+        );
+        let conclusion = retained_conclusion(conclusions, parent.parent);
+        has_noncontradictory_parent |= !matches!(conclusion, DerivationConclusion::Contradiction);
+        assert!(
+            matches!(conclusion, DerivationConclusion::Contradiction) || accepts(conclusion),
+            "join predecessor {parent:?} has incompatible conclusion {conclusion:?}"
+        );
+    }
+    if require_contributor {
+        assert!(
+            has_noncontradictory_parent,
+            "a noncontradictory joined fact needs a contributing predecessor"
+        );
+    }
+}
+
+fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
+    match kind {
+        TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => Some(type_range(*ty)),
+        TermKind::Length(_) | TermKind::ProjectedLength(_) | TermKind::CountedCapture { .. } => {
+            Some(type_range(IntegerType::U64))
+        }
+        TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
+    }
+}
+
+fn assert_array_length_bound(
+    summary: &FunctionEntailment,
+    left: TermId,
+    right: TermId,
+    bound: i128,
+) {
+    let relation_matches = |length: TermId, length_bound: LengthBound| match length_bound {
+        LengthBound::Constant(value) => {
+            (left == length && right == ZERO && bound == value)
+                || (left == ZERO && right == length && bound == -value)
+        }
+        LengthBound::Equal(parameter) => {
+            ((left == length && right == parameter) || (left == parameter && right == length))
+                && bound == 0
+        }
+    };
+    let matched = [left, right].into_iter().any(|candidate| {
+        matches!(
+            retained_term(summary, candidate),
+            TermKind::Length(_) | TermKind::ProjectedLength(_)
+        ) && summary.inventory.length_bounds[candidate.0 as usize]
+            .is_some_and(|length_bound| relation_matches(candidate, length_bound))
+    });
+    assert!(matched, "array-length implicit bound must resolve exactly");
+}
+
+fn validate_derivations(summary: &FunctionEntailment) {
+    assert_eq!(
+        summary.inventory.terms.len(),
+        summary.inventory.length_bounds.len(),
+        "term and length-bound inventories stay densely aligned"
+    );
+    assert_eq!(retained_term(summary, ZERO), &TermKind::Zero);
+
+    let mut conclusions = Vec::with_capacity(summary.derivations.nodes.len());
+    let mut depths = Vec::with_capacity(summary.derivations.nodes.len());
+    let mut used_events = vec![false; summary.derivations.events.len()];
+    let mut parent_edges = 0usize;
+
+    for (index, node) in summary.derivations.nodes.iter().enumerate() {
+        let parents = node.parent_ids();
+        parent_edges += parents.len();
+        assert!(
+            parents.iter().all(|parent| parent.0 < index as u32),
+            "every derivation parent must precede its child"
+        );
+        let depth = parents
+            .iter()
+            .map(|parent| depths[parent.0 as usize])
+            .max()
+            .map_or(0, |depth: u32| depth + 1);
+        depths.push(depth);
+
+        let conclusion = match node {
+            DerivationNode::SourceBound {
+                relation,
+                left,
+                right,
+                bound,
+                event,
+            } => {
+                assert_relation_terms_resolve(summary, relation);
+                retained_term(summary, *left);
+                retained_term(summary, *right);
+                assert_source_event(summary, *event, &mut used_events);
+                match relation {
+                    Relation::Bound {
+                        left: source_left,
+                        right: source_right,
+                        bound: source_bound,
+                    } => assert_eq!(
+                        (left, right, bound),
+                        (source_left, source_right, source_bound)
+                    ),
+                    Relation::Equal {
+                        left: source_left,
+                        right: source_right,
+                    } => {
+                        assert_eq!(*bound, 0);
+                        assert!(
+                            (*left == *source_left && *right == *source_right)
+                                || (*left == *source_right && *right == *source_left)
+                        );
+                    }
+                    Relation::Distinct { .. } => panic!("a distinct source is not a bound"),
+                }
+                DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *bound,
+                })
+            }
+            DerivationNode::SourceDistinct { left, right, event } => {
+                assert!(left <= right, "disequality identities are normalized");
+                retained_term(summary, *left);
+                retained_term(summary, *right);
+                assert_source_event(summary, *event, &mut used_events);
+                DerivationConclusion::Relation(Relation::Distinct {
+                    left: *left,
+                    right: *right,
+                })
+            }
+            DerivationNode::SourceGoal { goal, sign, event } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert_source_event(summary, *event, &mut used_events);
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
+            DerivationNode::ImplicitBound {
+                left,
+                right,
+                bound,
+                kind,
+            } => {
+                let left_kind = retained_term(summary, *left);
+                let right_kind = retained_term(summary, *right);
+                match kind {
+                    ImplicitBoundKind::Reflexive => {
+                        assert_eq!(left, right);
+                        assert_eq!(*bound, 0);
+                    }
+                    ImplicitBoundKind::Constant => match (left_kind, right_kind) {
+                        (TermKind::Constant(value), TermKind::Zero) => assert_eq!(bound, value),
+                        (TermKind::Zero, TermKind::Constant(value)) => assert_eq!(*bound, -value),
+                        _ => panic!("constant implicit bound must relate that constant to Z"),
+                    },
+                    ImplicitBoundKind::TypeMaximum => {
+                        assert_eq!(*right, ZERO);
+                        let (_, maximum) = term_integer_range(left_kind)
+                            .expect("type maximum requires an integer-like term");
+                        assert_eq!(*bound, maximum);
+                    }
+                    ImplicitBoundKind::TypeMinimum => {
+                        assert_eq!(*left, ZERO);
+                        let (minimum, _) = term_integer_range(right_kind)
+                            .expect("type minimum requires an integer-like term");
+                        assert_eq!(*bound, -minimum);
+                    }
+                    ImplicitBoundKind::ArrayLength => {
+                        assert_array_length_bound(summary, *left, *right, *bound);
+                    }
+                }
+                DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *bound,
+                })
+            }
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound,
+                first,
+                second,
+            } => {
+                let DerivationConclusion::Relation(Relation::Bound {
+                    left: first_left,
+                    right: first_right,
+                    bound: first_bound,
+                }) = retained_conclusion(&conclusions, *first)
+                else {
+                    panic!("transitivity first parent must be a bound");
+                };
+                let DerivationConclusion::Relation(Relation::Bound {
+                    left: second_left,
+                    right: second_right,
+                    bound: second_bound,
+                }) = retained_conclusion(&conclusions, *second)
+                else {
+                    panic!("transitivity second parent must be a bound");
+                };
+                assert_eq!((first_left, first_right), (left, middle));
+                assert_eq!((second_left, second_right), (middle, right));
+                assert_eq!(*bound, first_bound.saturating_add(*second_bound));
+                DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *bound,
+                })
+            }
+            DerivationNode::StrengthenedBound {
+                left,
+                right,
+                bound,
+                weak,
+                distinct,
+            } => {
+                assert_eq!(*bound, -1);
+                assert_eq!(
+                    retained_conclusion(&conclusions, *weak),
+                    &DerivationConclusion::Relation(Relation::Bound {
+                        left: *left,
+                        right: *right,
+                        bound: 0,
+                    })
+                );
+                let DerivationConclusion::Relation(Relation::Distinct {
+                    left: distinct_left,
+                    right: distinct_right,
+                }) = retained_conclusion(&conclusions, *distinct)
+                else {
+                    panic!("strengthening's second parent must be a disequality");
+                };
+                assert!(
+                    (*distinct_left == *left && *distinct_right == *right)
+                        || (*distinct_left == *right && *distinct_right == *left)
+                );
+                DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *bound,
+                })
+            }
+            DerivationNode::SubsumedBound {
+                left,
+                right,
+                held,
+                requested,
+                parent,
+            } => {
+                assert!(*held < *requested);
+                assert_eq!(
+                    retained_conclusion(&conclusions, *parent),
+                    &DerivationConclusion::Relation(Relation::Bound {
+                        left: *left,
+                        right: *right,
+                        bound: *held,
+                    })
+                );
+                DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *requested,
+                })
+            }
+            DerivationNode::Equality {
+                left,
+                right,
+                forward,
+                reverse,
+            } => {
+                assert_eq!(
+                    retained_conclusion(&conclusions, *forward),
+                    &DerivationConclusion::Relation(Relation::Bound {
+                        left: *left,
+                        right: *right,
+                        bound: 0,
+                    })
+                );
+                assert_eq!(
+                    retained_conclusion(&conclusions, *reverse),
+                    &DerivationConclusion::Relation(Relation::Bound {
+                        left: *right,
+                        right: *left,
+                        bound: 0,
+                    })
+                );
+                DerivationConclusion::Relation(Relation::Equal {
+                    left: *left,
+                    right: *right,
+                })
+            }
+            DerivationNode::DisequalityFromStrictBound {
+                left,
+                right,
+                parent,
+            } => {
+                assert!(left < right, "strict-derived disequalities are normalized");
+                let DerivationConclusion::Relation(Relation::Bound {
+                    left: parent_left,
+                    right: parent_right,
+                    bound: parent_bound,
+                }) = retained_conclusion(&conclusions, *parent)
+                else {
+                    panic!("strict-bound disequality requires a bound parent");
+                };
+                assert!(*parent_bound <= -1);
+                assert!(
+                    (*parent_left == *left && *parent_right == *right)
+                        || (*parent_left == *right && *parent_right == *left)
+                );
+                DerivationConclusion::Relation(Relation::Distinct {
+                    left: *left,
+                    right: *right,
+                })
+            }
+            DerivationNode::GoalProjection {
+                goal,
+                sign,
+                relation,
+                parent,
+            } => {
+                assert_relation_terms_resolve(summary, relation);
+                assert_eq!(
+                    retained_conclusion(&conclusions, *parent),
+                    &DerivationConclusion::Relation(relation.clone())
+                );
+                let retained_goal = summary
+                    .inventory
+                    .goals
+                    .get(goal.0 as usize)
+                    .expect("projected goal ID must resolve");
+                let projection = retained_goal
+                    .projection
+                    .as_ref()
+                    .expect("projection node requires a projected goal");
+                let expected = match sign {
+                    GoalSign::Positive => projection.clone(),
+                    GoalSign::Negative => projection.negated(),
+                };
+                assert_eq!(*relation, expected);
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
+            DerivationNode::L0Contradiction { term, parent } => {
+                retained_term(summary, *term);
+                let DerivationConclusion::Relation(Relation::Bound { left, right, bound }) =
+                    retained_conclusion(&conclusions, *parent)
+                else {
+                    panic!("L0 contradiction requires a bound parent");
+                };
+                assert_eq!((left, right), (term, term));
+                assert!(*bound < 0);
+                DerivationConclusion::Contradiction
+            }
+            DerivationNode::GoalContradiction {
+                goal,
+                positive,
+                negative,
+            } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert_eq!(
+                    retained_conclusion(&conclusions, *positive),
+                    &DerivationConclusion::Goal {
+                        goal: *goal,
+                        sign: GoalSign::Positive,
+                    }
+                );
+                assert_eq!(
+                    retained_conclusion(&conclusions, *negative),
+                    &DerivationConclusion::Goal {
+                        goal: *goal,
+                        sign: GoalSign::Negative,
+                    }
+                );
+                DerivationConclusion::Contradiction
+            }
+            DerivationNode::JoinBound {
+                left,
+                right,
+                bound,
+                event,
+                parents,
+            } => {
+                retained_term(summary, *left);
+                retained_term(summary, *right);
+                assert_synthetic_event(summary, *event, FlowEventKind::Join, &mut used_events);
+                assert_join_parents(
+                    parents,
+                    &conclusions,
+                    |conclusion| {
+                        matches!(
+                            conclusion,
+                            DerivationConclusion::Relation(Relation::Bound {
+                                left: parent_left,
+                                right: parent_right,
+                                bound: parent_bound,
+                            }) if parent_left == left && parent_right == right && parent_bound <= bound
+                        )
+                    },
+                    true,
+                );
+                DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *bound,
+                })
+            }
+            DerivationNode::JoinDistinct {
+                left,
+                right,
+                event,
+                parents,
+            } => {
+                assert!(left <= right, "joined disequalities are normalized");
+                retained_term(summary, *left);
+                retained_term(summary, *right);
+                assert_synthetic_event(summary, *event, FlowEventKind::Join, &mut used_events);
+                assert_join_parents(
+                    parents,
+                    &conclusions,
+                    |conclusion| {
+                        conclusion
+                            == &DerivationConclusion::Relation(Relation::Distinct {
+                                left: *left,
+                                right: *right,
+                            })
+                    },
+                    true,
+                );
+                DerivationConclusion::Relation(Relation::Distinct {
+                    left: *left,
+                    right: *right,
+                })
+            }
+            DerivationNode::JoinGoal {
+                goal,
+                sign,
+                event,
+                parents,
+            } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert_synthetic_event(summary, *event, FlowEventKind::Join, &mut used_events);
+                assert_join_parents(
+                    parents,
+                    &conclusions,
+                    |conclusion| {
+                        conclusion
+                            == &DerivationConclusion::Goal {
+                                goal: *goal,
+                                sign: *sign,
+                            }
+                    },
+                    true,
+                );
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
+            DerivationNode::JoinContradiction { event, parents } => {
+                assert_synthetic_event(summary, *event, FlowEventKind::Join, &mut used_events);
+                assert_join_parents(
+                    parents,
+                    &conclusions,
+                    |conclusion| matches!(conclusion, DerivationConclusion::Contradiction),
+                    false,
+                );
+                assert!(parents.iter().all(|parent| matches!(
+                    retained_conclusion(&conclusions, parent.parent),
+                    DerivationConclusion::Contradiction
+                )));
+                DerivationConclusion::Contradiction
+            }
+            DerivationNode::MaterializedBound {
+                left,
+                right,
+                bound,
+                event,
+                parent,
+            } => {
+                assert_synthetic_event(summary, *event, FlowEventKind::Snapshot, &mut used_events);
+                let conclusion = DerivationConclusion::Relation(Relation::Bound {
+                    left: *left,
+                    right: *right,
+                    bound: *bound,
+                });
+                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                conclusion
+            }
+            DerivationNode::MaterializedDistinct {
+                left,
+                right,
+                event,
+                parent,
+            } => {
+                assert_synthetic_event(summary, *event, FlowEventKind::Snapshot, &mut used_events);
+                let conclusion = DerivationConclusion::Relation(Relation::Distinct {
+                    left: *left,
+                    right: *right,
+                });
+                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                conclusion
+            }
+            DerivationNode::MaterializedGoal {
+                goal,
+                sign,
+                event,
+                parent,
+            } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert_synthetic_event(summary, *event, FlowEventKind::Snapshot, &mut used_events);
+                let conclusion = DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                };
+                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                conclusion
+            }
+            DerivationNode::MaterializedContradiction { event, parent } => {
+                assert_synthetic_event(summary, *event, FlowEventKind::Snapshot, &mut used_events);
+                assert_eq!(
+                    retained_conclusion(&conclusions, *parent),
+                    &DerivationConclusion::Contradiction
+                );
+                DerivationConclusion::Contradiction
+            }
+        };
+        conclusions.push(conclusion);
+    }
+
+    assert!(
+        used_events.iter().all(|used| *used),
+        "finish must prune every unreferenced flow event"
+    );
+    assert_eq!(
+        summary.derivations.metrics.unique_nodes as usize,
+        summary.derivations.nodes.len()
+    );
+    assert_eq!(
+        summary.derivations.metrics.parent_edges as usize,
+        parent_edges
+    );
+    assert_eq!(
+        summary.derivations.metrics.maximum_depth,
+        depths.iter().copied().max().unwrap_or(0)
+    );
+    if !summary.derivations.nodes.is_empty() {
+        assert!(summary.derivations.metrics.retained_bytes > 0);
+    }
+
+    let mut seen_obligations = vec![false; summary.obligations.len()];
+    let mut seen_calls = vec![false; summary.call_goals.len()];
+    let mut class_counts = [0u32; 4];
+    for root in &summary.derivations.roots {
+        let conclusion = retained_conclusion(&conclusions, root.node);
+        match root.kind {
+            DerivationRootKind::BoundsObligation(ordinal) => {
+                let ordinal = ordinal as usize;
+                let outcome = summary
+                    .obligations
+                    .get(ordinal)
+                    .expect("bounds-root ordinal must resolve");
+                assert!(!seen_obligations[ordinal], "one exact root per obligation");
+                seen_obligations[ordinal] = true;
+                assert!(outcome.discharged);
+                assert_eq!(outcome.conjunct, 0);
+                assert_eq!(outcome.derivation, Some(root.node));
+                assert!(!outcome.node_path.components().is_empty());
+                retained_term(summary, outcome.requested.right);
+                match conclusion {
+                    DerivationConclusion::Relation(relation) => {
+                        let left = outcome
+                            .requested
+                            .left
+                            .expect("noncontradictory accepted bound has a tracked offset");
+                        retained_term(summary, left);
+                        assert_eq!(
+                            relation,
+                            &Relation::Bound {
+                                left,
+                                right: outcome.requested.right,
+                                bound: outcome.requested.bound,
+                            }
+                        );
+                        assert!(!outcome.contradictory);
+                    }
+                    DerivationConclusion::Contradiction => assert!(outcome.contradictory),
+                    DerivationConclusion::Goal { .. } => {
+                        panic!("a bounds root cannot conclude a goal")
+                    }
+                }
+            }
+            DerivationRootKind::CallGoal(ordinal) => {
+                let ordinal = ordinal as usize;
+                let outcome = summary
+                    .call_goals
+                    .get(ordinal)
+                    .expect("call-root ordinal must resolve");
+                assert!(!seen_calls[ordinal], "one exact root per discharged call");
+                seen_calls[ordinal] = true;
+                assert_eq!(outcome.disposition, CallGoalDisposition::Discharged);
+                assert_eq!(outcome.derivation, Some(root.node));
+                assert!(!outcome.node_path.components().is_empty());
+                assert!(!outcome.final_check.components().is_empty());
+                match conclusion {
+                    DerivationConclusion::Goal {
+                        goal,
+                        sign: GoalSign::Positive,
+                    } => {
+                        let retained_goal = summary
+                            .inventory
+                            .goals
+                            .get(goal.0 as usize)
+                            .expect("call goal ID must resolve");
+                        assert_eq!(retained_goal.expression, outcome.goal.root);
+                    }
+                    DerivationConclusion::Contradiction => {}
+                    DerivationConclusion::Goal {
+                        sign: GoalSign::Negative,
+                        ..
+                    }
+                    | DerivationConclusion::Relation(_) => {
+                        panic!("a discharged call root must be positive or contradictory")
+                    }
+                }
+            }
+        }
+
+        match &summary.derivations.nodes[root.node.0 as usize] {
+            DerivationNode::SourceGoal { .. }
+            | DerivationNode::JoinGoal { .. }
+            | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
+            DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
+            DerivationNode::L0Contradiction { .. }
+            | DerivationNode::GoalContradiction { .. }
+            | DerivationNode::JoinContradiction { .. }
+            | DerivationNode::MaterializedContradiction { .. } => class_counts[3] += 1,
+            _ => class_counts[0] += 1,
+        }
+    }
+
+    let mut reachable = vec![false; summary.derivations.nodes.len()];
+    let mut stack: Vec<_> = summary
+        .derivations
+        .roots
+        .iter()
+        .map(|root| root.node)
+        .collect();
+    while let Some(id) = stack.pop() {
+        let index = id.0 as usize;
+        if reachable[index] {
+            continue;
+        }
+        reachable[index] = true;
+        stack.extend(summary.derivations.nodes[index].parent_ids());
+    }
+    assert!(
+        reachable.iter().all(|is_reachable| *is_reachable),
+        "finish must prune every node outside the mandatory-root sub-DAG"
+    );
+
+    for (ordinal, outcome) in summary.obligations.iter().enumerate() {
+        assert_eq!(outcome.derivation.is_some(), outcome.discharged);
+        assert_eq!(seen_obligations[ordinal], outcome.discharged);
+    }
+    for (ordinal, outcome) in summary.call_goals.iter().enumerate() {
+        let discharged = outcome.disposition == CallGoalDisposition::Discharged;
+        assert_eq!(outcome.derivation.is_some(), discharged);
+        assert_eq!(seen_calls[ordinal], discharged);
+    }
+    assert_eq!(
+        class_counts,
+        [
+            summary.derivations.metrics.bounds_roots,
+            summary.derivations.metrics.opaque_goal_roots,
+            summary.derivations.metrics.projected_goal_roots,
+            summary.derivations.metrics.contradiction_roots,
+        ]
+    );
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct DistinctGroundCounts {
+    source: usize,
+    strict: usize,
+    contradiction: usize,
+    joins: usize,
+    join_edges: usize,
+    join_parent_counts: Vec<usize>,
+}
+
+fn collect_distinct_grounds(
+    summary: &FunctionEntailment,
+    id: DerivationId,
+    counts: &mut DistinctGroundCounts,
+) {
+    match &summary.derivations.nodes[id.0 as usize] {
+        DerivationNode::SourceDistinct { .. } => counts.source += 1,
+        DerivationNode::DisequalityFromStrictBound { .. } => counts.strict += 1,
+        DerivationNode::JoinDistinct { parents, .. } => {
+            counts.joins += 1;
+            counts.join_edges += parents.len();
+            counts.join_parent_counts.push(parents.len());
+            for parent in parents {
+                collect_distinct_grounds(summary, parent.parent, counts);
+            }
+        }
+        DerivationNode::MaterializedDistinct { parent, .. } => {
+            collect_distinct_grounds(summary, *parent, counts);
+        }
+        DerivationNode::L0Contradiction { .. }
+        | DerivationNode::GoalContradiction { .. }
+        | DerivationNode::JoinContradiction { .. }
+        | DerivationNode::MaterializedContradiction { .. } => counts.contradiction += 1,
+        node => panic!("distinct proof has incompatible ground {node:?}"),
+    }
+}
+
+fn projected_call_parent(summary: &FunctionEntailment, ordinal: usize) -> DerivationId {
+    let root = summary.call_goals[ordinal]
+        .derivation
+        .expect("discharged call must have one exact root");
+    let DerivationNode::GoalProjection { parent, .. } = &summary.derivations.nodes[root.0 as usize]
+    else {
+        panic!("call root must be its exact L0 goal projection");
+    };
+    *parent
+}
+
+#[test]
+fn accepted_transitive_bounds_and_discharged_calls_retain_exact_parent_roots() {
+    let source = br#"const count: u64 = 4_u64;
+
+struct Pair {
+  count: u64;
+}
+
+fn below(value: own u64) -> own unit traps requires {
+  check ilt(value, 4_u64) else trap "small";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn read(values: own array<i32, count>, p: own Pair, i: own u64) -> own i32 traps {
+  if ile(i, p.count) {
+    if ilt(p.count, 4_u64) {
+      let item = values[i];
+      below(value: i);
+      return item;
+    } else {
+      return 0_i32;
+    }
+  } else {
+    return 0_i32;
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    assert_eq!(summary.obligations.len(), 1);
+    assert_eq!(summary.call_goals.len(), 1);
+    assert!(summary.obligations[0].discharged);
+    assert_eq!(
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    let bounds_root = summary.obligations[0]
+        .derivation
+        .expect("accepted subscript must retain an exact root");
+    let call_root = summary.call_goals[0]
+        .derivation
+        .expect("discharged ordinary call must retain an exact root");
+    assert_ne!(bounds_root, call_root);
+    assert_eq!(summary.derivations.roots.len(), 2);
+    assert!(
+        summary
+            .derivations
+            .nodes
+            .iter()
+            .any(|node| matches!(node, DerivationNode::TransitiveBound { .. }))
+    );
+    for (index, node) in summary.derivations.nodes.iter().enumerate() {
+        let parents: Vec<_> = match node {
+            DerivationNode::TransitiveBound { first, second, .. } => vec![*first, *second],
+            _ => Vec::new(),
+        };
+        assert!(parents.iter().all(|parent| parent.0 < index as u32));
+    }
+}
+
+#[test]
+fn normalized_derivations_are_byte_identical_across_twenty_analyses() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64, left: own Bool) -> own i32 pure {
+  if left {
+    if ilt(i, 4_u64) {
+    } else {
+      return 0_i32;
+    }
+  } else if ilt(i, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let first = entailment(source, "read");
+    validate_derivations(&first);
+    assert!(
+        first
+            .derivations
+            .nodes
+            .iter()
+            .any(|node| matches!(node, DerivationNode::JoinBound { .. }))
+    );
+    let expected = normalized_derivation_dump(&first);
+    for run in 1..20 {
+        let actual = entailment(source, "read");
+        validate_derivations(&actual);
+        assert_eq!(
+            normalized_derivation_dump(&actual),
+            expected,
+            "normalized function-local ledger changed on run {run}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -88,11 +1124,120 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = obligations(source, "read");
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    let outcomes = &summary.obligations;
     assert_eq!(outcomes.len(), 2);
     assert!(outcomes[0].discharged, "True arm carries i < 4 = len");
     assert!(!outcomes[1].discharged, "False arm carries only i >= 4");
     assert_eq!(outcomes[1].residual.as_deref(), Some("i < len(values)"));
+}
+
+#[test]
+fn a_projected_bool_scrutinee_retains_its_exact_s1_carrier() {
+    let source = br#"struct Flags {
+  ready: Bool;
+}
+
+fn need_ready(value: own Bool) -> own unit traps requires {
+  check value else trap "ready";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(flags: own Flags) -> own unit traps {
+  if flags.ready {
+    need_ready(value: flags.ready);
+  } else {
+    return unit;
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("projected Bool S1 fixture must check: {outcome:?}");
+        };
+        let caller = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "caller")
+            .expect("caller function");
+        let CheckedStatement::Match { scrutinee, .. } = &caller.body[0] else {
+            panic!("projected Bool branch must retain one checked match");
+        };
+        assert!(matches!(scrutinee, CheckedExpression::Project { .. }));
+        let expected = scrutinee
+            .carrier()
+            .expect("projected Bool has an exact carrier");
+        validate_derivations(&caller.entailment);
+        let call = &caller.entailment.call_goals[0];
+        assert_eq!(call.disposition, CallGoalDisposition::Discharged);
+        let root = call.derivation.expect("S1 whole-goal call root");
+        let DerivationNode::SourceGoal { event, .. } =
+            &caller.entailment.derivations.nodes[root.0 as usize]
+        else {
+            panic!("the exact projected whole goal must select its S1 opaque root");
+        };
+        let retained = retained_event(&caller.entailment, *event);
+        assert_eq!(retained.kind, FlowEventKind::S1);
+        assert_eq!(retained.node_path.as_ref(), Some(expected));
+    });
+}
+
+#[test]
+fn s1_true_and_false_edges_retain_their_exact_comparison_roots() {
+    let source = br#"fn need_below(value: own u64) -> own unit traps requires {
+  check ilt(value, 4_u64) else trap "below";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn need_at_least(value: own u64) -> own unit traps requires {
+  check ige(value, 4_u64) else trap "at least";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn caller(value: own u64) -> own unit traps {
+  if ilt(value, 4_u64) {
+    need_below(value: value);
+  } else {
+    need_at_least(value: value);
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 2);
+    for ordinal in 0..2 {
+        assert_root_has_event_kind(&summary, call_root(&summary, ordinal), FlowEventKind::S1);
+    }
+    assert!(matches!(
+        summary.derivations.nodes[call_root(&summary, 0).0 as usize],
+        DerivationNode::SourceGoal { .. }
+    ));
+    assert!(matches!(
+        summary.derivations.nodes[call_root(&summary, 1).0 as usize],
+        DerivationNode::GoalProjection { .. }
+    ));
+    assert!(matches!(
+        summary.derivations.nodes[projected_call_parent(&summary, 1).0 as usize],
+        DerivationNode::SourceBound { .. }
+    ));
 }
 
 #[test]
@@ -111,7 +1256,9 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = obligations(source, "read");
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    let outcomes = &summary.obligations;
     assert_eq!(outcomes.len(), 2);
     assert!(
         outcomes[0].discharged,
@@ -119,6 +1266,42 @@ fn main() -> own unit pure {
     );
     assert!(!outcomes[1].discharged, "9 < 4 is not derivable");
     assert_eq!(outcomes[1].residual.as_deref(), Some("9_u64 < len(table)"));
+    assert!(outcomes[1].derivation.is_none());
+    let root = obligation_root(&summary, 0);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| {
+            matches!(
+                node,
+                DerivationNode::ImplicitBound {
+                    kind: ImplicitBoundKind::Constant,
+                    ..
+                }
+            )
+        },
+        "the literal constant implicit fact",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| {
+            matches!(
+                node,
+                DerivationNode::ImplicitBound {
+                    kind: ImplicitBoundKind::ArrayLength,
+                    ..
+                }
+            )
+        },
+        "the named constant array's implicit length",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::SubsumedBound { .. }),
+        "requested-bound subsumption",
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -235,11 +1418,80 @@ fn main() -> own unit pure {
 }
 
 #[test]
+fn equality_retains_both_directed_parents_and_reflexive_implicit_support() {
+    let source = br#"fn need_equal(left: own u64, right: own u64) -> own unit traps requires {
+  check ieq(left, right) else trap "equal";
+} {
+  check True() else trap "body";
+  return unit;
+}
+
+fn directed(left: own u64, right: own u64) -> own unit traps {
+  check ile(left, right) else trap "forward";
+  check ile(right, left) else trap "reverse";
+  need_equal(left: left, right: right);
+  return unit;
+}
+
+fn reflexive(value: own u64) -> own unit traps {
+  need_equal(left: value, right: value);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let directed = entailment(source, "directed");
+    validate_derivations(&directed);
+    let equality = projected_call_parent(&directed, 0);
+    let DerivationNode::Equality {
+        forward, reverse, ..
+    } = &directed.derivations.nodes[equality.0 as usize]
+    else {
+        panic!("the exact equality projection must name both directed bounds");
+    };
+    for parent in [*forward, *reverse] {
+        let DerivationNode::SourceBound { event, .. } =
+            &directed.derivations.nodes[parent.0 as usize]
+        else {
+            panic!("each directed equality parent comes from its passed check");
+        };
+        assert_eq!(retained_event(&directed, *event).kind, FlowEventKind::S2);
+    }
+
+    let reflexive = entailment(source, "reflexive");
+    validate_derivations(&reflexive);
+    assert_root_contains(
+        &reflexive,
+        call_root(&reflexive, 0),
+        |node| {
+            matches!(
+                node,
+                DerivationNode::ImplicitBound {
+                    kind: ImplicitBoundKind::Reflexive,
+                    ..
+                }
+            )
+        },
+        "the reflexive implicit bound",
+    );
+}
+
+#[test]
 fn a_contradictory_state_discharges_every_obligation() {
     let source = br#"const count: u64 = 4_u64;
 
-fn read(values: own array<i32, count>, i: own u64) -> own i32 pure {
+fn below_minimum(values: own array<i32, count>, i: own u64) -> own i32 pure {
   if ilt(i, 0_u64) {
+    return values[9_u64];
+  } else {
+    return 0_i32;
+  }
+}
+
+fn above_maximum(values: own array<i32, count>, i: own u64) -> own i32 pure {
+  if igt(i, 18446744073709551615_u64) {
     return values[9_u64];
   } else {
     return 0_i32;
@@ -250,10 +1502,27 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = obligations(source, "read");
-    assert_eq!(outcomes.len(), 1);
-    assert!(outcomes[0].discharged, "i < 0 for u64 contradicts i >= 0");
-    assert!(outcomes[0].contradictory);
+    for (function, kind) in [
+        ("below_minimum", ImplicitBoundKind::TypeMinimum),
+        ("above_maximum", ImplicitBoundKind::TypeMaximum),
+    ] {
+        let summary = entailment(source, function);
+        validate_derivations(&summary);
+        assert_eq!(summary.obligations.len(), 1, "{function}");
+        assert!(summary.obligations[0].discharged, "{function}");
+        assert!(summary.obligations[0].contradictory, "{function}");
+        let root = obligation_root(&summary, 0);
+        assert!(matches!(
+            summary.derivations.nodes[root.0 as usize],
+            DerivationNode::L0Contradiction { .. }
+        ));
+        assert_root_contains(
+            &summary,
+            root,
+            |node| matches!(node, DerivationNode::ImplicitBound { kind: actual, .. } if *actual == kind),
+            "the matching integer type range",
+        );
+    }
 }
 
 #[test]
@@ -290,11 +1559,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![false],
         "consuming p kills both links before any join materializes i <= 3"
     );
+    assert!(summary.obligations[0].derivation.is_none());
 }
 
 // ---------------------------------------------------------------------
@@ -326,11 +1602,19 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true, false],
         "OWN-7 overlap: p.other is disjoint from p.count; p.count is not"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S1);
+    assert!(summary.obligations[1].derivation.is_none());
 }
 
 #[test]
@@ -357,11 +1641,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![false],
         "the callee's writes row projects onto the unique actual's place"
     );
+    assert!(summary.obligations[0].derivation.is_none());
 }
 
 #[test]
@@ -387,11 +1678,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "a call whose row carries no writes kills nothing"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S1);
 }
 
 // ---------------------------------------------------------------------
@@ -419,10 +1717,22 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true, false],
         "the join keeps i <= 3 (weakest across arms), not the True arm's i <= 1"
+    );
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, 0),
+        |node| matches!(node, DerivationNode::JoinBound { parents, .. } if parents.len() == 2),
+        "the predecessor-complete joined bound",
     );
 }
 
@@ -462,7 +1772,9 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = call_goals(source, "caller");
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    let outcomes = &summary.call_goals;
     assert_eq!(outcomes.len(), 3);
     assert_eq!(
         outcomes[0].disposition,
@@ -477,6 +1789,19 @@ fn main() -> own unit pure {
     assert_eq!(outcomes[2].disposition, CallGoalDisposition::Unproved);
     assert!(outcomes[1].evidence.is_empty());
     assert!(outcomes[2].evidence.is_empty());
+    let mut counts = DistinctGroundCounts::default();
+    collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+    assert_eq!(
+        counts,
+        DistinctGroundCounts {
+            strict: 2,
+            joins: 1,
+            join_edges: 2,
+            join_parent_counts: vec![2],
+            ..DistinctGroundCounts::default()
+        },
+        "the normalized joined disequality names both opposite strict parents"
+    );
 }
 
 #[test]
@@ -503,7 +1828,9 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = call_goals(source, "caller");
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    let outcomes = &summary.call_goals;
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(
@@ -511,6 +1838,17 @@ fn main() -> own unit pure {
         vec![CallGoalEvidence::ExactL0Projection],
         "the joined disequality and later weak bound strengthen to the strict requirement"
     );
+    let parent = projected_call_parent(&summary, 0);
+    let DerivationNode::StrengthenedBound { distinct, .. } =
+        &summary.derivations.nodes[parent.0 as usize]
+    else {
+        panic!("post-join weak bound must be strengthened by the joined disequality");
+    };
+    let mut counts = DistinctGroundCounts::default();
+    collect_distinct_grounds(&summary, *distinct, &mut counts);
+    assert_eq!(counts.strict, 2);
+    assert_eq!(counts.joins, 1);
+    assert_eq!(counts.join_edges, 2);
 }
 
 #[test]
@@ -546,15 +1884,30 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let kept = call_goals(source, "kept");
+    let kept_summary = entailment(source, "kept");
+    validate_derivations(&kept_summary);
+    let kept = &kept_summary.call_goals;
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(kept[0].evidence, vec![CallGoalEvidence::ExactL0Projection]);
+    let mut kept_counts = DistinctGroundCounts::default();
+    collect_distinct_grounds(
+        &kept_summary,
+        projected_call_parent(&kept_summary, 0),
+        &mut kept_counts,
+    );
+    assert_eq!(kept_counts.strict, 2);
+    assert_eq!(kept_counts.join_edges, 2);
 
-    let killed = call_goals(source, "killed");
+    let killed_summary = entailment(source, "killed");
+    validate_derivations(&killed_summary);
+    let killed = &killed_summary.call_goals;
     assert_eq!(killed.len(), 1);
     assert_eq!(killed[0].disposition, CallGoalDisposition::Unproved);
     assert!(killed[0].evidence.is_empty());
+    assert!(killed_summary.derivations.roots.is_empty());
+    assert!(killed_summary.derivations.nodes.is_empty());
+    assert!(killed_summary.derivations.events.is_empty());
 }
 
 #[test]
@@ -600,7 +1953,9 @@ fn main() -> own unit pure {
 }
 "#;
     for function in ["same_strict", "both_explicit", "mixed"] {
-        let outcomes = call_goals(source, function);
+        let summary = entailment(source, function);
+        validate_derivations(&summary);
+        let outcomes = &summary.call_goals;
         assert_eq!(outcomes.len(), 1, "{function}");
         assert_eq!(
             outcomes[0].disposition,
@@ -612,6 +1967,22 @@ fn main() -> own unit pure {
             vec![CallGoalEvidence::ExactL0Projection],
             "{function} discharges through the common L0 relation"
         );
+        if function == "mixed" {
+            let mut counts = DistinctGroundCounts::default();
+            collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+            assert_eq!(
+                counts,
+                DistinctGroundCounts {
+                    source: 1,
+                    strict: 1,
+                    joins: 1,
+                    join_edges: 2,
+                    join_parent_counts: vec![2],
+                    ..DistinctGroundCounts::default()
+                },
+                "the mixed join names its explicit and strict-derived predecessor roots"
+            );
+        }
     }
 }
 
@@ -641,12 +2012,26 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = call_goals(source, "caller");
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    let outcomes = &summary.call_goals;
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(
         outcomes[0].evidence,
         vec![CallGoalEvidence::ExactL0Projection]
+    );
+    let mut counts = DistinctGroundCounts::default();
+    collect_distinct_grounds(&summary, projected_call_parent(&summary, 0), &mut counts);
+    assert_eq!(counts.source, 1);
+    assert_eq!(counts.strict, 2);
+    assert_eq!(counts.contradiction, 1);
+    assert_eq!(counts.joins, 3);
+    counts.join_parent_counts.sort_unstable();
+    assert_eq!(counts.join_parent_counts, vec![2, 2, 2]);
+    assert_eq!(
+        counts.join_edges, 6,
+        "the three binary joins transitively name all four reaching inputs"
     );
 }
 
@@ -694,7 +2079,9 @@ fn main() -> own unit pure {
 }
 "#;
     for function in ["equality_input", "missing_input", "killed_input"] {
-        let outcomes = call_goals(source, function);
+        let summary = entailment(source, function);
+        validate_derivations(&summary);
+        let outcomes = &summary.call_goals;
         assert_eq!(outcomes.len(), 1, "{function}");
         assert_eq!(
             outcomes[0].disposition,
@@ -763,7 +2150,9 @@ fn main() -> own unit pure {
         "both_strict",
         "all_contradictory",
     ] {
-        let outcomes = call_goals(source, function);
+        let summary = entailment(source, function);
+        validate_derivations(&summary);
+        let outcomes = &summary.call_goals;
         assert_eq!(outcomes.len(), 1, "{function}");
         assert_eq!(
             outcomes[0].disposition,
@@ -775,8 +2164,24 @@ fn main() -> own unit pure {
             vec![CallGoalEvidence::AllDerivable],
             "{function}"
         );
+        if function == "all_contradictory" {
+            assert_root_contains(
+                &summary,
+                call_root(&summary, 0),
+                |node| {
+                    matches!(
+                        node,
+                        DerivationNode::JoinContradiction { parents, .. }
+                            if parents.len() == 2
+                    )
+                },
+                "the binary all-contradictory join with both predecessor roots",
+            );
+        }
     }
-    let loop_outcomes = call_goals(source, "no_induction");
+    let loop_summary = entailment(source, "no_induction");
+    validate_derivations(&loop_summary);
+    let loop_outcomes = &loop_summary.call_goals;
     assert_eq!(loop_outcomes.len(), 1);
     assert_eq!(
         loop_outcomes[0].disposition,
@@ -834,13 +2239,19 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = obligations(source, "read");
-    assert_eq!(outcomes.len(), 2);
-    assert!(outcomes[0].discharged, "the first j is branch-guarded");
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    assert_eq!(summary.obligations.len(), 2);
     assert!(
-        !outcomes[1].discharged,
+        summary.obligations[0].discharged,
+        "the first j is branch-guarded"
+    );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S5);
+    assert!(
+        !summary.obligations[1].discharged,
         "the second j is a fresh declaration event with no facts"
     );
+    assert!(summary.obligations[1].derivation.is_none());
 }
 
 #[test]
@@ -861,11 +2272,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "scope-exit kills reach only bindings whose scope ends at the edge"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S1);
 }
 
 // ---------------------------------------------------------------------
@@ -1022,11 +2440,19 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true, false],
         "the head state subtracts every fact the body's assignment may kill"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S1);
+    assert!(summary.obligations[1].derivation.is_none());
 }
 
 #[test]
@@ -1455,10 +2881,24 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "the capture equals four before the mutable source changes; that closed snapshot consequence remains true"
+    );
+    let root = obligation_root(&summary, 0);
+    assert_root_has_event_kind(&summary, root, FlowEventKind::S11);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::MaterializedBound { .. }),
+        "the counted preheader materialization marker",
     );
 }
 
@@ -1658,11 +3098,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let sized = entailment(source, "sized");
+    validate_derivations(&sized);
     assert_eq!(
-        discharge_flags(source, "sized"),
+        sized
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "len(b) = 4 makes 3 < len(b) derivable [ENT-3] S6"
     );
+    assert_root_has_event_kind(&sized, obligation_root(&sized, 0), FlowEventKind::S6);
     let runtime = obligations(source, "runtime");
     assert!(
         !runtime[0].discharged,
@@ -1744,16 +3191,27 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let kept = obligations(source, "kept");
+    let kept = entailment(source, "kept");
+    validate_derivations(&kept);
     assert!(
-        kept.last().is_some_and(|outcome| outcome.discharged),
+        kept.obligations
+            .last()
+            .is_some_and(|outcome| outcome.discharged),
         "an element write leaves len(b) = n alive"
     );
-    let killed = obligations(source, "killed");
+    let kept_root = obligation_root(&kept, kept.obligations.len() - 1);
+    assert_root_has_event_kind(&kept, kept_root, FlowEventKind::S6);
+
+    let killed = entailment(source, "killed");
+    validate_derivations(&killed);
     assert!(
-        !killed.last().is_some_and(|outcome| outcome.discharged),
+        !killed
+            .obligations
+            .last()
+            .is_some_and(|outcome| outcome.discharged),
         "writing n kills the allocation equality held against it"
     );
+    assert!(killed.obligations.last().unwrap().derivation.is_none());
 }
 
 #[test]
@@ -1787,16 +3245,30 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let kept = entailment(source, "kept");
+    validate_derivations(&kept);
     assert_eq!(
-        discharge_flags(source, "kept"),
+        kept.obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "m = len(b) = 4 < 8 while b is live"
     );
+    assert_root_has_event_kind(&kept, obligation_root(&kept, 0), FlowEventKind::S6);
+
+    let killed = entailment(source, "killed");
+    validate_derivations(&killed);
     assert_eq!(
-        discharge_flags(source, "killed"),
+        killed
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![false],
         "the consuming use kills m's tie to the allocation length"
     );
+    assert!(killed.obligations[0].derivation.is_none());
 }
 
 #[test]
@@ -1900,11 +3372,24 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true, true],
         "j = k = 2 and widened = narrow = 3, both below len(values)"
     );
+    for ordinal in 0..2 {
+        assert_root_has_event_kind(
+            &summary,
+            obligation_root(&summary, ordinal),
+            FlowEventKind::S5,
+        );
+    }
 }
 
 #[test]
@@ -1961,11 +3446,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "the executed contract check is the proof [ENT-3] S7"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S7);
 }
 
 #[test]
@@ -2107,16 +3599,22 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let low = obligations(source, "low");
-    assert_eq!(low.len(), 2, "the element read carries its own obligation");
+    let low = entailment(source, "low");
+    validate_derivations(&low);
+    assert_eq!(
+        low.obligations.len(),
+        2,
+        "the element read carries its own obligation"
+    );
     assert!(
-        !low[0].discharged,
+        !low.obligations[0].discharged,
         "the index into the const table is judged separately and unaffected"
     );
     assert!(
-        low[1].discharged,
+        low.obligations[1].discharged,
         "every declared element is at most 3 < len(values)"
     );
+    assert_root_has_event_kind(&low, obligation_root(&low, 1), FlowEventKind::S9);
     let high = obligations(source, "high");
     assert!(
         !high[1].discharged,
@@ -2143,11 +3641,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
     assert_eq!(
-        discharge_flags(source, "read"),
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "the requirement relation is available at body entry"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S4);
 }
 
 #[test]
@@ -2270,11 +3775,18 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
   return exit_status(code: 0_u8);
 }
 "#;
+    let under = entailment(source, "under");
+    validate_derivations(&under);
     assert_eq!(
-        discharge_flags(source, "under"),
+        under
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
         vec![true],
         "written <= 3 < len(table)"
     );
+    assert_root_has_event_kind(&under, obligation_root(&under, 0), FlowEventKind::S10);
     assert_eq!(
         discharge_flags(source, "exact"),
         vec![false],
@@ -2488,12 +4000,15 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = obligations(source, "read");
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    let outcomes = &summary.obligations;
     assert_eq!(outcomes.len(), 1);
     assert!(
         outcomes[0].discharged,
         "S3: the passed claim predicate discharges the following subscript"
     );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S3);
     let claim_outcomes = claims(source, "read");
     assert_eq!(claim_outcomes.len(), 1);
     assert_eq!(claim_outcomes[0].name, "in_range");
@@ -2650,6 +4165,24 @@ fn main() -> own unit pure {
             .expect("read must exist");
         assert_eq!(function.entailment.obligations.len(), 1);
         assert!(function.entailment.obligations[0].discharged);
+        validate_derivations(&function.entailment);
+        for rewalks in [
+            &program.data.provenance.unasserted,
+            &program.data.provenance.s4_blinded,
+        ] {
+            let obligations: Vec<_> = rewalks
+                .iter()
+                .flat_map(|rewalk| &rewalk.obligations)
+                .collect();
+            assert_eq!(obligations.len(), 1);
+            assert!(
+                obligations
+                    .iter()
+                    .all(|obligation| !obligation.node_path.components().is_empty()
+                        && obligation.discharged == obligation.residual.is_none()),
+                "counterfactual rewalks retain only provenance's exact path and disposition"
+            );
+        }
     });
 }
 
@@ -2939,21 +4472,37 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let exact = call_goals(source, "exact");
-    assert_eq!(exact[0].disposition, CallGoalDisposition::Discharged);
+    let exact = entailment(source, "exact");
+    validate_derivations(&exact);
     assert_eq!(
-        exact[0].evidence,
+        exact.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        exact.call_goals[0].evidence,
         vec![
             CallGoalEvidence::OpaquePositive,
             CallGoalEvidence::ExactL0Projection,
         ]
     );
-    let projected = call_goals(source, "projected");
-    assert_eq!(projected[0].disposition, CallGoalDisposition::Discharged);
+    assert!(matches!(
+        exact.derivations.nodes[call_root(&exact, 0).0 as usize],
+        DerivationNode::SourceGoal { .. }
+    ));
+    let projected = entailment(source, "projected");
+    validate_derivations(&projected);
     assert_eq!(
-        projected[0].evidence,
+        projected.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        projected.call_goals[0].evidence,
         vec![CallGoalEvidence::ExactL0Projection]
     );
+    assert!(matches!(
+        projected.derivations.nodes[call_root(&projected, 0).0 as usize],
+        DerivationNode::GoalProjection { .. }
+    ));
 }
 
 #[test]
@@ -2998,11 +4547,23 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let both = call_goals(source, "both");
-    assert_eq!(both[0].disposition, CallGoalDisposition::Discharged);
-    assert_eq!(both[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
-    let one = call_goals(source, "one");
-    assert_eq!(one[0].disposition, CallGoalDisposition::Unproved);
+    let both = entailment(source, "both");
+    validate_derivations(&both);
+    assert_eq!(
+        both.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        both.call_goals[0].evidence,
+        vec![CallGoalEvidence::OpaquePositive]
+    );
+    assert!(matches!(
+        both.derivations.nodes[call_root(&both, 0).0 as usize],
+        DerivationNode::JoinGoal { ref parents, .. } if parents.len() == 2
+    ));
+    let one = entailment(source, "one");
+    validate_derivations(&one);
+    assert_eq!(one.call_goals[0].disposition, CallGoalDisposition::Unproved);
 }
 
 #[test]
@@ -3076,10 +4637,18 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = call_goals(source, "caller");
-    assert_eq!(outcomes.len(), 1);
-    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
-    assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 1);
+    assert_eq!(
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        summary.call_goals[0].evidence,
+        vec![CallGoalEvidence::OpaquePositive]
+    );
+    assert_root_has_event_kind(&summary, call_root(&summary, 0), FlowEventKind::S1);
 }
 
 #[test]
@@ -3214,11 +4783,27 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    for function in ["signed", "l0"] {
-        let outcomes = call_goals(source, function);
-        assert_eq!(outcomes.len(), 1);
-        assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
-        assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::AllDerivable]);
+    for (function, is_goal) in [("signed", true), ("l0", false)] {
+        let summary = entailment(source, function);
+        validate_derivations(&summary);
+        assert_eq!(summary.call_goals.len(), 1);
+        assert_eq!(
+            summary.call_goals[0].disposition,
+            CallGoalDisposition::Discharged
+        );
+        assert_eq!(
+            summary.call_goals[0].evidence,
+            vec![CallGoalEvidence::AllDerivable]
+        );
+        let root = &summary.derivations.nodes[call_root(&summary, 0).0 as usize];
+        assert!(
+            if is_goal {
+                matches!(root, DerivationNode::GoalContradiction { .. })
+            } else {
+                matches!(root, DerivationNode::L0Contradiction { .. })
+            },
+            "{function} must retain its exact contradiction class: {root:#?}"
+        );
     }
     assert!(!matches!(
         claims(source, "signed")[0].disposition,
@@ -3360,6 +4945,25 @@ fn main() -> own unit pure {
             "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
         );
     });
+    let admitted = entailment(admitted_actual, "caller");
+    validate_derivations(&admitted);
+    assert_eq!(admitted.obligations.len(), 1);
+    assert!(admitted.obligations[0].discharged);
+    let actual_root = obligation_root(&admitted, 0);
+    for kind in [ImplicitBoundKind::Constant, ImplicitBoundKind::ArrayLength] {
+        assert_root_contains(
+            &admitted,
+            actual_root,
+            |node| matches!(node, DerivationNode::ImplicitBound { kind: actual, .. } if *actual == kind),
+            "the concrete array actual's implicit bounds",
+        );
+    }
+    assert_eq!(admitted.call_goals.len(), 1);
+    assert_eq!(
+        admitted.call_goals[0].disposition,
+        CallGoalDisposition::Unproved
+    );
+    assert!(admitted.call_goals[0].derivation.is_none());
 
     let failed_actual = br#"fn positive(value: own u8) -> own unit traps requires {
   check ilt(value, 10_u8) else trap "small";
@@ -3388,8 +4992,13 @@ fn main() -> own unit pure {
             SemanticIssueKind::UndischargedBoundsObligation { .. }
         ));
     });
+    let failed = entailment(failed_actual, "caller");
+    validate_derivations(&failed);
+    assert_eq!(failed.obligations.len(), 1);
+    assert!(!failed.obligations[0].discharged);
+    assert!(failed.obligations[0].derivation.is_none());
     assert!(
-        call_goals(failed_actual, "caller").is_empty(),
+        failed.call_goals.is_empty(),
         "FN-8 judgment begins only after every actual obligation succeeds"
     );
 }
@@ -3425,17 +5034,26 @@ fn main() -> own unit pure {
   return unit;
 }
 "#;
-    let outcomes = call_goals(source, "caller");
-    assert_eq!(outcomes.len(), 2);
-    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 2);
     assert_eq!(
-        outcomes[0].evidence,
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        summary.call_goals[0].evidence,
         vec![
             CallGoalEvidence::OpaquePositive,
             CallGoalEvidence::ExactL0Projection,
         ]
     );
-    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+    assert_root_has_event_kind(&summary, call_root(&summary, 0), FlowEventKind::S1);
+    assert_eq!(
+        summary.call_goals[1].disposition,
+        CallGoalDisposition::Unproved
+    );
+    assert!(summary.call_goals[1].derivation.is_none());
 }
 
 #[test]
@@ -3584,16 +5202,21 @@ fn main() -> own unit pure {
 }
 "#;
     for function in ["first", "second"] {
-        let outcomes = call_goals(source, function);
-        assert_eq!(outcomes.len(), 1);
-        assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+        let summary = entailment(source, function);
+        validate_derivations(&summary);
+        assert_eq!(summary.call_goals.len(), 1);
         assert_eq!(
-            outcomes[0].evidence,
+            summary.call_goals[0].disposition,
+            CallGoalDisposition::Discharged
+        );
+        assert_eq!(
+            summary.call_goals[0].evidence,
             vec![
                 CallGoalEvidence::OpaquePositive,
                 CallGoalEvidence::ExactL0Projection,
             ]
         );
+        assert_root_has_event_kind(&summary, call_root(&summary, 0), FlowEventKind::S4);
     }
 }
 
@@ -3620,16 +5243,81 @@ fn guarded<T: Int>(value: own T) -> own T traps requires {
   return value;
 }
 "#;
-    let outcomes = call_goals(source, "caller");
-    assert_eq!(outcomes.len(), 1);
-    assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
+    let summary = entailment(source, "caller");
+    validate_derivations(&summary);
+    assert_eq!(summary.call_goals.len(), 1);
     assert_eq!(
-        outcomes[0].evidence,
+        summary.call_goals[0].disposition,
+        CallGoalDisposition::Discharged
+    );
+    assert_eq!(
+        summary.call_goals[0].evidence,
         vec![
             CallGoalEvidence::OpaquePositive,
             CallGoalEvidence::ExactL0Projection,
         ],
         "concrete generic goal: {:#?}",
-        outcomes[0].goal
+        summary.call_goals[0].goal
     );
+    assert_root_has_event_kind(&summary, call_root(&summary, 0), FlowEventKind::S1);
+    let concrete_goal = format!("{:#?}", summary.call_goals[0].goal);
+    assert!(concrete_goal.contains("I32"));
+    assert!(!concrete_goal.contains("GenericInt"));
+}
+
+#[test]
+fn concrete_const_instances_keep_function_local_derivation_inventories() {
+    let source = br#"fn first<const n: u64>(values: own array<u8, n>) -> own u8 pure {
+  return values[0_u64];
+}
+
+fn main() -> own unit pure {
+  let small = array_new<u8, 2>(7_u8);
+  let small_first = first<2>(values: move small);
+  let large = array_new<u8, 5>(9_u8);
+  let large_first = first<5>(values: move large);
+  return unit;
+}
+"#;
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("both concrete const instances must check: {outcome:?}");
+        };
+        let instances: Vec<_> = checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.name == "first")
+            .collect();
+        assert_eq!(instances.len(), 2);
+        let mut concrete_lengths = Vec::new();
+        for instance in instances {
+            let summary = &instance.entailment;
+            validate_derivations(summary);
+            assert_eq!(summary.obligations.len(), 1);
+            assert!(summary.obligations[0].discharged);
+            let root = obligation_root(summary, 0);
+            for kind in [ImplicitBoundKind::Constant, ImplicitBoundKind::ArrayLength] {
+                assert_root_contains(
+                    summary,
+                    root,
+                    |node| matches!(node, DerivationNode::ImplicitBound { kind: actual, .. } if *actual == kind),
+                    "the concrete const instance's own implicit array proof",
+                );
+            }
+            let lengths: Vec<_> = summary
+                .inventory
+                .length_bounds
+                .iter()
+                .filter_map(|bound| match bound {
+                    Some(LengthBound::Constant(value)) => Some(*value),
+                    Some(LengthBound::Equal(_)) | None => None,
+                })
+                .collect();
+            assert_eq!(lengths.len(), 1);
+            concrete_lengths.push(lengths[0]);
+        }
+        concrete_lengths.sort_unstable();
+        assert_eq!(concrete_lengths, vec![2, 5]);
+    });
 }

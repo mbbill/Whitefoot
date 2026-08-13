@@ -24,17 +24,18 @@ use super::super::model::{
     CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::state::{
-    FactState, GoalId, GoalSign, GoalSupport, GoalTable, OutcomeFact, Relation, close, join,
-    materialize_closure,
+    DerivationId, DerivationInventory, DerivationLedger, DerivationRootKind, FactState,
+    FlowEventId, FlowEventKind, GoalId, GoalSign, GoalSupport, GoalTable, OutcomeFact, Relation,
+    close, join, materialize_closure,
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
     TermId, TermKind, TermTable, integer_value,
 };
 use super::{
-    CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
+    BoundsRequest, CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome,
     ClaimDisposition, ClaimOutcome, EntailmentContext, FunctionEntailment,
-    FunctionEntailmentRewalk, ObligationOutcome, fragment_type,
+    FunctionEntailmentRewalk, ObligationOutcome, RewalkObligationOutcome, fragment_type,
 };
 use crate::{SYSTEM_OPERATIONS, SystemParameterMode};
 
@@ -106,6 +107,7 @@ struct LoopFrame {
 /// carried with that arm's tag. Every other arm establishes nothing.
 #[derive(Default)]
 struct ArmFacts {
+    node_path: Option<crate::NodePath>,
     comparison: Option<Relation>,
     goals: Vec<GoalId>,
     outcome: Option<(u32, OutcomeFact)>,
@@ -164,6 +166,8 @@ pub(super) fn analyze(
         obligations: run.obligations,
         claims: run.claims,
         call_goals: run.call_goals,
+        derivations: run.derivations,
+        inventory: run.inventory,
     }
 }
 
@@ -174,7 +178,15 @@ pub(super) fn rewalk_unasserted(
 ) -> FunctionEntailmentRewalk {
     let run = run(function, context, false, include_s4, true);
     FunctionEntailmentRewalk {
-        obligations: run.obligations,
+        obligations: run
+            .obligations
+            .into_iter()
+            .map(|outcome| RewalkObligationOutcome {
+                node_path: outcome.node_path,
+                discharged: outcome.discharged,
+                residual: outcome.residual,
+            })
+            .collect(),
         call_goals: run.call_counterfactuals,
     }
 }
@@ -184,6 +196,8 @@ struct AnalysisRun {
     claims: Vec<ClaimOutcome>,
     call_goals: Vec<CallGoalOutcome>,
     call_counterfactuals: Vec<CallGoalCounterfactual>,
+    derivations: DerivationLedger,
+    inventory: DerivationInventory,
 }
 
 fn run(
@@ -202,6 +216,7 @@ fn run(
         bindings: Vec::new(),
         terms: TermTable::new(),
         goals: GoalTable::default(),
+        derivations: DerivationLedger::default(),
         obligations: Vec::new(),
         claims: Vec::new(),
         call_goals: Vec::new(),
@@ -222,11 +237,30 @@ fn run(
     }
     analyzer.walk_block(&function.body, &mut state);
     analyzer.scopes.pop();
+    let remap = analyzer.derivations.finish();
+    for outcome in &mut analyzer.obligations {
+        outcome.derivation = outcome
+            .derivation
+            .and_then(|id| remap.get(id.0 as usize).copied().flatten());
+    }
+    for outcome in &mut analyzer.call_goals {
+        outcome.derivation = outcome
+            .derivation
+            .and_then(|id| remap.get(id.0 as usize).copied().flatten());
+    }
+    let (terms, length_bounds) = analyzer.terms.into_inventory();
+    let inventory = DerivationInventory {
+        terms,
+        length_bounds,
+        goals: analyzer.goals.into_inventory(),
+    };
     AnalysisRun {
         obligations: analyzer.obligations,
         claims: analyzer.claims,
         call_goals: analyzer.call_goals,
         call_counterfactuals: analyzer.call_counterfactuals,
+        derivations: analyzer.derivations,
+        inventory,
     }
 }
 
@@ -244,6 +278,7 @@ struct Analyzer<'check, 'unit> {
     bindings: Vec<BindingSummary>,
     terms: TermTable,
     goals: GoalTable,
+    derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
     claims: Vec<ClaimOutcome>,
     call_goals: Vec<CallGoalOutcome>,
@@ -255,6 +290,18 @@ struct Analyzer<'check, 'unit> {
 }
 
 impl Analyzer<'_, '_> {
+    fn proof_event(
+        &mut self,
+        kind: FlowEventKind,
+        node_path: Option<&crate::NodePath>,
+    ) -> FlowEventId {
+        self.derivations.event(kind, node_path.cloned())
+    }
+
+    fn expression_node_path(expression: &CheckedExpression) -> Option<&crate::NodePath> {
+        expression.carrier()
+    }
+
     // ------------------------------------------------------------------
     // Binding prepass
     // ------------------------------------------------------------------
@@ -607,13 +654,17 @@ impl Analyzer<'_, '_> {
     /// Contradiction is absorbing. Promote the complete combined closure
     /// before every kill entry so a write cannot erase one premise and make
     /// an unreachable point reachable again.
-    fn promote_contradiction(&self, state: &mut FactState) {
-        if !state.all_derivable && close(state, &self.terms, &self.goals).contradictory() {
-            state.all_derivable = true;
+    fn promote_contradiction(&mut self, state: &mut FactState) {
+        if !state.all_derivable {
+            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+            if closed.contradictory() {
+                state.all_derivable = true;
+                state.contradiction = closed.contradiction_proof();
+            }
         }
     }
 
-    fn apply_kills(&self, state: &mut FactState, events: &[KillEvent]) {
+    fn apply_kills(&mut self, state: &mut FactState, events: &[KillEvent]) {
         if events.is_empty() {
             return;
         }
@@ -637,7 +688,7 @@ impl Analyzer<'_, '_> {
 
     /// Applies the scope-exit kills for every scope deeper than `depth`,
     /// as the edge event ordered before any join [ENT-5].
-    fn exit_scopes_to(&self, state: &mut FactState, depth: usize) {
+    fn exit_scopes_to(&mut self, state: &mut FactState, depth: usize) {
         let exited: HashSet<BindingId> =
             self.scopes.iter().skip(depth).flatten().copied().collect();
         if exited.is_empty() {
@@ -656,7 +707,7 @@ impl Analyzer<'_, '_> {
     }
 
     /// Applies the private capture-scope kill of one counted construct.
-    fn exit_counted_capture_scope(&self, state: &mut FactState, range_path: &[u32]) {
+    fn exit_counted_capture_scope(&mut self, state: &mut FactState, range_path: &[u32]) {
         self.promote_contradiction(state);
         state.kill(|term| {
             matches!(
@@ -668,7 +719,7 @@ impl Analyzer<'_, '_> {
 
     /// Applies capture-scope kills for every loop frame crossed by a
     /// non-local edge. Ordinary loop frames carry no private captures.
-    fn exit_counted_loops_from(&self, state: &mut FactState, loop_depth: usize) {
+    fn exit_counted_loops_from(&mut self, state: &mut FactState, loop_depth: usize) {
         let paths: Vec<Vec<u32>> = self
             .loops
             .iter()
@@ -1721,7 +1772,13 @@ impl Analyzer<'_, '_> {
         goal: ConcreteGoal,
         state: &FactState,
     ) {
-        let (disposition, evidence) = self.call_goal_disposition(&goal, state);
+        let (disposition, evidence, derivation) = self.call_goal_disposition(&goal, state);
+        let ordinal = u32::try_from(self.call_goals.len())
+            .expect("ENT call-root ordinal exceeds the u32 identity space");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::CallGoal(ordinal), root);
+        }
         self.call_goals.push(CallGoalOutcome {
             node_path: node_path.clone(),
             callee,
@@ -1729,6 +1786,7 @@ impl Analyzer<'_, '_> {
             goal,
             disposition,
             evidence,
+            derivation,
         });
     }
 
@@ -1741,7 +1799,7 @@ impl Analyzer<'_, '_> {
         actual_obligations_ok: bool,
         state: &FactState,
     ) {
-        let (goal_disposition, goal_evidence) = self.call_goal_disposition(&goal, state);
+        let (goal_disposition, goal_evidence, _) = self.call_goal_disposition(&goal, state);
         self.call_counterfactuals.push(CallGoalCounterfactual {
             node_path: node_path.clone(),
             callee,
@@ -1757,13 +1815,18 @@ impl Analyzer<'_, '_> {
         &mut self,
         goal: &ConcreteGoal,
         state: &FactState,
-    ) -> (CallGoalDisposition, Vec<CallGoalEvidence>) {
+    ) -> (
+        CallGoalDisposition,
+        Vec<CallGoalEvidence>,
+        Option<DerivationId>,
+    ) {
         let id = self.intern_goal_expression(goal.root.clone());
-        let closed = close(state, &self.terms, &self.goals);
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             (
                 CallGoalDisposition::Discharged,
                 vec![CallGoalEvidence::AllDerivable],
+                closed.contradiction_proof(),
             )
         } else {
             let positive_opaque = closed.holds_opaque(id, GoalSign::Positive);
@@ -1784,7 +1847,15 @@ impl Analyzer<'_, '_> {
                 if positive_projection {
                     evidence.push(CallGoalEvidence::ExactL0Projection);
                 }
-                (CallGoalDisposition::Discharged, evidence)
+                let derivation = closed.opaque_proof(id, GoalSign::Positive).or_else(|| {
+                    closed.goal_projection_proof(
+                        id,
+                        GoalSign::Positive,
+                        &self.goals,
+                        &mut self.derivations,
+                    )
+                });
+                (CallGoalDisposition::Discharged, evidence, derivation)
             } else if negative_opaque || negative_projection {
                 let mut evidence = Vec::with_capacity(2);
                 if negative_opaque {
@@ -1793,9 +1864,9 @@ impl Analyzer<'_, '_> {
                 if negative_projection {
                     evidence.push(CallGoalEvidence::NegatedL0Projection);
                 }
-                (CallGoalDisposition::Refuted, evidence)
+                (CallGoalDisposition::Refuted, evidence, None)
             } else {
-                (CallGoalDisposition::Unproved, Vec::new())
+                (CallGoalDisposition::Unproved, Vec::new(), None)
             }
         }
     }
@@ -1846,7 +1917,7 @@ impl Analyzer<'_, '_> {
     ) {
         let length_term = self.length_term(base.clone(), array_length);
         let offset_term = self.read_operand(offset);
-        let closed = close(state, &self.terms, &self.goals);
+        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
         let discharged = match offset_term {
             Some(offset_term) => closed.derives_bound(offset_term, length_term, -1),
             // An operand that is not a term or constant leaves the relation
@@ -1863,11 +1934,34 @@ impl Analyzer<'_, '_> {
                 self.render_place(&base)
             ))
         };
+        let derivation = if discharged && !self.counterfactual_calls {
+            match offset_term {
+                Some(offset_term) => {
+                    closed.bound_proof(offset_term, length_term, -1, &mut self.derivations)
+                }
+                None => closed.contradiction_proof(),
+            }
+        } else {
+            None
+        };
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+        }
         self.obligations.push(ObligationOutcome {
             node_path,
+            conjunct: 0,
+            requested: BoundsRequest {
+                left: offset_term,
+                right: length_term,
+                bound: -1,
+            },
             discharged,
             contradictory: closed.contradictory(),
             residual,
+            derivation,
         });
     }
 
@@ -1936,7 +2030,11 @@ impl Analyzer<'_, '_> {
 
     fn walk_statement(&mut self, statement: &CheckedStatement, state: &mut FactState) -> bool {
         match statement {
-            CheckedStatement::Let { binding, value, .. } => {
+            CheckedStatement::Let {
+                node_path,
+                binding,
+                value,
+            } => {
                 self.expression_effects(value, state);
                 self.declare(*binding);
                 if value.ty() == CheckedType::Bool
@@ -1947,7 +2045,7 @@ impl Analyzer<'_, '_> {
                 self.record_goal_origin(*binding, value, state);
                 // Sources S5, S6, S7, and S9 establish at the binding, after
                 // the initializer's own kills [ENT-3, ENT-5].
-                self.establish_binding_facts(*binding, value, state);
+                self.establish_binding_facts(node_path, *binding, value, state);
                 true
             }
             CheckedStatement::PropagateLet {
@@ -2015,10 +2113,15 @@ impl Analyzer<'_, '_> {
                 self.expression_effects(value, state);
                 true
             }
-            CheckedStatement::Check { condition, .. } => {
+            CheckedStatement::Check { condition, trap } => {
                 self.expression_effects(condition, state);
                 if self.include_asserted_sources {
-                    self.establish_passed_condition(condition, state);
+                    self.establish_passed_condition(
+                        FlowEventKind::S2,
+                        &trap.node_path,
+                        condition,
+                        state,
+                    );
                 }
                 true
             }
@@ -2035,7 +2138,7 @@ impl Analyzer<'_, '_> {
                 // everything and never refutes), refutation when the
                 // non-contradictory state derives the exact negation.
                 let relation = self.scrutinee_relation(condition, state);
-                let closed = close(state, &self.terms, &self.goals);
+                let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
                 let disposition = if let Some(relation) = relation {
                     if closed.derives(&relation) {
                         ClaimDisposition::Redundant
@@ -2058,7 +2161,12 @@ impl Analyzer<'_, '_> {
                 // [ENT-3] S3: the passed predicate holds on the normal
                 // continuation, exactly as S2 establishes a check's.
                 if self.include_asserted_sources {
-                    self.establish_passed_condition(condition, state);
+                    self.establish_passed_condition(
+                        FlowEventKind::S3,
+                        &trap.node_path,
+                        condition,
+                        state,
+                    );
                 }
                 true
             }
@@ -2108,7 +2216,7 @@ impl Analyzer<'_, '_> {
                 if exits.is_empty() {
                     false
                 } else {
-                    *state = join(&exits, &self.terms, &self.goals);
+                    *state = join(&exits, &self.terms, &self.goals, &mut self.derivations);
                     true
                 }
             }
@@ -2136,7 +2244,7 @@ impl Analyzer<'_, '_> {
                 if gives.is_empty() {
                     false
                 } else {
-                    *state = join(&gives, &self.terms, &self.goals);
+                    *state = join(&gives, &self.terms, &self.goals, &mut self.derivations);
                     true
                 }
             }
@@ -2167,7 +2275,7 @@ impl Analyzer<'_, '_> {
                 // break it is the contradictory all-derivable state, matching
                 // an unreachable-in-truth continuation the conservative graph
                 // keeps reachable [ENT-5].
-                *state = join(&breaks, &self.terms, &self.goals);
+                *state = join(&breaks, &self.terms, &self.goals, &mut self.derivations);
                 true
             }
             CheckedStatement::CountedRange {
@@ -2187,13 +2295,20 @@ impl Analyzer<'_, '_> {
                 let outer_scope_depth = self.scopes.len();
                 self.scopes.push(vec![*binder]);
                 let range_path = node_path.components().to_vec();
-                let counted =
-                    self.establish_counted_preheader(&range_path, *binder, lower, upper, state);
+                let counted = self.establish_counted_preheader(
+                    node_path,
+                    &range_path,
+                    *binder,
+                    lower,
+                    upper,
+                    state,
+                );
                 // S11 fixes the complete post-capture closure before
                 // continuing kills are subtracted. This preserves sound
                 // snapshot consequences without rereading a mutable endpoint
                 // on later iterations.
-                *state = materialize_closure(state, &self.terms, &self.goals);
+                *state =
+                    materialize_closure(state, &self.terms, &self.goals, &mut self.derivations);
 
                 let mut kills = LoopKills::default();
                 let body_reaches_head = self.collect_continuing_loop_kills(
@@ -2224,7 +2339,7 @@ impl Analyzer<'_, '_> {
                     breaks: Vec::new(),
                 });
                 let mut body_state = head.clone();
-                self.establish_counted_body_entry(&counted, &mut body_state);
+                self.establish_counted_body_entry(node_path, &counted, &mut body_state);
                 let _ = self.walk_block(body, &mut body_state);
                 let frame = self.loops.pop();
                 let breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
@@ -2239,7 +2354,7 @@ impl Analyzer<'_, '_> {
                 exits.push(exhaustion);
                 exits.extend(breaks);
                 self.scopes.pop();
-                *state = join(&exits, &self.terms, &self.goals);
+                *state = join(&exits, &self.terms, &self.goals, &mut self.derivations);
                 true
             }
             CheckedStatement::Region { body, .. } => self.walk_block(body, state),
@@ -2256,20 +2371,40 @@ impl Analyzer<'_, '_> {
         facts: &ArmFacts,
     ) -> Option<FactState> {
         let mut state = entry.clone();
+        let event = (!facts.goals.is_empty() || facts.comparison.is_some())
+            .then(|| self.proof_event(FlowEventKind::S1, facts.node_path.as_ref()));
         if let Some(relation) = &facts.comparison {
             // Bool arms: tag 1 is `True()`, tag 0 is `False()`; the False
             // arm takes the exact negation [ENT-3].
             if arm.tag == 1 {
-                state.establish(relation);
+                state.establish(
+                    relation,
+                    &mut self.derivations,
+                    event.expect("comparison arm has an S1 proof event"),
+                );
             } else if arm.tag == 0 {
-                state.establish(&relation.negated());
+                state.establish(
+                    &relation.negated(),
+                    &mut self.derivations,
+                    event.expect("comparison arm has an S1 proof event"),
+                );
             }
         }
         for goal in &facts.goals {
             if arm.tag == 1 {
-                state.establish_goal(*goal, GoalSign::Positive);
+                state.establish_goal(
+                    *goal,
+                    GoalSign::Positive,
+                    &mut self.derivations,
+                    event.expect("goal arm has an S1 proof event"),
+                );
             } else if arm.tag == 0 {
-                state.establish_goal(*goal, GoalSign::Negative);
+                state.establish_goal(
+                    *goal,
+                    GoalSign::Negative,
+                    &mut self.derivations,
+                    event.expect("goal arm has an S1 proof event"),
+                );
             }
         }
         if let Some((tag, outcome)) = &facts.outcome
@@ -2553,7 +2688,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn apply_loop_kills(&self, state: &mut FactState, kills: &LoopKills) {
+    fn apply_loop_kills(&mut self, state: &mut FactState, kills: &LoopKills) {
         self.promote_contradiction(state);
         state.kill(|term| {
             kills
