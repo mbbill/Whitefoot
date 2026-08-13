@@ -36,8 +36,9 @@ second authority or extending its architecture.
 ## Method
 
 1. Claim only after task 0055 is terminal, building on task 0054 implementation
-   commit `0e9a206188d8cc37ec3bb248889e42109122246a`. Use two clean detached
-   worktrees at baseline `c2c4092` and the exact 0055 terminal closure
+   commit `0e9a206188d8cc37ec3bb248889e42109122246a` and task 0055 implementation
+   commit `491446af053bfe8db95941e6093b30f4ff9cfb7a`. Use two clean detached
+   worktrees at baseline `c2c4092` and the exact task-0055 terminal closure
    revision; verify frozen source/spec digests and record rustc, cargo, OS,
    architecture, and SHAs.
 2. Build both release compilers once with `--locked --offline`. For SHA-256,
@@ -96,9 +97,11 @@ second authority or extending its architecture.
 ## Dependencies and integration order
 
 Task 0054's implementation is fixed at
-`0e9a206188d8cc37ec3bb248889e42109122246a`. Task 0055 must be terminal, and
-its terminal closure revision is this task's candidate base. After that
-closure, this task may measure in parallel with the required 0051/0052 refresh
+`0e9a206188d8cc37ec3bb248889e42109122246a`; task 0055's implementation is
+fixed at `491446af053bfe8db95941e6093b30f4ff9cfb7a`. Task 0055 becomes terminal in
+the integration change that moves its record to `docs/done/`; that exact
+closure revision is this task's candidate base. After that closure, this task
+may measure in parallel with the required 0051/0052 refresh
 and may wait with a complete hash-locked result. Once 0051/0052's first exact
 batch is approved, installed, and terminal, task 0053 may run in parallel with
 this task. Their protected sections integrate together in a second independent

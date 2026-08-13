@@ -87,11 +87,11 @@ MCTS bytes behind.
 ## Dependencies and integration order
 
 - The original probe ran from the plan-activation premise at `c2c4092` in
-  parallel with tasks 0052 and 0054. Task 0054 subsequently changed the
-  canonical entailment engine, and task 0055 extends the same retained root
-  path; this task must wait for 0055's terminal closure, refresh onto that exact
-  revision, and rerun the complete proof, near-miss, support/kill, real-body,
-  determinism, restoration, and gate matrix once.
+  parallel with tasks 0052 and 0054. Task 0055 is now terminal at implementation
+  commit `491446af053bfe8db95941e6093b30f4ff9cfb7a` and the commit containing
+  this coordinated lifecycle closure. This task owes one refresh onto that
+  exact closure revision and one complete rerun of the proof, near-miss,
+  support/kill, real-body, determinism, restoration, and gate matrix.
 - Tasks 0051 and 0052 share their first protected equivalent-compliance batch.
   Its fixed append order is installed base, refreshed 0051 section, then
   refreshed 0052 section, with one exact before/after audit and
@@ -136,10 +136,12 @@ task 0053 and Stage 8b while the independent DIAG-2 work continues.
 - **Current:** the former scratch section and combined candidate ending in
   SHA-256 `78ce0073244e810c1acb1b094c86d58d0522800ce025fc1f197c369fb84d53d5`
   are withdrawn and must not be installed because later DIAG-2 entailment
-  changes make their revision identity stale; wait for task 0055 terminal.
-- **Next:** refresh once onto task 0055's terminal closure, rerun the complete
-  matrix, and produce a new exact scratch section for the combined protected
-  candidate.
+  changes make their revision identity stale. Task 0055 implementation
+  `491446af053bfe8db95941e6093b30f4ff9cfb7a` is integrated. This task remains
+  `WAITING`; the commit containing this lifecycle update is the exact closure
+  revision to record in the subsequent resume change.
+- **Next:** resume from that closure revision, rerun the complete matrix once,
+  and produce a new exact scratch section for the combined protected candidate.
 
 Close by moving this record to `docs/done/` in the lead-reviewed combined
 integration change after the exact owner-approved canonical acceptance bytes
