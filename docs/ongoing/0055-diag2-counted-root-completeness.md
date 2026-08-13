@@ -91,9 +91,13 @@ Task 0054 is terminal at implementation commit
 - Snapshot-before-kill ordering is directly tested; a normal query-derived
   consequence cannot survive the same kill.
 - Endpoint writes/projections/dereferences, normal binder update, maximum-u64
-  endpoints, generic endpoints, and contradictory-predecessor joins preserve
-  only the facts allowed by current kills and snapshot materialization;
-  ordinary loops still gain no induction.
+  endpoints, legal value endpoints inside multiple concrete generic/const
+  instances, and contradictory-predecessor joins preserve only the facts
+  allowed by current kills and snapshot materialization; ordinary loops still
+  gain no induction. The generic fixture keeps its const parameter in an
+  admitted const position such as `array<u8, n>`, binds `len(values)` to an
+  ordinary u64 value, and uses that binding as the counted endpoint; TYPE-6
+  does not admit a const-generic name directly as a `pbase` value atom.
 - Mutation controls that delete or duplicate a root, change its `NodePath` or
   relation, corrupt a parent/snapshot marker, or retain a killed parent fail in
   the test-only structural checker.
@@ -120,12 +124,25 @@ or the expected count.
 
 - **Completed:** task 0054 landed its exact shared-DAG derivation arena and
   terminal closure; read-only hook audit confirmed the SHA-256 3/15/24
-  inventory and a single-walk implementation path.
-- **Current:** claim landed; create the isolated worktree and run the clean
-  focused and compiler pre-gates before implementation.
-- **Next:** retain the five semantic/eight atomic S11 roots through the sole
-  ledger channel, complete hostile/root-mutation coverage, and run both full
-  gates before lead review.
+  inventory and a single-walk implementation path. Clean pre-gates passed
+  focused 106/106, library 712/712, and real programs 30/30. The executor then
+  stopped correctly when the original generic-endpoint fixture wrote a const
+  generic directly as an endpoint atom and resolution rejected it under
+  TYPE-5.
+- **Lead correction:** active TYPE-6 admits a `pbase` only for a value binding
+  or named const, while a const generic is admitted only in its `const`
+  grammar positions; ENT-2's symbolic const term does not add a source atom
+  spelling. The intended generics coverage is therefore fixed to multiple
+  concrete generic/const instances whose legal ordinary u64 endpoint is
+  derived from a const-dependent value such as `len(array<u8, n>)`. This keeps
+  the planned concrete-instance, endpoint-identity, inventory, substitution,
+  and determinism coverage without changing the accepted language or the
+  six-file touch set.
+- **Current:** refresh the preserved five-file implementation onto this
+  correction and replace only the invalid fixture with the legal concrete-
+  instance form.
+- **Next:** complete hostile/root-mutation and real-bundle coverage, then run
+  focused and both full gates before lead review.
 
 Close only through lead review by moving this record to `docs/done/` with the
 landed commit and validation. Task 0056 remains the terminal cost/evidence
