@@ -17,12 +17,12 @@ continuing kills, body-entry roots, and deterministic occurrence coverage.
 
 ## Direction and invariants
 
-- Enumerate counted statements from the checked function, not from later
-  queries. Each exact `for_stmt` occurrence has one complete root group.
-- Retain the two capture equalities, binder initialization equality, and the
-  two true-header bounds in the normative S11 order. Equality roots expose
-  both directed bounds, yielding the complete atomic bound inventory rather
-  than a Boolean flag.
+- Populate roots during the existing analyzer walk, not from later queries or
+  a second checked-tree inventory. Each exact `for_stmt` occurrence has one
+  `CountedDerivationSet`, in deterministic statement-walk order.
+- Each set retains the two capture equalities, binder initialization equality,
+  and two true-header bounds in normative S11 order. This is exactly five
+  semantic roots and eight directed atomic-bound roots per occurrence.
 - The dedicated counted-preheader snapshot occurs after capture establishment
   and closure, before continuing-kill subtraction. No other new
   materialization boundary is admitted.
@@ -35,9 +35,12 @@ continuing kills, body-entry roots, and deterministic occurrence coverage.
 ## Method
 
 1. Refresh onto terminal task 0054 and rerun its focused root verifier.
-2. Add one retained counted-root group to `FunctionEntailment` in deterministic
-   checked-tree order. Populate it during the existing S11 preheader and body
-   entry operations, not in a post-pass.
+2. Add `CountedDerivationSet { counted_node_path,
+   lower_capture_eq_endpoint, upper_capture_eq_endpoint,
+   binder_eq_lower_capture, lower_capture_le_binder,
+   binder_lt_upper_capture }`. Each equality holds both directed atomic roots.
+   Populate it during existing S11 preheader and body-entry operations, not in
+   a post-pass.
 3. Record snapshot/materialization parents for every materialized consequence
    used by continuing state, then apply the existing kill summary to both facts
    and parents. Retain the normative S11 roots observationally even when their
@@ -46,19 +49,24 @@ continuing kills, body-entry roots, and deterministic occurrence coverage.
    endpoint sources, both endpoint writes, binder hidden update, early return,
    matching/enclosing break, nested ranges, join, ordinary-loop near miss, and
    unused S11 roots.
-5. Cross-check the three real SHA-256 counted loops and all synthetic counted
+5. Maintain encountered-counted and completed-root counters in that same walk;
+   assert completeness while building `FunctionEntailment`. Root relations
+   must equal the final normalized relations; identity mismatch is an internal
+   compiler defect, never a category-only fallback.
+6. Cross-check the three real SHA-256 counted loops and all synthetic counted
    statements: each occurrence appears exactly once, every required relation
    and directed equality component has one valid root, and no ordinary loop
-   appears.
-6. Run focused and complete gates and update compiler documentation only for
-   the exact retained capability.
+   appears. Run focused and complete gates.
 
 ## Scope and expected touch set
 
-Task 0054's entailment/derivation modules, counted flow/sources, focused
-semantic tests, and `compiler/README.md`. No specification, protected corpus,
-consumer source, lowering, backend, generated, plan, roadmap, approval, or MCTS
-bytes.
+Only task 0054's seven implementation/test files:
+`compiler/src/semantic/entailment.rs`, `model.rs`, `state.rs`, `term.rs`,
+`flow.rs`, `flow/sources.rs`, and
+`compiler/src/semantic/tests/entailment.rs`, plus this lifecycle record. No
+README, research, specification, protected corpus, consumer source, lowering,
+backend, provenance, generated, plan, roadmap, approval, or MCTS bytes. A need
+for another file stops for lead review.
 
 ## Dependencies and integration order
 
@@ -68,21 +76,36 @@ this task. Stage 8b waits for task 0056 plus positive task 0053.
 ## Validation
 
 - Every counted statement has one source-ordered root group with all five S11
-  relations and all directed bound components; unused facts remain present.
+  relations and exactly eight directed atomic roots; unused, zero-trip,
+  break/return/propagate, and nested occurrences remain present and distinct.
 - Parent replay proves each relation without rerunning closure.
 - Snapshot-before-kill ordering is directly tested; a normal query-derived
   consequence cannot survive the same kill.
-- Three real SHA counted loops are complete, deterministic, and still
-  discharge 9/9 without claims; all runtime and emitted no-trap evidence is
-  unchanged.
+- Endpoint writes/projections/dereferences, normal binder update, maximum-u64
+  endpoints, generic endpoints, and contradictory-predecessor joins preserve
+  only the facts allowed by current kills and snapshot materialization;
+  ordinary loops still gain no induction.
+- Mutation controls that delete or duplicate a root, change its `NodePath` or
+  relation, corrupt a parent/snapshot marker, or retain a killed parent fail in
+  the test-only structural checker.
+- `tests/programs/sha256_abc.wf` has three occurrence groups, exactly 15
+  semantic S11 roots and 24 atomic roots, plus exact roots for its existing
+  nine accepted bounds obligations. UTF-8, the four raw-DEFLATE sources, and
+  wfgrep have complete bounds/call/counted roots without changed outcomes.
+- Repeated compilation produces a byte-identical normalized ledger; all
+  runtime and emitted no-trap evidence is unchanged.
 - Focused checks and both complete repository gates pass.
 
 ## Stop condition
 
 Stop if complete roots require reconstructing flow after the pass, treating
 ordinary query closure as live, exporting binder/capture facts, adding loop
-induction, or changing counted control/runtime behavior; or if any checked
-counted occurrence cannot be enumerated exactly once.
+induction, a general ProofFlow/CFG, serialization, full closed-state snapshots,
+claim/O3 witnesses, broad identity remodeling, or changing counted
+control/runtime behavior; or if any checked counted occurrence cannot be
+enumerated exactly once. If the SHA-256 3/15/24 inventory does not match the
+actual checked model, stop with a reproduction rather than changing semantics
+or the expected count.
 
 ## Done-when
 

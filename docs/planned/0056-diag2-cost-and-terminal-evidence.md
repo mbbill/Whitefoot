@@ -21,10 +21,10 @@ second authority or extending its architecture.
 - Measurement uses the same canonical compiler path and exact frozen sources;
   the pre-change reference is the plan-activation baseline at `c2c4092` in a
   detached worktree.
-- Report arena nodes/edges, logical retained bytes, maximum and distribution
-  of proof depth, wall compile time, and peak RSS per frozen unit. Label any
-  platform-dependent quantity and preserve raw commands/results under the
-  canonical acceptance record.
+- Report mandatory roots by class, unique arena nodes, parent edges,
+  ledger-owned retained bytes, maximum reachable proof depth, wall compile
+  time, and peak RSS per frozen unit. Label platform-dependent quantities and
+  preserve exact commands and summaries under the canonical acceptance record.
 - Root completeness is checked from the checked program: accepted subscript
   occurrences, discharged call occurrences, and counted-statement S11 groups
   each map exactly once to valid roots. Negative outcomes do not gain positive
@@ -35,33 +35,41 @@ second authority or extending its architecture.
 
 ## Method
 
-1. Claim only after tasks 0054 and 0055 are terminal. Refresh both the result
-   and detached baseline worktrees and verify exact source/spec identities.
-2. Add only focused ordinary tests needed to walk every retained root and
-   compare complete occurrence inventories. Mutation controls delete/rebind a
-   root, parent, join predecessor, kill, substitution, and S11 entry and must
-   fail the audit deterministically.
-3. Use temporary bounded instrumentation to print node/edge/byte/depth counts;
-   remove it unless the same private method is directly needed by permanent
-   tests. Measure release compilation wall time and peak RSS with repeated
-   baseline/result runs and record method, sample count, and limitations.
-4. Re-run acceptance/disposition/diagnostic snapshots, the complete raw-
-   DEFLATE and wfgrep oracles, facts-on/off controls, focused semantic tests,
-   and the complete repository gate.
-5. Record exact installed results in
+1. Claim only after tasks 0054 and 0055 are terminal. Use two clean detached
+   worktrees at baseline `c2c4092` and the exact 0055 result; verify frozen
+   source/spec digests and record rustc, cargo, OS, architecture, and SHAs.
+2. Build both release compilers once with `--locked --offline`. For SHA-256,
+   UTF-8, four-source raw-DEFLATE, and wfgrep, use the Current Plan's real
+   release invocation, one warmup, then seven alternating baseline/candidate
+   measurements. `/usr/bin/time -l` records wall/user/sys and maximum RSS;
+   report median, min/max, and absolute/percentage deltas while preserving the
+   expected status/advisories.
+3. Collect candidate mandatory roots by class, unique nodes, parent edges,
+   maximum reachable depth, and retained bytes. Retained bytes are ledger arena
+   capacities times element sizes plus nested join-predecessor capacities;
+   exclude transient interner/`FactState`/`ClosedState` scratch. Temporary
+   instrumentation is removed from the final diff; add no CLI or script.
+4. Audit the structural bound `O(S + P + R)`, where `S` is unique proof nodes
+   created by existing source/closure/materialization, `P` real parent edges,
+   and `R` mandatory roots. Root-local DAG copying, full program-point states,
+   and query-triggered reclosure fail. There is no owner-approved numeric
+   slowdown or RSS budget, so do not invent a percentage threshold.
+5. Run acceptance/disposition/diagnostic comparisons, all real-program oracles,
+   focused semantic tests, `make -C compiler check`, and `make check`.
+6. Record exact installed results in
    `research/investigations/obligation-discharge/ACCEPTANCE.md` and update
    `compiler/README.md` only as needed. Close the DIAG-2 prerequisite; do not
    advance Stage 8b unless task 0053 is also terminal positive.
 
 ## Scope and expected touch set
 
-- Focused ordinary semantic tests and minimal private audit helpers in the
-  existing entailment modules.
-- `compiler/README.md`, the existing acceptance record, and this task record.
+- `research/investigations/obligation-discharge/ACCEPTANCE.md`,
+  `compiler/README.md`, and this lifecycle record only.
 - Scratch profiles and detached baseline under `/Users/bytedance/do_not_scan`.
-- No spec, protected conformance, real consumer, lowering/backend authority,
-  generated, roadmap, plan, approval, or MCTS change unless a genuinely new
-  durable decision is separately identified and handled through its skill.
+- No production Rust/tests, spec, protected conformance, gate wiring, real
+  consumer, lowering/backend authority, generated artifact, new script,
+  roadmap, plan, approval, or MCTS change. A discovered defect stops this task
+  for a separately bounded fix rather than being absorbed here.
 
 ## Dependencies and integration order
 
@@ -79,16 +87,20 @@ claimable only when both this task and task 0053 are terminal positive results.
   diagnostics, runtime output, effects, cleanup, and required checks match.
 - Node/edge/byte/depth, release-time, and peak-RSS results are exact and
   reproducible enough to support the Current Plan's bounded-cost judgment.
-- `make -C compiler check`, `make check`, and the independent conformance run
-  are green or carry only the exact unchanged OWN-3 unsupported boundary.
+- `make -C compiler check` and `make check` are green; any existing independent
+  adapter outside that gate is invoked read-only and no protected bytes or
+  wiring change.
 
 ## Stop condition
 
 Stop if root completeness cannot be audited without a second closure or
 semantic walk; cost or representation requires serialization, portable
 identity, cache/replay, ProofFlow, a shadow verifier, or lowering authority;
-any frozen acceptance/runtime behavior changes; or the retained representation
-is not compact enough to satisfy the Current Plan without material expansion.
+any source digest or frozen acceptance/diagnostic/runtime behavior changes;
+roots are nondeterministic; storage violates `O(S + P + R)`; measurement
+OOMs/times out; or a gate fails. A production fix, numeric policy, persistent
+benchmark framework, specification change, or protected conformance/gate
+change is outside this task and stops for the applicable task or approval.
 
 ## Done-when
 

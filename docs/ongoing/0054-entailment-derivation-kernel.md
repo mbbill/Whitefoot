@@ -28,42 +28,53 @@ change acceptance, or create another proof authority.
   that unit's existing term, goal, occurrence, and `NodePath` identities. No
   serialization, hashes, portable identity, replay schema, ProofFlow, shadow
   verifier, or second semantic walk is admitted.
-- A proof point distinguishes source occurrence and phase: before/after
-  transfer, set commit, claim S3 establishment, scope exit, join, and counted
-  snapshot. `NodePath` alone is insufficient.
-- Nodes cover exact source/implicit facts, L0 transitivity, equality's two
-  directions, disequality strengthening, signed opaque sources and exact L0
-  projections, contradiction, predecessor-complete joins, and the counted
-  materialization marker. Parent IDs are acyclic and topologically earlier.
+- Each existing deterministic function walk allocates a dense `FlowEventId`
+  for proof-producing events. Where a checked node already has a `NodePath`,
+  the event also retains it; joins and arms use the local event ID plus a
+  predecessor ordinal. Do not add paths to every checked statement or build a
+  second flow graph.
+- Nodes are limited to exact source/implicit facts, L0 transitivity,
+  requested-bound subsumption, equality's two directed roots, disequality
+  strengthening, signed opaque sources and exact L0 projections,
+  contradiction, predecessor-complete joins, and the counted materialization
+  marker. Parent IDs are acyclic and topologically earlier.
 - Ordinary closure consequences remain query-local. Only current joins and
   the counted S11 preheader snapshot may materialize a derived relation into a
   live state. Kills remove both fact and live parent; they never leave an
   endpoint-only derived fact behind.
-- Canonical choice follows existing deterministic source/term/goal order and
-  prefers the already selected smallest bound. Equal alternatives choose the
-  lexicographically earliest parent tuple; no hash-map iteration order becomes
-  observable.
+- Canonical choice first prefers the stronger bound. Equal bounds prefer the
+  smaller proof depth (`1 + max(parent depth)`), then the lexicographically
+  smaller node-kind and parent/event tuple. Closure and join emission sort
+  normalized fact/goal keys, including distinct and opaque facts; no hash-map
+  iteration order becomes observable.
+- The ledger records only nodes needed by mandatory roots or an existing
+  join/counted materialization. It does not retain every closed state, claim
+  support, or an O3 absence witness.
 
 ## Method
 
 1. Reproduce the active DIAG-2 gap and run the pre-change compiler gate.
-2. Add private dense derivation IDs, nodes, query roots, and point/event
-   identity under `compiler/src/semantic/entailment/`. Extend live bound,
-   distinct, and opaque fact bookkeeping with their exact producing node while
-   preserving the public semantic result of every operation.
+2. Add one private `DerivationLedger` per `FunctionEntailment`, with dense
+   `DerivationId(u32)`, nodes, query roots, and function-local event identity.
+   Extend live bound, distinct, opaque, and contradiction bookkeeping with the
+   exact producing node while preserving every public semantic result. Clones
+   share IDs; kills remove both the fact and its live handle.
 3. Teach the existing single `close` computation to carry canonical parents
    beside each best bound and sign. Never call a second closure to reconstruct
    a proof. Exact arithmetic uses the same safe representational policy as the
    accepted bound computation.
 4. Teach establishment, kills, joins, empty/all-derivable states, ordinary-loop
    continuing kills, and counted snapshot materialization to carry or remove
-   parent identities at the same event where the fact changes. A join root
-   names every reaching noncontradictory predecessor in canonical order.
-5. At each accepted subscript, retain its normalized query and exact root. At
-   each discharged ordinary-call requirement, retain the concrete callee,
-   final-check occurrence, substituted typed goal, exact positive or
-   contradiction root, and existing disposition. Unproved/refuted outcomes
-   gain no positive root.
+   parent identities at the same event where the fact changes. A join node
+   names every reaching predecessor in ordinal order, using either that
+   predecessor's fact proof or its contradiction proof.
+5. At each accepted subscript, retain exact bounds `NodePath`, conjunct zero,
+   normalized requested bound, and one root. At each discharged ordinary-call
+   requirement, retain exact call `NodePath`, concrete callee, final-check
+   occurrence, substituted typed goal, and one root. Unproved/refuted outcomes
+   gain no positive root. Preserve current contradiction and call-evidence
+   precedence: derivable/contradiction, then positive opaque, then exact L0
+   projection; retain the existing `CallGoalEvidence` category unchanged.
 6. Publish the arena and roots inside `FunctionEntailment`; do not duplicate
    terms or goals and do not expose a stable artifact format.
 7. Add focused hostile tests for direct and transitive bounds, equality,
@@ -76,14 +87,14 @@ change acceptance, or create another proof authority.
 
 ## Scope and expected touch set
 
-- `compiler/src/semantic/entailment.rs`, `state.rs`, `flow.rs`,
-  `flow/sources.rs`, and a cohesive new sibling module only if it owns the
-  derivation data/invariants rather than forwarding calls.
+- `compiler/src/semantic/entailment.rs`, `state.rs`, `term.rs`, `flow.rs`, and
+  `flow/sources.rs`.
 - `compiler/src/semantic/model.rs` only for checked-program retention wiring;
   focused ordinary tests under `compiler/src/semantic/tests/`.
-- `compiler/README.md` only after the retained capability is accurate.
 - No specification, protected conformance, real-program, generated, roadmap,
-  Current Plan, approval, or MCTS change.
+  Current Plan, compiler README, approval, research, provenance, lowering, or
+  MCTS change. If another implementation file is required, stop for lead
+  review rather than inventing a module.
 
 ## Dependencies and integration order
 
@@ -101,25 +112,44 @@ change acceptance, or create another proof authority.
   or contradiction root; no failed judgment carries a positive root.
 - Rewalking the retained parents from each root reaches only exact source or
   implicit facts and reproduces the normalized query without invoking closure.
+- A test-only structural walker validates node kind, parent type, relation
+  arithmetic, and acyclicity without re-running entailment. Direct/implicit,
+  transitivity/subsumption, both equality directions, two-parent
+  disequality-strengthening, integer/type/array-length implicit facts,
+  opaque/projection evidence, both contradiction kinds, generic substitution,
+  recursion, empty/all-contradictory joins, and ordinary-loop non-induction
+  each have focused coverage.
 - Set commit, callee write, consume, and scope exit invalidate the same parent
   as the same live fact; element writes preserve fixed-length premises.
-- Joins enumerate every reaching noncontradictory predecessor; empty and
-  contradictory inputs follow active ENT-4/ENT-5 exactly.
+- Joins enumerate every reaching predecessor, using contradiction evidence for
+  a contradictory-neutral edge; empty and all-contradictory inputs follow
+  active ENT-4/ENT-5 exactly.
 - Concrete generic instances never share local IDs; recursive calls produce
   finite local acyclic roots.
+- Repeating the same fixture at least 20 times produces byte-identical
+  normalized root/node dumps.
 - Acceptance, dispositions, residuals, diagnostics, lowering, runtime output,
   effects, and required checks are byte-for-byte unchanged.
 - `env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-cargo-tmp make -C compiler check`
   and `env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-cargo-tmp make check`
   pass.
 
+The retained representation exposes exact root-class counts, unique node
+count, parent-edge count, maximum reachable depth, and ledger-owned retained
+bytes (arena capacities plus nested join-predecessor capacities). It excludes
+transient `FactState`/`ClosedState` scratch and adds no CLI or persistent
+measurement script; task 0056 records the frozen-program measurements.
+
 ## Stop condition
 
 Stop with the smallest missing case if exact roots require a second closure or
 semantic walk, a serialized/portable identity, a shadow verifier, ProofFlow,
-lowering capability, guessed parent, cyclic proof, or incomplete join/kill
-accounting; if the representation changes acceptance or runtime behavior; or
-if it cannot retain exact call substitution and contradiction compactly.
+lowering capability, full-state retention, root-local proof copying, claim/O3
+witnesses, guessed parent, cyclic proof, or incomplete join/kill accounting;
+if exact joins cannot be represented by function-local events and predecessor
+ordinals; if the representation changes acceptance, diagnostics, or runtime
+behavior; or if it cannot retain exact call substitution and contradiction
+compactly.
 
 ## Progress and closure
 
