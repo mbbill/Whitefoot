@@ -1,6 +1,6 @@
 # 0054 — entailment derivation kernel
 
-- **Status:** `WAITING`
+- **Status:** `IN PROGRESS`
 - **Authority:** the `ACTIVE` Current Plan selected 2026-08-12, `Trust
   prerequisite — bounded existing-DIAG-2 repair`, derived from Direction
   Outline revision 33 item `PROOF-8` and active v0.27 DIAG-2
@@ -100,13 +100,12 @@ change acceptance, or create another proof authority.
 
 - Plan activation `c2c4092` was the starting premise. During hostile join
   coverage this task reproduced the pre-existing ENT-4/ENT-5 defect tracked by
-  task 0057: a disequality derived from opposite strict-bound orientations on
-  two predecessors is lost at their join. Task 0057 must land first; this task
-  then refreshes/rebases onto that exact repair and extends its canonical
-  derivation parents without changing the repaired semantics.
-- The preserved implementation work in this task remains isolated and
-  uncommitted while 0057 runs. It may otherwise overlap Stage 8a tasks 0051
-  and 0052.
+  task 0057. That repair landed as
+  `a6f11672eda883a37f147ce78400e2504f1c4031`; this task must now
+  refresh/rebase onto it and extend its canonical strict-bound-to-disequality
+  and join parents without changing the repaired semantics.
+- The preserved implementation work remains isolated and uncommitted during
+  that refresh. It may otherwise overlap Stage 8a tasks 0051 and 0052.
 - Task 0055 depends on this task's landed arena and exact root interfaces.
   Task 0056 depends on 0055. Stage 8b depends on 0053 and 0056 terminal.
 - If Stage 8a evidence integrates first, refresh/rebase and rerun all affected
@@ -164,15 +163,11 @@ compactly.
   rejected verifier/replay alternatives consulted; valid clean pre-gate;
   private shared-DAG implementation and a passing exact-root structural
   regression within the closed touch set.
-- **Current:** waiting on task 0057 after the hostile regression
-  `a_join_keeps_a_disequality_derived_in_opposite_strict_orientations`
-  correctly exposed frozen behavior `Unproved` where active ENT-4/ENT-5
-  requires `Discharged`. The six-file implementation diff and smallest failing
-  regression remain uncommitted and otherwise untouched in the isolated
-  worktree.
-- **Next:** after 0057 lands, refresh/rebase, teach the derivation ledger to
-  retain the repaired strict-bound-to-disequality and join parents, then rerun
-  every focused and complete gate.
+- **Current:** refresh/rebase the preserved six-file implementation onto 0057
+  commit `a6f1167`, resolving the repaired closure only by adding exact
+  derivation parents for its now-correct semantic result.
+- **Next:** rerun the opposite-orientation join witness, the structural root
+  walker, every hostile proof case, and the complete gates.
 
 Close only through lead review by moving this record to `docs/done/` with the
 landed commit and validation. The DIAG-2 prerequisite remains incomplete until
