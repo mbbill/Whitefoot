@@ -61,9 +61,19 @@ compiler, real-program, specification, conformance, generated, or MCTS change.
    every admitted `filled`, destination fills `0x00` and `0xA5`, and all-zero,
    all-maximum, and ascending text. Compare result and every destination byte
    in all 2,430 cases.
-6. Run hostile controls: remove the requirement, restore the ordinary loop,
-   return `at +wrap 1`, use an unrelated carried index, and attempt to consume
-   a post-loop binder fact. None may produce the desired proof.
+6. Run proof and behavioral controls, preserving the distinction between
+   them:
+   - removing the requirement still correctly proves the local result bound,
+     but the invalid-domain witness must expose that the counted body returns
+     `capacity` rather than the current body's `filled`; this is a behavioral
+     non-equivalence control, not a failed proof;
+   - returning `at +wrap 1` still correctly proves `result <= capacity` from
+     S11's `at < capacity`, but must fail the differential behavior oracle;
+   - returning `at +wrap 2` must fail the result-bound proof and behavior
+     oracle;
+   - restoring the ordinary loop, returning an actually independent
+     parameter, and attempting to consume a post-loop binder fact must not
+     produce the desired proof.
 7. Replay the complete wfgrep `9/9` and raw-DEFLATE `3/3` program oracles on
    the unchanged real sources.
 8. Remove every scratch/compiler/program change, restore all hashes, rerun the
@@ -96,8 +106,10 @@ compiler, real-program, specification, conformance, generated, or MCTS change.
 - Both candidate return shapes discharge independently; no post-loop binder
   fact or subtraction relation is observed.
 - All 2,430 admitted differential cases match result and every byte.
-- Hostile variants fail for the expected reason and do not gain a fallback
-  check or hidden premise.
+- The two mathematically valid bounded variants (`no requirement` and
+  `at +wrap 1`) retain their proof but fail the exact behavioral oracle; the
+  genuinely out-of-bound and unrelated-value variants remain unproved. No
+  control gains a fallback check or hidden premise.
 - Unchanged real programs pass wfgrep `9/9` and raw-DEFLATE `3/3`.
 - After restoration, only the acceptance record and task lifecycle differ;
   exact consumer and spec digests match the Current Plan.
@@ -113,12 +125,26 @@ equality, a variable-subtraction fact, new syntax, a hidden premise, or
 invalid-domain behavior change; or any real-program oracle drift. A stopped
 result forbids task 0053 and Stage 8b while DIAG-2 continues independently.
 
+## Lead correction after the first controls
+
+The executor stopped correctly when the original task text required the two
+mathematically valid variants `no requirement` and `at +wrap 1` to be
+unproved. The lead corrected only the falsifier classification above: both
+variants are required to keep the valid bound proof and fail the separate
+behavior oracle, while `at +wrap 2` is the true proof-negative arithmetic
+control. This correction does not change the Current Plan's fixed candidate,
+admitted domain, behavioral oracle, acceptance boundary, or stop conditions.
+
 ## Progress and closure
 
-- **Completed:** plan activation and exact task registration.
-- **Current:** create and refresh the isolated worktree, then reproduce the
-  ordinary-loop negative witness and invalid-domain counterexample.
-- **Next:** run the counted proof and 2,430-case differential matrix.
+- **Completed:** plan activation, exact task registration, frozen-identity and
+  compiler pre-gates, the ordinary-loop `unproved` witness, the exact
+  `capacity=3, filled=4` behavioral counterexample, both positive return
+  proofs, and the executor's honest stop on the two misclassified controls.
+- **Current:** refresh the isolated worktree onto the lead's falsifier-only
+  task correction and rerun the corrected proof/behavior controls.
+- **Next:** run the 2,430-case differential matrix, real-program oracles,
+  restoration audit, and complete gates.
 
 Close by moving this record to `docs/done/` in the lead-reviewed integration
 change after durable evidence is complete and every temporary byte is absent.
