@@ -1,11 +1,11 @@
 # 0053 — Stage 8a caller synthesis
 
-**Planned task.** Decomposed from the `ACTIVE` Current Plan selected
-2026-08-12, Workstream 8a `Caller audit`. It is not yet claimed; claiming fills
-in status, owner, workspace, and base revision and moves this number unchanged
-to `docs/ongoing/`. Delete it if a replacement plan does not explicitly carry
-this scope.
-
+- **Status:** `IN PROGRESS` (2026-08-13)
+- **Owner / workspace:** Codex executor /
+  `/Users/bytedance/do_not_scan/whitefoot-0053-stage8a-caller-synthesis`, branch
+  `codex/0053-stage8a-caller-synthesis`
+- **Base revision:**
+  `30b0ccc10d394dcce3403aaf49d149aea82f741d`
 - **Authority:** the ACTIVE Current Plan selected 2026-08-12 and derived from
   Direction Outline revision 32, plus current Direction Outline revision 34
   item `PROOF-8`, for the complete fourteen-call `read_bits` and twenty-call
@@ -97,6 +97,17 @@ appears, a direct result needs general `set` equality, any refutation occurs,
 any caller besides the fourteen immutable deliveries and one wfgrep value
 branch needs repair, or a solver, third fact source, variable-offset S7,
 recognizer, or writer assertion is required.
+
+## Progress
+
+- **Claimed:** from the exact closure commit
+  `30b0ccc10d394dcce3403aaf49d149aea82f741d`, which lands the refreshed 0051
+  and 0052 research sections, moves both tasks to terminal-positive history,
+  and records task 0056 terminal-positive independently.
+- **Current:** refresh the frozen source identities and enumerate all 14
+  `read_bits` and 20 `append_slice` occurrences from checked real units.
+- **Next:** build the typed, deterministic caller map, reconcile every
+  downstream goal, and stop on any census or flow-class divergence.
 
 ## Done-when
 
