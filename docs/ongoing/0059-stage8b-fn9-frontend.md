@@ -1,9 +1,14 @@
 # 0059 — Stage 8b FN-9 frontend and semantic surface
 
-**Planned task.** Decomposed from the `ACTIVE` Current Plan selected
-2026-08-14, Workstream 8b. It is not yet claimed; claiming fills in status,
-owner, workspace, and base revision and moves this number unchanged to
-`docs/ongoing/`.
+- **Status:** `IN PROGRESS` (claimed 2026-08-14)
+- **Owner:** Codex executor
+- **Workspace:**
+  `/Users/bytedance/do_not_scan/whitefoot-0059-stage8b-fn9-frontend`, branch
+  `codex/0059-stage8b-fn9-frontend`
+- **Base revision:** held candidate H0
+  `7a293861ddb0aad0cd8d494ee8f4bfa5f6cbba29`
+- **Claim coordination revision:**
+  `b79cf48185fd87e204097ae872e8ad7256913730`
 
 - **Authority:** the ACTIVE Current Plan, Workstream 8b `verified
   normal-return postconditions`, under Direction Outline revision 38 item
@@ -117,3 +122,10 @@ The handoff is implementation-complete when reviewed H1 implements exactly
 the frozen surface and identity, focused validation is green, and task 0060's
 premise names H1. It remains `WAITING`, not terminal, until the eventual exact
 approved activation atomically lands the held stack.
+
+## Progress
+
+Claimed from lifecycle revision `b79cf48185fd87e204097ae872e8ad7256913730`.
+Next: create the isolated workspace at exact H0, recheck the three frozen
+candidate identities, read the cited workflow and authority, then implement
+only this frontend/FN-9 surface handoff.
