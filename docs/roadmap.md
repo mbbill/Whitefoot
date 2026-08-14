@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 37 (Stage 8b delivery correction selected; semantic freeze resumed)
+Revision: 38 (Stage 8b semantic candidate frozen; held implementation next)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -207,8 +207,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, bounded DIAG-2 trust repair, the complete Stage 8a caller map, and active Stage 8b semantic freeze]`
-`[next: re-freeze and hostile-review the corrected Stage 8b exact candidate]`
+`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, bounded DIAG-2 trust repair, the complete Stage 8a caller map, and reviewed held Stage 8b semantic candidate]`
+`[next: execute the strict held 0059–0064 stack; preserve active v0.27 through the combined exact owner checkpoint]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -315,20 +315,26 @@ creating writer trust or weakening the checked safety envelope.
   unrelated fact. The owner selected that narrow correction on 2026-08-14 as
   the revised ACTIVE Current Plan strategy. It replaces only the fourteen-read
   delivery mechanism; active language authority remains v0.27 and no v0.28 or
-  protected-conformance byte is selected by that plan decision.
+  protected-conformance byte is selected by that plan decision. Task 0058 then
+  froze and hostile-reviewed the complete held v0.28 semantic candidate at
+  commit `7a293861`, with specification SHA-256 `08897c51…`, a byte-identical
+  outgoing v0.27 archive candidate, and a derivation-ledger amendment bound to
+  those exact bytes. The candidate is non-authoritative and has not landed on
+  the active-v0.27 integration branch.
 - **Missing / next:** the existing-DIAG-2 trust prerequisite, both Stage 8a
   local witnesses, and the complete caller synthesis are terminal-positive.
-  The Stage 8b plan boundary is resolved and task 0058 resumes semantic freeze
-  under the selected receiver rule. It must refresh and rebase its isolated
-  worktree, discard the withdrawn draft as authority, then re-freeze and
-  hostile-test the complete v0.28 candidate. No specification, compiler,
-  real-source, or protected-conformance byte may land through this plan
-  decision. The stable exact specification plus protected-conformance packet
-  remains a separate owner hard wait. Wfgrep remains parked until that atomic
-  Stage 8b activation is terminal.
+  Task 0058 is terminal-positive with the exact candidate frozen. Planned
+  tasks 0059–0064 must now implement the frontend, callee proofs, caller
+  publications, `value_if` delivery, five real consumers, and additive
+  protected corpus as one dependency-ordered held stack. Task 0064 then forms
+  the stable exact specification plus protected-conformance packet and stops
+  at the separate owner hard wait. No v0.28 specification, compiler,
+  real-source, protected-conformance, archive, or approval-ledger byte has
+  landed; wfgrep remains parked until the later atomic activation is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
+  [Stage 8b semantic freeze](done/0058-stage8b-normal-return-postconditions.md) ·
   [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·

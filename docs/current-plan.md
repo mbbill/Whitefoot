@@ -260,6 +260,20 @@ scope require renewed explanation and approval. Activation is atomic with the
 outgoing archive, digest chain, compiler, approved corpus, docs, and real
 consumer migration.
 
+Task 0058 froze the reviewed, non-authoritative semantic candidate at held
+commit `7a293861ddb0aad0cd8d494ee8f4bfa5f6cbba29`, with candidate specification
+SHA-256 `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+Implementation proceeds as one strict isolated held stack: 0059 frontend and
+FN-9 surface; 0060 callee proof and summaries; 0061 call publication,
+receivers, and provenance atomicity; 0062 `value_if`-only delivery; 0063 the
+five real consumers and behavior oracles; and 0064 additive protected
+conformance plus the combined exact packet. Each handoff starts only from the
+named reviewed held commit produced by its predecessor. None enters the
+active-v0.27 integration branch separately; task 0064 stops at the exact owner
+approval boundary. The later activation materializes only the exact approved
+final H6 tree as one coherent main change; it does not land H0–H6 as
+intermediate mainline language states.
+
 Stage 8b is terminal only when every mapped real caller sequence derives its
 intended fact. An unresolved or refuted mapping, a hidden runtime fallback, or
 a changed error, cleanup, effect, or output contract is a stop.
@@ -364,9 +378,9 @@ task:
 1. **complete (2026-08-12):** approve this high-level plan once;
 2. **complete (2026-08-14):** approve this one material Stage 8b delivery
    correction;
-3. after task 0058 re-freezes and independently reviews the exact candidate,
-   approve Stage 8b's exact specification plus protected-conformance
-   activation packet; and
+3. **pending:** after tasks 0059–0064 implement and independently review the
+   held candidate, approve Stage 8b's exact specification plus
+   protected-conformance activation packet; and
 4. after Stage 9a, approve Stage 9b's exact specification plus
    protected-conformance activation packet.
 
@@ -435,9 +449,10 @@ does not mark `PROOF-8` complete or unpark `CAND-8`.
 The owner approved this plan's predecessor on 2026-08-12 and explicitly
 selected the narrow receiver strategy written above on 2026-08-14. This
 `ACTIVE` status is execution authority only inside the exact written boundary.
-The lead first refreshes task 0058's authority, exact semantic questions, and
-scope to this plan, after which 0058 may resume within the exact narrow receiver
-boundary above and ordinary decomposition proceeds autonomously. A further
-material strategy change returns the plan to `PROPOSED`. Exact specification
-and protected-conformance bytes still stop later at their own independent
-approval boundary.
+Task 0058 is terminal with the reviewed semantic candidate frozen, and planned
+tasks 0059–0064 carry the exact implementation sequence above. Ordinary held
+implementation proceeds autonomously inside that sequence. A further material
+strategy change returns the plan to `PROPOSED`; candidate-byte drift or an
+unwritten semantic choice stops the affected task. Exact specification and
+protected-conformance bytes still stop later at their own independent approval
+boundary.
