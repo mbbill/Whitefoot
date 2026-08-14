@@ -210,6 +210,18 @@ CLM-1 and the claim name. Subscripts are not an EFF-2 trap source; `check`,
 projected roots through length, read, and write operations without
 re-evaluating source paths.
 
+Each successful function summary also retains DIAG-2 explanation data in one
+function-local derivation DAG. Mandatory roots cover every accepted bounds
+obligation, every discharged call goal, and the eight directed S11 atoms for
+each counted range. Finalization keeps only their transitive ancestry and
+remaps the retained nodes, events, and roots against the same function-local
+term and goal inventory. This is observational compiler state: it adds no
+second semantic walk or closure, serialized proof artifact, optimizer fact,
+lowering input, or independent authority, and it does not change dispositions
+or accepted programs. The frozen-program completeness and bounded-cost
+measurements live in
+`research/investigations/obligation-discharge/ACCEPTANCE.md`.
+
 The source-generic path is a finite monomorphizing subset, not complete generic
 support. Functions, structs, and enums support unbounded type parameters, the
 built-in `Int` and `Float` bounds, and integer-typed const parameters; every

@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 33 (Stage 5b terminal; remaining PROOF-8 high-level plan active)
+Revision: 34 (DIAG-2 trust and Stage 8a local witnesses terminal; caller synthesis next)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -207,8 +207,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, and bounded provenance gate]`
-`[next: execute active Stage 8a and existing-DIAG-2 trust repair]`
+`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, and bounded DIAG-2 trust repair]`
+`[next: complete the Stage 8a 14/20 caller synthesis]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -293,12 +293,20 @@ creating writer trust or weakening the checked safety envelope.
   programs, 131/131 rule coverage, and all 19 activation-chain entries. The
   installed adapter is `Pass=409 Fail=1 Skip=13`, with only the retained OWN-3
   unsupported boundary. Commit `74512309` makes the live design memory
-  truthful and passes MCTS lint; task 0050 is terminal.
-- **Missing / next:** the active high-level completion plan covers Stage 8a,
-  the existing DIAG-2 trust repair, Stage 8b, Stage 9a, and Stage 9b. The owner
-  selected it on 2026-08-12; execution begins with parallel Stage 8a and
-  DIAG-2 work after task registration. Wfgrep remains parked until the complete
-  selected PROOF-8 sequence is terminal.
+  truthful and passes MCTS lint; task 0050 is terminal. Tasks 0054 and 0055
+  install one function-local DIAG-2 derivation DAG with complete bounds, call,
+  and counted-range roots. Task 0056 independently confirms root completeness,
+  `O(S + P + R + C)` ledger-owned storage, preserved behavior, and measured
+  release cost. Stage 8a tasks 0051 and 0052 establish the two removable local
+  witnesses with hostile controls and restored green gates; none of their
+  temporary fact sources or program variants is installed.
+- **Missing / next:** the existing-DIAG-2 trust prerequisite and Stage 8a's two
+  local witnesses are terminal-positive. Next, task 0053 must enumerate the
+  exact fourteen `read_bits` and twenty `append_slice` callers and fix the
+  smallest Stage 8b repair boundary. Stage 8b remains gated on that caller
+  synthesis and its separate exact specification/protected-conformance
+  approval. Wfgrep remains parked until the complete selected PROOF-8 sequence
+  is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
