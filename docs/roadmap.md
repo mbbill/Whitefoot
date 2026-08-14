@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 35 (Stage 8a caller synthesis terminal; Stage 8b exact candidate next)
+Revision: 36 (Stage 8b stopped on the OWN-6 caller-delivery plan defect)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -208,7 +208,7 @@ creating writer trust or weakening the checked safety envelope.
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
 `[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, bounded DIAG-2 trust repair, and the complete Stage 8a caller map]`
-`[next: prepare the Stage 8b exact verified-postcondition candidate]`
+`[next: owner decision on the Stage 8b plan correction]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -301,18 +301,30 @@ creating writer trust or weakening the checked safety envelope.
   witnesses with hostile controls and restored green gates; none of their
   temporary fact sources or program variants is installed. Task 0053 freezes
   the exact fourteen `read_bits` and twenty `append_slice` callers: the read
-  side has fourteen mutable-delivery gaps addressable by bounded immutable
-  delivery, and the append map is staged `19 discharged / 1 unproved`, with
-  two distinct declarations and only the wfgrep separator needing a caller
-  repair.
+  side has fourteen mutable-delivery gaps, and the append map is staged
+  `19 discharged / 1 unproved`, with two distinct declarations and only the
+  wfgrep separator needing a caller repair. Task 0058's hostile source replay
+  falsifies the Current Plan's proposed existing-language repair for those
+  fourteen read gaps: OWN-6 requires each child-reborrow region to end with
+  its enclosing match or value-match `let` statement, so a value-producing
+  binding is either out of scope at its later consumer or makes the region
+  illegally extend past that statement. The smallest reviewed replacement is
+  one result-specific selected-`Ok`-payload receiver event for the existing
+  bare scalar `set` shape. It performs the ordinary target kill and substitutes
+  only the verified result payload; it transfers no assignment equality or
+  unrelated fact. That replacement is a candidate plan correction, not active
+  authority.
 - **Missing / next:** the existing-DIAG-2 trust prerequisite, both Stage 8a
   local witnesses, and the complete caller synthesis are terminal-positive.
-  Task 0058 now freezes the exact v0.28 semantics and decision-complete
-  executor handoffs for the single Stage 8b candidate across specification,
-  compiler, two real consumers, and protected conformance. Candidate work is
-  autonomous on isolated branches; no specification or protected-conformance
-  byte may land until the exact combined owner packet is approved. Wfgrep
-  remains parked until that atomic activation is terminal.
+  Task 0058 is stopped before implementation because the ACTIVE plan's
+  fourteen value-match migrations are not expressible under OWN-6. The next
+  step is an owner decision on the material Current Plan correction above;
+  task records cannot authorize it. No specification, compiler, real-source,
+  or protected-conformance candidate proceeds until that plan boundary is
+  resolved. After an approved correction, 0058 must re-freeze and hostile-test
+  the complete v0.28 candidate before the separate exact specification plus
+  protected-conformance owner packet. Wfgrep remains parked until that atomic
+  activation is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
