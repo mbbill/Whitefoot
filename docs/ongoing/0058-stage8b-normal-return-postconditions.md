@@ -1,6 +1,6 @@
 # 0058 — Stage 8b verified-postcondition semantic freeze
 
-- **Status:** `IN PROGRESS` (2026-08-14)
+- **Status:** `IN PROGRESS — STOPPED AT PLAN BOUNDARY` (2026-08-14)
 - **Owner / workspace:** Codex lead /
   `/Users/bytedance/do_not_scan/whitefoot-0058-stage8b-normal-return-postconditions`,
   branch `codex/0058-stage8b-normal-return-postconditions`
@@ -164,9 +164,14 @@ conformance, real-consumer, and limitation impact before implementation.
    specification candidate, the exact outgoing v0.27 archive candidate, and
    impact inventory there; those bytes are non-authoritative and do not enter
    the integration branch.
-2. Run the native grammar/spec verifier and independent hostile semantic
-   review against every question above. A prose placeholder or executor choice
-   is a failure, not a delegated detail.
+2. Run the current native grammar/spec verifier as an identity preflight and
+   independently audit the new strong-LL(2) decisions and hostile semantics.
+   Because that verifier intentionally compares candidate grammar with the
+   compiler's embedded active frontend contract, a real grammar addition
+   cannot pass it before the first compiler handoff installs the candidate
+   lexer/parser/table bytes. That handoff must make the same native verifier
+   pass before any owner packet is formed. A prose placeholder or executor
+   choice is a failure, not a delegated detail.
 3. Freeze exact candidate bytes, rule IDs, expected diagnostics, derivation
    shapes, protected impact categories, and the implementation dependency DAG
    in one reviewed candidate commit.
@@ -206,10 +211,13 @@ named handoff or the applicable plan/owner boundary.
 - Every numbered semantic question has complete positive, hostile, false,
   support, kill, join, scope, cleanup, generic, recursive, provenance, and
   deterministic-identity expectations suitable for executor tests.
-- The candidate grammar/spec verifier passes and the outgoing v0.27 authority
-  remains byte-identical on the integration branch; its candidate archive is
-  byte-identical to the outgoing active specification and supplies the native
-  verifier's exact `PREVIOUS` input.
+- The current native grammar/spec verifier is recorded rejecting only the
+  expected candidate-versus-embedded-v0.27 identity mismatch; independent
+  strong-LL(2) review finds no overlap, and the first frontend handoff is
+  required to make that verifier pass with candidate tables before the owner
+  packet. The outgoing v0.27 authority remains byte-identical on the
+  integration branch; its candidate archive is byte-identical to the outgoing
+  active specification and supplies the verifier's exact `PREVIOUS` input.
 - The complete 34-row caller map replays on paper without a solver, third fact
   source, general `set` equality, variable-addition S7, runtime fallback, or
   unresolved/refuted relation.
@@ -236,11 +244,62 @@ the candidate cannot be made executor-complete in bounded rule text.
 
 ## Progress
 
-- **Current:** freeze the complete spelling, proof, provenance, call-order,
-  direct-result, immutable-delivery, fact-source, diagnostic, and derivation
-  design without changing integration-branch specification bytes.
-- **Next:** run native verification and hostile review, then register the
-  decision-complete executor handoffs from the frozen candidate commit.
+- **Current:** the first hostile surface pass rejected the research shorthand
+  `Ok(result) => result < ishl.wrap(1_u64, count)`: the operation tree is not
+  an [ENT-2] L0 term, and admitting it would cross this task's arithmetic-term
+  stop. The bounded replacement is an explicit `mask: own u64` parameter on
+  `read_bits`, a verified `Ok(result) => result <= mask` relation, literal
+  masks at twelve fixed-count callers, and two caller-scope `high`/`mask`
+  computations at the variable-count callers. The measured unsigned shift,
+  existing constant-offset subtraction, unsigned `iand`, and ordinary ENT-4
+  closure recover all fourteen intended bounds without a new term or source
+  family at the callee/call boundary.
+- **Stop / plan defect:** the ACTIVE plan's mandated fourteen
+  value-producing-match rewrites are not expressible under active OWN-6.
+  Every call takes a statement-scoped child reborrow whose local region block
+  may not extend beyond the enclosing match, or planned value-match `let`,
+  statement. A value-producing match inside that block therefore binds its
+  result only inside the block; extending the block past that `let` to a later
+  consumer is an OWN-6 rejection, while ending it with the statement makes the
+  result invisible. The existing mutable outer `set` is exactly what crosses
+  that boundary. This falsifies the task's assertion that existing-language
+  value-producing matches replay all fourteen rows and triggers the stated
+  unresolved-mapping stop condition. No compiler, real-source, active-spec,
+  or protected-conformance byte changed; this coordination-record update only
+  reports the stop. The draft v0.28 scratch candidate is withdrawn as
+  incomplete.
+- **Separate A10 result:** wfgrep's host-copy repair is not blocked by this
+  lifetime edge. It can retain the copied count in an outer scalar, end the
+  child region, compute the candidate length, and then use the planned
+  `value_if` to select candidate versus prior length. That source shape still
+  requires later compile/behavior validation.
+- **Boundary routed forward:** activating any v0.28 bytes must also update the
+  three target-qualification version mappings currently fixed to `v0.27` in
+  `compiler/src/backend/qualification.rs`. That is a mechanical activation
+  identity update, not a new lowering, runtime ABI, or semantic path. It does
+  not belong to this candidate branch and must be named explicitly in the
+  later atomic activation handoff; omitting it would make the real system
+  operations fail qualification.
+- **Verifier preflight:** the active native grammar verifier accepts the exact
+  v0.27 previous bytes and rejects the draft v0.28 grammar solely because the
+  compiler still embeds the active v0.27 frontend contract. This is the
+  expected pre-implementation identity boundary, not a grammar verdict. The
+  first frontend executor handoff must install the frozen candidate tables and
+  make the same verifier green; no owner packet may be prepared before that.
+- **Next:** obtain an owner decision on a material Current Plan correction.
+  The smallest implementation candidate is one general but narrow
+  selected-outcome receiver rule for the measured shape: after a verified
+  direct-call `Ok` payload is copied by `set` to one bare same-typed outer
+  scalar, apply the ordinary target kill and substitute only that payload into
+  the post-write receiver relation. The receiver may not supply a call actual,
+  occur as any non-result relation/support identity, or overlap another
+  substituted support. Every other reaching arm and ordinary join remains
+  unchanged; projected, aliased, computed, non-payload, differently typed, or
+  unsupported assignments publish nothing. This supersedes the infeasible
+  fourteen-row value-match migration without admitting general assignment
+  equality. The alternatives are a broader OWN-6/value-region extension or
+  unverified row-specific code motion; neither is authorized by the current
+  plan.
 - **Approval state:** no Stage 8b candidate has been presented or approved;
   integration remains on active v0.27.
 
