@@ -1357,3 +1357,232 @@ protected conformance evidence, and gate wiring were not changed by measurement
 or audit.
 The retained DAG remains private checked-program state and is not a loadable or
 independently authoritative artifact.
+
+## Stage 8a complete caller synthesis (2026-08-13)
+
+This ordinary research result closes the Stage 8a caller audit at claimed
+revision `ccecd40d2f9fb33f97c5aed1626875ef3e989375`. Its exact premise is the
+closure commit `30b0ccc10d394dcce3403aaf49d149aea82f741d`, which installs the
+terminal-positive 0051 and 0052 local-witness sections and independently
+records task 0056 terminal-positive. No earlier caller table was reused.
+
+The result is **PASS**. The fresh checked-tree census is exactly fourteen
+`read_bits` calls and twenty `append_slice` calls. Every hypothetical
+formal/result substitution is well typed. All fourteen `read_bits` relations
+reach the `Ok` payload and expire at the current mutable-delivery seam. The
+append admission map is exactly 19 discharged and 1 unproved, with no
+refutation; the sole unproved row is wfgrep's separator after the successful
+host-copy scalar update. No fourth flow class or additional repair appears.
+
+This is a structural synthesis of future facts, not evidence that v0.27
+already has postconditions. In particular, the fourteen `read_bits` entries
+below are relation-survival and delivery gaps, not existing FN-8 call goals.
+Nothing in this section changes language acceptance, lowering authority, a
+required runtime check, or a protected compliance artifact.
+
+### Frozen inputs and deterministic checked census
+
+The active specification and all five real sources reproduced the Current
+Plan identities:
+
+| Input | SHA-256 |
+| --- | --- |
+| `spec/kernel-spec.md` | `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f` |
+| `tests/programs/raw_deflate.wf` | `5e87885a519de539736b0ad6a619a2c92bdf659623e3f39ded31116e63adb585` |
+| `tests/programs/raw_deflate_dynamic.wf` | `2606ae0b81039b0ecc787df2fa9cb87279ba44663744540d48f6abeea984d4c5` |
+| `tests/programs/raw_deflate_dynamic_decode.wf` | `72129284c60a6eacbe2bb86d7d3a82375ed2270ea457c49d8e1db95064fc960f` |
+| `tests/programs/raw_deflate_boundary.wf` | `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4` |
+| `tests/programs/wfgrep.wf` | `a1e49bcb9ffd353e707d4bbafe1eb4a2b634b9177c6916b2ff7b503ec5dff0bd` |
+
+The direct source enumerations were:
+
+```text
+rg -n 'match read_bits<' tests/programs/raw_deflate.wf tests/programs/raw_deflate_dynamic.wf tests/programs/raw_deflate_dynamic_decode.wf tests/programs/raw_deflate_boundary.wf
+rg -n '= append_slice<' tests/programs/raw_deflate_boundary.wf tests/programs/wfgrep.wf
+```
+
+They returned 14 and 20 source occurrences respectively. A disposable
+in-crate checked-tree walk then visited every concrete function body in the
+four-source raw-DEFLATE bundle and the standalone wfgrep unit. It asserted:
+
+- `read_bits` count actuals are `u32`; the `Ok` payload, payload read, and
+  outer delivery target are the same typed `u64` path described by each row;
+- `append_slice` takes `buffer<u8>`, `u64`, and `slice<u8>` actuals, returns
+  `u64`, and writes that result directly to the same `u64` binding supplied as
+  `filled`; and
+- the per-unit counts are raw-DEFLATE `14/8` and wfgrep `0/12`.
+
+The exact focused command was run three times:
+
+```text
+env TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0053-cargo-tmp cargo test --manifest-path compiler/Cargo.toml --locked --offline stage8a_dump_real_caller_census -- --nocapture
+```
+
+Each invocation exited 0 and passed its one selected test. The three selected
+test times were 151.89, 150.64, and 153.40 seconds. Normalizing each log with
+`rg '^STAGE8A'` produced exactly 34 lines and the same SHA-256
+`bbf7f3d05baa9910b70457ead1919355814a51ea06b472a90347830d3a2bd98c`;
+pairwise `cmp` succeeded. The third run included the complete type and direct
+receiver assertions above. Node paths in the tables are runtime checked-tree
+coordinates and are meaningful only with the named unit and frozen source
+identities; they are not portable identities.
+
+In the tables, `bN` means checked `BindingId(N)`. Every listed caller has one
+concrete checked instance whose symbol is the source function name; the region
+arguments do not create duplicate type- or const-specialized instances.
+
+The two real `append_slice` declarations remain distinct even though their
+23-line bodies are byte-identical:
+
+| Declaration | Lines | Body SHA-256 |
+| --- | ---: | --- |
+| `raw_deflate_boundary.wf:17-39` | 23 | `f6ce5cb725489c73ff74f4df78be1f9f95acb909eb673dfe717647326675941f` |
+| `wfgrep.wf:121-143` | 23 | `f6ce5cb725489c73ff74f4df78be1f9f95acb909eb673dfe717647326675941f` |
+
+Stage 8b must therefore verify and install the selected normal-result contract
+on both declaration identities. Their identical flow is not a fourth caller
+class.
+
+### Typed `read_bits` delivery map: 14 relation-survival gaps
+
+For this map, the hypothetical normal-result fact is
+`Ok(result) => result < ishl.wrap(1_u64, count)`. After formal/result
+substitution it relates a `u64` payload to a `u64` high value computed from a
+`u32` actual. A literal count adds no mutable support. The two table-derived
+count actuals add their named `u32` binding to the payload support.
+
+Every current `Ok` arm performs `set outer = payload`. ENT-3 creates no RHS
+equality, so the relation remains supported by the payload rather than the
+outer target. The payload then leaves scope and the relation expires. The
+following table names the first downstream source use only to fix the repair
+boundary; none of those uses is being reclassified as an existing FN-8 goal.
+
+| ID | Source call; concrete caller; checked call path | Actual count; payload -> target | Hypothetical relation and live support | First downstream use | Current disposition; one planned repair |
+| --- | --- | --- | --- | --- | --- |
+| R01 | `raw_deflate.wf:63`; `decode_fixed_symbol`; `[7,0,9,0,1,0,0,0,0,0]` | `1_u32`; `read_bit` b8 -> `bit` b7 | `read_bit < 2`; `{read_bit}` | `ior(code, bit)` at line 72 | delivery gap; immutable value-producing match |
+| R02 | `raw_deflate.wf:178`; `decode_fixed`; `[9,0,4,0,3,0,3,0,5,0,0,0,0,0]` | `5_u32`; `distance_code` b17 -> `distance_symbol` b16 | `distance_code < 32`; `{distance_code}` | `copy_distance(... distance_symbol)` at line 188 | delivery gap; immutable value-producing match |
+| R03 | `raw_deflate.wf:209`; `inflate`; `[10,0,7,0,1,0,0,0,0,0]` | `1_u32`; `final_bit` b6 -> `final_value` b5 | `final_bit < 2`; `{final_bit}` | `ieq(final_value, 1_u64)` at line 218 | delivery gap; immutable value-producing match |
+| R04 | `raw_deflate.wf:221`; `inflate`; `[10,0,7,0,4,0,0,0,0,0]` | `2_u32`; `block_type_bits` b10 -> `block_type` b9 | `block_type_bits < 4`; `{block_type_bits}` | `ieq(block_type, 0_u64)` at line 230 | delivery gap; immutable value-producing match |
+| R05 | `raw_deflate_dynamic.wf:31`; `decode_length`; `[13,0,16,0,0,0,0,0]` | `length_extra_count` b13; `extra` b15 -> `length_extra` b14 | `extra < ishl.wrap(1_u64, length_extra_count)`; `{extra, length_extra_count}` | `length_base +wrap length_extra` at line 40 | delivery gap; immutable value-producing match |
+| R06 | `raw_deflate_dynamic.wf:56`; `copy_distance`; `[14,0,11,0,0,0,0,0]` | `distance_extra_count` b10; `extra` b12 -> `distance_extra` b11 | `extra < ishl.wrap(1_u64, distance_extra_count)`; `{extra, distance_extra_count}` | `distance_base +wrap distance_extra` at line 65 | delivery gap; immutable value-producing match |
+| R07 | `raw_deflate_dynamic.wf:251`; `decode_table_symbol`; `[16,0,11,0,1,0,0,0,0,0]` | `1_u32`; `read_bit` b11 -> `bit` b10 | `read_bit < 2`; `{read_bit}` | `ior(code, bit)` at line 260 | delivery gap; immutable value-producing match |
+| R08 | `raw_deflate_dynamic_decode.wf:26`; `decode_dynamic`; `[18,0,5,0,0,0,0,0]` | `5_u32`; `read_count` b4 -> `literal_count_bits` b3 | `read_count < 32`; `{read_count}` | `literal_count_bits +wrap 257_u64` at line 35 | delivery gap; immutable value-producing match |
+| R09 | `raw_deflate_dynamic_decode.wf:43`; `decode_dynamic`; `[18,0,10,0,0,0,0,0]` | `5_u32`; `read_count` b10 -> `distance_count_bits` b9 | `read_count < 32`; `{read_count}` | `distance_count_bits +wrap 1_u64` at line 52 | delivery gap; immutable value-producing match |
+| R10 | `raw_deflate_dynamic_decode.wf:55`; `decode_dynamic`; `[18,0,13,0,0,0,0,0]` | `4_u32`; `read_count` b14 -> `code_count_bits` b13 | `read_count < 16`; `{read_count}` | `code_count_bits +wrap 4_u64` at line 64 | delivery gap; immutable value-producing match |
+| R11 | `raw_deflate_dynamic_decode.wf:78`; `decode_dynamic`; `[18,0,17,0,1,0,7,0,0,0,0,0]` | `3_u32`; `read_length` b24 -> `length_bits` b23 | `read_length < 8`; `{read_length}` | `cvt<u64, u8>(length_bits)` at line 87 | delivery gap; immutable value-producing match |
+| R12 | `raw_deflate_dynamic_decode.wf:151`; `decode_dynamic`; `[18,0,26,0,1,0,5,0,3,0,4,0,0,0,0,0]` | `2_u32`; `read_repeat` b52 -> `repeat_bits` b51 | `read_repeat < 4`; `{read_repeat}` | `repeat_bits +wrap 3_u64` at line 160 | delivery gap; immutable value-producing match |
+| R13 | `raw_deflate_dynamic_decode.wf:186`; `decode_dynamic`; `[18,0,26,0,1,0,5,0,3,0,14,0,1,0,0,0,0,0]` | `3_u32`; `read_repeat` b64 -> `repeat_bits` b62 | `read_repeat < 8`; `{read_repeat}` | branch join, then `repeat_bits +wrap repeat_base` at line 215 | delivery gap; value-producing match plus value-producing `if` |
+| R14 | `raw_deflate_dynamic_decode.wf:204`; `decode_dynamic`; `[18,0,26,0,1,0,5,0,3,0,14,0,5,0,0,0,0,0]` | `7_u32`; `read_repeat` b68 -> `repeat_bits` b62 | `read_repeat < 128`; `{read_repeat}` | branch join, then `repeat_bits +wrap repeat_base` at line 215 | delivery gap; value-producing match plus value-producing `if` |
+
+R13 and R14 are two calls but one outer branch join. The short arm's
+`read_repeat < 8` entails the common weaker `read_repeat < 128`; the long arm
+already has that relation. The smallest repair therefore uses the same
+immutable-delivery rule first for each value-producing match and then for a
+value-producing `if` that gives one `u64` on both reaching edges with the
+common `repeat_bits < 128` relation. It does not require general assignment
+equality or a new arithmetic source.
+
+For R01-R12, replacing the mutable delivery with an immutable value-producing
+match moves the established relation from the payload copy atom to the direct
+receiving binding while ordinary scope kills remove every other arm-local
+support. For R13-R14, the additional value-producing `if` is the already
+planned shared form of the same bounded rule. These fourteen source repairs,
+and no others, are the complete read-side caller boundary.
+
+### Typed `append_slice` admission map: 19 discharged, 1 unproved
+
+The hypothetical admitted-domain requirement at each call is
+`filled <= len(deref(destination))`. The hypothetical normal-result relation
+is `result <= len(deref(destination))`, instantiated directly onto the same
+`u64` receiving binding that supplied `filled`. This table models that one
+future direct-result rule only; it is not a general fact transfer for `set`.
+The established relation is supported by the receiving `length` binding and
+the destination buffer's length projection. The moved message slice is not
+support and may leave scope without killing the relation. Destination element
+writes preserve the length projection; a scalar write to `length` kills it.
+
+Rows are ordered first by compilation unit, then source occurrence. `D` means
+the future requirement at that call is discharged. `U` means unproved. The
+six reason rows after A10 are a staged synthesis result: they are discharged
+only after A10's one named repair has re-established the invariant and the
+separator's direct result has published it.
+
+| ID | Declaration; source call; caller; checked call path | Actual regions and checked receiver | Exact pre-support and intervening flow | Result |
+| --- | --- | --- | --- | --- |
+| A01 | raw-boundary declaration; line 122; `publish_reason`; `[31,0,6,0,1,0,1,0,0,0,1,0]` | `'usage_append/'usage_view`; report b1; length b3; view b4 | initial `0 <= len(report)`; result or false path preserves the invariant at the join | D |
+| A02 | raw-boundary declaration; line 130; `publish_reason`; `[31,0,7,0,1,0,1,0,0,0,1,0]` | `'unreadable_append/'unreadable_view`; report b1; length b3; view b5 | prior joined `length <= len(report)`; view scope exit is irrelevant | D |
+| A03 | raw-boundary declaration; line 138; `publish_reason`; `[31,0,8,0,1,0,1,0,0,0,1,0]` | `'empty_append/'empty_view`; report b1; length b3; view b6 | prior joined `length <= len(report)` | D |
+| A04 | raw-boundary declaration; line 146; `publish_reason`; `[31,0,9,0,1,0,1,0,0,0,1,0]` | `'too_large_append/'too_large_view`; report b1; length b3; view b7 | prior joined `length <= len(report)` | D |
+| A05 | raw-boundary declaration; line 154; `publish_reason`; `[31,0,10,0,1,0,1,0,0,0,1,0]` | `'truncated_append/'truncated_view`; report b1; length b3; view b8 | prior joined `length <= len(report)` | D |
+| A06 | raw-boundary declaration; line 162; `publish_reason`; `[31,0,11,0,1,0,1,0,0,0,1,0]` | `'malformed_append/'malformed_view`; report b1; length b3; view b9 | prior joined `length <= len(report)` | D |
+| A07 | raw-boundary declaration; line 170; `publish_reason`; `[31,0,12,0,1,0,1,0,0,0,1,0]` | `'output_full_append/'output_full_view`; report b1; length b3; view b10 | prior joined `length <= len(report)` | D |
+| A08 | raw-boundary declaration; line 178; `publish_reason`; `[31,0,13,0,1,0,1,0,0,0,1,0]` | `'write_failed_append/'write_failed_view`; report b1; length b3; view b11 | prior joined `length <= len(report)`; final result reaches `publish_all` | D |
+| A09 | wfgrep declaration; line 198; `report_failure`; `[16,0,6,0,1,0,0,0,1,0]` | `'prefix_append/'report_prefix`; report b2; length b5; view b6 | initial `0 <= len(report)`; direct result establishes `length <= len(report)` | D |
+| A10 | wfgrep declaration; line 219; `report_failure`; `[16,0,8,0,1,0,0,0,1,0]` | `'separator_append/'report_separator`; report b2; length b5; view b11 | A09 relation survives the host-copy element write; `set length = length +wrap copied` kills it; S7 has no variable-plus-variable replacement; the error arm preserves it but the match join cannot | **U** |
+| A11 | wfgrep declaration; line 228; `report_failure`; `[16,0,10,0,2,0,1,0,0,0,1,0]` | `'reason_missing_append/'reason_missing_view`; report b2; length b5; view b13 | staged after A10 repair and separator result; true result or false path preserves the same relation | D, conditional on A10 repair |
+| A12 | wfgrep declaration; line 237; `report_failure`; `[16,0,11,0,2,0,1,0,0,0,1,0]` | `'reason_denied_append/'reason_denied_view`; report b2; length b5; view b14 | staged prior joined relation | D, conditional on A10 repair |
+| A13 | wfgrep declaration; line 246; `report_failure`; `[16,0,12,0,2,0,1,0,0,0,1,0]` | `'reason_directory_append/'reason_directory_view`; report b2; length b5; view b15 | staged prior joined relation | D, conditional on A10 repair |
+| A14 | wfgrep declaration; line 255; `report_failure`; `[16,0,13,0,2,0,1,0,0,0,1,0]` | `'reason_path_append/'reason_path_view`; report b2; length b5; view b16 | staged prior joined relation | D, conditional on A10 repair |
+| A15 | wfgrep declaration; line 264; `report_failure`; `[16,0,14,0,2,0,1,0,0,0,1,0]` | `'reason_long_append/'reason_long_view`; report b2; length b5; view b17 | staged prior joined relation | D, conditional on A10 repair |
+| A16 | wfgrep declaration; line 272; `report_failure`; `[16,0,15,0,1,0,1,0,0,0,1,0]` | `'reason_other_append/'reason_other_view`; report b2; length b5; view b18 | staged prior joined relation; final result reaches `publish_all` | D, conditional on A10 repair |
+| A17 | wfgrep declaration; line 329; `main`; `[17,0,15,0,2,0,1,0,1,0,1,0]` | `'startup_usage/'startup_usage`; report b7; length b16; view b17 | branch-local initial `0 <= len(report)`; direct result establishes the relation | D |
+| A18 | wfgrep declaration; line 334; `main`; `[17,0,15,0,2,0,2,0,1,0,1,0]` | `'startup_pattern/'startup_pattern`; report b7; length b16; view b18 | alternate branch-local initial relation; both branches join with the same result relation | D |
+| A19 | wfgrep declaration; line 568; `main`; `[17,0,26,0,3,0,1,0,1,0,1,0]` | `'fail_pipe_view/'fail_pipe_view`; report b7; length b83; view b84 | branch-local initial `0 <= len(report)`; direct result establishes the relation | D |
+| A20 | wfgrep declaration; line 573; `main`; `[17,0,26,0,3,0,2,0,1,0,1,0]` | `'fail_write_view/'fail_write_view`; report b7; length b83; view b85 | alternate branch-local initial relation; both branches join with the same result relation | D |
+
+The only append-side caller repair is A10. On the successful host-copy path,
+Stage 8b must bind the candidate next length, take an explicit
+value-producing branch on `next_length <= len(deref(report))`, give the
+candidate only on the true edge, and otherwise give the prior length exactly
+as the existing failed-copy path leaves it. The result is one immutable
+length for the separator. This uses a real value branch and the same bounded
+delivery rule as the read side. It does not add variable-addition S7, a
+trusted system arithmetic premise, a writer assertion, or general assignment
+equality.
+
+### PASS synthesis and exact Stage 8b boundary
+
+The three admitted flow classes are exhaustive:
+
+1. fourteen `Ok payload -> set outer -> payload scope exit` paths, repaired
+   by the bounded immutable-delivery rule shared by value-producing match and
+   value-producing `if`;
+2. twenty direct `append_slice` normal results instantiated onto their direct
+   receiving targets, with ordinary scope and branch joins; and
+3. A09's append relation through host-copy element writes, then killed by the
+   variable-addition scalar update before A10.
+
+The smallest successful Stage 8b caller boundary is consequently fixed:
+
+- install only the two measured unsigned bit sources needed to verify the
+  `read_bits` normal-result relation;
+- use the measured counted `append_slice` body and admitted-domain
+  requirement, and verify the selected normal-result relation on both
+  distinct real declarations;
+- add verified normal-return postconditions and the one bounded immutable
+  value-delivery rule needed by the fourteen read calls; and
+- make only the one wfgrep host-copy value-branch repair described above.
+
+No solver, third fact source, loop induction, arithmetic-expression fact
+family, recognizer, general `set` equality, variable-offset or
+variable-plus-variable S7 rule, trusted writer assertion, or additional
+consumer repair is required. No row is refuted. The task's stop conditions
+therefore did not fire.
+
+The disposable checked-tree edit was removed after capture.
+`compiler/src/semantic/tests/entailment.rs` returned to SHA-256
+`94a6fd9579d163fd5ee9b72aa41f5d6550db26c664fb05041c7768aa74a05e0c`.
+The restored raw-DEFLATE program selection passed 3/3 in 846.32 seconds, and
+the restored wfgrep selection passed 9/9 in 207.48 seconds. The final
+`make check` passed all 28 recorded specification identities, conformance
+structure 23/23, specification coverage 131/131 with none uncovered, compiler
+tests 718/718 in 468.08 seconds, and real programs 30/30 in 1083.66 seconds.
+Rustdoc completed with warnings denied in 4.23 seconds. The run ended with
+`WHITEFOOT COMPILER GATE GREEN` and
+`WHITEFOOT GATE GREEN (active compiler + independent evidence)`.
+
+All task-local probe logs, the dedicated Cargo temporary directory, and the
+isolated worktree's generated compiler target tree were removed after the
+successful gate. This PASS permits preparation of the separate Stage 8b
+candidate; it does not approve or activate any future specification or
+protected-conformance byte.
