@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 36 (Stage 8b stopped on the OWN-6 caller-delivery plan defect)
+Revision: 37 (Stage 8b delivery correction selected; semantic freeze resumed)
 
 The active language authority is v0.27 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -207,8 +207,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, bounded DIAG-2 trust repair, and the complete Stage 8a caller map]`
-`[next: owner decision on the Stage 8b plan correction]`
+`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, bounded DIAG-2 trust repair, the complete Stage 8a caller map, and active Stage 8b semantic freeze]`
+`[next: re-freeze and hostile-review the corrected Stage 8b exact candidate]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -312,19 +312,20 @@ creating writer trust or weakening the checked safety envelope.
   one result-specific selected-`Ok`-payload receiver event for the existing
   bare scalar `set` shape. It performs the ordinary target kill and substitutes
   only the verified result payload; it transfers no assignment equality or
-  unrelated fact. That replacement is a candidate plan correction, not active
-  authority.
+  unrelated fact. The owner selected that narrow correction on 2026-08-14 as
+  the revised ACTIVE Current Plan strategy. It replaces only the fourteen-read
+  delivery mechanism; active language authority remains v0.27 and no v0.28 or
+  protected-conformance byte is selected by that plan decision.
 - **Missing / next:** the existing-DIAG-2 trust prerequisite, both Stage 8a
   local witnesses, and the complete caller synthesis are terminal-positive.
-  Task 0058 is stopped before implementation because the ACTIVE plan's
-  fourteen value-match migrations are not expressible under OWN-6. The next
-  step is an owner decision on the material Current Plan correction above;
-  task records cannot authorize it. No specification, compiler, real-source,
-  or protected-conformance candidate proceeds until that plan boundary is
-  resolved. After an approved correction, 0058 must re-freeze and hostile-test
-  the complete v0.28 candidate before the separate exact specification plus
-  protected-conformance owner packet. Wfgrep remains parked until that atomic
-  activation is terminal.
+  The Stage 8b plan boundary is resolved and task 0058 resumes semantic freeze
+  under the selected receiver rule. It must refresh and rebase its isolated
+  worktree, discard the withdrawn draft as authority, then re-freeze and
+  hostile-test the complete v0.28 candidate. No specification, compiler,
+  real-source, or protected-conformance byte may land through this plan
+  decision. The stable exact specification plus protected-conformance packet
+  remains a separate owner hard wait. Wfgrep remains parked until that atomic
+  Stage 8b activation is terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·

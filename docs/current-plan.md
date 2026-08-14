@@ -1,18 +1,22 @@
 # Current Plan
 
-Status: **ACTIVE** (owner selection 2026-08-12): complete the remaining selected
-obligation-discharge direction as one high-level undertaking, decomposed into
-Stage 8a proof-feasibility evidence, a bounded existing-DIAG-2 conformance
-repair, Stage 8b verified normal-return postconditions, Stage 9a deterministic
-claim-ledger tooling, and Stage 9b an opt-in strict no-claim partition.
+Status: **ACTIVE** (owner selection 2026-08-14): preserve the owner-selected
+obligation-discharge sequence while correcting Stage 8b's fourteen-call
+result-delivery mechanism after hostile source replay falsified the former
+existing-language value-match strategy.
 
-The owner selected this complete written plan on 2026-08-12. Its `ACTIVE`
-status authorizes the lead to create, claim, execute, integrate, and close every
-decision-complete task inside the boundaries below. This selection does not
-approve any future specification or protected-conformance bytes. Each exact
-protected batch still follows its own explanation-first hard wait.
+The owner selected the predecessor plan on 2026-08-12 and explicitly selected
+the narrow Stage 8b receiver correction described below on 2026-08-14. Task
+0058 proved that OWN-6 prevents a value-producing match result from surviving
+the mandatory statement-scoped child-reborrow region at all fourteen mapped
+`read_bits` calls. This revision changes only that Stage 8b delivery mechanism;
+it carries forward the objective, workstream order, consumers, verification
+boundary, and later exact specification/protected-conformance waits. Its
+`ACTIVE` status authorizes resumed task execution inside the exact written
+boundary, but does not approve any future specification or protected
+conformance bytes.
 
-Derived from [Direction Outline revision 32](roadmap.md), primarily `PROOF-8`,
+Derived from [Direction Outline revision 36](roadmap.md), primarily `PROOF-8`,
 with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
 constraints. `CAND-8` remains the selected flagship pressure source but stays
 parked until this plan reaches its terminal boundary.
@@ -58,7 +62,9 @@ optimization or performance project.
   DEFLATE `29/24/5/0`, dynamic DEFLATE `24/19/5/0`; twelve DEFLATE
   claims are seven retained, five redundant, zero refuted.
 - Installed tests: provenance `41/41`, raw-DEFLATE `3/3`, complete compiler
-  library `698/698`, real programs `30/30`, rule coverage `131/131`.
+  library `718/718`, real programs `30/30`, rule coverage `131/131`. The
+  predecessor plan recorded its earlier pre-DIAG compiler baseline as
+  `698/698`.
 - Protected conformance boundary: 423 cases, 30 coverage annotations, and the
   installed adapter result `Pass=409 Fail=1 Skip=13`; the sole failure remains
   the existing OWN-3 unsupported boundary.
@@ -179,10 +185,12 @@ separate approval gate.
 Stage 8b begins only after Stage 8a establishes both local witnesses, every
 caller gap has the fixed disposition below, and the trust prerequisite
 correctly retains the complete existing derivation set. General arithmetic,
-induction, solvers, recognizers, trusted writer assertions, general `set` fact
-transfer, and variable-offset S7 are outside the plan. Every new postcondition
-or operation-derived fact extends the same exact derivation representation
-rather than creating a parallel proof channel.
+induction, solvers, recognizers, trusted writer assertions, general `set`
+equality or arbitrary RHS fact transfer, and variable-offset S7 are outside
+the plan. The one result-specific selected-outcome receiver event enumerated
+below is not general assignment authority. Every new postcondition or
+operation-derived fact extends the same exact derivation representation rather
+than creating a parallel proof channel.
 
 Prepare the smallest normal-return postcondition design and implementation:
 
@@ -194,23 +202,50 @@ Prepare the smallest normal-return postcondition design and implementation:
   substitution, support and kills, branch and early-return behavior, cleanup,
   concrete generic instantiation, false-postcondition rejection, unsupported
   boundaries, deterministic diagnostics, and caller fact establishment;
-- replace the fourteen payload-to-outer-`set` shapes with existing-language
-  value-producing matches, using one bounded immutable-delivery rule shared by
-  `value_match` and `value_if`: on each reaching `give` edge, substitute the
-  delivered copy atom for the receiving binding in an L0 relation, apply the
-  ordinary scope kills to every other support, and establish the substituted
-  relation only when every reaching edge yields that same typed relation. The
-  result relation is supported by the receiving binding plus the surviving
-  exact support. A non-atom delivery, a missing edge relation, or unequal arm
-  relations yields no result fact. This transfers the instantiated
-  normal-result fact without adding general assignment equality;
-- repair wfgrep's post-copy transition in source: bind the candidate next
-  length, take an explicit value-producing branch on
-  `next_length <= len(deref(report))`, give the candidate only on the
-  established true edge, and otherwise give the prior length exactly as the
-  existing failed-copy path leaves it unchanged; bind that result immutably
-  for the next append. Do not add variable-addition entailment or a trusted
-  system-result arithmetic premise; and
+- retain the fourteen existing direct-call match shapes and add one bounded
+  selected-outcome receiver event. At the selected direct
+  `Ok(value: payload)` arm of a match whose scrutinee is one accepted ordinary
+  user call, and whose entry holds exactly the instantiated planned-S12
+  verified normal-result relation, a direct non-consuming
+  `set outer = payload;` may carry that relation only when `payload` is the bare
+  own fragment binder, `outer` is a previously live bare outer own binding of
+  the exact same type, and no intervening event occurs. Evaluate the RHS, apply
+  the ordinary target commit and kill, then replace only the result-payload
+  occurrences in that relation with the post-write receiver and re-establish
+  the relation in the same complete/U/B view when every non-payload support
+  remains live. The receiver may not be any actual argument of that call;
+  within that instantiated relation it may not appear as a non-result term or
+  support, nor overlap another substituted support. This check is
+  relation-local: unrelated pre-existing receiver facts do not block the event
+  and are removed by the ordinary target kill. A projected, computed, or
+  consuming RHS; wrong or unselected binder; differently typed receiver;
+  named/pending outcome; extra reaching write; alias; missing relation; or
+  killed support establishes nothing. Payload scope exit and the ordinary
+  match join then apply normally. This event establishes neither
+  `outer = payload` nor any unrelated fact and is not general `set` equality;
+- retain bounded immutable delivery for `value_if` only. On each reaching
+  `give` edge, for each eligible typed L0 relation replace every occurrence of
+  the delivered bare copy atom with the receiving binding, apply ordinary
+  scope kills to every other support, and pass the surviving edge relations
+  through the ordinary L0 join. Establish only each joined typed relation on the
+  fresh receiving binding, supported by it plus the exact surviving support.
+  Perform this independently within the same complete/U/B view; no relation or
+  edge evidence crosses views. A non-atom or consuming delivery, a missing or
+  ill-typed edge relation, or a join with no common relation establishes
+  nothing. This remains delivery-specific fact substitution, not assignment
+  equality, and no Stage 8b consumer relies on a corresponding `value_match`
+  rule;
+- repair wfgrep's post-copy transition after the child region ends: retain the
+  prior length and the copied count in outer scalars, form the candidate next
+  length, then take an explicit value-producing branch on
+  `candidate_length <= len(deref(report))`. Give the candidate only on the
+  established true edge and otherwise give the prior length exactly as the
+  existing failed-copy path leaves it unchanged. Use the resulting
+  `bounded_length` for every post-selection length use: as both receiver and
+  `filled` actual for the separator and all later append calls, and as the final
+  length passed to `publish_all`. Do not write it back through the old `length`
+  binding, add variable-addition entailment, or add a trusted system-result
+  arithmetic premise; and
 - exercise the complete raw-DEFLATE and wfgrep call sequences through the one
   ordinary compiler path with unchanged output, errors, cleanup, effects, and
   required runtime checks.
@@ -323,13 +358,16 @@ existing acceptance or required runtime behavior changes.
 
 ## Approval checkpoints
 
-The expected successful path has three owner decisions, not one decision per
+The revised successful path has four owner decisions, not one decision per
 task:
 
 1. **complete (2026-08-12):** approve this high-level plan once;
-2. after Stage 8a and the trust prerequisite, approve Stage 8b's exact
-   specification plus protected-conformance activation packet; and
-3. after Stage 9a, approve Stage 9b's exact specification plus
+2. **complete (2026-08-14):** approve this one material Stage 8b delivery
+   correction;
+3. after task 0058 re-freezes and independently reviews the exact candidate,
+   approve Stage 8b's exact specification plus protected-conformance
+   activation packet; and
+4. after Stage 9a, approve Stage 9b's exact specification plus
    protected-conformance activation packet.
 
 Stage 8a, the existing-DIAG-2 repair, Stage 9a, ordinary implementation and
@@ -394,11 +432,12 @@ does not mark `PROOF-8` complete or unpark `CAND-8`.
 
 ## Active authority
 
-The owner approved this written plan on 2026-08-12. Its `ACTIVE` status is
-execution authority without expanding the strategy. The lead may now register
-the next free planned or ongoing task. Workstreams may be decomposed,
-parallelized where their premises allow, reordered within the written
-dependencies, and supported by bounded side tasks without further plan
-approval. A material direction change returns the plan to `PROPOSED`; exact
-specification and protected-conformance bytes always stop at their own approval
-boundaries.
+The owner approved this plan's predecessor on 2026-08-12 and explicitly
+selected the narrow receiver strategy written above on 2026-08-14. This
+`ACTIVE` status is execution authority only inside the exact written boundary.
+The lead first refreshes task 0058's authority, exact semantic questions, and
+scope to this plan, after which 0058 may resume within the exact narrow receiver
+boundary above and ordinary decomposition proceeds autonomously. A further
+material strategy change returns the plan to `PROPOSED`. Exact specification
+and protected-conformance bytes still stop later at their own independent
+approval boundary.
