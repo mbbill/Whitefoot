@@ -23,9 +23,10 @@ use crate::{
 };
 
 use super::entailment::{
-    CallGoalDisposition, EntailmentCallee, EntailmentContext, PostconditionSchedule,
-    VerifiedPostconditionSummary, analyze_function, analyze_function_candidate,
-    finalize_function_entailment, postcondition_schedule,
+    CallGoalDisposition, ClaimSourceIdentity, EntailmentCallee, EntailmentContext,
+    PostconditionSchedule, VerifiedPostconditionSummary, analyze_function,
+    analyze_function_candidate, build_claim_ledger, finalize_function_entailment,
+    postcondition_schedule,
 };
 use super::goal::{
     CheckedCallRequirement, CheckedRequirement, ConcreteGoal, GoalDatum, GoalExpression,
@@ -656,6 +657,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let provenance = provenance_analysis.metadata;
 
+        let claim_ledger = if functions
+            .iter()
+            .any(|function| !function.entailment.claims.is_empty())
+        {
+            let claim_sources = functions
+                .iter()
+                .map(|function| {
+                    function
+                        .entailment
+                        .claims
+                        .iter()
+                        .map(|claim| {
+                            let (logical_path, coordinate) =
+                                self.tree.source_identity(&claim.node_path)?;
+                            Ok(ClaimSourceIdentity {
+                                logical_path,
+                                coordinate,
+                                node_path: claim.node_path.clone(),
+                                function: function.id,
+                                function_symbol: function.symbol.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, SemanticCompilerFailure>>()
+                })
+                .collect::<Result<Vec<_>, SemanticCompilerFailure>>()?;
+            build_claim_ledger(&functions, &provenance, claim_sources)?
+        } else {
+            Default::default()
+        };
+
         // The ordinary function path is complete, so the executable prefix
         // closes here — after the derived box nominals, which executable code
         // allocates and drops, and before the contract metadata, which no
@@ -701,6 +732,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             main,
             entry,
             claim_advisories,
+            claim_ledger,
         })
     }
 

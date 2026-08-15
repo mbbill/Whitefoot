@@ -35,8 +35,9 @@ use term::TermId;
 
 #[cfg(test)]
 pub(crate) use state::{
-    CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
-    FlowEventKind, GoalId, GoalSign, ImplicitBoundKind, JoinParent, Relation,
+    ClaimLifecycleKind, CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind,
+    FlowEvent, FlowEventId, FlowEventKind, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
+    Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -51,7 +52,7 @@ use super::model::{
     CheckedNominal, CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, IntegerType,
 };
 use super::postcondition::CheckedPostcondition;
-use crate::{DeclarationId, NodePath};
+use crate::{DeclarationId, NodePath, SemanticCompilerFailure, SyntaxCoordinate};
 
 /// Kill-relevant [EFF-2] projection of one callee signature: for each
 /// parameter, whether the callee's declared effect row writes the region that
@@ -392,7 +393,77 @@ pub(crate) struct ClaimOutcome {
     pub(crate) node_path: NodePath,
     /// The claim's written name.
     pub(crate) name: String,
+    /// Exact canonical spelling of the predicate expression.
+    pub(crate) predicate: String,
+    /// The writer's compile-time review justification.
+    pub(crate) justification: String,
     pub(crate) disposition: ClaimDisposition,
+    /// The already-selected proof of a redundant predicate or refuted
+    /// negation. Retained claims deliberately have no lifecycle proof.
+    pub(crate) lifecycle_derivation: Option<DerivationId>,
+}
+
+/// Bundle-local source identity of one concrete checked claim occurrence.
+/// This value deliberately has no hash or meaning outside its checked program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimSourceIdentity {
+    pub(crate) logical_path: String,
+    pub(crate) coordinate: SyntaxCoordinate,
+    pub(crate) node_path: NodePath,
+    pub(crate) function: FunctionId,
+    pub(crate) function_symbol: String,
+}
+
+/// Existing provenance disposition attached to one claim-supported root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimUseProvenance {
+    /// The retained query is not a protected leaf governed by PRV-1/2/3.
+    NotApplicable,
+    /// Exact success-side PRV disposition for the protected leaf.
+    ProtectedLeaf {
+        disposition: super::provenance::LocalLeafDisposition,
+        direct_demands: Vec<super::provenance::DirectDemand>,
+        structural_bridges: Vec<super::provenance::StructuralBridge>,
+        subject_bridges: Vec<super::provenance::SubjectBridge>,
+        calls: Vec<super::provenance::BridgeCallLink>,
+    },
+    /// Exact success-side provenance inventory for a claim-discharged call
+    /// requirement. Argument ordinals cover the call densely; bridge links
+    /// may be empty when the call reaches no protected leaf.
+    Call {
+        arguments: Vec<super::provenance::CallArgumentDisposition>,
+        bridges: Vec<super::provenance::BridgeCallLink>,
+    },
+}
+
+/// One canonical retained query whose proof actually reaches this claim's S3
+/// event. Dense derivation IDs are function-local and valid only in the
+/// enclosing checked program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimLedgerUse {
+    pub(crate) root: state::DerivationRootKind,
+    pub(crate) root_derivation: DerivationId,
+    pub(crate) premise_derivations: Vec<DerivationId>,
+    pub(crate) provenance: ClaimUseProvenance,
+}
+
+/// Complete observational record for one named claim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ClaimLedgerEntry {
+    pub(crate) source: ClaimSourceIdentity,
+    pub(crate) name: String,
+    pub(crate) predicate: String,
+    pub(crate) justification: String,
+    pub(crate) disposition: ClaimDisposition,
+    pub(crate) lifecycle_derivation: Option<DerivationId>,
+    pub(crate) uses: Vec<ClaimLedgerUse>,
+}
+
+/// Deterministic checked-program claim inventory in dense function and source
+/// order. It is neither serialized nor consulted by semantic acceptance.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ClaimLedger {
+    pub(crate) entries: Vec<ClaimLedgerEntry>,
 }
 
 /// Complete [FN-8] disposition of one ordinary call requirement.
@@ -423,6 +494,9 @@ pub(crate) struct CallGoalOutcome {
     /// Exact final-check occurrence in the concrete callee.
     pub(crate) final_check: NodePath,
     pub(crate) goal: ConcreteGoal,
+    /// Exact declared-order actual count at this concrete call occurrence.
+    /// This remains zero for a legal zero-argument call with a requirement.
+    pub(crate) argument_count: u32,
     pub(crate) disposition: CallGoalDisposition,
     /// Deterministic complete evidence. Contradictory states retain only
     /// `AllDerivable`; positive opaque and projection grounds follow in that
@@ -535,6 +609,192 @@ pub(crate) fn analyze_function_candidate(
 /// optimistic function batch.
 pub(crate) fn finalize_function_entailment(entailment: &mut FunctionEntailment) {
     flow::finish(entailment);
+}
+
+/// Builds the read-only Stage 9a claim report from finalized function-local
+/// derivation ledgers and the already-accepted provenance table.
+///
+/// This routine never closes a fact state or rewalks checked syntax. A link is
+/// present exactly when the canonical retained root reaches a proof node whose
+/// own structural event is the claim's S3 occurrence.
+pub(crate) fn build_claim_ledger(
+    functions: &[CheckedFunction],
+    provenance: &super::provenance::ProvenanceMetadata,
+    sources: Vec<Vec<ClaimSourceIdentity>>,
+) -> Result<ClaimLedger, SemanticCompilerFailure> {
+    if functions.len() != sources.len() {
+        return Err(SemanticCompilerFailure::InvalidResolution);
+    }
+    let mut ledger = ClaimLedger::default();
+    for (function, sources) in functions.iter().zip(sources) {
+        if function.entailment.claims.len() != sources.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        let entry_start = ledger.entries.len();
+        let mut claim_by_path = HashMap::with_capacity(function.entailment.claims.len());
+        for (occurrence, (claim, source)) in
+            function.entailment.claims.iter().zip(sources).enumerate()
+        {
+            if source.function != function.id
+                || source.function_symbol != function.symbol
+                || source.node_path != claim.node_path
+                || claim_by_path
+                    .insert(claim.node_path.clone(), occurrence)
+                    .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution);
+            }
+            ledger.entries.push(ClaimLedgerEntry {
+                source,
+                name: claim.name.clone(),
+                predicate: claim.predicate.clone(),
+                justification: claim.justification.clone(),
+                disposition: claim.disposition.clone(),
+                lifecycle_derivation: claim.lifecycle_derivation,
+                uses: Vec::new(),
+            });
+        }
+        if function.entailment.claims.is_empty() {
+            continue;
+        }
+
+        for root in &function.entailment.derivations.roots {
+            if matches!(root.kind, state::DerivationRootKind::ClaimLifecycle { .. }) {
+                continue;
+            }
+            let mut premise_derivations = vec![Vec::new(); function.entailment.claims.len()];
+            for (node_path, premise) in function
+                .entailment
+                .derivations
+                .event_premises(root.node, state::FlowEventKind::S3)
+            {
+                let occurrence = claim_by_path
+                    .get(&node_path)
+                    .copied()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                premise_derivations[occurrence].push(premise);
+            }
+            for (occurrence, premises) in premise_derivations.into_iter().enumerate() {
+                if premises.is_empty() {
+                    continue;
+                }
+                let use_provenance = match root.kind {
+                    state::DerivationRootKind::BoundsObligation(ordinal) => {
+                        let outcome = function
+                            .entailment
+                            .obligations
+                            .get(ordinal as usize)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        let leaf = super::provenance::ProtectedLeaf {
+                            function: function.id,
+                            obligation: outcome.node_path.clone(),
+                            conjunct: u32::from(outcome.conjunct),
+                        };
+                        let mut matches = provenance
+                            .local_leaf_dispositions
+                            .iter()
+                            .filter(|disposition| disposition.leaf == leaf);
+                        let disposition = matches
+                            .next()
+                            .cloned()
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        if matches.next().is_some() {
+                            return Err(SemanticCompilerFailure::InvalidResolution);
+                        }
+                        let direct_demands = provenance
+                            .direct_demands
+                            .iter()
+                            .filter(|demand| demand.leaf == leaf)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let structural_bridges = provenance
+                            .structural_bridges
+                            .iter()
+                            .filter(|bridge| bridge.leaf == leaf)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let subject_bridges = provenance
+                            .subject_bridges
+                            .iter()
+                            .filter(|bridge| bridge.leaf == leaf)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let calls = provenance
+                            .calls
+                            .iter()
+                            .filter(|call| call.leaf == leaf)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        match disposition.disposition {
+                            super::provenance::LocalLeafProvenanceDisposition::DirectDemand
+                                if direct_demands.is_empty() =>
+                            {
+                                return Err(SemanticCompilerFailure::InvalidResolution);
+                            }
+                            super::provenance::LocalLeafProvenanceDisposition::RequirementBridge
+                                if structural_bridges.is_empty() || subject_bridges.is_empty() =>
+                            {
+                                return Err(SemanticCompilerFailure::InvalidResolution);
+                            }
+                            _ => {}
+                        }
+                        ClaimUseProvenance::ProtectedLeaf {
+                            disposition,
+                            direct_demands,
+                            structural_bridges,
+                            subject_bridges,
+                            calls,
+                        }
+                    }
+                    state::DerivationRootKind::CallGoal(ordinal) => {
+                        let outcome = function
+                            .entailment
+                            .call_goals
+                            .get(ordinal as usize)
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                        let arguments = provenance
+                            .call_argument_dispositions
+                            .iter()
+                            .filter(|argument| {
+                                argument.caller == function.id && argument.call == outcome.node_path
+                            })
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        if arguments.len() != outcome.argument_count as usize
+                            || arguments.iter().enumerate().any(|(ordinal, argument)| {
+                                argument.argument as usize != ordinal
+                                    || argument.caller != function.id
+                                    || argument.call != outcome.node_path
+                            })
+                        {
+                            return Err(SemanticCompilerFailure::InvalidResolution);
+                        }
+                        ClaimUseProvenance::Call {
+                            arguments,
+                            bridges: provenance
+                                .calls
+                                .iter()
+                                .filter(|call| {
+                                    call.caller == function.id && call.call == outcome.node_path
+                                })
+                                .cloned()
+                                .collect(),
+                        }
+                    }
+                    _ => ClaimUseProvenance::NotApplicable,
+                };
+                ledger.entries[entry_start + occurrence]
+                    .uses
+                    .push(ClaimLedgerUse {
+                        root: root.kind,
+                        root_derivation: root.node,
+                        premise_derivations: premises,
+                        provenance: use_provenance,
+                    });
+            }
+        }
+    }
+    Ok(ledger)
 }
 
 /// Builds the concrete ordinary-call SCC schedule used to make verified FN-9

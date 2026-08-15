@@ -273,6 +273,46 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(SyntaxCoordinate::new(source, start, end))
     }
 
+    /// Copies the exact canonical source spelling owned by one production
+    /// node. Semantic metadata uses this only while the source bundle is
+    /// live; it is not a portable source identity or a second parser.
+    pub(super) fn source_spelling(&self, node: NodeId) -> Result<String, SemanticCompilerFailure> {
+        let coordinate = self.coordinate(node)?;
+        let span = self
+            .resolved
+            .syntax()
+            .classified_bundle()
+            .source_bundle()
+            .span(coordinate.source(), coordinate.start(), coordinate.end())
+            .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree)?;
+        std::str::from_utf8(span.bytes())
+            .map(str::to_owned)
+            .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree)
+    }
+
+    /// Resolves one checked node path to its bundle-local logical source and
+    /// exact byte extent. The pair is stable only within this checked program.
+    pub(super) fn source_identity(
+        &self,
+        path: &NodePath,
+    ) -> Result<(String, SyntaxCoordinate), SemanticCompilerFailure> {
+        let node = self
+            .node_with_path(path)
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let coordinate = self.coordinate(node)?;
+        let logical_path = self
+            .resolved
+            .syntax()
+            .classified_bundle()
+            .source_bundle()
+            .file(coordinate.source())
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?
+            .logical_path()
+            .as_str()
+            .to_owned();
+        Ok((logical_path, coordinate))
+    }
+
     pub(super) fn closing_brace_coordinate(
         &self,
         node: NodeId,

@@ -455,6 +455,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }));
                 }
                 let justification = self.check_message(node)?;
+                let predicate = self.tree.source_spelling(expression_node)?;
                 Ok(Self::continuing_statement(
                     CheckedStatement::Claim {
                         trap: TrapSite {
@@ -464,6 +465,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             node_path: self.tree.path(node)?.clone(),
                         },
                         name,
+                        predicate,
                         justification,
                         condition: condition.expression,
                     },

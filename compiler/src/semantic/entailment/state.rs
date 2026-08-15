@@ -512,10 +512,18 @@ pub(crate) struct DerivationMetrics {
     pub(crate) opaque_goal_roots: u32,
     pub(crate) projected_goal_roots: u32,
     pub(crate) contradiction_roots: u32,
+    pub(crate) claim_lifecycle_roots: u32,
     pub(crate) unique_nodes: u32,
     pub(crate) parent_edges: u32,
     pub(crate) maximum_depth: u32,
     pub(crate) retained_bytes: usize,
+}
+
+/// Which non-retained [CLM-2] lifecycle judgment owns a derivation root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimLifecycleKind {
+    Redundant,
+    Refuted,
 }
 
 /// Which mandatory checked-program query owns a retained root.
@@ -559,6 +567,10 @@ pub(crate) enum DerivationRootKind {
     PostconditionDeliveryJoin {
         occurrence: u32,
         view: ProofView,
+    },
+    ClaimLifecycle {
+        occurrence: u32,
+        kind: ClaimLifecycleKind,
     },
 }
 
@@ -667,6 +679,37 @@ impl DerivationLedger {
 
     pub(crate) fn node_event(&self, id: DerivationId) -> Option<FlowEventId> {
         node_event(&self.nodes[id.0 as usize])
+    }
+
+    /// Returns the exact retained proof nodes under `root` whose own event has
+    /// the requested kind. The traversal follows the already-retained proof
+    /// references and performs no closure or semantic reconstruction.
+    pub(crate) fn event_premises(
+        &self,
+        root: DerivationId,
+        kind: FlowEventKind,
+    ) -> Vec<(NodePath, DerivationId)> {
+        let mut seen = vec![false; self.nodes.len()];
+        let mut stack = vec![root];
+        let mut premises = Vec::new();
+        while let Some(id) = stack.pop() {
+            let index = id.0 as usize;
+            if seen[index] {
+                continue;
+            }
+            seen[index] = true;
+            let node = &self.nodes[index];
+            if let Some(event) =
+                node_event(node).and_then(|event| self.events.get(event.0 as usize))
+                && event.kind == kind
+                && let Some(node_path) = &event.node_path
+            {
+                premises.push((node_path.clone(), id));
+            }
+            node.for_each_retained_reference(|parent| stack.push(parent));
+        }
+        premises.sort_by_key(|(_, id)| *id);
+        premises
     }
 
     /// Whether this proof's same-view derivation ancestry consumes an S12
@@ -864,6 +907,10 @@ impl DerivationLedger {
     fn measure(&self) -> DerivationMetrics {
         let mut metrics = DerivationMetrics::default();
         for root in &self.roots {
+            if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
+                metrics.claim_lifecycle_roots += 1;
+                continue;
+            }
             match &self.nodes[root.node.0 as usize] {
                 DerivationNode::SourceGoal { .. }
                 | DerivationNode::JoinGoal { .. }

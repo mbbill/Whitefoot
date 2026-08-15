@@ -29,10 +29,11 @@ use super::super::postcondition::{
     PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
 };
 use super::state::{
-    ClosedState, CountedRootAtom, DerivationId, DerivationInventory, DerivationLedger,
-    DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind, GoalId, GoalSign,
-    GoalSupport, GoalTable, JoinParent, OutcomeFact, PostconditionCallSubstitution, ProofView,
-    Relation, close, close_excluding_term, join_at, materialize_closure_at,
+    ClaimLifecycleKind, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
+    DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
+    GoalId, GoalSign, GoalSupport, GoalTable, JoinParent, OutcomeFact,
+    PostconditionCallSubstitution, ProofView, Relation, close, close_excluding_term, join_at,
+    materialize_closure_at,
 };
 use super::term::{
     CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
@@ -535,6 +536,11 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
     for outcome in &mut entailment.call_goals {
         outcome.derivation = outcome
             .derivation
+            .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+    }
+    for outcome in &mut entailment.claims {
+        outcome.lifecycle_derivation = outcome
+            .lifecycle_derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
     }
     for outcome in entailment
@@ -4032,6 +4038,7 @@ impl Analyzer<'_, '_> {
                             call,
                             requirement.final_check.clone(),
                             requirement.goal.clone(),
+                            arguments.len(),
                             &states.complete,
                         );
                         complete_goal_ok = disposition == CallGoalDisposition::Discharged;
@@ -4153,6 +4160,7 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         final_check: crate::NodePath,
         goal: ConcreteGoal,
+        argument_count: usize,
         state: &FactState,
     ) -> (CallGoalDisposition, Option<DerivationId>) {
         let (disposition, evidence, derivation) = self.call_goal_disposition(&goal, state);
@@ -4167,6 +4175,8 @@ impl Analyzer<'_, '_> {
             callee,
             final_check,
             goal,
+            argument_count: u32::try_from(argument_count)
+                .expect("ENT call argument count exceeds the u32 identity space"),
             disposition,
             evidence,
             derivation,
@@ -5128,6 +5138,8 @@ impl Analyzer<'_, '_> {
             }
             CheckedStatement::Claim {
                 name,
+                predicate,
+                justification,
                 condition,
                 trap,
                 ..
@@ -5145,24 +5157,51 @@ impl Analyzer<'_, '_> {
                     &self.goals,
                     &mut self.derivations,
                 );
-                let disposition = if let Some(relation) = relation {
+                let occurrence = u32::try_from(self.claims.len())
+                    .expect("ENT claim-root occurrence exceeds the u32 identity space");
+                let (disposition, lifecycle) = if let Some(relation) = relation {
                     if closed.derives(&relation) {
-                        ClaimDisposition::Redundant
-                    } else if !closed.contradictory() && closed.derives(&relation.negated()) {
-                        ClaimDisposition::Refuted {
-                            predicate: self.render_relation(&relation),
-                            negation: self.render_relation(&relation.negated()),
-                        }
+                        let proof = closed
+                            .relation_proof(&relation, &mut self.derivations)
+                            .expect("a derivable claim relation must retain its canonical proof");
+                        (
+                            ClaimDisposition::Redundant,
+                            Some((ClaimLifecycleKind::Redundant, proof)),
+                        )
                     } else {
-                        ClaimDisposition::Retained
+                        let negation = relation.negated();
+                        if !closed.contradictory() && closed.derives(&negation) {
+                            let proof = closed
+                                .relation_proof(&negation, &mut self.derivations)
+                                .expect("a derived claim negation must retain its canonical proof");
+                            (
+                                ClaimDisposition::Refuted {
+                                    predicate: self.render_relation(&relation),
+                                    negation: self.render_relation(&negation),
+                                },
+                                Some((ClaimLifecycleKind::Refuted, proof)),
+                            )
+                        } else {
+                            (ClaimDisposition::Retained, None)
+                        }
                     }
                 } else {
-                    ClaimDisposition::Retained
+                    (ClaimDisposition::Retained, None)
                 };
+                let lifecycle_derivation = lifecycle.map(|(kind, proof)| {
+                    self.derivations.add_root(
+                        DerivationRootKind::ClaimLifecycle { occurrence, kind },
+                        proof,
+                    );
+                    proof
+                });
                 self.claims.push(ClaimOutcome {
                     node_path: trap.node_path.clone(),
                     name: name.clone(),
+                    predicate: predicate.clone(),
+                    justification: justification.clone(),
                     disposition,
+                    lifecycle_derivation,
                 });
                 // [ENT-3] S3: the passed predicate holds on the normal
                 // continuation, exactly as S2 establishes a check's.

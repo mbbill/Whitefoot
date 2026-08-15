@@ -9,22 +9,24 @@
 //! file through the ordinary acceptance path.
 
 use crate::{
-    BindingId, CallRequirementDisposition, NodePath, SemanticIssueKind, SemanticOutcome,
-    SemanticRule, SourceInput,
+    BindingId, CallRequirementDisposition, NodePath, SemanticCompilerFailure, SemanticIssueKind,
+    SemanticOutcome, SemanticRule, SourceInput,
 };
 
 use super::super::entailment::{
-    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimDisposition, ClaimOutcome,
+    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimDisposition, ClaimLedger,
+    ClaimLifecycleKind, ClaimOutcome, ClaimSourceIdentity, ClaimUseProvenance,
     CountedAtomicDerivation, CountedCaptureSide, CountedDerivationSet, CountedProofPoint,
     CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
     FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
     LengthBound, ObligationOutcome, PlaceProjection, PlaceRoot, PostconditionAggregate,
     PostconditionDisposition, PostconditionExit, PostconditionViewExit, ProofView, Relation,
-    S7DerivationKind, ShiftOneIdentity, TermId, TermKind, ZERO, type_range,
+    S7DerivationKind, ShiftOneIdentity, TermId, TermKind, ZERO, build_claim_ledger, type_range,
 };
 use super::super::model::{
     CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
+use super::super::provenance::LocalLeafProvenanceDisposition;
 use super::{assert_rule, with_semantics, with_semantics_dark, with_semantics_inputs};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -55,6 +57,42 @@ fn claims(source: &[u8], function: &str) -> Vec<ClaimOutcome> {
             .unwrap_or_else(|| panic!("function {function} must exist"));
         function.entailment.claims.clone()
     })
+}
+
+fn claim_ledger(source: &[u8]) -> ClaimLedger {
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("claim-ledger test source must check completely: {outcome:?}");
+        };
+        checked.data.claim_ledger.clone()
+    })
+}
+
+fn retained_claim_sources(program: &CheckedProgramData) -> Vec<Vec<ClaimSourceIdentity>> {
+    program
+        .functions
+        .iter()
+        .map(|function| {
+            function
+                .entailment
+                .claims
+                .iter()
+                .map(|claim| {
+                    program
+                        .claim_ledger
+                        .entries
+                        .iter()
+                        .find(|entry| {
+                            entry.source.function == function.id
+                                && entry.source.node_path == claim.node_path
+                        })
+                        .expect("every checked claim has one source identity")
+                        .source
+                        .clone()
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn call_goals(source: &[u8], function: &str) -> Vec<CallGoalOutcome> {
@@ -329,6 +367,12 @@ fn call_root(summary: &FunctionEntailment, ordinal: usize) -> DerivationId {
     summary.call_goals[ordinal]
         .derivation
         .unwrap_or_else(|| panic!("call goal {ordinal} must have one exact root"))
+}
+
+fn claim_lifecycle_root(summary: &FunctionEntailment, occurrence: usize) -> DerivationId {
+    summary.claims[occurrence]
+        .lifecycle_derivation
+        .unwrap_or_else(|| panic!("claim {occurrence} must have one exact lifecycle root"))
 }
 
 fn assert_root_contains(
@@ -1417,6 +1461,7 @@ fn validate_derivations(summary: &FunctionEntailment) {
     let mut seen_calls = vec![false; summary.call_goals.len()];
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
     let mut seen_s7 = vec![false; summary.s7_derivations.len()];
+    let mut seen_claim_lifecycle = vec![false; summary.claims.len()];
     let mut seen_postcondition_exits = summary
         .postcondition
         .as_ref()
@@ -1428,7 +1473,7 @@ fn validate_derivations(summary: &FunctionEntailment) {
     let mut seen_delivery_joins = 0u32;
     let mut seen_delivery_nodes = vec![false; summary.derivations.nodes.len()];
     let mut counted_root_order = Vec::new();
-    let mut class_counts = [0u32; 4];
+    let mut class_counts = [0u32; 5];
     for root in &summary.derivations.roots {
         let conclusion = retained_conclusion(&conclusions, root.node);
         match root.kind {
@@ -1725,18 +1770,52 @@ fn validate_derivations(summary: &FunctionEntailment) {
                     DerivationNode::PostconditionDeliveryJoin { .. }
                 ));
             }
+            DerivationRootKind::ClaimLifecycle { occurrence, kind } => {
+                let occurrence = occurrence as usize;
+                let outcome = summary
+                    .claims
+                    .get(occurrence)
+                    .expect("claim-lifecycle root occurrence must resolve");
+                assert!(
+                    !seen_claim_lifecycle[occurrence],
+                    "one exact lifecycle root per non-retained claim"
+                );
+                seen_claim_lifecycle[occurrence] = true;
+                assert_eq!(outcome.lifecycle_derivation, Some(root.node));
+                assert_eq!(
+                    summary.derivations.node_views[root.node.0 as usize],
+                    ProofView::Complete
+                );
+                match (&outcome.disposition, kind, conclusion) {
+                    (
+                        ClaimDisposition::Redundant,
+                        ClaimLifecycleKind::Redundant,
+                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction,
+                    ) => {}
+                    (
+                        ClaimDisposition::Refuted { .. },
+                        ClaimLifecycleKind::Refuted,
+                        DerivationConclusion::Relation(_),
+                    ) => {}
+                    _ => panic!("claim lifecycle root, disposition, and proof must agree"),
+                }
+            }
         }
 
-        match &summary.derivations.nodes[root.node.0 as usize] {
-            DerivationNode::SourceGoal { .. }
-            | DerivationNode::JoinGoal { .. }
-            | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
-            DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
-            DerivationNode::L0Contradiction { .. }
-            | DerivationNode::GoalContradiction { .. }
-            | DerivationNode::JoinContradiction { .. }
-            | DerivationNode::MaterializedContradiction { .. } => class_counts[3] += 1,
-            _ => class_counts[0] += 1,
+        if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
+            class_counts[4] += 1;
+        } else {
+            match &summary.derivations.nodes[root.node.0 as usize] {
+                DerivationNode::SourceGoal { .. }
+                | DerivationNode::JoinGoal { .. }
+                | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
+                DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
+                DerivationNode::L0Contradiction { .. }
+                | DerivationNode::GoalContradiction { .. }
+                | DerivationNode::JoinContradiction { .. }
+                | DerivationNode::MaterializedContradiction { .. } => class_counts[3] += 1,
+                _ => class_counts[0] += 1,
+            }
         }
     }
 
@@ -1790,6 +1869,11 @@ fn validate_derivations(summary: &FunctionEntailment) {
         let discharged = outcome.disposition == CallGoalDisposition::Discharged;
         assert_eq!(outcome.derivation.is_some(), discharged);
         assert_eq!(seen_calls[ordinal], discharged);
+    }
+    for (occurrence, outcome) in summary.claims.iter().enumerate() {
+        let judged = !matches!(outcome.disposition, ClaimDisposition::Retained);
+        assert_eq!(outcome.lifecycle_derivation.is_some(), judged);
+        assert_eq!(seen_claim_lifecycle[occurrence], judged);
     }
     assert!(
         seen_counted
@@ -1855,8 +1939,199 @@ fn validate_derivations(summary: &FunctionEntailment) {
             summary.derivations.metrics.opaque_goal_roots,
             summary.derivations.metrics.projected_goal_roots,
             summary.derivations.metrics.contradiction_roots,
+            summary.derivations.metrics.claim_lifecycle_roots,
         ]
     );
+}
+
+fn validate_claim_ledger(program: &CheckedProgramData) {
+    let mut entry_ordinal = 0usize;
+    for (function_ordinal, function) in program.functions.iter().enumerate() {
+        assert_eq!(function.id.0 as usize, function_ordinal);
+        let entry_end = entry_ordinal + function.entailment.claims.len();
+        assert!(entry_end <= program.claim_ledger.entries.len());
+        let entries = &program.claim_ledger.entries[entry_ordinal..entry_end];
+        for (claim, entry) in function.entailment.claims.iter().zip(entries) {
+            assert_eq!(entry.source.function, function.id);
+            assert_eq!(entry.source.function_symbol, function.symbol);
+            assert_eq!(entry.source.node_path, claim.node_path);
+            assert_eq!(entry.name, claim.name);
+            assert_eq!(entry.predicate, claim.predicate);
+            assert_eq!(entry.justification, claim.justification);
+            assert_eq!(entry.disposition, claim.disposition);
+            assert_eq!(entry.lifecycle_derivation, claim.lifecycle_derivation);
+
+            for used in &entry.uses {
+                assert!(
+                    !matches!(used.root, DerivationRootKind::ClaimLifecycle { .. }),
+                    "a lifecycle observation is not a supported obligation"
+                );
+                assert!(
+                    function
+                        .entailment
+                        .derivations
+                        .roots
+                        .iter()
+                        .any(|root| root.kind == used.root && root.node == used.root_derivation)
+                );
+                assert!(
+                    used.premise_derivations
+                        .windows(2)
+                        .all(|pair| pair[0] < pair[1])
+                );
+                let expected = function
+                    .entailment
+                    .derivations
+                    .event_premises(used.root_derivation, FlowEventKind::S3)
+                    .into_iter()
+                    .filter_map(|(path, premise)| {
+                        (path == entry.source.node_path).then_some(premise)
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(used.premise_derivations, expected);
+                match (used.root, &used.provenance) {
+                    (
+                        DerivationRootKind::BoundsObligation(ordinal),
+                        ClaimUseProvenance::ProtectedLeaf {
+                            disposition,
+                            direct_demands,
+                            structural_bridges,
+                            subject_bridges,
+                            calls,
+                        },
+                    ) => {
+                        let obligation = &function.entailment.obligations[ordinal as usize];
+                        let leaf = &disposition.leaf;
+                        assert_eq!(leaf.function, function.id);
+                        assert_eq!(leaf.obligation, obligation.node_path);
+                        assert_eq!(leaf.conjunct, u32::from(obligation.conjunct));
+                        assert_eq!(
+                            program
+                                .provenance
+                                .local_leaf_dispositions
+                                .iter()
+                                .filter(|candidate| *candidate == disposition)
+                                .count(),
+                            1
+                        );
+                        assert_eq!(
+                            direct_demands,
+                            &program
+                                .provenance
+                                .direct_demands
+                                .iter()
+                                .filter(|candidate| candidate.leaf == *leaf)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(
+                            structural_bridges,
+                            &program
+                                .provenance
+                                .structural_bridges
+                                .iter()
+                                .filter(|candidate| candidate.leaf == *leaf)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(
+                            subject_bridges,
+                            &program
+                                .provenance
+                                .subject_bridges
+                                .iter()
+                                .filter(|candidate| candidate.leaf == *leaf)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(
+                            calls,
+                            &program
+                                .provenance
+                                .calls
+                                .iter()
+                                .filter(|candidate| candidate.leaf == *leaf)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    (DerivationRootKind::BoundsObligation(_), _) => {
+                        panic!("a protected bounds leaf requires exact provenance")
+                    }
+                    (
+                        DerivationRootKind::CallGoal(ordinal),
+                        ClaimUseProvenance::Call { arguments, bridges },
+                    ) => {
+                        let outcome = &function.entailment.call_goals[ordinal as usize];
+                        assert_eq!(arguments.len(), outcome.argument_count as usize);
+                        assert!(arguments.iter().enumerate().all(|(ordinal, argument)| {
+                            argument.caller == function.id
+                                && argument.call == outcome.node_path
+                                && argument.argument as usize == ordinal
+                        }));
+                        assert_eq!(
+                            arguments,
+                            &program
+                                .provenance
+                                .call_argument_dispositions
+                                .iter()
+                                .filter(|candidate| {
+                                    candidate.caller == function.id
+                                        && candidate.call == outcome.node_path
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(
+                            bridges,
+                            &program
+                                .provenance
+                                .calls
+                                .iter()
+                                .filter(|candidate| {
+                                    candidate.caller == function.id
+                                        && candidate.call == outcome.node_path
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    (DerivationRootKind::CallGoal(_), _) => {
+                        panic!("a call goal requires its exact success-side provenance")
+                    }
+                    (_, ClaimUseProvenance::NotApplicable) => {}
+                    (_, ClaimUseProvenance::ProtectedLeaf { .. }) => {
+                        panic!("only bounds leaves carry local PRV provenance")
+                    }
+                    (_, ClaimUseProvenance::Call { .. }) => {
+                        panic!("only call goals carry call provenance")
+                    }
+                }
+            }
+        }
+
+        let published_uses = entries.iter().map(|entry| entry.uses.len()).sum::<usize>();
+        let mut expected_uses = 0usize;
+        for root in &function.entailment.derivations.roots {
+            if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
+                continue;
+            }
+            let mut used_claims = Vec::<NodePath>::new();
+            for (path, _) in function
+                .entailment
+                .derivations
+                .event_premises(root.node, FlowEventKind::S3)
+            {
+                if !used_claims.contains(&path) {
+                    used_claims.push(path);
+                }
+            }
+            expected_uses += used_claims.len();
+        }
+        assert_eq!(published_uses, expected_uses);
+        entry_ordinal += function.entailment.claims.len();
+    }
+    assert_eq!(entry_ordinal, program.claim_ledger.entries.len());
 }
 
 fn assert_derivation_mutation_rejected(
@@ -6304,10 +6579,488 @@ fn main() -> own unit pure {
         "S3: the passed claim predicate discharges the following subscript"
     );
     assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S3);
-    let claim_outcomes = claims(source, "read");
+    let claim_outcomes = &summary.claims;
     assert_eq!(claim_outcomes.len(), 1);
     assert_eq!(claim_outcomes[0].name, "in_range");
     assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Retained);
+    assert_eq!(claim_outcomes[0].lifecycle_derivation, None);
+    assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 0);
+}
+
+#[test]
+fn the_claim_ledger_reports_exact_source_text_used_proof_and_provenance() {
+    let source = br#"fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
+  let n = len(values);
+  let inside = ilt(i, n);
+  claim in_range: inside because "the caller walks 0..len";
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("claim-ledger source must be accepted: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        assert_eq!(program.data.claim_ledger.entries.len(), 1);
+        let entry = &program.data.claim_ledger.entries[0];
+        assert_eq!(entry.source.logical_path, "test.wf");
+        assert_eq!(entry.source.coordinate.source().ordinal(), 0);
+        assert_eq!(entry.name, "in_range");
+        assert_eq!(entry.predicate, "inside");
+        assert_eq!(entry.justification, "the caller walks 0..len");
+        assert_eq!(entry.disposition, ClaimDisposition::Retained);
+        assert_eq!(entry.lifecycle_derivation, None);
+        let start = entry.source.coordinate.start().value() as usize;
+        let end = entry.source.coordinate.end().value() as usize;
+        assert_eq!(
+            &source[start..end],
+            br#"claim in_range: inside because "the caller walks 0..len";"#
+        );
+
+        assert_eq!(entry.uses.len(), 1);
+        let used = &entry.uses[0];
+        assert_eq!(used.root, DerivationRootKind::BoundsObligation(0));
+        let function = &program.data.functions[entry.source.function.0 as usize];
+        assert_eq!(function.symbol, entry.source.function_symbol);
+        assert_eq!(
+            function.entailment.obligations[0].derivation,
+            Some(used.root_derivation)
+        );
+        assert!(!used.premise_derivations.is_empty());
+        for premise in &used.premise_derivations {
+            let event = function
+                .entailment
+                .derivations
+                .node_event(*premise)
+                .expect("an S3 premise has one retained event");
+            assert_eq!(
+                retained_event(&function.entailment, event),
+                &FlowEvent {
+                    kind: FlowEventKind::S3,
+                    node_path: Some(entry.source.node_path.clone()),
+                }
+            );
+        }
+        let ClaimUseProvenance::ProtectedLeaf {
+            disposition,
+            direct_demands,
+            structural_bridges,
+            subject_bridges,
+            calls,
+        } = &used.provenance
+        else {
+            panic!("a bounds obligation must carry its exact PRV disposition");
+        };
+        assert_eq!(
+            disposition.disposition,
+            LocalLeafProvenanceDisposition::DirectDemand
+        );
+        assert!(disposition.complete_discharged);
+        assert!(!disposition.unasserted_discharged);
+        assert!(!disposition.s4_blinded_discharged);
+        assert!(!direct_demands.is_empty());
+        assert!(structural_bridges.is_empty());
+        assert!(subject_bridges.is_empty());
+        assert!(calls.is_empty());
+
+        let sources = retained_claim_sources(&program.data);
+        let mut missing = program.data.provenance.clone();
+        missing.local_leaf_dispositions.clear();
+        assert_eq!(
+            build_claim_ledger(&program.data.functions, &missing, sources.clone()),
+            Err(SemanticCompilerFailure::InvalidResolution),
+            "a missing required provenance mapping fails closed"
+        );
+        let mut missing = program.data.provenance.clone();
+        missing.direct_demands.clear();
+        assert_eq!(
+            build_claim_ledger(&program.data.functions, &missing, sources.clone()),
+            Err(SemanticCompilerFailure::InvalidResolution),
+            "a DirectDemand disposition without its exact demand fails closed"
+        );
+        let mut missing = program.data.provenance.clone();
+        missing.local_leaf_dispositions[0].disposition =
+            LocalLeafProvenanceDisposition::RequirementBridge;
+        missing.direct_demands.clear();
+        assert_eq!(
+            build_claim_ledger(&program.data.functions, &missing, sources),
+            Err(SemanticCompilerFailure::InvalidResolution),
+            "a RequirementBridge disposition without its bridge inventory fails closed"
+        );
+    });
+}
+
+#[test]
+fn the_claim_ledger_links_only_live_canonical_s3_premises() {
+    let source = br#"fn first_wins(values: own buffer<i32>, i: own u64) -> own i32 traps {
+  let n = len(values);
+  let inside = ilt(i, n);
+  claim first: inside because "first proof";
+  claim second: inside because "duplicate proof";
+  return values[i];
+}
+
+fn killed(values: own buffer<i32>, i: own u64, replacement: own u64) -> own i32 traps {
+  let offset = i;
+  let n = len(values);
+  let inside = ilt(offset, n);
+  claim stale: inside because "killed before use";
+  set offset = replacement;
+  return values[offset];
+}
+
+fn joined(values: own buffer<i32>, i: own u64, choose: own Bool) -> own i32 traps {
+  let n = len(values);
+  if choose {
+    claim left: ilt(i, n) because "left edge";
+  } else {
+    claim right: ilt(i, n) because "right edge";
+  }
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("dark claim-ledger source must remain observable: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        let entry = |name: &str| {
+            program
+                .data
+                .claim_ledger
+                .entries
+                .iter()
+                .find(|entry| entry.name == name)
+                .unwrap_or_else(|| panic!("claim {name} must be reported"))
+        };
+
+        assert_eq!(entry("first").uses.len(), 1);
+        assert_eq!(entry("second").disposition, ClaimDisposition::Redundant);
+        assert!(entry("second").lifecycle_derivation.is_some());
+        assert!(
+            entry("second").uses.is_empty(),
+            "the later redundant S3 is not the canonical premise"
+        );
+        assert!(
+            entry("stale").uses.is_empty(),
+            "a killed S3 fact cannot support the undischarged leaf"
+        );
+
+        let left = entry("left");
+        let right = entry("right");
+        assert_eq!(left.uses.len(), 1);
+        assert_eq!(right.uses.len(), 1);
+        assert_eq!(left.uses[0].root, DerivationRootKind::BoundsObligation(0));
+        assert_eq!(right.uses[0].root, DerivationRootKind::BoundsObligation(0));
+        assert_eq!(left.uses[0].root_derivation, right.uses[0].root_derivation);
+        assert_ne!(
+            left.uses[0].premise_derivations, right.uses[0].premise_derivations,
+            "the join retains each exact reaching S3 parent"
+        );
+    });
+}
+
+#[test]
+fn one_claim_can_support_multiple_bounds_and_a_call_goal() {
+    let source = br#"fn need(index: own u64) -> own unit pure requires {
+  check ilt(index, 4_u64) else trap "small";
+} {
+  return unit;
+}
+
+fn read(values: own buffer<i32>, i: own u64) -> own i32 traps {
+  let n = len(values);
+  let inside = ilt(i, n);
+  claim bounded: inside because "one proof, two reads";
+  let first = values[i];
+  let second = values[i];
+  return first;
+}
+
+fn caller(i: own u64) -> own unit traps {
+  claim small: ilt(i, 4_u64) because "the call is guarded";
+  need(index: i);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("multi-use claim source must be accepted: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        let bounded = program
+            .data
+            .claim_ledger
+            .entries
+            .iter()
+            .find(|entry| entry.name == "bounded")
+            .expect("bounded claim");
+        assert_eq!(bounded.uses.len(), 2);
+        assert_eq!(
+            bounded
+                .uses
+                .iter()
+                .map(|used| used.root)
+                .collect::<Vec<_>>(),
+            vec![
+                DerivationRootKind::BoundsObligation(0),
+                DerivationRootKind::BoundsObligation(1),
+            ]
+        );
+        assert!(
+            bounded
+                .uses
+                .iter()
+                .all(|used| matches!(used.provenance, ClaimUseProvenance::ProtectedLeaf { .. }))
+        );
+
+        let small = program
+            .data
+            .claim_ledger
+            .entries
+            .iter()
+            .find(|entry| entry.name == "small")
+            .expect("small claim");
+        assert_eq!(small.uses.len(), 1);
+        assert_eq!(small.uses[0].root, DerivationRootKind::CallGoal(0));
+        let ClaimUseProvenance::Call { arguments, bridges } = &small.uses[0].provenance else {
+            panic!("a call goal must retain its exact call provenance");
+        };
+        assert_eq!(arguments.len(), 1);
+        assert_eq!(arguments[0].argument, 0);
+        assert_eq!(arguments[0].caller, small.source.function);
+        assert_eq!(bridges.len(), 0);
+
+        let mut missing = program.data.provenance.clone();
+        missing.call_argument_dispositions.retain(|argument| {
+            argument.caller != small.source.function
+                || argument.call
+                    != program.data.functions[small.source.function.0 as usize]
+                        .entailment
+                        .call_goals[0]
+                        .node_path
+        });
+        assert_eq!(
+            build_claim_ledger(
+                &program.data.functions,
+                &missing,
+                retained_claim_sources(&program.data),
+            ),
+            Err(SemanticCompilerFailure::InvalidResolution),
+            "a missing required call-provenance mapping fails closed"
+        );
+    });
+}
+
+#[test]
+fn a_zero_argument_call_goal_retains_an_empty_dense_provenance_inventory() {
+    let source = br#"fn need() -> own unit pure requires {
+  let first = ilt(0_u64, 1_u64);
+  let second = ilt(1_u64, 2_u64);
+  let complete = band(first, second);
+  check complete else trap "complete";
+} {
+  return unit;
+}
+
+fn caller() -> own unit traps {
+  let first = ilt(0_u64, 1_u64);
+  let second = ilt(1_u64, 2_u64);
+  let complete = band(first, second);
+  claim ready: complete because "same closed goal";
+  need();
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("zero-argument claim call must be accepted: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        let entry = program
+            .data
+            .claim_ledger
+            .entries
+            .iter()
+            .find(|entry| entry.name == "ready")
+            .expect("ready claim");
+        assert_eq!(entry.uses.len(), 1);
+        assert_eq!(entry.uses[0].root, DerivationRootKind::CallGoal(0));
+        let ClaimUseProvenance::Call { arguments, bridges } = &entry.uses[0].provenance else {
+            panic!("the zero-argument call must retain call provenance");
+        };
+        assert!(arguments.is_empty());
+        assert!(bridges.is_empty());
+        let caller = &program.data.functions[entry.source.function.0 as usize];
+        assert_eq!(caller.entailment.call_goals[0].argument_count, 0);
+    });
+}
+
+#[test]
+fn postcondition_routes_retain_claim_premises_through_complete_a0_parents() {
+    let source = br#"fn normalized(value: own i32) -> own i32 pure requires {
+  check ieq(value, 1_i32) else trap "required";
+} ensures result {
+  check ieq(result, 1_i32) else trap "post";
+} {
+  return 1_i32;
+}
+
+fn caller(value: own i32) -> own unit traps {
+  claim normalized_input: ieq(value, 1_i32) because "the call is guarded";
+  let called = normalized(value: value);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("claim-dependent postcondition route must be accepted: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        let entry = program
+            .data
+            .claim_ledger
+            .entries
+            .iter()
+            .find(|entry| entry.name == "normalized_input")
+            .expect("normalized_input claim");
+        let caller = &program.data.functions[entry.source.function.0 as usize];
+        let direct_uses = entry
+            .uses
+            .iter()
+            .filter(|used| {
+                matches!(
+                    used.root,
+                    DerivationRootKind::PostconditionDirectResult { .. }
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(direct_uses.len(), 3, "one retained route per proof view");
+        let call_goal = caller.entailment.call_goals[0]
+            .derivation
+            .expect("the complete call goal is discharged");
+        for used in direct_uses {
+            let DerivationNode::PostconditionDirectResult { parent, .. } =
+                &caller.entailment.derivations.nodes[used.root_derivation.0 as usize]
+            else {
+                panic!("the route root names its direct-result node");
+            };
+            let DerivationNode::PostconditionCall { a0_parents, .. } =
+                &caller.entailment.derivations.nodes[parent.0 as usize]
+            else {
+                panic!("the direct-result parent is the instantiated call summary");
+            };
+            assert!(a0_parents.contains(&call_goal));
+            assert!(!used.premise_derivations.is_empty());
+        }
+    });
+}
+
+#[test]
+fn a_loop_body_claim_links_only_the_obligation_it_reaches() {
+    let source =
+        br#"fn read(values: own buffer<i32>, i: own u64, leave: own Bool) -> own i32 traps {
+  loop @again {
+    let n = len(values);
+    let inside = ilt(i, n);
+    claim loop_bound: inside because "this iteration checked the index";
+    let value = values[i];
+    if leave {
+      return value;
+    } else {
+      break @again;
+    }
+  }
+  return values[i];
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    with_semantics_dark(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("dark loop ledger must remain observable: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        let entry = program
+            .data
+            .claim_ledger
+            .entries
+            .iter()
+            .find(|entry| entry.name == "loop_bound")
+            .expect("loop_bound claim");
+        assert_eq!(entry.uses.len(), 1);
+        assert_eq!(entry.uses[0].root, DerivationRootKind::BoundsObligation(0));
+        let function = &program.data.functions[entry.source.function.0 as usize];
+        assert_eq!(function.entailment.obligations.len(), 2);
+        assert!(function.entailment.obligations[0].discharged);
+        assert!(!function.entailment.obligations[1].discharged);
+    });
+}
+
+#[test]
+fn concrete_generic_claims_keep_distinct_checked_program_identities() {
+    let source = br#"fn identity<T: Int>(value: own T) -> own T traps {
+  claim reflexive: ieq(value, value) because "identity";
+  return value;
+}
+
+fn main() -> own unit traps {
+  let signed = identity<i32>(value: 1_i32);
+  let unsigned = identity<u32>(value: 1_u32);
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("concrete generic claims must be accepted: {outcome:?}");
+        };
+        validate_claim_ledger(&program.data);
+        let entries = program
+            .data
+            .claim_ledger
+            .entries
+            .iter()
+            .filter(|entry| entry.name == "reflexive")
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].source.node_path, entries[1].source.node_path);
+        assert_eq!(
+            entries[0].source.logical_path,
+            entries[1].source.logical_path
+        );
+        assert_ne!(entries[0].source.function, entries[1].source.function);
+        assert_ne!(
+            entries[0].source.function_symbol,
+            entries[1].source.function_symbol
+        );
+        assert!(entries.iter().all(|entry| {
+            entry.disposition == ClaimDisposition::Redundant
+                && entry.lifecycle_derivation.is_some()
+                && entry.uses.is_empty()
+        }));
+    });
 }
 
 #[test]
@@ -6318,9 +7071,12 @@ fn a_claim_without_comparison_origin_is_retained_and_never_judged() {
   return unit;
 }
 "#;
-    let claim_outcomes = claims(source, "main");
-    assert_eq!(claim_outcomes.len(), 1);
-    assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Retained);
+    let summary = entailment(source, "main");
+    validate_derivations(&summary);
+    assert_eq!(summary.claims.len(), 1);
+    assert_eq!(summary.claims[0].disposition, ClaimDisposition::Retained);
+    assert_eq!(summary.claims[0].lifecycle_derivation, None);
+    assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 0);
 }
 
 // ---------------------------------------------------------------------
@@ -6351,6 +7107,22 @@ fn main() -> own unit pure {
         assert_eq!(program.data.claim_advisories.len(), 1);
         assert_eq!(program.data.claim_advisories[0].function, "read");
         assert_eq!(program.data.claim_advisories[0].name, "proven");
+        let summary = &program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "read")
+            .expect("read must exist")
+            .entailment;
+        validate_derivations(summary);
+        assert_eq!(summary.claims.len(), 1);
+        assert_eq!(summary.claims[0].disposition, ClaimDisposition::Redundant);
+        assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 1);
+        assert!(root_contains(
+            summary,
+            claim_lifecycle_root(summary, 0),
+            |node| matches!(node, DerivationNode::SourceBound { .. }),
+        ));
     });
 }
 
@@ -6381,6 +7153,18 @@ fn main() -> own unit pure {
         };
         assert_eq!(detail.name, "in_range");
     });
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    assert!(matches!(
+        summary.claims[0].disposition,
+        ClaimDisposition::Refuted { .. }
+    ));
+    assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 1);
+    assert!(root_contains(
+        &summary,
+        claim_lifecycle_root(&summary, 0),
+        |node| matches!(node, DerivationNode::SourceBound { .. }),
+    ));
 }
 
 #[test]
@@ -6406,10 +7190,88 @@ fn main() -> own unit pure {
 "#;
     // i < 0 is unsatisfiable for u64: the True arm's state is contradictory,
     // so the claim is redundant there and the subscript discharges.
-    let claim_outcomes = claims(source, "read");
-    assert_eq!(claim_outcomes.len(), 1);
-    assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Redundant);
+    let summary = entailment(source, "read");
+    validate_derivations(&summary);
+    assert_eq!(summary.claims.len(), 1);
+    assert_eq!(summary.claims[0].disposition, ClaimDisposition::Redundant);
+    assert!(root_contains(
+        &summary,
+        claim_lifecycle_root(&summary, 0),
+        |node| matches!(
+            node,
+            DerivationNode::L0Contradiction { .. }
+                | DerivationNode::JoinContradiction { .. }
+                | DerivationNode::MaterializedContradiction { .. }
+        ),
+    ));
     assert_eq!(discharge_flags(source, "read"), vec![true]);
+}
+
+#[test]
+fn claim_lifecycle_roots_and_dense_ids_are_stable_across_repeated_analysis() {
+    let source = br#"fn inspect(values: own buffer<i32>, i: own u64) -> own unit traps {
+  if ilt(i, 4_u64) {
+    claim redundant: ilt(i, 4_u64) because "the branch established it";
+    let n = len(values);
+    claim retained: ilt(i, n) because "the caller checked the buffer";
+    let observed = values[i];
+    return unit;
+  } else {
+    claim refuted: ilt(i, 4_u64) because "the branch established its negation";
+    return unit;
+  }
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let expected = entailment(source, "inspect");
+    let expected_ledger = claim_ledger(source);
+    validate_derivations(&expected);
+    assert_eq!(expected.claims.len(), 3);
+    assert_eq!(
+        expected
+            .derivations
+            .roots
+            .iter()
+            .filter_map(|root| match root.kind {
+                DerivationRootKind::ClaimLifecycle { occurrence, kind } => {
+                    Some((occurrence, kind, root.node))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                0,
+                ClaimLifecycleKind::Redundant,
+                claim_lifecycle_root(&expected, 0),
+            ),
+            (
+                2,
+                ClaimLifecycleKind::Refuted,
+                claim_lifecycle_root(&expected, 2),
+            ),
+        ]
+    );
+    assert_eq!(expected.claims[1].lifecycle_derivation, None);
+    let retained = expected_ledger
+        .entries
+        .iter()
+        .find(|entry| entry.name == "retained")
+        .expect("retained claim ledger entry");
+    assert_eq!(retained.uses.len(), 1);
+    assert!(!retained.uses[0].premise_derivations.is_empty());
+    let ClaimUseProvenance::ProtectedLeaf { direct_demands, .. } = &retained.uses[0].provenance
+    else {
+        panic!("the repeated ledger must retain exact protected provenance");
+    };
+    assert!(!direct_demands.is_empty());
+    for _ in 0..20 {
+        assert_eq!(entailment(source, "inspect"), expected);
+        assert_eq!(claim_ledger(source), expected_ledger);
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -6452,6 +7314,11 @@ fn main() -> own unit pure {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("a discharged subscript must accept, got {outcome:?}");
         };
+        assert_eq!(
+            program.data.claim_ledger,
+            ClaimLedger::default(),
+            "a no-claim unit keeps the empty fast path"
+        );
         let function = program
             .data
             .functions
@@ -6603,11 +7470,36 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    for inputs in bundles {
+    for (inputs, expected_claims) in bundles.into_iter().zip([2, 12, 8]) {
         with_semantics_inputs(inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };
+            validate_claim_ledger(&program.data);
+            assert_eq!(
+                program.data.claim_ledger.entries.len(),
+                expected_claims,
+                "the complete real-source claim population comes from the checked-program ledger"
+            );
+            let claim_keys = program
+                .data
+                .claim_ledger
+                .entries
+                .iter()
+                .map(|entry| {
+                    let function = &program.data.functions[entry.source.function.0 as usize];
+                    assert_eq!(entry.source.function_symbol, function.symbol);
+                    assert!(!entry.name.is_empty());
+                    assert!(!entry.predicate.is_empty());
+                    assert!(!entry.justification.is_empty());
+                    assert!(!entry.source.node_path.components().is_empty());
+                    (entry.source.function.0, entry.source.node_path.components())
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                claim_keys.windows(2).all(|pair| pair[0] < pair[1]),
+                "claim ledger order is dense function then source occurrence: {claim_keys:?}"
+            );
             for function in &program.data.functions {
                 validate_derivations(&function.entailment);
                 assert_eq!(

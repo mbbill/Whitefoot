@@ -1086,6 +1086,8 @@ pub(crate) enum CheckedStatement {
     /// never reaches runtime behavior.
     Claim {
         name: String,
+        /// Exact canonical spelling of the checked predicate expression.
+        predicate: String,
         justification: String,
         condition: CheckedExpression,
         trap: TrapSite,
@@ -1343,6 +1345,10 @@ pub(crate) struct CheckedProgramData {
     /// channel and encoding are implementation-owned in this version; this
     /// list is the compiler's channel, and the CLI prints it to stderr.
     pub(crate) claim_advisories: Vec<ClaimAdvisory>,
+    /// Read-only checked-program claim report. Lowering and optimization do
+    /// not consume this observational metadata.
+    #[allow(dead_code)]
+    pub(crate) claim_ledger: super::entailment::ClaimLedger,
 }
 
 /// One [CLM-2] redundancy advisory: non-rejecting compile-time review data.
