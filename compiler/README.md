@@ -222,6 +222,24 @@ or accepted programs. The frozen-program completeness and bounded-cost
 measurements live in
 `research/investigations/obligation-discharge/ACCEPTANCE.md`.
 
+The successfully checked program also exposes one private read-only
+`ClaimLedger` in dense function and source order. Each named claim carries its
+bundle-local logical path and checked coordinate, exact source spelling,
+justification, lifecycle disposition and the optional redundant/refuted
+lifecycle derivation, plus
+every non-lifecycle retained root whose finalized proof ancestry reaches that
+claim's exact S3 premise. Bounds and call uses additionally join the existing
+protected-leaf, direct-demand, structural/subject bridge, call-argument, and
+bridge-call provenance inventories exactly; a missing or duplicate required
+mapping is an internal compiler failure. Claim-free units take an empty-ledger
+fast path.
+The ledger is neither serialized nor read by semantic acceptance, lowering, or
+optimization, and it performs no second semantic walk or closure. Installed
+real-source populations and the bounded-cost result live in the same acceptance
+record. `DerivationMetrics` separately counts claim-lifecycle roots so the
+existing retained-size accounting remains complete; no prior metric class or
+consumer is repurposed.
+
 The source-generic path is a finite monomorphizing subset, not complete generic
 support. Functions, structs, and enums support unbounded type parameters, the
 built-in `Int` and `Float` bounds, and integer-typed const parameters; every

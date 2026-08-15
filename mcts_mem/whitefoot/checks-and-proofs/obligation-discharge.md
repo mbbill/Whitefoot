@@ -12,6 +12,7 @@
 - Optimistic postcondition and value-if facts finalize atomically with the provenance verdict and checked program.
 - Signed goal support follows resolved reads; writes, ownership events, scope exits, loop summaries, intersection joins, and combined contradiction govern its lifetime without decomposing the goal.
 - A finite two-stratum explicit-dataflow provenance judgment freezes value, storage, result, and write component pairs before subject-only protected demands, requirement bridges, call targets, and rejection events converge.
+- Claim accountability is one deterministic read-only checked-program projection over the sole finalized function-local derivation DAGs: lifecycle and obligation links retain existing remapped proof identities, and the projection neither replays closure nor creates portable proof authority.
 - After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a body check, claim, or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
 - The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
 
@@ -39,6 +40,7 @@
 - 2026-08-15 (a36e3061) measurement: one structural flow and one function-local view-tagged derivation DAG prove complete, unasserted, and S4-blinded selected exits, retain both measured unsigned bit sources, and finalize all proof roots once; a separate counterfactual rewalk is neither needed nor retained. (code)
 - 2026-08-15 (a36e3061) measurement: concrete callee-before-caller components, closed result publication, and value-if delivery discharge all fourteen measured read routes and all twenty append routes, including the single A10 repair, while same-component summaries and value-match delivery remain unavailable. (code)
 - 2026-08-15 (a36e3061) pitfall: postcondition support after a join is the current live relation pair, not historical substitution metadata; following an original holder through proof ancestry incorrectly kills a holder-free joined consequence. (code)
+- 2026-08-15 (e04d3aca) measurement: the installed checked-program claim-accountability projection traverses only finalized retained-root ancestry, fails closed on missing exact provenance joins, and deterministically enumerates 2 UTF-8, 12 raw-DEFLATE, and 8 wfgrep claims. The heavy owning test measured 414.00 seconds against the 412.36-second Stage 8b baseline (about 0.4%), while claim-free programs take an explicit empty-result fast path. (code)
 
 ## Moves
 

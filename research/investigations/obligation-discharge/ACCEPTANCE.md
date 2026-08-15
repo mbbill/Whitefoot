@@ -1643,3 +1643,68 @@ coverage 132/132 with none uncovered. `make -C compiler check` is green with
 that gate and is run separately. Rustdoc passes with warnings denied. The
 native specification tool reports v0.28 at the approved digest, 132 rules, and
 20 unbroken activation entries.
+
+## Stage 9a deterministic claim-ledger acceptance (2026-08-15)
+
+Commit `e04d3acad80e1260c4f1aee24d8f45cba5140d84` adds the Stage 9a
+observational ledger to the successfully checked program. It preserves each
+named claim's exact source spelling, bundle-local path and coordinate,
+justification, lifecycle disposition, and already-selected redundant or
+refuted lifecycle proof. Retained claims deliberately have no lifecycle proof.
+For every non-lifecycle retained root whose finalized derivation ancestry
+reaches the claim's S3 event, the entry records the exact root, root derivation,
+and premise derivations. Bounds and call uses additionally retain their exact
+existing success-side provenance inventory.
+
+The implementation traverses only the already-finalized function-local
+derivation DAG. It does not replay source semantics, run a second closure, copy
+the proof graph, serialize an artifact, create a portable identity, or expose a
+consumer in acceptance, lowering, or optimization. Required provenance joins
+fail closed on a missing or duplicate mapping. The no-claim path publishes an
+empty ledger without scanning sources or roots.
+
+The ledger itself, rather than a source-text approximation, enumerates these
+complete installed populations in deterministic function and source order:
+
+| Program | Named claims |
+| --- | ---: |
+| UTF-8 | **2** |
+| four-source raw-DEFLATE | **12** |
+| wfgrep | **8** |
+
+Synthetic acceptance covers retained, redundant, refuted, contradiction,
+kill, join, loop, concrete generic instances, ordinary and zero-argument
+claim-supported calls, direct-result Complete/U/B routes, and hostile missing
+protected/call mappings. Twenty repeated analyses use a real bounds ledger
+with nonempty premise IDs and direct-demand provenance; ordering and complete
+entry contents remain identical. The non-heavy entailment selection passes
+`133/133`.
+
+The frozen-real owning test passes `1/1` in `414.00s`. Its Stage 8b consumer
+baseline at commit `5fd017b46973e5cbf990fe3fc92a2cc20a76f91c` was `412.36s`,
+a `1.64s` or approximately `0.4%` increase, so the observational walk remains
+bounded on the three authentic programs. `DerivationMetrics` adds the one
+`claim_lifecycle_roots` class needed to account for the newly retained roots;
+all prior metric classes keep their meaning and no acceptance consumer reads
+the new class. The complete compiler gate is green with library `816/816`,
+grammar `9/9`, generated grammar tables `1/1`, migration `36/36`, specification
+integrity `10/10`, canonical corpus `3/3`, and real programs `32/32`. The
+conformance adapter integration remains deliberately ignored in that gate,
+rustdoc passes with warnings denied, and the
+frontend still reports active v0.28 with 132 rules and 20 unbroken activation
+links. No specification, protected conformance, gate wiring, runtime behavior,
+diagnostic outcome, accepted-program verdict, or lowering behavior changed in
+Stage 9a.
+
+The repository-root `make check` independently completed after the real-program
+group passed `32/32` in `2102.97s`; it ended both
+`WHITEFOOT COMPILER GATE GREEN` and
+`WHITEFOOT GATE GREEN (active compiler + independent evidence)`. The separate
+`make conformance-run` then completed its adapter pass in `199.25s` and reported
+exactly `Pass=423 Fail=1 Skip=13`. As expected, that command exited nonzero
+(`make` exit `2`, test process exit `101`) because the adapter deliberately
+asserts zero failures. Its sole failure is unchanged:
+`own3-pos-outlives-store` still expects `Run(0)` and reaches only
+`Unsupported(RegionsAndBorrows)`. This is the recorded unsupported boundary,
+not a green conformance claim; every other protected case kept its installed
+verdict.

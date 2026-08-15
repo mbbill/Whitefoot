@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 39 (v0.28 Stage 8b activated; deterministic claim ledger next)
+Revision: 40 (Stage 9a deterministic claim ledger terminal; Stage 9b approval next)
 
 The active language authority is v0.28 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -207,8 +207,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, and installed v0.28 verified postconditions]`
-`[next: Stage 9a deterministic claim ledger, then the separately approved Stage 9b strict partition]`
+`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, installed v0.28 verified postconditions, and deterministic claim ledger]`
+`[next: separately approved Stage 9b strict partition]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -313,16 +313,23 @@ creating writer trust or weakening the checked safety envelope.
   now discharge through the ordinary compiler path; A10 alone uses the bounded
   `value_if` repair. The owner-approved additive protected matrix brings the
   corpus to 437 cases and 132/132 rule coverage, with the previous 423 cases
-  and 30 annotations unchanged.
-- **Missing / next:** Stage 8b is terminal-positive. Stage 9a must now expose
-  the deterministic complete claim ledger over the installed final fact
-  sources and consumers. Stage 9b remains behind its later exact specification
-  and protected-conformance approval. `CAND-8` stays parked until both stages
-  and the complete PROOF-8 closure are terminal.
+  and 30 annotations unchanged. Task 0066 then installs one checked-program-only
+  read-only claim ledger over the existing finalized derivation DAG, with no
+  second semantic walk or closure, copied proof graph, acceptance consumer, or
+  lowering consumer. Commit `e04d3ac` enumerates the complete installed claim
+  populations as UTF-8 `2`, four-source raw-DEFLATE `12`, and wfgrep `8`; the
+  frozen-real owning test is `414.00s` against commit
+  `5fd017b46973e5cbf990fe3fc92a2cc20a76f91c` at `412.36s` (about `0.4%`),
+  and the complete compiler and repository gates are green while the separate
+  adapter preserves the installed `Pass=423 Fail=1 Skip=13` boundary.
+- **Missing / next:** Stage 9a is terminal-positive. Stage 9b remains behind
+  its later exact specification and protected-conformance approval. `CAND-8`
+  stays parked until Stage 9b and the complete PROOF-8 closure are terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
   [Stage 8b semantic freeze](done/0058-stage8b-normal-return-postconditions.md) ·
+  [Stage 9a deterministic claim ledger](done/0066-stage9a-deterministic-claim-ledger.md) ·
   [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·

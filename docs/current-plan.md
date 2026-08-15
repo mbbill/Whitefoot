@@ -1,8 +1,8 @@
 # Current Plan
 
-Status: **ACTIVE** (Stage 8b installed 2026-08-15; Stage 9a next): preserve the
-owner-selected obligation-discharge sequence through the deterministic claim
-ledger and later separately approved strict partition.
+Status: **ACTIVE** (Stage 9a terminal 2026-08-15; Stage 9b exact approval
+next): preserve the owner-selected obligation-discharge sequence through the
+deterministic claim ledger and separately approved strict partition.
 
 The owner selected the predecessor plan on 2026-08-12 and explicitly selected
 the narrow Stage 8b receiver correction described below on 2026-08-14. Task
@@ -19,7 +19,7 @@ conformance bytes.
 Derived from [Direction Outline revision 36](roadmap.md), primarily `PROOF-8`,
 with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
 constraints; the installed landscape is synchronized through Direction
-Outline revision 39. `CAND-8` remains the selected flagship pressure source
+Outline revision 40. `CAND-8` remains the selected flagship pressure source
 but stays parked until this plan reaches its terminal boundary.
 
 ## Objective
@@ -62,9 +62,11 @@ optimization or performance project.
 - Installed Stage 8b acceptance covers all fourteen `read_bits` routes, all
   twenty `append_slice` routes, and the single wfgrep A10 `value_if` repair
   through the ordinary compiler path with unchanged output, error, cleanup,
-  effect, status, invalid-domain, and required-check oracles. Stage 9a owns the
-  next exact claim disposition ledger; the former v0.27 retained/redundant
-  split is not copied forward as an unmeasured v0.28 fact.
+  effect, status, invalid-domain, and required-check oracles. Installed Stage
+  9a commit `e04d3acad80e1260c4f1aee24d8f45cba5140d84` enumerates the complete
+  v0.28 claim-ledger populations as UTF-8 `2`, four-source raw-DEFLATE `12`,
+  and wfgrep `8`; the former v0.27 retained/redundant split was not copied
+  forward as an unmeasured v0.28 fact.
 - Protected conformance boundary: 437 cases, 30 coverage annotations, rule
   coverage `132/132`, and the installed adapter result
   `Pass=423 Fail=1 Skip=13`; the sole failure remains
@@ -305,6 +307,19 @@ baseline. If exact completeness requires re-analysis per claim, a second
 closure, guessed support, or a durable identity framework, stop and report the
 smallest gap. Any protected compliance change still enters its own owner gate.
 
+Installed outcome (2026-08-15): commit
+`e04d3acad80e1260c4f1aee24d8f45cba5140d84` exposes the ledger only from the
+successfully checked program and traverses the existing finalized canonical
+derivation ancestry. It reports complete deterministic populations of UTF-8
+`2`, four-source raw-DEFLATE `12`, and wfgrep `8`, including exact nonempty S3
+premise links. The frozen-real owning test passed in `414.00s` against H5's
+`412.36s` baseline at
+`5fd017b46973e5cbf990fe3fc92a2cc20a76f91c` (about `0.4%`); the complete
+compiler and repository gates are green with library `816/816` and real
+programs `32/32`, and the independent adapter preserves the exact installed
+`Pass=423 Fail=1 Skip=13` boundary. No stop condition fired, and Stage 9a is
+terminal.
+
 ## Workstream 9b — opt-in strict no-claim partition
 
 Stage 9b begins only after Stage 9a deterministically enumerates the actual
@@ -384,8 +399,8 @@ task:
    correction;
 3. **complete (2026-08-15):** approve and atomically activate Stage 8b's exact
    specification plus protected-conformance packet; and
-4. after Stage 9a, approve Stage 9b's exact specification plus
-   protected-conformance activation packet.
+4. **next:** with Stage 9a complete, approve Stage 9b's exact specification
+   plus protected-conformance activation packet.
 
 Stage 8a, the existing-DIAG-2 repair, Stage 9a, ordinary implementation and
 tests, real-source repair, documentation, integration, task lifecycle, and
@@ -452,7 +467,9 @@ does not mark `PROOF-8` complete or unpark `CAND-8`.
 The owner approved this plan's predecessor on 2026-08-12, selected the narrow
 receiver strategy on 2026-08-14, and approved the exact Stage 8b specification,
 protected corpus, and activation identity on 2026-08-15. Stage 8b is installed
-and tasks 0058–0065 are terminal; Stage 9a deterministic claim-ledger work is
-next under this same `ACTIVE` authority. A material strategy change returns the
-plan to `PROPOSED`. Stage 9b's later specification and protected-conformance
-bytes still stop at their own independent exact approval boundary.
+and tasks 0058–0065 are terminal. Stage 9a implementation commit
+`e04d3acad80e1260c4f1aee24d8f45cba5140d84` and task 0066 are terminal under
+this same `ACTIVE` authority. A material strategy change returns the plan to
+`PROPOSED`. Stage 9b candidate preparation is next; its specification and
+protected-conformance bytes still stop at their own independent exact approval
+boundary.
