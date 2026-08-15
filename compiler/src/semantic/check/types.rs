@@ -537,12 +537,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 return Ok(value);
             }
-            let constant = self.constant(
-                *self
-                    .constants
-                    .get(&declaration)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            )?;
+            let Some(constant) = self.constants.get(&declaration).copied() else {
+                if self.postcondition_declaration_unavailable(declaration) {
+                    return Err(CheckStop::PostconditionPrerequisiteUnavailable);
+                }
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            let constant = self.constant(constant)?;
             let CheckedValue::Integer { ty, bits } = &constant.value else {
                 return self.issue_node(
                     SemanticRule::Const1,
@@ -594,10 +595,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
-            let id = *self
-                .constants
-                .get(&declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let Some(id) = self.constants.get(&declaration).copied() else {
+                if self.postcondition_declaration_unavailable(declaration) {
+                    return Err(CheckStop::PostconditionPrerequisiteUnavailable);
+                }
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
             let constant = self.constant(id)?;
             if constant.ty == expected {
                 return Ok(constant.value.clone());

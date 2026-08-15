@@ -1,7 +1,7 @@
 //! Derives `src/syntax/grammar/generated.rs` from the active specification's
 //! normative EBNF.
 //!
-//! The committed strong-LL(2) tables are not hand-editable: 600 nodes, 85
+//! The committed strong-LL(2) tables are not hand-editable: 620 nodes, 90
 //! decisions and roughly three thousand provenance-retaining SELECT rows. They
 //! have always been produced by a generator, but each grammar task built one
 //! offline and deleted it, so nothing checked that the committed tables were
@@ -107,23 +107,110 @@ const ENUM_ORDER: &[&str] = &[
     "infix_tail",
     "infix_op",
     "for_stmt",
+    "ensures_block",
+    "ensures_selector",
+    "ensures_entry",
 ];
 
 /// The decision index is the second stable dense index, and is historical for
 /// the same reason: a decision keeps its slot and a newly written one appends.
-/// Each entry is the grammar node owning that slot. `psuffix`'s choice sits
-/// last because v0.22 added the subscript alternative after the rest of the
-/// table already existed.
-const DECISION_ORDER: &[usize] = &[
-    0, 2, 12, 15, 17, 28, 31, 33, 39, 45, 55, 59, 61, 64, 70, 73, 75, 82, 85, 91, 94, 96, 98, 104,
-    107, 118, 122, 129, 137, 140, 142, 165, 171, 174, 187, 195, 201, 212, 226, 262, 273, 279, 283,
-    457, 492, 532, 534, 302, 311, 314, 319, 323, 330, 335, 339, 366, 389, 415, 422, 428, 433, 438,
-    447, 450, 474, 483, 486, 488, 497, 500, 505, 514, 525, 541, 549, 552, 558, 564, 568, 573, 577,
-    583, 589, 591, 378,
+/// A grammar node's raw arena ID changes whenever an earlier production gains
+/// nodes, so each historical row is instead `(stable production slot,
+/// production-relative node offset)`. `for_stmt`'s repetition sits last
+/// because v0.25 added it after the preceding 84 decisions.
+const HISTORICAL_DECISIONS: &[(usize, usize)] = &[
+    (0, 0), // program
+    (1, 0), // item
+    (2, 3), // struct_decl
+    (2, 6),
+    (2, 8),
+    (4, 3), // enum_decl
+    (4, 6),
+    (4, 8),
+    (5, 3), // variant
+    (6, 2), // vfield_list
+    (8, 1), // fn_decl
+    (8, 5),
+    (8, 7),
+    (8, 10),
+    (8, 16),
+    // v0.28 inserted `ensures_block?` before the body. These two target paths
+    // are the old body `doc?` and `stmt*` decisions after that insertion; the
+    // new selector-clause decision is deliberately absent and appends later.
+    (8, 21),
+    (8, 23),
+    (9, 3),  // requires_block
+    (10, 0), // requires_entry
+    (11, 3), // contract_decl
+    (11, 6),
+    (11, 8),
+    (11, 10),
+    (12, 3), // fn_sig
+    (12, 6),
+    (13, 4), // law
+    (13, 8),
+    (14, 0), // law_arg
+    (15, 5), // conform_decl
+    (15, 8),
+    (15, 10),
+    (19, 3), // generics
+    (20, 0), // gparam
+    (20, 3),
+    (21, 3), // region_params
+    (22, 2), // param_list
+    (23, 1), // param
+    (24, 0), // type
+    (24, 14),
+    (26, 0), // mode
+    (27, 3), // targs
+    (28, 0), // targ
+    (29, 0), // stmt
+    (68, 0), // infix_op
+    (49, 0), // callee
+    (55, 2), // place
+    (56, 0), // pbase
+    (30, 5), // let_stmt
+    (65, 4), // if_stmt
+    (65, 7),
+    (65, 12),
+    (65, 16),
+    (66, 4), // value_if
+    (66, 9),
+    (66, 13),
+    (36, 4), // loop_stmt
+    (38, 4), // region_stmt
+    (41, 4), // match_stmt
+    (42, 4), // value_match
+    (43, 3), // arm
+    (43, 8),
+    (44, 2), // fieldbind_list
+    (46, 0), // expr
+    (46, 3),
+    (47, 0), // atom
+    (48, 2), // call
+    (48, 5),
+    (48, 7),
+    (50, 2), // construct
+    (50, 5),
+    (51, 2), // fieldinit_list
+    (53, 0), // borrow_expr
+    (54, 2), // atom_list
+    (57, 0), // psuffix
+    (58, 0), // const
+    (59, 0), // cvalue
+    (59, 6),
+    (60, 0), // effects
+    (60, 4),
+    (61, 0), // effect
+    (61, 4),
+    (61, 10),
+    (61, 16),
+    (61, 18),
+    (69, 9), // for_stmt
 ];
 
 /// Productions whose entry frontier carries DIAG-1 construct-entry behaviour.
-const CONSTRUCT_ENTRY: &[&str] = &["item", "stmt", "requires_entry"];
+const CONSTRUCT_ENTRY: &[&str] = &["item", "stmt", "requires_entry", "ensures_entry"];
 
 fn camel(name: &str) -> String {
     name.split('_')
@@ -203,7 +290,19 @@ fn generate(path: &str, specification: &str) -> String {
     let names: Vec<String> = raw.iter().map(|entry| entry.name.clone()).collect();
     let (trees, index) = ebnf::parse_all(&raw);
     let mut grammar = Grammar::build(&trees, &names, &index);
-    grammar.assign_decisions(DECISION_ORDER);
+    let historical_decisions: Vec<usize> = HISTORICAL_DECISIONS
+        .iter()
+        .map(|(production_slot, offset)| {
+            let name = ENUM_ORDER
+                .get(*production_slot)
+                .expect("historical production slot exists");
+            let production = index[*name];
+            grammar.roots[production]
+                .checked_add(*offset)
+                .expect("historical decision node fits in the arena")
+        })
+        .collect();
+    grammar.assign_decisions(&historical_decisions);
     let grammar = grammar;
 
     let start = index["program"];

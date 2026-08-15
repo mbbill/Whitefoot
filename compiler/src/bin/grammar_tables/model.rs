@@ -79,6 +79,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("fn", "Fn"),
         ("->", "ThinArrow"),
         ("requires", "Requires"),
+        ("ensures", "Ensures"),
         ("contract", "Contract"),
         ("law", "Law"),
         ("conform", "Conform"),

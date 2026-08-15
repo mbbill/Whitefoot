@@ -19,77 +19,161 @@ use super::{
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn declare_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
-        for node in items.iter().copied().filter(|node| {
-            self.tree.production(*node).is_ok_and(|production| {
-                matches!(production, Production::StructDecl | Production::EnumDecl)
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree.production(*node).is_ok_and(|production| {
+                    matches!(production, Production::StructDecl | Production::EnumDecl)
+                })
             })
-        }) {
-            let role = match self.tree.production(node)? {
-                Production::StructDecl => DeclarationRole::Struct,
-                Production::EnumDecl => DeclarationRole::Enum,
-                _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
-            };
-            let declaration = self.declaration_at(node, role)?;
-            let declaration_id = declaration.id();
-            let template = NominalTemplate {
-                declaration: declaration_id,
-                node,
-                name: declaration.spelling().to_owned(),
-                role,
-                generic_parameters: self.parse_generic_parameters(node)?,
-            };
-            let template_index = self.nominal_templates.len();
-            if self
-                .nominal_templates_by_declaration
-                .insert(declaration_id, template_index)
-                .is_some()
-            {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            let constructor = ConstructorTemplate::Struct {
-                template: template_index,
-            };
-            if role == DeclarationRole::Struct
-                && self
-                    .constructor_templates_by_declaration
-                    .insert(declaration_id, constructor)
-                    .is_some()
-            {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            if role == DeclarationRole::Enum {
-                for (variant, variant_node) in self
-                    .tree
-                    .children_with(node, Production::Variant)?
-                    .into_iter()
-                    .enumerate()
-                {
-                    let declaration =
-                        self.declaration_at(variant_node, DeclarationRole::Variant)?;
-                    let variant = u32::try_from(variant)
-                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                    if self
-                        .constructor_templates_by_declaration
-                        .insert(
-                            declaration.id(),
-                            ConstructorTemplate::Enum {
-                                template: template_index,
-                                variant,
-                            },
-                        )
-                        .is_some()
-                    {
-                        return Err(SemanticCompilerFailure::InvalidResolution.into());
-                    }
-                }
-            }
-            self.nominal_templates.push(template);
+            .collect::<Vec<_>>();
+        for node in nodes {
+            self.declare_nominal_template(node)?;
         }
         for index in 0..self.nominal_templates.len() {
             if self.nominal_templates[index].generic_parameters.is_empty() {
                 self.declare_source_nominal_instance(index, GenericSubstitution::default())?;
             }
         }
+        Ok(())
+    }
+
+    /// Scratch inventory for selector signatures. Invalid source templates
+    /// are unavailable only to signatures that name them; unrelated nominal
+    /// declarations cannot suppress an independently decidable FN-9 verdict.
+    pub(super) fn declare_nominals_for_postconditions(
+        &mut self,
+        items: &[NodeId],
+    ) -> Result<(), CheckStop> {
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree.production(*node).is_ok_and(|production| {
+                    matches!(production, Production::StructDecl | Production::EnumDecl)
+                })
+            })
+            .collect::<Vec<_>>();
+        for node in nodes {
+            match self.declare_nominal_template(node) {
+                Ok(()) => {}
+                Err(CheckStop::Issue(_) | CheckStop::Unsupported(_)) => {
+                    let role = match self.tree.production(node)? {
+                        Production::StructDecl => DeclarationRole::Struct,
+                        Production::EnumDecl => DeclarationRole::Enum,
+                        _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                    };
+                    self.mark_postcondition_unavailable(self.declaration_at(node, role)?.id());
+                }
+                Err(stop) => return Err(stop),
+            }
+        }
+        // Source instances are created and completed lazily by the exact
+        // signature/type helpers. This is the dependency-local equivalent of
+        // `complete_nominals`; PRE-1 instances remain ordinary shared setup.
+        self.register_prelude_nominals()?;
+
+        // A generic nominal declaration is a usable FN-2 signature premise
+        // only after its ordinary symbolic template judgment succeeds. Keep
+        // that judgment dependency-local: a bad template is unavailable to
+        // headers and call arguments that name it, while an unrelated
+        // selector remains independently decidable.
+        for template_index in 0..self.nominal_templates.len() {
+            let template = self
+                .nominal_templates
+                .get(template_index)
+                .cloned()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if template.generic_parameters.is_empty()
+                || self.postcondition_declaration_unavailable(template.declaration)
+            {
+                continue;
+            }
+            let checkpoint = self.nominal_checkpoint();
+            let result = (|| {
+                let substitution =
+                    self.symbolic_generic_substitution(&template.generic_parameters)?;
+                self.ensure_source_nominal_instance(template_index, substitution)?;
+                self.reject_recursive_nominal_layouts()
+            })();
+            self.restore_nominal_checkpoint(checkpoint)?;
+            match result {
+                Ok(()) => {}
+                Err(
+                    CheckStop::Issue(_)
+                    | CheckStop::Unsupported(_)
+                    | CheckStop::PostconditionPrerequisiteUnavailable,
+                ) => self.mark_postcondition_unavailable(template.declaration),
+                Err(stop) => return Err(stop),
+            }
+        }
+        Ok(())
+    }
+
+    fn declare_nominal_template(&mut self, node: NodeId) -> Result<(), CheckStop> {
+        let role = match self.tree.production(node)? {
+            Production::StructDecl => DeclarationRole::Struct,
+            Production::EnumDecl => DeclarationRole::Enum,
+            _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        };
+        let declaration = self.declaration_at(node, role)?;
+        let declaration_id = declaration.id();
+        // Parse every source-bearing premise before publishing any table
+        // entry, so a tolerant scratch failure is atomic.
+        let generic_parameters = self.parse_generic_parameters(node)?;
+        let variants = if role == DeclarationRole::Enum {
+            self.tree.children_with(node, Production::Variant)?
+        } else {
+            Vec::new()
+        };
+        let template = NominalTemplate {
+            declaration: declaration_id,
+            node,
+            name: declaration.spelling().to_owned(),
+            role,
+            generic_parameters,
+        };
+        let template_index = self.nominal_templates.len();
+        if self
+            .nominal_templates_by_declaration
+            .insert(declaration_id, template_index)
+            .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        if role == DeclarationRole::Struct
+            && self
+                .constructor_templates_by_declaration
+                .insert(
+                    declaration_id,
+                    ConstructorTemplate::Struct {
+                        template: template_index,
+                    },
+                )
+                .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        for (variant, variant_node) in variants.into_iter().enumerate() {
+            let declaration = self.declaration_at(variant_node, DeclarationRole::Variant)?;
+            let variant =
+                u32::try_from(variant).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            if self
+                .constructor_templates_by_declaration
+                .insert(
+                    declaration.id(),
+                    ConstructorTemplate::Enum {
+                        template: template_index,
+                        variant,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+        }
+        self.nominal_templates.push(template);
         Ok(())
     }
 
@@ -111,8 +195,67 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for construct in self.tree.descendants_with(node, Production::Construct)? {
             self.ensure_source_constructor_instance(construct, substitution)?;
         }
-        self.ensure_implicit_prelude_nominals(node, substitution)?;
+        self.ensure_implicit_prelude_nominals(node, substitution, false)?;
         self.reject_recursive_nominal_layouts()
+    }
+
+    /// Performs the ordinary nominal pre-scan for one function without
+    /// entering its FN-9 clause. Ensures entries use private provisional
+    /// links and must first pass the clause subset judgment; they are consumed
+    /// only by the postcondition checker after that admission.
+    pub(super) fn ensure_nominals_in_function(
+        &mut self,
+        function: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<(), CheckStop> {
+        if self
+            .tree
+            .first_child_with(function, Production::EnsuresBlock)?
+            .is_none()
+        {
+            return self.ensure_nominals_in_node(function, substitution);
+        }
+        // Preserve the exact ordinary category order across the retained
+        // subtree: every type, then every constructor, then every implicit
+        // PRE-1 instance, followed by one recursive-layout judgment.
+        for ty in self.nominal_type_descendants(function)? {
+            if self.node_is_inside_postcondition(ty)? {
+                continue;
+            }
+            self.ensure_nominal_type_head(ty, substitution)?;
+        }
+        for construct in self
+            .tree
+            .descendants_with(function, Production::Construct)?
+        {
+            if self.node_is_inside_postcondition(construct)? {
+                continue;
+            }
+            self.ensure_source_constructor_instance(construct, substitution)?;
+        }
+        self.ensure_implicit_prelude_nominals(function, substitution, true)?;
+        self.reject_recursive_nominal_layouts()
+    }
+
+    /// Interns only nominal instances read by `build_function_signature`.
+    /// The throwaway FN-9 preflight must not inspect requires, ensures, or the
+    /// executable body before selector admission.
+    pub(super) fn ensure_nominals_in_function_signature(
+        &mut self,
+        function: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<(), CheckStop> {
+        if let Some(parameters) = self
+            .tree
+            .first_child_with(function, Production::ParamList)?
+        {
+            self.ensure_nominals_in_node(parameters, substitution)?;
+        }
+        let result = self
+            .tree
+            .first_child_with(function, Production::Rtype)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        self.ensure_nominals_in_node(result, substitution)
     }
 
     pub(super) fn ensure_nominal_type(
@@ -184,10 +327,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::NominalType,
             } => {
-                let template_index = *self
+                if self.postcondition_declaration_unavailable(declaration) {
+                    return Err(CheckStop::PostconditionPrerequisiteUnavailable);
+                }
+                let Some(template_index) = self
                     .nominal_templates_by_declaration
                     .get(&declaration)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    .copied()
+                else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
                 let template = self
                     .nominal_templates
                     .get(template_index)
@@ -270,6 +419,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &mut self,
         node: NodeId,
         substitution: &GenericSubstitution,
+        skip_postconditions: bool,
     ) -> Result<(), CheckStop> {
         // A `propagate_let_rhs` needed its operand's `Result` instance
         // interned from the let's written annotation. [TYPE-5] deletes that
@@ -278,6 +428,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // signature already interned it.
 
         for call in self.tree.descendants_with(node, Production::Call)? {
+            if skip_postconditions && self.node_is_inside_postcondition(call)? {
+                continue;
+            }
             let callee = self
                 .tree
                 .first_child_with(call, Production::Callee)?

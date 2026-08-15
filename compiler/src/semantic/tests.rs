@@ -20,6 +20,7 @@ mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
 mod options;
+mod postconditions;
 mod provenance;
 mod reinterpret;
 mod requires;

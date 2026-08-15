@@ -7,14 +7,16 @@ mod user;
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationClass, DeclarationId, LexicalUseRole, Production, ResolvedTarget,
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
 use super::super::super::model::{
-    CheckedBooleanOperation, CheckedExpression, CheckedIntegerOperation, CheckedMode,
-    CheckedNominalKind, CheckedNumericType, CheckedType, TrapSite,
+    CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
+    CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
+    CheckedNumericType, CheckedType, TrapSite,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -33,19 +35,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let callee_path = self.tree.path(callee)?;
-        let usage = self
-            .resolved
-            .lexical_uses()
-            .iter()
-            .find(|usage| {
-                usage.origin().node() == callee_path
-                    && matches!(
-                        usage.role(),
-                        LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
-                    )
-            })
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let usage = self.use_at_roles(
+            callee,
+            &[
+                LexicalUseRole::IdentifierCallee,
+                LexicalUseRole::OperationCallee,
+            ],
+        )?;
         match usage.target() {
             ResolvedTarget::Source {
                 declaration,
@@ -203,6 +199,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let mut arguments = Vec::with_capacity(operand_count);
+        let mut argument_metadata = Vec::with_capacity(operand_count);
         let mut effects = if operation.traps() {
             EffectSet::TRAPS
         } else {
@@ -239,6 +236,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.issue_node(SemanticRule::Type5, atom, SemanticIssueKind::TypeMismatch);
             }
             effects = effects.union(argument.effects);
+            let source = match &argument.expression {
+                CheckedExpression::NamedConstant { declaration, .. } => {
+                    CheckedIntegerArgumentSource::NamedConstant {
+                        declaration: *declaration,
+                    }
+                }
+                CheckedExpression::Constant(_) => match self
+                    .tree
+                    .direct_token_with(atom, TerminalPredicate::Literal)?
+                {
+                    Some(literal) if matches!(self.tree.token_bytes(literal)?, b"0_T" | b"1_T") => {
+                        CheckedIntegerArgumentSource::GenericNumericIdentity
+                    }
+                    Some(_) => CheckedIntegerArgumentSource::TypedLiteral,
+                    None => CheckedIntegerArgumentSource::Other,
+                },
+                _ => CheckedIntegerArgumentSource::Other,
+            };
+            argument_metadata.push(CheckedIntegerArgument {
+                node_path: self.tree.path(atom)?.clone(),
+                source,
+            });
             arguments.push(argument.expression);
         }
         // `operation_atoms` already rejected a wrong operand count, and no
@@ -297,6 +316,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 carrier: self.tree.path(node)?.clone(),
                 operation,
                 operand_type,
+                argument_metadata,
                 arguments,
                 result,
                 trap,

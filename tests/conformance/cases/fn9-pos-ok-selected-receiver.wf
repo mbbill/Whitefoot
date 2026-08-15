@@ -1,0 +1,25 @@
+fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+  check ieq(result, value) else trap "selected postcondition";
+} {
+  return Ok<i32, Overflow>(value: value);
+}
+
+fn relay(outer: own i32, replacement: own i32) -> own i32 pure ensures result {
+  check ieq(result, replacement) else trap "relay postcondition";
+} {
+  match selected(value: replacement) {
+    Ok(value: payload) => {
+      set outer = payload;
+      return outer;
+    }
+    Err(error: problem) => {
+      return replacement;
+    }
+  }
+}
+
+fn main() -> own unit traps {
+  let observed = relay(outer: 0_i32, replacement: 7_i32);
+  check ieq(observed, 7_i32) else trap "selected receiver drift";
+  return unit;
+}

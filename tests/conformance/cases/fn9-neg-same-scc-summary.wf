@@ -1,0 +1,24 @@
+fn recursive_control(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "control postcondition";
+} {
+  let ignored = recursive_control(value: value);
+  return value;
+}
+
+fn first(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "first postcondition";
+} {
+  let called = second(value: value);
+  return called;
+}
+
+fn second(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "second postcondition";
+} {
+  let called = first(value: value);
+  return called;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

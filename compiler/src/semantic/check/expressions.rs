@@ -466,6 +466,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place_context: PlaceUseContext,
         reborrow_position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
+        if let Some(value) = self.postcondition_result_placeholder(node)? {
+            return Ok(TypedExpression::owned(
+                CheckedExpression::Constant(value),
+                EffectSet::NONE,
+            ));
+        }
         if let Some(literal) = self
             .tree
             .direct_token_with(node, TerminalPredicate::Literal)?
@@ -658,6 +664,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             binding: local.binding,
                             ty: local.ty,
                             slice_origins,
+                            consume_root: !copy,
                         },
                         mode: local.mode,
                         borrow: local.borrow,
@@ -757,6 +764,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             binding: local.binding,
                             ty,
                             slice_origins,
+                            consume_root: !copy,
                         },
                         EffectSet::NONE,
                         access,

@@ -1,8 +1,8 @@
 #![allow(clippy::panic)]
 
 use super::{
-    DecisionKind, GrammarNodeKind, LookaheadPredicate, Production, diagnostic_terminal_order,
-    grammar_node, productions,
+    DecisionContext, DecisionKind, GrammarNodeKind, LookaheadPredicate, Production,
+    diagnostic_terminal_order, grammar_node, productions,
 };
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 
@@ -13,16 +13,139 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 /// `committed_tables_are_derived_from_the_active_grammar`.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 70);
-    assert_eq!(DECISIONS.len(), 85);
-    assert_eq!(SELECT_ROWS.len(), 3359);
-    assert_eq!(diagnostic_terminal_order().len(), 96);
+    assert_eq!(productions().len(), 73);
+    assert_eq!(DECISIONS.len(), 90);
+    assert_eq!(SELECT_ROWS.len(), 3_544);
+    assert_eq!(diagnostic_terminal_order().len(), 97);
     assert_eq!(productions()[0], Production::Program);
-    assert_eq!(productions()[41], Production::ForStmt);
-    assert_eq!(productions()[69], Production::Effect);
+    assert_eq!(productions()[12], Production::EnsuresBlock);
+    assert_eq!(productions()[13], Production::EnsuresSelector);
+    assert_eq!(productions()[14], Production::EnsuresEntry);
+    assert_eq!(productions()[44], Production::ForStmt);
+    assert_eq!(productions()[72], Production::Effect);
     assert_eq!(Production::ForStmt.index(), 69);
+    assert_eq!(Production::EnsuresBlock.index(), 70);
+    assert_eq!(Production::EnsuresSelector.index(), 71);
+    assert_eq!(Production::EnsuresEntry.index(), 72);
     assert_eq!(DECISIONS[84].production(), Production::ForStmt);
     assert_eq!(DECISIONS[84].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[85].production(), Production::FnDecl);
+    assert_eq!(DECISIONS[89].production(), Production::EnsuresEntry);
+}
+
+#[test]
+fn v027_decision_slots_retain_their_exact_shapes() {
+    macro_rules! shape {
+        ($production:ident, $kind:ident, $context:ident, $arms:literal) => {
+            (
+                Production::$production,
+                DecisionKind::$kind,
+                DecisionContext::$context,
+                $arms,
+            )
+        };
+    }
+    let expected = [
+        shape!(Program, Repeat0, ProgramItems, 2),
+        shape!(Item, Choice, ConstructEntry, 6),
+        shape!(StructDecl, Optional, Ordinary, 2),
+        shape!(StructDecl, Optional, Ordinary, 2),
+        shape!(StructDecl, Repeat0, Ordinary, 2),
+        shape!(EnumDecl, Optional, Ordinary, 2),
+        shape!(EnumDecl, Optional, Ordinary, 2),
+        shape!(EnumDecl, Repeat0, Ordinary, 2),
+        shape!(Variant, Optional, Ordinary, 2),
+        shape!(VfieldList, Repeat0, Ordinary, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(FnDecl, Repeat0, ConstructEntry, 2),
+        shape!(RequiresBlock, Repeat0, ConstructEntry, 2),
+        shape!(RequiresEntry, Choice, ConstructEntry, 2),
+        shape!(ContractDecl, Optional, Ordinary, 2),
+        shape!(ContractDecl, Optional, Ordinary, 2),
+        shape!(ContractDecl, Repeat0, Ordinary, 2),
+        shape!(ContractDecl, Repeat0, Ordinary, 2),
+        shape!(FnSig, Optional, Ordinary, 2),
+        shape!(FnSig, Optional, Ordinary, 2),
+        shape!(Law, Optional, Ordinary, 2),
+        shape!(Law, Repeat0, Ordinary, 2),
+        shape!(LawArg, Choice, Ordinary, 2),
+        shape!(ConformDecl, Optional, Ordinary, 2),
+        shape!(ConformDecl, Optional, Ordinary, 2),
+        shape!(ConformDecl, Repeat0, Ordinary, 2),
+        shape!(Generics, Repeat0, Ordinary, 2),
+        shape!(Gparam, Choice, Ordinary, 2),
+        shape!(Gparam, Optional, Ordinary, 2),
+        shape!(RegionParams, Repeat0, Ordinary, 2),
+        shape!(ParamList, Repeat0, Ordinary, 2),
+        shape!(Param, Optional, Ordinary, 2),
+        shape!(Type, Choice, Ordinary, 17),
+        shape!(Type, Optional, Ordinary, 2),
+        shape!(Mode, Choice, Ordinary, 3),
+        shape!(Targs, Repeat0, Ordinary, 2),
+        shape!(Targ, Choice, Ordinary, 3),
+        shape!(Stmt, Choice, ConstructEntry, 13),
+        shape!(InfixOp, Choice, Ordinary, 16),
+        shape!(Callee, Choice, Ordinary, 2),
+        shape!(Place, Repeat0, Ordinary, 2),
+        shape!(Pbase, Choice, Ordinary, 2),
+        shape!(LetStmt, Choice, Ordinary, 4),
+        shape!(IfStmt, Repeat0, ConstructEntry, 2),
+        shape!(IfStmt, Optional, Ordinary, 2),
+        shape!(IfStmt, Choice, Ordinary, 2),
+        shape!(IfStmt, Repeat0, ConstructEntry, 2),
+        shape!(ValueIf, Repeat0, ConstructEntry, 2),
+        shape!(ValueIf, Choice, Ordinary, 2),
+        shape!(ValueIf, Repeat0, ConstructEntry, 2),
+        shape!(LoopStmt, Repeat0, ConstructEntry, 2),
+        shape!(RegionStmt, Repeat0, ConstructEntry, 2),
+        shape!(MatchStmt, Repeat1, Ordinary, 2),
+        shape!(ValueMatch, Repeat1, Ordinary, 2),
+        shape!(Arm, Optional, Ordinary, 2),
+        shape!(Arm, Repeat0, ConstructEntry, 2),
+        shape!(FieldbindList, Repeat0, Ordinary, 2),
+        shape!(Expr, Choice, Ordinary, 3),
+        shape!(Expr, Optional, Ordinary, 2),
+        shape!(Atom, Choice, Ordinary, 4),
+        shape!(Call, Optional, Ordinary, 2),
+        shape!(Call, Optional, Ordinary, 2),
+        shape!(Call, Choice, Ordinary, 2),
+        shape!(Construct, Optional, Ordinary, 2),
+        shape!(Construct, Optional, Ordinary, 2),
+        shape!(FieldinitList, Repeat0, Ordinary, 2),
+        shape!(BorrowExpr, Choice, Ordinary, 2),
+        shape!(AtomList, Repeat0, Ordinary, 2),
+        shape!(Psuffix, Choice, Ordinary, 2),
+        shape!(Const, Choice, Ordinary, 2),
+        shape!(Cvalue, Choice, Ordinary, 3),
+        shape!(Cvalue, Repeat0, Ordinary, 2),
+        shape!(Effects, Choice, Ordinary, 2),
+        shape!(Effects, Repeat0, Ordinary, 2),
+        shape!(Effect, Choice, Ordinary, 6),
+        shape!(Effect, Repeat1, Ordinary, 2),
+        shape!(Effect, Repeat1, Ordinary, 2),
+        shape!(Effect, Repeat1, Ordinary, 2),
+        shape!(Effect, Choice, Ordinary, 2),
+        shape!(ForStmt, Repeat0, ConstructEntry, 2),
+    ];
+    assert_eq!(expected.len(), 85);
+    for (slot, expected) in expected.into_iter().enumerate() {
+        let decision = DECISIONS[slot];
+        assert_eq!(
+            (
+                decision.production(),
+                decision.kind(),
+                decision.context(),
+                decision.arm_count(),
+            ),
+            expected,
+            "historical decision slot {slot} changed shape"
+        );
+    }
 }
 
 #[test]
@@ -61,7 +184,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 85);
+    assert_eq!(decisions, 90);
 }
 
 #[test]
@@ -129,7 +252,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 85);
+    assert_eq!(DECISIONS.len(), 90);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -173,6 +296,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_359);
+    assert_eq!(total_rows, 3_544);
     assert!(saw_atom_only);
 }

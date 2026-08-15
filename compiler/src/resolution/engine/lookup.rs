@@ -18,6 +18,22 @@ pub(super) fn resolve_uses(
     uses: &[UseMeta],
     system: &[SystemDeclarationRecord],
 ) -> Result<Vec<LexicalUseRecord>, BuildStop> {
+    let (resolved, issue) =
+        resolve_uses_deferred(scopes, declarations, metas, index, uses, system)?;
+    match issue {
+        Some(issue) => Err(BuildStop::Issue(Box::new(issue))),
+        None => Ok(resolved),
+    }
+}
+
+pub(super) fn resolve_uses_deferred(
+    scopes: &ScopeBuild,
+    declarations: &[DeclarationRecord],
+    metas: &[DeclarationMeta],
+    index: &DeclarationIndex,
+    uses: &[UseMeta],
+    system: &[SystemDeclarationRecord],
+) -> Result<(Vec<LexicalUseRecord>, Option<ResolutionIssue>), ResolutionCompilerFailure> {
     let mut resolved = Vec::with_capacity(uses.len());
     for use_record in uses {
         let admissible = admissible_classes(use_record.role, &use_record.spelling);
@@ -124,15 +140,18 @@ pub(super) fn resolve_uses(
                     })
                     .collect();
                 if !labels.is_empty() {
-                    return Err(BuildStop::Issue(Box::new(ResolutionIssue {
-                        rule: ResolutionRule::Type6,
-                        origin: use_record.origin.clone(),
-                        kind: ResolutionIssueKind::NonEnclosingLabel {
-                            spelling: use_record.spelling.clone(),
-                            role: use_record.role,
-                            origins: labels,
-                        },
-                    })));
+                    return Ok((
+                        resolved,
+                        Some(ResolutionIssue {
+                            rule: ResolutionRule::Type6,
+                            origin: use_record.origin.clone(),
+                            kind: ResolutionIssueKind::NonEnclosingLabel {
+                                spelling: use_record.spelling.clone(),
+                                role: use_record.role,
+                                origins: labels,
+                            },
+                        }),
+                    ));
                 }
             }
         }
@@ -148,33 +167,68 @@ pub(super) fn resolve_uses(
                 invisible.sort_by(|left, right| {
                     conflict_key(left, declarations).cmp(&conflict_key(right, declarations))
                 });
-                return Err(BuildStop::Issue(Box::new(ResolutionIssue {
-                    rule: use_rule(use_record.role),
-                    origin: use_record.origin.clone(),
-                    kind: ResolutionIssueKind::InvisibleUse {
-                        spelling: use_record.spelling.clone(),
-                        role: use_record.role,
-                        admissible,
-                        origins: invisible,
-                    },
-                })));
+                return Ok((
+                    resolved,
+                    Some(ResolutionIssue {
+                        rule: use_rule(use_record.role),
+                        origin: use_record.origin.clone(),
+                        kind: ResolutionIssueKind::InvisibleUse {
+                            spelling: use_record.spelling.clone(),
+                            role: use_record.role,
+                            admissible,
+                            origins: invisible,
+                        },
+                    }),
+                ));
             }
             [] => {
                 let mut available: Vec<_> = available.into_iter().collect();
                 available.sort_unstable();
-                return Err(BuildStop::Issue(Box::new(ResolutionIssue {
-                    rule: use_rule(use_record.role),
-                    origin: use_record.origin.clone(),
-                    kind: ResolutionIssueKind::UnresolvedUse {
-                        spelling: use_record.spelling.clone(),
-                        role: use_record.role,
-                        admissible,
-                        available,
-                    },
-                })));
+                return Ok((
+                    resolved,
+                    Some(ResolutionIssue {
+                        rule: use_rule(use_record.role),
+                        origin: use_record.origin.clone(),
+                        kind: ResolutionIssueKind::UnresolvedUse {
+                            spelling: use_record.spelling.clone(),
+                            role: use_record.role,
+                            admissible,
+                            available,
+                        },
+                    }),
+                ));
             }
-            _ => return Err(ResolutionCompilerFailure::AmbiguousResolution.into()),
+            _ => return Err(ResolutionCompilerFailure::AmbiguousResolution),
         }
+    }
+    Ok((resolved, None))
+}
+
+/// Resolves every independently valid use while deliberately retaining no
+/// lookup verdict.  This path is used only when an FN-9 entry inventory issue
+/// is already pending: that inventory event must survive selector admission
+/// and outrank every lookup event, but concrete signature discovery still
+/// needs the successful header/callee links that do not depend on the poison
+/// declaration.  No partial prefix is exposed and no failed use is guessed.
+pub(super) fn resolve_uses_without_verdict(
+    scopes: &ScopeBuild,
+    declarations: &[DeclarationRecord],
+    metas: &[DeclarationMeta],
+    index: &DeclarationIndex,
+    uses: &[UseMeta],
+    system: &[SystemDeclarationRecord],
+) -> Result<Vec<LexicalUseRecord>, ResolutionCompilerFailure> {
+    let mut resolved = Vec::new();
+    for use_record in uses {
+        let (mut one, _) = resolve_uses_deferred(
+            scopes,
+            declarations,
+            metas,
+            index,
+            std::slice::from_ref(use_record),
+            system,
+        )?;
+        resolved.append(&mut one);
     }
     Ok(resolved)
 }
@@ -192,6 +246,7 @@ fn system_admissible(role: LexicalUseRole) -> bool {
         LexicalUseRole::Type
             | LexicalUseRole::Construct
             | LexicalUseRole::ArmVariant
+            | LexicalUseRole::EnsuresVariant
             | LexicalUseRole::IdentifierCallee
     )
 }
@@ -206,7 +261,9 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
             DeclarationClass::StructConstructor,
             DeclarationClass::EnumVariant,
         ],
-        LexicalUseRole::ArmVariant => vec![DeclarationClass::EnumVariant],
+        LexicalUseRole::ArmVariant | LexicalUseRole::EnsuresVariant => {
+            vec![DeclarationClass::EnumVariant]
+        }
         LexicalUseRole::TypeRegion
         | LexicalUseRole::ModeRegion
         | LexicalUseRole::TypeArgumentRegion
@@ -241,10 +298,12 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         LexicalUseRole::GenericBound | LexicalUseRole::ConformanceContract => {
             vec![DeclarationClass::Contract]
         }
-        LexicalUseRole::Construct | LexicalUseRole::ArmVariant => vec![
-            DeclarationClass::StructConstructor,
-            DeclarationClass::EnumVariant,
-        ],
+        LexicalUseRole::Construct | LexicalUseRole::ArmVariant | LexicalUseRole::EnsuresVariant => {
+            vec![
+                DeclarationClass::StructConstructor,
+                DeclarationClass::EnumVariant,
+            ]
+        }
         LexicalUseRole::TypeRegion
         | LexicalUseRole::ModeRegion
         | LexicalUseRole::TypeArgumentRegion
@@ -275,9 +334,10 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
     match role {
         LexicalUseRole::Type | LexicalUseRole::PlaceBase => ResolutionRule::Type5,
         LexicalUseRole::GenericBound | LexicalUseRole::ConformanceContract => ResolutionRule::Fn3,
-        LexicalUseRole::Construct | LexicalUseRole::ArmVariant | LexicalUseRole::BreakLabel => {
-            ResolutionRule::Type6
-        }
+        LexicalUseRole::Construct
+        | LexicalUseRole::ArmVariant
+        | LexicalUseRole::EnsuresVariant
+        | LexicalUseRole::BreakLabel => ResolutionRule::Type6,
         LexicalUseRole::TypeRegion
         | LexicalUseRole::ModeRegion
         | LexicalUseRole::TypeArgumentRegion

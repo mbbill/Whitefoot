@@ -150,7 +150,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(node);
             }
         }
-        Err(CheckStop::Issue(SemanticIssue {
+        Err(CheckStop::source_issue(SemanticIssue {
             rule: SemanticRule::Fn7,
             location: SemanticLocation::BundleRoot(self.resolved.syntax().root_extent().to_vec()),
             kind: SemanticIssueKind::MissingMain,

@@ -13,8 +13,9 @@
 //! S9, and S10. The label S8 is retired, not reused [ENT-3].
 
 use super::super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerOperation,
-    CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedValue, IntegerType,
+    BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
+    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSliceSource, CheckedType,
+    CheckedValue, IntegerType,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -26,7 +27,7 @@ use super::super::term::{
 };
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
-    CountedEqualityDerivation, CountedProofPoint,
+    CountedEqualityDerivation, CountedProofPoint, S7Derivation, S7DerivationKind, ShiftOneIdentity,
 };
 use super::{Analyzer, ArmFacts};
 use crate::SYSTEM_OPERATIONS;
@@ -70,14 +71,13 @@ impl Analyzer<'_, '_> {
     /// applies the counted continuing-kill summary.
     pub(super) fn establish_counted_preheader(
         &mut self,
-        node_path: &crate::NodePath,
         range_path: &[u32],
         binder: BindingId,
         lower: &CheckedExpression,
         upper: &CheckedExpression,
         state: &mut FactState,
+        event: FlowEventId,
     ) -> CountedTerms {
-        let event = self.proof_event(FlowEventKind::S11, Some(node_path));
         let lower_source = self
             .read_operand(lower)
             .expect("checked counted lower endpoint must be an ENT-2 term or constant");
@@ -183,8 +183,8 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         counted: CountedPreheader,
         state: &mut FactState,
+        event: FlowEventId,
     ) -> CountedDerivationSet {
-        let event = self.proof_event(FlowEventKind::S11, Some(node_path));
         let lower_relation = Relation::Bound {
             left: counted.terms.lower,
             right: counted.terms.binder,
@@ -268,17 +268,11 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S4: the complete concrete body goal enters as a positive opaque
     /// fact, with its one exact comparison-root projection when present.
-    pub(super) fn establish_requires_facts(&mut self, state: &mut FactState) {
+    pub(super) fn establish_requires_facts(&mut self, state: &mut FactState, event: FlowEventId) {
         let Some(goal) = self.body_requirement_goal() else {
             return;
         };
         let goal = self.intern_goal_expression(goal);
-        let node_path = self
-            .function
-            .requirement
-            .as_ref()
-            .map(|requirement| requirement.trap.node_path.clone());
-        let event = self.proof_event(FlowEventKind::S4, node_path.as_ref());
         state.establish_goal(
             goal,
             super::super::state::GoalSign::Positive,
@@ -302,18 +296,34 @@ impl Analyzer<'_, '_> {
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
-        if self.establish_length_facts(node_path, binding, value, state) {
+        if self.establish_length_facts(node_path, binding, value, state, event) {
             return;
         }
-        if self.establish_element_range(node_path, binding, value, state) {
+        if self.establish_element_range(node_path, binding, value, state, event) {
             return;
         }
-        if self.establish_offset_fact(node_path, binding, value, state) {
+        if self.establish_offset_fact(node_path, binding, value, state, event) {
             return;
         }
         self.record_outcome_origin(binding, value, state);
-        self.establish_copy_fact(node_path, binding, value, state);
+        self.establish_copy_fact(node_path, binding, value, state, event);
+    }
+
+    fn binding_event(
+        &mut self,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
+        kind: FlowEventKind,
+        node_path: &crate::NodePath,
+    ) -> FlowEventId {
+        if let Some((existing_kind, id)) = event {
+            debug_assert_eq!(*existing_kind, kind);
+            return *id;
+        }
+        let id = self.proof_event(kind, Some(node_path));
+        *event = Some((kind, id));
+        id
     }
 
     /// The term of a freshly bound integer place, when its type is one
@@ -348,6 +358,7 @@ impl Analyzer<'_, '_> {
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) {
         let source = match value {
             CheckedExpression::NumericConversion {
@@ -369,7 +380,7 @@ impl Analyzer<'_, '_> {
         let Some(bound) = self.bound_term(binding, value) else {
             return;
         };
-        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+        let event = self.binding_event(event, FlowEventKind::S5, node_path);
         state.establish(
             &Relation::Equal {
                 left: bound,
@@ -393,6 +404,7 @@ impl Analyzer<'_, '_> {
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
         match value {
             CheckedExpression::BufferFill { length, .. } => {
@@ -401,7 +413,7 @@ impl Analyzer<'_, '_> {
                 };
                 let place = self.bound_place(binding);
                 let length_term = self.length_term(place, None);
-                let event = self.proof_event(FlowEventKind::S6, Some(node_path));
+                let event = self.binding_event(event, FlowEventKind::S6, node_path);
                 state.establish(
                     &Relation::Equal {
                         left: length_term,
@@ -429,7 +441,7 @@ impl Analyzer<'_, '_> {
                 let source_length = self.length_term(place, array_length);
                 let slice_place = self.bound_place(binding);
                 let slice_length = self.length_term(slice_place, None);
-                let event = self.proof_event(FlowEventKind::S6, Some(node_path));
+                let event = self.binding_event(event, FlowEventKind::S6, node_path);
                 state.establish(
                     &Relation::Equal {
                         left: slice_length,
@@ -443,7 +455,7 @@ impl Analyzer<'_, '_> {
             _ => match self.length_operand(value) {
                 Some(source_length) => {
                     if let Some(bound) = self.bound_term(binding, value) {
-                        let event = self.proof_event(FlowEventKind::S6, Some(node_path));
+                        let event = self.binding_event(event, FlowEventKind::S6, node_path);
                         state.establish(
                             &Relation::Equal {
                                 left: bound,
@@ -502,7 +514,13 @@ impl Analyzer<'_, '_> {
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
+        if self.establish_bit_and_bounds(node_path, binding, value, state, event)
+            || self.establish_shift_one_nonzero(node_path, binding, value, state, event)
+        {
+            return true;
+        }
         let Some((base, delta, trapping)) = self.constant_offset(value) else {
             return false;
         };
@@ -523,8 +541,139 @@ impl Analyzer<'_, '_> {
                 return true;
             }
         }
-        let event = self.proof_event(FlowEventKind::S7, Some(node_path));
+        let event = self.binding_event(event, FlowEventKind::S7, node_path);
         establish_shifted(state, bound, base, delta, &mut self.derivations, event);
+        true
+    }
+
+    fn establish_bit_and_bounds(
+        &mut self,
+        node_path: &crate::NodePath,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> bool {
+        let CheckedExpression::IntegerOperation {
+            operation: CheckedIntegerOperation::BitAnd,
+            operand_type: CheckedType::Integer(row),
+            arguments,
+            ..
+        } = value
+        else {
+            return false;
+        };
+        if row.signed() {
+            return true;
+        }
+        let Some(result) = self.bound_term(binding, value) else {
+            return true;
+        };
+        for (operand, argument) in arguments.iter().enumerate() {
+            let Some(admitted) = self.read_operand(argument) else {
+                continue;
+            };
+            let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+            let relation = Relation::Bound {
+                left: result,
+                right: admitted,
+                bound: 0,
+            };
+            let parent =
+                state.establish_bound_with_proof(result, admitted, 0, &mut self.derivations, event);
+            self.retain_s7_derivation(S7Derivation {
+                source: node_path.clone(),
+                view: state.proof_view(),
+                row: *row,
+                binding,
+                kind: S7DerivationKind::BitAndBound {
+                    operand: u8::try_from(operand)
+                        .expect("integer-operation operand ordinal exceeds u8"),
+                    admitted,
+                },
+                relation,
+                event,
+                parent,
+            });
+        }
+        true
+    }
+
+    fn establish_shift_one_nonzero(
+        &mut self,
+        node_path: &crate::NodePath,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> bool {
+        let CheckedExpression::IntegerOperation {
+            operation: CheckedIntegerOperation::ShiftLeftWrap,
+            operand_type: CheckedType::Integer(row),
+            argument_metadata,
+            arguments,
+            ..
+        } = value
+        else {
+            return false;
+        };
+        if row.signed() {
+            return true;
+        }
+        let [one, _count] = arguments.as_slice() else {
+            return true;
+        };
+        let [one_metadata, count_metadata] = argument_metadata.as_slice() else {
+            return true;
+        };
+        let one_value = match one {
+            CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) => {
+                (integer_value(*ty, *bits) == 1).then_some(())
+            }
+            CheckedExpression::NamedConstant {
+                value: CheckedValue::Integer { ty, bits },
+                ..
+            } => (integer_value(*ty, *bits) == 1).then_some(()),
+            _ => None,
+        };
+        if one_value.is_none() {
+            return true;
+        }
+        let one = match one_metadata.source {
+            CheckedIntegerArgumentSource::TypedLiteral => ShiftOneIdentity::TypedLiteral {
+                source: one_metadata.node_path.clone(),
+            },
+            CheckedIntegerArgumentSource::NamedConstant { declaration } => {
+                ShiftOneIdentity::NamedConstant { declaration }
+            }
+            CheckedIntegerArgumentSource::GenericNumericIdentity
+            | CheckedIntegerArgumentSource::Other => return true,
+        };
+        let Some(result) = self.bound_term(binding, value) else {
+            return true;
+        };
+        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let (left, right) = if result < ZERO {
+            (result, ZERO)
+        } else {
+            (ZERO, result)
+        };
+        let relation = Relation::Distinct { left, right };
+        let parent =
+            state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
+        self.retain_s7_derivation(S7Derivation {
+            source: node_path.clone(),
+            view: state.proof_view(),
+            row: *row,
+            binding,
+            kind: S7DerivationKind::ShiftOneNonzero {
+                count_atom: count_metadata.node_path.clone(),
+                one,
+            },
+            relation,
+            event,
+            parent,
+        });
         true
     }
 
@@ -580,6 +729,7 @@ impl Analyzer<'_, '_> {
         binding: BindingId,
         value: &CheckedExpression,
         state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
         let CheckedExpression::ArrayIndex {
             root: CheckedArrayRoot::Constant(constant),
@@ -608,7 +758,7 @@ impl Analyzer<'_, '_> {
         let (Some((low, high)), Some(bound)) = (range, self.bound_term(binding, value)) else {
             return true;
         };
-        let event = self.proof_event(FlowEventKind::S9, Some(node_path));
+        let event = self.binding_event(event, FlowEventKind::S9, node_path);
         state.establish(
             &Relation::Bound {
                 left: ZERO,
@@ -658,9 +808,8 @@ impl Analyzer<'_, '_> {
         &mut self,
         scrutinee: &CheckedExpression,
         enum_type: CheckedEnumType,
-        state: &mut FactState,
+        state: &FactState,
     ) -> ArmFacts {
-        self.expression_effects(scrutinee, state);
         let node_path = Self::expression_node_path(scrutinee).cloned();
         if enum_type == CheckedEnumType::Bool {
             return ArmFacts {
@@ -793,6 +942,7 @@ impl Analyzer<'_, '_> {
         arm: &CheckedMatchArm,
         outcome: &OutcomeFact,
         state: &mut FactState,
+        event: FlowEventId,
     ) {
         let Some(binder) = arm.binders.iter().find(|binder| binder.field == 0) else {
             return;
@@ -806,7 +956,6 @@ impl Analyzer<'_, '_> {
             fields: Vec::new(),
         };
         let bound = self.terms.intern(TermKind::Place(place, fragment));
-        let event = self.proof_event(outcome.event_kind, Some(&binder.node_path));
         match outcome.relation {
             OutcomeRelation::Shifted(delta) => {
                 establish_shifted(

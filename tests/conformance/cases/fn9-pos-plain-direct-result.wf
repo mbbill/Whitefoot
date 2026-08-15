@@ -1,0 +1,18 @@
+fn identity(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "identity postcondition";
+} {
+  return value;
+}
+
+fn relay(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "relay postcondition";
+} {
+  let called = identity(value: value);
+  return called;
+}
+
+fn main() -> own unit traps {
+  let observed = relay(value: 7_i32);
+  check ieq(observed, 7_i32) else trap "plain result drift";
+  return unit;
+}

@@ -118,28 +118,32 @@ fn io_class(error: own IoError) -> own u8 pure {
   }
 }
 
-fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) {
+fn append_slice['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> own u64 reads('d 'm), writes('d) requires {
+  let capacity = len(deref(destination));
+  let admitted = ile(filled, capacity);
+  check admitted else trap "append filled exceeds destination";
+} ensures result {
+  let capacity = len(deref(destination));
+  check ile(result, capacity) else trap "append result exceeds destination";
+} {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity = len(deref(destination));
+  let admitted = ile(filled, capacity);
   let length = len(text);
-  let at = filled;
-  let taken = 0_u64;
-  loop @append {
-    let done = ige(taken, length);
-    if done {
-      break @append;
+  if admitted {
+    for @append at in filled..capacity {
+      let taken = at -wrap filled;
+      let done = ige(taken, length);
+      if done {
+        return at;
+      }
+      let byte = text[taken];
+      set deref(destination)[at] = byte;
     }
-    let room = ilt(at, capacity);
-    if room {
-    } else {
-      break @append;
-    }
-    let byte = text[taken];
-    set deref(destination)[at] = byte;
-    set at = at +wrap 1_u64;
-    set taken = taken +wrap 1_u64;
+    return capacity;
+  } else {
+    return filled;
   }
-  return at;
 }
 
 fn copy_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s buffer<u8>, from: own u64, to: own u64) -> own u64 reads('d 's), writes('d), traps {
@@ -198,12 +202,14 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
       set length = append_slice<'prefix_append, 'report_prefix>(destination: &uniq 'prefix_append deref(report), filled: length, text: move view);
     }
   }
+  let prior_length = length;
+  let copied_count = 0_u64;
   match arg_get<'a>(args: args, position: position) {
     Ok(value: text) => {
       region 'report_name {
-        match host_copy_bytes<'report_name, 'report_name>(value: &'report_name text, destination: &uniq 'report_name deref(report), offset: length, capacity: 256_u64) {
+        match host_copy_bytes<'report_name, 'report_name>(value: &'report_name text, destination: &uniq 'report_name deref(report), offset: prior_length, capacity: 256_u64) {
           Ok(value: copied) => {
-            set length = length +wrap copied;
+            set copied_count = copied;
           }
           Err(error: too_small) => {
           }
@@ -213,10 +219,18 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     Err(error: absent) => {
     }
   }
+  let candidate_length = prior_length +wrap copied_count;
+  let report_capacity = len(deref(report));
+  let candidate_fits = ile(candidate_length, report_capacity);
+  let bounded_length = if candidate_fits {
+    give candidate_length;
+  } else {
+    give prior_length;
+  }
   region 'report_separator {
     let view = slice_of(&'report_separator error_separator);
     region 'separator_append {
-      set length = append_slice<'separator_append, 'report_separator>(destination: &uniq 'separator_append deref(report), filled: length, text: move view);
+      set bounded_length = append_slice<'separator_append, 'report_separator>(destination: &uniq 'separator_append deref(report), filled: bounded_length, text: move view);
     }
   }
   let named = 0_u8;
@@ -225,7 +239,7 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     region 'reason_missing_view {
       let view = slice_of(&'reason_missing_view reason_missing);
       region 'reason_missing_append {
-        set length = append_slice<'reason_missing_append, 'reason_missing_view>(destination: &uniq 'reason_missing_append deref(report), filled: length, text: move view);
+        set bounded_length = append_slice<'reason_missing_append, 'reason_missing_view>(destination: &uniq 'reason_missing_append deref(report), filled: bounded_length, text: move view);
       }
     }
   }
@@ -234,7 +248,7 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     region 'reason_denied_view {
       let view = slice_of(&'reason_denied_view reason_denied);
       region 'reason_denied_append {
-        set length = append_slice<'reason_denied_append, 'reason_denied_view>(destination: &uniq 'reason_denied_append deref(report), filled: length, text: move view);
+        set bounded_length = append_slice<'reason_denied_append, 'reason_denied_view>(destination: &uniq 'reason_denied_append deref(report), filled: bounded_length, text: move view);
       }
     }
   }
@@ -243,7 +257,7 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     region 'reason_directory_view {
       let view = slice_of(&'reason_directory_view reason_directory);
       region 'reason_directory_append {
-        set length = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: length, text: move view);
+        set bounded_length = append_slice<'reason_directory_append, 'reason_directory_view>(destination: &uniq 'reason_directory_append deref(report), filled: bounded_length, text: move view);
       }
     }
   }
@@ -252,7 +266,7 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     region 'reason_path_view {
       let view = slice_of(&'reason_path_view reason_invalid_path);
       region 'reason_path_append {
-        set length = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: length, text: move view);
+        set bounded_length = append_slice<'reason_path_append, 'reason_path_view>(destination: &uniq 'reason_path_append deref(report), filled: bounded_length, text: move view);
       }
     }
   }
@@ -261,7 +275,7 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     region 'reason_long_view {
       let view = slice_of(&'reason_long_view reason_long_line);
       region 'reason_long_append {
-        set length = append_slice<'reason_long_append, 'reason_long_view>(destination: &uniq 'reason_long_append deref(report), filled: length, text: move view);
+        set bounded_length = append_slice<'reason_long_append, 'reason_long_view>(destination: &uniq 'reason_long_append deref(report), filled: bounded_length, text: move view);
       }
     }
   }
@@ -269,12 +283,12 @@ fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uni
     region 'reason_other_view {
       let view = slice_of(&'reason_other_view reason_unreadable);
       region 'reason_other_append {
-        set length = append_slice<'reason_other_append, 'reason_other_view>(destination: &uniq 'reason_other_append deref(report), filled: length, text: move view);
+        set bounded_length = append_slice<'reason_other_append, 'reason_other_view>(destination: &uniq 'reason_other_append deref(report), filled: bounded_length, text: move view);
       }
     }
   }
   region 'report_write {
-    match publish_all<'report_write, 'report_write>(output: &uniq 'report_write deref(err), source: &'report_write deref(report), length: length) {
+    match publish_all<'report_write, 'report_write>(output: &uniq 'report_write deref(err), source: &'report_write deref(report), length: bounded_length) {
       Ok(value: published) => {
       }
       Err(error: problem) => {

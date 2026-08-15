@@ -7,6 +7,9 @@
 - Loop-derived admission authority is a construct-owned structural recurrence, not general ordinary-loop induction.
 - The fact state combines the scalar relation fragment with finite signed atomic goal evidence; only an exact comparison root may project into the scalar fragment.
 - An ordinary call requirement has exactly three outcomes: discharged, refuted, or unproved; refuted and unproved calls reject before transfer, while a discharged call supplies its complete positive goal to the body.
+- A normal-return postcondition is proved at every selected exit in complete, unasserted, and S4-blinded views; only a wholly successful concrete callee component publishes a closed summary to later components.
+- Caller-side postcondition facts use only the closed direct-result, selected-payload, narrow receiver, and value-if delivery routes, with ordinary substitution, support kills, joins, and view-local derivations.
+- Optimistic postcondition and value-if facts finalize atomically with the provenance verdict and checked program.
 - Signed goal support follows resolved reads; writes, ownership events, scope exits, loop summaries, intersection joins, and combined contradiction govern its lifetime without decomposing the goal.
 - A finite two-stratum explicit-dataflow provenance judgment freezes value, storage, result, and write component pairs before subject-only protected demands, requirement bridges, call targets, and rejection events converge.
 - After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a body check, claim, or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
@@ -33,6 +36,9 @@
 - 2026-08-09 measurement: finite once-captured counted-range facts discharge all nine SHA-256 schedule accesses without any claim, preserve the direct digest word `3128432319_u32`, and add no trap to the pure compression function; carried-value and next-index controls remain unproved, so the result does not require or imply general loop induction. (code)
 - 2026-08-10 (441cd5b8) measurement: installed all-claims-blinded acceptance is UTF-8 33/22/11/0, SHA-256 9/9/0/0, complete DEFLATE 29/11/18/0, and dynamic DEFLATE 24/11/13/0; the three real requirement calls remain discharged in both unasserted and S4-blinded rewalks. (code)
 - 2026-08-10 (5ab45aa7) measurement: after eleven boundary-fed DEFLATE claims were replaced by real value branches, thirteen protected sites discharge in the unasserted rewalk and the five remaining claim-supported protected sites all have internal constrained subjects; UTF-8 remains 33/22/11/0, SHA-256 remains 9/9/0/0, and the stored, fixed, and dynamic raw-DEFLATE runtime paths remain 3/3. (code)
+- 2026-08-15 (a36e3061) measurement: one structural flow and one function-local view-tagged derivation DAG prove complete, unasserted, and S4-blinded selected exits, retain both measured unsigned bit sources, and finalize all proof roots once; a separate counterfactual rewalk is neither needed nor retained. (code)
+- 2026-08-15 (a36e3061) measurement: concrete callee-before-caller components, closed result publication, and value-if delivery discharge all fourteen measured read routes and all twenty append routes, including the single A10 repair, while same-component summaries and value-match delivery remain unavailable. (code)
+- 2026-08-15 (a36e3061) pitfall: postcondition support after a join is the current live relation pair, not historical substitution metadata; following an original holder through proof ancestry incorrectly kills a holder-free joined consequence. (code)
 
 ## Moves
 

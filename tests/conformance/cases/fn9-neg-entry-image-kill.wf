@@ -1,0 +1,10 @@
+fn changed(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "postcondition";
+} {
+  set value = 1_i32;
+  return value;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

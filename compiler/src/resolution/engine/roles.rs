@@ -9,7 +9,7 @@ use super::super::{
     DeclarationRole, DeferredUseRole, DependentDeclarationRole, LexicalUseRole,
     ResolutionCompilerFailure, SourceOrigin,
 };
-use super::{ClassifiedRole, EventKey, RawRole, RawRoleKind, owner_chain};
+use super::{ClassifiedRole, EventKey, RawRole, RawRoleKind, SelectorRole, owner_chain};
 
 pub(super) fn classify_roles(
     syntax: &CanonicalSyntaxUnit<'_, '_, '_>,
@@ -29,6 +29,7 @@ pub(super) fn classify_roles(
             .get(index)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
         classify_node(
+            topology,
             classified,
             record.production,
             node,
@@ -135,6 +136,7 @@ fn direct_terminals_by_owner(
 }
 
 fn classify_node(
+    topology: &FinalizedTopology,
     classified: &crate::ClassifiedBundle<'_, '_>,
     production: Production,
     owner: NodeId,
@@ -356,13 +358,35 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
+        Production::EnsuresSelector => {
+            let [selector] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            let kind = match name_predicate(classified, *selector) {
+                Some(TerminalPredicate::Identifier) => {
+                    RawRoleKind::Selector(SelectorRole::PlainCandidate)
+                }
+                Some(TerminalPredicate::TypeIdentifier) => {
+                    RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant)
+                }
+                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+            };
+            add_complete(classified, owner, *selector, kind, roles, complete_counts)?;
+        }
         Production::Fieldbind => {
             if let [field, binder] = names.as_slice() {
+                let selector_field =
+                    ancestor_with_production(topology, owner, Production::EnsuresSelector)
+                        .is_some();
                 add_complete(
                     classified,
                     owner,
                     *field,
-                    RawRoleKind::DeferredUse(DeferredUseRole::MatchField),
+                    if selector_field {
+                        RawRoleKind::Selector(SelectorRole::VariantField)
+                    } else {
+                        RawRoleKind::DeferredUse(DeferredUseRole::MatchField)
+                    },
                     roles,
                     complete_counts,
                 )?;
@@ -370,7 +394,11 @@ fn classify_node(
                     classified,
                     owner,
                     *binder,
-                    RawRoleKind::Declaration(DeclarationRole::MatchBinder),
+                    if selector_field {
+                        RawRoleKind::Selector(SelectorRole::VariantCandidate)
+                    } else {
+                        RawRoleKind::Declaration(DeclarationRole::MatchBinder)
+                    },
                     roles,
                     complete_counts,
                 )?;
@@ -580,6 +608,20 @@ fn classify_node(
         }
     }
     Ok(())
+}
+
+fn ancestor_with_production(
+    topology: &FinalizedTopology,
+    mut node: NodeId,
+    production: Production,
+) -> Option<NodeId> {
+    loop {
+        let record = topology.node(node)?;
+        if record.production == production {
+            return Some(node);
+        }
+        node = record.parent?;
+    }
 }
 
 fn name_predicate(

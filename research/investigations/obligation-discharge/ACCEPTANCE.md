@@ -1586,3 +1586,60 @@ isolated worktree's generated compiler target tree were removed after the
 successful gate. This PASS permits preparation of the separate Stage 8b
 candidate; it does not approve or activate any future specification or
 protected-conformance byte.
+
+## Installed v0.28 Stage 8b acceptance (2026-08-15)
+
+The owner-approved Stage 8b candidate is now installed as active v0.28 at
+`spec/kernel-spec.md`, SHA-256
+`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+The outgoing v0.27 authority is preserved byte-identically at
+`spec/kernel-spec-v0.27.md`, SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+
+The installed five-source identities are, in compilation order:
+
+- `raw_deflate.wf`
+  `6da69f4dfaa3906c8516a4b0eb3f113b96b8c406084ac3c16ffb92514098bdf2`;
+- `raw_deflate_dynamic.wf`
+  `87099254c197460733a3a4661b0a5e0dd6290936e4647634ceed0134043b0b84`;
+- `raw_deflate_dynamic_decode.wf`
+  `8604a81550083bdaea85e5da0aaf798a75e14beb7626a2f21d08975ae88d071d`;
+- `raw_deflate_boundary.wf`
+  `c5044c5db980e1d2c14b5c3731a153351a58d61d84aec81880e355707c2a2f84`;
+- `wfgrep.wf`
+  `44db13e238b00260ec4f23a60be85db700d22902c6657a406ec13bc87b6a4889`.
+
+The ordinary checked path retains exact complete, unasserted, and S4-blinded
+proof roots for all fourteen `read_bits` selected-payload receiver routes.
+The raw-DEFLATE boundary declaration retains eight direct `append_slice`
+receiver routes per view, while the distinct wfgrep declaration retains twelve
+per view. Wfgrep's A10 host-copy boundary alone uses the installed `value_if`
+delivery join to select `candidate_length` or the prior length; the separator,
+A11--A16, and final publication all consume that one `bounded_length` result.
+No `value_match` delivery, general assignment equality, variable-addition S7,
+runtime fallback, or second proof path was introduced.
+
+The two clause-stripped append controls preserve the invalid-domain behavior:
+at capacity 3 with `filled = 4`, both empty and nonempty text return 4, leave
+all three destination bytes unchanged, and produce no output. The existing
+raw-DEFLATE and wfgrep suites preserve success output, mapped errors, cleanup,
+effects, process status, required runtime checks, and facts-off behavior. The
+single frozen-real owning run validates the exact fourteen read routes, eight
+raw append routes, twelve wfgrep append routes, and A10 ancestry.
+
+The protected corpus is additive: manifest SHA-256
+`8fada5059b57d563ab00a1c1c305dcd5810201ea2c507ee00a4137102bfc18f3`,
+437 cases, 30 unchanged annotations, and 132/132 rule coverage. The native
+adapter reports `Pass=423 Fail=1 Skip=13`; the sole failure remains the
+pre-existing OWN-3 `own3-pos-outlives-store` unsupported boundary.
+
+The installed activation checks pass archive integrity for 29 recorded
+specifications, archive-to-active native grammar identity at 73 productions,
+90 decisions, and 97 terminal predicates, conformance structure 23/23, and
+coverage 132/132 with none uncovered. `make -C compiler check` is green with
+808/808 library tests, grammar 9/9, generated grammar tables 1/1, migration
+36/36, specification integrity 10/10, canonical corpus 3/3, and real programs
+32/32; the conformance adapter integration remains deliberately ignored in
+that gate and is run separately. Rustdoc passes with warnings denied. The
+native specification tool reports v0.28 at the approved digest, 132 rules, and
+20 unbroken activation entries.

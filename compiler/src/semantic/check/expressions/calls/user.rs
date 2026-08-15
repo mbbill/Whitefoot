@@ -426,7 +426,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// TYPE-5 governs whether an argument's *type* matches its parameter, one
     /// step later and at the offending atom; it does not own the argument list
     /// itself.
-    fn call_region_arguments(
+    pub(in crate::semantic::check) fn call_region_arguments(
         &self,
         node: NodeId,
         signature: &FunctionSignature,

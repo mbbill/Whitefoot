@@ -1,8 +1,8 @@
 use std::os::unix::process::ExitStatusExt;
 
 use super::support::{
-    CompiledProgram, build_program, compile_and_run, compile_programs, emitted_function,
-    fixture_directory,
+    CompiledProgram, build_program, compile_and_run, compile_programs, compile_sources,
+    emitted_function, fixture_directory,
 };
 
 /// The accepted compressed input length in `tests/programs/raw_deflate_boundary.wf`.
@@ -191,4 +191,61 @@ fn each_boundary_and_decode_outcome_reaches_its_own_status() {
         diagnostics,
         b"raw_deflate_boundary: cannot publish the decoded output\n"
     );
+}
+
+#[test]
+fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
+    let source = include_str!("../../../tests/programs/raw_deflate_boundary.wf");
+    let start = source.find("fn append_slice").expect("append_slice start");
+    let rest = &source[start..];
+    let end = rest
+        .find("\nfn copy_range")
+        .expect("append_slice declaration end");
+    let declaration = &rest[..end];
+    let clauses = declaration
+        .find(" requires {")
+        .expect("append_slice requires clause");
+    let body = declaration
+        .find("} {\n  doc")
+        .expect("append_slice body after ensures");
+    let declaration = format!("{} {}", &declaration[..clauses], &declaration[body + 2..])
+        .trim_end()
+        .to_owned();
+    let control = format!(
+        r#"{declaration}
+
+fn main() -> own unit allocates(heap), traps {{
+  let empty_text = buffer_new(0_u64, 1_u8);
+  let empty_destination = buffer_new(3_u64, 9_u8);
+  region 'empty_text_view {{
+    let text = slice_of(&'empty_text_view empty_text);
+    region 'empty_destination_view {{
+      let result = append_slice<'empty_destination_view, 'empty_text_view>(destination: &uniq 'empty_destination_view empty_destination, filled: 4_u64, text: move text);
+      check ieq(result, 4_u64) else trap "empty result";
+    }}
+  }}
+  check ieq(empty_destination[0_u64], 9_u8) else trap "empty byte zero";
+  check ieq(empty_destination[1_u64], 9_u8) else trap "empty byte one";
+  check ieq(empty_destination[2_u64], 9_u8) else trap "empty byte two";
+  let nonempty_text = buffer_new(2_u64, 1_u8);
+  let nonempty_destination = buffer_new(3_u64, 9_u8);
+  region 'nonempty_text_view {{
+    let text = slice_of(&'nonempty_text_view nonempty_text);
+    region 'nonempty_destination_view {{
+      let result = append_slice<'nonempty_destination_view, 'nonempty_text_view>(destination: &uniq 'nonempty_destination_view nonempty_destination, filled: 4_u64, text: move text);
+      check ieq(result, 4_u64) else trap "nonempty result";
+    }}
+  }}
+  check ieq(nonempty_destination[0_u64], 9_u8) else trap "nonempty byte zero";
+  check ieq(nonempty_destination[1_u64], 9_u8) else trap "nonempty byte one";
+  check ieq(nonempty_destination[2_u64], 9_u8) else trap "nonempty byte two";
+  return unit;
+}}
+"#
+    );
+    let llvm = compile_sources(&[("raw_append_invalid_domain.wf", control.as_bytes())]);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
 }

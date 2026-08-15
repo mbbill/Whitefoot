@@ -218,6 +218,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binding: local.binding,
                 ty,
                 slice_origins: Vec::new(),
+                consume_root: false,
             }
         };
         if copy {
@@ -333,6 +334,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .as_ref()
                         .map(|slice| slice.origins.clone())
                         .unwrap_or_default(),
+                    consume_root: false,
                 },
                 resolved: local.borrow.map_or_else(
                     || ResolvedPlace {

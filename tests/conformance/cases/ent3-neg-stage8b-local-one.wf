@@ -1,0 +1,16 @@
+fn require_nonzero(value: own u32) -> own unit pure requires {
+  check ine(value, 0_u32) else trap "shift nonzero";
+} {
+  return unit;
+}
+
+fn local_one(count: own u32) -> own unit pure {
+  let one = 1_u32;
+  let shifted = ishl.wrap(one, count);
+  require_nonzero(value: shifted);
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

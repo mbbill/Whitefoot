@@ -90,6 +90,11 @@ impl ScopeBuild {
                                 ScopeKind::RequiresBlock,
                                 path.clone(),
                             )?,
+                            Production::EnsuresBlock => build.push_scope(
+                                Some(signature),
+                                ScopeKind::EnsuresBlock,
+                                path.clone(),
+                            )?,
                             Production::Doc | Production::Stmt => body,
                             _ => signature,
                         };

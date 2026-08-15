@@ -1,12 +1,12 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 38 (Stage 8b semantic candidate frozen; held implementation next)
+Revision: 39 (v0.28 Stage 8b activated; deterministic claim ledger next)
 
-The active language authority is v0.27 at the stable path
+The active language authority is v0.28 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
-Exact v0.8 through v0.26 are immutable flat archives. The current execution
+`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+Exact v0.8 through v0.27 are immutable flat archives. The current execution
 plan is [`docs/current-plan.md`](current-plan.md), project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
@@ -53,7 +53,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.27]` `[current: safe-Rust compiler]`
+`[current: spec v0.28]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -65,7 +65,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.27 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.28 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -207,8 +207,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, bounded DIAG-2 trust repair, the complete Stage 8a caller map, and reviewed held Stage 8b semantic candidate]`
-`[next: execute the strict held 0059–0064 stack; preserve active v0.27 through the combined exact owner checkpoint]`
+`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, and installed v0.28 verified postconditions]`
+`[next: Stage 9a deterministic claim ledger, then the separately approved Stage 9b strict partition]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -274,7 +274,7 @@ creating writer trust or weakening the checked safety envelope.
   the separately invoked adapter remains `Pass=393 Fail=1 Skip=13`, with only
   the pre-existing OWN-3 unsupported boundary. Commit `d495d8c` records the
   paired requirement-enforcement re-decision and passes MCTS lint. Task 0048 is
-  terminal. Exact-approved v0.27 is now active at
+  terminal. Exact-approved v0.27 became active at
   `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
   with byte-identical outgoing v0.26 archived at
   `spec/kernel-spec-v0.26.md`. It activates the bounded PRV-1/PRV-2/PRV-3
@@ -304,33 +304,21 @@ creating writer trust or weakening the checked safety envelope.
   side has fourteen mutable-delivery gaps, and the append map is staged
   `19 discharged / 1 unproved`, with two distinct declarations and only the
   wfgrep separator needing a caller repair. Task 0058's hostile source replay
-  falsifies the Current Plan's proposed existing-language repair for those
-  fourteen read gaps: OWN-6 requires each child-reborrow region to end with
-  its enclosing match or value-match `let` statement, so a value-producing
-  binding is either out of scope at its later consumer or makes the region
-  illegally extend past that statement. The smallest reviewed replacement is
-  one result-specific selected-`Ok`-payload receiver event for the existing
-  bare scalar `set` shape. It performs the ordinary target kill and substitutes
-  only the verified result payload; it transfers no assignment equality or
-  unrelated fact. The owner selected that narrow correction on 2026-08-14 as
-  the revised ACTIVE Current Plan strategy. It replaces only the fourteen-read
-  delivery mechanism; active language authority remains v0.27 and no v0.28 or
-  protected-conformance byte is selected by that plan decision. Task 0058 then
-  froze and hostile-reviewed the complete held v0.28 semantic candidate at
-  commit `7a293861`, with specification SHA-256 `08897c51…`, a byte-identical
-  outgoing v0.27 archive candidate, and a derivation-ledger amendment bound to
-  those exact bytes. The candidate is non-authoritative and has not landed on
-  the active-v0.27 integration branch.
-- **Missing / next:** the existing-DIAG-2 trust prerequisite, both Stage 8a
-  local witnesses, and the complete caller synthesis are terminal-positive.
-  Task 0058 is terminal-positive with the exact candidate frozen. Planned
-  tasks 0059–0064 must now implement the frontend, callee proofs, caller
-  publications, `value_if` delivery, five real consumers, and additive
-  protected corpus as one dependency-ordered held stack. Task 0064 then forms
-  the stable exact specification plus protected-conformance packet and stops
-  at the separate owner hard wait. No v0.28 specification, compiler,
-  real-source, protected-conformance, archive, or approval-ledger byte has
-  landed; wfgrep remains parked until the later atomic activation is terminal.
+  falsified the former value-match repair and froze the narrow selected-payload
+  receiver now installed by v0.28. Tasks 0059–0065 then installed FN-9,
+  complete/U/B callee proofs, callee-before-caller summaries, the four closed
+  call-result routes, `value_if`-only delivery, failure-atomic provenance
+  publication, and the five real consumers without a second proof authority or
+  runtime fallback. All fourteen `read_bits` and twenty `append_slice` routes
+  now discharge through the ordinary compiler path; A10 alone uses the bounded
+  `value_if` repair. The owner-approved additive protected matrix brings the
+  corpus to 437 cases and 132/132 rule coverage, with the previous 423 cases
+  and 30 annotations unchanged.
+- **Missing / next:** Stage 8b is terminal-positive. Stage 9a must now expose
+  the deterministic complete claim ledger over the installed final fact
+  sources and consumers. Stage 9b remains behind its later exact specification
+  and protected-conformance approval. `CAND-8` stays parked until both stages
+  and the complete PROOF-8 closure are terminal.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
@@ -368,13 +356,13 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.27 run is `Pass=409 Fail=1 Skip=13`; the one
+  compiler. The installed-v0.28 run is `Pass=423 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store` at the retained
   `RegionsAndBorrows` unsupported boundary, while the thirteen pending rows
   remain explicit toolchain gaps. This adapter is deliberately `#[ignore]` and
   invoked separately; `make check` does not silently include it. The earlier
-  v0.26 `393/1/13` and 242/123 runs are historical attribution evidence, not
-  current status.
+  v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are historical
+  attribution evidence, not current status.
 - **Missing / next:** preserve the independent pass/fail/skip report while the
   protected OWN-3 wording question remains open. Any expectation, source, or
   status change remains owner-protected and must report the before/after sets.

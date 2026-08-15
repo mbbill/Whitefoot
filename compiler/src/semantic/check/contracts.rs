@@ -399,6 +399,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .tree
                         .first_child_with(template.node, Production::RequiresBlock)?
                         .is_some()
+                    || self
+                        .tree
+                        .first_child_with(template.node, Production::EnsuresBlock)?
+                        .is_some()
                 {
                     return self.issue_node(
                         SemanticRule::Fn3,

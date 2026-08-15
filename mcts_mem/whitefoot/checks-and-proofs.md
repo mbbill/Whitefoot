@@ -3,7 +3,8 @@
 - No writer-accessible syntax removes, weakens, or silences a check; explicit `check` statements are never elided, even when tautological.
 - The active safe-Rust compiler reaches semantic and ownership checking, exact
   memory-effect checking, normative index and ordinary-call requirement
-  discharge, constrained-subject provenance gating, a private checked program,
+  discharge, verified normal-return postconditions, constrained-subject
+  provenance gating, a private checked program,
   target-independent typed control-flow IR, target qualification, conservative
   LLVM, and host execution. Explicit
   checks, claims, and real-entry requirement checks remain runtime checks; no

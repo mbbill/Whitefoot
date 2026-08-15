@@ -8,9 +8,10 @@ use super::scopes::ScopeBuild;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationId, DeclarationRecord, DeclarationRole,
     DeferredUseRecord, DeferredUseRole, DependentDeclarationRecord, DependentDeclarationRole,
-    LexicalUseRecord, LexicalUseRole, PreludeDeclarationRecord, ResolutionCompilerFailure,
-    ResolutionIssue, ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin,
-    SystemDeclarationRecord,
+    LexicalUseRecord, LexicalUseRole, PostconditionCandidateRecord, PostconditionFieldRecord,
+    PostconditionResolutionRecord, PostconditionSelectorClass, PostconditionSelectorUseRecord,
+    PreludeDeclarationRecord, ResolutionCompilerFailure, ResolutionIssue, ResolutionOutcome,
+    ResolvedSyntaxUnit, ScopeId, SourceOrigin, SystemDeclarationRecord,
 };
 
 mod admission;
@@ -18,9 +19,9 @@ mod inventory;
 mod lookup;
 mod roles;
 
-use admission::check_requires_blocks;
-use inventory::check_declaration_inventory;
-use lookup::resolve_uses;
+use admission::check_clause_blocks;
+use inventory::{check_declaration_inventory, check_ensures_entry_inventory};
+use lookup::{resolve_uses, resolve_uses_deferred, resolve_uses_without_verdict};
 use roles::classify_roles;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -51,6 +52,7 @@ impl EventKey {
 enum RawRoleKind {
     Declaration(DeclarationRole),
     DependentDeclaration(DependentDeclarationRole),
+    Selector(SelectorRole),
     LexicalUse(LexicalUseRole),
     DeferredUse(DeferredUseRole),
     /// A DIAG-1 table-checked carrier: the `program_kind` IDENT and both
@@ -70,12 +72,20 @@ impl RawRoleKind {
     const fn class_ordinal(self) -> u8 {
         match self {
             Self::Declaration(_) | Self::DependentDeclaration(_) => 0,
-            Self::LexicalUse(_) => 1,
-            Self::DeferredUse(_) => 2,
-            Self::TableChecked => 3,
-            Self::ClaimName => 4,
+            Self::Selector(_) => 1,
+            Self::LexicalUse(_) => 2,
+            Self::DeferredUse(_) => 3,
+            Self::TableChecked => 4,
+            Self::ClaimName => 5,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SelectorRole {
+    PlainCandidate,
+    VariantField,
+    VariantCandidate,
 }
 
 struct RawRole {
@@ -136,9 +146,11 @@ impl DeclarationIndex {
     }
 }
 
+#[derive(Clone)]
 struct UseMeta {
     role: LexicalUseRole,
     spelling: String,
+    owner: NodeId,
     origin: SourceOrigin,
     scope: ScopeId,
     owner_chain: Vec<NodeId>,
@@ -153,6 +165,7 @@ struct Tables {
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
+    postconditions: Vec<PostconditionResolutionRecord>,
 }
 
 enum BuildStop {
@@ -181,6 +194,7 @@ pub fn resolve<'classified, 'lexed, 'source>(
             dependent_declarations: tables.dependent_declarations,
             lexical_uses: tables.lexical_uses,
             deferred_uses: tables.deferred_uses,
+            postconditions: tables.postconditions,
         }),
         Err(BuildStop::Issue(issue)) => ResolutionOutcome::SourceIssue {
             syntax,
@@ -197,7 +211,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
     // permits the [SYS-3] system-admission decision, only that decision
     // permits declaration inventory, and only complete inventory permits
     // lexical resolution.
-    if let Some(issue) = check_requires_blocks(topology, &scopes)? {
+    if let Some(issue) = check_clause_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
     // The [SYS-3] system-admission decision reads the one syntactic [FN-7]
@@ -217,6 +231,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
     let mut declaration_metas = Vec::new();
     let mut declaration_by_role = vec![None; roles.len()];
     let mut uses = Vec::new();
+    let mut postcondition_entry_uses = Vec::new();
 
     for (role_index, role) in roles.iter().enumerate() {
         match role.kind {
@@ -251,14 +266,24 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                     origin: role.origin.clone(),
                 });
             }
-            RawRoleKind::LexicalUse(use_role) => uses.push(UseMeta {
-                role: use_role,
-                spelling: role.spelling.clone(),
-                origin: role.origin.clone(),
-                scope: role.scope,
-                owner_chain: role.owner_chain.clone(),
-                function_owner: function_owner(topology, role.owner),
-            }),
+            RawRoleKind::LexicalUse(use_role) => {
+                let use_meta = UseMeta {
+                    role: use_role,
+                    spelling: role.spelling.clone(),
+                    owner: role.owner,
+                    origin: role.origin.clone(),
+                    scope: role.scope,
+                    owner_chain: role.owner_chain.clone(),
+                    function_owner: function_owner(topology, role.owner),
+                };
+                if ancestor_with_production(topology, role.owner, Production::EnsuresEntry)
+                    .is_some()
+                {
+                    postcondition_entry_uses.push(use_meta);
+                } else {
+                    uses.push(use_meta);
+                }
+            }
             RawRoleKind::DeferredUse(deferred_role) => deferred_uses.push(DeferredUseRecord {
                 role: deferred_role,
                 spelling: role.spelling.clone(),
@@ -268,7 +293,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             // claim-name carriers the CLM-1 claim capability; until then a unit
             // containing one stops in semantic checking as an explicit
             // unsupported compiler capability.
-            RawRoleKind::TableChecked | RawRoleKind::ClaimName => {}
+            RawRoleKind::Selector(_) | RawRoleKind::TableChecked | RawRoleKind::ClaimName => {}
         }
     }
 
@@ -286,12 +311,92 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
     )? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    let lexical_uses = resolve_uses(
+    // An ensures-entry inventory issue is deliberately reported only after
+    // concrete FN-9 selector admission.  It nevertheless remains an
+    // inventory-stage event and therefore outranks *every* lookup event.  In
+    // that case collect all independently successful non-entry links without
+    // publishing a lookup verdict; semantic admission consumes only the
+    // links needed to form concrete signatures and then forwards the original
+    // stored inventory issue.  This also prevents an invalid ensures local
+    // from poisoning a body lookup before its own FORM-3/TYPE-6 event wins.
+    let pending_entry_inventory = first_ensures_entry_inventory_issue(
+        topology,
         &scopes,
+        &roles,
         &declarations,
         &declaration_metas,
         &declaration_index,
-        &uses,
+        &declaration_by_role,
+        &system,
+    )?
+    .is_some();
+    let lexical_uses = if pending_entry_inventory {
+        let (pre_admission, later): (Vec<_>, Vec<_>) = uses.iter().cloned().partition(|usage| {
+            usage.role == LexicalUseRole::EnsuresVariant
+                || ancestor_with_production(topology, usage.owner, Production::Stmt).is_none()
+        });
+        // Leading selector lookup and declaration/header lookup are true
+        // prerequisites of concrete signature substitution and therefore
+        // retain their original resolver verdict.  In particular an unknown
+        // variant never degrades into a semantic InvalidResolution merely
+        // because an entry inventory event is also pending.
+        let mut resolved = resolve_uses(
+            &scopes,
+            &declarations,
+            &declaration_metas,
+            &declaration_index,
+            &pre_admission,
+            &system,
+        )?;
+        resolved.extend(resolve_uses_without_verdict(
+            &scopes,
+            &declarations,
+            &declaration_metas,
+            &declaration_index,
+            &later,
+            &system,
+        )?);
+        resolved.sort_by(|left, right| {
+            let left = left.origin();
+            let right = right.origin();
+            (
+                left.coordinate().source().ordinal(),
+                left.coordinate().start().value(),
+                left.coordinate().end().value(),
+                left.node().components(),
+                left.role_ordinal(),
+                left.subtoken_ordinal(),
+            )
+                .cmp(&(
+                    right.coordinate().source().ordinal(),
+                    right.coordinate().start().value(),
+                    right.coordinate().end().value(),
+                    right.node().components(),
+                    right.role_ordinal(),
+                    right.subtoken_ordinal(),
+                ))
+        });
+        resolved
+    } else {
+        resolve_uses(
+            &scopes,
+            &declarations,
+            &declaration_metas,
+            &declaration_index,
+            &uses,
+            &system,
+        )?
+    };
+    let postconditions = build_postcondition_records(
+        topology,
+        &scopes,
+        &roles,
+        &declarations,
+        &declaration_metas,
+        &declaration_index,
+        &declaration_by_role,
+        &postcondition_entry_uses,
+        &lexical_uses,
         &system,
     )?;
     Ok(Tables {
@@ -302,6 +407,338 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
         dependent_declarations,
         lexical_uses,
         deferred_uses,
+        postconditions,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn first_ensures_entry_inventory_issue(
+    topology: &FinalizedTopology,
+    scopes: &ScopeBuild,
+    roles: &[ClassifiedRole],
+    declarations: &[DeclarationRecord],
+    declaration_metas: &[DeclarationMeta],
+    declaration_index: &DeclarationIndex,
+    declaration_by_role: &[Option<usize>],
+    system: &[SystemDeclarationRecord],
+) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
+    let mut blocks = topology
+        .nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| {
+            (record.production == Production::EnsuresBlock)
+                .then(|| NodeId::from_index(index))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    blocks.sort_by_key(|block| {
+        let record = &topology.nodes[block.index()];
+        let (source, start, end) = match record.extent {
+            FinalizedExtent::Source { source, start, end } => {
+                (source.ordinal(), start.value(), end.value())
+            }
+            FinalizedExtent::BundleRoot => (u32::MAX, u64::MAX, u64::MAX),
+        };
+        let path = scopes
+            .path(*block)
+            .map_or_else(|_| Vec::new(), |path| path.components().to_vec());
+        (source, start, end, path)
+    });
+    for block in blocks {
+        if let Some(issue) = check_ensures_entry_inventory(
+            topology,
+            scopes,
+            roles,
+            declarations,
+            declaration_metas,
+            declaration_index,
+            declaration_by_role,
+            system,
+            block,
+        )? {
+            return Ok(Some(issue));
+        }
+    }
+    Ok(None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_postcondition_records(
+    topology: &FinalizedTopology,
+    scopes: &ScopeBuild,
+    roles: &[ClassifiedRole],
+    declarations: &[DeclarationRecord],
+    declaration_metas: &[DeclarationMeta],
+    declaration_index: &DeclarationIndex,
+    declaration_by_role: &[Option<usize>],
+    entry_uses: &[UseMeta],
+    lexical_uses: &[LexicalUseRecord],
+    system: &[SystemDeclarationRecord],
+) -> Result<Vec<PostconditionResolutionRecord>, BuildStop> {
+    let mut blocks = Vec::new();
+    for (index, record) in topology.nodes.iter().enumerate() {
+        if record.production == Production::EnsuresBlock {
+            blocks
+                .push(NodeId::from_index(index).ok_or(ResolutionCompilerFailure::CounterOverflow)?);
+        }
+    }
+    blocks.sort_by_key(|block| {
+        let record = &topology.nodes[block.index()];
+        let (source, start, end) = match record.extent {
+            FinalizedExtent::Source { source, start, end } => {
+                (source.ordinal(), start.value(), end.value())
+            }
+            FinalizedExtent::BundleRoot => (u32::MAX, u64::MAX, u64::MAX),
+        };
+        let path = scopes
+            .path(*block)
+            .map_or_else(|_| Vec::new(), |path| path.components().to_vec());
+        (source, start, end, path)
+    });
+
+    let mut out = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        let function = ancestor_with_production(topology, block, Production::FnDecl)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        let selector = topology
+            .node_children(block)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
+            .iter()
+            .copied()
+            .find(|child| {
+                topology
+                    .node(*child)
+                    .is_some_and(|record| record.production == Production::EnsuresSelector)
+            })
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        let selector_path = scopes.path(selector)?;
+        let selector_roles: Vec<_> = roles.iter().filter(|role| role.owner == selector).collect();
+        let (class, plain_candidate, variant_target) = if let [candidate] =
+            selector_roles.as_slice()
+            && matches!(
+                candidate.kind,
+                RawRoleKind::Selector(SelectorRole::PlainCandidate)
+            ) {
+            (
+                PostconditionSelectorClass::Plain,
+                Some(build_postcondition_candidate(
+                    topology,
+                    scopes,
+                    candidate,
+                    None,
+                    block,
+                    declarations,
+                    declaration_metas,
+                    declaration_index,
+                    roles,
+                )?),
+                None,
+            )
+        } else {
+            let [variant] = selector_roles.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            };
+            if !matches!(
+                variant.kind,
+                RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant)
+            ) {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            }
+            let target = lexical_uses
+                .iter()
+                .find(|usage| {
+                    usage.role() == LexicalUseRole::EnsuresVariant
+                        && usage.origin().node() == selector_path
+                })
+                .map(LexicalUseRecord::target)
+                .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
+            (PostconditionSelectorClass::Variant, None, Some(target))
+        };
+
+        let mut field_roles: Vec<_> = roles
+            .iter()
+            .filter(|role| {
+                matches!(
+                    role.kind,
+                    RawRoleKind::Selector(SelectorRole::VariantField)
+                        | RawRoleKind::Selector(SelectorRole::VariantCandidate)
+                ) && ancestor_with_production(topology, role.owner, Production::EnsuresBlock)
+                    == Some(block)
+            })
+            .collect();
+        field_roles.sort_by_key(|role| EventKey::from_origin(&role.origin));
+        let mut fields = Vec::new();
+        for pair in field_roles.chunks(2) {
+            let [field, candidate] = pair else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            };
+            if field.owner != candidate.owner
+                || !matches!(
+                    field.kind,
+                    RawRoleKind::Selector(SelectorRole::VariantField)
+                )
+                || !matches!(
+                    candidate.kind,
+                    RawRoleKind::Selector(SelectorRole::VariantCandidate)
+                )
+            {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            }
+            fields.push(PostconditionFieldRecord {
+                spelling: field.spelling.clone(),
+                origin: field.origin.clone(),
+                candidate: build_postcondition_candidate(
+                    topology,
+                    scopes,
+                    candidate,
+                    Some(field.spelling.clone()),
+                    block,
+                    declarations,
+                    declaration_metas,
+                    declaration_index,
+                    roles,
+                )?,
+            });
+        }
+        if class == PostconditionSelectorClass::Plain && !fields.is_empty() {
+            return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+        }
+
+        let candidate_spellings: Vec<&str> = plain_candidate
+            .iter()
+            .map(|candidate| candidate.spelling.as_str())
+            .chain(fields.iter().map(|field| field.candidate.spelling.as_str()))
+            .collect();
+        let mut ordinary_entry_uses = Vec::new();
+        let mut selector_uses = Vec::new();
+        for use_record in entry_uses.iter().filter(|use_record| {
+            ancestor_with_production(topology, use_record.owner, Production::EnsuresBlock)
+                == Some(block)
+        }) {
+            if use_record.role == LexicalUseRole::PlaceBase
+                && candidate_spellings.contains(&use_record.spelling.as_str())
+            {
+                selector_uses.push(PostconditionSelectorUseRecord {
+                    spelling: use_record.spelling.clone(),
+                    origin: use_record.origin.clone(),
+                });
+            } else {
+                ordinary_entry_uses.push(use_record.clone());
+            }
+        }
+        let entry_inventory_issue = check_ensures_entry_inventory(
+            topology,
+            scopes,
+            roles,
+            declarations,
+            declaration_metas,
+            declaration_index,
+            declaration_by_role,
+            system,
+            block,
+        )?;
+        let (provisional_uses, entry_resolution_issue) = if entry_inventory_issue.is_some() {
+            (Vec::new(), None)
+        } else {
+            let (resolved, issue) = resolve_uses_deferred(
+                scopes,
+                declarations,
+                declaration_metas,
+                declaration_index,
+                &ordinary_entry_uses,
+                system,
+            )?;
+            if issue.is_some() {
+                (Vec::new(), issue)
+            } else {
+                (resolved, None)
+            }
+        };
+        out.push(PostconditionResolutionRecord {
+            function: scopes.path(function)?.clone(),
+            block: scopes.path(block)?.clone(),
+            selector: selector_path.clone(),
+            class,
+            plain_candidate,
+            fields,
+            variant_target,
+            provisional_uses,
+            selector_uses,
+            entry_inventory_issue,
+            entry_resolution_issue,
+        });
+    }
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_postcondition_candidate(
+    topology: &FinalizedTopology,
+    scopes: &ScopeBuild,
+    role: &ClassifiedRole,
+    paired_field: Option<String>,
+    block: NodeId,
+    declarations: &[DeclarationRecord],
+    metas: &[DeclarationMeta],
+    index: &DeclarationIndex,
+    roles: &[ClassifiedRole],
+) -> Result<PostconditionCandidateRecord, ResolutionCompilerFailure> {
+    let mut live_conflicts = Vec::new();
+    for meta in index
+        .with_spelling(&role.spelling)
+        .iter()
+        .filter_map(|candidate| metas.get(*candidate))
+    {
+        if meta.scope != ScopeId(0)
+            && meta
+                .owner
+                .is_some_and(|owner| !role.owner_chain.contains(&owner))
+        {
+            continue;
+        }
+        if !meta.entries.iter().any(|class| {
+            matches!(
+                class,
+                DeclarationClass::Function
+                    | DeclarationClass::NamedConst
+                    | DeclarationClass::ConstGeneric
+                    | DeclarationClass::Value
+            )
+        }) || !is_visible(
+            scopes,
+            meta,
+            role.scope,
+            role.origin.coordinate.source().ordinal(),
+            role.origin.coordinate.start().value(),
+        ) {
+            continue;
+        }
+        live_conflicts.push(declarations[meta.record_index].origin.clone());
+    }
+    live_conflicts.sort_by_key(EventKey::from_origin);
+    let later_local_collision = metas
+        .iter()
+        .filter_map(|meta| {
+            let declaration = declarations.get(meta.record_index)?;
+            let classified = roles.get(meta.role_index)?;
+            Some((declaration, classified.owner))
+        })
+        .filter(|(declaration, _)| {
+            declaration.role == DeclarationRole::Let
+                && declaration.spelling == role.spelling
+                && EventKey::from_origin(&declaration.origin) > EventKey::from_origin(&role.origin)
+        })
+        .find(|(_, owner)| {
+            ancestor_with_production(topology, *owner, Production::EnsuresBlock) == Some(block)
+        })
+        .map(|(declaration, _)| declaration.origin.clone());
+    Ok(PostconditionCandidateRecord {
+        spelling: role.spelling.clone(),
+        origin: role.origin.clone(),
+        paired_field,
+        live_conflicts,
+        later_local_collision,
     })
 }
 

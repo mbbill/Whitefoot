@@ -6,6 +6,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::{assert_rule, assert_rule_at, with_semantics};
+use crate::semantic::model::{CheckedStatement, ValueInitializerKind};
 
 fn assert_checks(source: &[u8]) {
     with_semantics(source, |outcome| {
@@ -167,6 +168,43 @@ fn a_value_if_derives_its_binder_from_the_delivery_set() {
 }
 "#;
     assert_checks(source);
+}
+
+#[test]
+fn checked_value_initializers_retain_their_source_production_kind() {
+    let source = br#"fn main() -> own unit pure {
+  let flag = True();
+  let from_if = if flag {
+    give 1_i32;
+  } else {
+    give 2_i32;
+  }
+  let outcome = Ok<i32, Overflow>(value: 1_i32);
+  let from_match = match outcome {
+    Ok(value: payload) => {
+      give payload;
+    }
+    Err(error: problem) => {
+      give 0_i32;
+    }
+  }
+  return unit;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("value initializer kinds must check: {outcome:?}");
+        };
+        let body = &checked.data.functions[0].body;
+        let CheckedStatement::ValueMatchLet { kind, .. } = &body[1] else {
+            panic!("second statement must be the value-if initializer");
+        };
+        assert_eq!(*kind, ValueInitializerKind::ValueIf);
+        let CheckedStatement::ValueMatchLet { kind, .. } = &body[3] else {
+            panic!("fourth statement must be the value-match initializer");
+        };
+        assert_eq!(*kind, ValueInitializerKind::ValueMatch);
+    });
 }
 
 #[test]

@@ -2,15 +2,15 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-v0.27 authority at `spec/kernel-spec.md`; released versioned files retain the
+v0.28 authority at `spec/kernel-spec.md`; released versioned files retain the
 superseded authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
-**Current statistics: 83 derived · 48 existence-only · 0 underived**
-(131 rules: v0.26's 128 plus the three v0.27 PRV additions).
+**Current statistics: 83 derived · 49 existence-only · 0 underived**
+(132 rules: v0.27's 131 plus the v0.28 FN-9 addition).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -96,6 +96,7 @@ exist; this form is minimality-selected and awaits its experiment),
 | FN-6 | Recursion allowed; polymorphic recursion rejected syntactically | 🟡 existence-only | Round-2 decided law monomorphization-only (D001, P0) forces rejecting polymorphic recursion — an unbounded instantiation set makes compile non-terminating — and R4 places the rejection at check time. Existence is therefore mechanically derived. The specific criterion (every call in a cycle instantiates at exactly the caller's own type parameters) is a conservative decidable form, strictly stronger than termination requires (it rejects finite permutation cycles). | Same class as the OWN-8 reject-when-unsure levers but NOT in the R3-provisional register — thinnest audit coverage of the FN section; flagged here. Sound-program rejection rate for AI-written mutually recursive generic code is unmeasured; a W1-tier codegen experiment on recursive-generic patterns would complete the derivation or force a relaxation. v0.3: deliberate over-strength now RECORDED in the rule (OWN-8 reject-and-restructure posture); rejection-rate experiment registered. Form still awaits measurement. |
 | FN-7 | Single main entry, capped effects, no globals/'static | 🟡 existence-only | PROG-1 closed world (round-2 decided law) demands a unique entry point — existence derived. The 'at most allocates(heap), traps' cap follows mechanically from EFF-1 + OWN-3: no caller-supplied regions exist at entry, so reads/writes rows are unspellable. No-global-state/no-'static rides on the OWN-3 lexical-regions D1a lever plus a P0/F001 argument (ambient global aliasing would erode the noalias fact base) that is plausible but nowhere carded. v0.18 adds the kind-declaring entry form beside the unchanged unlabelled entry. Existence is forced by PROG-3 together with the no-ambient-authority argument already recorded here: a program's complete standard-input access must be its own declared signature, so the inputs are written parameters of the entry rather than ambient functions or one retained `Process` object (both rejected with recorded grounds in the dossier's alternative table). Retaining the unlabelled entry is not conservatism — it supplies the non-empty kindless population on which SYS-1's Route C selection turns. Ordinal identity rather than type identity selects each supplied value because `command.stdout` and `command.stderr` share one type, and strictly increasing table-ordinal order is FORM-1/GRAM-8's one-legal-byte-sequence rule applied to the parameter list. | No card, debate round, or gate entry decides no-global-state specifically, and OWN-3 is itself R3-provisional (rejection-rate unmeasured). Adding statics/'static later is a breaking META-5 delta under FORM-1. Completing evidence: W1 experiment on program shapes that idiomatically want globals (config, interning tables) plus the section-5 formal-calculus reconciliation. v0.3: derivation basis recorded in the rule (P0 noalias erosion, W3 hidden channels, T1 future shared state); GlobalsAA-class carding remains backlog. v0.18 form NOT derived, and newly so: the `input_label` punctuation (`command.args as args: own Args`) is proposal-selected — the dossier fixed the label/binding separation and explicitly left the mechanism to the specification proposal, and no alternative binder punctuation was ever compared against it. The `command.*` label spellings and the IDENT-plus-closed-table kind/label mechanism are likewise regularity-selected, the latter from the FN-4 law-name precedent (syntax formation encodes no semantic vocabulary; the checker requires the IDENT to equal exactly one table row). New R3-provisional register items; time-urgent for the standing FORM-1 reason, since these bytes are now the one legal spelling of every program that touches the system. |
 | FN-8 | Concrete checked `requires` prologue; downstream proof only | 🟡 existence-only | Existence and semantics are evidence-selected: the base64 ceiling showed 1.7x removable-check headroom, PROOF-1 recovered 1.17x while leaving exactly 12 output-capacity writes, and the remaining relation is a single entry fact, so P0/R0 justify a boundary fact channel. W3 plus OP-4/OP-5 force stated-and-checked rather than trusted `assume`: the predicate executes and traps in every build, while only a deterministic proof may remove dominated implicit checks. W3/T1 and the observed direct-C entry path require universal boundary coverage rather than reliance on known Whitefoot callers; R4 places an unproved violation on the runtime-trap rung instead of silent corruption. EFF-2 exactness forces `traps` to remain syntactically exhibited after proof elision. The pure/total operation-table-only ANF sublanguage is the D1a/OWN-8 conservative closure: it gives the checker one local, non-mutating proof graph and rejects anything whose totality or dependency stability is uncertain. | The concrete-only boundary, always-retained check, and no-caller-obligation semantics are selected. The particular `requires { let_stmt* check_stmt }` spelling is minimality-selected (reuses existing ANF/check nodes), therefore R3-provisional pending a W1 code-generation/repair comparison against other single-spelling surfaces. Contract/refinement use is deliberately deferred rather than silently assigning conditional semantics to FN-3/FN-4. |
+| FN-9 | Verified narrow normal-return relation and caller publication | 🟡 existence-only | Existence and safety semantics are evidence-selected by the active Stage 8b plan and task 0053's complete 34-row caller map: fourteen direct selected-`Ok` read results and twenty direct append results need one caller-visible relation that the callee proves at every selected normal exit, while A10 needs only the existing `value_if` delivery join. W3/T1 forbid trusting the writer, so complete proof is mandatory, an empty selected-exit set is rejected, assertion dependence is retained separately in complete/U/B, same-SCC summaries are unavailable, and every caller fact passes exact substitution, ordinary kills, FN-8 premises, and the existing PRV batch before atomic publication. Reusing ENT-2 through ENT-5 and DIAG-2 supplies one finite deterministic derivation system and one evidence DAG rather than a solver, runtime fallback, recognizer, or second proof authority. | Form is not fully derived: the `ensures`/selector spelling, the explicit non-vacuity rejection, and the exact direct-result, direct-selected-payload, narrow receiver, and `value_if`-only carrier cuts are lead/minimality-selected within the plan around the measured consumers; the owner selection is specifically the high-level narrow selected-payload receiver and `value_if`-only correction rather than comparatively tested writer surfaces. Task 0058 must preserve the closed near misses; any broader RHS transfer, named/pending outcome token, general assignment equality, fixed-point summary, or additional delivery form requires a later amendment with its own evidence. |
 | EFF-1 | Canonical effect-row grammar: reads/writes/allocates/traps over regions | 🟡 existence-only | Existence: P0/R0 — the constitution names 'exact effect rows' as a delta of record over rustc; round-2 minimal-core decided law puts an effect row on every signature (grounded F001/F002/F003 non-interference payoffs); round-3 proof-burden includes the effect row in the mandatory writer floor. Canonical order and 'pure' as the unique empty-row spelling: R3/FORM-1 one-spelling + W3 canonical bytes. The specific four-effect, region-granular vocabulary: never evidence-selected. v0.18 adds `external` and `blocks` as payload-free categories between `allocates` and `traps`, leaving the pairwise canonical order of the four pre-existing categories unchanged. `external`'s existence follows from EFF-2's exactness requirement once any operation can act outside ordinary Whitefoot memory: an unexhibited external effect is exactly the hidden channel W3 forbids. `blocks` is fixed now on a decidability ground rather than a current need — whether an operation blocks is already determinable for every first-slice operation, while suspend and spawn membership cannot be decided until the async and task designs exist — and the honest statement is that no v0.18 rule reads `blocks` and it is exactly coextensive with `external` across the slice. The payload-free form is a recorded rejection, not an omission: `external(cwd)` and `changes(file)` would require every `Result`, field, helper return type, move, and call substitution to preserve a source-visible resource origin, while no rule may derive a disjointness, reordering, or elimination conclusion from a row (EFF-5), so the machinery would have no consumer. | Section 9 is spec-gated on region/effect exemplar carding before ratification — the spec's own admission the form is untested. The effects dossier's candidate vocabulary (free, throw, async, blocking, IO, synchronization, cancellation, unknown-foreign) was explicitly compared 'without selecting a winner', and region granularity inherits OWN-3 lexical regions, itself an R3-provisional D1a checker lever. Exemplar carding is the completing experiment. That standing gate now covers two more categories and nothing in v0.18 discharges it; the adversarial review's acceptance of `external` and `blocks` is not carding. |
 | EFF-2 | Syntactic exhibits relation; rows checked both directions; set-wide origin projection | ✅ derived | Undeclared-but-exhibited errors follow W3; declared-but-unexhibited errors follow the exact-effect P0/R0 delta; syntactic stability follows R4/W1 and DIAG-2. v0.17 lifts existing ultimate-origin projection over every member of a direct slice's finite origin set. At calls, formal declaration identity selects descriptor-mode and slice-data projections before region substitution, so equal actual region spellings cannot merge distinct suppliers or erase an effect. v0.18 extends the attribution, not the row. The row's shape is unchanged — an exact union with no subtyping — while its derivation gains a release contribution, because compiler-derived release has no syntactic occurrence anywhere in a declaration and a syntactic-only attribution would let a function that releases an external resource declare `pure`, which is the undeclared-but-exhibited error this rule already forbids. The union over every release that may run on any edge of FN-1's existing conservative structural normal-control graph is forced by the same conservatism that graph already carries: an owner moved on one match arm and released on another contributes its release row, and no path condition, constant evaluation, discharged law, optimizer fact, or backend reachability judgment removes an edge. The scope limit is deliberate — existing `box`, `buffer`, `arena`, and absent `const` releases carry the empty release row and are not retrofitted, because retrofitting would change the legal row of every existing program and conformance case that owns one, which no current experiment needs. | The set lifting is forced by T1/W3 once FN-1 permits multiple possible origins: projecting only the runtime-chosen or one arbitrary origin would be unsound. The effect vocabulary still inherits the section-9 exemplar-carding gate, and exact-row repair churn remains unmeasured. The v0.18 canonical case is a function whose only parameter is `own ReadFile` and whose complete body is exactly `return unit;`, which must declare `external, blocks`; that shape was chosen because FN-1 rejects an empty body, so the case cannot be simplified back into an unwritable shape. A release-only mismatch has no offending source occurrence and therefore reports at the function's `effects` node. |
 | EFF-3 | pure licenses dedup/reorder; elimination needs termination proof | ✅ derived | P0 via F002-class redundancy payoffs -> pure must license deduplication and reordering, which are sound without a termination assumption precisely because pure excludes traps and all effects (different trap orders would be observable via the report; effect-free reorder is not). Elimination restricted: T2 + W3 proof-only-elision — deleting an unused pure call assumes termination, an unstated unproven fact the round-3 spine forbids assuming; v0 ships no termination checker, so the conservative no-elimination fallback (round-3 conservative-fallback law pattern) is forced. Entered as a blocking spec-critique v0.1 fix ('pure-elimination restricted, no termination assumption'). v0.18 changes no license. `pure` is the unique spelling of the empty row, so it excludes `external` and `blocks` by the same clause that excludes every other category, and every row that was `pure` before this version keeps exactly its prior licenses. EFF-5 states the converse explicitly — no license stated here reaches a row carrying either new category — which is what makes the conservative fallback for external calls forced rather than chosen. | Deductive chain; no experiment is load-bearing. Note the elegant escape from round-3's 'purity has no carded check form -> conservative-only' problem: kernel purity is never asserted, only computed syntactically via EFF-2, so it never enters the trusted-assertion ledger. Unpriced residue: the P0 cost of retaining unused pure calls (likely negligible); a termination checker is a pure upgrade path. Inherits the section-9 ratification gate. |
@@ -988,3 +989,79 @@ noninterference claim.
 
 The active totals are **83 derived · 48 existence-only · 0 underived** across
 131 rules.
+
+## v0.28 amendment — verified normal-return postconditions (activated 2026-08-15)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.28, at SHA-256
+`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+The superseded v0.27 bytes are immutable at
+`spec/kernel-spec-v0.27.md`, SHA-256
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
+and byte-identical to the exact outgoing v0.27 authority. The specification,
+compiler, five real consumers, fourteen additive protected cases, canonical
+runner identity, approval chain, and derived material were installed as one
+owner-approved atomic activation.
+
+v0.28 adds FN-9 and removes no numbered rule. It modifies twenty existing
+rules at forty verbatim-anchored sites: FORM-2, GRAM-2, GIVE-1,
+GRAM-10, TYPE-6, OP-1, OP-5, FN-1, FN-3, FN-4, EFF-2, ERR-3, DIAG-1,
+DIAG-2, and ENT-1 through ENT-6. The following rows bind every modified rule
+without reclassifying any prior row:
+
+| Rule | v0.28 status | Amendment role |
+|---|---|---|
+| FORM-2 | derived_existence_only | Adds the one canonical placement and rendering of the optional `ensures` block. |
+| GRAM-2 | derived_existence_only | Adds `ensures_block`, `ensures_selector`, and `ensures_entry`, and one optional function-clause decision. |
+| GIVE-1 | derived_existence_only | Admits relation delivery only from an eligible bare atom through `value_if`; `value_match` remains a closed negative. |
+| GRAM-10 | derived_existence_only | Keeps zero, one, and multiple selector fields parseable while assigning their owner/member judgment exclusively to FN-9. |
+| TYPE-6 | derived_existence_only | Retains a selector binder as provisional until FN-9 admits one block-local symbolic result datum. |
+| OP-1 | derived_existence_only | Applies the existing reservation boundary to selector and clause-local candidate binders. |
+| OP-5 | derived_existence_only | Classifies the final ensures check as a proof obligation with no execution or dynamic-boundary behavior. |
+| FN-1 | derived | Extends the verified callable summary and keeps `fn_sig` template-free; only a function electing `ensures` receives the stricter result shape. |
+| FN-3 | derived_existence_only | Excludes an ensures-bearing function from a static conformance binding. |
+| FN-4 | derived | Excludes an ensures-bearing function from the existing exact law-discharge shape. |
+| FN-9 | derived_existence_only | Defines selector admission, one output-bearing L0 relation, nonempty selected exits, entry-image stability, complete/U/B proof, callee-before-caller SCC publication, B-summary-first evidence selection, exact caller substitution and route cuts, and PRV-atomic publication. |
+| EFF-2 | derived | Makes an ensures block proof-only and effectless. |
+| ERR-3 | derived | Makes an automatically propagated `Err` unselected for an `Ok` postcondition and publishes no relation there. |
+| DIAG-1 | derived | Fixes structural admission, selector ownership and same-block shadow rejection, stage order, exact residuals, and deterministic rejection selection. |
+| DIAG-2 | derived | Extends the one function-local derivation DAG with S7, exit, aggregate, call, receiver, delivery, join, and atomic-publication roots. |
+| ENT-1 | derived | Adds FN-9/S12 and bounded delivery to the same deterministic acceptance-bearing fragment without another proof authority. |
+| ENT-2 | derived_existence_only | Adds the template-only symbolic result datum, view-independent parameter entry-image stability boundary, and Z's single S7 mathematical-zero disequality role. |
+| ENT-3 | derived | Adds only the measured unsigned `iand` bounds, closed `ishl.wrap(one, count)` nonzero source, and verified S12 source. |
+| ENT-4 | derived | Fixes complete exclusive dispositions for L0 relations, including equality, disequality, and one-bound exact negation. |
+| ENT-5 | derived | Fixes support, kill, call/receiver order, forward delivery substitution, weakest-bound joins, and entry-image invalidation. |
+| ENT-6 | derived | Carries candidate facts independently in complete/U/B after PRV-1 freezes and finalizes or discards the whole batch under PRV-2/PRV-3. |
+
+The owner selected the high-level narrow selected-payload receiver and
+`value_if`-only correction. Within that active plan, the lead semantic freeze
+selected the `ensures` and selector spelling, explicit non-vacuity rejection,
+and remaining exact closed route cuts. The complete 14/20 caller map and A10
+delivery case select the existence and bounded semantics, but no function,
+source, corpus, or test identity selects a language rule. FN-9 therefore adds
+one existence-only row: the totals become **83 derived · 49 existence-only ·
+0 underived** across 132 rules.
+
+Grammar arithmetic from v0.27 is exact: 70 + 3 = 73 productions; 85 + 5 =
+90 decisions (function `ensures?`, entries `*`, selector choice, optional
+fieldbind list, and entry `doc | stmt`); 88 + 1 = 89 fixed terminal spellings;
+and 96 + 1 = 97 terminal predicates. The only new spelling is `ensures`.
+
+The frozen pre-implementation identity preflight used the active-v0.27 compiler,
+not a candidate-branch build that self-embeds these candidate specification
+bytes. Against the exact outgoing archive, baseline versus baseline exits zero
+with `grammar-preserving candidate verified by the active compiler: 70
+productions, 85 decisions, 96 terminal predicates`. Baseline versus this
+candidate exits one with only `candidate changes the lexer or source grammar
+of the baseline but does not match the compiler's embedded frontend contract`.
+That identity mismatch was the expected freeze-boundary control. The installed
+frontend now makes the archive-to-active verifier pass at 73 productions, 90
+decisions, and 97 terminal predicates; the archive-to-archive v0.27 control
+remains 70/85/96.
+
+The amendment adds no runtime check, fallback, trusted assertion, optimizer
+license, effect, cleanup behavior, error behavior, provenance class, host or
+runtime ABI rule, serialized identity, or alternate lowering path. The private
+`read_bits` signature and call-typing migration is ordinary source/compiler
+synchronization. The installed protected matrix is additive: 437 cases, 30
+unchanged annotations, and 132/132 rule coverage; it records rather than
+selects the specification semantics above.

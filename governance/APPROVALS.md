@@ -320,6 +320,7 @@ ACTIVE-SPEC: v0.24 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2d
 ACTIVE-SPEC: v0.25 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab 53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86
 ACTIVE-SPEC: v0.26 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab
 ACTIVE-SPEC: v0.27 bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476
+ACTIVE-SPEC: v0.28 08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09 bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f
 
 ## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
 - owner: **the owner's exact-byte approval of the digest below.** It was taken
@@ -569,6 +570,69 @@ ACTIVE-SPEC: v0.27 bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d95020
   v0.26 archive bytes, the named raw-DEFLATE migration, and the sixteen
   additive conformance cases. Stage 8a is not approved; this commit performs
   no MCTS activation and creates no v0.27 archive.
+
+## 2026-08-15 — OWNER EXACT-BYTE APPROVAL: v0.28 verified normal-return postconditions
+- owner: **the owner, in conversation, 2026-08-15** — “按上述 SHA 激活 v0.28
+  specification，并加入上述 manifest SHA 与 14 个 source SHA 所定义的受保护
+  conformance 候选；随后在当前单一 codex/0047 开发线上执行一次原子化 main
+  集成，写入批准/ACTIVE-SPEC 链及普通 closure 记录，并运行完整激活后
+  gates。” The reply followed the revised exact packet and its hard wait. It
+  explicitly approves the named specification, protected corpus, canonical
+  runner identity, archive action, chain entry, and atomic integration.
+- APPROVED BYTES: active `spec/kernel-spec.md`, version v0.28, SHA-256
+  `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+  The outgoing immutable v0.27 archive is byte-identical to the previously
+  active stable file and has SHA-256
+  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+  A changed specification or archive byte returns to exact review.
+- PROTECTED CORPUS: approve the append-only manifest at SHA-256
+  `8fada5059b57d563ab00a1c1c305dcd5810201ea2c507ee00a4137102bfc18f3`;
+  its fourteen-row suffix is
+  `d388c6d01ad1de4a294bef0d64fb3074544fb90f2c0c3a4177f7dea587579ab6`.
+  Approve exactly these additive source identities, with no prior case or row
+  modification, deletion, rename, or reorder:
+  `fn9-pos-plain-direct-result` `b3ce74fada6ea840b39d319952ee6b4a0393eb5cd6c2cff6c7faaaf2ddea8a7e`;
+  `fn9-pos-ok-selected-receiver` `ad5983b34a0d050b8404248e83d4607ed05af3b4120eaba8f4193023bf5ec79b`;
+  `fn9-neg-no-selected-normal-exit` `bccccff8b2725b4bc57a7fc676a045c279057930073d8cc1792ecdd610d3d776`;
+  `fn9-neg-unproved-selected-return` `401716a140d4702c31866363f72665df3aa503e379feb8043f5712a101c6fc46`;
+  `fn9-neg-entry-image-kill` `8c95f20c44fcf083d60e3e62b5aacd7199a7026006eb7898bf8af6a225cd2515`;
+  `fn9-neg-same-scc-summary` `b9adaabea6f31847c7c9495ecd3b94e2a1c3f28d3043e753abdde69364dd013f`;
+  `ent3-pos-stage8b-bit-sources` `348aa8a014bf7204dfbc17061234b5076188393b0be308fe3274699ab8c50be1`;
+  `ent3-neg-stage8b-local-one` `7fe3f057ab5ca803efb52450c6c92ec9d2d5db0937478f4b0e2dff776467e9bb`;
+  `fn9-pos-direct-set-receiver` `f989f805cdfa18d490a795fa050dea0c898a0dd64c067248bb5e407d52c27880`;
+  `fn9-neg-named-outcome-no-publication` `4a678d82a9e637f26ae2aae4d33efdebeea9bf28eac5a65a4d30e0310b1a37b9`;
+  `ent5-pos-value-if-delivery-join` `1aed6d6be263899f04decd6508966f31199c6bbfd20db40c847d0eeaa587eb5e`;
+  `ent5-neg-value-match-no-delivery` `22eba0419d73aaa20a3b21bf78dfba2b9adb9e9159f8f5ed595ee0d0d5e9354b`;
+  `prv2-neg-complete-only-postcondition` `34ddc5f80b2a571b32775846419920ea92e7c41d6b5e60426304f982eda54995`;
+  and `prv2-pos-postcondition-b-summary`
+  `8d87708df6572fb90b09234ba9d51a3cd1ea05dc6f356f3131f5182776abc9fa`.
+- CANONICAL RUNNER IDENTITY: approve changing only
+  `tests/conformance/runner.py`'s `ACTIVE_SPEC_SHA256` from the outgoing v0.27
+  digest to the approved v0.28 digest. The resulting complete runner SHA-256
+  is `369fc2f100d679f9ce815087f9533315b95c81750e9d60d1660993f5ea290072`.
+  Runner logic, collection, verdict interpretation, adapter, baseline, gate
+  wiring, and invocation remain unchanged.
+- SEMANTIC AND CONSUMER SCOPE: install the reviewed FN-9 surface, complete/U/B
+  selected-exit proofs, bounded S7 sources, earlier-SCC postcondition
+  publication, four closed result-receiver routes, `value_if`-only delivery,
+  failure-atomic provenance publication, and the exact five-source 14/20/A10
+  real-consumer migration. No general assignment equality, solver, induction,
+  runtime fallback, new optimizer authority, alternate lowering, host/runtime
+  ABI, or additional caller repair is approved.
+- INSTALLED EVIDENCE: the additive result is 437 cases and 30 unchanged
+  annotations, rule coverage 132/132, and native adapter
+  `Pass=423 Fail=1 Skip=13`; the sole failure remains the pre-existing OWN-3
+  `own3-pos-outlives-store` unsupported boundary.
+- STABLE-PATH INSTALLATION: v0.28 remains only at `spec/kernel-spec.md`; the
+  exact outgoing bytes are newly archived at immutable
+  `spec/kernel-spec-v0.27.md`. No `spec/kernel-spec-v0.28.md` is created.
+- boundary: exact specification/archive/protected/runner identity bytes plus
+  the reviewed H0–H5 compiler and consumer implementation, generated data,
+  active pins, approval chain, derivation binding, ordinary documentation,
+  task closure, MCTS synchronization, full gates, and one atomic main squash.
+  Stage 9a is ordinary compiler/tooling work under the ACTIVE plan; Stage 9b
+  still requires its later independent exact specification and protected
+  approval.
 
 ## Pre-approval specification digests, as found
 

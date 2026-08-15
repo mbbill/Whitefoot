@@ -462,6 +462,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .as_ref()
                     .map(|slice| slice.origins.clone())
                     .unwrap_or_default(),
+                consume_root: false,
             },
             _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
                 CheckedExpression::BorrowAddressed {

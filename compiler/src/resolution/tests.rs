@@ -10,9 +10,9 @@ use crate::{
 use super::catalog::OPERATION_FAMILIES;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationOrigin, DeclarationRole, DeferredUseRole,
-    DependentDeclarationRole, LexicalUseRecord, LexicalUseRole, ReservedDeclarationRole,
-    ResolutionIssue, ResolutionIssueKind, ResolutionOutcome, ResolutionRule, ResolvedTarget,
-    resolve,
+    DependentDeclarationRole, LexicalUseRecord, LexicalUseRole, PostconditionSelectorClass,
+    ReservedDeclarationRole, ResolutionIssue, ResolutionIssueKind, ResolutionOutcome,
+    ResolutionRule, ResolvedTarget, ScopeKind, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -221,6 +221,423 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
             ResolutionIssueKind::RequiresShape(_)
         ));
     });
+}
+
+#[test]
+fn clause_structural_admission_selects_the_earliest_source_across_both_rules() {
+    let invalid_ensures = br#"fn first() -> own i32 pure ensures result {
+  doc "bad ensures";
+} {
+  return 0_i32;
+}
+"#;
+    let invalid_requires = br#"fn second() -> own unit traps requires {
+  doc "bad requires";
+} {
+  return unit;
+}
+"#;
+
+    for (first, second, expected) in [
+        (
+            invalid_ensures.as_slice(),
+            invalid_requires.as_slice(),
+            ResolutionRule::Fn9,
+        ),
+        (
+            invalid_requires.as_slice(),
+            invalid_ensures.as_slice(),
+            ResolutionRule::Fn8,
+        ),
+    ] {
+        with_resolution(
+            &[
+                SourceInput::new("first.wf", first),
+                SourceInput::new("second.wf", second),
+            ],
+            |outcome| {
+                let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("an invalid clause block must reject: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), expected);
+                assert_eq!(issue.origin().coordinate().source().ordinal(), 0);
+            },
+        );
+    }
+}
+
+#[test]
+fn plain_postcondition_selector_is_private_and_clause_scopes_are_disjoint() {
+    let source = br#"fn relation(value: own i32) -> own i32 traps requires {
+  check ieq(value, value) else trap "pre";
+} ensures result {
+  check ieq(result, value) else trap "post";
+} {
+  return value;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("plain postcondition surface must resolve: {outcome:?}");
+        };
+        let postcondition = resolved
+            .postconditions()
+            .first()
+            .expect("one private postcondition record");
+        assert_eq!(postcondition.class, PostconditionSelectorClass::Plain);
+        let candidate = postcondition
+            .plain_candidate
+            .as_ref()
+            .expect("plain selector candidate");
+        assert_eq!(candidate.spelling, "result");
+        assert_eq!(candidate.origin.role_ordinal(), 0);
+        assert!(candidate.paired_field.is_none());
+        assert!(candidate.live_conflicts.is_empty());
+        assert!(candidate.later_local_collision.is_none());
+        assert!(postcondition.fields.is_empty());
+        assert!(postcondition.variant_target.is_none());
+        assert!(postcondition.entry_inventory_issue.is_none());
+        assert!(postcondition.entry_resolution_issue.is_none());
+        assert_eq!(postcondition.selector_uses.len(), 1);
+        assert_eq!(postcondition.selector_uses[0].spelling, "result");
+        assert!(
+            resolved
+                .declarations()
+                .iter()
+                .all(|declaration| declaration.spelling() != "result")
+        );
+        assert!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .all(|usage| usage.spelling() != "result")
+        );
+
+        let requires = resolved
+            .scopes()
+            .iter()
+            .find(|scope| scope.kind() == ScopeKind::RequiresBlock)
+            .expect("requires scope");
+        let ensures = resolved
+            .scopes()
+            .iter()
+            .find(|scope| scope.kind() == ScopeKind::EnsuresBlock)
+            .expect("ensures scope");
+        assert_ne!(requires.id(), ensures.id());
+        assert_eq!(requires.parent(), ensures.parent());
+    });
+}
+
+#[test]
+fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles() {
+    for field in ["value", "hostile"] {
+        let source = format!(
+            "fn selected(value: own i32) -> own Result<i32, i32> pure ensures Ok({field}: result) {{\n  check ieq(result, value) else trap \"post\";\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
+        );
+        with_one_resolution(source.as_bytes(), |outcome| {
+            let ResolutionOutcome::Complete(resolved) = outcome else {
+                panic!("variant postcondition surface must resolve: {outcome:?}");
+            };
+            let [postcondition] = resolved.postconditions() else {
+                panic!("one private postcondition record is required");
+            };
+            assert_eq!(postcondition.class, PostconditionSelectorClass::Variant);
+            assert!(postcondition.plain_candidate.is_none());
+            assert!(matches!(
+                postcondition.variant_target,
+                Some(ResolvedTarget::Prelude(id)) if id.ordinal() == 11
+            ));
+            let [selector_field] = postcondition.fields.as_slice() else {
+                panic!("one selector field is required");
+            };
+            assert_eq!(selector_field.spelling, field);
+            assert_eq!(selector_field.origin.role_ordinal(), 0);
+            assert_eq!(selector_field.candidate.spelling, "result");
+            assert_eq!(selector_field.candidate.origin.role_ordinal(), 1);
+            assert_eq!(
+                selector_field.candidate.paired_field.as_deref(),
+                Some(field)
+            );
+            assert!(
+                resolved
+                    .declarations()
+                    .iter()
+                    .all(|declaration| declaration.role() != DeclarationRole::MatchBinder)
+            );
+            assert!(
+                resolved
+                    .deferred_uses()
+                    .iter()
+                    .all(|usage| usage.role() != DeferredUseRole::MatchField)
+            );
+        });
+    }
+}
+
+#[test]
+fn selector_candidates_use_their_exact_form3_reservation_roles() {
+    let plain = br#"fn plain(value: own i32) -> own i32 pure ensures ilt {
+  check ieq(ilt, value) else trap "post";
+} {
+  return value;
+}
+"#;
+    let variant =
+        br#"fn variant(value: own i32) -> own Result<i32, i32> pure ensures Ok(value: ilt) {
+  check ieq(ilt, value) else trap "post";
+} {
+  return Ok<i32, i32>(value: value);
+}
+"#;
+    for (source, expected_role, role_ordinal) in [
+        (
+            plain.as_slice(),
+            ReservedDeclarationRole::PlainResultSelector,
+            0,
+        ),
+        (
+            variant.as_slice(),
+            ReservedDeclarationRole::VariantResultSelector,
+            1,
+        ),
+    ] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("reserved selector candidate must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Form3);
+            assert_eq!(issue.origin().role_ordinal(), role_ordinal);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::ReservedName {
+                    spelling,
+                    declaration_role,
+                    inventory_ordinal: 18,
+                    ..
+                } if spelling == "ilt" && *declaration_role == expected_role
+            ));
+        });
+    }
+}
+
+#[test]
+fn postcondition_entry_inventory_and_lookup_wait_for_selector_admission() {
+    let unresolved = br#"fn unresolved() -> own unit pure ensures result {
+  check ieq(result, missing) else trap "post";
+} {
+  return unit;
+}
+"#;
+    with_one_resolution(unresolved, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("entry lookup must be retained behind selector admission: {outcome:?}");
+        };
+        let [postcondition] = resolved.postconditions() else {
+            panic!("one private postcondition record is required");
+        };
+        assert!(postcondition.entry_inventory_issue.is_none());
+        assert!(postcondition.provisional_uses.is_empty());
+        assert!(matches!(
+            postcondition.entry_resolution_issue.as_ref(),
+            Some(issue)
+                if issue.rule() == ResolutionRule::Type5
+                    && matches!(
+                        issue.kind(),
+                        ResolutionIssueKind::UnresolvedUse { spelling, .. }
+                            if spelling == "missing"
+                    )
+        ));
+    });
+
+    let inventory_conflict = br#"fn conflict(result: own i32) -> own i32 pure ensures result {
+  let result = 0_i32;
+  check ieq(result, result) else trap "post";
+} {
+  return result;
+}
+"#;
+    with_one_resolution(inventory_conflict, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("entry inventory must be retained behind selector admission: {outcome:?}");
+        };
+        let [postcondition] = resolved.postconditions() else {
+            panic!("one private postcondition record is required");
+        };
+        let candidate = postcondition
+            .plain_candidate
+            .as_ref()
+            .expect("plain selector candidate");
+        assert_eq!(candidate.live_conflicts.len(), 1);
+        assert!(candidate.later_local_collision.is_some());
+        assert!(postcondition.provisional_uses.is_empty());
+        assert!(postcondition.entry_resolution_issue.is_none());
+        assert!(matches!(
+            postcondition.entry_inventory_issue.as_ref(),
+            Some(issue)
+                if issue.rule() == ResolutionRule::Type6
+                    && matches!(
+                        issue.kind(),
+                        ResolutionIssueKind::DeclarationCollision { spelling, .. }
+                            if spelling == "result"
+                    )
+        ));
+    });
+}
+
+#[test]
+fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
+    let source = br#"fn poisoned(value: own i32) -> own i32 pure ensures result {
+  let ilt = ieq(result, value);
+  check ilt else trap "post";
+} {
+  return ilt;
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("entry inventory must remain pending through selector admission: {outcome:?}");
+        };
+        let [postcondition] = resolved.postconditions() else {
+            panic!("one private postcondition record is required");
+        };
+        assert!(matches!(
+            postcondition.entry_inventory_issue.as_ref(),
+            Some(issue)
+                if issue.rule() == ResolutionRule::Form3
+                    && matches!(
+                        issue.kind(),
+                        ResolutionIssueKind::ReservedName {
+                            spelling,
+                            declaration_role: ReservedDeclarationRole::Let,
+                            ..
+                        } if spelling == "ilt"
+                    )
+        ));
+        assert!(
+            resolved
+                .lexical_uses()
+                .iter()
+                .all(|usage| usage.spelling() != "ilt"),
+            "neither the invalid entry declaration nor its body lookalike may publish a target"
+        );
+    });
+}
+
+#[test]
+fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory() {
+    let source = br#"fn unresolved(value: own i32) -> own Result<i32, Overflow> pure ensures Missing(value: result) {
+  let ilt = ieq(result, value);
+  check ilt else trap "post";
+} {
+  return Ok<i32, Overflow>(value: value);
+}
+"#;
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!(
+                "leading selector lookup must reject before delayed entry inventory: {outcome:?}"
+            );
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type6);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::UnresolvedUse {
+                spelling,
+                role: LexicalUseRole::EnsuresVariant,
+                ..
+            } if spelling == "Missing"
+        ));
+    });
+}
+
+#[test]
+fn requires_and_ensures_locals_do_not_cross_clause_or_body_boundaries() {
+    let requires_into_ensures = br#"fn isolated(value: own i32) -> own i32 traps requires {
+  let pre = value;
+  check ieq(pre, value) else trap "pre";
+} ensures result {
+  check ieq(result, pre) else trap "post";
+} {
+  return value;
+}
+"#;
+    with_one_resolution(requires_into_ensures, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("cross-clause lookup must wait behind selector admission: {outcome:?}");
+        };
+        let [postcondition] = resolved.postconditions() else {
+            panic!("one private postcondition record is required");
+        };
+        assert!(matches!(
+            postcondition.entry_resolution_issue.as_ref(),
+            Some(issue)
+                if issue.rule() == ResolutionRule::Type5
+                    && matches!(
+                        issue.kind(),
+                        ResolutionIssueKind::InvisibleUse { spelling, .. }
+                            if spelling == "pre"
+                    )
+        ));
+    });
+
+    let ensures_into_body = br#"fn isolated(value: own i32) -> own i32 pure ensures result {
+  let post = value;
+  check ieq(result, post) else trap "post";
+} {
+  return post;
+}
+"#;
+    with_one_resolution(ensures_into_body, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("ensures local must not reach the body: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), ResolutionRule::Type5);
+        assert!(matches!(
+            issue.kind(),
+            ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "post"
+        ));
+    });
+}
+
+#[test]
+fn const_generics_remain_outside_the_ordinary_place_base_domain() {
+    let ordinary = br#"fn value<const n: u64>() -> own u64 pure {
+  return n;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    let postcondition = br#"fn value<const n: u64>() -> own u64 pure ensures result {
+  check ieq(result, result) else trap "post";
+} {
+  return n;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#;
+    for source in [ordinary.as_slice(), postcondition.as_slice()] {
+        with_one_resolution(source, |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a const generic must not become an ordinary pbase: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), ResolutionRule::Type5);
+            assert!(matches!(
+                issue.kind(),
+                ResolutionIssueKind::UnresolvedUse {
+                    spelling,
+                    role: LexicalUseRole::PlaceBase,
+                    admissible,
+                    available,
+                } if spelling == "n"
+                    && !admissible.contains(&DeclarationClass::ConstGeneric)
+                    && available.contains(&DeclarationClass::ConstGeneric)
+            ));
+        });
+    }
 }
 
 #[test]

@@ -26,9 +26,11 @@ fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, sy
   let length_base = cvt<u16, u64>(length_base_word);
   let length_extra_byte = length_extras[length_index];
   let length_extra_count = cvt<u8, u32>(length_extra_byte);
+  let length_extra_high = ishl.wrap(1_u64, length_extra_count);
+  let length_extra_mask = length_extra_high -wrap 1_u64;
   let length_extra = 0_u64;
   region 'length_extra_call {
-    match read_bits<'length_extra_call, 'length_extra_call>(state: &uniq 'length_extra_call deref(state), input: &'length_extra_call deref(input), count: length_extra_count) {
+    match read_bits<'length_extra_call, 'length_extra_call>(state: &uniq 'length_extra_call deref(state), input: &'length_extra_call deref(input), count: length_extra_count, mask: length_extra_mask) {
       Ok(value: extra) => {
         set length_extra = extra;
       }
@@ -51,9 +53,11 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
   let distance_base = cvt<u16, u64>(distance_base_word);
   let distance_extra_byte = distance_extras[distance_symbol];
   let distance_extra_count = cvt<u8, u32>(distance_extra_byte);
+  let distance_extra_high = ishl.wrap(1_u64, distance_extra_count);
+  let distance_extra_mask = distance_extra_high -wrap 1_u64;
   let distance_extra = 0_u64;
   region 'distance_extra_call {
-    match read_bits<'distance_extra_call, 'distance_extra_call>(state: &uniq 'distance_extra_call deref(state), input: &'distance_extra_call deref(input), count: distance_extra_count) {
+    match read_bits<'distance_extra_call, 'distance_extra_call>(state: &uniq 'distance_extra_call deref(state), input: &'distance_extra_call deref(input), count: distance_extra_count, mask: distance_extra_mask) {
       Ok(value: extra) => {
         set distance_extra = extra;
       }
@@ -248,7 +252,7 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
   loop @table_code_lengths {
     let bit = 0_u64;
     region 'table_bit_call {
-      match read_bits<'table_bit_call, 'table_bit_call>(state: &uniq 'table_bit_call deref(state), input: &'table_bit_call deref(input), count: 1_u32) {
+      match read_bits<'table_bit_call, 'table_bit_call>(state: &uniq 'table_bit_call deref(state), input: &'table_bit_call deref(input), count: 1_u32, mask: 1_u64) {
         Ok(value: read_bit) => {
           set bit = read_bit;
         }

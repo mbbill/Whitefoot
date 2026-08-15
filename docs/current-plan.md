@@ -1,15 +1,15 @@
 # Current Plan
 
-Status: **ACTIVE** (owner selection 2026-08-14): preserve the owner-selected
-obligation-discharge sequence while correcting Stage 8b's fourteen-call
-result-delivery mechanism after hostile source replay falsified the former
-existing-language value-match strategy.
+Status: **ACTIVE** (Stage 8b installed 2026-08-15; Stage 9a next): preserve the
+owner-selected obligation-discharge sequence through the deterministic claim
+ledger and later separately approved strict partition.
 
 The owner selected the predecessor plan on 2026-08-12 and explicitly selected
 the narrow Stage 8b receiver correction described below on 2026-08-14. Task
 0058 proved that OWN-6 prevents a value-producing match result from surviving
 the mandatory statement-scoped child-reborrow region at all fourteen mapped
-`read_bits` calls. This revision changes only that Stage 8b delivery mechanism;
+`read_bits` calls. The 2026-08-14 plan revision changed only that Stage 8b
+delivery mechanism;
 it carries forward the objective, workstream order, consumers, verification
 boundary, and later exact specification/protected-conformance waits. Its
 `ACTIVE` status authorizes resumed task execution inside the exact written
@@ -18,8 +18,9 @@ conformance bytes.
 
 Derived from [Direction Outline revision 36](roadmap.md), primarily `PROOF-8`,
 with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
-constraints. `CAND-8` remains the selected flagship pressure source but stays
-parked until this plan reaches its terminal boundary.
+constraints; the installed landscape is synchronized through Direction
+Outline revision 39. `CAND-8` remains the selected flagship pressure source
+but stays parked until this plan reaches its terminal boundary.
 
 ## Objective
 
@@ -45,28 +46,28 @@ optimization or performance project.
 
 ## Installed baseline and frozen boundaries
 
-- Active language authority: v0.27 at `spec/kernel-spec.md`, SHA-256
-  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+- Active language authority: v0.28 at `spec/kernel-spec.md`, SHA-256
+  `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
 - Raw-DEFLATE sources, in compilation order:
   - `raw_deflate.wf`:
-    `5e87885a519de539736b0ad6a619a2c92bdf659623e3f39ded31116e63adb585`;
+    `6da69f4dfaa3906c8516a4b0eb3f113b96b8c406084ac3c16ffb92514098bdf2`;
   - `raw_deflate_dynamic.wf`:
-    `2606ae0b81039b0ecc787df2fa9cb87279ba44663744540d48f6abeea984d4c5`;
+    `87099254c197460733a3a4661b0a5e0dd6290936e4647634ceed0134043b0b84`;
   - `raw_deflate_dynamic_decode.wf`:
-    `72129284c60a6eacbe2bb86d7d3a82375ed2270ea457c49d8e1db95064fc960f`;
+    `8604a81550083bdaea85e5da0aaf798a75e14beb7626a2f21d08975ae88d071d`;
   - `raw_deflate_boundary.wf`:
-    `3fbd1281b1e9f4f9a161cf7d846622ae277611eaf9d34ce3ba576f3a81d140c4`.
+    `c5044c5db980e1d2c14b5c3731a153351a58d61d84aec81880e355707c2a2f84`.
 - `wfgrep.wf`:
-  `a1e49bcb9ffd353e707d4bbafe1eb4a2b634b9177c6916b2ff7b503ec5dff0bd`.
-- Installed acceptance: UTF-8 `33/22/11/0`, SHA-256 `9/9/0/0`, complete
-  DEFLATE `29/24/5/0`, dynamic DEFLATE `24/19/5/0`; twelve DEFLATE
-  claims are seven retained, five redundant, zero refuted.
-- Installed tests: provenance `41/41`, raw-DEFLATE `3/3`, complete compiler
-  library `718/718`, real programs `30/30`, rule coverage `131/131`. The
-  predecessor plan recorded its earlier pre-DIAG compiler baseline as
-  `698/698`.
-- Protected conformance boundary: 423 cases, 30 coverage annotations, and the
-  installed adapter result `Pass=409 Fail=1 Skip=13`; the sole failure remains
+  `44db13e238b00260ec4f23a60be85db700d22902c6657a406ec13bc87b6a4889`.
+- Installed Stage 8b acceptance covers all fourteen `read_bits` routes, all
+  twenty `append_slice` routes, and the single wfgrep A10 `value_if` repair
+  through the ordinary compiler path with unchanged output, error, cleanup,
+  effect, status, invalid-domain, and required-check oracles. Stage 9a owns the
+  next exact claim disposition ledger; the former v0.27 retained/redundant
+  split is not copied forward as an unmeasured v0.28 fact.
+- Protected conformance boundary: 437 cases, 30 coverage annotations, rule
+  coverage `132/132`, and the installed adapter result
+  `Pass=423 Fail=1 Skip=13`; the sole failure remains
   the existing OWN-3 unsupported boundary.
 
 Every task must resolve these identities before using them. A changed real
@@ -182,6 +183,11 @@ separate approval gate.
 
 ## Workstream 8b — verified normal-return postconditions
 
+Status: **COMPLETE (2026-08-15).** The exact owner-approved v0.28
+specification, compiler, five consumers, outgoing archive, protected corpus,
+runner identity, approval chain, and derived material are installed atomically.
+Workstream 9a is the next execution item.
+
 Stage 8b begins only after Stage 8a establishes both local witnesses, every
 caller gap has the fixed disposition below, and the trust prerequisite
 correctly retains the complete existing derivation set. General arithmetic,
@@ -263,16 +269,14 @@ consumer migration.
 Task 0058 froze the reviewed, non-authoritative semantic candidate at held
 commit `7a293861ddb0aad0cd8d494ee8f4bfa5f6cbba29`, with candidate specification
 SHA-256 `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
-Implementation proceeds as one strict isolated held stack: 0059 frontend and
+Implementation proceeded as one strict isolated held stack: 0059 frontend and
 FN-9 surface; 0060 callee proof and summaries; 0061 call publication,
 receivers, and provenance atomicity; 0062 `value_if`-only delivery; 0063 the
 five real consumers and behavior oracles; and 0064 additive protected
-conformance plus the combined exact packet. Each handoff starts only from the
-named reviewed held commit produced by its predecessor. None enters the
-active-v0.27 integration branch separately; task 0064 stops at the exact owner
-approval boundary. The later activation materializes only the exact approved
-final H6 tree as one coherent main change; it does not land H0–H6 as
-intermediate mainline language states.
+conformance plus the combined exact packet. Task 0064 stopped at the owner
+boundary, and 0065 installed the unchanged approved H6 tree atomically after
+approval. H0–H6 remain audit-line history rather than intermediate mainline
+language states.
 
 Stage 8b is terminal only when every mapped real caller sequence derives its
 intended fact. An unresolved or refuted mapping, a hidden runtime fallback, or
@@ -378,9 +382,8 @@ task:
 1. **complete (2026-08-12):** approve this high-level plan once;
 2. **complete (2026-08-14):** approve this one material Stage 8b delivery
    correction;
-3. **pending:** after tasks 0059–0064 implement and independently review the
-   held candidate, approve Stage 8b's exact specification plus
-   protected-conformance activation packet; and
+3. **complete (2026-08-15):** approve and atomically activate Stage 8b's exact
+   specification plus protected-conformance packet; and
 4. after Stage 9a, approve Stage 9b's exact specification plus
    protected-conformance activation packet.
 
@@ -446,13 +449,10 @@ does not mark `PROOF-8` complete or unpark `CAND-8`.
 
 ## Active authority
 
-The owner approved this plan's predecessor on 2026-08-12 and explicitly
-selected the narrow receiver strategy written above on 2026-08-14. This
-`ACTIVE` status is execution authority only inside the exact written boundary.
-Task 0058 is terminal with the reviewed semantic candidate frozen, and planned
-tasks 0059–0064 carry the exact implementation sequence above. Ordinary held
-implementation proceeds autonomously inside that sequence. A further material
-strategy change returns the plan to `PROPOSED`; candidate-byte drift or an
-unwritten semantic choice stops the affected task. Exact specification and
-protected-conformance bytes still stop later at their own independent approval
-boundary.
+The owner approved this plan's predecessor on 2026-08-12, selected the narrow
+receiver strategy on 2026-08-14, and approved the exact Stage 8b specification,
+protected corpus, and activation identity on 2026-08-15. Stage 8b is installed
+and tasks 0058–0065 are terminal; Stage 9a deterministic claim-ledger work is
+next under this same `ACTIVE` authority. A material strategy change returns the
+plan to `PROPOSED`. Stage 9b's later specification and protected-conformance
+bytes still stop at their own independent exact approval boundary.

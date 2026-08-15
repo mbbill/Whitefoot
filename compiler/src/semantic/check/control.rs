@@ -14,6 +14,7 @@ use crate::{
 
 use super::super::model::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType, TrapSite,
+    ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -188,7 +189,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.check_expression(function, expression_node, bindings, scope.loops.len())?
                 };
                 if value.expression.ty() != function.result {
-                    return Err(CheckStop::Issue(SemanticIssue {
+                    return Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Fn1,
                         location: SemanticLocation::SourceNode(
                             self.tree.path(node)?.clone(),
@@ -233,7 +234,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .iter()
                         .all(|origin| function.slice_return_ceiling.contains(origin))
                     {
-                        return Err(CheckStop::Issue(SemanticIssue {
+                        return Err(CheckStop::source_issue(SemanticIssue {
                             rule: SemanticRule::Fn1,
                             location: SemanticLocation::SourceNode(
                                 self.tree.path(node)?.clone(),
@@ -269,7 +270,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if condition.expression.ty() != CheckedType::Bool
                     || condition.mode != CheckedMode::Own
                 {
-                    return Err(CheckStop::Issue(SemanticIssue {
+                    return Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Op5,
                         location: SemanticLocation::SourceNode(
                             self.tree.path(node)?.clone(),
@@ -444,7 +445,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if condition.expression.ty() != CheckedType::Bool
                     || condition.mode != CheckedMode::Own
                 {
-                    return Err(CheckStop::Issue(SemanticIssue {
+                    return Err(CheckStop::source_issue(SemanticIssue {
                         rule: SemanticRule::Clm1,
                         location: SemanticLocation::SourceNode(
                             self.tree.path(node)?.clone(),
@@ -557,6 +558,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(StatementResult {
                 statement: CheckedStatement::ValueMatchLet {
                     node_path: self.tree.path(node)?.clone(),
+                    kind: if value_if.is_some() {
+                        ValueInitializerKind::ValueIf
+                    } else {
+                        ValueInitializerKind::ValueMatch
+                    },
                     binding,
                     result_type: expected,
                     scrutinee: matched.scrutinee,

@@ -1,0 +1,27 @@
+fn selected(value: own i32) -> own Result<i32, Overflow> pure ensures Ok(value: result) {
+  check ieq(result, value) else trap "selected postcondition";
+} {
+  return Ok<i32, Overflow>(value: value);
+}
+
+fn guard(left: own i32, right: own i32) -> own unit pure requires {
+  check ieq(left, right) else trap "guard precondition";
+} {
+  return unit;
+}
+
+fn named(value: own i32) -> own unit pure {
+  let outcome = selected(value: value);
+  match outcome {
+    Ok(value: payload) => {
+      guard(left: payload, right: value);
+    }
+    Err(error: problem) => {
+    }
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

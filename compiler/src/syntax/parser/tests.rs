@@ -508,6 +508,7 @@ return unit;
 fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
 -> own unit reads('r), writes('r), allocates(heap arena 'r), traps
 requires { let pre = 0_i32 +wrap 1_i32; check pre else trap "pre"; }
+ensures Result(value: result) { let post = 0_i32 +wrap 1_i32; check post else trap "post"; }
 {
 doc "body";
 let ordinary = 0_i32 +wrap 1_i32;
@@ -558,7 +559,7 @@ fn main() -> own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 70);
+    assert_eq!(productions().len(), 73);
     assert_eq!(
         parsed
             .tree

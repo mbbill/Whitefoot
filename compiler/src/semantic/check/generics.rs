@@ -93,60 +93,163 @@ impl GenericSubstitution {
             GenericArgument::Const(value) => value.is_concrete(),
         })
     }
+
+    pub(super) fn entries(&self) -> &[(DeclarationId, GenericArgument)] {
+        &self.bindings
+    }
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn collect_function_templates(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
-        for node in items.iter().copied().filter(|node| {
-            self.tree
-                .production(*node)
-                .is_ok_and(|production| production == Production::FnDecl)
-        }) {
-            let declaration = self.declaration_at(node, DeclarationRole::Function)?;
-            let template = FunctionTemplate {
-                declaration: declaration.id(),
-                node,
-                name: declaration.spelling().to_owned(),
-                generic_parameters: self.parse_generic_parameters(node)?,
-            };
-            if !template.generic_parameters.is_empty()
-                && let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)?
-            {
-                return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
-            }
-            let index = self.function_templates.len();
-            if self
-                .templates_by_declaration
-                .insert(template.declaration, index)
-                .is_some()
-            {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            self.function_templates.push(template);
-        }
+        self.collect_function_template_inventory(items)?;
         self.reject_generic_call_cycles()?;
         self.validate_generic_templates()?;
         Ok(())
     }
 
+    /// Builds only the source template inventory and exact generic-cycle
+    /// judgment needed by the throwaway selector checker. Generic bodies are
+    /// ordinary semantic premises and are checked later by the real H0 path.
+    pub(super) fn collect_function_templates_for_postconditions(
+        &mut self,
+        items: &[NodeId],
+    ) -> Result<(), CheckStop> {
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree
+                    .production(*node)
+                    .is_ok_and(|production| production == Production::FnDecl)
+            })
+            .collect::<Vec<_>>();
+        for node in nodes {
+            match self.collect_function_template(node) {
+                Ok(()) => {}
+                Err(CheckStop::Issue(_) | CheckStop::Unsupported(_)) => {
+                    let declaration = self.declaration_at(node, DeclarationRole::Function)?.id();
+                    self.mark_postcondition_unavailable(declaration);
+                }
+                Err(stop) => return Err(stop),
+            }
+        }
+        let (unavailable, _) = self.generic_cycle_analysis()?;
+        for (index, is_unavailable) in unavailable.into_iter().enumerate() {
+            if is_unavailable {
+                let declaration = self
+                    .function_templates
+                    .get(index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .declaration;
+                self.mark_postcondition_unavailable(declaration);
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_function_template_inventory(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree
+                    .production(*node)
+                    .is_ok_and(|production| production == Production::FnDecl)
+            })
+            .collect::<Vec<_>>();
+        for node in nodes {
+            self.collect_function_template(node)?;
+        }
+        Ok(())
+    }
+
+    fn collect_function_template(&mut self, node: NodeId) -> Result<(), CheckStop> {
+        let declaration = self.declaration_at(node, DeclarationRole::Function)?;
+        let template = FunctionTemplate {
+            declaration: declaration.id(),
+            node,
+            name: declaration.spelling().to_owned(),
+            generic_parameters: self.parse_generic_parameters(node)?,
+        };
+        if !template.generic_parameters.is_empty()
+            && let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)?
+        {
+            return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
+        }
+        let index = self.function_templates.len();
+        if self
+            .templates_by_declaration
+            .insert(template.declaration, index)
+            .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        self.function_templates.push(template);
+        Ok(())
+    }
+
     pub(super) fn collect_concrete_function_signatures(&mut self) -> Result<(), CheckStop> {
+        self.collect_concrete_function_signatures_with(false)
+    }
+
+    /// Scratch-only counterpart used by the FN-9 selector preflight.
+    ///
+    /// A source-side call that has not completed FN-2 establishes no selector
+    /// instance.  The throwaway checker may therefore skip that edge while it
+    /// discovers every independently successful instance.  The ordinary
+    /// checker keeps the strict path above, so its source diagnostics and
+    /// no-`ensures` behavior are unchanged.
+    pub(super) fn collect_concrete_function_signatures_for_postconditions(
+        &mut self,
+    ) -> Result<(), CheckStop> {
+        self.collect_concrete_function_signatures_with(true)
+    }
+
+    fn collect_concrete_function_signatures_with(
+        &mut self,
+        tolerate_source_failure: bool,
+    ) -> Result<(), CheckStop> {
         for template_index in 0..self.function_templates.len() {
+            if tolerate_source_failure
+                && self.postcondition_declaration_unavailable(
+                    self.function_templates[template_index].declaration,
+                )
+            {
+                continue;
+            }
             if self.function_templates[template_index]
                 .generic_parameters
                 .is_empty()
             {
-                self.instantiate_function_signature(
-                    template_index,
-                    GenericSubstitution::default(),
-                )?;
+                let result = if tolerate_source_failure {
+                    self.instantiate_function_signature_for_postconditions(
+                        template_index,
+                        GenericSubstitution::default(),
+                    )
+                } else {
+                    self.instantiate_function_signature(
+                        template_index,
+                        GenericSubstitution::default(),
+                    )
+                };
+                match result {
+                    Ok(()) => {}
+                    Err(
+                        CheckStop::Issue(_)
+                        | CheckStop::Unsupported(_)
+                        | CheckStop::PostconditionPrerequisiteUnavailable,
+                    ) if tolerate_source_failure => {}
+                    Err(stop) => return Err(stop),
+                }
             }
         }
-        self.discover_called_function_signatures(true)
+        self.discover_called_function_signatures(true, tolerate_source_failure)
     }
 
     fn discover_called_function_signatures(
         &mut self,
         require_concrete: bool,
+        tolerate_source_failure: bool,
     ) -> Result<(), CheckStop> {
         let mut cursor = 0_usize;
         while cursor < self.signatures.len() {
@@ -155,14 +258,55 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .descendants_with(signature.node, Production::Call)?
             {
+                if self.call_is_inside_postcondition(call)? {
+                    continue;
+                }
                 let Some((template_index, template)) = self.called_function_template(call)? else {
                     continue;
                 };
+                if tolerate_source_failure
+                    && self.postcondition_declaration_unavailable(template.declaration)
+                {
+                    continue;
+                }
                 if template.generic_parameters.is_empty() {
                     continue;
                 }
-                let substitution =
-                    self.call_generic_substitution(call, &template, &signature.substitution)?;
+                if tolerate_source_failure && !self.postcondition_call_arguments_have_links(call)? {
+                    continue;
+                }
+                if tolerate_source_failure
+                    && let Some(targs) = self.tree.first_child_with(call, Production::Targs)?
+                {
+                    let checkpoint = self.nominal_checkpoint();
+                    match self.ensure_nominals_in_node(targs, &signature.substitution) {
+                        Ok(()) => {}
+                        Err(
+                            CheckStop::Issue(_)
+                            | CheckStop::Unsupported(_)
+                            | CheckStop::PostconditionPrerequisiteUnavailable,
+                        ) => {
+                            self.restore_nominal_checkpoint(checkpoint)?;
+                            continue;
+                        }
+                        Err(stop) => return Err(stop),
+                    }
+                }
+                let substitution = match self.call_generic_substitution(
+                    call,
+                    &template,
+                    &signature.substitution,
+                ) {
+                    Ok(substitution) => substitution,
+                    Err(
+                        CheckStop::Issue(_)
+                        | CheckStop::Unsupported(_)
+                        | CheckStop::PostconditionPrerequisiteUnavailable,
+                    ) if tolerate_source_failure => {
+                        continue;
+                    }
+                    Err(stop) => return Err(stop),
+                };
                 if require_concrete && !substitution.is_concrete() {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
@@ -177,7 +321,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .is_some_and(|instance| instance.substitution == substitution)
                     });
                 if !already_present {
-                    self.instantiate_function_signature(template_index, substitution)?;
+                    let result = if tolerate_source_failure {
+                        self.instantiate_function_signature_for_postconditions(
+                            template_index,
+                            substitution,
+                        )
+                    } else {
+                        self.instantiate_function_signature(template_index, substitution)
+                    };
+                    match result {
+                        Ok(()) => {}
+                        Err(
+                            CheckStop::Issue(_)
+                            | CheckStop::Unsupported(_)
+                            | CheckStop::PostconditionPrerequisiteUnavailable,
+                        ) if tolerate_source_failure => {}
+                        Err(stop) => return Err(stop),
+                    }
                 }
             }
             cursor = cursor
@@ -185,6 +345,96 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
         }
         Ok(())
+    }
+
+    pub(super) fn postcondition_call_arguments_have_links(
+        &self,
+        call: NodeId,
+    ) -> Result<bool, CheckStop> {
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return Ok(true);
+        };
+        let owner = self.tree.path(targs)?.components();
+        if self.resolved.lexical_uses().iter().any(|usage| {
+            let path = usage.origin().node().components();
+            path.len() >= owner.len()
+                && path.starts_with(owner)
+                && match usage.target() {
+                    ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::NamedConst,
+                    } => !self.constants.contains_key(&declaration),
+                    ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::NominalType,
+                    } => {
+                        self.postcondition_declaration_unavailable(declaration)
+                            || !self
+                                .nominal_templates_by_declaration
+                                .contains_key(&declaration)
+                    }
+                    _ => false,
+                }
+        }) {
+            return Ok(false);
+        }
+        for ty in self.tree.descendants_with(targs, Production::Type)? {
+            if self
+                .tree
+                .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
+                .is_some()
+            {
+                let path = self.tree.path(ty)?;
+                if !self.resolved.lexical_uses().iter().any(|usage| {
+                    usage.role() == LexicalUseRole::Type && usage.origin().node() == path
+                }) {
+                    return Ok(false);
+                }
+            }
+        }
+        for constant in self.tree.descendants_with(targs, Production::Const)? {
+            if self
+                .tree
+                .direct_token_with(constant, crate::TerminalPredicate::Identifier)?
+                .is_some()
+            {
+                let path = self.tree.path(constant)?;
+                let usage = self.resolved.lexical_uses().iter().find(|usage| {
+                    usage.role() == LexicalUseRole::Const && usage.origin().node() == path
+                });
+                let Some(usage) = usage else {
+                    return Ok(false);
+                };
+                if let ResolvedTarget::Source {
+                    declaration,
+                    class: DeclarationClass::NamedConst,
+                } = usage.target()
+                    && !self.constants.contains_key(&declaration)
+                {
+                    return Ok(false);
+                }
+            }
+        }
+        for argument in self.tree.children_with(targs, Production::Targ)? {
+            if self
+                .tree
+                .first_child_with(argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(argument, Production::Const)?
+                    .is_some()
+            {
+                continue;
+            }
+            let path = self.tree.path(argument)?;
+            if !self.resolved.lexical_uses().iter().any(|usage| {
+                usage.role() == LexicalUseRole::TypeArgumentRegion && usage.origin().node() == path
+            }) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub(super) fn called_function_template(
@@ -211,10 +461,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ResolvedTarget::Operation(_) | ResolvedTarget::System(_) => return Ok(None),
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
-        let index = *self
-            .templates_by_declaration
-            .get(&declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let Some(index) = self.templates_by_declaration.get(&declaration).copied() else {
+            if self.postcondition_declaration_unavailable(declaration) {
+                return Ok(None);
+            }
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
         let template = self
             .function_templates
             .get(index)
@@ -265,7 +517,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             u32::try_from(self.signatures.len())
                 .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
         );
-        self.ensure_nominals_in_node(template.node, &substitution)?;
+        self.ensure_nominals_in_function(template.node, &substitution)?;
         let signature = self.build_function_signature(&template, substitution, id)?;
         self.functions_by_declaration
             .entry(template.declaration)
@@ -275,7 +527,111 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    fn build_function_signature(
+    fn instantiate_function_signature_for_postconditions(
+        &mut self,
+        template_index: usize,
+        substitution: GenericSubstitution,
+    ) -> Result<(), CheckStop> {
+        let template = self
+            .function_templates
+            .get(template_index)
+            .cloned()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let id = super::super::model::FunctionId(
+            u32::try_from(self.signatures.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        if !self.postcondition_function_header_dependencies_available(template.node)? {
+            return Err(CheckStop::PostconditionPrerequisiteUnavailable);
+        }
+        let checkpoint = self.nominal_checkpoint();
+        let signature = match self
+            .ensure_nominals_in_function_signature(template.node, &substitution)
+            .and_then(|()| self.build_function_signature(&template, substitution, id))
+        {
+            Ok(signature) => signature,
+            Err(stop) => {
+                self.restore_nominal_checkpoint(checkpoint)?;
+                self.pending_nominals.borrow_mut().clear();
+                return Err(stop);
+            }
+        };
+        self.functions_by_declaration
+            .entry(template.declaration)
+            .or_default()
+            .push(id);
+        self.signatures.push(signature);
+        Ok(())
+    }
+
+    pub(super) fn postcondition_function_header_dependencies_available(
+        &self,
+        function: NodeId,
+    ) -> Result<bool, CheckStop> {
+        for owner in [Production::ParamList, Production::Rtype] {
+            let Some(node) = self.tree.first_child_with(function, owner)? else {
+                if owner == Production::Rtype {
+                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                }
+                continue;
+            };
+            let path = self.tree.path(node)?.components();
+            if self.resolved.lexical_uses().iter().any(|usage| {
+                let usage_path = usage.origin().node().components();
+                usage_path.len() >= path.len()
+                    && usage_path.starts_with(path)
+                    && match usage.target() {
+                        ResolvedTarget::Source {
+                            declaration,
+                            class: DeclarationClass::NamedConst,
+                        } => !self.constants.contains_key(&declaration),
+                        ResolvedTarget::Source {
+                            declaration,
+                            class: DeclarationClass::NominalType,
+                        } => {
+                            self.postcondition_declaration_unavailable(declaration)
+                                || !self
+                                    .nominal_templates_by_declaration
+                                    .contains_key(&declaration)
+                        }
+                        _ => false,
+                    }
+            }) {
+                return Ok(false);
+            }
+            for ty in self.tree.descendants_with(node, Production::Type)? {
+                if self
+                    .tree
+                    .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
+                    .is_some()
+                {
+                    let path = self.tree.path(ty)?;
+                    if !self.resolved.lexical_uses().iter().any(|usage| {
+                        usage.role() == LexicalUseRole::Type && usage.origin().node() == path
+                    }) {
+                        return Ok(false);
+                    }
+                }
+            }
+            for constant in self.tree.descendants_with(node, Production::Const)? {
+                if self
+                    .tree
+                    .direct_token_with(constant, crate::TerminalPredicate::Identifier)?
+                    .is_some()
+                {
+                    let path = self.tree.path(constant)?;
+                    if !self.resolved.lexical_uses().iter().any(|usage| {
+                        usage.role() == LexicalUseRole::Const && usage.origin().node() == path
+                    }) {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    pub(super) fn build_function_signature(
         &self,
         template: &FunctionTemplate,
         substitution: GenericSubstitution,
@@ -356,7 +712,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 canonical_generic_signatures.push((signature_index, template.declaration));
             }
         }
-        self.discover_called_function_signatures(false)?;
+        self.discover_called_function_signatures(false, false)?;
         for index in 0..self.signatures.len() {
             if !self.signatures[index].substitution.bindings.is_empty() {
                 // Symbolic generic validation may discover a derived box or
@@ -427,18 +783,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn reject_generic_call_cycles(&self) -> Result<(), CheckStop> {
+        let (_, first) = self.generic_cycle_analysis()?;
+        if let Some(call) = first {
+            return self.unsupported(UnsupportedSemanticFeature::Generics, call);
+        }
+        Ok(())
+    }
+
+    fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
         let mut edges = vec![Vec::new(); self.function_templates.len()];
         for (caller, template) in self.function_templates.iter().enumerate() {
             for call in self
                 .tree
                 .descendants_with(template.node, Production::Call)?
             {
+                if self.call_is_inside_postcondition(call)? {
+                    continue;
+                }
                 let Some((callee, _)) = self.called_function_template(call)? else {
                     continue;
                 };
                 edges[caller].push((callee, call));
             }
         }
+        let mut unavailable = vec![false; self.function_templates.len()];
+        let mut first = None;
         for (caller, outgoing) in edges.iter().enumerate() {
             for (callee, call) in outgoing {
                 if !Self::graph_reaches(*callee, caller, &edges) {
@@ -452,11 +821,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .is_empty()
                 });
                 if generic_component {
-                    return self.unsupported(UnsupportedSemanticFeature::Generics, *call);
+                    if first.is_none() {
+                        first = Some(*call);
+                    }
+                    for (candidate, slot) in unavailable.iter_mut().enumerate() {
+                        if Self::graph_reaches(caller, candidate, &edges)
+                            && Self::graph_reaches(candidate, caller, &edges)
+                        {
+                            *slot = true;
+                        }
+                    }
                 }
             }
         }
-        Ok(())
+        Ok((unavailable, first))
+    }
+
+    pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {
+        self.node_is_inside_postcondition(call)
+    }
+
+    pub(super) fn node_is_inside_postcondition(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let path = self.tree.path(node)?.components();
+        Ok(self.resolved.postconditions().iter().any(|record| {
+            let block = record.block.components();
+            path.len() > block.len() && path.starts_with(block)
+        }))
     }
 
     fn graph_reaches(start: usize, target: usize, edges: &[Vec<(usize, NodeId)>]) -> bool {

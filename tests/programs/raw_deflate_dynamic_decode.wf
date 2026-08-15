@@ -23,7 +23,7 @@ fn store_dynamic_length['l, 'd](literal_lengths: &uniq 'l buffer<u8>, distance_l
 fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>) -> own Result<unit, InflateError> reads('s 'i 'o), writes('s 'o), allocates(heap), traps {
   let literal_count_bits = 0_u64;
   region 'literal_count_call {
-    match read_bits<'literal_count_call, 'literal_count_call>(state: &uniq 'literal_count_call deref(state), input: &'literal_count_call deref(input), count: 5_u32) {
+    match read_bits<'literal_count_call, 'literal_count_call>(state: &uniq 'literal_count_call deref(state), input: &'literal_count_call deref(input), count: 5_u32, mask: 31_u64) {
       Ok(value: read_count) => {
         set literal_count_bits = read_count;
       }
@@ -40,7 +40,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
   }
   let distance_count_bits = 0_u64;
   region 'distance_count_call {
-    match read_bits<'distance_count_call, 'distance_count_call>(state: &uniq 'distance_count_call deref(state), input: &'distance_count_call deref(input), count: 5_u32) {
+    match read_bits<'distance_count_call, 'distance_count_call>(state: &uniq 'distance_count_call deref(state), input: &'distance_count_call deref(input), count: 5_u32, mask: 31_u64) {
       Ok(value: read_count) => {
         set distance_count_bits = read_count;
       }
@@ -52,7 +52,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
   let distance_count = distance_count_bits +wrap 1_u64;
   let code_count_bits = 0_u64;
   region 'code_count_call {
-    match read_bits<'code_count_call, 'code_count_call>(state: &uniq 'code_count_call deref(state), input: &'code_count_call deref(input), count: 4_u32) {
+    match read_bits<'code_count_call, 'code_count_call>(state: &uniq 'code_count_call deref(state), input: &'code_count_call deref(input), count: 4_u32, mask: 15_u64) {
       Ok(value: read_count) => {
         set code_count_bits = read_count;
       }
@@ -75,7 +75,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
       let ordered_symbol = cvt<u8, u64>(ordered_symbol_byte);
       let length_bits = 0_u64;
       region 'code_length_call {
-        match read_bits<'code_length_call, 'code_length_call>(state: &uniq 'code_length_call deref(state), input: &'code_length_call deref(input), count: 3_u32) {
+        match read_bits<'code_length_call, 'code_length_call>(state: &uniq 'code_length_call deref(state), input: &'code_length_call deref(input), count: 3_u32, mask: 7_u64) {
           Ok(value: read_length) => {
             set length_bits = read_length;
           }
@@ -148,7 +148,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           }
           let repeat_bits = 0_u64;
           region 'previous_repeat_call {
-            match read_bits<'previous_repeat_call, 'previous_repeat_call>(state: &uniq 'previous_repeat_call deref(state), input: &'previous_repeat_call deref(input), count: 2_u32) {
+            match read_bits<'previous_repeat_call, 'previous_repeat_call>(state: &uniq 'previous_repeat_call deref(state), input: &'previous_repeat_call deref(input), count: 2_u32, mask: 3_u64) {
               Ok(value: read_repeat) => {
                 set repeat_bits = read_repeat;
               }
@@ -183,7 +183,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
           let repeat_base = 0_u64;
           if short_zero {
             region 'short_zero_call {
-              match read_bits<'short_zero_call, 'short_zero_call>(state: &uniq 'short_zero_call deref(state), input: &'short_zero_call deref(input), count: 3_u32) {
+              match read_bits<'short_zero_call, 'short_zero_call>(state: &uniq 'short_zero_call deref(state), input: &'short_zero_call deref(input), count: 3_u32, mask: 7_u64) {
                 Ok(value: read_repeat) => {
                   set repeat_bits = read_repeat;
                 }
@@ -201,7 +201,7 @@ fn decode_dynamic['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8
               return Err<unit, InflateError>(error: error);
             }
             region 'long_zero_call {
-              match read_bits<'long_zero_call, 'long_zero_call>(state: &uniq 'long_zero_call deref(state), input: &'long_zero_call deref(input), count: 7_u32) {
+              match read_bits<'long_zero_call, 'long_zero_call>(state: &uniq 'long_zero_call deref(state), input: &'long_zero_call deref(input), count: 7_u32, mask: 127_u64) {
                 Ok(value: read_repeat) => {
                   set repeat_bits = read_repeat;
                 }

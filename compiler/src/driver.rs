@@ -403,6 +403,13 @@ pub fn compile(
                 issue,
             ));
         }
+        SemanticOutcome::ResolutionIssue { issue, .. } => {
+            return Err(CompilationFailure::source(
+                CompilationStage::Resolution,
+                issue.rule().id(),
+                issue,
+            ));
+        }
         SemanticOutcome::Unsupported { unsupported, .. } => {
             return Err(CompilationFailure::new(
                 CompilationStage::Semantics,

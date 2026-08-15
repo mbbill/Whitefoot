@@ -22,6 +22,15 @@ pub(crate) enum CheckedMode {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct CheckedLoopId(pub(crate) u32);
 
+/// The checked source production that owns a value initializer. These forms
+/// share GIVE-1 typing and lowering, but only `value_if` is an ENT-5 relation
+/// carrier.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ValueInitializerKind {
+    ValueIf,
+    ValueMatch,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct NominalId(pub(crate) u32);
 
@@ -605,6 +614,23 @@ pub(crate) enum CheckedSliceSource {
     Buffer(CheckedBufferRoot),
 }
 
+/// Source category retained only for integer-operation operands whose exact
+/// written constant class affects an ENT-3 source. This is checked metadata,
+/// not a second expression tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedIntegerArgumentSource {
+    TypedLiteral,
+    GenericNumericIdentity,
+    NamedConstant { declaration: DeclarationId },
+    Other,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedIntegerArgument {
+    pub(crate) node_path: NodePath,
+    pub(crate) source: CheckedIntegerArgumentSource,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedExpression {
     Constant(CheckedValue),
@@ -619,6 +645,10 @@ pub(crate) enum CheckedExpression {
         binding: BindingId,
         ty: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
+        /// The owning checker admitted this occurrence as an affine consume.
+        /// ENT keeps it beside the checked binding because holder mode is not
+        /// recoverable from the value type and must not be re-read from syntax.
+        consume_root: bool,
     },
     UserCall {
         function: FunctionId,
@@ -659,6 +689,7 @@ pub(crate) enum CheckedExpression {
         carrier: NodePath,
         operation: CheckedIntegerOperation,
         operand_type: CheckedType,
+        argument_metadata: Vec<CheckedIntegerArgument>,
         arguments: Vec<CheckedExpression>,
         result: CheckedType,
         trap: Option<TrapSite>,
@@ -1072,6 +1103,7 @@ pub(crate) enum CheckedStatement {
     },
     ValueMatchLet {
         node_path: NodePath,
+        kind: ValueInitializerKind,
         binding: BindingId,
         result_type: CheckedType,
         scrutinee: CheckedExpression,
@@ -1133,10 +1165,12 @@ pub(crate) struct CheckedFunction {
     pub(crate) declared_allocates_heap: bool,
     /// The callable-boundary predicate and its diagnostic occurrence.
     pub(crate) requirement: Option<super::goal::CheckedRequirement>,
+    /// Verified-relation surface and selected exits. H1 constructs this
+    /// metadata; the shared entailment flow proves it at every selected exit.
+    pub(crate) postcondition: Option<super::postcondition::CheckedPostcondition>,
     pub(crate) body: Vec<CheckedStatement>,
-    /// Retained dark [ENT] analysis summary [DIAG-2]. No acceptance,
-    /// diagnostic, or lowering behavior reads it in this slice; tests
-    /// exercise it directly.
+    /// Retained [ENT] analysis summary [DIAG-2]. Semantic acceptance and
+    /// diagnostics read it; lowering deliberately does not.
     #[allow(dead_code)]
     pub(crate) entailment: super::entailment::FunctionEntailment,
 }
@@ -1280,6 +1314,10 @@ pub(crate) struct CheckedProgramData {
     pub(crate) executable_nominal_count: usize,
     pub(crate) constants: Vec<CheckedConstant>,
     pub(crate) functions: Vec<CheckedFunction>,
+    /// Concrete ordinary-call SCCs in deterministic callee-before-caller
+    /// order, with component-atomic verified FN-9 summary publication.
+    #[allow(dead_code)]
+    pub(crate) postcondition_schedule: super::entailment::PostconditionSchedule,
     /// Frozen PRV component/demand metadata and explicit successful
     /// dispositions [PRV-1/2/3, DIAG-2]. Rejection witnesses are consumed
     /// before this value is built; lowering and optimization do not read it.

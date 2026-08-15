@@ -290,7 +290,7 @@ mod tests {
                 ACTIVE_KERNEL_SPEC_TEXT,
                 &computed_active_spec_hash().to_string(),
             ),
-            Ok(19)
+            Ok(20)
         );
     }
 
@@ -379,7 +379,7 @@ mod tests {
     fn active_spec_has_complete_internal_integrity() {
         assert_eq!(
             validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER),
-            Ok(131)
+            Ok(132)
         );
     }
 

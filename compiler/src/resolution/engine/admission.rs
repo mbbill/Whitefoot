@@ -3,49 +3,91 @@ use crate::{Production, SyntaxCoordinate};
 
 use super::super::scopes::ScopeBuild;
 use super::super::{
-    RequiresShapeIssue, ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind,
-    ResolutionRule, SourceOrigin,
+    EnsuresShapeIssue, RequiresShapeIssue, ResolutionCompilerFailure, ResolutionIssue,
+    ResolutionIssueKind, ResolutionRule, SourceOrigin,
 };
 use super::EventKey;
 
-pub(super) fn check_requires_blocks(
+pub(super) fn check_clause_blocks(
     topology: &FinalizedTopology,
     scopes: &ScopeBuild,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     let mut candidates = Vec::new();
     for (index, node) in topology.nodes.iter().enumerate() {
-        if node.production != Production::RequiresBlock {
-            continue;
-        }
+        let clause = match node.production {
+            Production::RequiresBlock => ClauseKind::Requires,
+            Production::EnsuresBlock => ClauseKind::Ensures,
+            _ => continue,
+        };
         let id = NodeId::from_index(index).ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-        let entries = topology
+        let children = topology
             .node_children(id)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        let entries = match clause {
+            ClauseKind::Requires => children,
+            ClauseKind::Ensures => {
+                let [selector, entries @ ..] = children else {
+                    return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+                };
+                if topology
+                    .node(*selector)
+                    .is_none_or(|record| record.production != Production::EnsuresSelector)
+                {
+                    return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+                }
+                entries
+            }
+        };
+        let expected_entry = match clause {
+            ClauseKind::Requires => Production::RequiresEntry,
+            ClauseKind::Ensures => Production::EnsuresEntry,
+        };
+        if entries.iter().any(|entry| {
+            topology
+                .node(*entry)
+                .is_none_or(|record| record.production != expected_entry)
+        }) {
+            return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
+        }
         let mut all_ordinary = true;
         let mut selected = None;
         for (entry_index, entry) in entries.iter().enumerate() {
-            let kind = requires_entry_kind(topology, *entry)?;
+            let kind = clause_entry_kind(topology, *entry)?;
             match kind {
-                RequiresEntryKind::OrdinaryLet => {}
-                RequiresEntryKind::Check if entry_index + 1 == entries.len() => {
+                ClauseEntryKind::OrdinaryLet => {}
+                ClauseEntryKind::Check if entry_index + 1 == entries.len() => {
                     all_ordinary = false;
                 }
                 _ => {
-                    selected = Some((*entry, RequiresShapeIssue::InvalidEntry));
+                    selected = Some((*entry, ShapeIssue::InvalidEntry));
                     break;
                 }
             }
         }
         if selected.is_none() && (entries.is_empty() || all_ordinary) {
-            selected = Some((id, RequiresShapeIssue::MissingFinalCheck));
+            selected = Some((id, ShapeIssue::MissingFinalCheck));
         }
         if let Some((issue_node, issue_kind)) = selected {
             let origin = node_origin(topology, scopes, issue_node)?;
-            candidates.push(ResolutionIssue {
-                rule: ResolutionRule::Fn8,
-                origin,
-                kind: ResolutionIssueKind::RequiresShape(issue_kind),
-            });
+            let (rule, kind) = match (clause, issue_kind) {
+                (ClauseKind::Requires, ShapeIssue::MissingFinalCheck) => (
+                    ResolutionRule::Fn8,
+                    ResolutionIssueKind::RequiresShape(RequiresShapeIssue::MissingFinalCheck),
+                ),
+                (ClauseKind::Requires, ShapeIssue::InvalidEntry) => (
+                    ResolutionRule::Fn8,
+                    ResolutionIssueKind::RequiresShape(RequiresShapeIssue::InvalidEntry),
+                ),
+                (ClauseKind::Ensures, ShapeIssue::MissingFinalCheck) => (
+                    ResolutionRule::Fn9,
+                    ResolutionIssueKind::EnsuresShape(EnsuresShapeIssue::MissingFinalCheck),
+                ),
+                (ClauseKind::Ensures, ShapeIssue::InvalidEntry) => (
+                    ResolutionRule::Fn9,
+                    ResolutionIssueKind::EnsuresShape(EnsuresShapeIssue::InvalidEntry),
+                ),
+            };
+            candidates.push(ResolutionIssue { rule, origin, kind });
         }
     }
     candidates.sort_by_key(|issue| EventKey::from_origin(&issue.origin));
@@ -53,16 +95,28 @@ pub(super) fn check_requires_blocks(
 }
 
 #[derive(Clone, Copy)]
-enum RequiresEntryKind {
+enum ClauseKind {
+    Requires,
+    Ensures,
+}
+
+#[derive(Clone, Copy)]
+enum ShapeIssue {
+    MissingFinalCheck,
+    InvalidEntry,
+}
+
+#[derive(Clone, Copy)]
+enum ClauseEntryKind {
     OrdinaryLet,
     Check,
     Other,
 }
 
-fn requires_entry_kind(
+fn clause_entry_kind(
     topology: &FinalizedTopology,
     entry: NodeId,
-) -> Result<RequiresEntryKind, ResolutionCompilerFailure> {
+) -> Result<ClauseEntryKind, ResolutionCompilerFailure> {
     let [selected] = topology
         .node_children(entry)
         .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
@@ -73,7 +127,7 @@ fn requires_entry_kind(
         .node(*selected)
         .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
     if selected_record.production != Production::Stmt {
-        return Ok(RequiresEntryKind::Other);
+        return Ok(ClauseEntryKind::Other);
     }
     let [statement] = topology
         .node_children(*selected)
@@ -85,7 +139,7 @@ fn requires_entry_kind(
         .node(*statement)
         .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
     match statement_record.production {
-        Production::CheckStmt => Ok(RequiresEntryKind::Check),
+        Production::CheckStmt => Ok(ClauseEntryKind::Check),
         Production::LetStmt => {
             let ordinary = topology
                 .node_children(*statement)
@@ -97,12 +151,12 @@ fn requires_entry_kind(
                         .is_some_and(|record| record.production == Production::OrdinaryLetRhs)
                 });
             Ok(if ordinary {
-                RequiresEntryKind::OrdinaryLet
+                ClauseEntryKind::OrdinaryLet
             } else {
-                RequiresEntryKind::Other
+                ClauseEntryKind::Other
             })
         }
-        _ => Ok(RequiresEntryKind::Other),
+        _ => Ok(ClauseEntryKind::Other),
     }
 }
 

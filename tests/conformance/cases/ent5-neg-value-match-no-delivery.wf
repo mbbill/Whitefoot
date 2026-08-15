@@ -1,0 +1,29 @@
+enum Choice {
+  Narrow();
+  Wide();
+}
+
+fn guard(value: own i32) -> own unit pure requires {
+  check ilt(value, 128_i32) else trap "guard bound";
+} {
+  return unit;
+}
+
+fn matched(value: own i32, choice: own Choice) -> own i32 traps {
+  let picked = match choice {
+    Narrow() => {
+      check ilt(value, 8_i32) else trap "narrow bound";
+      give value;
+    }
+    Wide() => {
+      check ilt(value, 128_i32) else trap "wide bound";
+      give value;
+    }
+  }
+  guard(value: picked);
+  return picked;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}

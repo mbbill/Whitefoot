@@ -83,6 +83,26 @@ fn nested_blocks_arms_and_requires_follow_tree_depth() {
 }
 
 #[test]
+fn plain_and_variant_ensures_round_trip_with_clause_joins() {
+    let source = br#"fn plain(value: own i32) -> own i32 pure ensures result {
+  check ieq(result, value) else trap "post";
+} {
+  return value;
+}
+
+fn selected(value: own i32) -> own Result<i32, i32> pure requires {
+  check ieq(value, value) else trap "pre";
+} ensures Ok(value: result) {
+  let same = ieq(result, value);
+  check same else trap "post";
+} {
+  return Ok<i32, i32>(value: value);
+}
+"#;
+    only_these_trivia_bytes_render(source);
+}
+
+#[test]
 fn first_gap_mismatch_uses_exact_source_or_deepest_node_location() {
     audit_source(b"fn main() -> own unit pure {}", |outcome| {
         let CanonicalOutcome::SourceIssue(issue) = outcome else {

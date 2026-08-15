@@ -10,11 +10,12 @@ use whitefoot::{
     classify_terminals, diagnostic_terminal_order, grammar_node, lex, parse, productions,
 };
 
-/// Minimal ordinary and command entries plus one complete counted-range body.
-const PARSER_PROBES: [&[u8]; 3] = [
+/// Minimal ordinary and command entries plus counted-range and postcondition bodies.
+const PARSER_PROBES: [&[u8]; 4] = [
     b"fn main() -> own unit pure {\n  return unit;\n}\n",
     b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> own ExitStatus allocates(heap), external, blocks, traps {\n  return unit;\n}\n",
     b"fn range(lower: own u64, upper: own u64) -> own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n",
+    b"fn checked(value: own i32) -> own Result<i32, i32> pure requires {\n  check ieq(value, value) else trap \"pre\";\n} ensures Ok(value: result) {\n  check ieq(result, value) else trap \"post\";\n} {\n  return Ok<i32, i32>(value: value);\n}\n",
 ];
 
 const FRONTEND_SECTIONS: [(&str, &str); 3] = [
@@ -387,9 +388,9 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 70);
-        assert_eq!(report.decisions, 85);
-        assert_eq!(report.terminals, 96);
+        assert_eq!(report.productions, 73);
+        assert_eq!(report.decisions, 90);
+        assert_eq!(report.terminals, 97);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 

@@ -64,6 +64,7 @@ fn is_block_bearing(production: Production) -> bool {
             | Production::ConformDecl
             | Production::FnDecl
             | Production::RequiresBlock
+            | Production::EnsuresBlock
             | Production::LoopStmt
             | Production::ForStmt
             | Production::RegionStmt
@@ -167,13 +168,15 @@ pub(super) fn build_gap_styles(
                 .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
             mark_before(&mut gaps, topology, after_open, GapStyle::Break)?;
             mark_before(&mut gaps, topology, close, GapStyle::Break)?;
-            // A `requires` block joins its function body as `} {`, and an
+            // A clause block joins the following clause or function body, and an
             // `if` joins its continuation as `} else {` or `} else if … {`.
             // Both keep the close brace and what follows on one line, so the
             // break after the close is suppressed exactly there. The last
             // block of a construct always breaks.
-            let joins_a_continuation =
-                record.production == Production::RequiresBlock || (index == 0 && record.has_else);
+            let joins_a_continuation = matches!(
+                record.production,
+                Production::RequiresBlock | Production::EnsuresBlock
+            ) || (index == 0 && record.has_else);
             if !joins_a_continuation {
                 let after_close = close
                     .checked_add(1)

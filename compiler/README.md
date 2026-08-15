@@ -23,8 +23,8 @@ ordered source bundle
   -> host executable
 ```
 
-The frontend targets the exact v0.27 bytes of `../spec/kernel-spec.md`, SHA-256
-`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`.
+The frontend targets the exact v0.28 bytes of `../spec/kernel-spec.md`, SHA-256
+`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
 `cargo run --bin whitefoot-spec` checks the embedded bytes against the recorded
 activation chain and checks that the terminal and grammar data name the same
 specification identity. The committed grammar tables are ordinary compiler
@@ -321,6 +321,37 @@ current protected subject is the offset in `i < len(P)`. Provenance changes no
 runtime operation, effect row by itself, optimizer fact, or check-elision
 license, and facts-on/facts-off acceptance and required runtime behavior use
 the same semantic path.
+
+The v0.28 implementation adds one verified normal-return `ensures` relation
+without adding an executable callee check. Each concrete function instance
+proves every selected normal exit in complete, assertion-blinded, and
+S4-blinded views. Concrete call components are scheduled callee before caller;
+same-component summaries remain unavailable, and a component publishes its
+verified summary atomically without iteration or a summary fixed point.
+
+An earlier-component summary can establish only the closed result routes in
+the active specification: a fresh direct ordinary-let result, a direct
+selected `Ok` payload, the narrow same-binding direct result receiver, and the
+first-statement selected-payload receiver. `value_if` can additionally deliver
+an eligible bare-atom L0 relation across every reaching `give` edge and the
+ordinary weakest-bound join; the checked `ValueInitializerKind` keeps the
+byte-similar `value_match` path at zero delivered relations. Transfer, effect,
+target, holder, scope, loop, and support kills apply before publication.
+
+Complete/U/B proof nodes, the two measured unsigned bit sources (`iand` bounds
+and direct-one `ishl.wrap` nonzero), selected exits, summaries, calls,
+receivers, and delivery joins share one function-local DIAG-2 ledger and event
+stream. Optimistic S12 and delivery facts are finalized with the checked
+program only after the existing provenance batch has no rejection event; a
+failure discards the whole candidate. This adds no runtime fallback, optimizer
+assumption, second semantic pass, foreign derivation identity, or lowering
+authority.
+
+The ordinary real-program path exercises fourteen `read_bits` calls and twenty
+`append_slice` calls through these rules. The two append declarations retain
+their invalid-domain no-write behavior, and wfgrep's sole post-copy repair uses
+one `value_if` result for every subsequent length use. Existing output, error,
+cleanup, effect, and required-check oracles remain unchanged.
 
 The compiler retains the static contract family introduced in v0.16 and checks
 it before checked-program publication.

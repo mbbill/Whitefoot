@@ -5,19 +5,14 @@
 //! bridges without feeding either result back into provenance classification.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
-use super::entailment::{
-    CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence, EntailmentCallee,
-    EntailmentContext, rewalk_function_unasserted,
-};
+use super::entailment::{CallGoalCounterfactual, CallGoalDisposition, CallGoalEvidence};
 use super::model::{
-    BindingId, CheckedArrayRoot, CheckedConstant, CheckedConstantId, CheckedExpression,
-    CheckedFunction, CheckedIntegerOperation, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedSetTarget, CheckedSliceSource, CheckedStatement, CheckedType,
-    FunctionId,
+    BindingId, CheckedArrayRoot, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
+    CheckedMatchArm, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedSetTarget,
+    CheckedSliceSource, CheckedStatement, CheckedType, FunctionId,
 };
-use crate::{DeclarationId, NodePath, SemanticCompilerFailure};
+use crate::{NodePath, SemanticCompilerFailure};
 
 type ProvenanceResult<T> = Result<T, SemanticCompilerFailure>;
 
@@ -382,10 +377,10 @@ pub(crate) struct LocalLeafDisposition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProvenanceMetadata {
     pub(crate) functions: Vec<FunctionDependencies>,
-    /// S2/S3-disabled rewalk with the body-entry S4 goal retained.
-    pub(crate) unasserted: Vec<super::entailment::FunctionEntailmentRewalk>,
-    /// The same rewalk with S4 and its exact L0 projection omitted.
-    pub(crate) s4_blinded: Vec<super::entailment::FunctionEntailmentRewalk>,
+    /// S2/S3-disabled view with the body-entry S4 goal retained.
+    pub(crate) unasserted: Vec<super::entailment::FunctionEntailmentView>,
+    /// The same view with S4 and its exact L0 projection omitted.
+    pub(crate) s4_blinded: Vec<super::entailment::FunctionEntailmentView>,
     pub(crate) structural_bridges: Vec<StructuralBridge>,
     pub(crate) subject_bridges: Vec<SubjectBridge>,
     pub(crate) calls: Vec<BridgeCallLink>,
@@ -412,13 +407,31 @@ pub(crate) struct ProvenanceAnalysis {
     pub(crate) failures: ProvenanceFailures,
 }
 
+/// The converged PRV-1 component pairs frozen before optimistic S12 facts are
+/// formed. The second provenance stratum consumes this value without
+/// recomputing the component fixed point from candidate entailment metadata.
+pub(crate) struct FrozenProvenanceDependencies {
+    functions: Vec<FunctionDependencies>,
+}
+
+impl ProvenanceAnalysis {
+    /// Replaces the temporary pre-finish proof views with the authoritative
+    /// remapped views after the optimistic program batch has passed PRV-2/3.
+    pub(crate) fn refresh_entailment_views(&mut self, functions: &[CheckedFunction]) {
+        self.metadata.unasserted = functions
+            .iter()
+            .map(|function| function.entailment.unasserted.clone())
+            .collect();
+        self.metadata.s4_blinded = functions
+            .iter()
+            .map(|function| function.entailment.s4_blinded.clone())
+            .collect();
+    }
+}
+
 /// Inputs already held by the phase-B semantic inventory.
 pub(crate) struct ProvenanceContext<'check> {
-    pub(crate) callees: &'check [EntailmentCallee],
-    pub(crate) constants: &'check [CheckedConstant],
-    pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
-    pub(crate) binding_names: &'check [Vec<String>],
     /// The kind-declaring command entry; all of its labelled parameters are
     /// unconditional PRV-1 origins and have no caller-substitutable datum.
     pub(crate) external_entry: Option<FunctionId>,
@@ -3466,8 +3479,8 @@ fn actual_values(
 fn build_call_inventory(
     functions: &[CheckedFunction],
     dependencies: &[FunctionDependencies],
-    unasserted: &[super::entailment::FunctionEntailmentRewalk],
-    blinded: &[super::entailment::FunctionEntailmentRewalk],
+    unasserted: &[super::entailment::FunctionEntailmentView],
+    blinded: &[super::entailment::FunctionEntailmentView],
     nominals: &[CheckedNominal],
 ) -> ProvenanceResult<Vec<CallInventory>> {
     let mut calls = Vec::new();
@@ -3611,8 +3624,8 @@ fn build_direct_call_inventory(
 fn local_bridge_seeds(
     functions: &[CheckedFunction],
     dependencies: &[FunctionDependencies],
-    unasserted: &[super::entailment::FunctionEntailmentRewalk],
-    blinded: &[super::entailment::FunctionEntailmentRewalk],
+    unasserted: &[super::entailment::FunctionEntailmentView],
+    blinded: &[super::entailment::FunctionEntailmentView],
     nominals: &[CheckedNominal],
 ) -> ProvenanceResult<(Vec<StructuralKey>, Vec<SubjectKey>)> {
     let mut structural = Vec::new();
@@ -3681,8 +3694,8 @@ fn local_bridge_seeds(
 fn local_gate_seeds(
     functions: &[CheckedFunction],
     dependencies: &[FunctionDependencies],
-    unasserted: &[super::entailment::FunctionEntailmentRewalk],
-    blinded: &[super::entailment::FunctionEntailmentRewalk],
+    unasserted: &[super::entailment::FunctionEntailmentView],
+    blinded: &[super::entailment::FunctionEntailmentView],
     nominals: &[CheckedNominal],
     reconstructor: &CarrierReconstructor<'_>,
 ) -> ProvenanceResult<(
@@ -4632,42 +4645,48 @@ fn build_call_links(
 /// success dispositions. The checker consumes failures for source acceptance;
 /// only the success metadata enters the checked program, and lowering does not
 /// read it.
+pub(crate) fn freeze_program_provenance(
+    functions: &[CheckedFunction],
+    context: &ProvenanceContext<'_>,
+) -> ProvenanceResult<FrozenProvenanceDependencies> {
+    Ok(FrozenProvenanceDependencies {
+        functions: dependency_fixed_point(functions, context.nominals, context.external_entry)?,
+    })
+}
+
+/// Runs both provenance strata on an ordinary unit. FN-9 units instead freeze
+/// PRV-1 before their optimistic entailment batch and call
+/// [`analyze_program_provenance_with_frozen`].
 pub(crate) fn analyze_program_provenance(
     functions: &[CheckedFunction],
     context: &ProvenanceContext<'_>,
 ) -> ProvenanceResult<ProvenanceAnalysis> {
-    let dependencies = dependency_fixed_point(functions, context.nominals, context.external_entry)?;
+    let dependencies = freeze_program_provenance(functions, context)?;
+    analyze_program_provenance_with_frozen(functions, context, dependencies)
+}
+
+/// Finalizes PRV-2/3 from the already-frozen ordinary component pairs and the
+/// fixed optimistic complete/U/B fact batch.
+pub(crate) fn analyze_program_provenance_with_frozen(
+    functions: &[CheckedFunction],
+    context: &ProvenanceContext<'_>,
+    frozen: FrozenProvenanceDependencies,
+) -> ProvenanceResult<ProvenanceAnalysis> {
+    let dependencies = frozen.functions;
     let reconstructor = CarrierReconstructor {
         functions,
         summaries: &dependencies,
         nominals: context.nominals,
         external_entry: context.external_entry,
     };
-    let mut unasserted = Vec::with_capacity(functions.len());
-    let mut blinded = Vec::with_capacity(functions.len());
-    for function in functions {
-        let binding_names = context
-            .binding_names
-            .get(function.id.0 as usize)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let entailment_context = EntailmentContext {
-            callees: context.callees,
-            constants: context.constants,
-            constant_ids: context.constant_ids,
-            nominals: context.nominals,
-            binding_names: binding_names.as_slice(),
-        };
-        unasserted.push(rewalk_function_unasserted(
-            function,
-            &entailment_context,
-            true,
-        ));
-        blinded.push(rewalk_function_unasserted(
-            function,
-            &entailment_context,
-            false,
-        ));
-    }
+    let unasserted = functions
+        .iter()
+        .map(|function| function.entailment.unasserted.clone())
+        .collect::<Vec<_>>();
+    let blinded = functions
+        .iter()
+        .map(|function| function.entailment.s4_blinded.clone())
+        .collect::<Vec<_>>();
 
     let (local_structural, local_subjects) = local_bridge_seeds(
         functions,

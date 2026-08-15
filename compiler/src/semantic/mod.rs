@@ -9,13 +9,14 @@ mod check;
 mod entailment;
 mod goal;
 mod model;
+mod postcondition;
 mod provenance;
 mod tree;
 
 #[cfg(test)]
 mod tests;
 
-use crate::{BundleSourceExtent, NodePath, ResolvedSyntaxUnit, SyntaxCoordinate};
+use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
 
@@ -90,6 +91,8 @@ pub enum SemanticRule {
     Fn7,
     /// Finite atomic function requirement goal.
     Fn8,
+    /// Verified narrow normal-return relation.
+    Fn9,
     /// Type-driven conditional form, and the `else` spellings it forbids.
     Gram6,
     /// Exact declared-order named user-call arguments.
@@ -160,6 +163,7 @@ impl SemanticRule {
             Self::Fn4 => "FN-4",
             Self::Fn7 => "FN-7",
             Self::Fn8 => "FN-8",
+            Self::Fn9 => "FN-9",
             Self::Gram6 => "GRAM-6",
             Self::Gram11 => "GRAM-11",
             Self::Gram8 => "GRAM-8",
@@ -230,7 +234,8 @@ impl SemanticRule {
             Self::Fn3 => Self::Fn4,
             Self::Fn4 => Self::Fn7,
             Self::Fn7 => Self::Fn8,
-            Self::Fn8 => Self::Eff1,
+            Self::Fn8 => Self::Fn9,
+            Self::Fn9 => Self::Eff1,
             Self::Eff1 => Self::Eff2,
             Self::Eff2 => Self::Err2,
             Self::Err2 => Self::Err3,
@@ -289,16 +294,17 @@ impl SemanticRule {
             Self::Fn4 => 31,
             Self::Fn7 => 32,
             Self::Fn8 => 33,
-            Self::Eff1 => 34,
-            Self::Eff2 => 35,
-            Self::Err2 => 36,
-            Self::Err3 => 37,
-            Self::Sys2 => 38,
-            Self::Clm1 => 39,
-            Self::Clm2 => 40,
-            Self::Ent2 => 41,
-            Self::Prv2 => 42,
-            Self::Prv3 => 43,
+            Self::Fn9 => 34,
+            Self::Eff1 => 35,
+            Self::Eff2 => 36,
+            Self::Err2 => 37,
+            Self::Err3 => 38,
+            Self::Sys2 => 39,
+            Self::Clm1 => 40,
+            Self::Clm2 => 41,
+            Self::Ent2 => 42,
+            Self::Prv2 => 43,
+            Self::Prv3 => 44,
         }
     }
 }
@@ -346,6 +352,30 @@ pub struct UndischargedCallRequirementDetail {
     pub disposition: CallRequirementDisposition,
     /// The rule-selected mechanical restructuring.
     pub mechanical_fix: &'static str,
+}
+
+/// One non-discharged complete-view [FN-9] relation disposition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PostconditionProofDisposition {
+    Refuted,
+    Unproved,
+}
+
+/// The deterministic [FN-9] selected-return rejection payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndischargedPostconditionDetail {
+    /// The concrete, possibly generic, function instance.
+    pub concrete_function: String,
+    /// The unique postcondition occurrence's block path.
+    pub postcondition: NodePath,
+    /// The fixed relation occurrence ordinal (zero in this version).
+    pub conjunct: u32,
+    /// Exact admitted selector identity.
+    pub selector: NodePath,
+    /// The instantiated normalized relation at the selected exit.
+    pub relation: String,
+    /// The exact non-discharged complete-view disposition.
+    pub disposition: PostconditionProofDisposition,
 }
 
 /// Public finite spelling of one PRV-1 parameter component selector.
@@ -645,6 +675,41 @@ pub enum SemanticIssueKind {
     FunctionFallthrough,
     /// A requirement entry uses a construct outside the admitted FN-8 goal subset.
     InvalidRequires,
+    /// An ensures selector does not match the concrete result class FN-9 admits.
+    InvalidPostconditionSelector,
+    /// A variant selector does not spell exact `Ok(value: result)`.
+    InvalidPostconditionFields {
+        /// Exact closed field list required by the admitted selector.
+        required_fields: Vec<String>,
+    },
+    /// The symbolic result candidate conflicts with a live declaration.
+    PostconditionCandidateNotFresh {
+        /// Written candidate spelling.
+        spelling: String,
+        /// Ordered live declaration origins that conflict with the candidate.
+        conflicts: Vec<crate::SourceOrigin>,
+    },
+    /// A later ensures-local declaration attempts to shadow the symbolic result.
+    PostconditionLocalShadowsResult {
+        /// Written candidate spelling.
+        spelling: String,
+        /// The admitted selector candidate's exact origin.
+        selector: crate::SourceOrigin,
+    },
+    /// An ensures entry uses a construct outside FN-9's proof-only ANF subset.
+    InvalidPostconditionClause,
+    /// The alpha-expanded final condition is not one output-bearing L0 relation.
+    InvalidPostconditionRelation,
+    /// A selected Result exit is not a direct canonical `Ok(value: atom)` or `Err(error: atom)`.
+    InvalidPostconditionReturn,
+    /// One concrete postcondition has no selected normal exit.
+    NoSelectedNormalExit {
+        /// The exact fixed residual required by FN-9.
+        residual: &'static str,
+    },
+    /// A selected normal return's complete instantiated FN-9 relation is
+    /// refuted or unproved after entry-image stability and ordinary kills.
+    UndischargedPostcondition(Box<UndischargedPostconditionDetail>),
     /// The unique source `main` declaration has a header shape FN-7 admits in
     /// neither entry form.
     InvalidMain,
@@ -923,6 +988,11 @@ pub enum SemanticOutcome<'classified, 'lexed, 'source> {
         /// Deterministically selected semantic issue.
         issue: SemanticIssue,
     },
+    /// A delayed ensures-entry resolver issue selected only after FN-9 selector admission.
+    ResolutionIssue {
+        /// The original resolution issue, unchanged in rule, location, and payload.
+        issue: ResolutionIssue,
+    },
     /// Valid source requires a language family the compiler has not implemented.
     Unsupported {
         /// Exact unimplemented family and source node.
@@ -936,7 +1006,8 @@ pub enum SemanticOutcome<'classified, 'lexed, 'source> {
 }
 
 enum CheckStop {
-    Issue(SemanticIssue),
+    Issue(Box<SemanticIssue>),
+    Resolution(Box<ResolutionIssue>),
     Unsupported(SemanticUnsupported),
     Compiler(SemanticCompilerFailure),
     /// A derived type named a nominal instance that is not interned yet.
@@ -949,6 +1020,16 @@ enum CheckStop {
     /// pending and checks the function again. It is private to the checker
     /// and never reaches a diagnostic.
     DeferredNominal,
+    /// A throwaway FN-9 selector dependency whose ordinary source premise did
+    /// not succeed. It must be consumed inside preflight and never becomes a
+    /// source or compiler diagnostic of its own.
+    PostconditionPrerequisiteUnavailable,
+}
+
+impl CheckStop {
+    fn source_issue(issue: SemanticIssue) -> Self {
+        Self::Issue(Box::new(issue))
+    }
 }
 
 impl From<SemanticCompilerFailure> for CheckStop {

@@ -1,5 +1,5 @@
 use crate::Production;
-use crate::syntax::{FinalizedExtent, FinalizedTopology};
+use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
 
 use super::super::catalog::{PRELUDE_DECLARATIONS, reserved_name};
 use super::super::scopes::ScopeBuild;
@@ -9,7 +9,7 @@ use super::super::{
     ResolutionIssue, ResolutionIssueKind, ResolutionRule, SystemDeclarationRecord,
 };
 use super::{
-    ClassifiedRole, DeclarationIndex, DeclarationMeta, EventKey, RawRoleKind,
+    ClassifiedRole, DeclarationIndex, DeclarationMeta, EventKey, RawRoleKind, SelectorRole,
     ancestor_with_production, declaration_domain, is_visible,
 };
 
@@ -32,6 +32,60 @@ pub(super) fn check_declaration_inventory(
     declaration_by_role: &[Option<usize>],
     system: &[SystemDeclarationRecord],
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
+    check_inventory(
+        topology,
+        scopes,
+        roles,
+        declarations,
+        metas,
+        index,
+        declaration_by_role,
+        system,
+        |role| ancestor_with_production(topology, role.owner, Production::EnsuresEntry).is_none(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn check_ensures_entry_inventory(
+    topology: &FinalizedTopology,
+    scopes: &ScopeBuild,
+    roles: &[ClassifiedRole],
+    declarations: &[DeclarationRecord],
+    metas: &[DeclarationMeta],
+    index: &DeclarationIndex,
+    declaration_by_role: &[Option<usize>],
+    system: &[SystemDeclarationRecord],
+    block: NodeId,
+) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
+    check_inventory(
+        topology,
+        scopes,
+        roles,
+        declarations,
+        metas,
+        index,
+        declaration_by_role,
+        system,
+        |role| {
+            ancestor_with_production(topology, role.owner, Production::EnsuresEntry).is_some()
+                && ancestor_with_production(topology, role.owner, Production::EnsuresBlock)
+                    == Some(block)
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_inventory(
+    topology: &FinalizedTopology,
+    scopes: &ScopeBuild,
+    roles: &[ClassifiedRole],
+    declarations: &[DeclarationRecord],
+    metas: &[DeclarationMeta],
+    index: &DeclarationIndex,
+    declaration_by_role: &[Option<usize>],
+    system: &[SystemDeclarationRecord],
+    include: impl Fn(&ClassifiedRole) -> bool,
+) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     if declarations.len() != metas.len()
         || metas
             .iter()
@@ -48,6 +102,9 @@ pub(super) fn check_declaration_inventory(
         system,
     };
     for (role_index, role) in roles.iter().enumerate() {
+        if !include(role) {
+            continue;
+        }
         if let Some((reserved_role, checked_spelling)) = reserved_role(role)
             && let Some((class, inventory_ordinal)) = reserved_name(checked_spelling)
         {
@@ -124,6 +181,12 @@ fn reserved_role(role: &ClassifiedRole) -> Option<(ReservedDeclarationRole, &str
         }
         RawRoleKind::Declaration(DeclarationRole::MatchBinder) => {
             ReservedDeclarationRole::MatchBinder
+        }
+        RawRoleKind::Selector(SelectorRole::PlainCandidate) => {
+            ReservedDeclarationRole::PlainResultSelector
+        }
+        RawRoleKind::Selector(SelectorRole::VariantCandidate) => {
+            ReservedDeclarationRole::VariantResultSelector
         }
         RawRoleKind::DependentDeclaration(DependentDeclarationRole::Field) => {
             ReservedDeclarationRole::Field

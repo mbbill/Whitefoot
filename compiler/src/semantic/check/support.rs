@@ -68,11 +68,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: LexicalUseRole,
     ) -> Result<&crate::LexicalUseRecord, CheckStop> {
+        self.use_at_roles(node, &[role])
+    }
+
+    pub(super) fn use_at_roles(
+        &self,
+        node: NodeId,
+        roles: &[LexicalUseRole],
+    ) -> Result<&crate::LexicalUseRecord, CheckStop> {
         let path = self.tree.path(node)?;
+        if let Some(context) = self.active_postcondition.get() {
+            let record = self
+                .resolved
+                .postconditions()
+                .get(context.record)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            if let Some(usage) = record
+                .provisional_uses
+                .iter()
+                .find(|usage| roles.contains(&usage.role()) && usage.origin().node() == path)
+            {
+                return Ok(usage);
+            }
+        }
         self.resolved
             .lexical_uses()
             .iter()
-            .find(|usage| usage.role() == role && usage.origin().node() == path)
+            .find(|usage| roles.contains(&usage.role()) && usage.origin().node() == path)
             .ok_or(SemanticCompilerFailure::InvalidResolution.into())
     }
 
@@ -109,7 +131,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         kind: SemanticIssueKind,
     ) -> CheckStop {
         match (self.tree.path(node), self.tree.coordinate(node)) {
-            (Ok(path), Ok(coordinate)) => CheckStop::Issue(SemanticIssue {
+            (Ok(path), Ok(coordinate)) => CheckStop::source_issue(SemanticIssue {
                 rule,
                 location: SemanticLocation::SourceNode(path.clone(), coordinate),
                 kind,
@@ -135,7 +157,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         kind: SemanticIssueKind,
     ) -> Result<ResultValue, CheckStop> {
         let path = self.tree.path(node)?.clone();
-        Err(CheckStop::Issue(SemanticIssue {
+        Err(CheckStop::source_issue(SemanticIssue {
             rule,
             location: SemanticLocation::SourceNode(path, coordinate),
             kind,

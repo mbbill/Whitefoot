@@ -53,12 +53,14 @@ pub enum ScopeKind {
     CompilationUnit,
     /// Type and const generics owned by one declaration.
     DeclarationGenerics,
-    /// Region parameters, parameters, signature suffix, requires, and body.
+    /// Region parameters, parameters, signature suffix, clauses, and body.
     FunctionSignature,
     /// One contract-member signature.
     ContractSignature,
     /// The disjoint lexical block of a function's requires clause.
     RequiresBlock,
+    /// The disjoint lexical block of a function's ensures clause.
+    EnsuresBlock,
     /// A concrete function body.
     FunctionBody,
     /// The statement body nested under an arm, loop, or local region.
@@ -288,6 +290,8 @@ pub enum LexicalUseRole {
     Construct,
     /// U05: enum-variant match arm.
     ArmVariant,
+    /// The leading enum variant of an FN-9 selector.
+    EnsuresVariant,
     /// U06: region carried by a type.
     TypeRegion,
     /// U07: region carried by a mode.
@@ -537,6 +541,58 @@ impl DeferredUseRecord {
     }
 }
 
+/// Grammar class of one private FN-9 selector record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PostconditionSelectorClass {
+    Plain,
+    Variant,
+}
+
+/// One FN-9 result-datum candidate. It is deliberately not a declaration or binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PostconditionCandidateRecord {
+    pub(crate) spelling: String,
+    pub(crate) origin: SourceOrigin,
+    pub(crate) paired_field: Option<String>,
+    pub(crate) live_conflicts: Vec<SourceOrigin>,
+    pub(crate) later_local_collision: Option<SourceOrigin>,
+}
+
+/// One written variant-selector field and its candidate binder.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PostconditionFieldRecord {
+    pub(crate) spelling: String,
+    pub(crate) origin: SourceOrigin,
+    pub(crate) candidate: PostconditionCandidateRecord,
+}
+
+/// One in-clause pbase provisionally owned by its selector rather than TYPE-6.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PostconditionSelectorUseRecord {
+    pub(crate) spelling: String,
+    pub(crate) origin: SourceOrigin,
+}
+
+/// Private resolver handoff for one structurally admitted FN-9 clause.
+///
+/// Ordinary entry uses are linked only provisionally. The semantic FN-9
+/// admission pass activates them after concrete signature substitution; an
+/// invalid selector therefore wins before any deferred entry lookup issue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PostconditionResolutionRecord {
+    pub(crate) function: NodePath,
+    pub(crate) block: NodePath,
+    pub(crate) selector: NodePath,
+    pub(crate) class: PostconditionSelectorClass,
+    pub(crate) plain_candidate: Option<PostconditionCandidateRecord>,
+    pub(crate) fields: Vec<PostconditionFieldRecord>,
+    pub(crate) variant_target: Option<ResolvedTarget>,
+    pub(crate) provisional_uses: Vec<LexicalUseRecord>,
+    pub(crate) selector_uses: Vec<PostconditionSelectorUseRecord>,
+    pub(crate) entry_inventory_issue: Option<ResolutionIssue>,
+    pub(crate) entry_resolution_issue: Option<ResolutionIssue>,
+}
+
 /// One normative [SYS-2] declaration record admitted to one resolved unit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SystemDeclarationRecord {
@@ -620,6 +676,8 @@ pub enum ResolutionRule {
     Fn4,
     /// Requires-block structural admission.
     Fn8,
+    /// Ensures-block structural and selector admission.
+    Fn9,
 }
 
 impl ResolutionRule {
@@ -639,6 +697,7 @@ impl ResolutionRule {
             Self::Fn3 => "FN-3",
             Self::Fn4 => "FN-4",
             Self::Fn8 => "FN-8",
+            Self::Fn9 => "FN-9",
         }
     }
 }
@@ -667,6 +726,10 @@ pub enum ReservedDeclarationRole {
     ForBinder,
     /// Match binder.
     MatchBinder,
+    /// Plain FN-9 result-selector candidate.
+    PlainResultSelector,
+    /// Variant-form FN-9 result-selector candidate.
+    VariantResultSelector,
     /// Struct field.
     Field,
     /// Enum-variant field.
@@ -680,6 +743,15 @@ pub enum ReservedDeclarationRole {
 /// Why an FN-8 direct entry or block was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequiresShapeIssue {
+    /// The block is empty or contains only ordinary lets.
+    MissingFinalCheck,
+    /// A direct entry is not an admitted nonfinal let or final check.
+    InvalidEntry,
+}
+
+/// Why an FN-9 direct entry or block was rejected by early structural admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EnsuresShapeIssue {
     /// The block is empty or contains only ordinary lets.
     MissingFinalCheck,
     /// A direct entry is not an admitted nonfinal let or final check.
@@ -719,6 +791,8 @@ impl DeclarationConflict {
 pub enum ResolutionIssueKind {
     /// Early FN-8 structural-admission failure.
     RequiresShape(RequiresShapeIssue),
+    /// Early FN-9 structural-admission failure.
+    EnsuresShape(EnsuresShapeIssue),
     /// A declaration uses a derived reserved lower name.
     ReservedName {
         /// Unsigiled spelling for a region, otherwise the declaration spelling.
@@ -846,6 +920,7 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
+    postconditions: Vec<PostconditionResolutionRecord>,
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
@@ -920,6 +995,10 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
     #[must_use]
     pub fn deferred_uses(&self) -> &[DeferredUseRecord] {
         &self.deferred_uses
+    }
+
+    pub(crate) fn postconditions(&self) -> &[PostconditionResolutionRecord] {
+        &self.postconditions
     }
 
     /// Consumes resolution and returns the underlying canonical syntax.
