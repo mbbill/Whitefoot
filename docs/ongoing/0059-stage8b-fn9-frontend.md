@@ -45,8 +45,11 @@ never misreport that temporary implementation boundary as invalid source.
    the first later-local collision origin. It is excluded from ordinary
    declaration and deferred-use inventories. Resolution may link exact-scope
    uses provisionally; FN-9 admission activates them only as the template
-   datum. Do not create a `BindingId`, storage, a second general lookup path,
-   or an ad hoc checker name scan.
+   datum. Preserve any delayed entry `ResolutionIssue` through one narrow
+   semantic-outcome/driver forwarding path so its original rule, location,
+   payload, and resolution stage survive after selector admission. Do not
+   create a `BindingId`, storage, a second general lookup path, or an ad hoc
+   checker name scan.
 4. Reuse and factor the existing pure, total, nontrapping ANF and alpha-
    expansion machinery in `semantic/check/requires.rs`. Add the frozen
    RelationTemplate and checked postcondition metadata without changing
@@ -73,7 +76,9 @@ never misreport that temporary implementation boundary as invalid source.
 - Semantic surface: new cohesive `semantic/postcondition.rs` and
   `semantic/check/ensures.rs`, plus the minimum existing semantic model,
   checker, requires, generics, contracts, and test modules that own the frozen
-  metadata and admission.
+  metadata and admission. `compiler/src/driver.rs` may change only to forward
+  a delayed original `ResolutionIssue` selected after FN-9 admission; it owns
+  no lookup or semantic reinterpretation.
 - Identity: `compiler/src/spec.rs`, `compiler/src/bin/spec.rs`, and exactly
   three version guards in `compiler/src/backend/qualification.rs`.
 
@@ -115,7 +120,8 @@ stack strictly H2 onto H1 through H6 onto H5.
 Stop on any candidate-byte drift, grammar ambiguity, unresolved resolution
 choice, need for ordinary storage or a second lookup authority, duplicated
 requires machinery, GoalTemplate expansion, semantic proof or publication in
-this handoff, path outside the named conditional test owners, or need for a
+this handoff, path outside the named conditional test owners and the single
+resolution-outcome forwarding path above, or need for a
 backend/lowering/runtime/ABI/gate change beyond the three version guards.
 
 The handoff is implementation-complete when reviewed H1 implements exactly
@@ -126,6 +132,8 @@ approved activation atomically lands the held stack.
 ## Progress
 
 Claimed from lifecycle revision `b79cf48185fd87e204097ae872e8ad7256913730`.
-Next: create the isolated workspace at exact H0, recheck the three frozen
-candidate identities, read the cited workflow and authority, then implement
-only this frontend/FN-9 surface handoff.
+The lead autonomously refined the implementation touch set after the resolver
+correctly deferred entry issues but the semantic outcome lacked a route that
+could preserve their original resolution rule and stage. That bounded driver
+forwarding is part of the approved frontend handoff, not a new lookup path or
+semantic direction. Next: complete and review H1 at exact H0.
