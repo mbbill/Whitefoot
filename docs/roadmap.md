@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 41 (PROOF-8 terminal; CAND-8 unparked)
+Revision: 41 (outline:PROOF-8 terminal; outline:CAND-8 unparked)
 
 The active language authority is v0.29 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -74,25 +74,25 @@ Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
 
-- CAND-1 records the completed flagship selection. CAND-8 remains the selected
-  flagship and pressure source. PROOF-8's selected obligation-discharge
-  sequence is now complete, so CAND-8 is unparked; choosing or executing its
+- outline:CAND-1 records the completed flagship selection. outline:CAND-8 remains the selected
+  flagship and pressure source. outline:PROOF-8's selected obligation-discharge
+  sequence is now complete, so outline:CAND-8 is unparked; choosing or executing its
   next bounded slice still requires a new owner-approved plan. Mapped direction
   items inform that plan, but none authorizes work by itself.
-- PERF-1 establishes ordinary code quality before a new optimizer fact or
+- outline:PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
-- Every production fact consumer in PROOF-1 through PROOF-4 and PROOF-7 depends
-  on VERIFY-3. PROOF-2 depends on PROOF-5 only for a `willreturn`-class claim,
+- Every production fact consumer in outline:PROOF-1 through outline:PROOF-4 and outline:PROOF-7 depends
+  on outline:VERIFY-3. outline:PROOF-2 depends on outline:PROOF-5 only for a `willreturn`-class claim,
   not for memory-effect attributes.
-- PAR-1 selects a source construct only after CAND-8 profiling exposes concrete
-  parallel work; PAR-2 through PAR-4 cannot preselect proof rules, reductions,
+- outline:PAR-1 selects a source construct only after outline:CAND-8 profiling exposes concrete
+  parallel work; outline:PAR-2 through outline:PAR-4 cannot preselect proof rules, reductions,
   or a runtime before that evidence.
-- STORE-2 must expose a concrete unsolved representation privilege before
-  PROOF-6 can enter a plan.
-- TARGET-2 through TARGET-4 depend on BOUND-1 whenever their authentic milestone
-  crosses the closed compilation-unit boundary. PAR-4 and BOUND-1 must agree on
+- outline:STORE-2 must expose a concrete unsolved representation privilege before
+  outline:PROOF-6 can enter a plan.
+- outline:TARGET-2 through outline:TARGET-4 depend on outline:BOUND-1 whenever their authentic milestone
+  crosses the closed compilation-unit boundary. outline:PAR-4 and outline:BOUND-1 must agree on
   resource transfer, waiting, cancellation, and runtime thread authority.
-- APP-1 depends on BOUND-2 when its selected component requires opaque foreign
+- outline:APP-1 depends on outline:BOUND-2 when its selected component requires opaque foreign
   code rather than a Whitefoot or compiler-owned system provider.
 
 ## Proof and optimizer facts
@@ -100,7 +100,7 @@ Which gap matters next is selected by a project, never by checklist length.
 Serves Constitution P0, W3, T1, and T2: useful facts must improve code without
 creating writer trust or weakening the checked safety envelope.
 
-### PROOF-1 — Relational bounds proofs and check elision
+### outline:PROOF-1 — Relational bounds proofs and check elision
 
 `[current: compiler]` `[historical: measured]` `[next: project pressure]`
 
@@ -121,7 +121,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [compiler `requires` boundary](../compiler/README.md) ·
   [historical base64 result](../research/experiments/port-study/base64/RESULTS.md).
 
-### PROOF-2 — Effect-derived optimizer facts
+### outline:PROOF-2 — Effect-derived optimizer facts
 
 `[current: spec]` `[current: compiler]` `[historical: measured]` `[next: research]`
 
@@ -137,7 +137,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [historical effect result](../research/experiments/effect-attrs-channel/RESULTS.md) ·
   [current design memory](../mcts_mem/whitefoot/effects.md).
 
-### PROOF-3 — Borrow-derived alias facts
+### outline:PROOF-3 — Borrow-derived alias facts
 
 `[current: compiler]` `[historical: measured]` `[next: project pressure]`
 
@@ -152,7 +152,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [historical alias result](../research/experiments/scoped-alias-channel/RESULTS.md) ·
   [directional frequency study](../research/experiments/frequency-study/RESULTS.md).
 
-### PROOF-4 — Checked laws as transformation authority
+### outline:PROOF-4 — Checked laws as transformation authority
 
 `[current: spec]` `[current: compiler]` `[historical: measured]` `[next: project pressure]`
 
@@ -167,7 +167,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [historical checked-law result](../research/experiments/checked-law-channel/RESULTS.md) ·
   [current contract implementation](../compiler/README.md).
 
-### PROOF-5 — Derived totality
+### outline:PROOF-5 — Derived totality
 
 `[current: spec]` `[research-only]` `[parked]`
 
@@ -180,7 +180,7 @@ creating writer trust or weakening the checked safety envelope.
   rejection boundary before implementation.
 - **Facts:** v0.17 `EFF-3` · [totality design decision](../mcts_mem/whitefoot/effects/derived-totality.md).
 
-### PROOF-6 — Proof-gated representation authority (D17)
+### outline:PROOF-6 — Proof-gated representation authority (D17)
 
 `[current: project law]` `[research-only]` `[parked]`
 
@@ -196,7 +196,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [Constitution D17](constitution.md) ·
   [archive-promotion placement](../research/archive-promotion-audit.md#1-d17-placement-completed).
 
-### PROOF-7 — Verified strategy-selecting lowering
+### outline:PROOF-7 — Verified strategy-selecting lowering
 
 `[historical: measured]` `[speculative]` `[next: project pressure]`
 
@@ -211,7 +211,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Facts:** [DEFLATE design handoff](../research/experiments/zlib-core-kernels/DESIGN-HANDOFF.md) ·
   [proof-guided autotuning](ideas.md#proof-guided-autotuning).
 
-### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
+### outline:PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
 `[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, installed v0.28 verified postconditions, deterministic claim ledger, and installed v0.29 strict partition]`
 `[terminal]`
@@ -361,9 +361,9 @@ creating writer trust or weakening the checked safety envelope.
   derivation ledger at SHA-256 `7f2b277c...`
   intentionally retains its candidate-time historical prose. The active
   specification is sole language authority; the v0.29 activation chain records
-  its installed identity, and this outline records terminal `PROOF-8` status.
-- **Missing / next:** none inside PROOF-8. The direction is terminal and
-  `CAND-8` is unparked. Selecting its next bounded slice requires a new
+  its installed identity, and this outline records terminal `outline:PROOF-8` status.
+- **Missing / next:** none inside outline:PROOF-8. The direction is terminal and
+  `outline:CAND-8` is unparked. Selecting its next bounded slice requires a new
   owner-approved high-level plan.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
@@ -381,7 +381,7 @@ creating writer trust or weakening the checked safety envelope.
 Serves W3, T1, and T2: current claims must survive independent, hostile, and
 facts-off evidence rather than trust in the compiler or writer.
 
-### VERIFY-1 — Checked safety envelope in real programs
+### outline:VERIFY-1 — Checked safety envelope in real programs
 
 `[current: spec]` `[current: compiler]` `[next: project validation]`
 
@@ -395,7 +395,7 @@ facts-off evidence rather than trust in the compiler or writer.
   results, transfer, and teardown in the first selected medium project.
 - **Facts:** [Constitution](constitution.md) · [compiler README](../compiler/README.md).
 
-### VERIFY-2 — Execute the conformance corpus against the compiler
+### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
 `[current: native adapter wired, one protected divergence]`
 `[next: preserve independent reporting]`
@@ -416,7 +416,7 @@ facts-off evidence rather than trust in the compiler or writer.
   status change remains owner-protected and must report the before/after sets.
 - **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
 
-### VERIFY-3 — Facts-on/facts-off differential trust
+### outline:VERIFY-3 — Facts-on/facts-off differential trust
 
 `[historical: measured]` `[next: with first fact consumer]`
 
@@ -430,7 +430,7 @@ facts-off evidence rather than trust in the compiler or writer.
 - **Facts:** [experiment index](../research/experiments/README.md) ·
   [fact-channel design memory](../mcts_mem/whitefoot/fact-channels.md).
 
-### VERIFY-4 — Deterministic and reproducible artifacts
+### outline:VERIFY-4 — Deterministic and reproducible artifacts
 
 `[current: bounded determinism]` `[next: real consumer]`
 
@@ -449,7 +449,7 @@ facts-off evidence rather than trust in the compiler or writer.
 Serves P0 and W1: ordinary accepted source should be forced toward a fast shape,
 and every slower-but-accepted divergence becomes a measured finding.
 
-### PERF-1 — Ordinary lowering and baseline code quality
+### outline:PERF-1 — Ordinary lowering and baseline code quality
 
 `[current: check-aware wide probe landed]` `[current: wfgrep beats pinned grep 1.07/1.35]`
 `[next: owner-selected next attributed cause or capability]`
@@ -474,7 +474,7 @@ and every slower-but-accepted divergence becomes a measured finding.
   [historical DEFLATE result](../research/experiments/zlib-core-kernels/RESULTS.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md).
 
-### FLOOR-1 — Canonical source and constrained control shape
+### outline:FLOOR-1 — Canonical source and constrained control shape
 
 `[current: spec]` `[current: compiler]` `[next: project validation]`
 
@@ -487,7 +487,7 @@ and every slower-but-accepted divergence becomes a measured finding.
   expert reference shape and identify accepted but materially slower forms.
 - **Facts:** v0.17 `FORM-*` and `GRAM-*` · [floor rationale](why-whitefoot.md).
 
-### FLOOR-2 — Closed, taught pattern catalog
+### outline:FLOOR-2 — Closed, taught pattern catalog
 
 `[seeded]` `[next: project validation]`
 
@@ -501,7 +501,7 @@ and every slower-but-accepted divergence becomes a measured finding.
   slower-but-accepted or currently inexpressible shape.
 - **Facts:** [pattern catalog](patterns.md) · [pattern design memory](../mcts_mem/whitefoot/pattern-doctrine.md).
 
-### FLOOR-3 — Project floor audit
+### outline:FLOOR-3 — Project floor audit
 
 `[historical: measured]` `[next: selected project]`
 
@@ -515,7 +515,7 @@ and every slower-but-accepted divergence becomes a measured finding.
   inside a medium project; the checker outcome, not a model score, is the gate.
 - **Facts:** [historical default-floor results](../research/experiments/default-floor/RESULTS.md).
 
-### FLOOR-4 — Diagnostic repair loop
+### outline:FLOOR-4 — Diagnostic repair loop
 
 `[current: deterministic diagnostics]` `[next: measure]`
 
@@ -528,9 +528,9 @@ and every slower-but-accepted divergence becomes a measured finding.
   repeated confusion into a diagnostic or teaching defect.
 - **Facts:** v0.17 `DIAG-*` · [honest limitation](why-whitefoot.md#part-vi-what-it-does-not-beat-and-what-is-not-yet-known).
 
-### FLOOR-5 — Spelling rule and surface relief
+### outline:FLOOR-5 — Spelling rule and surface relief
 
-`[research: complete]` `[next: spec batch after PROOF-8 slice 1]`
+`[research: complete]` `[next: spec batch after outline:PROOF-8 slice 1]`
 
 - **Goal:** every surface byte carries a decision the checker cannot
   reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
@@ -553,7 +553,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 Serves P0, W1, W3, T1, and T2: useful data structures must retain safety and
 optimizer facts without a writer-accessible escape or hidden pathological cost.
 
-### STORE-1 — Borrow and provenance completeness
+### outline:STORE-1 — Borrow and provenance completeness
 
 `[current: compiler]` `[next: project-selected gap]`
 
@@ -574,13 +574,13 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language
   authority or a ready implementation package; it vacated the v0.18 candidate
-  slot for the BOUND-1 system-interface batch on 2026-08-05 (predates the
+  slot for the outline:BOUND-1 system-interface batch on 2026-08-05 (predates the
   wfgrep goal framing and would need re-derivation from a real blocker).
 - **Facts:** [compiler borrow boundary](../compiler/README.md) ·
   [parked loan/freeze candidate](../governance/spec-evolution/parked-loan-freeze-candidate.md) ·
   [M1 placement](../research/archive-promotion-audit.md#2-keep-the-m1-loanfreeze-work-as-a-parked-candidate-not-a-rule-set).
 
-### STORE-2 — Growth, replacement, occupancy, and identity
+### outline:STORE-2 — Growth, replacement, occupancy, and identity
 
 `[current: fixed storage only]` `[research-only]` `[parked]`
 
@@ -601,7 +601,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
 - **Facts:** [promotion checklist](../research/archive-promotion-audit.md#4-storage-checklist-retained-as-direction-outline-reopening-input) ·
   [rejected owning-sequence experiment](../research/experiments/data-layout-owning-sequence/RESULTS.md).
 
-### STORE-3 — Refined domains and automatic niches
+### outline:STORE-3 — Refined domains and automatic niches
 
 `[speculative]` `[parked]`
 
@@ -619,7 +619,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
 Serves P0, T1, and T2: concurrency is useful only when checked non-interference
 and failure semantics survive the runtime implementation.
 
-### PAR-1 — Writer-declared, compiler-verified parallelism
+### outline:PAR-1 — Writer-declared, compiler-verified parallelism
 
 `[research-only]` `[next: candidate project]`
 
@@ -633,7 +633,7 @@ and failure semantics survive the runtime implementation.
   before language or runtime implementation.
 - **Facts:** [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
 
-### PAR-2 — Intra-object disjointness
+### outline:PAR-2 — Intra-object disjointness
 
 `[research-only]` `[parked]`
 
@@ -647,7 +647,7 @@ and failure semantics survive the runtime implementation.
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
   [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns).
 
-### PAR-3 — Reductions, algebra, and trap selection
+### outline:PAR-3 — Reductions, algebra, and trap selection
 
 `[current: spec]` `[historical: measured]` `[next: project pressure]`
 
@@ -660,7 +660,7 @@ and failure semantics survive the runtime implementation.
   domain, deterministic result, and trap rule before any transform.
 - **Facts:** [historical chunk-summary result](../research/experiments/port-study/wc-chunk-summary/RESULTS.md).
 
-### PAR-4 — Runtime, allocation, and dynamic fan-out
+### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 
 `[research-only]` `[parked]`
 
@@ -669,7 +669,7 @@ and failure semantics survive the runtime implementation.
 - **Current:** no runtime architecture is selected. The archive audit preserves
   one required witness: a runtime-count worker set whose workers share-read
   outer state; the old fixed-spawn answer has no authority.
-- **Missing / next:** the PAR-1 project must exercise or deliberately reject
+- **Missing / next:** the outline:PAR-1 project must exercise or deliberately reject
   that witness and measure allocation, scheduling, determinism, and absolute
   wall time; any OWN-11 change needs hostile soundness review.
 - **Facts:** [dynamic fan-out placement](../research/archive-promotion-audit.md#3-dynamic-fan-out-retained-as-a-parallel-design-witness).
@@ -679,7 +679,7 @@ and failure semantics survive the runtime implementation.
 Serves P0, W3, T1, T2, and R6: external usefulness and target reach may not
 become alternate unchecked semantics or prematurely bind the whole toolchain.
 
-### BOUND-1 — System capabilities and host integration
+### outline:BOUND-1 — System capabilities and host integration
 
 `[current: first slice complete end-to-end with standing cost gates]`
 `[next: helper decomposition (system-type borrow parameters); later families on project pressure]`
@@ -727,7 +727,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [WASI capability model](https://github.com/WebAssembly/WASI/blob/main/docs/Capabilities.md) ·
   [WASI 0.1–0.3 release lessons](https://wasi.dev/releases).
 
-### BOUND-2 — Foreign ABI and opaque binaries
+### outline:BOUND-2 — Foreign ABI and opaque binaries
 
 `[current: spec skeleton; compiler absent]` `[parked]`
 
@@ -740,15 +740,15 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   implementation exists. Project law prefers rewriting source-available code in
   Whitefoot.
 - **Missing / next:** reopen only for an opaque binary that a selected project
-  cannot credibly replace. Keep this distinct from BOUND-1's compiler-owned
+  cannot credibly replace. Keep this distinct from outline:BOUND-1's compiler-owned
   system provider; system calls do not by themselves justify general FFI.
 - **Facts:** v0.17 `GATE-1` and `LEDGER-1` ·
   [safe capsule idea](ideas.md#safe-c-abi-capsules).
 
-Migration tooling is supporting work under BOUND-2, not an independent language
+Migration tooling is supporting work under outline:BOUND-2, not an independent language
 authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefoot-assumption-extractor).
 
-### TARGET-1 — Portable and mutually checking backends
+### outline:TARGET-1 — Portable and mutually checking backends
 
 `[current: host LLVM only]` `[speculative]` `[parked]`
 
@@ -763,7 +763,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 - **Facts:** [portable C backend](ideas.md#a-portable-c-backend) ·
   [multiple backends](ideas.md#multiple-backends-as-mutual-oracles).
 
-### TARGET-2 — Embedded and resource-bounded systems
+### outline:TARGET-2 — Embedded and resource-bounded systems
 
 `[research-only]` `[next: candidate research]`
 
@@ -778,7 +778,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 - **Facts:** [embedded direction synthesis](bargain.md#9-the-embedded-direction-owner-intent-stated-2026-07-31-researched-same-day) ·
   [resource certificate idea](ideas.md#resource-certificates).
 
-### TARGET-3 — Deployment evidence and policy
+### outline:TARGET-3 — Deployment evidence and policy
 
 `[speculative]` `[parked]`
 
@@ -793,7 +793,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
   [sandbox policies](ideas.md#effect-derived-sandbox-policies) ·
   [optimization receipts](ideas.md#optimization-receipts).
 
-### TARGET-4 — Constant-time secret-dependent behavior
+### outline:TARGET-4 — Constant-time secret-dependent behavior
 
 `[speculative]` `[parked]`
 
@@ -808,7 +808,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
   and independent leakage test before language design.
 - **Facts:** [dated direction synthesis](bargain.md#5-shipping-what-the-artifacts-can-be).
 
-### APP-1 — ML systems components
+### outline:APP-1 — ML systems components
 
 `[research-only]` `[next: candidate research]`
 
@@ -826,7 +826,7 @@ Ripgrep is the owner-selected umbrella project. Selection fixes the external
 pressure source and the headline objective, **2x ripgrep**; it does not
 authorize a favorable subset, a monolithic rewrite, or any particular
 language, compiler, proof, runtime, or optimizer change. The completed
-`current-plan.md` closed the bounded PROOF-8 undertaking. No next CAND-8
+`current-plan.md` closed the bounded outline:PROOF-8 undertaking. No next outline:CAND-8
 slice is authorized until a new owner-approved high-level plan selects it and
 states how it returns to the unchanged product comparison.
 
@@ -841,7 +841,7 @@ exposed by a frozen slice is therefore a finding first; the owner-override
 loop in `WORKFLOW.md` is its expected path, and the gap-accumulation rule
 remains as the owner check-in, not as a presumption against the goal.
 
-### CAND-1 — Select the first external validation project
+### outline:CAND-1 — Select the first external validation project
 
 `[current: completed — ripgrep selected]`
 
@@ -852,14 +852,14 @@ remains as the owner check-in, not as a presumption against the goal.
   near-term-reachability gate. The owner subsequently made comparative
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
-- **Missing / next:** none; `CAND-8` owns the preserved flagship sequence and
-  is unparked now that PROOF-8 is terminal. Its next slice requires a new
+- **Missing / next:** none; `outline:CAND-8` owns the preserved flagship sequence and
+  is unparked now that outline:PROOF-8 is terminal. Its next slice requires a new
   owner-approved plan.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
 
-### CAND-8 — Ripgrep-compatible command-line search
+### outline:CAND-8 — Ripgrep-compatible command-line search
 
 `[selected flagship]` `[current: credited compute-bound win]`
 `[unparked: new high-level plan required]`
@@ -892,17 +892,17 @@ remains as the owner check-in, not as a presumption against the goal.
   The probe covers only the recognized byte-walk class; the verify subloop
   and copy loops stay scalar, and bounds traps remain secondary (~18%
   ceiling). On 2026-08-09 the owner parked every further wfgrep slice until the
-  complete PROOF-8 obligation-discharge sequence selected in the Current Plan
+  complete outline:PROOF-8 obligation-discharge sequence selected in the Current Plan
   was implemented and verified. That sequence is now terminal, so the exact
   credited checkpoint and full 2x objective are unparked rather than replaced.
   The next bounded wfgrep slice must be selected by a new owner-approved plan;
   this outline does not itself authorize it.
-- **Directions tested:** PERF-1 owns the baseline and attribution; BOUND-1 and
-  VERIFY-1 enter with the real CLI/filesystem path; PAR-1 through PAR-4 enter
-  only for measured parallel work and its proof/runtime contract; FLOOR-1
-  through FLOOR-4 audit accepted source shape; STORE-1 and STORE-2 answer
-  concrete matcher, queue, buffer, or result-representation blockers; PROOF-1,
-  PROOF-2, PROOF-3, PROOF-7, and VERIFY-3 enter only for an observed fact
+- **Directions tested:** outline:PERF-1 owns the baseline and attribution; outline:BOUND-1 and
+  outline:VERIFY-1 enter with the real CLI/filesystem path; outline:PAR-1 through outline:PAR-4 enter
+  only for measured parallel work and its proof/runtime contract; outline:FLOOR-1
+  through outline:FLOOR-4 audit accepted source shape; outline:STORE-1 and outline:STORE-2 answer
+  concrete matcher, queue, buffer, or result-representation blockers; outline:PROOF-1,
+  outline:PROOF-2, outline:PROOF-3, outline:PROOF-7, and outline:VERIFY-3 enter only for an observed fact
   consumer.
 - **Facts:** [project frame, source audit, and comparison rules](../research/notes/ripgrep-flagship-frame.md) ·
   [inconclusive RG-BASE attempt](../research/experiments/ripgrep/RESULTS.md) ·
@@ -914,16 +914,16 @@ approved probes. They are not phases or prerequisites in front of ripgrep.
 
 | Candidate | Primary outline items | Current disposition | Reopening condition |
 |---|---|---|---|
-| `CAND-2` Compression / binary format | PERF-1, PROOF-1, PROOF-7, VERIFY-1, BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately approved binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
-| `CAND-3` Parser / text validation | FLOOR-1, FLOOR-3, FLOOR-4, VERIFY-1, BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately approved parser or storage question has independent decision value that the current plan does not answer. |
-| `CAND-5` Embedded / signal processing | TARGET-2, TARGET-3, PROOF-5, BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately approved target/runtime question has an authentic Cortex boundary. |
-| `CAND-6` Declared parallelism (`later`) | PAR-1 through PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately approved explicit-parallel question has independent value beyond the ripgrep plan. |
-| `CAND-7` ML systems component (`later`) | APP-1, BOUND-2, TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
+| `outline:CAND-2` Compression / binary format | outline:PERF-1, outline:PROOF-1, outline:PROOF-7, outline:VERIFY-1, outline:BOUND-1 | LZ4 and the raw-DEFLATE/zlib evidence are parked; they remain useful binary-transform controls. | A separately approved binary-transform question has independent decision value, including as a bounded cross-check for a live general mechanism. |
+| `outline:CAND-3` Parser / text validation | outline:FLOOR-1, outline:FLOOR-3, outline:FLOOR-4, outline:VERIFY-1, outline:BOUND-1 | The yyjson strict-reader frame and current text witnesses are parked. | A separately approved parser or storage question has independent decision value that the current plan does not answer. |
+| `outline:CAND-5` Embedded / signal processing | outline:TARGET-2, outline:TARGET-3, outline:PROOF-5, outline:BOUND-1 | CMSIS-DSP remains parked; signal and image programs are internal evidence only. | A separately approved target/runtime question has an authentic Cortex boundary. |
+| `outline:CAND-6` Declared parallelism (`later`) | outline:PAR-1 through outline:PAR-4 | BLAKE3 remains a recognizable anchor; ripgrep now supplies the live project pressure, while automatic profitable discovery remains rejected. | A separately approved explicit-parallel question has independent value beyond the ripgrep plan. |
+| `outline:CAND-7` ML systems component (`later`) | outline:APP-1, outline:BOUND-2, outline:TARGET-1 | Llama inference remains a possible attention probe, not a ripgrep prerequisite. | A separately approved ML question has independent value and a bounded real-model boundary. |
 
 ## Settled exclusions and history
 
 - Automatic profitable parallelism discovery is rejected; only a
-  writer-declared, compiler-verified direction remains live. See PAR-1.
+  writer-declared, compiler-verified direction remains live. See outline:PAR-1.
 - Product-scale artifact replay, capability overlays, whole-compiler resource
   profiles, and stable protocol machinery are not prerequisites for the
   research compiler. Reopen only for a real consumer. See
