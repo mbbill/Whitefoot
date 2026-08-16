@@ -489,12 +489,11 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
         errors.push(format!("derivation ledger has no row for [{rule}]"));
     }
 
-    if !spec.contains("Specification delta:") {
-        errors.push("status header has no Specification delta".to_owned());
-    }
-    if !spec.contains("Selection ground:") {
-        errors.push("status header has no Selection ground".to_owned());
-    }
+    // The v0.30 header profile carries no "Specification delta:" or
+    // "Selection ground:" sentences: the per-activation delta inventory lives
+    // in the review packet and the approval-ledger entry, never in the
+    // normative bytes. The former hard requirements on those two phrases are
+    // deliberately retired with it.
 
     if errors.is_empty() {
         Ok(rules.len())
@@ -1095,7 +1094,7 @@ mod tests {
 
     #[test]
     fn unknown_references_and_missing_ledger_rows_fail() {
-        let spec = "Specification delta: test\nSelection ground: test\n[X-1] See [X-2].\n";
+        let spec = "[X-1] See [X-2].\n";
         let errors = validate_spec_integrity(spec, "").expect_err("invalid spec must fail");
         assert!(errors.iter().any(|error| error.contains("[X-2]")));
         assert!(errors.iter().any(|error| error.contains("[X-1]")));

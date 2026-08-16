@@ -36,7 +36,7 @@ impl fmt::Display for SpecHash {
 }
 
 /// Version label of the active kernel specification.
-pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.29";
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.30";
 
 /// Repository-relative stable path of the active kernel specification.
 pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec.md";
