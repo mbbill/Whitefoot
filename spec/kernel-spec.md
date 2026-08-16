@@ -150,7 +150,7 @@ Every production maps 1:1 to one core-tree node kind; there is no desugaring.
 
 [GRAM-2] Items:
 
-```
+```wf-ebnf GRAM-2
 program      := item*
 item         := fn_decl | struct_decl | enum_decl | contract_decl | conform_decl | const_decl
 struct_decl  := "struct" TYPEID generics? "{" doc? field* "}"
@@ -185,7 +185,7 @@ input_label  := IDENT "." IDENT "as"
 
 [GRAM-3] Types and modes:
 
-```
+```wf-ebnf GRAM-3
 type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
         | TYPEID targs? | "array" "<" type "," const ">"
         | "slice" "<" REGIONID "," type ">" | "box" "<" type ">"
@@ -198,7 +198,7 @@ targ   := type | REGIONID | const
 
 [GRAM-4] Statements:
 
-```
+```wf-ebnf GRAM-4
 stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
              | for_stmt | break_stmt | region_stmt | check_stmt | claim_stmt
              | if_stmt | match_stmt | give_stmt
@@ -228,7 +228,7 @@ fieldbind      := IDENT ":" IDENT
 
 [GRAM-5] Expressions and places:
 
-```
+```wf-ebnf GRAM-5
 expr           := atom infix_tail? | call | construct
 infix_tail     := infix_op atom
 infix_op       := "+" | "+wrap" | "+checked" | "+sat"
@@ -452,7 +452,12 @@ The new value occupies the same place and the target root remains live.
 If right-hand-side evaluation traps, no store occurs; preceding right-hand-side effects are not rolled back, and trap-abort behavior remains [EFF-4].
 The checked program retains the exact target path, each required target check, the right-hand-side value, the post-right-hand-side liveness and writability judgments, and the single store before lowering [DIAG-2].
 
-[CONST-1] The grammar production `const := "[0-9]+" | IDENT` is usable at `array<T, N>` sizes and `const` targs.
+[CONST-1] The grammar production `const` of the fence below is usable at `array<T, N>` sizes and `const` targs.
+
+```wf-ebnf CONST-1
+const := "[0-9]+" | IDENT
+```
+
 A decimal integer literal is bare and u64 by position; an IDENT names an in-scope integer-typed const-generic parameter [GRAM-2] or a top-level integer-typed named-const item [CONST-2].
 The set is closed and total: no operators, no calls, no in-language computation in v0.
 Constant-expressions are evaluated at monomorphization [FN-2].
@@ -460,7 +465,12 @@ An IDENT resolving to a non-integer or array-typed const is a compile-time rejec
 This closes the const-generic forwarding path: `const N` is usable as an `array<T, N>` size and forwardable as a `const` targ.
 Const arithmetic is DEFERRED with recorded delta; when added it carries a distinct const-eval overflow-policy name, does not overload the runtime `.trap` OPNAMEs, and is excluded from EFF-2's exhibits-traps relation.
 
-[CONST-2] A `const IDENT: type = cvalue;` item declares an immutable, program-lifetime, read-only static value, with `cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]"`.
+[CONST-2] A `const IDENT: type = cvalue;` item declares an immutable, program-lifetime, read-only static value, with the `cvalue` production of the fence below.
+
+```wf-ebnf CONST-2
+cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]"
+```
+
 `type` must be const-eligible: a primitive [TYPE-1], or `array<T, N>` of const-eligible T; `box`, `buffer`, `arena`, and `slice` are not const-eligible (a const is pure static rodata: no allocation, no region, no drop).
 The `cvalue` totally defines the value (T1): a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming an earlier const of that exact type; an `array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T.
 The const-dependency graph is acyclic and declaration-before-use [TYPE-6]; evaluation is substitution and layout only.
@@ -664,6 +674,7 @@ Exhaustion during execution is inside the compiler/runtime/OS TCB boundary [SCOP
 [OP-1] Every computation is a call naming one operation from the operation table; one operation per (semantic operation × mode); nothing is overloaded.
 The table below is the normative inventory (columns: op, type domain, signature, effects).
 
+```wf-ops
 | op | domain | signature | effects |
 |---|---|---|---|
 | `+wrap` `-wrap` `*wrap` | all int T | `(T, T) -> own T` | pure |
@@ -710,6 +721,7 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | `fsqrt.strict` | f32 f64 | `(T) -> own T` | pure |
 | `ffma.strict` | f32 f64 | `(T, T, T) -> own T` | pure |
 | `finf` `fnan` | f32 f64 | `() -> own T` | pure |
+```
 
 Let `DotlessOperationNames` be exactly the set of distinct individual operation spellings enumerated in this rule's normative `op` column whose complete spelling satisfies IDENT and contains no dot.
 Let `ModeWords` be exactly the suffix alternatives in FORM-3's active OPNAME formation rule together with the operator-form suffixes of [GRAM-1]; in this version the two carriers share one closed set, `{wrap, trap, checked, sat, strict}`.
@@ -1335,7 +1347,13 @@ Postconditions add no runtime operation, hidden check, assume, optimizer license
 
 ## 9. Effects (gated on exemplar carding before ratification)
 
-[EFF-1] Row grammar: `effects := "pure" | effect ("," effect)*` with `effect := "reads" "(" REGIONID+ ")" | "writes" "(" REGIONID+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "external" | "blocks" | "traps"`, in exactly this canonical order (reads, writes, allocates, external, blocks, traps).
+[EFF-1] Row grammar: the `effects` and `effect` productions of the fence below, in exactly this canonical order (reads, writes, allocates, external, blocks, traps).
+
+```wf-ebnf EFF-1
+effects := "pure" | effect ("," effect)*
+effect := "reads" "(" REGIONID+ ")" | "writes" "(" REGIONID+ ")" | "allocates" "(" ("heap" | "arena" REGIONID)+ ")" | "external" | "blocks" | "traps"
+```
+
 A category appears at most once in one row.
 `pure` is the unique spelling of the empty row and therefore excludes `external` and `blocks` exactly as it excludes every other category.
 Frame residency (STOR-1) is not an allocation by definition.
@@ -2187,6 +2205,7 @@ Each operation's result components and writable `&uniq` parameter components add
 An operation whose row contains `external` may observe or change state outside ordinary Whitefoot memory, and one whose row contains `blocks` may block its current host thread [EFF-1].
 No system operation allocates.
 
+```wf-prov
 | operation | result component class | writable `&uniq` parameter component class |
 |---|---|---|
 | `args_count` | plain result external | — |
@@ -2200,6 +2219,7 @@ No system operation allocates.
 | `read_once` | `ReadBytes(count:)` internal; `ReadFailed(error:)` external; `ReadEnd()` carries no result component | `destination` external; `file` external |
 | `write_once` | `Ok(value:)` internal; `Err(error:)` external | `output` external |
 | `exit_status` | plain result internal | — |
+```
 
 A plain-result cell fixes that result's sole aggregate component.
 A named payload cell fixes exactly that direct variant-field projection; a payload-carrying result's aggregate is the join of its projections, while a nullary variant and the control choice of a variant carry no component of their own.
@@ -2324,6 +2344,7 @@ An immutable value has no cursor, sequence position, or caller-visible mutation;
 A shared capability owns no caller-visible cursor or sequence position that a later call consumes, and its shared operations may observe outside state or create an independent owned resource.
 A stateful resource identifies one live stateful object; an operation that advances a cursor, fixes observable order, or otherwise changes its state takes `&uniq` or consumes the owner.
 
+```wf-sys
 | type | kind | Sendable | Shareable |
 |---|---|---|---|
 | `Args` | immutable value | yes | yes |
@@ -2333,6 +2354,7 @@ A stateful resource identifies one live stateful object; an operation that advan
 | `ReadFile` | stateful resource | yes | no |
 | `Output` | stateful resource | yes | no |
 | `ExitStatus` | immutable value | yes | yes |
+```
 
 `ExitStatus` is Sendable and Shareable because it is an immutable command code with no interior state.
 `HostString` and `RelativePath` are Sendable and Shareable because their backing is immutable and outlives the invocation [HOST-3, QUAL-2]; the judgment is a judgment about that backing, so a later string type with separately owned backing rederives both predicates from its own representation and inherits neither [SYS-9].
@@ -2357,6 +2379,7 @@ This specification declares no type under either class and defines no operation,
 
 The consuming release action of each system type is exactly:
 
+```wf-sys
 | type | release action | release effect |
 |---|---|---|
 | `Args` | logical consume | none |
@@ -2366,6 +2389,7 @@ The consuming release action of each system type is exactly:
 | `ReadFile` | at most one native close attempt | `external, blocks` |
 | `Output` | logical source detach | none |
 | `ExitStatus` | logical consume | none |
+```
 
 A logical consume performs no host call, no target call, no handle lookup, no byte copy, and no external effect.
 A native close attempt discards only the close diagnostic and never retries an ambiguous close: a consuming close invalidates the source handle on success and on error, because the native descriptor may already be closed and reusable.
@@ -2381,6 +2405,7 @@ An operation with exactly two outcomes returns a [PRE-1] `Result<T, E>` instanti
 The one operation with more than two outcomes declares one enum whose variant spellings carry its operation prefix, so no two operations compete for a constructor name in the whole-unit constructor domain [TYPE-6].
 The complete inventory is:
 
+```wf-sys
 | operation | outcome type |
 |---|---|
 | `args_count` | `own u64`; total, no failure outcome |
@@ -2394,6 +2419,7 @@ The complete inventory is:
 | `read_once` | `own ReadOutcome` |
 | `write_once` | `own Result<u64, IoError>` |
 | `exit_status` | `own ExitStatus`; total, no failure outcome |
+```
 
 `InvalidIndex` states that the requested argument index is not present and returns no value.
 `Utf8Invalid` states that the host string is not valid UTF-8.

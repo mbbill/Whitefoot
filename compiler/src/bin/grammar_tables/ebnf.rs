@@ -1,9 +1,11 @@
 //! Extract and parse the normative EBNF of a Whitefoot kernel specification.
 //!
-//! Sixty-nine productions live in the four fenced blocks of GRAM-2..GRAM-5; the
-//! remaining four (`const`, `cvalue`, `effects`, `effect`) are written inline
-//! in the prose of CONST-1, CONST-2, and EFF-1. Scraping only fenced blocks
-//! silently loses those four.
+//! Every normative production lives in a fenced block whose info string is
+//! `wf-ebnf` followed by the id of the rule that owns it, so extraction keys
+//! on the info string and never on a prose anchor. Seven such fences define
+//! seventy-three productions: GRAM-2..GRAM-5 carry the source grammar, and
+//! CONST-1, CONST-2, and EFF-1 carry `const`, `cvalue`, `effects`, and
+//! `effect`, which were written inline in prose before v0.30.
 
 use std::collections::BTreeMap;
 
@@ -19,6 +21,20 @@ pub enum Owner {
 }
 
 impl Owner {
+    /// The rule id a `wf-ebnf` fence names in its info string.
+    fn from_info(id: &str) -> Option<Self> {
+        Some(match id {
+            "GRAM-2" => Owner::Gram2,
+            "GRAM-3" => Owner::Gram3,
+            "GRAM-4" => Owner::Gram4,
+            "GRAM-5" => Owner::Gram5,
+            "CONST-1" => Owner::Const1,
+            "CONST-2" => Owner::Const2,
+            "EFF-1" => Owner::Eff1,
+            _ => return None,
+        })
+    }
+
     pub fn rust(self) -> &'static str {
         match self {
             Owner::Gram2 => "RuleOwner::Gram2",
@@ -40,22 +56,31 @@ pub struct RawProduction {
     pub owner: Owner,
 }
 
-/// Returns the fenced code block that follows `marker` at a line start.
-fn fenced_after(text: &str, marker: &str) -> String {
-    let start = line_index(text, marker).unwrap_or_else(|| panic!("missing {marker}"));
-    let rest = &text[start..];
-    let open = rest.find("\n```").expect("fenced block opens");
-    let after_open = &rest[open + 4..];
-    let body_start = after_open.find('\n').expect("fence line ends") + 1;
-    let body = &after_open[body_start..];
-    let close = body.find("\n```").expect("fenced block closes");
-    body[..close].to_string()
-}
-
-fn line_index(text: &str, marker: &str) -> Option<usize> {
-    text.match_indices(marker)
-        .map(|(index, _)| index)
-        .find(|index| *index == 0 || text.as_bytes()[index - 1] == b'\n')
+/// Every `wf-ebnf` fence body with its owner, in specification order.
+fn ebnf_blocks(text: &str) -> Vec<(Owner, String)> {
+    let mut blocks = Vec::new();
+    let mut open: Option<(Owner, Vec<&str>)> = None;
+    for line in text.lines() {
+        match open.as_mut() {
+            Some((_, body)) => {
+                if line == "```" {
+                    let (owner, body) = open.take().expect("an open fence");
+                    blocks.push((owner, body.join("\n")));
+                } else {
+                    body.push(line);
+                }
+            }
+            None => {
+                if let Some(info) = line.strip_prefix("```wf-ebnf ") {
+                    let owner = Owner::from_info(info.trim())
+                        .unwrap_or_else(|| panic!("unknown wf-ebnf owner {info}"));
+                    open = Some((owner, Vec::new()));
+                }
+            }
+        }
+    }
+    assert!(open.is_none(), "a wf-ebnf fence is unterminated");
+    blocks
 }
 
 /// Splits a block of `name := body` lines, honouring continuation lines.
@@ -94,53 +119,19 @@ fn split_block(block: &str, owner: Owner, out: &mut Vec<RawProduction>) {
     }
 }
 
-/// Pulls one inline `name := ...` production out of backticked prose.
-fn inline(text: &str, rule: &str, name: &str, owner: Owner) -> RawProduction {
-    let start = line_index(text, rule).unwrap_or_else(|| panic!("missing {rule}"));
-    let paragraph_end = text[start..]
-        .find("\n\n")
-        .map(|offset| start + offset)
-        .unwrap_or(text.len());
-    let paragraph = &text[start..paragraph_end];
-    let needle = format!("{name} :=");
-    let alternate = format!("{name}:=");
-    let at = paragraph
-        .find(&needle)
-        .or_else(|| paragraph.find(&alternate))
-        .unwrap_or_else(|| panic!("missing inline production {name} in {rule}"));
-    // The production runs to the closing backtick of its code span.
-    let open = paragraph[..at].rfind('`').expect("inline span opens");
-    let close = at + paragraph[at..].find('`').expect("inline span closes");
-    let span = &paragraph[open + 1..close];
-    let body = span
-        .split_once(":=")
-        .expect("inline production has a body")
-        .1
-        .trim()
-        .to_string();
-    RawProduction {
-        name: name.to_string(),
-        body,
-        owner,
-    }
-}
-
 /// Every normative production in specification-definition order.
 pub fn productions(spec: &str) -> Vec<RawProduction> {
     let mut out = Vec::new();
-    split_block(&fenced_after(spec, "[GRAM-2]"), Owner::Gram2, &mut out);
-    split_block(&fenced_after(spec, "[GRAM-3]"), Owner::Gram3, &mut out);
-    split_block(&fenced_after(spec, "[GRAM-4]"), Owner::Gram4, &mut out);
-    split_block(&fenced_after(spec, "[GRAM-5]"), Owner::Gram5, &mut out);
+    let blocks = ebnf_blocks(spec);
+    assert_eq!(blocks.len(), 7, "the specification has seven wf-ebnf fences");
+    for (owner, block) in blocks {
+        split_block(&block, owner, &mut out);
+    }
     assert_eq!(
         out.len(),
-        69,
-        "the four fenced blocks define 69 productions"
+        73,
+        "the seven wf-ebnf fences define 73 productions"
     );
-    out.push(inline(spec, "[CONST-1]", "const", Owner::Const1));
-    out.push(inline(spec, "[CONST-2]", "cvalue", Owner::Const2));
-    out.push(inline(spec, "[EFF-1]", "effects", Owner::Eff1));
-    out.push(inline(spec, "[EFF-1]", "effect", Owner::Eff1));
     out
 }
 
