@@ -2642,6 +2642,7 @@ A constant operand folds through Z: `a <= 7` is `a - Z <= 7`.
 Implicit facts hold at every program point: every term t carries the reflexive bound `t - t <= 0`; every term t of fragment type T carries `t - Z <= max(T)` and `Z - t <= -min(T)`; every length term over a place of type `array<T, N>` carries the equality `len(P) = N` (both bounds), with concrete N a constant and const-generic N a symbolic constant term.
 
 [ENT-3] The fact state is defined constructively over the conservative structural normal-control graph [FN-1]: each source below establishes its L0 and signed-goal facts at its stated point; facts flow forward along normal edges; kill events apply on the edges where [ENT-5] places them, with scope-exit kills applied before any join; merge points take the [ENT-5] join and loop heads the [ENT-5] loop rule; and the state queried at any point is the [ENT-4] closure of that flow.
+retired: S8
 Dominated straight-line establishment is a consequence of this construction, not a second definition.
 Nothing else is a fact: an `ensures_block` is only an FN-9 proof obligation, never a trusted source; no struct invariant, writer-stated or inferred loop induction, inferred summary, or unverified user-function result exists.
 S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from a separately verified earlier-SCC summary under the publication formula below.
@@ -2661,25 +2662,32 @@ Clause-local expansion in FN-8 is unconditional because the admitted block conta
 
 The sources are:
 
+[ENT-3.S1]
 - S1 (branch facts).
 At an `if_stmt` or `value_if`, each goal G in the condition's goal-origin set is established as `+G` at the then-block's entry and `-G` at the else-block's entry; for an else-free `if_stmt`, `-G` is established on the false edge, which joins the then exit at the continuation [ENT-5].
 Independently, when the condition has comparison origin R, R is established at the then entry and R's exact negation at the else entry or false edge.
 L0 negation is exact over mathematical integers: the negation of `a - b <= c` is `b - a <= -c - 1`; the negation of `a = b` is `a != b` and conversely.
+[ENT-3.S2]
 - S2 (check facts).
 After `check e else trap "…";` [OP-5], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
+[ENT-3.S3]
 - S3 (claim facts).
 After `claim n: e because "…";` [CLM-1], each goal in `e`'s goal-origin set is established with positive sign on the normal continuation; when `e` also has comparison origin R, R is established there independently.
+[ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
 When and only when G's complete root is one comparison call admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len(P)` length term, that exact relation R is also established.
 No child of any other goal is established.
 S4 is the admitted-body axiom justified by every ordinary caller's static discharge or the successful dynamic boundary check [PROG-3, GATE-1]; no callee-entry prologue executes.
+[ENT-3.S5]
 - S5 (copy and conversion equalities).
 An `ordinary_let_rhs` establishes at its binding: for `let x = lit;`, x = value(lit); for `let x = p;` with p a term of type T, x = p; for `let y = cvt<Src, Dst>(p);` with (Src, Dst) a total pair [OP-6] and p a term or constant, y = p — `cvt` keeps its written type pair [TYPE-5].
+[ENT-3.S6]
 - S6 (length facts).
 `let b = buffer_new(n, v);` establishes len(b) = n on the normal continuation [OP-9], n read as term or constant.
 `let m = len(P);` for a tracked P establishes m = len(P).
 `let s = slice_of…(&'r P);` for a tracked P establishes len(s) = len(P).
+[ENT-3.S7]
 - S7 (constant-offset arithmetic).
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
 For `p + k` and `p - k` with constant k, s = p ± k is established on the normal continuation unconditionally: the executed contract check is the proof [OP-2].
@@ -2688,20 +2696,24 @@ Additionally, for a direct ordinary binding `let r = iand(a, b);` at unsigned in
 For a direct ordinary binding `let r = ishl.wrap(one, count);` at unsigned integer type T, establish `r != Z` exactly when `one` is directly a checked typed literal or directly an earlier named const whose mathematical value is one.
 A local binding merely proved equal to one, a const-generic value equal to one, a signed result, any other left operand, a non-direct result, and every other shift mode establish no nonzero fact.
 The latter is sound because [OP-8] masks count modulo T's width, so shifting the one bit never clears it.
+[ENT-3.S9]
 - S9 (const-array element ranges).
 For `let x = c[i];` where c is the bare IDENT of a named const of type `array<T, N>` [CONST-2] and T a fragment type, with vlo and vhi the minimum and maximum of its N declared element values, vlo <= x and x <= vhi are established at the binding.
 The index's own bounds obligation [ENT-6] is judged separately and is unaffected.
 Deeper const shapes establish nothing in this version.
+[ENT-3.S10]
 - S10 (boundary count facts).
 For a `match_stmt` or `value_match` whose scrutinee is directly a call to `read_once`, `write_once`, `host_copy_bytes`, or `host_copy_utf8` [SYS-2, SYS-8], or a bare IDENT naming a `let` binding of the call's outcome type initialized by such a call under the same no-kill, no-`set` path discipline as S7's checked-arithmetic origin: with k the actual bound to the call's bounding parameter — `capacity` for `read_once`, `host_copy_bytes`, and `host_copy_utf8`; `count` for `write_once` — read as a term or constant, where no [ENT-5] kill event applies to a fact supported by k on the path to the match, the `ReadBytes(count: w)` arm of a `read_once` match and the `Ok(value: w)` arm of the other three establish w <= k at arm entry; every other arm establishes nothing.
 These facts carry the same trust class as S6's allocation-length equality — a declared operation contract, never a writer statement.
 The three [SYS-9] relations are retained checked-program facts and are not L0 fact sources in this version.
+[ENT-3.S11]
 - S11 (counted-range structural facts).
 In a `for_stmt` preheader, immediately after the lower and upper endpoint values have been captured once in [FN-1]'s order, establish `lower_capture = lower_endpoint` and `upper_capture = upper_endpoint`, reading each admitted endpoint as its exact term or constant, and establish `binder = lower_capture` at the compiler-owned initialization.
 Close that post-capture state under [ENT-4] before [ENT-5] forms the counted head state.
 On every true header edge that actually enters the body, establish `lower_capture <= binder` and `binder < upper_capture`; the first follows from initialization plus the exact representable compiler updates, and the second from the header comparison just executed.
 The capture-to-endpoint equalities are established once in the preheader only: no later header or body entry rereads an endpoint or reasserts a capture equal to the current value of a mutable endpoint source.
 The false header edge, every `break` edge, and the counted continuation establish no S11 fact and in particular no `binder = upper_capture` postcondition.
+[ENT-3.S12]
 - S12 (verified user normal results).
 For one call c and verified relation q, use exactly FN-9's `A0(c)`, per-relation `M(c,q)`, nonempty aggregate booleans Cq/Uq/Bq, and same-view call premise Gv(c).
 After ordinary transfer and every applicable consume, borrow, callee-effect, and target kill, candidate scratch establishes q in complete exactly when `A0(c) and M(c,q) and Cq`; in U exactly when `A0(c) and M(c,q)` and first Bq, otherwise only `Uq and GU(c)`; and in B exactly when `A0(c) and M(c,q)` and first Bq, otherwise only `Uq and GB(c)`.
