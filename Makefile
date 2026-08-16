@@ -8,7 +8,7 @@
 
 PY := python3 -B
 
-check: repository-invariants spec-append-only spec-archive-integrity conformance compiler
+check: repository-invariants spec-append-only spec-archive-integrity spec-digest-sync conformance compiler
 	@echo "== WHITEFOOT GATE GREEN (active compiler + independent evidence) =="
 
 # repository invariants: identical agent instructions and the canonical outline marker
@@ -118,6 +118,32 @@ spec-archive-integrity:
 	done; \
 	echo "spec archive integrity: $$recorded recorded specifications hash as recorded"
 
+# The activation chain tail in governance/APPROVALS.md is the sole authority
+# for the active specification's identity, but a handful of live prose sites
+# quote that identity for readers. This target checks those quotes, so an
+# activation cannot leave prose naming the superseded version (found landed:
+# the derivation ledger still described v0.28 as the installed authority after
+# the v0.29 activation). Checking only — it never rewrites prose. Green means
+# exactly that the anchored claims below name the chain tail; it does not mean
+# a listed file has no other stale sentence, and it says nothing about files
+# outside the list. Frozen history (docs/done/, research records, archived
+# specs) legitimately quotes superseded identities and is deliberately not
+# listed.
+spec-digest-sync:
+	@tail="$$(awk '/^ACTIVE-SPEC: /{version=$$2; digest=$$3} END{if (version == "") exit 1; print version, digest}' governance/APPROVALS.md)" || { echo "spec digest sync: governance/APPROVALS.md has no activation chain" >&2; exit 1; }; \
+	set -- $$tail; version="$$1"; digest="$$2"; failed=0; \
+	for file in README.md compiler/README.md docs/roadmap.md docs/current-plan.md spec/derivation/derivation-ledger.md; do \
+		grep -qF "$$digest" "$$file" || { echo "spec digest sync: $$file does not quote the active digest ($$version $$digest)" >&2; failed=1; }; \
+	done; \
+	grep -qF "Kernel specification $$version" README.md || { echo "spec digest sync: README.md does not name $$version as the kernel specification" >&2; failed=1; }; \
+	grep -qF "the exact $$version bytes" compiler/README.md || { echo "spec digest sync: compiler/README.md does not target the exact $$version bytes" >&2; failed=1; }; \
+	grep -qF "The active language authority is $$version" docs/roadmap.md || { echo "spec digest sync: docs/roadmap.md does not name $$version as the active authority" >&2; failed=1; }; \
+	grep -qF "Active language authority: $$version" docs/current-plan.md || { echo "spec digest sync: docs/current-plan.md does not name $$version as the active authority" >&2; failed=1; }; \
+	grep -qF "active $$version guidance" docs/patterns.md || { echo "spec digest sync: docs/patterns.md does not carry active $$version guidance" >&2; failed=1; }; \
+	grep -qF "the active $$version authority" spec/derivation/derivation-ledger.md || { echo "spec digest sync: spec/derivation/derivation-ledger.md does not name $$version as the active authority" >&2; failed=1; }; \
+	test "$$failed" -eq 0 || exit 1; \
+	echo "spec digest sync: live prose quotes the chain tail ($$version $$digest)"
+
 conformance:
 	cd tests/conformance && $(PY) test_runner.py
 	$(PY) tests/conformance/runner.py coverage
@@ -137,4 +163,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check repository-invariants spec-append-only spec-append-only-staged spec-archive-integrity conformance compiler conformance-run install-hooks
+.PHONY: check repository-invariants spec-append-only spec-append-only-staged spec-archive-integrity spec-digest-sync conformance compiler conformance-run install-hooks
