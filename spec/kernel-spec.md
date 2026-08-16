@@ -1948,7 +1948,7 @@ A CLM-3, strict OP-4, or strict FN-8 event instead discards them.
 This preserves A0/A atomicity and makes the derivation DAG evidence for the accepted semantic flow rather than a second acceptance path.
 
 For [CLM-3], the successful checked program additionally retains each declaration marker, each concrete strict root, its outgoing SCC membership, each component `DirectClaims` and `MayClaims` set, every source-ordered call occurrence used by the summary, the successful component and root disposition, the marked program-start disposition, and the exact existing U derivation root for every demanded protected obligation and call requirement.
-The claim and call graph is formed in private semantic scratch from checked claim occurrences and the ordinary concrete call inventory; the Stage 9a `ClaimLedger` is derived only after success and is never read back as acceptance authority.
+The claim and call graph is formed in private semantic scratch from checked claim occurrences and the ordinary concrete call inventory; the checked-program `ClaimLedger` is derived only after success and is never read back as acceptance authority.
 Strict roots extend the same function-local view-tagged derivation DAG and event stream; they are registered before the sole reachability walk and identity remap, import no foreign `DerivationId`, and create no copied graph or second semantic flow.
 On any CLM-3, strict OP-4, or strict FN-8 event, all strict metadata, candidate S12 and delivery roots, the prospective checked program, and every checked-program-derived tool projection are discarded together.
 On success, lowering consumes the same checked functions and executable operations as the unmarked unit and reads none of this metadata.
@@ -2608,7 +2608,7 @@ An ordinary caller outside the closure that calls a marked root remains ordinary
 A marked program entry follows [PROG-3] and must discharge its requirement in the post-setup, pre-wrapper-check U state before the unchanged wrapper check and S4 body entry; this specification defines no foreign adapter.
 Claim import is tested before a strict FN-8 judgment at the same call.
 All strict roots and candidate S12 or delivery facts remain unpublished in one failure-atomic batch; any CLM-3, strict OP-4, or strict FN-8 event discards that batch and the prospective checked program.
-Strict acceptance reads checked claim occurrences and call metadata directly from semantic scratch, never the Stage 9a checked-program `ClaimLedger`, which is constructed only after successful finalization.
+Strict acceptance reads checked claim occurrences and call metadata directly from semantic scratch, never the checked-program `ClaimLedger` [DIAG-2], which is constructed only after successful finalization.
 
 [ENT-1] The entailment fragment is a closed, deterministic, search-free derivation system fixed completely by this specification.
 Its state is the L0 relation state plus [ENT-2]'s finite signed opaque goals.
