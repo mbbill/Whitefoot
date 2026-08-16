@@ -29,6 +29,38 @@ class ActiveSpecificationTests(unittest.TestCase):
         copy_authorities(directory)
         (directory / "spec").mkdir(exist_ok=True)
 
+    def make_active_repository(self, directory: Path) -> tuple[str, str]:
+        """Normalize the copied fixture to a synthetic ACTIVE state.
+
+        The real stable file may legitimately be a declared candidate — that
+        is the point of candidate mode — so a test that needs an ACTIVE
+        fixture must build one instead of assuming the working tree's state:
+        rewrite whatever status line the copy carries to a fresh synthetic
+        ACTIVE version and append a chain record naming the rewritten bytes,
+        the same accepted-extension pattern
+        test_expected_identity_is_the_approval_chain_tail exercises.
+        Returns the synthetic (version, digest).
+        """
+        active = directory / runner.ACTIVE_SPEC
+        text = active.read_text()
+        lines = text.split("\n")
+        status_indexes = [
+            i for i, line in enumerate(lines) if line.startswith("Status: ")
+        ]
+        self.assertTrue(status_indexes, "fixture spec has no status line")
+        version = "v99.8"
+        lines[status_indexes[0]] = f"Status: ACTIVE {version}"
+        rewritten = "\n".join(lines).encode()
+        active.write_bytes(rewritten)
+        _, old_digest = runner.activation_chain_tail(directory)
+        digest = hashlib.sha256(rewritten).hexdigest()
+        approvals = directory / runner.APPROVALS
+        approvals.write_bytes(
+            approvals.read_bytes()
+            + f"ACTIVE-SPEC: {version} {digest} {old_digest}\n".encode()
+        )
+        return version, digest
+
     def test_versioned_archive_cannot_change_coverage_authority(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -56,6 +88,7 @@ class ActiveSpecificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.make_repository(directory)
+            self.make_active_repository(directory)
             active = directory / runner.ACTIVE_SPEC
             active.write_bytes(active.read_bytes() + b"\n")
 
@@ -90,14 +123,15 @@ class ActiveSpecificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.make_repository(directory)
+            version, digest = self.make_active_repository(directory)
             active = directory / runner.ACTIVE_SPEC
-            tail_version, tail_digest = runner.activation_chain_tail(directory)
             text = active.read_text()
-            self.assertIn(f"Status: ACTIVE {tail_version}", text)
+            marker = f"Status: ACTIVE {version}"
+            self.assertIn(marker, text)
             active.write_text(
                 text.replace(
-                    f"Status: ACTIVE {tail_version}",
-                    f"Status: CANDIDATE v99.0 supersedes {tail_version} {tail_digest}",
+                    marker,
+                    f"Status: CANDIDATE v99.9 supersedes {version} {digest}",
                     1,
                 )
             )
@@ -111,13 +145,15 @@ class ActiveSpecificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.make_repository(directory)
+            version, _ = self.make_active_repository(directory)
             active = directory / runner.ACTIVE_SPEC
-            tail_version, _ = runner.activation_chain_tail(directory)
             text = active.read_text()
+            marker = f"Status: ACTIVE {version}"
+            self.assertIn(marker, text)
             active.write_text(
                 text.replace(
-                    f"Status: ACTIVE {tail_version}",
-                    f"Status: CANDIDATE v99.0 supersedes {tail_version} {'0' * 64}",
+                    marker,
+                    f"Status: CANDIDATE v99.9 supersedes {version} {'0' * 64}",
                     1,
                 )
             )
