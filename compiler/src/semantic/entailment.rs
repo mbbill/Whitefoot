@@ -26,18 +26,15 @@ mod flow;
 mod state;
 mod term;
 
-#[cfg(not(test))]
-use state::DerivationId;
-pub(crate) use state::ProofView;
+pub(crate) use state::{DerivationId, DerivationRootKind, ProofView, StrictDerivationRootKind};
 use state::{DerivationInventory, DerivationLedger};
 #[cfg(not(test))]
 use term::TermId;
 
 #[cfg(test)]
 pub(crate) use state::{
-    ClaimLifecycleKind, CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind,
-    FlowEvent, FlowEventId, FlowEventKind, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
-    Relation,
+    ClaimLifecycleKind, CountedRootAtom, DerivationNode, FlowEvent, FlowEventId, FlowEventKind,
+    GoalId, GoalSign, ImplicitBoundKind, JoinParent, Relation,
 };
 #[cfg(test)]
 pub(crate) use term::{
@@ -108,6 +105,10 @@ pub(crate) struct EntailmentContext<'check> {
     /// Binding names in dense [`super::model::BindingId`] order, for the
     /// [ENT-6] canonical residual rendering.
     pub(crate) binding_names: &'check [String],
+    /// True only for the marked concrete program-entry instance. The flow
+    /// uses this bit solely to retain the post-setup, pre-S4 U judgment that
+    /// CLM-3 later consumes.
+    pub(crate) marked_program_start: bool,
 }
 
 impl EntailmentContext<'_> {
@@ -356,14 +357,30 @@ pub(crate) struct VerifiedPostconditionSummaryRef {
 pub(crate) struct PostconditionComponent {
     pub(crate) ordinal: u32,
     pub(crate) functions: Vec<FunctionId>,
+    /// Strictly outgoing callee components in callee-before-caller order.
+    pub(crate) outgoing: Vec<u32>,
     pub(crate) summaries: Vec<VerifiedPostconditionSummary>,
 }
 
+/// One checked concrete ordinary-user-call occurrence collected by the same
+/// structural walk that builds the FN-9/CLM-3 SCC graph.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ConcreteCallOccurrence {
+    pub(crate) caller: FunctionId,
+    pub(crate) node_path: NodePath,
+    pub(crate) callee: FunctionId,
+}
+
 /// Program-private SCC schedule retained for the later caller-publication
-/// handoff. An empty schedule is the no-postcondition fast path.
+/// handoff. An empty schedule is the no-postcondition, no-strict-root fast
+/// path.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct PostconditionSchedule {
     pub(crate) components: Vec<PostconditionComponent>,
+    /// Dense function-to-component map, using ordered component ordinals.
+    pub(crate) function_components: Vec<u32>,
+    /// Stable caller-instance then call-NodePath order.
+    pub(crate) calls: Vec<ConcreteCallOccurrence>,
 }
 
 /// [CLM-2] lifecycle disposition of one claim, judged at its statement node
@@ -524,7 +541,7 @@ pub(crate) struct CallGoalCounterfactual {
     pub(crate) goal_disposition: CallGoalDisposition,
     pub(crate) goal_evidence: Vec<CallGoalEvidence>,
     /// Exact same-view positive or contradiction proof, retained only when a
-    /// caller-local S12 root reaches it.
+    /// caller-local S12 or strict U root reaches it.
     pub(crate) derivation: Option<DerivationId>,
 }
 
@@ -538,7 +555,7 @@ pub(crate) struct ViewObligationOutcome {
     /// The ordinary canonical residual when it remains undischarged.
     pub(crate) residual: Option<String>,
     /// Exact same-view proof, retained only through a required caller-local
-    /// postcondition root.
+    /// postcondition or strict U root.
     pub(crate) derivation: Option<DerivationId>,
 }
 
@@ -555,6 +572,33 @@ pub(crate) struct FunctionEntailmentView {
     pub(crate) call_goals: Vec<CallGoalCounterfactual>,
 }
 
+/// The marked program entry's pre-wrapper, pre-S4 U requirement judgment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProgramStartGoalOutcome {
+    /// Exact final requirement check occurrence.
+    pub(crate) final_check: NodePath,
+    /// Concrete requirement over the entry parameter images.
+    pub(crate) goal: ConcreteGoal,
+    /// Existing U-view goal disposition.
+    pub(crate) disposition: CallGoalDisposition,
+    /// Deterministic complete U-view evidence.
+    pub(crate) evidence: Vec<CallGoalEvidence>,
+    /// Existing positive or contradiction proof on success.
+    pub(crate) derivation: Option<DerivationId>,
+}
+
+/// One successful CLM-3 query rooted in the owning function's existing U
+/// derivation arena. Registration precedes the sole finish/remap boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StrictEntailmentRoot {
+    /// Exact protected leaf, call, or program-start final-check occurrence.
+    pub(crate) node_path: NodePath,
+    /// Query class sharing this occurrence namespace.
+    pub(crate) kind: StrictDerivationRootKind,
+    /// Owning-function derivation, remapped by the sole finish boundary.
+    pub(crate) derivation: DerivationId,
+}
+
 /// Retained summary of one function's entailment analysis [DIAG-2].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailment {
@@ -568,6 +612,10 @@ pub(crate) struct FunctionEntailment {
     pub(crate) unasserted: FunctionEntailmentView,
     /// The unasserted view with S4 and its exact projection omitted.
     pub(crate) s4_blinded: FunctionEntailmentView,
+    /// Present only for a marked program entry carrying a requirement.
+    pub(crate) program_start: Option<ProgramStartGoalOutcome>,
+    /// Exact existing-U roots demanded by successful CLM-3 validation.
+    pub(crate) strict_roots: Vec<StrictEntailmentRoot>,
     /// One complete five-relation/eight-atomic S11 group per counted
     /// statement, in deterministic statement-walk order.
     pub(crate) counted_derivations: Vec<CountedDerivationSet>,
@@ -583,6 +631,124 @@ pub(crate) struct FunctionEntailment {
     pub(crate) inventory: DerivationInventory,
 }
 
+impl FunctionEntailment {
+    fn register_strict_root(
+        &mut self,
+        node_path: &NodePath,
+        kind: StrictDerivationRootKind,
+        derivation: DerivationId,
+    ) -> Result<(), SemanticCompilerFailure> {
+        if let Some(existing) = self
+            .strict_roots
+            .iter()
+            .find(|root| root.node_path == *node_path && root.kind == kind)
+        {
+            return (existing.derivation == derivation)
+                .then_some(())
+                .ok_or(SemanticCompilerFailure::InvalidResolution);
+        }
+        let occurrence = u32::try_from(self.strict_roots.len())
+            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+        self.derivations
+            .add_root(DerivationRootKind::Strict { occurrence, kind }, derivation);
+        self.strict_roots.push(StrictEntailmentRoot {
+            node_path: node_path.clone(),
+            kind,
+            derivation,
+        });
+        Ok(())
+    }
+
+    /// Retains one already-successful protected-obligation U proof.
+    pub(crate) fn register_strict_obligation(
+        &mut self,
+        node_path: &NodePath,
+    ) -> Result<(), SemanticCompilerFailure> {
+        let outcome = self
+            .unasserted
+            .obligations
+            .iter()
+            .find(|outcome| outcome.node_path == *node_path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if !outcome.discharged {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        let derivation = outcome
+            .derivation
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.register_strict_root(
+            node_path,
+            StrictDerivationRootKind::BoundsObligation,
+            derivation,
+        )
+    }
+
+    /// Retains one already-successful ordinary-call requirement U proof.
+    pub(crate) fn register_strict_call(
+        &mut self,
+        node_path: &NodePath,
+    ) -> Result<(), SemanticCompilerFailure> {
+        let outcome = self
+            .unasserted
+            .call_goals
+            .iter()
+            .find(|outcome| outcome.node_path == *node_path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if !outcome.actual_obligations_ok
+            || outcome.goal_disposition != CallGoalDisposition::Discharged
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        let derivation = outcome
+            .derivation
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.register_strict_root(node_path, StrictDerivationRootKind::CallGoal, derivation)
+    }
+
+    /// Retains one successful outside-caller-to-marked-root U goal. The
+    /// caller's actual-expression obligations are not part of this additional
+    /// boundary judgment: ordinary complete-state checking already accepted
+    /// them, and CLM-3 does not demand the outside caller's component.
+    pub(crate) fn register_strict_boundary_call(
+        &mut self,
+        node_path: &NodePath,
+    ) -> Result<(), SemanticCompilerFailure> {
+        let outcome = self
+            .unasserted
+            .call_goals
+            .iter()
+            .find(|outcome| outcome.node_path == *node_path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if outcome.goal_disposition != CallGoalDisposition::Discharged {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        let derivation = outcome
+            .derivation
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.register_strict_root(node_path, StrictDerivationRootKind::CallGoal, derivation)
+    }
+
+    /// Retains the marked entry's already-successful pre-S4 U proof.
+    pub(crate) fn register_strict_program_start(&mut self) -> Result<(), SemanticCompilerFailure> {
+        let outcome = self
+            .program_start
+            .as_ref()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if outcome.disposition != CallGoalDisposition::Discharged {
+            return Err(SemanticCompilerFailure::InvalidResolution);
+        }
+        let node_path = outcome.final_check.clone();
+        let derivation = outcome
+            .derivation
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.register_strict_root(
+            &node_path,
+            StrictDerivationRootKind::ProgramStart,
+            derivation,
+        )
+    }
+}
+
 /// Computes the combined entailment analysis of one checked function body.
 ///
 /// The analysis is total: it never rejects, never reports unsupported, and
@@ -595,9 +761,9 @@ pub(crate) fn analyze_function(
     flow::analyze(function, context)
 }
 
-/// Computes one optimistic FN-9 function batch without pruning its shared
-/// derivation ledger. Program provenance decides whether this candidate batch
-/// is discarded or finalized unchanged.
+/// Computes one optimistic FN-9/CLM-3 function batch without pruning its
+/// shared derivation ledger. Program provenance and strict validation decide
+/// whether this candidate batch is discarded or finalized unchanged.
 pub(crate) fn analyze_function_candidate(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,
@@ -797,9 +963,10 @@ pub(crate) fn build_claim_ledger(
     Ok(ledger)
 }
 
-/// Builds the concrete ordinary-call SCC schedule used to make verified FN-9
-/// summaries referenceable. The schedule is absent when the unit declares no
-/// postcondition, preserving the established no-postcondition fast path.
+/// Builds the one concrete ordinary-call SCC schedule shared by verified
+/// FN-9 summaries and the CLM-3 strict partition. The schedule is absent when
+/// the unit declares neither a postcondition nor a strict root, preserving the
+/// established fast path.
 /// `None` reports a broken dense [`FunctionId`] invariant.
 pub(crate) fn postcondition_schedule<'function>(
     functions: impl IntoIterator<Item = &'function CheckedFunction>,
@@ -807,16 +974,25 @@ pub(crate) fn postcondition_schedule<'function>(
     let functions = functions.into_iter().collect::<Vec<_>>();
     if !functions
         .iter()
-        .any(|function| function.postcondition.is_some())
+        .any(|function| function.postcondition.is_some() || function.deny_claims_marker.is_some())
     {
         return Some(PostconditionSchedule::default());
     }
     let mut graph = vec![Vec::new(); functions.len()];
+    let mut calls = Vec::new();
     for (index, function) in functions.iter().enumerate() {
         if function.id.0 as usize != index {
             return None;
         }
-        collect_statement_calls(&function.body, &mut graph[index]);
+        let start = calls.len();
+        collect_statement_calls(function.id, &function.body, &mut calls);
+        calls[start..].sort_by(|left, right| {
+            left.node_path
+                .components()
+                .cmp(right.node_path.components())
+                .then_with(|| left.callee.0.cmp(&right.callee.0))
+        });
+        graph[index].extend(calls[start..].iter().map(|call| call.callee));
         if graph[index]
             .iter()
             .any(|callee| callee.0 as usize >= functions.len())
@@ -898,6 +1074,28 @@ pub(crate) fn postcondition_schedule<'function>(
         }
     }
 
+    let function_components = component_of
+        .iter()
+        .map(|component| {
+            u32::try_from(ordered_component_of[*component])
+                .expect("concrete call component count exceeds the u32 identity space")
+        })
+        .collect::<Vec<_>>();
+    let mut outgoing = vec![Vec::new(); components.len()];
+    for (caller, callees) in graph.iter().enumerate() {
+        let caller_component = function_components[caller];
+        for callee in callees {
+            let callee_component = function_components[*callee];
+            if caller_component != callee_component {
+                outgoing[caller_component as usize].push(callee_component);
+            }
+        }
+    }
+    for callees in &mut outgoing {
+        callees.sort_unstable();
+        callees.dedup();
+    }
+
     Some(PostconditionSchedule {
         components: order
             .into_iter()
@@ -914,13 +1112,20 @@ pub(crate) fn postcondition_schedule<'function>(
                         )
                     })
                     .collect(),
+                outgoing: outgoing[ordinal].clone(),
                 summaries: Vec::new(),
             })
             .collect(),
+        function_components,
+        calls,
     })
 }
 
-fn collect_statement_calls(statements: &[CheckedStatement], calls: &mut Vec<FunctionId>) {
+fn collect_statement_calls(
+    caller: FunctionId,
+    statements: &[CheckedStatement],
+    calls: &mut Vec<ConcreteCallOccurrence>,
+) {
     for statement in statements {
         match statement {
             CheckedStatement::Let { value, .. }
@@ -933,21 +1138,23 @@ fn collect_statement_calls(statements: &[CheckedStatement], calls: &mut Vec<Func
                 condition: value, ..
             }
             | CheckedStatement::Return { value, .. }
-            | CheckedStatement::Give { value, .. } => collect_expression_calls(value, calls),
+            | CheckedStatement::Give { value, .. } => {
+                collect_expression_calls(caller, value, calls);
+            }
             CheckedStatement::PropagateLet { scrutinee, .. } => {
-                collect_expression_calls(scrutinee, calls);
+                collect_expression_calls(caller, scrutinee, calls);
             }
             CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
-                        collect_expression_calls(&target.offset, calls);
+                        collect_expression_calls(caller, &target.offset, calls);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
-                        collect_expression_calls(&target.offset, calls);
+                        collect_expression_calls(caller, &target.offset, calls);
                     }
                 }
-                collect_expression_calls(value, calls);
+                collect_expression_calls(caller, value, calls);
             }
             CheckedStatement::Match {
                 scrutinee, arms, ..
@@ -955,32 +1162,40 @@ fn collect_statement_calls(statements: &[CheckedStatement], calls: &mut Vec<Func
             | CheckedStatement::ValueMatchLet {
                 scrutinee, arms, ..
             } => {
-                collect_expression_calls(scrutinee, calls);
+                collect_expression_calls(caller, scrutinee, calls);
                 for arm in arms {
-                    collect_statement_calls(&arm.body, calls);
+                    collect_statement_calls(caller, &arm.body, calls);
                 }
             }
             CheckedStatement::Loop { body, .. } | CheckedStatement::Region { body, .. } => {
-                collect_statement_calls(body, calls);
+                collect_statement_calls(caller, body, calls);
             }
             CheckedStatement::CountedRange {
                 lower, upper, body, ..
             } => {
-                collect_expression_calls(lower, calls);
-                collect_expression_calls(upper, calls);
-                collect_statement_calls(body, calls);
+                collect_expression_calls(caller, lower, calls);
+                collect_expression_calls(caller, upper, calls);
+                collect_statement_calls(caller, body, calls);
             }
             CheckedStatement::Break { .. } => {}
         }
     }
 }
 
-fn collect_expression_calls(expression: &CheckedExpression, calls: &mut Vec<FunctionId>) {
-    if let CheckedExpression::UserCall { function, .. } = expression {
-        calls.push(*function);
+fn collect_expression_calls(
+    caller: FunctionId,
+    expression: &CheckedExpression,
+    calls: &mut Vec<ConcreteCallOccurrence>,
+) {
+    if let CheckedExpression::UserCall { function, call, .. } = expression {
+        calls.push(ConcreteCallOccurrence {
+            caller,
+            node_path: call.clone(),
+            callee: *function,
+        });
     }
     for child in flow::expression_children(expression) {
-        collect_expression_calls(child, calls);
+        collect_expression_calls(caller, child, calls);
     }
 }
 

@@ -1,0 +1,54 @@
+fn relay<T: Int>(value: own T) -> own T pure ensures result {
+  check ieq(result, value) else trap "relay result";
+} {
+  return value;
+}
+
+fn accept_bound(value: own u64, limit: own u64) -> own u64 pure requires {
+  let admitted = ile(value, limit);
+  check admitted else trap "bounded value";
+} {
+  return value;
+}
+
+fn cycle_left(remaining: own u64) -> own u64 pure {
+  let done = ieq(remaining, 0_u64);
+  if done {
+    return 0_u64;
+  } else {
+    let next = remaining -wrap 1_u64;
+    let result = cycle_right(remaining: next);
+    return result;
+  }
+}
+
+fn cycle_right(remaining: own u64) -> own u64 pure {
+  let done = ieq(remaining, 0_u64);
+  if done {
+    return 1_u64;
+  } else {
+    let next = remaining -wrap 1_u64;
+    let result = cycle_left(remaining: next);
+    return result;
+  }
+}
+
+deny_claims command fn main() -> own ExitStatus traps requires {
+  let valid_entry = ieq(0_u64, 0_u64);
+  check valid_entry else trap "entry relation";
+} {
+  let candidate_length = 7_u64;
+  let prior_length = 0_u64;
+  let capacity = 8_u64;
+  let candidate_fits = ile(candidate_length, capacity);
+  let bounded_length = if candidate_fits {
+    give candidate_length;
+  } else {
+    give prior_length;
+  }
+  let relayed_length = relay<u64>(value: bounded_length);
+  let accepted_length = accept_bound(value: relayed_length, limit: capacity);
+  let cycle_result = cycle_left(remaining: 2_u64);
+  check ieq(cycle_result, 0_u64) else trap "seedless cycle drift";
+  return exit_status(code: 0_u8);
+}

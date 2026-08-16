@@ -193,7 +193,7 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> own unit reads('a 'e 'r), writes('e 'r), external, blocks, traps {
+deny_claims fn report_failure['a, 'e, 'r](args: &'a Args, err: &uniq 'e Output, report: &uniq 'r buffer<u8>, status: own u8, position: own u64) -> own unit reads('a 'e 'r), writes('e 'r), external, blocks, traps {
   doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";
   let length = 0_u64;
   region 'report_prefix {

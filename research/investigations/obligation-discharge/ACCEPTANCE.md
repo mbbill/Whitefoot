@@ -1708,3 +1708,110 @@ asserts zero failures. Its sole failure is unchanged:
 `Unsupported(RegionsAndBorrows)`. This is the recorded unsupported boundary,
 not a green conformance claim; every other protected case kept its installed
 verdict.
+
+## Installed v0.29 Stage 9b strict-partition acceptance (2026-08-15)
+
+The exact owner-approved Stage 9b candidate is installed as active v0.29 at
+`spec/kernel-spec.md`, SHA-256
+`0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
+The outgoing v0.28 authority is preserved byte-identically at
+`spec/kernel-spec-v0.28.md`, SHA-256
+`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+Candidate commit `4e4707317206a103cdb29d2f1d076d8f9807a90f`, exact approval
+commit `137ef4d87a5a91f7088d04e677b8c87dbd127401`, and the appended v0.29
+`ACTIVE-SPEC` line bind those bytes without changing the approved candidate.
+
+The approved derivation ledger remains exactly SHA-256
+`7f2b277c3bafa8d9448f4b16b9ba0066b26668beb804cc31ee05d5c655b22806`.
+Its introductory v0.28-authority, non-authoritative-v0.29-candidate wording and
+its CLM-3 candidate-only note are deliberately retained as candidate-time
+historical prose because the ledger itself was an exact approved byte identity.
+They do not describe the post-activation authority state. The active
+`spec/kernel-spec.md` is sole language authority; the chained v0.29 record in
+`governance/APPROVALS.md` records its installed identity, and
+`docs/roadmap.md` records terminal `PROOF-8` direction status.
+
+Held frontend checkpoint `ec95b7026e84b9d001cd9912b3f34ee9b2511d19`
+defined the reviewed v0.29 `deny_claims` declaration prefix, parser surface,
+generated syntax data, and frontend identity. Held semantic checkpoint
+`a927f2ca15471de22bbc878355fd7376d74f660b` defined one normal checking path
+for the strict partition. Their bytes are incorporated by the single atomic
+main integration; the held commits remain review identities rather than main
+ancestors. A marked concrete root contributes its outgoing
+ordinary-call closure; mutually recursive concrete instances are handled as
+one SCC. Direct claims and source-ordered imports of a may-claim summary are
+CLM-3 rejections. Protected operation leaves, ordinary requirements, and a
+marked program entry's requirement are judged only from the existing U view;
+the program-entry check occurs before generated-wrapper S4 authorization.
+Strict publication is failure-atomic, diagnostics retain their actual source
+owner, and acceptance never reads the Stage 9a `ClaimLedger`. No second proof
+walk, runtime body, lowering, specialization, solver, fact source, ABI surface,
+or optimizer authority was introduced.
+
+The exact protected manifest is SHA-256
+`2dbd4f4242f82142c4c39578d8ca3e70ca6528bc3c2f5c540d0d548ee8fc1ee2`.
+Its nine additions bring the corpus from 437 to 446 cases and runnable rows
+from 424 to 433, with all 13 pending rows, all 30 coverage annotations, and
+every older source, row, verdict, status, rule citation, and order unchanged.
+Apart from the approved active-spec digest pin, runner logic, collection, and
+verdict interpretation are unchanged. Rule coverage is 133/133. The native adapter result is
+`Pass=432 Fail=1 Skip=13` in `202.22s`. `make conformance-run` exits `2` only
+because `own3-pos-outlives-store` still expects `Run(0)` and reaches
+`Unsupported(RegionsAndBorrows)`; no other protected case fails. This is the
+expected retained OWN-3 unsupported boundary, not a green conformance claim.
+
+The authentic wfgrep source hashes to
+`fb2f3b44160a947d7adca9fc9b5af851b446a7bcfc179ede4f8c689b21033904`.
+Stage 9b added only the twelve-byte `deny_claims ` prefix to
+`report_failure`; removing it recovers the exact v0.28 source at
+`44db13e238b00260ec4f23a60be85db700d22902c6657a406ec13bc87b6a4889`.
+The function's body, its callers, ordinary claims outside the outgoing closure,
+runtime checks, lowering, output/error/cleanup/status behavior, and facts-off
+path are unchanged. Ordinary sources with no marker keep their prior acceptance
+and diagnostics.
+
+Focused strict semantic evidence passes `17/17`, including direct/import
+may-claim SCC behavior, existing-U OP-4/FN-8 ownership, the entry pre-wrapper
+boundary, exact CLM-3 nodes and payloads, no-marker parity, strict-root
+one-to-one metadata remap, failure atomicity, and value-branch repair. The
+non-heavy semantic selection passes `481/481`. The heavy entailment test
+`frozen_real_sources_retain_complete_entailment_roots_without_counted_false_positives`
+passes `1/1` in `711.37s`; the separately selected heavy provenance test
+`canonical_deflate_retains_one_subject_bridge_and_three_unasserted_calls`
+passes `1/1` in `207.28s`. Those three selections cover the original 483
+semantic tests, but they were not one `483/483` run.
+
+The `711.37s` observation belongs to one combined real-source owning test. It
+includes frontend and production semantic work for multiple sources, the
+test-only `validate_derivations` walk, and its additional ledger and route
+assertions; the repository has no standalone semantic-only CLI or replayable
+validator that can separate those costs without instrumentation. The duration
+therefore has no honest per-source, wfgrep-only, semantic-checker-only, or
+validator-only attribution and is correctness-gate latency, not a Stage 9b
+performance result.
+
+Before the v0.29 activation identity was installed, the exact wfgrep
+integration test ran for `139.63s` and then failed only at the expected v0.28
+target-qualification `CommandEntry` mapping pin. That preactivation result is
+not a passing wfgrep gate and does not claim end-to-end activation success; it
+also exposed no Stage 9b semantic failure. Post-activation gate evidence is
+recorded only by the actual activation-era commands, never inferred from that
+probe.
+
+The authoritative final root gate ran as
+`TMPDIR=/Users/bytedance/do_not_scan/whitefoot-0067-tmp make check` and exited
+`0`. Specification append-only checks passed; archive integrity covered all 30
+recorded specifications; the runner passed `23/23`; and coverage passed
+`133/133`. The compiler gate passed library `833/833` in `679.39s`, grammar
+`9/9`, generated grammar tables `1/1`, migration `36/36`, specification
+integrity `10/10`, canonical corpus `3/3`, and real programs `32/32` in
+`2170.33s`. The conformance integration target retained its one deliberately
+ignored known OWN-3 test. Rustdoc passed with warnings denied, and
+`whitefoot-spec` reported active v0.29 at the exact installed SHA, 133 rules,
+and 21 unbroken activation links. The command ended with both
+`WHITEFOOT COMPILER GATE GREEN` and
+`WHITEFOOT GATE GREEN (active compiler + independent evidence)`.
+
+With Stage 9b installed and both the root gate and protected adapter boundary
+accounted for, PROOF-8 is terminal. CAND-8 is unparked, but its next slice
+requires a new owner-approved high-level plan.

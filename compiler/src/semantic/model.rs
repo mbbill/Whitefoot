@@ -1159,6 +1159,9 @@ pub(crate) struct CheckedFunction {
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) symbol: String,
+    /// The marker-bearing `fn_decl` path, present for every concrete instance
+    /// of a source declaration carrying `deny_claims` [CLM-3].
+    pub(crate) deny_claims_marker: Option<NodePath>,
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
@@ -1308,6 +1311,92 @@ pub(crate) struct CheckedResourceAlias {
     pub(crate) right: u8,
 }
 
+/// Stable checked identity of one direct claim in the CLM-3 SCC summary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StrictClaimIdentity {
+    /// Owning concrete function instance.
+    pub(crate) function: FunctionId,
+    /// Exact `claim_stmt` occurrence.
+    pub(crate) node_path: NodePath,
+    /// Written claim name.
+    pub(crate) name: String,
+}
+
+/// Successful disposition of one demanded strict component.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StrictComponentDisposition {
+    /// Every applicable CLM-3 query succeeded.
+    Succeeded,
+}
+
+/// Successful disposition of one marked strict root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StrictRootDisposition {
+    /// The complete outgoing closure passed atomically.
+    Succeeded,
+}
+
+/// Marked-entry program-start disposition retained after strict success.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StrictProgramStartDisposition {
+    /// This strict root is not the concrete program entry.
+    NotProgramEntry,
+    /// The marked entry declares no requirement.
+    RequirementFree,
+    /// Its post-setup, pre-wrapper, pre-S4 U requirement discharged.
+    Discharged,
+}
+
+/// One component of the shared FN-9/CLM-3 concrete-call condensation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StrictComponentMetadata {
+    /// Callee-before-caller component ordinal.
+    pub(crate) ordinal: u32,
+    /// Stable concrete function members.
+    pub(crate) functions: Vec<FunctionId>,
+    /// Strictly outgoing callee component ordinals.
+    pub(crate) outgoing: Vec<u32>,
+    /// Claims declared by members of this component.
+    pub(crate) direct_claims: Vec<StrictClaimIdentity>,
+    /// Direct claims plus every outgoing component's `MayClaims` set.
+    pub(crate) may_claims: Vec<StrictClaimIdentity>,
+    /// True exactly when at least one strict-root closure demands this component.
+    pub(crate) demanded: bool,
+    /// Present exactly for a demanded component after total strict success.
+    pub(crate) disposition: Option<StrictComponentDisposition>,
+}
+
+/// One successful concrete strict root and its finite outgoing closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StrictRootMetadata {
+    /// Marked concrete function instance.
+    pub(crate) function: FunctionId,
+    /// Exact declaration marker path inherited by this instance.
+    pub(crate) marker: NodePath,
+    /// Root component ordinal.
+    pub(crate) component: u32,
+    /// Root plus every reachable outgoing component, in component order.
+    pub(crate) closure: Vec<u32>,
+    /// Successful atomic root disposition.
+    pub(crate) disposition: StrictRootDisposition,
+    /// Exact marked-entry boundary disposition.
+    pub(crate) program_start: StrictProgramStartDisposition,
+}
+
+/// Read-only CLM-3 checked-program metadata. Lowering never consumes it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct StrictPartitionMetadata {
+    /// Every source declaration carrying the fixed marker, including an
+    /// uninstantiated generic declaration with no concrete strict root.
+    pub(crate) markers: Vec<NodePath>,
+    /// Shared concrete SCC summaries, including undemanded components.
+    pub(crate) components: Vec<StrictComponentMetadata>,
+    /// Successful strict roots in stable concrete-instance order.
+    pub(crate) roots: Vec<StrictRootMetadata>,
+    /// Shared source-ordered concrete ordinary calls used by the summary.
+    pub(crate) calls: Vec<super::entailment::ConcreteCallOccurrence>,
+}
+
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
@@ -1320,6 +1409,11 @@ pub(crate) struct CheckedProgramData {
     /// order, with component-atomic verified FN-9 summary publication.
     #[allow(dead_code)]
     pub(crate) postcondition_schedule: super::entailment::PostconditionSchedule,
+    /// Successful opt-in strict-partition summary. It is constructed from
+    /// semantic scratch before the observational claim ledger, but retained
+    /// only after the sole derivation finish/remap boundary.
+    #[allow(dead_code)]
+    pub(crate) strict_partition: StrictPartitionMetadata,
     /// Frozen PRV component/demand metadata and explicit successful
     /// dispositions [PRV-1/2/3, DIAG-2]. Rejection witnesses are consumed
     /// before this value is built; lowering and optimization do not read it.

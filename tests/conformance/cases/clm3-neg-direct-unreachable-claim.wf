@@ -1,0 +1,8 @@
+deny_claims fn main() -> own unit traps {
+  let never = False();
+  if never {
+    let same = ieq(0_u64, 0_u64);
+    claim unreachable_claim: same because "strict partitions count redundant claims even in unreachable arms";
+  }
+  return unit;
+}

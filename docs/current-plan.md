@@ -1,8 +1,10 @@
 # Current Plan
 
-Status: **ACTIVE** (Stage 9a terminal 2026-08-15; Stage 9b exact approval
-next): preserve the owner-selected obligation-discharge sequence through the
-deterministic claim ledger and separately approved strict partition.
+Status: **COMPLETE (2026-08-15)**: the owner-selected obligation-discharge
+sequence is installed through the deterministic claim ledger and the
+separately approved strict partition. This plan now grants no further execution
+authority; beginning another wfgrep undertaking requires a new owner-approved
+high-level plan.
 
 The owner selected the predecessor plan on 2026-08-12 and explicitly selected
 the narrow Stage 8b receiver correction described below on 2026-08-14. Task
@@ -10,17 +12,17 @@ the narrow Stage 8b receiver correction described below on 2026-08-14. Task
 the mandatory statement-scoped child-reborrow region at all fourteen mapped
 `read_bits` calls. The 2026-08-14 plan revision changed only that Stage 8b
 delivery mechanism;
-it carries forward the objective, workstream order, consumers, verification
+it carried forward the objective, workstream order, consumers, verification
 boundary, and later exact specification/protected-conformance waits. Its
-`ACTIVE` status authorizes resumed task execution inside the exact written
-boundary, but does not approve any future specification or protected
-conformance bytes.
+former `ACTIVE` status authorized task execution inside the exact written
+boundary, but did not approve any specification or protected-conformance bytes
+before their separate exact owner decisions.
 
 Derived from [Direction Outline revision 36](roadmap.md), primarily `PROOF-8`,
 with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
 constraints; the installed landscape is synchronized through Direction
-Outline revision 40. `CAND-8` remains the selected flagship pressure source
-but stays parked until this plan reaches its terminal boundary.
+Outline revision 41. `CAND-8` remains the selected flagship pressure source
+and is now unparked, but this completed plan does not authorize its next slice.
 
 ## Objective
 
@@ -46,7 +48,10 @@ optimization or performance project.
 
 ## Installed baseline and frozen boundaries
 
-- Active language authority: v0.28 at `spec/kernel-spec.md`, SHA-256
+- Active language authority: v0.29 at `spec/kernel-spec.md`, SHA-256
+  `0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`;
+  the outgoing v0.28 bytes are archived unchanged at
+  `spec/kernel-spec-v0.28.md`, SHA-256
   `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
 - Raw-DEFLATE sources, in compilation order:
   - `raw_deflate.wf`:
@@ -58,7 +63,9 @@ optimization or performance project.
   - `raw_deflate_boundary.wf`:
     `c5044c5db980e1d2c14b5c3731a153351a58d61d84aec81880e355707c2a2f84`.
 - `wfgrep.wf`:
-  `44db13e238b00260ec4f23a60be85db700d22902c6657a406ec13bc87b6a4889`.
+  `fb2f3b44160a947d7adca9fc9b5af851b446a7bcfc179ede4f8c689b21033904`;
+  Stage 9b changed only the twelve-byte `deny_claims ` prefix on
+  `report_failure`.
 - Installed Stage 8b acceptance covers all fourteen `read_bits` routes, all
   twenty `append_slice` routes, and the single wfgrep A10 `value_if` repair
   through the ordinary compiler path with unchanged output, error, cleanup,
@@ -67,9 +74,9 @@ optimization or performance project.
   v0.28 claim-ledger populations as UTF-8 `2`, four-source raw-DEFLATE `12`,
   and wfgrep `8`; the former v0.27 retained/redundant split was not copied
   forward as an unmeasured v0.28 fact.
-- Protected conformance boundary: 437 cases, 30 coverage annotations, rule
-  coverage `132/132`, and the installed adapter result
-  `Pass=423 Fail=1 Skip=13`; the sole failure remains
+- Protected conformance boundary: 446 cases, 30 coverage annotations, rule
+  coverage `133/133`, and the installed adapter result
+  `Pass=432 Fail=1 Skip=13`; the sole failure remains
   the existing OWN-3 unsupported boundary.
 
 Every task must resolve these identities before using them. A changed real
@@ -188,7 +195,7 @@ separate approval gate.
 Status: **COMPLETE (2026-08-15).** The exact owner-approved v0.28
 specification, compiler, five consumers, outgoing archive, protected corpus,
 runner identity, approval chain, and derived material are installed atomically.
-Workstream 9a is the next execution item.
+Workstream 9a followed this installation and is also terminal below.
 
 Stage 8b begins only after Stage 8a establishes both local witnesses, every
 caller gap has the fixed disposition below, and the trust prerequisite
@@ -322,12 +329,13 @@ terminal.
 
 ## Workstream 9b — opt-in strict no-claim partition
 
-Stage 9b begins only after Stage 9a deterministically enumerates the actual
-remaining claims and their transitive support.
+Status: **COMPLETE (2026-08-15).** Stage 9b began only after Stage 9a
+deterministically enumerated the actual remaining claims and their transitive
+support.
 
-Design and implement the smallest opt-in `deny-claims` partition semantics.
-The marker is carried by a function declaration; its exact spelling is left to
-the later specification candidate. Each marked concrete function instance is
+The selected design implements the smallest opt-in `deny_claims` partition
+semantics. The marker is carried by a function declaration. Each marked
+concrete function instance is
 one strict root. Its outgoing transitive closure contains every concrete user
 function instance reached by an ordinary call, each recursive strongly
 connected component, and the generated entry wrapper or adapter when the root
@@ -335,19 +343,19 @@ has one. The closure does not flow upward into unrelated callers.
 
 One function may therefore be used by both ordinary and strict callers. It has
 one runtime body and ordinary acceptance remains unchanged; strict membership
-is an additional unasserted semantic rewalk and finite summary, not a second
-lowering or specialization. A call from outside into a marked root must prove
-that root's requirement in the caller's unasserted state. Calls within the
-strict closure are likewise judged unasserted, and their callees must have a
-successful strict summary.
+uses the existing unasserted proof views plus a finite summary, not a second
+semantic rewalk, lowering, or specialization. A call from outside into a
+marked root must prove that root's requirement in the caller's unasserted
+state. Calls within the strict closure are likewise judged unasserted, and
+their callees must have a successful strict summary.
 
 The closure's complete transitive claim ledger must be empty. Every checked
 direct claim counts, including one in a structurally unreachable arm. A finite
 may-claim fixed point propagates through ordinary calls, recursion, concrete
 generic instances, and generated boundaries. A direct claim rejects at its
 claim node; the first source-ordered call that imports a may-claim summary
-rejects at that call node. The exact rule id and payload are fixed by the later
-specification candidate, but those two ownership locations may not change.
+rejects at that call node. Installed CLM-3 fixes the exact rule ID and payload;
+those two ownership locations remain part of the approved boundary.
 
 All protected obligations and ordinary required calls inside the partition are
 judged in the unasserted state: a body `check` may remain as an executed check
@@ -358,17 +366,59 @@ the existing claim lifecycle and runtime checks remain unchanged. This is not
 a global claim ban, a universal sole-trap-source law, or permission to erase
 explicit runtime checks.
 
-Prepare direct and transitive positive, negative, near-miss, recursion,
-adapter, generic, and bypass evidence, plus claim-free acceptance,
-claim-bearing rejection, and value-branch repair on a real path. This
-workstream is expected to require a second exact specification and protected
-conformance packet. Candidate work is autonomous; landing waits for the
-explanation, exact candidate SHA/diff/impact/verifier results, exact corpus
+The installed evidence covers direct and transitive positive, negative,
+near-miss, recursion, generated-entry, generic, and bypass cases, plus
+claim-free acceptance, claim-bearing rejection, and value-branch repair on a
+real path. This workstream required a second exact specification and protected
+conformance packet. Candidate work proceeded autonomously; landing waited for
+the explanation, exact candidate SHA/diff/impact/verifier results, exact corpus
 before/after audit, and explicit owner approval.
 
 Stop if the partition cannot be finite and deterministic without a generalized
 effect/proof framework, if a transitive bypass remains, or if ordinary code's
 existing acceptance or required runtime behavior changes.
+
+Installed outcome (2026-08-15): held frontend checkpoint
+`ec95b7026e84b9d001cd9912b3f34ee9b2511d19` defined the reviewed v0.29
+declaration grammar and generated-data bytes, and held semantic checkpoint
+`a927f2ca15471de22bbc878355fd7376d74f660b` defined the reviewed CLM-3
+direct/import may-claim SCC summaries, existing-U OP-4/FN-8 judgments,
+marked-entry pre-wrapper check, deterministic source ownership, and
+failure-atomic checked publication. Those checkpoint bytes are incorporated by
+the single atomic main integration; the held commits are review identities,
+not main ancestors. The exact nine protected additions and the sole wfgrep marker are
+installed without changing any older case, row, annotation, verdict, runner
+logic, runtime body, lowering, or ordinary unmarked acceptance.
+
+Focused strict semantics pass `17/17`, and the non-heavy semantic selection
+passes `481/481`. The separately selected heavy entailment test
+`frozen_real_sources_retain_complete_entailment_roots_without_counted_false_positives`
+passes `1/1` in `711.37s`, and the separately selected heavy provenance test
+`canonical_deflate_retains_one_subject_bridge_and_three_unasserted_calls`
+passes `1/1` in `207.28s`. Together those selections cover the original 483
+semantic tests, but they were not one `483/483` run. The `711.37s` owning test
+combines multiple real sources, production checking, and test-only derivation
+validation, so it has no defensible wfgrep-versus-validator or other per-phase
+timing attribution. An exact wfgrep preactivation integration test ran
+`139.63s` and then failed only at the expected still-v0.28
+target-qualification `CommandEntry` mapping pin, before the approved v0.29
+activation identity was installed; it was not an activation-era passing
+wfgrep gate or a semantic failure. Canonical installed evidence and the
+candidate-time ledger boundary are recorded in the acceptance report. The
+postactivation canonical adapter completed in `202.22s` with exact
+`Pass=432 Fail=1 Skip=13`; `make conformance-run` exited `2` only because
+`own3-pos-outlives-store` still expects `Run(0)` and reaches
+`Unsupported(RegionsAndBorrows)`. No other protected case failed. The final
+Stage 9b repository-root `make check`, with `TMPDIR` under
+`/Users/bytedance/do_not_scan`, exited `0`: specification append-only checks,
+archive identities `30`, runner `23/23`, coverage `133/133`, compiler library
+`833/833` in `679.39s`, grammar
+`9/9`, generated tables `1/1`, migration `36/36`, specification `10/10`,
+canonical corpus `3/3`, real programs `32/32` in `2170.33s`, rustdoc with
+warnings denied, and active v0.29 identity at the exact SHA with 133 rules and
+21 activation links are green. It ended with both repository and compiler
+green markers; the conformance target remains its one deliberately ignored
+known OWN-3 integration test.
 
 ## Cross-workstream invariants
 
@@ -399,8 +449,8 @@ task:
    correction;
 3. **complete (2026-08-15):** approve and atomically activate Stage 8b's exact
    specification plus protected-conformance packet; and
-4. **next:** with Stage 9a complete, approve Stage 9b's exact specification
-   plus protected-conformance activation packet.
+4. **complete (2026-08-15):** approve and atomically activate Stage 9b's exact
+   specification plus protected-conformance packet.
 
 Stage 8a, the existing-DIAG-2 repair, Stage 9a, ordinary implementation and
 tests, real-source repair, documentation, integration, task lifecycle, and
@@ -462,14 +512,17 @@ lead records the evidence and returns a revised `PROPOSED` plan instead of
 weakening the gate or accumulating side tasks around it. A stopped outcome
 does not mark `PROOF-8` complete or unpark `CAND-8`.
 
-## Active authority
+## Terminal authority record
 
 The owner approved this plan's predecessor on 2026-08-12, selected the narrow
-receiver strategy on 2026-08-14, and approved the exact Stage 8b specification,
-protected corpus, and activation identity on 2026-08-15. Stage 8b is installed
-and tasks 0058–0065 are terminal. Stage 9a implementation commit
-`e04d3acad80e1260c4f1aee24d8f45cba5140d84` and task 0066 are terminal under
-this same `ACTIVE` authority. A material strategy change returns the plan to
-`PROPOSED`. Stage 9b candidate preparation is next; its specification and
-protected-conformance bytes still stop at their own independent exact approval
-boundary.
+receiver strategy on 2026-08-14, and approved the exact Stage 8b and Stage 9b
+specification, protected-corpus, and activation identities on 2026-08-15.
+Tasks 0058–0067 and `PROOF-8` are terminal. The installed Stage 9a commit is
+`e04d3acad80e1260c4f1aee24d8f45cba5140d84`; the Stage 9b frontend and
+semantic review checkpoints are `ec95b7026e84b9d001cd9912b3f34ee9b2511d19`
+and `a927f2ca15471de22bbc878355fd7376d74f660b`, whose bytes are incorporated by
+the single atomic main integration without making those held commits main
+ancestors. The exact approvals and active
+specification chain remain in `governance/APPROVALS.md`; this terminal plan
+does not extend them or authorize another task. `CAND-8` is unparked, and its
+next bounded slice begins only under a new owner-approved high-level plan.

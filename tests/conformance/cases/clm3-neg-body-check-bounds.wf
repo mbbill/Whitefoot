@@ -1,0 +1,12 @@
+deny_claims fn checked_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+  let room = len(values);
+  let inside = ilt(index, room);
+  check inside else trap "checked read";
+  return values[index];
+}
+
+fn main() -> own unit traps {
+  let values = array_new<u8, 4>(7_u8);
+  let selected = checked_read(values: move values, index: 0_u64);
+  return unit;
+}

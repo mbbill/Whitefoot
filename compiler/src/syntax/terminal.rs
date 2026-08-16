@@ -10,7 +10,8 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// index: the v0.17 inventory, the three spellings v0.18 added, and the two
 /// v0.21 added, less the `index` spelling v0.22 released to IDENT, plus the
 /// twenty-one v0.23 added — `if` and the twenty `infix_op` operator spellings —
-/// and the three v0.25 counted-range spellings, plus v0.28's `ensures`.
+/// and the three v0.25 counted-range spellings, plus v0.28's `ensures` and
+/// v0.29's `deny_claims`.
 /// New variants append so every
 /// previously released dense index remains stable.
 /// First grammar-occurrence order is carried by
@@ -196,10 +197,12 @@ pub enum FixedTerminal {
     DotDot,
     /// `ensures`.
     Ensures,
+    /// `deny_claims`.
+    DenyClaims,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 89] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 90] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -209,6 +212,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 89] = [
     FixedTerminal::LeftParen,
     FixedTerminal::RightParen,
     FixedTerminal::Comma,
+    FixedTerminal::DenyClaims,
     FixedTerminal::Fn,
     FixedTerminal::ThinArrow,
     FixedTerminal::Requires,
@@ -385,6 +389,7 @@ impl FixedTerminal {
             Self::In => b"in",
             Self::DotDot => b"..",
             Self::Ensures => b"ensures",
+            Self::DenyClaims => b"deny_claims",
         }
     }
 
@@ -459,21 +464,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 97] = {
-    let mut predicates = [TerminalPredicate::Identifier; 97];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 98] = {
+    let mut predicates = [TerminalPredicate::Identifier; 98];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[89] = TerminalPredicate::Identifier;
-    predicates[90] = TerminalPredicate::TypeIdentifier;
-    predicates[91] = TerminalPredicate::RegionIdentifier;
-    predicates[92] = TerminalPredicate::Label;
-    predicates[93] = TerminalPredicate::OperationName;
-    predicates[94] = TerminalPredicate::Literal;
-    predicates[95] = TerminalPredicate::String;
-    predicates[96] = TerminalPredicate::Digits;
+    predicates[90] = TerminalPredicate::Identifier;
+    predicates[91] = TerminalPredicate::TypeIdentifier;
+    predicates[92] = TerminalPredicate::RegionIdentifier;
+    predicates[93] = TerminalPredicate::Label;
+    predicates[94] = TerminalPredicate::OperationName;
+    predicates[95] = TerminalPredicate::Literal;
+    predicates[96] = TerminalPredicate::String;
+    predicates[97] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -481,14 +486,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 89,
-            Self::TypeIdentifier => 90,
-            Self::RegionIdentifier => 91,
-            Self::Label => 92,
-            Self::OperationName => 93,
-            Self::Literal => 94,
-            Self::String => 95,
-            Self::Digits => 96,
+            Self::Identifier => 90,
+            Self::TypeIdentifier => 91,
+            Self::RegionIdentifier => 92,
+            Self::Label => 93,
+            Self::OperationName => 94,
+            Self::Literal => 95,
+            Self::String => 96,
+            Self::Digits => 97,
         }
     }
 }
@@ -719,6 +724,7 @@ mod tests {
         assert_eq!(FixedTerminal::In as u8, 86);
         assert_eq!(FixedTerminal::DotDot as u8, 87);
         assert_eq!(FixedTerminal::Ensures as u8, 88);
+        assert_eq!(FixedTerminal::DenyClaims as u8, 89);
     }
 
     #[test]

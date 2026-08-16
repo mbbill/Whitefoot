@@ -815,8 +815,8 @@ fn malformed_input_labels_reject_at_their_exact_grammar_boundary() {
 }
 
 #[test]
-fn the_two_new_optional_decisions_report_their_complete_expected_sets() {
-    // `fn_decl := program_kind? "fn" ...`: an IDENT-headed top-level lookahead
+fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
+    // `fn_decl := "deny_claims"? program_kind? "fn" ...`: an IDENT-headed top-level lookahead
     // that no complete item row accepts is DIAG-1 attribution row 4, reported
     // at that first IDENT with the second position's expectation retained.
     let outcome = parse_active(
@@ -835,6 +835,31 @@ fn the_two_new_optional_decisions_report_their_complete_expected_sets() {
         b"command"
     );
     assert_eq!(issue.expected().len(), 1);
+    assert!(
+        issue
+            .expected()
+            .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
+                TerminalPredicate::Fixed(FixedTerminal::Fn)
+            ))
+    );
+
+    // Once the fixed marker is consumed, a non-IDENT, non-`fn` token is
+    // attributed at that marker and retains the complete continuation set.
+    let marked_non_function = b"deny_claims struct Thing {\n  a: i32;\n}\n".as_slice();
+    let outcome = parse_active("marked-kind.wf", marked_non_function);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("deny_claims not followed by a function must reject: {outcome:?}");
+    };
+    assert_eq!(issue.rule(), SyntaxRule::Form3);
+    assert_eq!(issue_bytes(marked_non_function, issue), b"struct");
+    assert_eq!(issue.expected().len(), 2);
+    assert!(
+        issue
+            .expected()
+            .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
+                TerminalPredicate::Identifier
+            ))
+    );
     assert!(
         issue
             .expected()
@@ -873,6 +898,7 @@ fn a_program_kind_and_an_input_label_derive_outside_the_entry() {
     // must derive these units and leave the rejection to semantic checking
     // rather than reporting invalid source here.
     for source in [
+        b"deny_claims command fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
         b"command fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n".as_slice(),
         b"fn helper(command.args as args: own Args) -> own unit pure {\n  return unit;\n}\n\nfn main() -> own unit pure {\n  return unit;\n}\n",
     ] {

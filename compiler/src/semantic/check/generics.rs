@@ -637,6 +637,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: GenericSubstitution,
         id: super::super::model::FunctionId,
     ) -> Result<FunctionSignature, CheckStop> {
+        let deny_claims_marker = if self
+            .tree
+            .direct_token_with(
+                template.node,
+                crate::TerminalPredicate::Fixed(crate::FixedTerminal::DenyClaims),
+            )?
+            .is_some()
+        {
+            Some(self.tree.path(template.node)?.clone())
+        } else {
+            None
+        };
         let region_parameters = self.parse_region_parameters(template.node)?;
         let parameters = self.parse_parameters_with(template.node, &substitution)?;
         let rtype = self
@@ -675,6 +687,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node: template.node,
             name: template.name.clone(),
             symbol,
+            deny_claims_marker,
             region_parameters,
             parameters,
             result_mode,

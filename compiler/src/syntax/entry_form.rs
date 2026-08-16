@@ -22,7 +22,7 @@ use crate::syntax::parser::{FinalizedTopology, NodeId};
 /// location for a rejection owned by that judgment.
 ///
 /// The scan covers every node because the grammar admits `program_kind` in
-/// exactly one place: as the optional first child of `fn_decl`, which itself
+/// exactly one place: as the optional second child of `fn_decl`, which itself
 /// derives only from a top-level `item` [GRAM-2]. A `program_kind` node
 /// existing anywhere is therefore the same fact as some top-level `fn_decl`
 /// carrying one, and a total scan cannot miss a nesting the grammar does not

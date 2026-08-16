@@ -526,6 +526,14 @@ pub(crate) enum ClaimLifecycleKind {
     Refuted,
 }
 
+/// Which successful CLM-3 U query retains one existing derivation root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StrictDerivationRootKind {
+    BoundsObligation,
+    CallGoal,
+    ProgramStart,
+}
+
 /// Which mandatory checked-program query owns a retained root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DerivationRootKind {
@@ -571,6 +579,10 @@ pub(crate) enum DerivationRootKind {
     ClaimLifecycle {
         occurrence: u32,
         kind: ClaimLifecycleKind,
+    },
+    Strict {
+        occurrence: u32,
+        kind: StrictDerivationRootKind,
     },
 }
 

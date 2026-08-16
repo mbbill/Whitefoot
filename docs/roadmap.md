@@ -1,13 +1,14 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 40 (Stage 9a deterministic claim ledger terminal; Stage 9b approval next)
+Revision: 41 (PROOF-8 terminal; CAND-8 unparked)
 
-The active language authority is v0.28 at the stable path
+The active language authority is v0.29 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
-`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
-Exact v0.8 through v0.27 are immutable flat archives. The current execution
-plan is [`docs/current-plan.md`](current-plan.md), project law is the
+`0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
+Exact v0.8 through v0.28 are immutable flat archives. The completed execution
+plan is [`docs/current-plan.md`](current-plan.md); a new undertaking requires a
+new owner-approved plan. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -53,7 +54,7 @@ inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
 
-`[current: spec v0.28]` `[current: safe-Rust compiler]`
+`[current: spec v0.29]` `[current: safe-Rust compiler]`
 
 Whitefoot has one normal path from canonical source through resolution,
 semantic and ownership checking, checked program, typed CFG IR, target
@@ -65,7 +66,7 @@ The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
 belong in the [compiler README](../compiler/README.md); the
-active [v0.28 specification](../spec/kernel-spec.md) remains semantic authority.
+active [v0.29 specification](../spec/kernel-spec.md) remains semantic authority.
 The first-slice system interface compiles and runs end-to-end on the native
 macOS/Linux command target; the §9.1 cost and §12.2 hostile gates (task 0016)
 remain ahead of any performance claim.
@@ -74,9 +75,10 @@ Which gap matters next is selected by a project, never by checklist length.
 ## Dependency rules
 
 - CAND-1 records the completed flagship selection. CAND-8 remains the selected
-  flagship and pressure source, but the owner has parked further wfgrep work
-  until PROOF-8's selected obligation-discharge sequence is complete; mapped
-  direction items inform the plan, but none authorizes work by itself.
+  flagship and pressure source. PROOF-8's selected obligation-discharge
+  sequence is now complete, so CAND-8 is unparked; choosing or executing its
+  next bounded slice still requires a new owner-approved plan. Mapped direction
+  items inform that plan, but none authorizes work by itself.
 - PERF-1 establishes ordinary code quality before a new optimizer fact or
   strategy is blamed or credited.
 - Every production fact consumer in PROOF-1 through PROOF-4 and PROOF-7 depends
@@ -207,8 +209,8 @@ creating writer trust or weakening the checked safety envelope.
 
 ### PROOF-8 — Obligation-discharge semantics: claims, caller-side discharge, trap as checker backstop
 
-`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, installed v0.28 verified postconditions, and deterministic claim ledger]`
-`[next: separately approved Stage 9b strict partition]`
+`[current: items 1–4, counted range, atomic requires goals, bounded provenance gate, complete DIAG-2 retention, installed v0.28 verified postconditions, deterministic claim ledger, and installed v0.29 strict partition]`
+`[terminal]`
 
 - **Goal:** replace each selected implicit trap family with explicit
   machine-tracked obligations. A migrated partial operation or `requires`
@@ -322,14 +324,49 @@ creating writer trust or weakening the checked safety envelope.
   `5fd017b46973e5cbf990fe3fc92a2cc20a76f91c` at `412.36s` (about `0.4%`),
   and the complete compiler and repository gates are green while the separate
   adapter preserves the installed `Pass=423 Fail=1 Skip=13` boundary.
-- **Missing / next:** Stage 9a is terminal-positive. Stage 9b remains behind
-  its later exact specification and protected-conformance approval. `CAND-8`
-  stays parked until Stage 9b and the complete PROOF-8 closure are terminal.
+  The owner then approved the exact Stage 9b candidate bound by commit
+  `4e47073` and approval record `137ef4d`. Held frontend checkpoint `ec95b70`
+  defined the reviewed v0.29 declaration marker and generated tables; held
+  semantic checkpoint `a927f2c` defined CLM-3's finite direct/import may-claim SCC summaries, existing-U
+  OP-4/FN-8 judgments, marked-entry pre-wrapper check, and failure-atomic
+  checked publication. Ordinary unmarked acceptance, runtime bodies, lowering,
+  and the Stage 9a observational ledger remain outside that authority path.
+  Focused strict semantics pass 17/17, the non-heavy semantic selection passes
+  481/481, the separately selected heavy entailment owning test passes 1/1 in
+  711.37s, and the separately selected heavy provenance test passes 1/1 in
+  207.28s. Those selections cover the original 483 semantic tests but were not
+  one 483/483 run. The 711.37s owning test combines multiple real sources,
+  production checking, and test-only derivation validation, so it cannot be
+  attributed separately to wfgrep compilation or `validate_derivations`. The
+  sole wfgrep source change is `deny_claims ` on `report_failure`; the installed
+  source hashes to `fb2f3b44160a947d...` and preserves its semantic and
+  non-upward oracles. The additive protected matrix is 446 cases, 30 unchanged
+  annotations, and 133/133 rule coverage; the adapter is
+  `Pass=432 Fail=1 Skip=13` in 202.22s. `make conformance-run` exits 2 only
+  because `own3-pos-outlives-store` still expects `Run(0)` and reaches
+  `Unsupported(RegionsAndBorrows)`; no other protected case fails. An exact
+  wfgrep preactivation integration test ran 139.63s and then failed only at the
+  expected still-v0.28 `CommandEntry` target mapping pin; it was neither an
+  activation-era passing wfgrep gate nor a semantic failure. The final
+  repository-root `make check` exits 0 with specification append-only checks,
+  archive identities 30, runner 23/23, coverage 133/133, compiler library
+  833/833 in 679.39s, real programs 32/32 in 2170.33s, active v0.29 at its
+  exact SHA with 133 rules and 21 activation links, rustdoc warnings denied,
+  and both compiler and repository green markers; the deliberately ignored
+  conformance target remains the known OWN-3 integration. The approved
+  derivation ledger at SHA-256 `7f2b277c...`
+  intentionally retains its candidate-time historical prose. The active
+  specification is sole language authority; the v0.29 activation chain records
+  its installed identity, and this outline records terminal `PROOF-8` status.
+- **Missing / next:** none inside PROOF-8. The direction is terminal and
+  `CAND-8` is unparked. Selecting its next bounded slice requires a new
+  owner-approved high-level plan.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
   [Stage 8b semantic freeze](done/0058-stage8b-normal-return-postconditions.md) ·
   [Stage 9a deterministic claim ledger](done/0066-stage9a-deterministic-claim-ledger.md) ·
+  [Stage 9b strict partition](done/0067-stage9b-strict-partition-candidate.md) ·
   [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·
@@ -363,13 +400,13 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.28 run is `Pass=423 Fail=1 Skip=13`; the one
+  compiler. The installed-v0.29 run is `Pass=432 Fail=1 Skip=13`; the one
   runnable divergence is `own3-pos-outlives-store` at the retained
   `RegionsAndBorrows` unsupported boundary, while the thirteen pending rows
   remain explicit toolchain gaps. This adapter is deliberately `#[ignore]` and
   invoked separately; `make check` does not silently include it. The earlier
-  v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are historical
-  attribution evidence, not current status.
+  v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
+  historical attribution evidence, not current status.
 - **Missing / next:** preserve the independent pass/fail/skip report while the
   protected OWN-3 wording question remains open. Any expectation, source, or
   status change remains owner-protected and must report the before/after sets.
@@ -784,10 +821,10 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 Ripgrep is the owner-selected umbrella project. Selection fixes the external
 pressure source and the headline objective, **2x ripgrep**; it does not
 authorize a favorable subset, a monolithic rewrite, or any particular
-language, compiler, proof, runtime, or optimizer change. The active
-`current-plan.md` sequences the remaining PROOF-8 undertaking into bounded
-workstreams, and every task must state how it returns to the unchanged product
-comparison.
+language, compiler, proof, runtime, or optimizer change. The completed
+`current-plan.md` closed the bounded PROOF-8 undertaking. No next CAND-8
+slice is authorized until a new owner-approved high-level plan selects it and
+states how it returns to the unchanged product comparison.
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
 about the language's functional and performance ceiling — resolved general
@@ -811,8 +848,9 @@ remains as the owner check-in, not as a presumption against the goal.
   near-term-reachability gate. The owner subsequently made comparative
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
-- **Missing / next:** none; `CAND-8` owns the preserved flagship sequence, and
-  the Current Plan parks its next slice behind PROOF-8 completion.
+- **Missing / next:** none; `CAND-8` owns the preserved flagship sequence and
+  is unparked now that PROOF-8 is terminal. Its next slice requires a new
+  owner-approved plan.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
@@ -820,7 +858,7 @@ remains as the owner check-in, not as a presumption against the goal.
 ### CAND-8 — Ripgrep-compatible command-line search
 
 `[selected flagship]` `[current: credited compute-bound win]`
-`[parked: complete PROOF-8 obligation-discharge sequence first]`
+`[unparked: new high-level plan required]`
 
 - **Goal:** build a Whitefoot-written command-line search tool credible for
   ripgrep's primary line-oriented recursive regex use and reach at least
@@ -851,10 +889,10 @@ remains as the owner check-in, not as a presumption against the goal.
   and copy loops stay scalar, and bounds traps remain secondary (~18%
   ceiling). On 2026-08-09 the owner parked every further wfgrep slice until the
   complete PROOF-8 obligation-discharge sequence selected in the Current Plan
-  is implemented and verified, or a reproduced blocker is returned for owner
-  disposition. The exact credited checkpoint and full 2x objective remain
-  unchanged; finishing the language sequence un-parks rather than replaces
-  them.
+  was implemented and verified. That sequence is now terminal, so the exact
+  credited checkpoint and full 2x objective are unparked rather than replaced.
+  The next bounded wfgrep slice must be selected by a new owner-approved plan;
+  this outline does not itself authorize it.
 - **Directions tested:** PERF-1 owns the baseline and attribution; BOUND-1 and
   VERIFY-1 enter with the real CLI/filesystem path; PAR-1 through PAR-4 enter
   only for measured parallel work and its proof/runtime contract; FLOOR-1

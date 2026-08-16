@@ -1,0 +1,21 @@
+fn clean_identity<T: Int>(value: own T) -> own T pure {
+  return value;
+}
+
+fn claimed_identity<T: Int>(value: own T) -> own T traps {
+  let asserted = True();
+  claim generic_claim: asserted because "the concrete callee retains one direct claim";
+  return value;
+}
+
+fn claimed_relay<T: Int>(value: own T) -> own T traps {
+  let result = claimed_identity<T>(value: value);
+  return result;
+}
+
+deny_claims fn main() -> own unit traps {
+  let clean = clean_identity<u8>(value: 1_u8);
+  let first = claimed_relay<u64>(value: 2_u64);
+  let second = claimed_relay<u8>(value: 3_u8);
+  return unit;
+}

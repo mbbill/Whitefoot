@@ -734,7 +734,7 @@ fn validate_counted_derivation_set(
     }
 }
 
-fn validate_derivations(summary: &FunctionEntailment) {
+pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     assert_eq!(
         summary.inventory.terms.len(),
         summary.inventory.length_bounds.len(),
@@ -1462,6 +1462,7 @@ fn validate_derivations(summary: &FunctionEntailment) {
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
     let mut seen_s7 = vec![false; summary.s7_derivations.len()];
     let mut seen_claim_lifecycle = vec![false; summary.claims.len()];
+    let mut seen_strict = vec![false; summary.strict_roots.len()];
     let mut seen_postcondition_exits = summary
         .postcondition
         .as_ref()
@@ -1800,6 +1801,25 @@ fn validate_derivations(summary: &FunctionEntailment) {
                     _ => panic!("claim lifecycle root, disposition, and proof must agree"),
                 }
             }
+            DerivationRootKind::Strict { occurrence, kind } => {
+                let occurrence = occurrence as usize;
+                let retained = summary
+                    .strict_roots
+                    .get(occurrence)
+                    .expect("strict-root occurrence must resolve");
+                assert!(
+                    !seen_strict[occurrence],
+                    "one exact root per strict U query"
+                );
+                seen_strict[occurrence] = true;
+                assert_eq!(retained.kind, kind);
+                assert_eq!(retained.derivation, root.node);
+                assert!(!retained.node_path.components().is_empty());
+                assert_eq!(
+                    summary.derivations.node_views[root.node.0 as usize],
+                    ProofView::Unasserted
+                );
+            }
         }
 
         if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
@@ -1818,6 +1838,7 @@ fn validate_derivations(summary: &FunctionEntailment) {
             }
         }
     }
+    assert!(seen_strict.into_iter().all(|seen| seen));
 
     let mut reachable = vec![false; summary.derivations.nodes.len()];
     let mut stack: Vec<_> = summary

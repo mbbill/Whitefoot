@@ -13,6 +13,7 @@
 - Signed goal support follows resolved reads; writes, ownership events, scope exits, loop summaries, intersection joins, and combined contradiction govern its lifetime without decomposing the goal.
 - A finite two-stratum explicit-dataflow provenance judgment freezes value, storage, result, and write component pairs before subject-only protected demands, requirement bridges, call targets, and rejection events converge.
 - Claim accountability is one deterministic read-only checked-program projection over the sole finalized function-local derivation DAGs: lifecycle and obligation links retain existing remapped proof identities, and the projection neither replays closure nor creates portable proof authority.
+- An opt-in claim-free root demands its finite outgoing concrete-call/SCC closure in the existing unasserted view: direct or imported claims and unproved protected obligations reject, the closure never flows upward into unrelated callers, and no second flow analysis or proof authority exists.
 - After complete-state local discharge and ordinary-call requirement success, an unconditionally external constrained subject cannot authorize a protected index leaf solely through a body check, claim, or S4-blinded requirement bridge; local leaves reject at the subscript and downstream leaves at the responsible call argument.
 - The entailment fragment is part of the trusted computing base beside the type and borrow checkers; a wrong discharge is a memory-safety defect rather than an optimizer defect.
 
@@ -41,6 +42,7 @@
 - 2026-08-15 (a36e3061) measurement: concrete callee-before-caller components, closed result publication, and value-if delivery discharge all fourteen measured read routes and all twenty append routes, including the single A10 repair, while same-component summaries and value-match delivery remain unavailable. (code)
 - 2026-08-15 (a36e3061) pitfall: postcondition support after a join is the current live relation pair, not historical substitution metadata; following an original holder through proof ancestry incorrectly kills a holder-free joined consequence. (code)
 - 2026-08-15 (e04d3aca) measurement: the installed checked-program claim-accountability projection traverses only finalized retained-root ancestry, fails closed on missing exact provenance joins, and deterministically enumerates 2 UTF-8, 12 raw-DEFLATE, and 8 wfgrep claims. The heavy owning test measured 414.00 seconds against the 412.36-second Stage 8b baseline (about 0.4%), while claim-free programs take an explicit empty-result fast path. (code)
+- 2026-08-15 (a927f2ca) measurement: the installed opt-in strict partition reuses the existing concrete call condensation, unasserted outcomes, and function-local derivation DAG; seventeen focused cases cover direct and imported claims, generic and mutual-recursive closures, program-entry requirements, protected bounds and call requirements, failure-atomic publication, no-upward propagation, and unmarked-source parity. (code)
 
 ## Moves
 

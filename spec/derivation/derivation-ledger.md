@@ -2,15 +2,18 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through the active
-v0.28 authority at `spec/kernel-spec.md`; released versioned files retain the
-superseded authorities. Requirement (owner + META-6): every rule is provably
+v0.28 authority and the non-authoritative v0.29 candidate at
+`spec/kernel-spec.md`; released versioned files retain the superseded
+authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
-**Current statistics: 83 derived · 49 existence-only · 0 underived**
-(132 rules: v0.27's 131 plus the v0.28 FN-9 addition).
+**Candidate statistics: 83 derived · 50 existence-only · 0 underived**
+(133 rules: active v0.28's 132 plus the candidate v0.29 CLM-3 addition).
+The installed v0.28 authority remains 83 derived · 49 existence-only · 0
+underived until an exact v0.29 activation.
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -818,6 +821,7 @@ sequencing amendment selecting atomic activation.
 |---|---|---|---|---|
 | CLM-1 | `claim name: e because "text";` — named runtime check, the writer's sole trap-stating statement | 🟡 existence-only | Existence: W3 keystone (no construct may introduce a fact without a proof or an executed runtime check — the SPARK `pragma Assume` door stays structurally closed; obligation-discharge DOSSIER §3, owner/assistant design record 2026-08-05..06) + R4 ladder (the failure path is language-authored and traps loudly with a named record; the writer authors only the predicate and the auditable justification — authorship factoring) + OP-5 lineage (semantics are exactly check-else-trap plus a name, and the executed check is what admits the fact into [ENT-3], so no assumption enters unexecuted). Construct-level evidence: PROBE-W1 rounds 1–2 (16/16 low-effort and adversarial writers steered to honest shapes by the residual-printing loop) and SIMULATION.md (claim consolidation: ~13 claims cover 27 sites across three real programs; the corpus's existing test assertions map onto claims unchanged). Form NOT derived: the name-first spelling, mandatory `because` STRING, per-function name uniqueness outside every TYPE-6 domain, and the reservation exemption are owner-ruled (2026-08-07) without a comparative writer-form experiment. | Awaits: spelling comparison under W1 writers and the ledger tooling that consumes name-plus-predicate identity; fired-claim escalation is a toolchain contract. Redundancy and refutation live in CLM-2. |
 | CLM-2 | Claim lifecycle: required redundancy advisory, refutation hard error, fired-claim escalation | ✅ derived | Version-monotonicity requirement (acceptance may not tighten when the checker strengthens; DOSSIER §2.7 keystone — 'acceptance monotonicity depends on redundant-claim being a warning') -> a provable claim must be a non-rejecting advisory in every later version, never an error. R4 shift-left -> a refuted claim (the predicate's exact negation derived in a non-contradictory state) is a program proven to trap on every execution reaching it, so compile-time rejection is the ladder's exact direction, deliberately enumerated as the lifecycle's one non-monotone edge in [ENT-1] (candidate review F4 forced the exception to be stated rather than implied). W3 -> the advisory channel cannot alter acceptance and the writer cannot suppress refutation. Fired-claim reclassification is a toolchain contract in the ERR-2 edit-list sense, not a language judgment. | Form is judgment semantics with no spelling axis. Advisory channel and encoding are implementation-owned this version; normative advisory bytes deferred (owner ruling 2026-08-07). |
+| CLM-3 | opt-in transitive strict no-claim partition | 🟡 existence-only | Existence: W3 forbids assertion-backed authorization while the Stage 9a deterministic ledger measures a finite real claim population; FN-1 caller locality, the existing complete/U separation, and finite concrete ordinary-call SCCs therefore support an opt-in outgoing closure whose protected obligations and requirements must succeed without S2/S3, whose direct and imported claims are counted independent of reachability, and whose membership never propagates upward. SCC atomicity and one runtime body prevent a recursive or mixed-caller bypass. Form NOT derived: the `deny_claims` spelling, declaration-prefix placement, exact writer surface, and diagnostic tie-breaks are minimality-selected by the ACTIVE Stage 9b plan and have not had a comparative writer experiment. | Candidate v0.29 only. It reuses the existing U view, ordinary call graph, function-local derivation DAG, and failure-atomic checked-program batch; it adds no fact, solver, body, lowering, runtime check, effect, ABI field, foreign adapter, or ClaimLedger authority. |
 | ENT-1 | L0 fragment authority: deterministic, spec-pinned, acceptance-bearing, TCB-resident, version-monotone | ✅ derived | W3 determinism (two conforming implementations must derive identical fact states and dispositions — the R0 delta of record: deterministic spec-pinned discharge versus SMT portfolios with timeout/replay instability, DOSSIER §5) + T1 (a wrong discharge compiles a raw out-of-bounds access, so the fragment joins the TCB beside the type and ownership checkers; owner ruling of record — a compiler bug class owned by testing, never language-level hedging, DOSSIER §4.3) + facts-off correctness law (the fragment is acceptance machinery, not an optional optimizer-fact family, and [SCOPE-2] is unchanged because every fact source is check-backed) -> determinism, per-FN-2-instantiation judgment, TCB placement, and the monotonicity law with CLM-2's enumerated refutation exception. | The monotonicity law keeps every later fragment strengthening a pure widening; the refutation carve-out is deliberate (review F4). |
 | ENT-2 | Fragment terms and facts: tracked places, length terms, constants, difference bounds, disequalities | 🟡 existence-only | Existence: the fragment needs one closed fact language at released-spec precision (DOSSIER §4.2: kill rules, congruence, interval arithmetic all become normative text), and SIMULATION.md exercised exactly this L0 strength by hand — 57–59% of non-test bounds sites discharged outright on utf8parse, deflate-dynamic, and sha256, every residual one line. Determinism of the normal form (unique least closure over difference bounds) serves W3. Form NOT derived: the exact cuts — difference bounds only, declaration-anchored byte-identical place identity (review F2 repair), no index-segment places, the review-F5 term-root set — are soundness-hardened by adversarial review but were not comparatively selected against richer abstract domains. | Awaits: the preregistered acceptance run — the real checker must reproduce SIMULATION.md's per-program buckets — which is exactly the experiment the hand-simulation's single-analyst caveat defers to. |
 | ENT-3 | Fact sources S1–S10: branch/match, check, claim, requires substitution, copy/cvt equalities, lengths, constant-offset arithmetic, midpoint family, const-array ranges, boundary counts | ✅ derived | Every source names an executed check, a declared allocation/type/operation contract, or a constant, preserving the W3 keystone (no assume anywhere), and each entered on measured evidence: dominating branch/match facts, allocation-length equality, const-array element ranges, and ±-constant arithmetic are exactly SIMULATION.md's validated L0 inventory on three real programs; S10's boundary count bounds are PROBE-TAINT.md's load-bearing finding (one structural claim in 723 wfgrep lines only because the read_once/host_copy count bounds hold) made normative through the SYS-8/SYS-9 postconditions and carried in the same [QUAL-1] contract trust class as S6's buffer_new length; the comparison-origin single-`let` cut is owner-ruled (2026-08-07) with its measured consequence recorded (the sha256 bucket restatement, review F8). | S4 requires-substitution is fail-closed on any non-comparison substituted shape; the S8 midpoint family is closed-shape and its unsigned arithmetic was verified sound in the adversarial review's surviving-attack record. |
@@ -1065,3 +1069,84 @@ runtime ABI rule, serialized identity, or alternate lowering path. The private
 synchronization. The installed protected matrix is additive: 437 cases, 30
 unchanged annotations, and 132/132 rule coverage; it records rather than
 selects the specification semantics above.
+
+## v0.29 amendment — opt-in strict no-claim partition (candidate 2026-08-15)
+
+Candidate binding: non-authoritative `spec/kernel-spec.md`, headed v0.29 with
+final status wording, at SHA-256
+`0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
+The installed authority remains v0.28 until explicit exact owner approval and
+atomic activation. The proposed outgoing archive is
+`spec/kernel-spec-v0.28.md`, SHA-256
+`08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`,
+byte-identical to the installed v0.28 authority.
+
+v0.29 adds CLM-3 and removes no numbered rule. It modifies twelve existing
+rules: GRAM-2, OP-4, FN-1, FN-7, FN-8, FN-9, PROG-3, DIAG-1, DIAG-2, ENT-1,
+ENT-3, and ENT-6. The following rows bind every modified rule without
+reclassifying any prior row:
+
+| Rule | v0.29 status | Amendment role |
+|---|---|---|
+| GRAM-2 | derived_existence_only | Adds the one optional fixed `deny_claims` prefix directly to `fn_decl`, before the optional program kind, with no new production. |
+| OP-4 | derived | Rejudges each demanded protected leaf in the existing U view after ordinary complete and provenance success, preserving OP-4 at the actual `psuffix`. |
+| FN-1 | derived | Exposes the declaration policy and derived strict summary at the caller boundary while retaining one signature, body, call graph, and lowering. |
+| FN-7 | derived_existence_only | Admits the marker before either existing entry form without creating a third entry form, kind trigger, input, or adapter. |
+| FN-8 | derived_existence_only | Rejudges demanded and outside-to-root call requirements in caller U, and marked program-start requirements before the retained wrapper check, at the existing FN-8 nodes. |
+| FN-9 | derived_existence_only | Keeps the unchanged S12 and delivery candidates unpublished after PRV success until the strict partition also succeeds. |
+| PROG-3 | derived | Requires the static marked-entry U judgment before, but never instead of, the one retained runtime wrapper check. |
+| DIAG-1 | derived | Preserves every v0.28 verdict first, then fixes direct-claim, imported-claim, strict OP-4/FN-8, marked-entry, root, instance, and call ordering. |
+| DIAG-2 | derived | Retains exact strict roots, SCC summaries, call and claim identities, successful U roots, and program-start disposition in the existing DAG and sole finalization. |
+| ENT-1 | derived | Adds one fixed deterministic opt-in acceptance judgment over the existing concrete graph, U view, and derivation authority. |
+| ENT-3 | derived | Removes PRV-only publication sufficiency from S12: the candidate source remains unchanged, but authority waits for total CLM-3 success. |
+| ENT-6 | derived | Fixes the exact existing-U queries and preserves one failure-atomic S12, delivery, strict, and checked-program batch through the additional gate. |
+| CLM-3 | derived_existence_only | Defines the finite outgoing SCC closure, exact direct and may-claim sets, strict-U success, deterministic direct/import ownership, and no-upward-propagation boundary. |
+
+Existence is selected by the ACTIVE Stage 9b plan and Stage 9a's measured
+finite claim population: an opt-in partition must close transitive assertion
+bypasses rather than inspect only one marked body. W3 forbids either a claim or
+an executed body check from becoming unchecked authority; the existing U view,
+concrete ordinary-call graph, SCC condensation, and function-local derivation
+DAG provide the smallest finite implementation ground. One checked runtime
+body and an outgoing-only closure preserve FN-1 locality and ordinary callers.
+The `deny_claims` spelling, declaration-prefix placement, and exact diagnostic
+tie-break remain minimality-selected rather than experimentally derived, so
+CLM-3 is existence-only.
+
+Grammar arithmetic from v0.28 is exact: 73 productions remain 73; the optional
+marker adds one decision, 90 to 91; the fixed spelling inventory adds only
+`deny_claims`, 89 to 90; terminal predicates rise from 97 to 98. The rule
+inventory is 133. CLM-3 adds one existence-only row, so the candidate totals
+are **83 derived · 50 existence-only · 0 underived**.
+
+The preimplementation verifier control was built from committed v0.28 bytes,
+not from a candidate rebuild that automatically embeds the edited stable spec.
+Archive versus archive exits zero with `grammar-preserving candidate verified
+by the active compiler: 73 productions, 90 decisions, 97 terminal predicates`.
+Archive versus candidate exits one with only `candidate changes the lexer or
+source grammar of the baseline but does not match the compiler's embedded
+frontend contract`. This is an explicit approval-sequencing limitation, not a
+green frontend result. The candidate inventories above are a static one-token,
+one-optional-node audit; frontend and generated-table agreement must become
+green after approval and before activation.
+
+The accepted byte set widens through the optional marked declaration and
+reserves `deny_claims` away from IDENT. Relative to the same function without
+the marker, the new rule only narrows acceptance: every direct or imported
+claim is forbidden, and every protected leaf, ordinary required call, and
+program-start requirement in the demanded outgoing closure must additionally
+discharge in U. The closure includes complete concrete generic instances and
+whole recursive components but never incoming unrelated callers. Unmarked
+source not using the new spelling keeps v0.28 acceptance, diagnostics, runtime
+checks, claims, effects, cleanup, lowering, ABI, and facts-on/off behavior.
+
+The proposed protected matrix is purely additive: nine runnable cases take the
+corpus from 437 to 446 while leaving 30 annotations unchanged and projecting
+133/133 rule coverage. Two positives and seven negatives freeze direct and
+imported claims, concrete generics, upward non-propagation, mutual recursion,
+marked program start, strict OP-4, strict FN-8, transitive strict failure, and
+the real value-branch repair shape. The authentic wfgrep candidate adds only
+the marker to `report_failure`; its body, callers, output, error, cleanup,
+status, runtime-check, and facts-off oracles remain activation obligations.
+These corpus and consumer bytes are protected non-authoritative candidates and
+do not select the rule semantics recorded above.

@@ -404,8 +404,9 @@ pub(super) fn analyze(
 }
 
 /// Builds the one optimistic per-function proof batch without pruning or
-/// remapping its derivation ledger. The checker uses this only for FN-9 units,
-/// then calls [`finish`] after the program-level PRV batch has no event.
+/// remapping its derivation ledger. The checker uses this for shared FN-9 and
+/// CLM-3 units, then calls [`finish`] after the program-level PRV and CLM-3
+/// batches have no event.
 pub(super) fn analyze_candidate(
     function: &CheckedFunction,
     context: &EntailmentContext<'_>,
@@ -417,6 +418,8 @@ pub(super) fn analyze_candidate(
         call_goals: run.call_goals,
         unasserted: run.unasserted,
         s4_blinded: run.s4_blinded,
+        program_start: run.program_start,
+        strict_roots: Vec::new(),
         counted_derivations: run.counted_derivations,
         s7_derivations: run.s7_derivations,
         postcondition: run.postcondition,
@@ -431,6 +434,7 @@ struct AnalysisRun {
     call_goals: Vec<CallGoalOutcome>,
     unasserted: FunctionEntailmentView,
     s4_blinded: FunctionEntailmentView,
+    program_start: Option<super::ProgramStartGoalOutcome>,
     counted_derivations: Vec<CountedDerivationSet>,
     s7_derivations: Vec<S7Derivation>,
     postcondition: Option<super::FunctionPostconditionProof>,
@@ -476,6 +480,31 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     analyzer
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
+    // [CLM-3, PROG-3] The marked entry query observes the existing U proof
+    // state after parameter setup but before the retained wrapper check or S4
+    // can authorize the body. It is computed by the same analyzer and DAG.
+    let program_start = if context.marked_program_start {
+        let requirement = function
+            .requirement
+            .as_ref()
+            .expect("a marked program-start query exists only with a requirement");
+        let goal = ConcreteGoal::new(
+            analyzer
+                .body_requirement_goal()
+                .expect("a checked concrete requirement has a body image"),
+        );
+        let (disposition, evidence, derivation) =
+            analyzer.call_goal_disposition(&goal, &state.unasserted);
+        Some(super::ProgramStartGoalOutcome {
+            final_check: requirement.trap.node_path.clone(),
+            goal,
+            disposition,
+            evidence,
+            derivation,
+        })
+    } else {
+        None
+    };
     // [ENT-3] S4: the substituted `requires` relation enters the body's entry
     // fact state, the one fact that crosses into the body [ENT-2, FN-8].
     if let Some(requirement) = &function.requirement {
@@ -508,6 +537,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
             obligations: analyzer.s4_blinded_obligations,
             call_goals: analyzer.s4_blinded_call_goals,
         },
+        program_start,
         counted_derivations: analyzer.counted_derivations,
         s7_derivations: analyzer.s7_derivations,
         postcondition: analyzer.postcondition,
@@ -517,8 +547,8 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
 }
 
 /// Finalizes the sole function-local derivation ledger after the optimistic
-/// program batch has passed PRV-2/PRV-3. A rejecting batch drops the candidate
-/// function inventory without ever calling this boundary.
+/// program batch has passed PRV-2/PRV-3 and CLM-3. A rejecting batch drops the
+/// candidate function inventory without ever calling this boundary.
 pub(super) fn finish(entailment: &mut FunctionEntailment) {
     let event_roots = entailment
         .postcondition
@@ -552,6 +582,19 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         outcome.derivation = outcome
             .derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+    }
+    if let Some(outcome) = &mut entailment.program_start {
+        outcome.derivation = outcome
+            .derivation
+            .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+    }
+    for root in &mut entailment.strict_roots {
+        root.derivation = remap
+            .nodes
+            .get(root.derivation.0 as usize)
+            .copied()
+            .flatten()
+            .expect("registered strict U root retained by the sole finish boundary");
     }
     for outcome in entailment
         .unasserted

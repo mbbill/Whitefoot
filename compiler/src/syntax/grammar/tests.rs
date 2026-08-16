@@ -14,9 +14,9 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 73);
-    assert_eq!(DECISIONS.len(), 90);
-    assert_eq!(SELECT_ROWS.len(), 3_544);
-    assert_eq!(diagnostic_terminal_order().len(), 97);
+    assert_eq!(DECISIONS.len(), 91);
+    assert_eq!(SELECT_ROWS.len(), 3_564);
+    assert_eq!(diagnostic_terminal_order().len(), 98);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::EnsuresBlock);
     assert_eq!(productions()[13], Production::EnsuresSelector);
@@ -30,11 +30,21 @@ fn complete_inventory_is_pinned() {
     assert_eq!(DECISIONS[84].production(), Production::ForStmt);
     assert_eq!(DECISIONS[84].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[85].production(), Production::FnDecl);
+    assert_eq!(DECISIONS[85].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[86].production(), Production::EnsuresBlock);
+    assert_eq!(DECISIONS[86].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[87].production(), Production::EnsuresSelector);
+    assert_eq!(DECISIONS[87].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[88].production(), Production::EnsuresSelector);
+    assert_eq!(DECISIONS[88].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[89].production(), Production::EnsuresEntry);
+    assert_eq!(DECISIONS[89].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[90].production(), Production::FnDecl);
+    assert_eq!(DECISIONS[90].kind(), DecisionKind::Optional);
 }
 
 #[test]
-fn v027_decision_slots_retain_their_exact_shapes() {
+fn v028_decision_slots_retain_their_exact_shapes() {
     macro_rules! shape {
         ($production:ident, $kind:ident, $context:ident, $arms:literal) => {
             (
@@ -131,8 +141,13 @@ fn v027_decision_slots_retain_their_exact_shapes() {
         shape!(Effect, Repeat1, Ordinary, 2),
         shape!(Effect, Choice, Ordinary, 2),
         shape!(ForStmt, Repeat0, ConstructEntry, 2),
+        shape!(FnDecl, Optional, Ordinary, 2),
+        shape!(EnsuresBlock, Repeat0, ConstructEntry, 2),
+        shape!(EnsuresSelector, Choice, Ordinary, 2),
+        shape!(EnsuresSelector, Optional, Ordinary, 2),
+        shape!(EnsuresEntry, Choice, ConstructEntry, 2),
     ];
-    assert_eq!(expected.len(), 85);
+    assert_eq!(expected.len(), 90);
     for (slot, expected) in expected.into_iter().enumerate() {
         let decision = DECISIONS[slot];
         assert_eq!(
@@ -184,7 +199,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 90);
+    assert_eq!(decisions, 91);
 }
 
 #[test]
@@ -201,20 +216,38 @@ fn program_is_one_repeat_decision_over_items() {
 }
 
 #[test]
-fn fn_decl_opens_with_an_optional_program_kind() {
+fn fn_decl_opens_with_the_marker_then_the_optional_program_kind() {
     let Some(root) = grammar_node(Production::FnDecl.root()) else {
         panic!("fn_decl root must exist");
     };
     assert_eq!(root.kind(), GrammarNodeKind::Sequence);
-    let Some(first) = root.children().first().copied() else {
+    let [marker, program_kind, ..] = root.children() else {
         panic!("fn_decl root must have children");
     };
-    let Some(first) = grammar_node(first) else {
-        panic!("fn_decl first child must exist");
+    let Some(marker) = grammar_node(*marker) else {
+        panic!("fn_decl marker child must exist");
     };
-    assert_eq!(first.kind(), GrammarNodeKind::Optional);
-    let Some(content) = first.children().first().copied() else {
-        panic!("the optional must contain the program_kind reference");
+    assert_eq!(marker.kind(), GrammarNodeKind::Optional);
+    let Some(marker_content) = marker.children().first().copied() else {
+        panic!("the marker optional must contain deny_claims");
+    };
+    let Some(marker_content) = grammar_node(marker_content) else {
+        panic!("the marker terminal must exist");
+    };
+    assert_eq!(marker_content.kind(), GrammarNodeKind::TerminalSequence);
+    assert_eq!(
+        marker_content.terminals(),
+        &[LookaheadPredicate::Terminal(TerminalPredicate::Fixed(
+            FixedTerminal::DenyClaims
+        ))]
+    );
+
+    let Some(program_kind) = grammar_node(*program_kind) else {
+        panic!("fn_decl program_kind child must exist");
+    };
+    assert_eq!(program_kind.kind(), GrammarNodeKind::Optional);
+    let Some(content) = program_kind.children().first().copied() else {
+        panic!("the second optional must contain the program_kind reference");
     };
     let Some(content) = grammar_node(content) else {
         panic!("the program_kind reference must exist");
@@ -252,7 +285,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 90);
+    assert_eq!(DECISIONS.len(), 91);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -296,6 +329,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
             }
         }
     }
-    assert_eq!(total_rows, 3_544);
+    assert_eq!(total_rows, 3_564);
     assert!(saw_atom_only);
 }

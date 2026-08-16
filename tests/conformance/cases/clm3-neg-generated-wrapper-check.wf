@@ -1,0 +1,8 @@
+deny_claims command fn main() -> own ExitStatus pure requires {
+  let first = ilt(0_u64, 1_u64);
+  let second = ilt(1_u64, 2_u64);
+  let together = band(first, second);
+  check together else trap "entry conjunction";
+} {
+  return exit_status(code: 0_u8);
+}

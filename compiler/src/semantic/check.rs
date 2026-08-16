@@ -10,6 +10,7 @@ mod generics;
 mod nominal_instances;
 mod nominals;
 mod requires;
+mod strict;
 mod support;
 mod types;
 
@@ -68,6 +69,7 @@ struct FunctionSignature {
     node: NodeId,
     name: String,
     symbol: String,
+    deny_claims_marker: Option<crate::NodePath>,
     region_parameters: Vec<DeclarationId>,
     parameters: Vec<ParameterSignature>,
     result_mode: CheckedMode,
@@ -546,6 +548,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.admit_postcondition_selectors()?;
         let nominal_count_before_function_checking = self.nominals.len();
         let main = self.main_id()?;
+        let strict_markers = self.strict_declaration_markers()?;
 
         // Phase A completes every reachable concrete function before any
         // acceptance-bearing entailment judgment runs. This makes forward,
@@ -568,24 +571,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
 
-        // For an FN-9 unit, the complete existing [FN-3]/[FN-4] pass remains
-        // ahead of the first acceptance-bearing postcondition query. Its
+        // For an FN-9 or CLM-3 unit, the complete existing [FN-3]/[FN-4] pass
+        // remains ahead of the first acceptance-bearing optimistic query. Its
         // results are retained and reused below; no narrow duplicate prepass
-        // or proof-only contract judgment exists. The no-ensures path keeps
-        // its established phase order byte-for-behavior.
-        let early_contracts = if self.resolved.postconditions().is_empty() {
-            None
-        } else {
-            let executable_nominal_count = self.nominals.len();
-            let functions = function_inventory
-                .iter()
-                .map(|checked| checked.function.clone())
-                .collect::<Vec<_>>();
-            self.collect_contracts(&items)?;
-            let (conformances, law_derivations) =
-                self.check_conformances_and_laws(&items, &functions)?;
-            Some((executable_nominal_count, conformances, law_derivations))
-        };
+        // or proof-only contract judgment exists. The no-postcondition,
+        // no-marker ordinary fast path keeps its established phase order.
+        let early_contracts =
+            if self.resolved.postconditions().is_empty() && strict_markers.is_empty() {
+                None
+            } else {
+                let executable_nominal_count = self.nominals.len();
+                let functions = function_inventory
+                    .iter()
+                    .map(|checked| checked.function.clone())
+                    .collect::<Vec<_>>();
+                self.collect_contracts(&items)?;
+                let (conformances, law_derivations) =
+                    self.check_conformances_and_laws(&items, &functions)?;
+                Some((executable_nominal_count, conformances, law_derivations))
+            };
 
         // Phase B reads only the completed inventory. Kill-relevant [EFF-2]
         // projections are indexed by dense function identity [ENT-5]; later
@@ -603,7 +607,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let optimistic_batch = function_inventory.iter().any(|checked| {
             checked.function.postcondition.is_some()
                 || Self::statements_contain_value_if(&checked.function.body)
-        });
+        }) || !strict_markers.is_empty();
 
         // [PRV-1] depends only on the phase-A checked program. Freeze it before
         // any optimistic S12/receiver facts enter the shared entailment batch;
@@ -627,8 +631,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             )?)
         };
-        let postcondition_schedule =
-            self.analyze_function_inventory(&mut function_inventory, &callees, optimistic_batch)?;
+        let postcondition_schedule = self.analyze_function_inventory(
+            &mut function_inventory,
+            &callees,
+            optimistic_batch,
+            main,
+        )?;
         let mut functions = function_inventory
             .into_iter()
             .map(|checked| checked.function)
@@ -648,6 +656,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &functions,
             &provenance_analysis.metadata,
             &provenance_analysis.failures,
+        )?;
+        // [CLM-3] consumes only the already-successful ordinary and PRV
+        // scratch. It registers successful existing-U roots before the one
+        // derivation finish and never reads the observational ClaimLedger.
+        let strict_partition = self.check_strict_partition(
+            &mut functions,
+            &postcondition_schedule,
+            main,
+            strict_markers,
         )?;
         if optimistic_batch {
             for function in &mut functions {
@@ -720,6 +737,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             constants: self.checked_constants.clone(),
             functions,
             postcondition_schedule,
+            strict_partition,
             provenance,
             generic_requirements: self.generic_requirements.clone(),
             contracts: self
@@ -1137,6 +1155,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             declaration: signature.declaration,
             name: signature.name.clone(),
             symbol: signature.symbol.clone(),
+            deny_claims_marker: signature.deny_claims_marker.clone(),
             parameters,
             result_mode: signature.result_mode,
             result: signature.result,
@@ -1190,6 +1209,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         functions: &mut [CheckedFunctionInventory],
         callees: &[EntailmentCallee],
         optimistic_batch: bool,
+        main: FunctionId,
     ) -> Result<PostconditionSchedule, CheckStop> {
         // The [ENT] engine is acceptance-bearing [ENT-1]: it computes the
         // closed fact states, obligation and ordinary-call goal dispositions,
@@ -1209,6 +1229,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
+                    marked_program_start: checked.function.id == main
+                        && checked.function.deny_claims_marker.is_some()
+                        && checked.function.requirement.is_some(),
                 };
                 checked.function.entailment = if optimistic_batch {
                     analyze_function_candidate(&checked.function, &context)
@@ -1262,6 +1285,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             verified_postconditions: &verified_postconditions,
                             verified_postcondition_proofs: &verified_postcondition_proofs,
                             binding_names: &checked.binding_names,
+                            marked_program_start: checked.function.id == main
+                                && checked.function.deny_claims_marker.is_some()
+                                && checked.function.requirement.is_some(),
                         },
                     );
                     drop(verified_postconditions);

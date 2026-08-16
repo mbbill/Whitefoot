@@ -1,7 +1,7 @@
 //! Derives `src/syntax/grammar/generated.rs` from the active specification's
 //! normative EBNF.
 //!
-//! The committed strong-LL(2) tables are not hand-editable: 620 nodes, 90
+//! The committed strong-LL(2) tables are not hand-editable: 622 nodes, 91
 //! decisions and roughly three thousand provenance-retaining SELECT rows. They
 //! have always been produced by a generator, but each grammar task built one
 //! offline and deleted it, so nothing checked that the committed tables were
@@ -116,8 +116,8 @@ const ENUM_ORDER: &[&str] = &[
 /// the same reason: a decision keeps its slot and a newly written one appends.
 /// A grammar node's raw arena ID changes whenever an earlier production gains
 /// nodes, so each historical row is instead `(stable production slot,
-/// production-relative node offset)`. `for_stmt`'s repetition sits last
-/// because v0.25 added it after the preceding 84 decisions.
+/// production-relative node offset)`. `for_stmt`'s repetition keeps released
+/// slot 84 after the preceding decisions and before v0.28's five additions.
 const HISTORICAL_DECISIONS: &[(usize, usize)] = &[
     (0, 0), // program
     (1, 0), // item
@@ -129,16 +129,19 @@ const HISTORICAL_DECISIONS: &[(usize, usize)] = &[
     (4, 8),
     (5, 3), // variant
     (6, 2), // vfield_list
-    (8, 1), // fn_decl
-    (8, 5),
+    // v0.29 inserted `deny_claims?` before every earlier fn_decl child. The
+    // new optional decision is absent here so it appends after all released
+    // decision indices.
+    (8, 3), // fn_decl
     (8, 7),
-    (8, 10),
-    (8, 16),
+    (8, 9),
+    (8, 12),
+    (8, 18),
     // v0.28 inserted `ensures_block?` before the body. These two target paths
     // are the old body `doc?` and `stmt*` decisions after that insertion; the
     // new selector-clause decision is deliberately absent and appends later.
-    (8, 21),
     (8, 23),
+    (8, 25),
     (9, 3),  // requires_block
     (10, 0), // requires_entry
     (11, 3), // contract_decl
@@ -207,6 +210,13 @@ const HISTORICAL_DECISIONS: &[(usize, usize)] = &[
     (61, 16),
     (61, 18),
     (69, 9), // for_stmt
+    // v0.28 decisions keep their released slots after v0.29 adds the earlier
+    // fn_decl marker decision. The fn_decl path includes v0.29's +2 shift.
+    (8, 20), // fn_decl ensures_block?
+    (70, 4), // ensures_block entries
+    (71, 0), // ensures_selector choice
+    (71, 5), // ensures_selector payload binder
+    (72, 0), // ensures_entry
 ];
 
 /// Productions whose entry frontier carries DIAG-1 construct-entry behaviour.

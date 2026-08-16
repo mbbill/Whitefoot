@@ -122,6 +122,8 @@ pub enum SemanticRule {
     Clm1,
     /// Claim lifecycle: refutation rejection under the entailment fragment.
     Clm2,
+    /// Opt-in strict no-claim partition and its imported-claim boundary.
+    Clm3,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
     /// External actual protecting one downstream constrained subject.
@@ -177,6 +179,7 @@ impl SemanticRule {
             Self::Sys2 => "SYS-2",
             Self::Clm1 => "CLM-1",
             Self::Clm2 => "CLM-2",
+            Self::Clm3 => "CLM-3",
             Self::Ent2 => "ENT-2",
             Self::Prv2 => "PRV-2",
             Self::Prv3 => "PRV-3",
@@ -242,7 +245,8 @@ impl SemanticRule {
             Self::Err3 => Self::Sys2,
             Self::Sys2 => Self::Clm1,
             Self::Clm1 => Self::Clm2,
-            Self::Clm2 => Self::Ent2,
+            Self::Clm2 => Self::Clm3,
+            Self::Clm3 => Self::Ent2,
             Self::Ent2 => Self::Prv2,
             Self::Prv2 => Self::Prv3,
             Self::Prv3 => return None,
@@ -302,9 +306,10 @@ impl SemanticRule {
             Self::Sys2 => 39,
             Self::Clm1 => 40,
             Self::Clm2 => 41,
-            Self::Ent2 => 42,
-            Self::Prv2 => 43,
-            Self::Prv3 => 44,
+            Self::Clm3 => 42,
+            Self::Ent2 => 43,
+            Self::Prv2 => 44,
+            Self::Prv3 => 45,
         }
     }
 }
@@ -352,6 +357,89 @@ pub struct UndischargedCallRequirementDetail {
     pub disposition: CallRequirementDisposition,
     /// The rule-selected mechanical restructuring.
     pub mechanical_fix: &'static str,
+}
+
+/// The fixed proof view used by every [CLM-3] non-claim query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrictProofView {
+    /// Existing S2/S3-disabled U view, with independently proved S4 retained.
+    Unasserted,
+}
+
+/// Public lifecycle spelling retained in a direct [CLM-3] claim diagnostic.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StrictClaimLifecycleDisposition {
+    /// Ordinary CLM-1 retained runtime check.
+    Retained,
+    /// Ordinary CLM-2 non-rejecting redundancy disposition.
+    Redundant,
+    /// Test-only dark-checker observation; the production path rejects this
+    /// earlier under CLM-2, before CLM-3 begins.
+    Refuted,
+}
+
+/// The least downstream direct-claim identity carried by an import event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrictClaimIdentityDetail {
+    pub concrete_function: String,
+    pub claim: NodePath,
+    pub name: String,
+}
+
+/// A direct claim in the marked root's own concrete SCC [CLM-3].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrictDirectClaimDetail {
+    pub strict_root: String,
+    pub concrete_claim_owner: String,
+    pub claim: NodePath,
+    pub name: String,
+    pub predicate: String,
+    pub justification: String,
+    pub lifecycle: StrictClaimLifecycleDisposition,
+}
+
+/// A root-SCC call importing a nonempty downstream `MayClaims` set [CLM-3].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrictImportedClaimDetail {
+    pub strict_root: String,
+    pub concrete_caller: String,
+    pub call: NodePath,
+    pub concrete_callee: String,
+    pub least_downstream_claim: StrictClaimIdentityDetail,
+}
+
+/// One demanded U-view protected-obligation failure, still owned by [OP-4].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrictUndischargedBoundsDetail {
+    pub residual: String,
+    pub strict_root: String,
+    pub concrete_function: String,
+    pub view: StrictProofView,
+    pub mechanical_fix: &'static str,
+}
+
+/// One demanded or marked-boundary U-view call-goal failure [FN-8].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrictUndischargedCallRequirementDetail {
+    pub strict_root: String,
+    pub concrete_caller: String,
+    pub concrete_callee: String,
+    pub final_check: NodePath,
+    pub instantiated_goal: String,
+    pub disposition: CallRequirementDisposition,
+    pub view: StrictProofView,
+    pub mechanical_fix: &'static str,
+}
+
+/// A marked program entry whose post-setup, pre-S4 U query fails [FN-8].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrictProgramStartRequirementDetail {
+    pub strict_root: String,
+    pub concrete_function: String,
+    pub final_check: NodePath,
+    pub instantiated_goal: String,
+    pub disposition: CallRequirementDisposition,
+    pub view: StrictProofView,
 }
 
 /// One non-discharged complete-view [FN-9] relation disposition.
@@ -624,9 +712,17 @@ pub enum SemanticIssueKind {
         /// The mechanical fix ENT-6 names.
         mechanical_fix: &'static str,
     },
+    /// A demanded strict component's protected obligation is not discharged
+    /// in the existing unasserted U view [OP-4, CLM-3].
+    StrictUndischargedBounds(Box<StrictUndischargedBoundsDetail>),
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
+    /// A demanded call or outside caller-to-marked-root boundary fails the
+    /// existing unasserted U goal judgment [FN-8, CLM-3].
+    StrictUndischargedCallRequirement(Box<StrictUndischargedCallRequirementDetail>),
+    /// A marked entry requirement fails before its wrapper check and S4 [FN-8].
+    StrictProgramStartRequirement(Box<StrictProgramStartRequirementDetail>),
     /// A full-state-accepted call passes an unconditionally external actual
     /// into one or more protected downstream subjects [PRV-2].
     ExternalProtectedCallArgument(Box<ProvenanceGateDetail>),
@@ -642,6 +738,10 @@ pub enum SemanticIssueKind {
     /// The fact state at a claim derives the exact negation of its predicate
     /// [CLM-2].
     RefutedClaim(Box<RefutedClaimDetail>),
+    /// A direct claim belongs to the marked root's own SCC [CLM-3].
+    StrictDirectClaim(Box<StrictDirectClaimDetail>),
+    /// A root-SCC call imports a nonempty downstream `MayClaims` set [CLM-3].
+    StrictImportedClaim(Box<StrictImportedClaimDetail>),
     /// A return expression disagrees with the written function result.
     ReturnMismatch,
     /// A returned direct slice may originate outside its signature ceiling.

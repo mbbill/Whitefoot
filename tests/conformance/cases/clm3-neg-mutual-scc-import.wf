@@ -1,0 +1,33 @@
+fn mutual_left(remaining: own u64) -> own u64 traps {
+  let done = ieq(remaining, 0_u64);
+  if done {
+    let asserted = True();
+    claim scc_claim: asserted because "one member seeds the component's may-claim summary";
+    return 0_u64;
+  } else {
+    let next = remaining -wrap 1_u64;
+    let result = mutual_right(remaining: next);
+    return result;
+  }
+}
+
+fn mutual_right(remaining: own u64) -> own u64 traps {
+  let done = ieq(remaining, 0_u64);
+  if done {
+    return 0_u64;
+  } else {
+    let next = remaining -wrap 1_u64;
+    let result = mutual_left(remaining: next);
+    return result;
+  }
+}
+
+deny_claims fn strict_root(remaining: own u64) -> own u64 traps {
+  let result = mutual_right(remaining: remaining);
+  return result;
+}
+
+fn main() -> own unit traps {
+  let result = strict_root(remaining: 2_u64);
+  return unit;
+}

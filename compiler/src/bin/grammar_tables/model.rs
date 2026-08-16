@@ -76,6 +76,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("(", "LeftParen"),
         (")", "RightParen"),
         (",", "Comma"),
+        ("deny_claims", "DenyClaims"),
         ("fn", "Fn"),
         ("->", "ThinArrow"),
         ("requires", "Requires"),

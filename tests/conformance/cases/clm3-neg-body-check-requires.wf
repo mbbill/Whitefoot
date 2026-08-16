@@ -1,0 +1,18 @@
+fn required(value: own u64, limit: own u64) -> own unit pure requires {
+  let allowed = ilt(value, limit);
+  check allowed else trap "required bound";
+} {
+  return unit;
+}
+
+deny_claims fn checked_forward(value: own u64, limit: own u64) -> own unit traps {
+  let allowed = ilt(value, limit);
+  check allowed else trap "caller check";
+  required(value: value, limit: limit);
+  return unit;
+}
+
+fn main() -> own unit traps {
+  checked_forward(value: 0_u64, limit: 1_u64);
+  return unit;
+}

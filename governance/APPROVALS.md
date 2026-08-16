@@ -321,6 +321,7 @@ ACTIVE-SPEC: v0.25 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6b
 ACTIVE-SPEC: v0.26 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476 c0b3c279f4c20d06da17ef7ac0e4ec882c8a76c560f62cce47d5b4fd4ac6beab
 ACTIVE-SPEC: v0.27 bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f 18aa00e307642e608f2a3406642db9980dd3620291a7e434985e20a65eb0e476
 ACTIVE-SPEC: v0.28 08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09 bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f
+ACTIVE-SPEC: v0.29 0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3 08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09
 
 ## 2026-08-09 — OWNER EXACT-BYTE APPROVAL: v0.23, and its activation
 - owner: **the owner's exact-byte approval of the digest below.** It was taken
@@ -633,6 +634,83 @@ ACTIVE-SPEC: v0.28 08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536c
   Stage 9a is ordinary compiler/tooling work under the ACTIVE plan; Stage 9b
   still requires its later independent exact specification and protected
   approval.
+
+## 2026-08-15 — OWNER EXACT-BYTE APPROVAL: v0.29 strict no-claim partition
+
+- owner: **the owner, in conversation, 2026-08-15** — “上述精确
+  specification、archive、ledger、manifest、九个 source、wfgrep marker 和
+  未来 runner identity；接受 frontend verifier 在批准前保持红色、批准后才
+  实施并在原子激活前转绿的时序例外。” The reply followed the exact held
+  packet and its repeated hard wait. It approves the named bytes and the
+  disclosed post-approval implementation sequence; it does not waive any
+  activation gate or permit a changed candidate byte.
+- APPROVED SPECIFICATION: stable `spec/kernel-spec.md`, version v0.29,
+  SHA-256
+  `0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
+  The outgoing immutable v0.28 archive is byte-identical to the installed
+  v0.28 authority and has SHA-256
+  `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`.
+  The approved derivation ledger has SHA-256
+  `7f2b277c3bafa8d9448f4b16b9ba0066b26668beb804cc31ee05d5c655b22806`.
+- PROTECTED CORPUS: approve the append-only manifest at SHA-256
+  `2dbd4f4242f82142c4c39578d8ca3e70ca6528bc3c2f5c540d0d548ee8fc1ee2`;
+  its exact nine-row suffix is
+  `ebea9a792345d3b86e3f3d62b4f12631012c0083eb924ccf9fe137979ad7bbef`.
+  Approve exactly these additive runnable source identities, with no existing
+  case, row, annotation, verdict, status, rule citation, rename, deletion, or
+  reorder:
+  `clm3-pos-transitive-value-branch`
+  `779b5b21aee3f5bd7c6d73d336d3045905ee872c3e7f461bc3085bbb05792614`;
+  `clm3-neg-direct-unreachable-claim`
+  `9f76ccc551c582c559ed2ca9e7d173f0e05775fb2333c91baaf2235594290f78`;
+  `clm3-neg-generic-first-import`
+  `cf36fd37b8ca3c972f14118e17c2971179f6a34fb429665e44814ce2c3806028`;
+  `clm3-pos-upward-near-miss`
+  `34d31132121e19da9185f40a24c35c7fec3baaafedd3728853747007a3533930`;
+  `clm3-neg-mutual-scc-import`
+  `df6b3048ffc9589c4cfc5b76ac2849bdbce0c0b97da432d284c7f3753b5b66fa`;
+  `clm3-neg-generated-wrapper-check`
+  `13a7d553dc07a0a89fa181091cdb7655dccf513f1b6c9930971d9aef753157ee`;
+  `clm3-neg-body-check-bounds`
+  `6abc4f3a4ad34561b8d75c04d75845c5c338a9db32f775a05afc3b01e67a94a0`;
+  `clm3-neg-body-check-requires`
+  `0be65125314e4ef0b2ea478f3eae3d139917971cc6727dd1f27a4de7e5de7cc7`;
+  and `clm3-neg-transitive-check-summary`
+  `be1445597569e920034c1d82c40fd6dd9ebc2ef88382d9f0009c417658ad5396`.
+- AUTHENTIC CONSUMER: approve only the `deny_claims` prefix on wfgrep's
+  `report_failure`, producing complete-file SHA-256
+  `fb2f3b44160a947d7adca9fc9b5af851b446a7bcfc179ede4f8c689b21033904`.
+  Its body, callers, output, error, cleanup, status, runtime checks, facts-off
+  behavior, and non-upward claim boundary remain activation oracles.
+- CANONICAL RUNNER IDENTITY: approve changing only
+  `tests/conformance/runner.py`'s `ACTIVE_SPEC_SHA256` from the v0.28 digest to
+  the approved v0.29 digest. The resulting complete runner SHA-256 is
+  `aead0b55b7fe7f52cee36fac74025d46dba8d0de19654a62341ce695b0e62f3e`.
+  Runner logic, collection, verdict interpretation, adapter, baseline, gate
+  wiring, and invocation remain unchanged.
+- SEMANTIC SCOPE: add the optional fixed `deny_claims` declaration prefix and
+  CLM-3's finite outgoing concrete-call/SCC closure. Direct or imported claims
+  reject deterministically; demanded protected leaves, ordinary requirements,
+  and marked program-start requirements must discharge in the already-produced
+  U view. The marker never propagates upward, reads no Stage 9a ClaimLedger as
+  acceptance authority, and adds no runtime check, body, solver, fact source,
+  effect, ABI field, foreign adapter, lowering, optimizer license, or serialized
+  identity.
+- SEQUENCING EXCEPTION: the owner explicitly accepts the disclosed red
+  archive-to-candidate frontend verifier before implementation. Frontend,
+  generated tables, semantics, and ordinary tests are implemented only after
+  this approval; the production verifier and every complete activation gate
+  must become green before the atomic activation. The projected corpus result
+  `Pass=432 Fail=1 Skip=13` and exact Stage 9b diagnostics remain expectations
+  until measured post-implementation.
+- boundary: the exact held commit
+  `4e4707317206a103cdb29d2f1d076d8f9807a90f` binds the approved candidate.
+  Post-approval ordinary implementation, generated data, active pins, the
+  chained `ACTIVE-SPEC:` line, lifecycle and authority closure, MCTS
+  synchronization, complete gates, and one atomic main integration may now
+  proceed. Any approved specification, archive, ledger, manifest, source,
+  verdict, status, rule, wfgrep marker, or runner-identity byte change returns
+  to exact review.
 
 ## Pre-approval specification digests, as found
 

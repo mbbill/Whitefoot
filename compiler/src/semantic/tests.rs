@@ -25,6 +25,7 @@ mod provenance;
 mod reinterpret;
 mod requires;
 mod slices;
+mod strict;
 mod system_effects;
 
 use crate::lexer::{LexLimits, LexOutcome, lex};

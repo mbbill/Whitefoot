@@ -159,7 +159,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Rejects a `program_kind` on any declaration that is not the entry.
     ///
-    /// The grammar admits `program_kind` only as the optional first child of a
+    /// The grammar admits `program_kind` only as the optional second child of a
     /// `fn_decl`, which derives only from a top-level `item` [GRAM-2], so a
     /// total node scan sees exactly the declarations [FN-7] speaks about.
     fn reject_non_entry_program_kind(&self, entry_kind: Option<NodeId>) -> Result<(), CheckStop> {

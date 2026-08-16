@@ -1,0 +1,17 @@
+fn checked_leaf(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+  let room = len(values);
+  let inside = ilt(index, room);
+  check inside else trap "checked leaf";
+  return values[index];
+}
+
+deny_claims fn strict_root(values: own array<u8, 4>, index: own u64) -> own u8 traps {
+  let selected = checked_leaf(values: move values, index: index);
+  return selected;
+}
+
+fn main() -> own unit traps {
+  let values = array_new<u8, 4>(7_u8);
+  let selected = strict_root(values: move values, index: 0_u64);
+  return unit;
+}
