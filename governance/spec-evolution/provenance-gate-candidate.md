@@ -1,12 +1,14 @@
 # Provenance and the subject-position gate — held design evidence
 
-Status: **HELD DESIGN EVIDENCE** (stage 5a-R review, 2026-08-09).
-Non-authoritative. This file is neither an activation candidate nor an exact
-delta against the active specification. The active language is v0.24 at the
-stable path `spec/kernel-spec.md` (activation `f4c7e60`; SHA-256
-`53495b9c47b92942876c90931d0296c752855954564ebf7435a549c48cb2dc86`). If this
-design is selected after its remaining blocker closes, the specification
-workflow edits that stable file directly and archives only the outgoing bytes.
+Status: **DESIGN EVIDENCE FOR THE GATE ACTIVATED AS v0.27** (stage 5a-R
+review, 2026-08-09; gate activated 2026-08-10 at `5ab45aa`, exact-byte approval
+`bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f` in
+`governance/APPROVALS.md`). Non-authoritative history: this file is neither an
+activation candidate nor an exact delta against the active specification. Its
+header said "HELD DESIGN EVIDENCE ... the active language is v0.24" for six
+days after the design it held was activated, contradicting the ledger;
+corrected rather than left, because a record whose own status disagrees with
+the ledger is the defect class this project keeps re-finding.
 
 This record began as a complete exact-text delta against the then-active v0.22
 specification. Sections 2, 6, and 9 retain that old header, replacement text,

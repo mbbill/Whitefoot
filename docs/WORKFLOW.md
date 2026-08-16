@@ -284,6 +284,42 @@ resolution changes the approved high-level plan or a protected boundary.
   part. If a probe did not isolate the claim, write `not measured`.
 - Every new check states what a green run does and does not establish.
 
+### The failures that look like success
+
+Most defects announce themselves. A handful do not, and every one of them was
+found here by a deliberate question rather than by a gate, because **their
+failure mode is success**: a conformance case that passes while testing
+nothing, a check that cannot fail, a transform verified against its own
+output, an operation performed against a baseline that no longer describes
+reality. Nothing that watches for failure sees any of them.
+
+The one habit that reaches all of them is to **prefer the observation that
+separates two hypotheses over one consistent with the hypothesis you already
+hold**. Before running a check, ask what result would make you believe the
+other thing; if no result would, the check is decorative. Worked instances:
+
+- A clean working tree *and* HEAD containing the fix — either alone is equally
+  consistent with the fix having been destroyed.
+- A test that MOVED to a different error versus one that STAYED PUT: moving
+  means the fix worked and a second cause is underneath; staying means it did
+  not work. The pass count is identical either way.
+- Breaking a check in each direction it can fail, not once. A wrong value and
+  a missing entry should fail differently; proving both is what separates a
+  real check from a decorative one.
+
+Three corollaries: run a transform against the input it should have handled,
+never against its own output — a migrator or renderer checked on what it
+produced is a fixed point and always agrees with itself. A mask's fix is
+itself a probe — read the run immediately after removing one instead of
+treating it as confirmation; a mask means the number of hidden problems is
+unknown, never one. When a migrated case behaves oddly, read the migration
+diff before the compiler — the program may have stopped being the program the
+case was written about.
+
+When writing rules like these, state the **property** that produces the
+failure, not the causes you happen to have met; a cause list is wrong in both
+directions at once.
+
 ## Specification-change workflow
 
 Use this branch only for a real language gap named by the `ACTIVE` high-level

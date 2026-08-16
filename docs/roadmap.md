@@ -113,7 +113,11 @@ creating writer trust or weakening the checked safety envelope.
   optimizer authority.
 - **Missing / next:** a selected workload must first show retained-check
   pressure; then build one finite proof family with exact producers,
-  invalidators, negative canaries, facts-off identity, and attribution.
+  invalidators, negative canaries, facts-off identity, and attribution. O11
+  Boolean-goal composition stays an open question with four recorded findings
+  and a de-pairing ruling (`governance/APPROVALS.md`); its trigger is a real
+  program whose discharge needs a composed Boolean goal, and it re-enters only
+  through the specification workflow.
 - **Facts:** [compiler `requires` boundary](../compiler/README.md) ·
   [historical base64 result](../research/experiments/port-study/base64/RESULTS.md).
 
