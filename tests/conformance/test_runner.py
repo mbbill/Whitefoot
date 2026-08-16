@@ -183,7 +183,13 @@ class ActiveSpecificationTests(unittest.TestCase):
 
             rules, _ = runner.spec_rule_ids(directory)
 
-            self.assertIn("ENT-3.S10", rules)
+            # A sub-id line is an addressable anchor, not a rule: it must not
+            # enter the coverage denominator, and a citation of it must fold
+            # onto its parent rule.
+            self.assertNotIn("ENT-3.S10", rules)
+            self.assertIn("ENT-3", rules)
+            self.assertEqual(runner.base_rule("ENT-3.S10"), "ENT-3")
+            self.assertEqual(runner.base_rule("ENT-3"), "ENT-3")
 
 
 class ManifestValidationTests(unittest.TestCase):

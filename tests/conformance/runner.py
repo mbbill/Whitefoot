@@ -175,9 +175,16 @@ def spec_rule_ids(root=ROOT):
     text = raw.decode("utf-8")
     if digest != expected and declared_candidate_supersedes(text) != expected:
         raise ValueError(f"active specification digest mismatch: {digest}")
-    # Rule ids at line starts; `[FAM-N.Sk]` sub-ids are already accepted so a
-    # future migration that introduces them does not orphan this regex.
-    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?(?:\.S\d+)?)\]", text, re.M)), spec.name
+    # Rule ids at line starts. A `[FAM-N.Sk]` sub-id line is an addressable
+    # citation anchor inside its parent rule, not a rule of its own: the
+    # coverage denominator stays the base rules, and a citation of a sub-id
+    # counts toward its parent (see base_rule below).
+    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)(?:\.S\d+)?\]", text, re.M)), spec.name
+
+
+def base_rule(rule_id):
+    """Fold a `[FAM-N.Sk]` sub-id citation onto its parent rule id."""
+    return rule_id.split(".", 1)[0]
 
 
 HEX = re.compile(r"\A(?:[0-9a-f]{2})*\Z")
@@ -289,7 +296,9 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
         if not isinstance(case_rules, list) or not case_rules:
             errors.append(f"{case_id}: rules must be a nonempty list")
             case_rules = []
-        unknown = sorted(set(case_rules) - rules)
+        unknown = sorted(
+            r for r in set(case_rules) if base_rule(r) not in rules
+        )
         if unknown:
             errors.append(f"{case_id}: unknown rules: {' '.join(unknown)}")
 
@@ -349,7 +358,7 @@ def coverage(cases, annots):
     rules, spec_name = spec_rule_ids()
     tagged, pos, neg = set(), set(), set()
     for c in cases:
-        tagged |= set(c["rules"])
+        tagged |= {base_rule(r) for r in c["rules"]}
         kind = c["expect"]["kind"]
         # Coverage measures the corpus against the specification, so every case
         # counts whatever its toolchain-readiness status is. An `unsupported`
@@ -358,7 +367,7 @@ def coverage(cases, annots):
         if kind == "reject":
             neg.add(c["expect"]["rule"])
         elif kind != "unsupported":
-            pos |= set(c["rules"])
+            pos |= {base_rule(r) for r in c["rules"]}
     annotated = {a["rule"] for a in annots} & rules
     by_case = tagged & rules
     covered = by_case | annotated
