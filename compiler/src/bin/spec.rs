@@ -59,6 +59,175 @@ fn rule_references(text: &str) -> BTreeSet<&str> {
     references
 }
 
+/// One rule's block extent inside the specification text: the `[ID]`
+/// definition line through the line before the next definition or heading,
+/// with trailing blank lines trimmed.
+struct RuleBlock<'a> {
+    id: &'a str,
+    /// 1-based first line (the definition line).
+    start: usize,
+    /// 1-based last content line.
+    end: usize,
+    /// Byte length of the block's text, excluding the final newline.
+    bytes: usize,
+    /// Rule ids the block references, sorted, excluding the block's own id.
+    refs: Vec<&'a str>,
+}
+
+/// Every rule block in definition order.
+///
+/// The definition predicate is exactly the one `rule_definitions` uses, so the
+/// index covers exactly the rule set the integrity gate counts.
+fn rule_blocks(text: &str) -> Result<Vec<RuleBlock<'_>>, String> {
+    struct Line<'a> {
+        offset: usize,
+        text: &'a str,
+    }
+    let mut lines: Vec<Line<'_>> = Vec::new();
+    let mut offset = 0;
+    for raw in text.split_inclusive('\n') {
+        lines.push(Line {
+            offset,
+            text: raw.strip_suffix('\n').unwrap_or(raw),
+        });
+        offset += raw.len();
+    }
+
+    let mut definitions: Vec<(usize, &str)> = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (number, line) in lines.iter().enumerate() {
+        let Some(rest) = line.text.strip_prefix('[') else {
+            continue;
+        };
+        let Some(close) = rest.find(']') else {
+            continue;
+        };
+        let candidate = &rest[..close];
+        if is_rule_id(candidate) {
+            if !seen.insert(candidate) {
+                return Err(format!("duplicate rule definition [{candidate}]"));
+            }
+            definitions.push((number, candidate));
+        }
+    }
+
+    let mut blocks = Vec::new();
+    for (position, (start, id)) in definitions.iter().enumerate() {
+        let stop = definitions
+            .get(position + 1)
+            .map_or(lines.len(), |(next, _)| *next);
+        let limit = lines[*start + 1..stop]
+            .iter()
+            .position(|line| line.text.starts_with('#'))
+            .map_or(stop, |found| *start + 1 + found);
+        let mut last = limit;
+        while last > *start + 1 && lines[last - 1].text.trim().is_empty() {
+            last -= 1;
+        }
+        let first = &lines[*start];
+        let closing = &lines[last - 1];
+        let block = &text[first.offset..closing.offset + closing.text.len()];
+        let refs = rule_references(block)
+            .into_iter()
+            .filter(|reference| reference != id)
+            .collect();
+        blocks.push(RuleBlock {
+            id,
+            start: start + 1,
+            end: last,
+            bytes: block.len(),
+            refs,
+        });
+    }
+    Ok(blocks)
+}
+
+/// The `--index` query: every rule's location, size, and outgoing references,
+/// as one JSON object on stdout. A query, never a committed artifact.
+fn index_json(text: &str) -> Result<String, String> {
+    let blocks = rule_blocks(text)?;
+    let mut out = String::from("{\n");
+    for (position, block) in blocks.iter().enumerate() {
+        let refs: Vec<String> = block
+            .refs
+            .iter()
+            .map(|reference| format!("\"{reference}\""))
+            .collect();
+        out.push_str(&format!(
+            "\"{}\": {{\"start\": {}, \"end\": {}, \"bytes\": {}, \"refs\": [{}]}}{}\n",
+            block.id,
+            block.start,
+            block.end,
+            block.bytes,
+            refs.join(", "),
+            if position + 1 == blocks.len() {
+                ""
+            } else {
+                ","
+            }
+        ));
+    }
+    out.push('}');
+    Ok(out)
+}
+
+/// The `--counts` query: per-family rule counts, the total, each markdown
+/// table's row count, and the byte size of the pre-section header. These are
+/// the numbers reviews otherwise re-derive by hand.
+fn counts_json(text: &str) -> Result<String, String> {
+    let blocks = rule_blocks(text)?;
+    let mut families: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for block in &blocks {
+        let family = block
+            .id
+            .split_once('-')
+            .map_or(block.id, |(family, _)| family);
+        *families.entry(family).or_insert(0) += 1;
+    }
+
+    let mut tables: Vec<(usize, usize)> = Vec::new();
+    let mut current: Option<(usize, usize)> = None;
+    for (number, line) in text.lines().enumerate() {
+        if line.starts_with('|') {
+            match current.as_mut() {
+                Some((_, rows)) => *rows += 1,
+                None => current = Some((number + 1, 1)),
+            }
+        } else if let Some(table) = current.take() {
+            tables.push(table);
+        }
+    }
+    if let Some(table) = current.take() {
+        tables.push(table);
+    }
+
+    let mut header_bytes = text.len();
+    let mut offset = 0;
+    for raw in text.split_inclusive('\n') {
+        if raw.starts_with("## ") {
+            header_bytes = offset;
+            break;
+        }
+        offset += raw.len();
+    }
+
+    let families: Vec<String> = families
+        .iter()
+        .map(|(family, count)| format!("\"{family}\": {count}"))
+        .collect();
+    let tables: Vec<String> = tables
+        .iter()
+        .map(|(line, rows)| format!("{{\"line\": {line}, \"rows\": {rows}}}"))
+        .collect();
+    Ok(format!(
+        "{{\n\"families\": {{{}}},\n\"total_rules\": {},\n\"tables\": [{}],\n\"header_bytes\": {}\n}}",
+        families.join(", "),
+        blocks.len(),
+        tables.join(", "),
+        header_bytes
+    ))
+}
+
 fn ledger_rule_ids(text: &str) -> BTreeSet<&str> {
     text.lines()
         .filter_map(|line| {
@@ -225,6 +394,30 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
 }
 
 fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    match arguments.first().map(String::as_str) {
+        None => run_gate(),
+        Some("--index") => run_query(index_json(ACTIVE_KERNEL_SPEC_TEXT)),
+        Some("--counts") => run_query(counts_json(ACTIVE_KERNEL_SPEC_TEXT)),
+        Some(flag) => {
+            eprintln!("whitefoot-spec: unknown flag {flag}; flags: --index, --counts");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Print one query result, or the reason the specification cannot answer it.
+fn run_query(result: Result<String, String>) {
+    match result {
+        Ok(output) => println!("{output}"),
+        Err(error) => {
+            eprintln!("whitefoot-spec: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_gate() {
     let computed = computed_active_spec_hash();
     if ACTIVE_KERNEL_SPEC_HASH != computed {
         eprintln!("{ACTIVE_KERNEL_SPEC_PATH} does not hash to the recorded active identity");
@@ -264,8 +457,185 @@ fn main() {
 mod tests {
     use super::{
         ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, APPROVAL_RECORD, DERIVATION_LEDGER,
-        computed_active_spec_hash, is_rule_id, validate_activation_chain, validate_spec_integrity,
+        computed_active_spec_hash, counts_json, index_json, is_rule_id, rule_definitions,
+        validate_activation_chain, validate_spec_integrity,
     };
+
+    /// One parsed `--index` entry.
+    struct IndexEntry {
+        start: usize,
+        end: usize,
+        bytes: usize,
+        refs: Vec<String>,
+    }
+
+    /// Minimal reader for exactly the subset `index_json` emits: one object of
+    /// objects whose values are non-negative integers and arrays of
+    /// escape-free strings. Hand-rolled on purpose: the crate has no
+    /// dependencies, and re-reading the emitted text through independent code
+    /// is the test.
+    struct Reader<'a> {
+        bytes: &'a [u8],
+        at: usize,
+    }
+
+    impl<'a> Reader<'a> {
+        fn skip_space(&mut self) {
+            while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
+                self.at += 1;
+            }
+        }
+
+        fn eat(&mut self, expected: u8) {
+            self.skip_space();
+            assert_eq!(
+                self.bytes.get(self.at).copied(),
+                Some(expected),
+                "expected {:?} at byte {}",
+                char::from(expected),
+                self.at
+            );
+            self.at += 1;
+        }
+
+        fn peek(&mut self) -> Option<u8> {
+            self.skip_space();
+            self.bytes.get(self.at).copied()
+        }
+
+        fn string(&mut self) -> &'a str {
+            self.eat(b'"');
+            let start = self.at;
+            while self.bytes.get(self.at).is_some_and(|byte| *byte != b'"') {
+                assert_ne!(self.bytes[self.at], b'\\', "emitted strings never escape");
+                self.at += 1;
+            }
+            let text = core::str::from_utf8(&self.bytes[start..self.at]).expect("emitted UTF-8");
+            self.eat(b'"');
+            text
+        }
+
+        fn number(&mut self) -> usize {
+            self.skip_space();
+            let start = self.at;
+            while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
+                self.at += 1;
+            }
+            assert_ne!(self.at, start, "expected a number at byte {start}");
+            core::str::from_utf8(&self.bytes[start..self.at])
+                .expect("digits are UTF-8")
+                .parse()
+                .expect("digits parse")
+        }
+    }
+
+    /// Parses the complete `--index` document, asserting its JSON shape.
+    fn parse_index(text: &str) -> Vec<(String, IndexEntry)> {
+        let mut reader = Reader {
+            bytes: text.as_bytes(),
+            at: 0,
+        };
+        let mut entries = Vec::new();
+        reader.eat(b'{');
+        while reader.peek() != Some(b'}') {
+            if !entries.is_empty() {
+                reader.eat(b',');
+            }
+            let id = reader.string().to_owned();
+            reader.eat(b':');
+            reader.eat(b'{');
+            let (mut start, mut end, mut bytes, mut refs) = (None, None, None, None);
+            loop {
+                let key = reader.string().to_owned();
+                reader.eat(b':');
+                match key.as_str() {
+                    "start" => start = Some(reader.number()),
+                    "end" => end = Some(reader.number()),
+                    "bytes" => bytes = Some(reader.number()),
+                    "refs" => {
+                        let mut list = Vec::new();
+                        reader.eat(b'[');
+                        while reader.peek() != Some(b']') {
+                            if !list.is_empty() {
+                                reader.eat(b',');
+                            }
+                            list.push(reader.string().to_owned());
+                        }
+                        reader.eat(b']');
+                        refs = Some(list);
+                    }
+                    other => panic!("unknown key {other:?}"),
+                }
+                if reader.peek() == Some(b',') {
+                    reader.eat(b',');
+                } else {
+                    break;
+                }
+            }
+            reader.eat(b'}');
+            entries.push((
+                id,
+                IndexEntry {
+                    start: start.expect("start"),
+                    end: end.expect("end"),
+                    bytes: bytes.expect("bytes"),
+                    refs: refs.expect("refs"),
+                },
+            ));
+        }
+        reader.eat(b'}');
+        reader.skip_space();
+        assert_eq!(reader.at, reader.bytes.len(), "trailing bytes after JSON");
+        entries
+    }
+
+    /// `--index` output parses as JSON and describes exactly the rule set the
+    /// integrity scanner finds: same ids, correct definition lines, block
+    /// bytes that match the named line range, and only resolvable references.
+    #[test]
+    fn index_query_parses_and_covers_the_scanned_rule_set() {
+        let emitted = index_json(ACTIVE_KERNEL_SPEC_TEXT).expect("active spec indexes");
+        let entries = parse_index(&emitted);
+        let scanned = rule_definitions(ACTIVE_KERNEL_SPEC_TEXT).expect("active spec scans");
+
+        let indexed: std::collections::BTreeSet<&str> =
+            entries.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(
+            indexed,
+            scanned.iter().copied().collect(),
+            "the index must cover exactly the scanned rule set"
+        );
+
+        let lines: Vec<&str> = ACTIVE_KERNEL_SPEC_TEXT.lines().collect();
+        for (id, entry) in &entries {
+            assert!(entry.start <= entry.end, "[{id}] has an inverted range");
+            assert!(
+                lines[entry.start - 1].starts_with(&format!("[{id}]")),
+                "[{id}] start line {} is not its definition line",
+                entry.start
+            );
+            let block = lines[entry.start - 1..entry.end].join("\n");
+            assert_eq!(block.len(), entry.bytes, "[{id}] bytes disagree");
+            for reference in &entry.refs {
+                assert_ne!(reference, id, "[{id}] lists itself as a reference");
+                assert!(
+                    scanned.contains(reference.as_str()),
+                    "[{id}] references unknown [{reference}]"
+                );
+            }
+        }
+    }
+
+    /// `--counts` agrees with the scanner's totals.
+    #[test]
+    fn counts_query_totals_agree_with_the_scanner() {
+        let emitted = counts_json(ACTIVE_KERNEL_SPEC_TEXT).expect("active spec counts");
+        let scanned = rule_definitions(ACTIVE_KERNEL_SPEC_TEXT).expect("active spec scans");
+        assert!(
+            emitted.contains(&format!("\"total_rules\": {}", scanned.len())),
+            "total_rules must equal the scanned rule count"
+        );
+    }
 
     const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
