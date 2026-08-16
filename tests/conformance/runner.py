@@ -77,7 +77,7 @@ ROOT = HERE.parent.parent
 CASES = HERE / "cases"
 MANIFEST = HERE / "manifest.jsonl"
 ACTIVE_SPEC = Path("spec/kernel-spec.md")
-ACTIVE_SPEC_SHA256 = "0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3"
+APPROVALS = Path("governance/APPROVALS.md")
 # The named native adapter is compiler/tests/conformance.rs, reached through
 # `make conformance-run`; this hook stays open for a future non-native
 # toolchain. Keeping it explicit prevents a missing compiler, crash, or broad
@@ -133,14 +133,51 @@ def run_cases(cases):
     return results
 
 
+def activation_chain_tail(root=ROOT):
+    """(version, digest) of the last `ACTIVE-SPEC:` record in the approval
+    ledger — the sole authority for the active specification's identity.
+    Reading the pin from the chain replaced a hardcoded digest constant here,
+    turning one hand edit per activation forever into none."""
+    tail = None
+    for line in (root / APPROVALS).read_text().splitlines():
+        if not line.startswith("ACTIVE-SPEC: "):
+            continue
+        fields = line.split(" ")
+        if len(fields) != 4 or not re.fullmatch(r"[0-9a-f]{64}", fields[2]):
+            raise ValueError(f"malformed activation record: {line}")
+        tail = (fields[1], fields[2])
+    if tail is None:
+        raise ValueError("governance/APPROVALS.md has no activation chain")
+    return tail
+
+
+def declared_candidate_supersedes(text):
+    """The supersedes digest of a `Status: CANDIDATE vM supersedes vN <sha>`
+    declaration, or None for any other status. A declared candidate is
+    accepted exactly when this digest equals the chain tail; every other
+    candidate property (version arithmetic, title, self-consistency) is judged
+    by the compiled `whitefoot-spec` gate, not re-implemented here."""
+    for line in text.splitlines():
+        if not line.startswith("Status: "):
+            continue
+        fields = line.split()
+        if len(fields) >= 6 and fields[1] == "CANDIDATE" and fields[3] == "supersedes":
+            return fields[5]
+        return None
+    return None
+
+
 def spec_rule_ids(root=ROOT):
     spec = root / ACTIVE_SPEC
     raw = spec.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
-    if digest != ACTIVE_SPEC_SHA256:
-        raise ValueError(f"active specification digest mismatch: {digest}")
+    _, expected = activation_chain_tail(root)
     text = raw.decode("utf-8")
-    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?)\]", text, re.M)), spec.name
+    if digest != expected and declared_candidate_supersedes(text) != expected:
+        raise ValueError(f"active specification digest mismatch: {digest}")
+    # Rule ids at line starts; `[FAM-N.Sk]` sub-ids are already accepted so a
+    # future migration that introduces them does not orphan this regex.
+    return set(re.findall(r"^\[([A-Z]+-\d+[a-z]?(?:\.S\d+)?)\]", text, re.M)), spec.name
 
 
 HEX = re.compile(r"\A(?:[0-9a-f]{2})*\Z")

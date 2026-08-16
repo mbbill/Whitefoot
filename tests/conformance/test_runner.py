@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for compiler-independent conformance coverage plumbing."""
 
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,13 +11,22 @@ import runner
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = ROOT / runner.ACTIVE_SPEC
+APPROVALS = ROOT / runner.APPROVALS
+
+
+def copy_authorities(directory: Path) -> None:
+    """Copy the active specification and the approval ledger it is pinned by."""
+    active = directory / runner.ACTIVE_SPEC
+    active.parent.mkdir(parents=True, exist_ok=True)
+    active.write_bytes(SPEC.read_bytes())
+    approvals = directory / runner.APPROVALS
+    approvals.parent.mkdir(parents=True, exist_ok=True)
+    approvals.write_bytes(APPROVALS.read_bytes())
 
 
 class ActiveSpecificationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> None:
-        active = directory / runner.ACTIVE_SPEC
-        active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_bytes(SPEC.read_bytes())
+        copy_authorities(directory)
         (directory / "spec").mkdir(exist_ok=True)
 
     def test_versioned_archive_cannot_change_coverage_authority(self):
@@ -54,12 +64,95 @@ class ActiveSpecificationTests(unittest.TestCase):
             ):
                 runner.spec_rule_ids(directory)
 
+    def test_expected_identity_is_the_approval_chain_tail(self):
+        # The pin follows the ledger: appending a new activation record whose
+        # digest names the (modified) spec bytes is accepted with no runner
+        # edit, which is the point of reading the pin from the chain.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            _, old_digest = runner.activation_chain_tail(directory)
+            modified = active.read_bytes() + b"\n[ZZZ-1] appended rule.\n"
+            active.write_bytes(modified)
+            new_digest = hashlib.sha256(modified).hexdigest()
+            approvals = directory / runner.APPROVALS
+            approvals.write_bytes(
+                approvals.read_bytes()
+                + f"ACTIVE-SPEC: v99.0 {new_digest} {old_digest}\n".encode()
+            )
+
+            rules, _ = runner.spec_rule_ids(directory)
+
+            self.assertIn("ZZZ-1", rules)
+
+    def test_declared_candidate_superseding_the_chain_tail_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            tail_version, tail_digest = runner.activation_chain_tail(directory)
+            text = active.read_text()
+            self.assertIn(f"Status: ACTIVE {tail_version}", text)
+            active.write_text(
+                text.replace(
+                    f"Status: ACTIVE {tail_version}",
+                    f"Status: CANDIDATE v99.0 supersedes {tail_version} {tail_digest}",
+                    1,
+                )
+            )
+
+            rules, name = runner.spec_rule_ids(directory)
+
+            self.assertEqual(name, runner.ACTIVE_SPEC.name)
+            self.assertIn("PROG-2", rules)
+
+    def test_declared_candidate_with_wrong_supersedes_digest_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            tail_version, _ = runner.activation_chain_tail(directory)
+            text = active.read_text()
+            active.write_text(
+                text.replace(
+                    f"Status: ACTIVE {tail_version}",
+                    f"Status: CANDIDATE v99.0 supersedes {tail_version} {'0' * 64}",
+                    1,
+                )
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, "active specification digest mismatch"
+            ):
+                runner.spec_rule_ids(directory)
+
+    def test_sub_rule_ids_are_recognized(self):
+        # Forward compatibility for the migration that introduces `[FAM-N.Sk]`
+        # sub-ids: the regex already reads them, so the corpus can cite them
+        # the release they exist.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_repository(directory)
+            active = directory / runner.ACTIVE_SPEC
+            _, old_digest = runner.activation_chain_tail(directory)
+            modified = active.read_bytes() + b"\n[ENT-3.S10] sub-rule body.\n"
+            active.write_bytes(modified)
+            new_digest = hashlib.sha256(modified).hexdigest()
+            approvals = directory / runner.APPROVALS
+            approvals.write_bytes(
+                approvals.read_bytes()
+                + f"ACTIVE-SPEC: v99.0 {new_digest} {old_digest}\n".encode()
+            )
+
+            rules, _ = runner.spec_rule_ids(directory)
+
+            self.assertIn("ENT-3.S10", rules)
+
 
 class ManifestValidationTests(unittest.TestCase):
     def make_repository(self, directory: Path) -> Path:
-        active = directory / runner.ACTIVE_SPEC
-        active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_bytes(SPEC.read_bytes())
+        copy_authorities(directory)
         cases = directory / "cases"
         cases.mkdir()
         return cases
@@ -137,9 +230,7 @@ class ArrangementTests(unittest.TestCase):
     expressible exactly."""
 
     def make_repository(self, directory: Path) -> Path:
-        active = directory / runner.ACTIVE_SPEC
-        active.parent.mkdir(parents=True, exist_ok=True)
-        active.write_bytes(SPEC.read_bytes())
+        copy_authorities(directory)
         cases = directory / "cases"
         cases.mkdir()
         return cases

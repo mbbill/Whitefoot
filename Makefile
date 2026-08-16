@@ -46,6 +46,17 @@ spec-append-only-staged:
 # `core.hooksPath` points elsewhere, so this is the guard that actually holds.
 # `shasum` is used deliberately: it is the tool the digests were recorded with,
 # and it shares no code with the compiler's own SHA-256.
+#
+# Candidate mode: a stable file whose status line declares
+# `Status: CANDIDATE vM supersedes vN <sha256-of-vN>` is a pre-approval
+# candidate. It passes exactly when vN is the one recorded version without an
+# archive, the declared supersedes digest is vN's recorded digest, the title
+# token equals the declared vM, and vM is vN's successor. Its own digest is
+# deliberately unchecked — it is not recorded until activation — so candidate
+# work can hold a fully green tree instead of the measured 21h36m red window.
+# An ACTIVE stable file keeps the exact original behavior. Green on a
+# candidate means layout and lineage only; the owner's exact-byte approval of
+# the candidate content is still pending by definition.
 spec-archive-integrity:
 	@records="$$(awk 'function fail(message) { print "spec archive integrity: approval record line " NR ": " message > "/dev/stderr"; exit 1 } function is_version(value) { return value ~ /^v[0-9]+\.[0-9]+$$/ } function is_digest(value) { return length(value) == 64 && value ~ /^[0-9a-f]+$$/ } /^ACTIVE-SPEC:/ { if (NF != 4) fail("ACTIVE-SPEC record must have four fields"); if (!is_version($$2)) fail("invalid version " $$2); if (!is_digest($$3)) fail("invalid digest for " $$2); if ($$4 != "-" && !is_digest($$4)) fail("invalid previous digest for " $$2); if (seen[$$2]++) fail($$2 " has more than one recorded identity"); print $$2, $$3; next } /^ARCHIVE-SPEC:/ { if (NF != 3) fail("ARCHIVE-SPEC record must have three fields"); if (!is_version($$2)) fail("invalid version " $$2); if (!is_digest($$3)) fail("invalid digest for " $$2); if (seen[$$2]++) fail($$2 " has more than one recorded identity"); print $$2, $$3 }' governance/APPROVALS.md)" || exit 1; \
 	set -- $$records; \
@@ -92,14 +103,37 @@ spec-archive-integrity:
 			echo "spec archive integrity: $$stable_file has no exact first-line version token" >&2; \
 			exit 1; \
 		fi; \
-		if test "$$stable_version" != "$$missing_version"; then \
-			echo "spec archive integrity: $$stable_file names $$stable_version, but $$missing_version is the unarchived recorded version" >&2; \
-			exit 1; \
-		fi; \
-		actual="$$(shasum -a 256 "$$stable_file" | cut -d' ' -f1)"; \
-		if test "$$actual" != "$$missing_digest"; then \
-			echo "spec archive integrity: $$stable_file hashes to $$actual, recorded as $$missing_digest" >&2; \
-			exit 1; \
+		candidate="$$(awk '/^Status: /{ if ($$2 == "CANDIDATE" && $$4 == "supersedes" && NF >= 6) print $$3, $$5, $$6; exit }' "$$stable_file")"; \
+		if test -n "$$candidate"; then \
+			set -- $$candidate; cand_version="$$1"; prev_version="$$2"; prev_digest="$$3"; \
+			if test "$$prev_version" != "$$missing_version"; then \
+				echo "spec archive integrity: $$stable_file declares a candidate superseding $$prev_version, but $$missing_version is the unarchived recorded version" >&2; \
+				exit 1; \
+			fi; \
+			if test "$$prev_digest" != "$$missing_digest"; then \
+				echo "spec archive integrity: $$stable_file candidate supersedes digest $$prev_digest, but the record names $$missing_digest for $$missing_version" >&2; \
+				exit 1; \
+			fi; \
+			if test "$$stable_version" != "$$cand_version"; then \
+				echo "spec archive integrity: $$stable_file is titled $$stable_version but declares candidate $$cand_version" >&2; \
+				exit 1; \
+			fi; \
+			minor="$${missing_version##*.}"; expected="$${missing_version%%.*}.$$((minor + 1))"; \
+			if test "$$cand_version" != "$$expected"; then \
+				echo "spec archive integrity: candidate $$cand_version does not succeed $$missing_version (expected $$expected)" >&2; \
+				exit 1; \
+			fi; \
+			echo "spec archive integrity: $$stable_file is a declared candidate $$cand_version superseding the recorded $$missing_version"; \
+		else \
+			if test "$$stable_version" != "$$missing_version"; then \
+				echo "spec archive integrity: $$stable_file names $$stable_version, but $$missing_version is the unarchived recorded version" >&2; \
+				exit 1; \
+			fi; \
+			actual="$$(shasum -a 256 "$$stable_file" | cut -d' ' -f1)"; \
+			if test "$$actual" != "$$missing_digest"; then \
+				echo "spec archive integrity: $$stable_file hashes to $$actual, recorded as $$missing_digest" >&2; \
+				exit 1; \
+			fi; \
 		fi; \
 	elif test "$$missing" -ne 0; then \
 		echo "spec archive integrity: $$missing_version is recorded but spec/kernel-spec-$$missing_version.md is missing and $$stable_file is absent" >&2; \
