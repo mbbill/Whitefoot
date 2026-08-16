@@ -18,10 +18,10 @@ former `ACTIVE` status authorized task execution inside the exact written
 boundary, but did not approve any specification or protected-conformance bytes
 before their separate exact owner decisions.
 
-Derived from [Direction Outline revision 36](roadmap.md), primarily `PROOF-8`,
-with `PROOF-1`, `VERIFY-1`, and `VERIFY-2` as proof, safety, and evidence
+Derived from [Direction Outline revision 36](roadmap.md), primarily `outline:PROOF-8`,
+with `outline:PROOF-1`, `outline:VERIFY-1`, and `outline:VERIFY-2` as proof, safety, and evidence
 constraints; the installed landscape is synchronized through Direction
-Outline revision 41. `CAND-8` remains the selected flagship pressure source
+Outline revision 41. `outline:CAND-8` remains the selected flagship pressure source
 and is now unparked, but this completed plan does not authorize its next slice.
 
 ## Objective
@@ -500,7 +500,7 @@ The successful terminal boundary requires:
 
 Remaining ordinary claims are reported honestly; terminal does not mean every
 claim has disappeared or that claim is the language's sole possible trap.
-After closure, `PROOF-8` is terminal and the existing `CAND-8` wfgrep checkpoint
+After closure, `outline:PROOF-8` is terminal and the existing `outline:CAND-8` wfgrep checkpoint
 is unparked. Beginning the next wfgrep undertaking requires a new high-level
 plan rather than extending this one silently.
 
@@ -510,19 +510,19 @@ requires a material change to this objective, strategy, principal consumer
 boundary, acceptance, risk, or stop conditions has the same disposition. The
 lead records the evidence and returns a revised `PROPOSED` plan instead of
 weakening the gate or accumulating side tasks around it. A stopped outcome
-does not mark `PROOF-8` complete or unpark `CAND-8`.
+does not mark `outline:PROOF-8` complete or unpark `outline:CAND-8`.
 
 ## Terminal authority record
 
 The owner approved this plan's predecessor on 2026-08-12, selected the narrow
 receiver strategy on 2026-08-14, and approved the exact Stage 8b and Stage 9b
 specification, protected-corpus, and activation identities on 2026-08-15.
-Tasks 0058–0067 and `PROOF-8` are terminal. The installed Stage 9a commit is
+Tasks 0058–0067 and `outline:PROOF-8` are terminal. The installed Stage 9a commit is
 `e04d3acad80e1260c4f1aee24d8f45cba5140d84`; the Stage 9b frontend and
 semantic review checkpoints are `ec95b7026e84b9d001cd9912b3f34ee9b2511d19`
 and `a927f2ca15471de22bbc878355fd7376d74f660b`, whose bytes are incorporated by
 the single atomic main integration without making those held commits main
 ancestors. The exact approvals and active
 specification chain remain in `governance/APPROVALS.md`; this terminal plan
-does not extend them or authorize another task. `CAND-8` is unparked, and its
+does not extend them or authorize another task. `outline:CAND-8` is unparked, and its
 next bounded slice begins only under a new owner-approved high-level plan.

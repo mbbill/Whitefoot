@@ -1,19 +1,17 @@
 # Derivation Ledger — kernel spec (living artifact)
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
-on 2026-07-07. Versioned amendments below carry that audit through the active
-v0.28 authority and the non-authoritative v0.29 candidate at
-`spec/kernel-spec.md`; released versioned files retain the superseded
+on 2026-07-07. Versioned amendments below carry that audit through
+the active v0.29 authority at `spec/kernel-spec.md`; released versioned
+files retain the superseded
 authorities. Requirement (owner + META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
 exist; this form is minimality-selected and awaits its experiment),
 **underived** (no chain; may not ratify).
 
-**Candidate statistics: 83 derived · 50 existence-only · 0 underived**
-(133 rules: active v0.28's 132 plus the candidate v0.29 CLM-3 addition).
-The installed v0.28 authority remains 83 derived · 49 existence-only · 0
-underived until an exact v0.29 activation.
+**Statistics: 83 derived · 50 existence-only · 0 underived**
+(133 rules: v0.28's 132 plus the v0.29 CLM-3 addition).
 
 ## Re-grounding priority queue (weakest chains)
 
@@ -1070,16 +1068,14 @@ synchronization. The installed protected matrix is additive: 437 cases, 30
 unchanged annotations, and 132/132 rule coverage; it records rather than
 selects the specification semantics above.
 
-## v0.29 amendment — opt-in strict no-claim partition (candidate 2026-08-15)
+## v0.29 amendment — opt-in strict no-claim partition (activated 2026-08-15)
 
-Candidate binding: non-authoritative `spec/kernel-spec.md`, headed v0.29 with
-final status wording, at SHA-256
+Specification binding: active `spec/kernel-spec.md`, headed v0.29, at SHA-256
 `0b7aa8ccee958ba85613c51535165dcbf7ac12db556b2210d2f1aac0d39e6cc3`.
-The installed authority remains v0.28 until explicit exact owner approval and
-atomic activation. The proposed outgoing archive is
+The superseded v0.28 bytes are immutable at
 `spec/kernel-spec-v0.28.md`, SHA-256
 `08897c51f0ccb8e7d19edb558229b1ef17b33971cd291b701d4f270ee536ce09`,
-byte-identical to the installed v0.28 authority.
+and byte-identical to the exact outgoing v0.28 authority.
 
 v0.29 adds CLM-3 and removes no numbered rule. It modifies twelve existing
 rules: GRAM-2, OP-4, FN-1, FN-7, FN-8, FN-9, PROG-3, DIAG-1, DIAG-2, ENT-1,
