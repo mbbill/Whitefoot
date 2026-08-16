@@ -167,10 +167,9 @@ reader expects it. Keeping that legible is a standing obligation, not a
 one-time cleanup.
 
 - Do not add a new top-level entry — a directory or file at the repository
-  root — unless an `ACTIVE` plan requires it and lead review establishes that
-  no existing directory owns its kind. A new root entry is a structural
-  decision, not an implementation detail; stop and review it rather than
-  inventing a folder opportunistically.
+  root — without owner approval. A new root entry is a structural decision,
+  not an implementation detail. Put new material in the existing directory
+  that already owns its kind; if none fits, ask rather than invent a folder.
 - Every new file, directory, script, or document earns its place before it is
   created. Be able to state what compiler capability or experiment it serves,
   which existing home it belongs in, and the condition under which it is
@@ -204,9 +203,9 @@ one-time cleanup.
   legibility — a clear map, a good name, a stated purpose — over relocation.
 
 Follow this by judgment and keep moving; it is a standing rule, not a reason to
-pause on every file. A new top-level entry still requires an explicit reviewed
-structural decision. Append-only versioned specification archives are enforced
-by a pre-commit hook (installed with `make install-hooks`); everything else is
+pause on every file. The one thing it reserves for the owner is a new top-level
+entry. Append-only versioned specification archives are enforced by a
+pre-commit hook (installed with `make install-hooks`); everything else is
 upheld by discipline.
 
 ## Specification and test integrity
