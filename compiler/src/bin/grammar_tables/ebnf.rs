@@ -123,7 +123,11 @@ fn split_block(block: &str, owner: Owner, out: &mut Vec<RawProduction>) {
 pub fn productions(spec: &str) -> Vec<RawProduction> {
     let mut out = Vec::new();
     let blocks = ebnf_blocks(spec);
-    assert_eq!(blocks.len(), 7, "the specification has seven wf-ebnf fences");
+    assert_eq!(
+        blocks.len(),
+        7,
+        "the specification has seven wf-ebnf fences"
+    );
     for (owner, block) in blocks {
         split_block(&block, owner, &mut out);
     }
