@@ -52,6 +52,7 @@ const INTEGER_TYPES: [IntegerType; 8] = [
     },
 ];
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn executes_exact_success_and_failure_edges_for_every_integer_pair() {
     let mut source = String::from("fn main() -> own unit traps {\n");

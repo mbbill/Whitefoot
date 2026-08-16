@@ -1966,6 +1966,7 @@ command fn main(command.stdout as out: own Output) -> own ExitStatus allocates(h
     });
 }
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn canonical_deflate_retains_one_subject_bridge_and_three_unasserted_calls() {
     let inputs = [

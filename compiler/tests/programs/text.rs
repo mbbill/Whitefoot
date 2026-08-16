@@ -13,6 +13,7 @@ fn percent_decoder_executes_through_the_ordinary_pipeline() {
     assert!(output.stderr.is_empty());
 }
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn utf8_parser_executes_through_the_ordinary_pipeline() {
     let llvm = compile_program("utf8parse.wf");

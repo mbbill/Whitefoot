@@ -283,6 +283,7 @@ fn record(stderr: Vec<u8>) -> String {
     record
 }
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wide_probe_walks_keep_exact_results_and_exact_trap_identity() {
     let llvm = compile_sources(&[("wide_scan.wf", ORACLE)]);

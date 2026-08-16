@@ -7461,6 +7461,7 @@ fn counted_sha256_discharges_all_nine_indices_without_claims() {
     );
 }
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_positives() {
     let bundles: [&[SourceInput<'_>]; 3] = [

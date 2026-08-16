@@ -95,6 +95,7 @@ fn boundary_driver() -> CompiledProgram {
     ]))
 }
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
     let llvm = compile_programs(&[
@@ -136,6 +137,7 @@ fn stored_fixed_and_dynamic_blocks_execute_with_data_failures() {
 /// from bytes that entered through the boundary. The compressed bytes and the
 /// expected output both come from the recorded correctness corpus, so this case
 /// checks the decoder against that oracle and not against itself.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn the_boundary_driver_decodes_a_file_read_through_the_system_path() {
     let program = boundary_driver();
@@ -153,6 +155,7 @@ fn the_boundary_driver_decodes_a_file_read_through_the_system_path() {
 ///
 /// A malformed or truncated input is an ordinary outcome of reading a real
 /// file, so none of these may trap or be absorbed into the success path.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn each_boundary_and_decode_outcome_reaches_its_own_status() {
     let program = boundary_driver();
@@ -193,6 +196,7 @@ fn each_boundary_and_decode_outcome_reaches_its_own_status() {
     );
 }
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
     let source = include_str!("../../../tests/programs/raw_deflate_boundary.wf");

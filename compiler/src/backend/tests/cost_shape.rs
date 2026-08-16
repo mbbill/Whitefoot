@@ -318,6 +318,7 @@ const SELECTED_ROWS: &[(u32, &str)] = &[
 ];
 
 /// §9.1 row 1 — target selection is one link-time table decision.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn target_selection_is_one_link_time_table_decision() {
     let module = emitted();
@@ -361,6 +362,7 @@ fn target_selection_is_one_link_time_table_decision() {
 
 /// §9.1 row 2 — a selected argument is one inline pointer/length lease over
 /// immutable command backing.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn an_argument_lease_allocates_nothing_and_copies_no_byte() {
     let row = approved_row(emitted(), "wf.sys.arg_get.v1");
@@ -391,6 +393,7 @@ fn an_argument_lease_allocates_nothing_and_copies_no_byte() {
 
 /// §9.1 rows 3 and 4 — the raw byte route is a length pass plus a
 /// caller-buffer copy, with no Unicode gate in front of it.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn the_raw_byte_route_carries_no_unicode_gate() {
     let row = approved_row(emitted(), "wf.sys.host_copy_bytes.v1");
@@ -424,6 +427,7 @@ fn the_raw_byte_route_carries_no_unicode_gate() {
 
 /// §9.1 row 5 — `RelativePath` construction is validation and a type
 /// transition over the consumed lease.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn relative_path_retypes_the_lease_without_allocating() {
     let row = approved_row(emitted(), "wf.sys.relative_path.v1");
@@ -450,6 +454,7 @@ fn relative_path_retypes_the_lease_without_allocating() {
 
 /// §9.1 row 6 — `open_read` is one direct native open-relative operation on
 /// the capability's own descriptor.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
     let row = approved_row(emitted(), "wf.sys.open_read.v1");
@@ -491,6 +496,7 @@ fn open_read_is_one_direct_relative_open_on_the_capabilitys_own_descriptor() {
 
 /// §9.1 row 7 — `read_once` and `write_once` are bounds checks, at most one
 /// host transfer, one count check, and a cold outcome mapper.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     let module = emitted();
@@ -627,6 +633,7 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 
 /// §9.1 row 8 — a closing owner releases with at most one direct native close
 /// attempt, and an ambiguous close is never retried.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
     // Only the two closing owners close: `DirectoryRead` and `ReadFile`. The
@@ -668,6 +675,7 @@ fn every_release_close_is_one_discarded_attempt() {
 
 /// §9.1 rows 9 and 10 — the value releases and the `Output` release reach no
 /// host facility at all.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     let program = program();
@@ -732,6 +740,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
 /// all is material is the separate §9.1 row 13 question, which only an
 /// uninitialized control can answer, and which lives in
 /// `research/experiments/buffer-initialization-cost/`.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn the_reused_buffers_are_initialized_once_at_allocation() {
     let program = program();
@@ -795,6 +804,7 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
 /// attempts a run makes for how many matches. Task 0013's deterministic host
 /// is what makes that observable, because it traces every attempt against
 /// every descriptor.
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn the_output_batch_costs_one_host_write_per_full_batch() {
     // Three thousand matching lines of two bytes each: six thousand bytes of

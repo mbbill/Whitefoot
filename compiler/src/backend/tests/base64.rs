@@ -1,5 +1,6 @@
 use super::*;
 
+#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn compiler_independent_base64_rfc_vectors_execute() {
     let llvm = compile(include_bytes!(
