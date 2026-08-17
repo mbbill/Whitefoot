@@ -128,9 +128,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // unsupported capability rather than a source rejection.
             return match self.flat_element(element_type)? {
                 Some(element) => Ok(CheckedType::Buffer { element }),
-                None => {
-                    self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
-                }
+                None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
             };
         }
         if self.has_fixed(node, FixedTerminal::Arena)? {
