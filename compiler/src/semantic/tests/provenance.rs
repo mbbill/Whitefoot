@@ -8,9 +8,177 @@ use super::super::provenance::{
     CallArgumentProvenanceDisposition, CarrierCallRole, CarrierRoute, CarrierWriteContext,
     DatumDependencies, DatumSelector, FunctionDependencies, LocalLeafProvenanceDisposition,
     ParameterDatum, ProvenanceDependency, ProvenanceGoalObservation, StructuralPredecessor,
-    SubjectPredecessor, ValueDependencies, carrier_route_cmp,
+    SubjectPredecessor, SystemResultProvenance, ValueDependencies, carrier_route_cmp,
+    system_external_writes, system_result_provenance,
 };
 use super::with_semantics;
+
+/// One extracted row of the [SYS-2] `wf-prov` table.
+#[derive(Debug, Eq, PartialEq)]
+struct ProvRow {
+    operation: String,
+    result_class: String,
+    parameter_class: String,
+}
+
+/// The `wf-prov` table, extracted from the active specification by fence info
+/// string.
+///
+/// This is the table's first extraction lock of any kind. Its rows were
+/// hand-transcribed into `semantic::provenance` as bare numeric operation
+/// ordinals — the one payload in the specification with a machine consumer and
+/// no check that the consumer still agreed with it.
+fn prov_rows() -> Vec<ProvRow> {
+    let mut fences = crate::ACTIVE_KERNEL_SPEC_TEXT.split("\n```wf-prov\n");
+    let _before = fences.next().expect("the split always yields a first part");
+    let body = fences
+        .next()
+        .expect("the active specification has one wf-prov fence")
+        .split_once("\n```")
+        .expect("the wf-prov fence is terminated")
+        .0;
+    assert!(
+        fences.next().is_none(),
+        "the wf-prov schema names exactly one table"
+    );
+
+    let mut lines = body.lines();
+    assert_eq!(
+        lines.next(),
+        Some("| operation | result component class | writable `&uniq` parameter component class |"),
+        "the first row of a wf-prov fence is its column schema"
+    );
+    assert_eq!(lines.next(), Some("|---|---|---|"));
+
+    lines
+        .map(|line| {
+            let cells: Vec<&str> = line
+                .strip_prefix("| ")
+                .and_then(|rest| rest.strip_suffix(" |"))
+                .expect("a wf-prov row is pipe-delimited")
+                .split(" | ")
+                .collect();
+            let [operation, result_class, parameter_class] = cells.as_slice() else {
+                panic!(
+                    "a wf-prov row has exactly three cells, found {}",
+                    cells.len()
+                );
+            };
+            ProvRow {
+                operation: operation
+                    .split('`')
+                    .nth(1)
+                    .expect("a wf-prov operation cell is backticked")
+                    .to_owned(),
+                result_class: (*result_class).to_owned(),
+                parameter_class: (*parameter_class).to_owned(),
+            }
+        })
+        .collect()
+}
+
+/// Every `wf-prov` row's two class cells decide what the compiler does.
+///
+/// The operation column is locked to `SYSTEM_OPERATIONS` order, so the numeric
+/// ordinals the compiler dispatches on cannot drift from the row they name —
+/// the failure that a bare ordinal table makes silent, because a
+/// misattributed external class still produces a well-formed provenance
+/// judgment for some other operation.
+///
+/// A green run establishes that each row's result class and writable-parameter
+/// class are the ones the compiler applies, and that the two orders coincide.
+/// It does not establish that an external class produces the right downstream
+/// [PRV-2] demand; the provenance tests below cover that.
+#[test]
+fn every_wf_prov_row_decides_the_compilers_system_provenance() {
+    let rows = prov_rows();
+    assert_eq!(
+        rows.len(),
+        crate::SYSTEM_OPERATIONS.len(),
+        "the wf-prov table has one row per SYS-2 operation"
+    );
+
+    let mut result_classes = std::collections::HashSet::new();
+    let mut writing_rows = 0;
+    for (ordinal, row) in rows.iter().enumerate() {
+        let index = u8::try_from(ordinal).expect("eleven operations fit a u8");
+        assert_eq!(
+            row.operation,
+            crate::SYSTEM_OPERATIONS[ordinal].spelling,
+            "wf-prov row {ordinal} and SYSTEM_OPERATIONS[{ordinal}] name different operations"
+        );
+
+        // The result-component cell's own vocabulary decides the class.
+        let expected = match row.result_class.as_str() {
+            "plain result external" | "`Ok(value:)` external; `Err(error:)` external" => {
+                SystemResultProvenance::AllExternal
+            }
+            "`Ok(value:)` internal; `Err(error:)` external" => {
+                SystemResultProvenance::ErrorPayloadOnly
+            }
+            "`ReadBytes(count:)` internal; `ReadFailed(error:)` external; `ReadEnd()` carries no result component" => {
+                SystemResultProvenance::ReadFailedPayloadOnly
+            }
+            "plain result internal" => SystemResultProvenance::NoneExternal,
+            other => panic!(
+                "{} writes an unmodelled result class {other}",
+                row.operation
+            ),
+        };
+        result_classes.insert(expected);
+        assert_eq!(
+            system_result_provenance(index),
+            Some(expected),
+            "{}'s result class is written `{}`",
+            row.operation,
+            row.result_class
+        );
+
+        // The writable-parameter cell names the parameters by their declared
+        // name, so the expected ordinals come from the operation's own
+        // parameter list rather than from a second hand-written list.
+        let declared = crate::SYSTEM_OPERATIONS[ordinal].parameters;
+        let expected_writes: Vec<usize> = if row.parameter_class == "—" {
+            Vec::new()
+        } else {
+            let mut ordinals: Vec<usize> = row
+                .parameter_class
+                .split("; ")
+                .map(|entry| {
+                    let (name, class) = entry
+                        .split_once(' ')
+                        .unwrap_or_else(|| panic!("{entry} names a parameter and a class"));
+                    assert_eq!(class, "external", "{entry} is not an external write");
+                    let name = name.trim_matches('`');
+                    declared
+                        .iter()
+                        .position(|parameter| parameter.name == name)
+                        .unwrap_or_else(|| panic!("{} declares no parameter {name}", row.operation))
+                })
+                .collect();
+            ordinals.sort_unstable();
+            writing_rows += 1;
+            ordinals
+        };
+        assert_eq!(
+            system_external_writes(index).expect("a declared operation ordinal"),
+            expected_writes.as_slice(),
+            "{}'s writable-parameter class is written `{}`",
+            row.operation,
+            row.parameter_class
+        );
+    }
+
+    // All four result classes and the four writing rows appear, so a table
+    // that collapsed to one class would not pass the loop vacuously.
+    assert_eq!(result_classes.len(), 4);
+    assert_eq!(writing_rows, 4);
+    // An ordinal past the inventory fails closed rather than defaulting to a
+    // class, in both directions the dispatch can be wrong.
+    let past = u8::try_from(crate::SYSTEM_OPERATIONS.len()).expect("eleven fits a u8");
+    assert_eq!(system_result_provenance(past), None);
+    assert!(system_external_writes(past).is_err());
+}
 
 fn checked(source: &[u8], run: impl FnOnce(&CheckedProgramData)) {
     with_semantics(source, |outcome| {
