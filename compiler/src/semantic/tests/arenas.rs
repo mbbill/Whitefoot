@@ -152,6 +152,143 @@ fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
     );
 }
 
+/// [OWN-14] defines a reborrow form by its root binding's *mode*, so a borrow
+/// of a local arena's content — an own-mode binding — is an ordinary borrow,
+/// never a reborrow. Dispatching on the `deref` spelling alone demanded a
+/// borrow holder these programs never wrote and reported spec-legal source as
+/// an OWN-6, OWN-14, or TYPE-7 violation. Each shape now reaches [OWN-10]'s
+/// arena case with source region `'r` [STOR-4] and then stops at the explicit
+/// arena-runtime gate, because no checked expression addresses arena content.
+#[test]
+fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
+    // A `uniq` child in the arena's own region, and the same borrow under a
+    // nested region: `'r` outlives-or-equals both.
+    assert_unsupported(
+        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+  set deref(n) = 42_i32;
+  return unit;
+}
+
+fn main() -> own unit traps {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    bump<'r>(n: &uniq 'r deref(a));
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::ArenaRuntime,
+    );
+    assert_unsupported(
+        br#"fn bump['r](n: &uniq 'r i32) -> own unit writes('r) {
+  set deref(n) = 42_i32;
+  return unit;
+}
+
+fn main() -> own unit traps {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    region 'c {
+      bump<'c>(n: &uniq 'c deref(a));
+    }
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::ArenaRuntime,
+    );
+    // A shared borrow in argument position, and a `let`-bound holder, which
+    // OWN-14 rejected outright as a non-argument reborrow position.
+    assert_unsupported(
+        br#"fn peek['r](n: &'r i32) -> own i32 reads('r) {
+  return deref(n);
+}
+
+fn main() -> own unit traps {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    let v = peek<'r>(n: &'r deref(a));
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::ArenaRuntime,
+    );
+    assert_unsupported(
+        br#"fn main() -> own unit traps {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    let h = &uniq 'r deref(a);
+  }
+  return unit;
+}
+"#,
+        UnsupportedSemanticFeature::ArenaRuntime,
+    );
+}
+
+/// The ordinary judgments the routed borrow now reaches still reject: [OWN-10]
+/// with the arena's source region for a borrow region `'r` does not
+/// outlive-or-equal, and [OWN-11] for a region introduced outside the loop.
+#[test]
+fn arena_content_borrows_keep_their_region_rejections() {
+    // An enclosing region outlives the arena's, so its storage is too
+    // short-lived for the borrow.
+    assert_rule(
+        br#"fn main() -> own unit traps {
+  region 'o {
+    region 'r {
+      let a = arena_new<'r, i32>(4_i32);
+      let h = &uniq 'o deref(a);
+    }
+  }
+  return unit;
+}
+"#,
+        SemanticRule::Own10,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+    // A caller-supplied region is never comparable to a local arena's [OWN-3].
+    assert_rule(
+        br#"fn hold['s](n: &uniq 's i32) -> own unit writes('s) {
+  set deref(n) = 1_i32;
+  return unit;
+}
+
+fn outer['s]() -> own unit pure {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    hold<'s>(n: &uniq 's deref(a));
+  }
+  return unit;
+}
+
+fn main() -> own unit pure {
+  return unit;
+}
+"#,
+        SemanticRule::Own10,
+        SemanticIssueKind::InvalidBorrowLifetime,
+    );
+    assert_rule(
+        br#"fn main() -> own unit traps {
+  region 'r {
+    let a = arena_new<'r, i32>(4_i32);
+    loop @once {
+      let h = &uniq 'r deref(a);
+      break @once;
+    }
+  }
+  return unit;
+}
+"#,
+        SemanticRule::Own11,
+        SemanticIssueKind::BorrowRegionOutsideLoop {
+            mechanical_fix: "introduce the borrow region inside the enclosing loop body",
+        },
+    );
+}
+
 /// [STOR-4] a value delivery whose destination binding lies outside the
 /// arena's region block moves the value out of its region and rejects.
 #[test]
