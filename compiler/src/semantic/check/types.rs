@@ -122,9 +122,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(element_node, substitution)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            return Ok(CheckedType::Buffer {
-                element: self.checked_flat_element(element_type, element_node)?,
-            });
+            // [TYPE-2] v0.31 also forms buffers over region-free affine
+            // elements; their representation is not implemented, so a
+            // well-formed affine-element buffer stops as an explicit
+            // unsupported capability rather than a source rejection.
+            return match self.flat_element(element_type)? {
+                Some(element) => Ok(CheckedType::Buffer { element }),
+                None => {
+                    self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
+                }
+            };
         }
         if self.has_fixed(node, FixedTerminal::Arena)? {
             let content_node = self

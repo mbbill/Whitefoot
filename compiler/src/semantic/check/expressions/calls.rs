@@ -94,6 +94,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if spelling == "buffer_new" {
             return self.check_buffer_new(node, function, bindings, loop_depth);
         }
+        if spelling == "buffer_vacant" {
+            // The v0.31 all-`None` affine-element constructor [OP-1, OP-9].
+            // The affine-element representation (aggregate buffer elements
+            // through checked IR and the backend) is not implemented yet, so
+            // the admitted operation stops as an explicit unsupported
+            // capability rather than misreporting valid source.
+            return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
+        }
         if spelling == "box_new" {
             return self.check_box_new(node, function, bindings, loop_depth);
         }
