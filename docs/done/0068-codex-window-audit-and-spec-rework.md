@@ -1,5 +1,12 @@
 # 0068 — Codex-window audit repairs and specification representation rework
 
+Status: DONE (integrated to main 2026-08-17; owner reviewed the batch
+document and approved the merge). The v0.30 candidate rides to main as a
+declared candidate; its activation is a separate exact-byte approval.
+Follow-ups: tasks #44 (owner-decision list), #35/#39/#13/#17 (parked
+language items), the conciseness ratchet and DIAG-1 restructure, and the
+capability review the owner ordered as the next batch.
+
 Owner: lead. Workspace: `spec-rework` branch. Base: `9b6b678` (main, v0.29).
 Registered: 2026-08-16, during the owner's overnight delegation of 2026-08-15.
 
