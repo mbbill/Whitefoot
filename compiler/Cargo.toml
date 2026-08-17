@@ -33,12 +33,14 @@ unsafe_code = "forbid"
 [lints.clippy]
 all = "deny"
 
-# Heavy owning tests run compute-bound front-end analysis on real programs;
-# at the default unoptimized test profile that analysis was measured at 136s
-# per wfgrep pass. This profile keeps every debug assertion and overflow
-# check (release would drop them) and changes only code generation, so no
-# test's identity or meaning moves. Used by `make -C compiler heavy`.
-[profile.heavy]
+# The gate's test profile. The suite's owning tests run compute-bound
+# front-end analysis on real programs; at the default unoptimized test
+# profile one wfgrep pass was measured at 136s against ~8s here. It keeps
+# every debug assertion and overflow check (plain release would drop them)
+# and changes only code generation, so no test's identity or meaning moves.
+# Used by the Makefile `test` target; a bare `cargo test <filter>` during
+# development still uses the default profile.
+[profile.gate]
 inherits = "release"
 debug-assertions = true
 overflow-checks = true

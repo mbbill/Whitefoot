@@ -91,7 +91,6 @@ const CONVERSION_CLASSES: [(IntegerType, IntegerType); 15] = [
     (I64, U32), // signed to unsigned narrowing maximum at 64-bit width
 ];
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
     let mut source = String::from("fn main() -> own unit traps {\n");

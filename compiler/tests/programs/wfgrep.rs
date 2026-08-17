@@ -116,7 +116,6 @@ fn numbered_lines(count: usize, width: usize) -> Vec<u8> {
     content
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wfgrep_matches_the_reference_across_every_required_file_shape() {
     let program = wfgrep();
@@ -188,7 +187,6 @@ fn wfgrep_matches_the_reference_across_every_required_file_shape() {
     assert_reference(program, b"7", &[(b"flushes.txt", numbered_lines(2000, 20))]);
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wfgrep_reports_one_unreadable_file_and_still_searches_the_others() {
     let program = wfgrep();
@@ -204,7 +202,6 @@ fn wfgrep_reports_one_unreadable_file_and_still_searches_the_others() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn a_path_that_is_not_text_travels_the_lossless_route_unchanged() {
     let program = wfgrep();
@@ -224,7 +221,6 @@ fn a_path_that_is_not_text_travels_the_lossless_route_unchanged() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wfgrep_reports_a_path_the_directory_capability_does_not_admit() {
     let program = wfgrep();
@@ -241,7 +237,6 @@ fn wfgrep_reports_a_path_the_directory_capability_does_not_admit() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wfgrep_reports_a_line_longer_than_its_reusable_buffer() {
     let program = wfgrep();
@@ -263,7 +258,6 @@ fn wfgrep_reports_a_line_longer_than_its_reusable_buffer() {
     assert_reference(program, b"xxx", &[(b"fitting.txt", fitting)]);
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn a_closed_destination_reaches_source_as_broken_pipe_not_a_signal() {
     let program = wfgrep();
@@ -286,7 +280,6 @@ fn a_closed_destination_reaches_source_as_broken_pipe_not_a_signal() {
     assert_eq!(diagnostics, b"wfgrep: broken pipe\n");
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn open_read_follows_a_symbolic_link_out_of_the_directory_it_names() {
     let program = wfgrep();
@@ -306,7 +299,6 @@ fn open_read_follows_a_symbolic_link_out_of_the_directory_it_names() {
     assert_eq!(output.status.code(), Some(0));
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn each_invocation_observes_only_what_the_file_held_for_that_attempt() {
     let program = wfgrep();
@@ -334,7 +326,6 @@ fn each_invocation_observes_only_what_the_file_held_for_that_attempt() {
     assert_eq!(shrunk.status.code(), Some(0));
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wfgrep_reports_its_usage_when_the_invocation_names_no_file() {
     let program = wfgrep();
@@ -345,7 +336,6 @@ fn wfgrep_reports_its_usage_when_the_invocation_names_no_file() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-#[ignore = "heavy owning test: runs in make -C compiler heavy"]
 #[test]
 fn wfgrep_append_preserves_its_clause_stripped_invalid_domain_behavior() {
     let source = include_str!("../../../tests/programs/wfgrep.wf");

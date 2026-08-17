@@ -1,7 +1,7 @@
 CARGO := cargo
 
 check: format lint test docs spec
-	@echo "== WHITEFOOT COMPILER GATE GREEN (heavy owning tests excluded; run 'make -C compiler heavy' before integrating or activating) =="
+	@echo "== WHITEFOOT COMPILER GATE GREEN =="
 
 format:
 	$(CARGO) fmt --all -- --check
@@ -9,22 +9,14 @@ format:
 lint:
 	$(CARGO) clippy --all-targets --locked --offline -- -D warnings
 
+# The gate profile (Cargo.toml [profile.gate]) is release codegen with debug
+# assertions and overflow checks retained: the suite's owning tests analyze
+# real programs, ~16x faster there than at the unoptimized default, so the
+# whole suite runs in one gate with no fast/heavy split. A bare
+# `cargo test <filter>` during development still uses the default profile
+# and keeps incremental builds cheap.
 test:
-	$(CARGO) test --all-targets --locked --offline
-
-# The 29 `#[ignore = "heavy owning test…"]` tests: end-to-end program
-# executions (wfgrep, raw DEFLATE, wide scan, UTF-8 pipeline), backend cost
-# shapes, and the two heaviest semantic rewalks. Measured 2026-08-16 they
-# carried ~44 of the gate's ~50 minutes. `check` green therefore does NOT
-# include them; they MUST pass before a branch integrates to main and before
-# any activation, via this target. This split changes when they run, never
-# whether they exist — deleting or weakening one remains a protected change.
-# Enumerated per target rather than --all-targets: the conformance adapter is
-# also #[ignore] but belongs to its own `conformance-run` reporting flow and
-# must not ride along here.
-heavy:
-	$(CARGO) test --profile heavy --lib --locked --offline -- --ignored
-	$(CARGO) test --profile heavy --test programs --locked --offline -- --ignored
+	$(CARGO) test --profile gate --all-targets --locked --offline
 
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline
@@ -32,4 +24,4 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-.PHONY: check format lint test docs spec heavy
+.PHONY: check format lint test docs spec
