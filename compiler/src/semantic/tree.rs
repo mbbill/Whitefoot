@@ -393,6 +393,33 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(identifiers)
     }
 
+    /// Every direct token of one node matching any of the given predicates,
+    /// in source order. The single-token reader below rejects a second match
+    /// of one predicate, which suits the productions carrying one such
+    /// token; a candidate-grammar `const` operation carries two terms of one
+    /// terminal class [CONST-1].
+    pub(super) fn direct_tokens_matching(
+        &self,
+        node: NodeId,
+        predicates: &[TerminalPredicate],
+    ) -> Result<Vec<usize>, SemanticCompilerFailure> {
+        let classified = self.resolved.syntax().classified_bundle();
+        let mut matches = Vec::new();
+        for terminal in self.direct_token_indices(node)? {
+            let token = classified
+                .tokens()
+                .get(*terminal)
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            if predicates
+                .iter()
+                .any(|predicate| token.terminals().contains(*predicate))
+            {
+                matches.push(*terminal);
+            }
+        }
+        Ok(matches)
+    }
+
     pub(super) fn direct_token_with(
         &self,
         node: NodeId,

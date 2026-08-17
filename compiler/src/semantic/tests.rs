@@ -8,6 +8,7 @@ mod boxes;
 mod buffers;
 mod checked_division;
 mod conditionals;
+mod const_eval;
 mod contracts;
 mod counted_ranges;
 mod derivation;

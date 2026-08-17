@@ -37,8 +37,8 @@ use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
     CheckedNominal, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
-    CheckedStatement, CheckedType, CheckedValue, ClaimAdvisory, FunctionId, NominalId,
-    ValueInitializerKind,
+    CheckedStatement, CheckedType, CheckedValue, ClaimAdvisory, DerivedConst, DerivedConstId,
+    FunctionId, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::postcondition::CheckedPostconditionSelector;
 use super::provenance::{
@@ -427,6 +427,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
+    /// Hash-consed symbolic const operations [CONST-1 candidate]. Written by
+    /// the `&self` const-expression parse while a generic template or
+    /// symbolic validation instance is checked; every concrete instantiation
+    /// evaluates entries away, so no id reaches lowering.
+    derived_consts: RefCell<Vec<DerivedConst>>,
     generic_requirements: Vec<CheckedGenericRequirement>,
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
@@ -600,6 +605,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions_by_declaration: HashMap::new(),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
+            derived_consts: RefCell::new(Vec::new()),
             generic_requirements: Vec::new(),
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
@@ -624,6 +630,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
+        self.collect_deferred_nominal_constants(&items)?;
         self.collect_function_signatures(&items)?;
         self.admit_postcondition_selectors()?;
         let nominal_count_before_function_checking = self.nominals.len();
@@ -850,6 +857,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_concrete_function_signatures()
     }
 
+    /// Collects every non-nominal-typed const declaration. Runs before
+    /// nominal completion because a nominal field's array length may name an
+    /// earlier const; nominal-typed const declarations [CONST-2 candidate]
+    /// need completed field inventories and are collected by the second pass
+    /// below.
     fn collect_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
             .iter()
@@ -861,9 +873,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .collect::<Vec<_>>();
         for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                continue;
+            }
             self.collect_constant(node)?;
         }
         Ok(())
+    }
+
+    /// Collects the nominal-typed const declarations deferred by the first
+    /// pass, in item order, after `complete_nominals` has filled the field
+    /// inventories they are checked against. CONST-2's declaration-before-use
+    /// rule is unaffected: a non-nominal const can never reference a
+    /// nominal-typed one (a cvalue reference must have the exact expected
+    /// type), so the two passes never reorder a legal dependency.
+    fn collect_deferred_nominal_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
+        let nodes = items
+            .iter()
+            .copied()
+            .filter(|node| {
+                self.tree
+                    .production(*node)
+                    .is_ok_and(|production| production == Production::ConstDecl)
+            })
+            .collect::<Vec<_>>();
+        for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                self.collect_constant(node)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn constant_declaration_is_deferred(&self, node: NodeId) -> Result<bool, CheckStop> {
+        if !super::V031_CANDIDATE_SEMANTICS {
+            return Ok(false);
+        }
+        let ty = self
+            .tree
+            .first_child_with(node, Production::Type)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(self
+            .tree
+            .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
+            .is_some())
     }
 
     pub(super) fn collect_constants_for_postconditions(
@@ -882,6 +935,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for node in nodes {
             let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?.id();
             if !self.postcondition_constant_has_links(node)? {
+                self.mark_postcondition_unavailable(declaration);
+                continue;
+            }
+            // A nominal-typed const [CONST-2 candidate] is conservatively
+            // unavailable to the FN-9 selector preflight for now; ordinary
+            // checking collects it through the deferred second pass.
+            if self.constant_declaration_is_deferred(node)? {
                 self.mark_postcondition_unavailable(declaration);
                 continue;
             }
@@ -1797,7 +1857,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .substitution
                 .const_argument(declaration)
                 .unwrap_or(value),
+            CheckedConst::Derived(id) => {
+                let derived = self.derived_const(id)?;
+                let left = self.instantiate_goal_const(derived.left, signature)?;
+                let right = self.instantiate_goal_const(derived.right, signature)?;
+                // The owning instance body was accepted, so the same
+                // evaluation already succeeded at its source node; a failure
+                // here is a trusted-invariant breach, not a source verdict.
+                self.combine_const(derived.operation, left, right)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            }
         })
+    }
+
+    /// Returns the interned symbolic const operation behind `id`.
+    pub(super) fn derived_const(&self, id: DerivedConstId) -> Result<DerivedConst, CheckStop> {
+        self.derived_consts
+            .borrow()
+            .get(id.0 as usize)
+            .copied()
+            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// Combines two const operands under one const operation.
+    ///
+    /// Two concrete operands evaluate immediately in the u64 const-eval
+    /// domain, and `None` reports the const-eval overflow policy's rejection
+    /// (a result outside the domain or a zero divisor). A symbolic operand
+    /// hash-conses the operation instead, so a symbolic const never fails
+    /// here and always has one interned identity.
+    pub(super) fn combine_const(
+        &self,
+        operation: super::model::ConstOperation,
+        left: CheckedConst,
+        right: CheckedConst,
+    ) -> Option<CheckedConst> {
+        if let (CheckedConst::Value(left), CheckedConst::Value(right)) = (left, right) {
+            return evaluate_const_operation(operation, left, right).map(CheckedConst::Value);
+        }
+        let derived = DerivedConst {
+            operation,
+            left,
+            right,
+        };
+        let mut table = self.derived_consts.borrow_mut();
+        let index = table
+            .iter()
+            .position(|entry| *entry == derived)
+            .unwrap_or_else(|| {
+                table.push(derived);
+                table.len() - 1
+            });
+        u32::try_from(index)
+            .ok()
+            .map(|index| CheckedConst::Derived(DerivedConstId(index)))
     }
 
     fn instantiate_goal_region(
@@ -1861,6 +1974,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 elements: elements
                     .iter()
                     .map(|element| self.instantiate_goal_value(element, signature, regions))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            CheckedValue::Struct { ty, fields } => CheckedValue::Struct {
+                ty: self.instantiate_goal_type(*ty, signature, regions)?,
+                fields: fields
+                    .iter()
+                    .map(|field| self.instantiate_goal_value(field, signature, regions))
                     .collect::<Result<Vec<_>, _>>()?,
             },
         })

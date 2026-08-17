@@ -36,6 +36,18 @@ pub(crate) use model::{
     NominalId, PropagationContext, TrapSite,
 };
 
+/// Master switch for the v0.31 candidate's gated semantic surface:
+/// struct-typed named consts [CONST-2 candidate] and the clause-conditional
+/// OWN-1 bare-affine repair [#35].
+///
+/// `false` ships exact v0.30 semantics; every gated path behaves
+/// byte-identically to the pre-candidate compiler. The lead flips this one
+/// constant to `true` in the same change that lands the v0.31 candidate
+/// specification bytes and the grammar tables regenerated from them — the
+/// const-arithmetic and construction-cvalue grammar shapes are additionally
+/// gated by those tables and need no switch of their own.
+pub(crate) const V031_CANDIDATE_SEMANTICS: bool = false;
+
 /// Numbered rule owning one post-resolution semantic rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SemanticRule {
@@ -642,6 +654,21 @@ pub enum SemanticIssueKind {
     InvalidFloatLiteral,
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
+    /// A const-expression's compile-time evaluation has no u64 result: the
+    /// mathematical result lies outside the domain or the divisor is zero.
+    /// This is the const-eval overflow policy's rejection [CONST-1]; it is
+    /// never a runtime trap and never enters EFF-2's exhibits-traps relation.
+    ConstEvalOverflow {
+        /// Bare spelling of the rejected const operation.
+        operation: &'static str,
+    },
+    /// A const-expression names a runtime arithmetic mode; const evaluation
+    /// has exactly the five bare spellings under the const-eval overflow
+    /// policy [CONST-1].
+    ConstRuntimeArithmeticMode {
+        /// Exact mechanical repair selected by CONST-1.
+        mechanical_fix: &'static str,
+    },
     /// Two exact written modes or types disagree.
     TypeMismatch,
     /// A constant was selected as an assignment target.

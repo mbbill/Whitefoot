@@ -229,49 +229,84 @@ fn emit_global_constants(
             .map_err(|_| BackendFailure::TextEmission)?;
         write!(
             output,
-            "{} = private unnamed_addr constant {} ",
+            "{} = private unnamed_addr constant {} {}",
             constant_symbol(constant.id()),
-            llvm_type(program, constant.ty())?
+            llvm_type(program, constant.ty())?,
+            global_constant_value(program, constant.value(), constant.ty())?
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        match (constant.value(), constant.ty()) {
-            (IrGlobalValue::Scalar(value), ty) => {
-                output.push_str(&constant_operand(*value, ty)?);
-            }
-            (IrGlobalValue::Array(elements), IrType::Array { element, length }) => {
-                if u64::try_from(elements.len()).map_err(|_| BackendFailure::CounterOverflow)?
-                    != length
-                {
-                    return Err(BackendFailure::InvalidIr);
-                }
-                if elements.is_empty() {
-                    output.push_str("zeroinitializer");
-                } else {
-                    output.push('[');
-                    let element_type = element.ty();
-                    let llvm_element_type = llvm_type(program, element_type)?;
-                    for (index, value) in elements.iter().enumerate() {
-                        if index != 0 {
-                            output.push_str(", ");
-                        }
-                        write!(
-                            output,
-                            "{llvm_element_type} {}",
-                            constant_operand(*value, element_type)?
-                        )
-                        .map_err(|_| BackendFailure::TextEmission)?;
-                    }
-                    output.push(']');
-                }
-            }
-            _ => return Err(BackendFailure::InvalidIr),
-        }
         output.push('\n');
     }
     if !program.constants().is_empty() {
         output.push('\n');
     }
     Ok(())
+}
+
+/// Renders one rodata constant value of one exact type: a scalar operand, a
+/// complete array, or a complete struct aggregate with each field rendered
+/// recursively [CONST-2 candidate].
+fn global_constant_value(
+    program: &IrProgram<'_, '_, '_>,
+    value: &IrGlobalValue,
+    ty: IrType,
+) -> Result<String, BackendFailure> {
+    match (value, ty) {
+        (IrGlobalValue::Scalar(value), ty) => constant_operand(*value, ty),
+        (IrGlobalValue::Array(elements), IrType::Array { element, length }) => {
+            if u64::try_from(elements.len()).map_err(|_| BackendFailure::CounterOverflow)? != length
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+            if elements.is_empty() {
+                return Ok("zeroinitializer".to_owned());
+            }
+            let mut text = String::from("[");
+            let element_type = element.ty();
+            let llvm_element_type = llvm_type(program, element_type)?;
+            for (index, value) in elements.iter().enumerate() {
+                if index != 0 {
+                    text.push_str(", ");
+                }
+                write!(
+                    text,
+                    "{llvm_element_type} {}",
+                    constant_operand(*value, element_type)?
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            text.push(']');
+            Ok(text)
+        }
+        (IrGlobalValue::Struct(fields), IrType::Nominal(id)) => {
+            let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
+            let IrNominalKind::Struct { fields: declared } = nominal.kind() else {
+                return Err(BackendFailure::InvalidIr);
+            };
+            if fields.len() != declared.len() {
+                return Err(BackendFailure::InvalidIr);
+            }
+            if fields.is_empty() {
+                return Ok("zeroinitializer".to_owned());
+            }
+            let mut text = String::from("{ ");
+            for (index, (value, field)) in fields.iter().zip(declared).enumerate() {
+                if index != 0 {
+                    text.push_str(", ");
+                }
+                write!(
+                    text,
+                    "{} {}",
+                    llvm_type(program, field.ty())?,
+                    global_constant_value(program, value, field.ty())?
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            text.push_str(" }");
+            Ok(text)
+        }
+        _ => Err(BackendFailure::InvalidIr),
+    }
 }
 
 fn emit_nominal_declarations(

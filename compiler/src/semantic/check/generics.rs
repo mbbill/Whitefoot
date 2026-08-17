@@ -394,25 +394,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         for constant in self.tree.descendants_with(targs, Production::Const)? {
-            if self
-                .tree
-                .direct_token_with(constant, crate::TerminalPredicate::Identifier)?
-                .is_some()
-            {
+            let identifiers = self.tree.direct_identifiers(constant)?;
+            if !identifiers.is_empty() {
                 let path = self.tree.path(constant)?;
-                let usage = self.resolved.lexical_uses().iter().find(|usage| {
-                    usage.role() == LexicalUseRole::Const && usage.origin().node() == path
-                });
-                let Some(usage) = usage else {
+                let uses = self
+                    .resolved
+                    .lexical_uses()
+                    .iter()
+                    .filter(|usage| {
+                        usage.role() == LexicalUseRole::Const && usage.origin().node() == path
+                    })
+                    .collect::<Vec<_>>();
+                if uses.len() != identifiers.len() {
                     return Ok(false);
-                };
-                if let ResolvedTarget::Source {
-                    declaration,
-                    class: DeclarationClass::NamedConst,
-                } = usage.target()
-                    && !self.constants.contains_key(&declaration)
-                {
-                    return Ok(false);
+                }
+                for usage in uses {
+                    if let ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::NamedConst,
+                    } = usage.target()
+                        && !self.constants.contains_key(&declaration)
+                    {
+                        return Ok(false);
+                    }
                 }
             }
         }
@@ -615,15 +619,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             for constant in self.tree.descendants_with(node, Production::Const)? {
-                if self
-                    .tree
-                    .direct_token_with(constant, crate::TerminalPredicate::Identifier)?
-                    .is_some()
-                {
+                let identifiers = self.tree.direct_identifiers(constant)?;
+                if !identifiers.is_empty() {
                     let path = self.tree.path(constant)?;
-                    if !self.resolved.lexical_uses().iter().any(|usage| {
-                        usage.role() == LexicalUseRole::Const && usage.origin().node() == path
-                    }) {
+                    let uses = self
+                        .resolved
+                        .lexical_uses()
+                        .iter()
+                        .filter(|usage| {
+                            usage.role() == LexicalUseRole::Const && usage.origin().node() == path
+                        })
+                        .count();
+                    if uses != identifiers.len() {
                         return Ok(false);
                     }
                 }
@@ -1318,6 +1325,12 @@ fn value_uses_nominal_prefix(value: &CheckedValue, checkpoint: usize) -> bool {
                 && elements
                     .iter()
                     .all(|element| value_uses_nominal_prefix(element, checkpoint))
+        }
+        CheckedValue::Struct { ty, fields } => {
+            type_uses_nominal_prefix(*ty, checkpoint)
+                && fields
+                    .iter()
+                    .all(|field| value_uses_nominal_prefix(field, checkpoint))
         }
         CheckedValue::Unit
         | CheckedValue::Bool(_)

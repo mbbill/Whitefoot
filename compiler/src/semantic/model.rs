@@ -37,17 +37,82 @@ pub(crate) struct NominalId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct CheckedConstantId(pub(crate) u32);
 
+/// One checker-interned symbolic const operation [`DerivedConst`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct DerivedConstId(pub(crate) u32);
+
+/// The five bare const-expression operations of the CONST-1 candidate
+/// grammar. Const evaluation happens at monomorphization in the unsigned
+/// 64-bit domain under the const-eval overflow policy: a result outside that
+/// domain or a zero divisor is a compile-time rejection citing CONST-1, never
+/// a runtime trap, so this family is disjoint from the runtime arithmetic
+/// modes and excluded from EFF-2's exhibits-traps relation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum ConstOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
+
+impl ConstOperation {
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Subtract => "-",
+            Self::Multiply => "*",
+            Self::Divide => "/",
+            Self::Remainder => "%",
+        }
+    }
+}
+
+/// One interned symbolic const-expression node: exactly one operation over
+/// two operands, mirroring the one-operation source grammar. At least one
+/// operand is symbolic — a fully concrete operation is evaluated eagerly and
+/// never interned — so a value of this shape exists only while a generic
+/// template or symbolic validation instance is being checked, and every
+/// concrete instantiation evaluates it away.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct DerivedConst {
+    pub(crate) operation: ConstOperation,
+    pub(crate) left: CheckedConst,
+    pub(crate) right: CheckedConst,
+}
+
+/// Evaluates one const operation in the u64 const-eval domain.
+///
+/// `None` is the const-eval overflow policy's rejection premise: the
+/// mathematical result is outside the domain, or the divisor is zero.
+pub(crate) const fn evaluate_const_operation(
+    operation: ConstOperation,
+    left: u64,
+    right: u64,
+) -> Option<u64> {
+    match operation {
+        ConstOperation::Add => left.checked_add(right),
+        ConstOperation::Subtract => left.checked_sub(right),
+        ConstOperation::Multiply => left.checked_mul(right),
+        ConstOperation::Divide => left.checked_div(right),
+        ConstOperation::Remainder => left.checked_rem(right),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedConst {
     Value(u64),
     Parameter(DeclarationId),
+    /// One symbolic const operation, by checker-interned identity. Structural
+    /// identity is id identity because interning is hash-consed.
+    Derived(DerivedConstId),
 }
 
 impl CheckedConst {
     pub(crate) const fn value(self) -> Option<u64> {
         match self {
             Self::Value(value) => Some(value),
-            Self::Parameter(_) => None,
+            Self::Parameter(_) | Self::Derived(_) => None,
         }
     }
 
@@ -223,6 +288,12 @@ pub(crate) enum CheckedValue {
         ty: CheckedType,
         elements: Vec<CheckedValue>,
     },
+    /// One struct-typed constant value [CONST-2 candidate]: the nominal
+    /// instance plus its complete field values in declared order.
+    Struct {
+        ty: CheckedType,
+        fields: Vec<CheckedValue>,
+    },
 }
 
 impl CheckedValue {
@@ -234,6 +305,7 @@ impl CheckedValue {
             Self::Float { ty, .. } => CheckedType::Float(*ty),
             Self::NumericIdentity { ty, .. } => *ty,
             Self::Array { ty, .. } => *ty,
+            Self::Struct { ty, .. } => *ty,
         }
     }
 }

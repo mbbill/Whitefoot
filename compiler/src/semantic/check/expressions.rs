@@ -12,9 +12,9 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
-    CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace,
-    FloatType, IntegerType,
+    CheckedConst, CheckedConstant, CheckedExpression, CheckedIntegerOperation, CheckedMode,
+    CheckedNominalKind, CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue,
+    CheckedWritablePlace, FloatType, IntegerType,
 };
 use super::borrows::{AccessKind, ReborrowPosition, ResolvedPlace};
 use super::{
@@ -197,12 +197,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Nominal(id) => self.nominal(id)?.name.clone(),
             CheckedType::Array { element, length } => {
-                let length = match length {
-                    CheckedConst::Value(value) => value.to_string(),
-                    CheckedConst::Parameter(declaration) => {
-                        format!("<const-parameter:{}>", declaration.index())
-                    }
-                };
+                let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
             CheckedType::Slice { region, element } => format!(
@@ -212,6 +207,70 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ),
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
+            }
+        })
+    }
+
+    /// A field-suffix chain rooted at a struct-typed const [CONST-2
+    /// candidate]. The path is resolved by the ordinary projection judgment,
+    /// then folded against the constant's total value: a copy scalar
+    /// selection copies out as a constant, and a composite selection keeps
+    /// the whole-composite read rules.
+    fn check_struct_constant_projection(
+        &self,
+        use_node: NodeId,
+        constant: &CheckedConstant,
+        suffixes: &[NodeId],
+    ) -> Result<TypedExpression, CheckStop> {
+        let (fields, ty) = self.resolve_struct_path(suffixes, constant.ty)?;
+        let mut value = &constant.value;
+        for index in &fields {
+            let CheckedValue::Struct { fields: values, .. } = value else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            value = values
+                .get(*index as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        }
+        if value.ty() != ty {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        match value {
+            CheckedValue::Struct { .. } => self.issue_node(
+                SemanticRule::Own1,
+                use_node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "read a const struct through its fields",
+                },
+            ),
+            CheckedValue::Array { .. } => self.issue_node(
+                SemanticRule::Own1,
+                use_node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "read a const array through `index` or `len`",
+                },
+            ),
+            scalar => Ok(TypedExpression::owned(
+                CheckedExpression::Constant(scalar.clone()),
+                EffectSet::NONE,
+            )),
+        }
+    }
+
+    pub(super) fn checked_const_name(&self, value: CheckedConst) -> Result<String, CheckStop> {
+        Ok(match value {
+            CheckedConst::Value(value) => value.to_string(),
+            CheckedConst::Parameter(declaration) => {
+                format!("<const-parameter:{}>", declaration.index())
+            }
+            CheckedConst::Derived(id) => {
+                let derived = self.derived_const(id)?;
+                format!(
+                    "{} {} {}",
+                    self.checked_const_name(derived.left)?,
+                    derived.operation.spelling(),
+                    self.checked_const_name(derived.right)?
+                )
             }
         })
     }
@@ -802,15 +861,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !suffixes.is_empty() {
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-                }
                 let constant = self
                     .constants
                     .get(&declaration)
                     .copied()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let constant = self.constant(constant)?;
+                if !suffixes.is_empty() {
+                    // A field-suffix chain rooted at a struct-typed const
+                    // [CONST-2 candidate] copies the selected value out; the
+                    // selection is total at compile time, so the read folds
+                    // to the selected constant.
+                    if matches!(constant.value, CheckedValue::Struct { .. }) {
+                        return self
+                            .check_struct_constant_projection(use_node, constant, &suffixes);
+                    }
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+                }
                 if matches!(
                     constant.ty,
                     CheckedType::Array { .. }
@@ -822,6 +889,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         use_node,
                         SemanticIssueKind::BareAffineUse {
                             mechanical_fix: "read a const array through `index` or `len`",
+                        },
+                    );
+                }
+                if matches!(constant.value, CheckedValue::Struct { .. }) {
+                    return self.issue_node(
+                        SemanticRule::Own1,
+                        use_node,
+                        SemanticIssueKind::BareAffineUse {
+                            mechanical_fix: "read a const struct through its fields",
                         },
                     );
                 }

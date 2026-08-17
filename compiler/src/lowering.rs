@@ -508,6 +508,9 @@ impl From<TrapSite> for IrTrapSite {
 pub enum IrGlobalValue {
     Scalar(IrConstant),
     Array(Vec<IrConstant>),
+    /// One struct-typed rodata constant [CONST-2 candidate]: complete field
+    /// values in declared order.
+    Struct(Vec<IrGlobalValue>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

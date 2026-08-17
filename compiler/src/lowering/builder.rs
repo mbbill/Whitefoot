@@ -96,9 +96,27 @@ fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFai
             ty: lower_type(crate::semantic::CheckedType::Float(*ty))?,
             bits: *bits,
         }),
-        CheckedValue::NumericIdentity { .. } | CheckedValue::Array { .. } => {
-            Err(LoweringFailure::InvalidCheckedProgram)
-        }
+        CheckedValue::NumericIdentity { .. }
+        | CheckedValue::Array { .. }
+        | CheckedValue::Struct { .. } => Err(LoweringFailure::InvalidCheckedProgram),
+    }
+}
+
+fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFailure> {
+    match value {
+        CheckedValue::Array { elements, .. } => Ok(IrGlobalValue::Array(
+            elements
+                .iter()
+                .map(lower_scalar_constant)
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        CheckedValue::Struct { fields, .. } => Ok(IrGlobalValue::Struct(
+            fields
+                .iter()
+                .map(lower_global_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        scalar => Ok(IrGlobalValue::Scalar(lower_scalar_constant(scalar)?)),
     }
 }
 
@@ -110,20 +128,11 @@ fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, L
             if constant.id.0 as usize != index || constant.value.ty() != constant.ty {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
-            let value = match &constant.value {
-                CheckedValue::Array { elements, .. } => IrGlobalValue::Array(
-                    elements
-                        .iter()
-                        .map(lower_scalar_constant)
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
-                scalar => IrGlobalValue::Scalar(lower_scalar_constant(scalar)?),
-            };
             Ok(IrGlobalConstant {
                 id: IrConstantId(constant.id.0),
                 name: constant.name.clone(),
                 ty: lower_type(constant.ty)?,
-                value,
+                value: lower_global_value(&constant.value)?,
             })
         })
         .collect()
