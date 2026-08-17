@@ -10,11 +10,8 @@ the owner's exact-byte morning approval.)
 Derived from Direction Outline revision 41 and the 2026-08-17 capability
 review. Supersedes the completed obligation-discharge plan in place.
 Active language authority: v0.30 at `spec/kernel-spec.md`, SHA-256
-`5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`.
-
-Active language authority: v0.30 at `spec/kernel-spec.md`, SHA-256
 `5ed210190737b2aa53a91dc901f07d02344669eeb6d6660224602872331204d1`; the
-W2 v0.31 bytes on this branch are a declared candidate awaiting the
+v0.31 bytes on this branch are a declared candidate awaiting the
 owner's exact-byte approval.
 
 ## Objective

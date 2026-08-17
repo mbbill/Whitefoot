@@ -30,8 +30,8 @@ change; merging to main.
 Branch `caps-batch`, ~40 commits over main `d5e1897`. Full `make check`
 exit 0 at the tip — including the conformance structural and coverage
 legs (134/134). The conformance adapter is fully green for the first
-time in project history: Pass=460 Skip=1 Fail=0 (was 432/1/13). lib
-suite 832 → 902+ tests, every workstream shipping both-direction
+time in project history: Pass=460 Skip=1 Fail=0 (pre-batch: 432 pass,
+1 fail, 13 pending). lib suite 832 → 902+ tests, every workstream shipping both-direction
 regressions with negative controls.
 
 ### What landed, by workstream

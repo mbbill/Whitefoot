@@ -241,3 +241,14 @@ Each step loses its dominant toil term; no step gains a new artifact to maintain
 - **Optional later protected:** conformance-manifest citation of S-sub-ids; `whitefoot-migrate` deletion (gate-wiring removal).
 
 Evidence provenance: current-state numbers and incident table from the three supplied research inputs; independently re-verified this session — `wc -c spec/kernel-spec.md` → 431650; longest line = line 15 at 10,699 B (v0.23 `Prior:` paragraph); OP-4 full text at line 421 (2,580 B single line); S1–S12 bullets at lines 1179–1189 + S8 retirement at 1191; op-table rows at lines 350–363; `compiler/Cargo.toml` → no `[dependencies]` section; `bin/spec.rs:28-70` → dependency-free line/bracket scanners. Key file paths: `/Users/bytedance/code/Whitefoot/spec/kernel-spec.md`, `/Users/bytedance/code/Whitefoot/compiler/src/bin/spec.rs`, `/Users/bytedance/code/Whitefoot/compiler/src/bin/grammar_tables/ebnf.rs`, `/Users/bytedance/code/Whitefoot/compiler/src/resolution/catalog.rs`, `/Users/bytedance/code/Whitefoot/compiler/src/semantic/provenance.rs`, `/Users/bytedance/code/Whitefoot/compiler/src/semantic/entailment/flow/sources.rs`, `/Users/bytedance/code/Whitefoot/tests/conformance/runner.py`, `/Users/bytedance/code/Whitefoot/Makefile`, `/Users/bytedance/code/Whitefoot/governance/APPROVALS.md`.
+
+## Correction (2026-08-18, measured)
+
+The conciseness ratchet's targets are RETIRED. The batch-0070 measurement
+(786-check verifier, spec-ratchet investigation): cross-rule verbatim
+restatement is 1.1% of the spec, tabulating DIAG-1's enumerations grows it
+(+386 B), and the defensible whole-pass yield was -161 B. The balloon rules
+are dense original content; this document's §D2 byte story ("agents restate
+hub content defensively") is refuted as a size driver. Size control remains
+a growth-watch (per-rule top movers in review packets), not a shrink
+program. The ≤300 KB and -12 KB DIAG-1 figures above are superseded.

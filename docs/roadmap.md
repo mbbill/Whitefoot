@@ -1,7 +1,7 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 41 (outline:PROOF-8 terminal; outline:CAND-8 unparked)
+Revision: 42 (batch 0070: adapter fully green; v0.31 candidate prepared on branch)
 
 The active language authority is v0.30 at the stable path
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), SHA-256
@@ -404,10 +404,9 @@ facts-off evidence rather than trust in the compiler or writer.
   expectations through the normal command path.
 - **Current:** the native execution adapter is wired (task 0014):
   `make conformance-run` compiles and runs every case through the real
-  compiler. The installed-v0.30 run is `Pass=432 Fail=1 Skip=13`; the one
-  runnable divergence is `own3-pos-outlives-store` at the retained
-  `RegionsAndBorrows` unsupported boundary, while the thirteen pending rows
-  remain explicit toolchain gaps. This adapter is deliberately `#[ignore]` and
+  compiler. The batch-0070 branch run is `Pass=460 Skip=1 Fail=0` — the first
+  fully green adapter: the thirteen pending rows were implemented or their
+  cases repaired (protected candidate), and `own3-pos-outlives-store` runs. This adapter is deliberately `#[ignore]` and
   invoked separately; `make check` does not silently include it. The earlier
   v0.28 `423/1/13`, v0.27 `409/1/13`, v0.26 `393/1/13`, and 242/123 runs are
   historical attribution evidence, not current status.
