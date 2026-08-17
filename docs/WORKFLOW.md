@@ -1,8 +1,9 @@
 # Whitefoot workflow
 
 This is the sole operational guide for advancing Whitefoot. Ordinary delivery
-is the default. Specification and protected-compliance changes use guarded
-branches with explicit owner approval.
+runs as lead-orchestrated batches with an adversarial audit at each batch
+boundary. Specification and protected-compliance changes use the guarded
+workflows below with explicit owner approval.
 
 ## Authorities
 
@@ -12,259 +13,188 @@ branches with explicit owner approval.
   archives.
 - `docs/roadmap.md` is the living Direction Outline: it records directions,
   current facts, gaps, and candidate projects, but does not sequence work.
-- `docs/current-plan.md` is the sole high-level execution plan. It is derived
-  from one outline revision and cannot select a direction absent from that
-  outline.
-- `docs/planned/`, `docs/ongoing/`, and `docs/done/` contain numbered task
-  records for work under the active plan. They coordinate execution and never
-  create authority by themselves.
+- `docs/current-plan.md` is the sole high-level execution plan, derived from
+  one outline revision; it cannot select a direction absent from the outline.
+- `docs/ongoing/` holds one numbered record per live batch; `docs/done/`
+  holds the same records after integration. Records coordinate and report;
+  they never create authority.
 - `research/**/RESULTS.md` and equivalent accepted evidence records own
   measurements; `mcts_mem/` owns durable design choices and rejected
   alternatives; `governance/APPROVALS.md` records protected owner approvals.
 - `docs/WORKFLOW.md` defines process but selects no work.
 
-Compiler behavior, tests, plans, task records, design prose, and archives do
+Compiler behavior, tests, plans, batch records, design prose, and archives do
 not define language semantics. Active source, builds, tests, and tools may not
 depend on `archive/`.
+
+## Rule tiers
+
+Every rule in this repository belongs to exactly one tier, and the tier
+states how it is enforced. A rule that names no enforcement is guidance.
+
+1. **Machine-enforced.** The activation digest chain, archive immutability,
+   candidate lineage, the repository gate (`make check`), generated-identity
+   freshness, prose digest sync, and `AGENTS.md`/`CLAUDE.md` identity. These
+   run on every gate invocation and hold without anyone's attention.
+2. **Owner boundary.** Exactly four decisions stop work and wait for the
+   owner, at any point in any batch: a new or materially revised high-level
+   plan; any batch landing different `spec/kernel-spec.md` bytes; any
+   protected-compliance evidence change as defined below; a new repository
+   root entry.
+3. **Guidance.** Everything else in this document and in project law. It is
+   not pretended to bind an executor in flight; it is enforced by the batch
+   audit, which hunts violations after the fact and reports them for repair.
 
 ## Approval boundaries
 
 Owner approval is required in exactly these situations:
 
 1. **High-level direction plan.** A new `docs/current-plan.md`, or a material
-   revision to its objective, overall strategy, semantic direction, principal
+   revision to its objective, strategy, semantic direction, principal
    consumer boundary, acceptance criteria, risk posture, or stop conditions,
-   starts as `PROPOSED`. It becomes `ACTIVE` only after an owner-facing
-   explanation and explicit owner approval.
+   starts as `PROPOSED` and becomes `ACTIVE` only after an owner-facing
+   explanation and explicit owner approval. While a plan is `ACTIVE`, batch
+   decomposition, ordering, implementation, ordinary tests, documentation,
+   bounded probes, integration, and closure proceed autonomously.
 2. **Specification.** Any batch that will land different bytes at
    `spec/kernel-spec.md` requires the exact specification workflow below.
-3. **Protected compliance evidence.** Any addition, modification, deletion, or
-   rename involving conformance case source, manifest row or annotation,
-   declared verdict, status, rule assignment, or coverage requires the protected
-   evidence workflow below. So does any change to a canonical compliance
-   runner, adapter, oracle, baseline, gate, collection or invocation wiring, or
-   gate-integrity test that can alter collection, interpretation, verdict,
-   coverage, baseline identity, or whether the gate runs. Ordinary compiler
-   unit, integration, and regression tests are not protected by this gate.
+3. **Protected compliance evidence.** Any addition, modification, deletion,
+   or rename involving conformance case source, manifest row or annotation,
+   declared verdict, status, rule assignment, or coverage requires the
+   protected evidence workflow below. So does any change to a canonical
+   compliance runner, adapter, oracle, baseline, gate, collection or
+   invocation wiring, or gate-integrity test that can alter collection,
+   interpretation, verdict, coverage, baseline identity, or whether the gate
+   runs. Ordinary compiler tests are not protected.
+4. **Repository root.** A new top-level entry needs owner approval.
 
-Before asking for either protected approval, present the explanation and exact
-candidate boundary, then stop and wait. Approval covers only the named bytes
-and changes. Any changed candidate byte or scope returns to review.
+Before asking, present the explanation and exact candidate boundary, then
+stop and wait. Approval covers only the named bytes and changes; any changed
+byte or scope returns to review.
 
-No separate owner approval is required for task decomposition, claiming,
-implementation, ordinary tests, documentation, bounded probes, integration,
-or closure inside an `ACTIVE` plan. The lead may also create and execute a
-subordinate task discovered during execution when it supports the approved
-plan and does not alter its direction or protected boundaries.
+## The batch loop
 
-A high-level plan approval does not preapprove later specification or
-conformance changes. Conversely, task autonomy does not permit an agent to
-turn a subordinate discovery into a new direction.
-
-## High-level plan lifecycle
-
-The Current Plan describes the whole approved undertaking, not one temporary
-task. It may contain several stages, workstreams, blockers, and task families.
-It states:
-
-- why the work matters and which Direction Outline items it advances;
-- the principal consumer or experiment and its authentic boundary;
-- the major workstreams and their dependency order;
-- invariants and protected boundaries that must not drift;
-- expected specification or conformance decision points;
-- verification, acceptance, and stop conditions; and
-- explicitly excluded work.
-
-The lifecycle is:
+Work advances in batches — typically one working session. One lead session
+owns each batch end to end:
 
 ```text
-Direction Outline + evidence
-  -> AI drafts PROPOSED high-level plan
-  -> independent review
-  -> owner explanation and selection
-  -> ACTIVE high-level plan
-  -> autonomous planned/ongoing/done task execution
-  -> terminal evidence and plan closure or replacement
+owner sets direction (a sentence or two)
+        |
+        v
+lead decomposes the batch
+  - parallel executors in isolated worktrees when scopes are file-disjoint
+  - sequential work in the lead's tree when coupled
+  - the lead assigns boundaries; no claim files, no reservation protocol
+        |
+        v
+executors return diffs; the diff is the report
+lead reviews every diff, integrates, keeps the gate green
+        |
+        v
+batch end: make check green
+        -> adversarial audit (independent finders + refuters)
+        -> one batch record finalized
+        |
+        v
+owner reads the batch review: approve / reject / redirect
+(protected boundaries above stop mid-flight regardless)
+        |
+        v
+merge to main -> next batch
 ```
 
-`PROPOSED` authorizes no execution. Owner approval changes it to `ACTIVE`;
-rejection or parking changes it to `NO ACTIVE PLAN` or replaces it with another
-proposal. The approval is recorded in the plan's status and authority text;
-ordinary plan selection does not need a separate approval-ledger entry.
+Rules of the loop:
 
-While a plan is `ACTIVE`, the lead may autonomously refine task decomposition,
-ordering, progress, evidence links, implementation choices, and bounded
-supporting research. A newly discovered compiler defect, prerequisite, or
-diagnostic investigation may become a subordinate task without changing the
-plan.
+- **Executors are tools, not principals.** An executor receives a precise
+  brief, implements exactly it, and reports honestly; a blocker or
+  out-of-scope discovery is a successful stopped outcome when reported with a
+  reproduction — never hacked around, absorbed by weakening a check, or
+  quietly narrowed. Executors do not spawn sub-batches or redesign the plan.
+- **One live worktree has one writer.** Never commit, reset, rebase, or edit
+  inside another live executor's worktree; integrate from a worktree the
+  integrator owns.
+- **The lead verifies; reports are leads, not evidence.** Load-bearing
+  claims from any executor are reproduced by the lead before they reach a
+  batch record or an owner packet.
+- **External or unsupervised batches** (work delegated to another agent or
+  produced outside a lead session) merge only after an entry audit. Trust is
+  per batch and established by audit, never assumed.
 
-Return to `PROPOSED` and owner review when a change would alter the approved
-objective, overall strategy, semantic direction, principal boundary, acceptance
-or stop conditions, or materially expand the risk being accepted. Do not use a
-large number of side tasks to conceal such a change.
+## Batch records
 
-Replacing the Current Plan is a coordination barrier. Unclaimed planned tasks
-from the old plan are deleted in the same change unless the replacement
-explicitly carries them.
-An ongoing task continues only when the new `ACTIVE` plan carries its exact
-scope. A `PROPOSED` plan cannot carry execution authority.
+One numbered record per batch: registered in `docs/ongoing/` as
+`NNNN-short-slug.md` when the batch starts, moved unchanged in number to
+`docs/done/` in the integration change. Numbers continue the existing
+sequence, `max(existing) + 1`, and are never reused. `docs/planned/` is
+retired; decomposition lives inside the batch record or the plan.
 
-## Task lifecycle
+A batch record is a boundary document, never a journal. It states the
+authority (plan item or owner direction), scope and exclusions, the approval
+classes the batch will touch, and — at closure — the outcome, landed
+commits, verification results, and dispositions of audit findings. Progress
+narration is forbidden: record updates ride the work commits they describe,
+and a docs-only commit is exceptional. Transient state belongs to the
+session; evidence belongs in the commit messages of the work itself.
 
-Tasks are independently integrable pieces of an `ACTIVE` plan:
+A batch handed to another agent (an overnight delegation, an external tool)
+gets its record written before the handoff; that record is the batch
+contract the entry audit checks against.
 
-- `docs/planned/` holds decision-complete tasks not yet claimed;
-- `docs/ongoing/` holds claimed or immediately started tasks; and
-- `docs/done/` holds concise terminal history for work that actually ran.
+## The batch audit
 
-The planned stage is optional. Immediate work may register directly in
-`docs/ongoing/`, but its registration commit must land before substantive work.
-Several agents contributing to one deliverable share one record; read-only
-reviewers do not create records.
+The audit is the enforcement mechanism for tier-3 guidance and the entry
+check for external batches. It is adversarial by construction: independent
+finder agents sweep the batch across dimensions (plan-vs-actual, governance,
+protected evidence, code quality, design-memory sync), and each major
+finding is independently re-verified by a skeptic briefed to refute it.
+Findings are repaired or explicitly dispositioned in the batch record; a
+refuted finding is recorded as refuted.
 
-### Register
-
-After refreshing the integration branch, allocate consecutive numbers beginning
-at `max(existing numbers) + 1` across all three task directories. Names are
-`NNNN-short-slug.md`. The first registration commit assigns each number
-permanently; a concurrent later registration refreshes and renumbers. Assigned
-or deleted numbers are never reused.
-
-A planned record contains:
-
-- `Authority`: the exact `ACTIVE` plan item;
-- `Goal`, direction, scope, invariants, method, and expected touch set;
-- dependencies and integration order;
-- validation and done criteria; and
-- a stop condition.
-
-It must be small enough for one executor context, independently integrable, and
-free of unwritten design choices. Planned records authorize nothing beyond the
-active plan.
-
-### Claim or start
-
-Claiming moves a record from `planned` to `ongoing` without renumbering and
-adds `Status` (`IN PROGRESS`, `WAITING`, or `BLOCKED`), owner, workspace or
-branch, base revision, and current progress. Refresh immediately before
-claiming; the claim commit must land before substantive work begins. The first
-claim to land wins. Work registered directly in `ongoing` supplies the same
-fields in its registration commit. `ACTIVE` is reserved for the Current Plan.
-
-Claim only when each listed premise is terminal, or when cross-linked records
-explicitly permit overlap after the exact required premise commit or canonical
-result has landed and state the integration order. A parent task may create a
-subordinate task that runs alongside it; link the parent and child with an
-explicit integration order rather than falsely requiring the parent to finish
-first.
-
-### Dependencies and side tasks
-
-Ordinary textual overlap is a rebase warning. Semantic or authority overlap—
-the same language rule, ABI, effect or resource model, proof contract, durable
-decision, correctness oracle, plan, or protected evidence—requires cross-linked
-records and one stated integration order.
-
-The lead may register a subordinate side task without owner approval when it:
-
-- directly advances or unblocks the exact active-plan item and is
-  proportionate to it;
-- has a bounded goal and stop condition;
-- does not change the high-level direction or acceptance boundary; and
-- does not cross the specification or protected-compliance gates.
-
-If any condition fails, stop and route the discovery back to the relevant
-approval boundary instead of disguising it as a side task.
-
-### Execute and integrate
-
-An executor reads this workflow, the full task record, and its cited
-authorities; works in an isolated worktree; implements exactly the written
-scope; runs the required gates; and submits the result for lead review. A
-blocker, plan defect, or out-of-scope discovery is a successful stopped outcome
-when reported with a reproduction. Never hack around it, weaken evidence, or
-quietly narrow the deliverable.
-
-One live worktree has one writer. Do not commit, reset, rebase, or edit inside
-another executor's worktree. Integration and conflict resolution happen in a
-worktree owned by the integrator.
-
-Before resuming, rebasing, or integrating, refresh the integration branch,
-reread relevant task records and changed authorities, rebase, and rerun the
-gates owed by those changes. Review challenges relevance, proportionality,
-sequencing, and correctness.
-
-### Close
-
-First put facts, measurements, decisions, and live status in their canonical
-homes. Then move the same record from `ongoing` to `done` in the integration
-change and set `DONE`, `PARKED`, `REPLACED`, or `ABANDONED`. Replace live
-operational detail with outcome, landed commits, canonical evidence,
-validation, and remaining follow-up.
-
-If live dependents exist, the same integration change replaces their task link
-with the landed commit or canonical result and records the refresh, rebase, and
-gates now owed.
-
-Done records are frozen coordination history, not a second roadmap, plan,
-results report, decision tree, approval ledger, compiler status, or
-specification. A planned task that never starts is deleted rather than moved to
-done; its number remains burned.
+The audit also reports the batch's own economics: substance versus
+bookkeeping commits, gate wall time, and what landed. A process element that
+fails to pay measured rent is a finding.
 
 ## Execution discipline
-
-The owner selects the high-level plan and protected changes. The lead owns task
-decomposition, bounded side work, design within the approved boundaries,
-review, and integration. Executors maximize throughput inside one written task;
-they do not redesign the plan.
 
 Before changing code, answer:
 
 1. What concrete compiler capability, real program, or experiment does this
    unlock?
-2. Which `ACTIVE` plan item and task record authorize it?
+2. Which `ACTIVE` plan item or owner direction authorizes it?
 3. What is the smallest general implementation?
 4. Does it exercise the normal compiler path rather than a project, function,
    source-shape, corpus, or test special case?
 5. Has supporting machinery become larger than the capability it serves?
 
-Freeze the real consumer boundary, oracle, and cost obligation before changing
-the implementation. A project selects pressure, not language semantics. Adapt
-project code when a Whitefoot-native form preserves the frozen behavior; make
-compiler changes general and project-independent.
+Freeze the real consumer boundary, oracle, and cost obligation before
+changing the implementation. A project selects pressure, not language
+semantics; make compiler changes general and project-independent. For
+performance work, attribute the loss before optimizing, with a same-source
+causal comparison and a falsifier.
 
-For performance work, attribute the loss before optimizing. Use a same-source
-causal comparison, record the expected code-shape consequence and a falsifier,
-and retain parity or negative results. A workaround that changes behavior,
-errors, ownership boundary, required complexity, or a preregistered performance
-band cannot close the task.
+Record durable design choices and rejected alternatives through the
+`mcts-mem-use` skill. A re-decision must be recorded within its batch; the
+audit checks for silent divergence between the tree and the landed code.
 
 ## Blocker routing
 
 - **Compiler defect:** implemented behavior contradicts the active spec. Add
   the smallest regression and fix the normal path without changing normative
   expectations.
-- **Unsupported specified capability:** the spec determines behavior but the
-  compiler stops as unsupported. Implement it only when the active plan needs
-  it; never report it as invalid source.
-- **Protected-evidence issue:** conformance or another protected compliance
-  artifact appears wrong or needs expansion. Reproduce it, keep the active spec
-  authoritative, and enter the protected evidence workflow before landing a
-  change.
-- **Research or performance question:** evidence is insufficient. Run the
-  cheapest bounded probe with a hypothesis, observable, and stop condition.
-  A plan-supporting probe is an autonomous side task.
-- **Language gap:** the active spec is ambiguous, incomplete, or should change.
-  Record the minimal witness. If the active high-level plan does not already
-  contain this direction, return to plan approval; in all cases, exact spec
-  bytes still require their own approval.
-- **Project-local issue:** adapt the project rather than generalizing the
-  language or compiler when the frozen contract is preserved.
+- **Unsupported specified capability:** implement it only when the active
+  plan needs it; never report it as invalid source.
+- **Protected-evidence issue:** reproduce it, keep the active spec
+  authoritative, and enter the protected evidence workflow before landing.
+- **Research or performance question:** run the cheapest bounded probe with
+  a hypothesis, observable, and stop condition.
+- **Language gap:** record the minimal witness; if the active plan does not
+  contain the direction, return to plan approval. Exact spec bytes always
+  require their own approval.
+- **Project-local issue:** adapt the project when the frozen contract is
+  preserved, rather than generalizing the language or compiler.
 
-A soundness defect may preempt other work. Fix it with hostile regression
-evidence, then return to the active plan. A second or unexpected blocker does
-not automatically require owner review; the deciding question is whether its
-resolution changes the approved high-level plan or a protected boundary.
+A soundness defect may preempt other work; fix it with hostile regression
+evidence, then return to the batch.
 
 ## Evidence discipline
 
@@ -331,48 +261,44 @@ directions at once.
 
 ## Specification-change workflow
 
-Use this branch only for a real language gap named by the `ACTIVE` high-level
-plan. Candidate preparation is non-authoritative; owner approval is required
+Use this workflow for a real language gap named by the `ACTIVE` plan.
+Candidate preparation is non-authoritative; owner approval is required
 before activation.
 
 1. **Bound the delta.** Consult the relevant live MCTS node and rejected
-   alternatives with the `mcts-mem-use` skill. Inventory grammar, names, types,
-   ownership, effects, runtime behavior, checks, diagnostics, ABI, conformance,
-   compiler, examples, and documentation as changed, unchanged, or not
-   applicable.
-2. **Draft one exact candidate.** Edit `spec/kernel-spec.md` on the task branch,
-   bump the version, and include its final status wording. Prepare
-   `spec/kernel-spec-vPREVIOUS.md` from the previously active bytes in the same
-   reviewable change; fail if that immutable archive path already exists.
-   Concurrent spec branches rebase onto the selected predecessor and recompute
-   the complete digest. Never resolve the stable spec with `ours` or `theirs`.
-3. **Prepare evidence.** Derive positive, negative, and near-miss expectations.
-   For grammar or syntax changes, run the production verifier:
-
-   ```sh
-   cargo run --manifest-path compiler/Cargo.toml --bin whitefoot-grammar -- \
-     spec/kernel-spec-vPREVIOUS.md spec/kernel-spec.md
-   ```
-
-   Review the exact diff, impact inventory, protected changes, verifier output,
-   real-program effect, accepted-set risk, limitations, archive action, and the
-   SHA-256 of the complete candidate.
-4. **Explain and wait.** Present the owner-facing explanation before asking for
-   approval. Then stop and wait for the owner's explicit response; do not
-   continue activation in the same turn. Approval covers only the exact bytes
-   and named changes. Record it in `governance/APPROVALS.md`. Any byte or scope
-   change, including a rebase resolution, requires a new explanation and
-   approval.
-5. **Activate atomically.** Land the approved stable bytes, outgoing immutable
-   archive, one exact chained record
-   `ACTIVE-SPEC: vN <new-sha256> <previous-sha256>`, compiler and generated
-   changes, approved conformance changes, docs, plan/outline updates, and other
-   derived material as one coherent activation. Valid but unsupported behavior
-   remains unsupported, never rejection.
-6. **Verify and close.** Recompute the installed digest, check archive identity
-   and the activation chain, run focused and complete gates, inspect every
-   impact row, and rerun the same frozen real consumer and oracle. Update MCTS
-   only for a real durable decision or rejected alternative.
+   alternatives with the `mcts-mem-use` skill. Inventory grammar, names,
+   types, ownership, effects, runtime behavior, checks, diagnostics, ABI,
+   conformance, compiler, examples, and documentation as changed, unchanged,
+   or not applicable.
+2. **Draft the candidate in place.** Edit `spec/kernel-spec.md` on the
+   branch and declare it: the status line becomes
+   `Status: CANDIDATE vN+1 supersedes vN <sha256-of-vN>`, where the digest is
+   the activation-chain tail. Under candidate mode the full gate runs green
+   on the branch throughout drafting; the candidate's own digest is not
+   recorded until activation. Never resolve the stable spec with `ours` or
+   `theirs`; a rebase onto a moved chain tail recomputes the declaration.
+3. **Prepare evidence.** Derive positive, negative, and near-miss
+   expectations. For grammar changes, run the two-path production verifier
+   against the predecessor bytes (from the activation commit or the
+   versioned archive once it exists) and the candidate. Assemble the exact
+   diff, impact inventory (the `whitefoot-spec --index` reference graph is
+   its mechanical source), protected changes, verifier output, accepted-set
+   risk, and the complete candidate SHA-256.
+4. **Explain and wait.** Present the owner-facing explanation and the exact
+   digest, then stop and wait for the owner's explicit approval. Record it
+   in `governance/APPROVALS.md`. Any byte or scope change, including a
+   rebase, requires renewed approval.
+5. **Activate atomically.** In one commit: archive the outgoing bytes as
+   `spec/kernel-spec-vN.md`, failing if that path exists; flip the status
+   line to `Status: ACTIVE vN+1`; append the chained record
+   `ACTIVE-SPEC: vN+1 <new-sha256> <previous-sha256>`; regenerate the
+   identity module (`whitefoot-spec --emit-identity`) and grammar tables;
+   land approved conformance changes and derived material together. Valid
+   but unsupported behavior remains unsupported, never rejection.
+6. **Verify and close.** The gate must be green on both sides of the
+   activation commit. Recompute the installed digest independently, inspect
+   the impact rows, rerun the frozen real consumer, and record any durable
+   decision in MCTS.
 
 Released versioned specification archives are append-only and are never
 edited, renamed, or deleted.
@@ -407,26 +333,14 @@ unsupported feature cannot rewrite normative expectations.
 
 Use `/Users/bytedance/do_not_scan` for scratch files and test artifacts.
 
-For compiler work, run before and after:
+Run `make -C compiler check` before and after compiler work, and `make
+check` before committing a completed slice. Read exit codes directly, never
+through a pipe. A green gate states only what it exercises. Keep required
+runtime checks unless machine proof discharges them; optional facts may not
+change acceptance, cleanup, output, or required trap behavior.
 
-```sh
-make -C compiler check
-```
-
-Before committing a completed repository slice, run:
-
-```sh
-make check
-```
-
-A green gate states only what it exercises. Keep required runtime checks unless
-machine proof discharges them; optional facts may not change acceptance,
-cleanup, output, or required trap behavior. Every new fact producer/consumer
-pair needs bounded positive, near-miss, invalidation, and facts-off evidence.
-
-At closure, put semantics in the spec, implementation facts in code/tests and
-the compiler README, measurements in the canonical results record, durable
-decisions in MCTS, and protected approvals in the ledger. Update the Direction
-Outline and the high-level Current Plan once, rather than copying status into
-supporting prose. Keep commits cohesive and never weaken evidence to turn a
-gate green.
+At closure, put semantics in the spec, implementation facts in code/tests
+and the compiler README, measurements in the canonical results record,
+durable decisions in MCTS, protected approvals in the ledger, and the batch
+outcome in the batch record. Update the Direction Outline and the Current
+Plan once, rather than copying status into every document.

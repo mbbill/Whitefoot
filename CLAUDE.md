@@ -40,12 +40,11 @@ probably not the next work.
   derived from one outline revision and cannot authorize a direction the
   outline has not selected. `PROPOSED` authorizes no execution; the owner
   approves a high-level plan before it becomes `ACTIVE`.
-- `docs/ongoing/` contains one numbered temporary coordination record per
-  substantial in-flight task or distinct handoff boundary. `docs/done/`
-  retains the same numbered record after terminal disposition. Both report how
-  authorized work was carried out; neither selects, expands, or resequences
-  work by itself, and neither replaces the canonical homes for facts,
-  measurements, decisions, or status.
+- `docs/ongoing/` contains one numbered coordination record per live batch of
+  work or distinct handoff boundary. `docs/done/` retains the same numbered
+  record after integration. Both report how authorized work was carried out;
+  neither selects, expands, or resequences work by itself, and neither
+  replaces the canonical homes for facts, measurements, decisions, or status.
 - The active specification at `spec/kernel-spec.md`, named by
   `docs/roadmap.md`, defines the language. Compiler behavior, tests, archived
   code, and design prose do not.
@@ -74,12 +73,12 @@ exact change boundary, then stop and wait for explicit approval. Specification
 requests additionally carry the complete candidate SHA-256, diff, impact
 inventory, and verifier results; a changed byte returns to that hard wait.
 
-After a plan is `ACTIVE`, its task decomposition, claiming, implementation,
-ordinary tests, documentation, bounded supporting probes, integration, and
-closure proceed autonomously. The lead may register subordinate side tasks that
-support the plan without changing its direction. Task autonomy never permits a
-specification or protected-compliance change, or a material plan expansion,
-without the corresponding approval above.
+After a plan is `ACTIVE`, batch decomposition, implementation, ordinary
+tests, documentation, bounded supporting probes, integration, and closure
+proceed autonomously. The lead may take on subordinate side work that
+supports the plan without changing its direction. Batch autonomy never
+permits a specification or protected-compliance change, or a material plan
+expansion, without the corresponding approval above.
 
 ## Goal discipline
 
@@ -106,57 +105,33 @@ and private interfaces that can evolve.
 Review must challenge relevance, proportionality, and sequencing as well as
 technical soundness.
 
-## Parallel task coordination
+## Batch coordination
 
-Every substantial independently integrable task, or task with a distinct
-integration or handoff boundary, has one short numbered file under
-`docs/ongoing/` while it is live. Agents contributing to one deliverable share
-its record; read-only reviewers do not create another. Publish the record to
-the integration branch before substantial work so other workspaces can see it.
+Work advances in lead-orchestrated batches, typically one working session
+each. The owner sets direction; one lead session decomposes the batch,
+dispatches executors (isolated worktrees for file-disjoint parallel scopes,
+sequential work when coupled), reviews every returned diff, integrates, and
+keeps the gate green. The lead assigns scope boundaries directly; there are
+no claim files and no reservation protocol. Executors are tools, not
+principals: they implement exactly their brief, report blockers honestly
+with a reproduction, and never hack around one, weaken a check, or quietly
+narrow a deliverable. One live worktree has one writer.
 
-Task records move through at most three stages: `docs/planned/` holds tasks
-decomposed from an `ACTIVE` plan but not yet claimed, `docs/ongoing/` holds
-claimed in-flight tasks, and `docs/done/` holds terminal history. Claiming is
-one commit that moves the file from `docs/planned/` to `docs/ongoing/`
-unchanged in number and fills in owner, workspace, and base revision; the
-first claim to land on the integration branch wins. Claim only when each listed
-premise is terminal, or when cross-linked records explicitly allow overlap
-after a named premise commit has landed and state the integration order.
-Planned files authorize nothing; when their plan is replaced, unclaimed tasks
-are deleted in the same change unless the new plan carries them.
+Each batch has one numbered record: `docs/ongoing/NNNN-short-slug.md` while
+live, moved unchanged in number to `docs/done/` in the integration change.
+Numbers continue one shared monotonic sequence and are never reused. A
+record is a boundary document — authority, scope, approval classes, and at
+closure the outcome, landed commits, verification, and audit dispositions.
+Progress narration is forbidden; record updates ride the work commits they
+describe, and a docs-only commit is exceptional. A batch handed to another
+agent gets its record written before the handoff as the batch contract.
 
-Names use `NNNN-short-slug.md`, with one zero-padded monotonically increasing
-sequence shared by `docs/planned/`, `docs/ongoing/`, and `docs/done/`. After
-refreshing the integration branch, allocate `max(existing numbers) + 1` in the
-task's first registration commit. The number never changes or returns to the
-pool. If two concurrent registrations choose the same number, the later
-integration renumbers before landing.
-
-Executor agents implement; they do not research, explore, redesign, or plan.
-An executor reads `docs/WORKFLOW.md` and the claimed task's cited authorities,
-works in an isolated worktree, executes exactly the written scope, and lands
-changes only through lead review. A blocker, plan defect, or discovery outside
-the cited authority stops the task and is reported honestly with reproduction
-evidence — never hacked around, absorbed by weakening a check or test, or
-quietly narrowed. An honest blocked report is a successful executor outcome.
-The owner approves high-level direction and protected changes; the lead owns
-task decomposition, review, and integration inside the `ACTIVE` plan. See the
-Execution discipline section of `docs/WORKFLOW.md`.
-
-At terminal disposition, move the same numbered file to `docs/done/` in the
-integration change. Use final status `DONE`, `PARKED`, `REPLACED`, or
-`ABANDONED`, and replace live current/next detail with a concise outcome,
-landed commits, canonical evidence, validation, and remaining dependency or
-follow-up links. A done record is frozen coordination history, not a second
-roadmap, results report, decision tree, approval ledger, or source of authority.
-
-Before starting, resuming, rebasing, or integrating a task, refresh the
-integration branch and read relevant ongoing records. Their scope is advisory,
-not a file lock. Textual overlap is allowed, but semantic or authority overlap
-requires cross-linked dependencies and an explicit integration order; it never
-resolves by last-writer-wins. A task record cannot authorize or expand work.
-Follow the complete schema, refresh, rebase, numbering, and lifecycle rules in
-`docs/WORKFLOW.md`.
+Every batch ends with the adversarial batch audit — independent finders
+plus refuters — which enforces everything the machine-checked gates and the
+owner boundary do not; an external or unsupervised batch merges only after
+that audit. An executor report is a lead, not evidence: the lead reproduces
+load-bearing claims before they reach a record or an owner packet. Follow
+the complete loop in `docs/WORKFLOW.md`.
 
 ## Repository structure and hygiene
 
