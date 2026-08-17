@@ -18,9 +18,11 @@ column schema") and §4 Stage 1's "DIAG-1 enumerations to rows".
 
 It converts three of DIAG-1's enumerations into `wf-diag` fences. It is
 **content-preserving by mechanical reconstruction**: every fence cell is a
-verbatim substring of the base line it came from, and `verify-delta.rs`
-reconstructs each base line byte-for-byte from its row plus one declared
-reading template per fence. Nothing is reworded.
+verbatim substring of the base line it came from, and the one-shot
+`verify-delta.rs` reconstructed each base line byte-for-byte from its row plus
+one declared reading template per fence before it was deleted with the
+integrated ratchet cuts (`PASS-EVIDENCE.md` records that run). Nothing is
+reworded.
 
 It does **not** reduce bytes. Measured below: the restructure is +386 B. The
 DOSSIER's "−~12 KB DIAG-1/DIAG-2 prose scaffolding" estimate does not survive
@@ -181,7 +183,7 @@ what makes the rows reconstructible.
 
 ## 4. Byte accounting
 
-Measured by `verify-delta.rs` check C7 (see `PASS-EVIDENCE.md`):
+Measured by the deleted `verify-delta.rs` check C7 (see `PASS-EVIDENCE.md`):
 
 | span | base B | new B | delta |
 |---|---|---|---|
