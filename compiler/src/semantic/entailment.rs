@@ -599,6 +599,27 @@ pub(crate) struct StrictEntailmentRoot {
     pub(crate) derivation: DerivationId,
 }
 
+/// One O11 signed-Boolean-decomposition candidate, recorded at a
+/// complete-view signed-goal establishment point.
+///
+/// This is acceptance-dark candidate metadata for the v0.31 O11 boolean
+/// composition item: the members and their retained projections are exactly
+/// what the candidate rule would establish (`+band` and `-bor` decompose
+/// into signed children, `bnot` flips, `-band`/`+bor`/`bxor` decompose on
+/// no sign), but nothing establishes them as facts in this version, so
+/// v0.30 acceptance is untouched. Activation establishes precisely these
+/// members at the same establishment sites. Design and delta:
+/// `research/investigations/o11-composition/`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BooleanGoalDecomposition {
+    /// The established parent goal.
+    pub(crate) parent: state::GoalId,
+    /// The parent's established sign at the recording point.
+    pub(crate) sign: state::GoalSign,
+    /// The signed decomposition set in deterministic structural walk order.
+    pub(crate) members: Vec<(state::GoalId, state::GoalSign)>,
+}
+
 /// Retained summary of one function's entailment analysis [DIAG-2].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionEntailment {
@@ -624,6 +645,9 @@ pub(crate) struct FunctionEntailment {
     pub(crate) s7_derivations: Vec<S7Derivation>,
     /// Present exactly for a concrete function carrying an FN-9 declaration.
     pub(crate) postcondition: Option<FunctionPostconditionProof>,
+    /// O11 candidate decomposition sets recorded at complete-view signed-goal
+    /// establishments; never an acceptance input in this version.
+    pub(crate) boolean_decompositions: Vec<BooleanGoalDecomposition>,
     /// Function-local, lifetime-bound derivations for mandatory DIAG-2 roots.
     pub(crate) derivations: DerivationLedger,
     /// Canonical term and goal identities moved from the analyzer so every

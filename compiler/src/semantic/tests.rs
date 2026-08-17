@@ -1,6 +1,7 @@
 #![allow(clippy::panic)]
 
 mod arrays;
+mod boolean_composition;
 mod borrows;
 mod boxes;
 mod buffers;

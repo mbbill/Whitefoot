@@ -249,9 +249,10 @@ impl Analyzer<'_, '_> {
     ) {
         let event = self.proof_event(event_kind, Some(node_path));
         let goals = self.goal_origin_set(condition, state);
-        for goal in goals {
+        let view = state.proof_view();
+        for goal in &goals {
             state.establish_goal(
-                goal,
+                *goal,
                 super::super::state::GoalSign::Positive,
                 &mut self.derivations,
                 event,
@@ -259,6 +260,10 @@ impl Analyzer<'_, '_> {
         }
         if let Some(relation) = self.scrutinee_relation(condition, state) {
             state.establish(&relation, &mut self.derivations, event);
+        }
+        // [O11 candidate] Retained decomposition metadata only; no fact.
+        for goal in goals {
+            self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, view);
         }
     }
 
@@ -282,6 +287,12 @@ impl Analyzer<'_, '_> {
         if let Some(relation) = self.goals.projection(goal).cloned() {
             state.establish(&relation, &mut self.derivations, event);
         }
+        // [O11 candidate] Retained decomposition metadata only; no fact.
+        self.record_boolean_decomposition(
+            goal,
+            super::super::state::GoalSign::Positive,
+            state.proof_view(),
+        );
     }
 
     // ------------------------------------------------------------------
