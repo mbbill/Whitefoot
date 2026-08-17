@@ -24,6 +24,7 @@ fn general_scalar_and_enum_borrows_execute_through_host_llvm() {
             .as_slice(),
         include_bytes!("../../../../tests/conformance/cases/own11-pos-loop-inner-region.wf")
             .as_slice(),
+        include_bytes!("../../../../tests/conformance/cases/own3-pos-outlives-store.wf").as_slice(),
         include_bytes!("../../../../tests/conformance/cases/x-typ-uniq-deref-write-roundtrip.wf")
             .as_slice(),
         include_bytes!("../../../../tests/conformance/cases/x-enum-borrow-payload-live.wf")
