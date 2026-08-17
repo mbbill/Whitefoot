@@ -105,7 +105,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_expression_release_sites(scrutinee, sites)?;
                     self.collect_drop_release_sites(error_drops, sites)?;
                 }
-                CheckedStatement::Set { target, value, .. } => {
+                CheckedStatement::Set { target, value, .. }
+                | CheckedStatement::Replace { target, value, .. } => {
+                    // A [SET-2] commit derives no release of its own
+                    // [STOR-3]; only its offset and right-hand side can
+                    // carry release sites, exactly as for a Set commit.
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {

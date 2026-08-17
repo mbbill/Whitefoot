@@ -315,7 +315,8 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// value operands. Listing them explicitly is what makes the coverage
 /// assertion below two-sided — a new row is a failure unless someone decides
 /// which side it belongs on.
-const UNMODELLED_ROW_SPELLINGS: [&str; 10] = [
+const UNMODELLED_ROW_SPELLINGS: [&str; 11] = [
+    "buffer_vacant",
     "eeq",
     "ene",
     "cvt",

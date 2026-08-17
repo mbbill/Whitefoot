@@ -35,12 +35,38 @@ struct PlaceUseOptions {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [SET-2] target formation: exactly [SET-1]'s relation with the
+    /// copy/affine class judgment inverted and the region-free demand added.
+    pub(super) fn check_replace_target(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        self.check_mutation_target(function, node, bindings, loop_depth, true)
+    }
+
     pub(super) fn check_set_target(
         &self,
         function: &FunctionSignature,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
+    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+        self.check_mutation_target(function, node, bindings, loop_depth, false)
+    }
+
+    /// One judgment of a place's [SET-1]/[SET-2] mutation-target class: the
+    /// two statements share the complete writability relation and differ only
+    /// in the final selected type's required [OWN-1] class.
+    fn check_mutation_target(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        for_replace: bool,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let pbase = self
             .tree
@@ -70,11 +96,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_indexed_set_target(
-                function, node, &suffixes, subscript, bindings, loop_depth,
+                function,
+                node,
+                &suffixes,
+                subscript,
+                bindings,
+                loop_depth,
+                for_replace,
             );
         }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            return self.check_dereferenced_set_target(node, pbase, bindings);
+            return self.check_dereferenced_set_target(node, pbase, bindings, for_replace);
         }
         if !self.tree.children(pbase)?.is_empty() {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -143,17 +175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
         )?;
 
-        if !self.is_copy_type(ty)? {
-            return self.issue_node(
-                SemanticRule::Stor1,
-                node,
-                SemanticIssueKind::AffineSetTarget {
-                    target_type: self.checked_type_name(ty)?,
-                    mechanical_fix:
-                        "construct a fresh owner under a new let; do not replace an affine place",
-                },
-            );
-        }
+        self.check_mutation_target_class(node, ty, for_replace)?;
 
         Ok((
             declaration,
@@ -164,6 +186,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }),
             EffectSet::NONE,
         ))
+    }
+
+    /// The final selected type's [OWN-1] class judgment shared by the
+    /// [SET-1] and [SET-2] target paths: `set` demands copy [STOR-1], and
+    /// `replace` demands region-free affine [SET-2].
+    fn check_mutation_target_class(
+        &self,
+        node: NodeId,
+        ty: CheckedType,
+        for_replace: bool,
+    ) -> Result<(), CheckStop> {
+        if for_replace {
+            if self.is_copy_type(ty)? {
+                return self.issue_node(
+                    SemanticRule::Set2,
+                    node,
+                    SemanticIssueKind::InvalidReplaceTarget {
+                        target_type: self.checked_type_name(ty)?,
+                        mechanical_fix: "use set for a copy place; read the previous value bare",
+                    },
+                );
+            }
+            if matches!(ty, CheckedType::Slice { .. }) {
+                return self.issue_node(
+                    SemanticRule::Set2,
+                    node,
+                    SemanticIssueKind::InvalidReplaceTarget {
+                        target_type: self.checked_type_name(ty)?,
+                        mechanical_fix: "a slice's static origin set is fixed at initialization; \
+                                         bind a new slice under a new let",
+                    },
+                );
+            }
+            return Ok(());
+        }
+        if !self.is_copy_type(ty)? {
+            return self.issue_node(
+                SemanticRule::Stor1,
+                node,
+                SemanticIssueKind::AffineSetTarget {
+                    target_type: self.checked_type_name(ty)?,
+                    mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
+                },
+            );
+        }
+        Ok(())
     }
 
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
@@ -918,6 +986,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
+        for_replace: bool,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let (declaration, local, borrow) =
             self.resolve_dereference_holder(node, pbase, bindings)?;
@@ -939,20 +1008,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             AccessKind::Write,
             node,
         )?;
-        if !self.is_copy_type(ty)? {
-            return self.issue_node(
-                SemanticRule::Stor1,
-                node,
-                SemanticIssueKind::AffineSetTarget {
-                    target_type: self.checked_type_name(ty)?,
-                    mechanical_fix:
-                        "construct a fresh owner under a new let; do not replace an affine place",
-                },
-            );
-        }
+        self.check_mutation_target_class(node, ty, for_replace)?;
         let mut effects = EffectSet::NONE;
         if let Some(region) = borrow.origin_region {
             effects.add_write(region);
+            if for_replace {
+                // [SET-2, EFF-2]: the commit is one read and one write of
+                // the target's ultimate storage origin.
+                effects.add_read(region);
+            }
         }
         Ok((
             declaration,

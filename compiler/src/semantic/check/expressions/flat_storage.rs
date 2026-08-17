@@ -483,6 +483,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::semantic::check) fn check_indexed_set_target(
         &self,
         function: &FunctionSignature,
@@ -491,6 +492,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         subscript: usize,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
+        for_replace: bool,
     ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
         let suffix = suffixes[subscript];
         if subscript + 1 != suffixes.len() {
@@ -554,6 +556,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             function: function.name.clone(),
             node_path: self.tree.path(suffix)?.clone(),
         };
+        // [SET-1]/[SET-2] partition the element class exactly as they
+        // partition every other final selected type; every v0-constructible
+        // element is copy, so an element-position `replace` rejects here
+        // until an affine-element constructor exists.
+        let element_type = match &indexed {
+            CheckedIndexedPlace::Array(array) => array.element_type,
+            CheckedIndexedPlace::Buffer(buffer) => buffer.root.element.ty(),
+            CheckedIndexedPlace::Slice(_) => {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+        };
+        self.check_mutation_target_class(node, element_type, for_replace)?;
         let mut effects = offset.effects;
         let (declaration, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -584,6 +598,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedIndexedPlace::Buffer(buffer) => {
                 if let Some(region) = buffer.origin_region {
                     effects.add_write(region);
+                    if for_replace {
+                        // [SET-2, EFF-2]: one read and one write of the
+                        // target's ultimate storage origin.
+                        effects.add_read(region);
+                    }
                 }
                 (
                     buffer.declaration,

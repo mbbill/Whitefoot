@@ -1,0 +1,83 @@
+struct ByteVec {
+  buf: buffer<u8>;
+  fill: u64;
+}
+
+fn vec_new() -> own ByteVec allocates(heap), traps {
+  let empty = buffer_new(0_u64, 0_u8);
+  return ByteVec(buf: move empty, fill: 0_u64);
+}
+
+fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> own unit reads('a), writes('a), allocates(heap), traps {
+  let count = deref(v).fill;
+  let cap = len(deref(v).buf);
+  let full = ige(count, cap);
+  if full {
+    let ncap = cap + 8_u64;
+    let nbuf = buffer_new(ncap, x);
+    for @copy i in 0_u64..cap {
+      let e = deref(v).buf[i];
+      set nbuf[i] = e;
+    }
+    let old = replace deref(v).buf = move nbuf;
+    let grown = cap + 1_u64;
+    set deref(v).fill = grown;
+    return unit;
+  }
+  set deref(v).buf[count] = x;
+  let bumped = count + 1_u64;
+  set deref(v).fill = bumped;
+  return unit;
+}
+
+fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> own unit reads('d 's), writes('d), allocates(heap), traps {
+  let count = len(deref(src));
+  for @append i in 0_u64..count {
+    let byte = deref(src)[i];
+    region 'c {
+      vec_push<'c>(v: &uniq 'c deref(dst), x: byte);
+    }
+  }
+  return unit;
+}
+
+fn main() -> own unit allocates(heap), traps {
+  let v = vec_new();
+  let b = 7_u8;
+  for @seed i in 0_u64..20_u64 {
+    region 'push {
+      vec_push<'push>(v: &uniq 'push v, x: b);
+    }
+    set b = b +wrap 7_u8;
+  }
+  let total = v.fill;
+  check ieq(total, 20_u64) else trap "vector length";
+  let cap_now = len(v.buf);
+  check ieq(cap_now, 24_u64) else trap "vector capacity";
+  if ilt(3_u64, cap_now) {
+    let third = v.buf[3_u64];
+    check ieq(third, 28_u8) else trap "vector content at 3";
+  } else {
+    check False() else trap "vector capacity too small";
+  }
+  let s = vec_new();
+  region 'first {
+    vec_push<'first>(v: &uniq 'first s, x: 65_u8);
+  }
+  let raw = buffer_new(5_u64, 33_u8);
+  region 'grow {
+    bytes_append<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw);
+  }
+  let stored = s.fill;
+  check ieq(stored, 6_u64) else trap "byte string length";
+  let scap = len(s.buf);
+  if ilt(5_u64, scap) {
+    let last = s.buf[5_u64];
+    check ieq(last, 33_u8) else trap "byte string tail";
+    let head = s.buf[0_u64];
+    check ieq(head, 65_u8) else trap "byte string head";
+  } else {
+    check False() else trap "byte string capacity too small";
+  }
+  return unit;
+}

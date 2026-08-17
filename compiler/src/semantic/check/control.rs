@@ -599,6 +599,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 scope,
             );
         }
+        if let Some(replace) = self
+            .tree
+            .first_child_with(node, Production::ReplaceLetRhs)?
+        {
+            return self.check_replace_let(
+                function,
+                node,
+                replace,
+                declaration_id,
+                binding,
+                bindings,
+                scope,
+            );
+        }
         let rhs = self
             .tree
             .first_child_with(node, Production::OrdinaryLetRhs)?
@@ -673,6 +687,90 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 value: value.expression,
             },
             value.effects,
+        ))
+    }
+
+    /// [SET-2] `let x = replace p = e;`: SET-1's target order with the
+    /// affine class judgment, then the fresh old-value binding.
+    #[allow(clippy::too_many_arguments)]
+    fn check_replace_let(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        replace: NodeId,
+        declaration_id: DeclarationId,
+        binding: crate::BindingId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let target_node = self
+            .tree
+            .first_child_with(replace, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let expression_node = self
+            .tree
+            .first_child_with(replace, Production::Expr)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+
+        // [SET-2] fixes SET-1's order: form and check the target first
+        // (its affine, region-free class judged inside), then evaluate the
+        // right-hand side, then re-establish target-root liveness.
+        let (target_declaration, target, target_effects) =
+            self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
+        let value =
+            self.check_expression(function, expression_node, bindings, scope.loops.len())?;
+        // [TYPE-5]: the right-hand side must produce exactly `own T`.
+        if value.expression.ty() != target.ty() || value.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Type5,
+                expression_node,
+                SemanticIssueKind::TypeMismatch,
+            );
+        }
+        if !bindings
+            .get(&target_declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .live
+        {
+            return self.issue_node(
+                SemanticRule::Own1,
+                target_node,
+                SemanticIssueKind::UseAfterMove {
+                    mechanical_fix: "introduce a new `let` binding before reuse",
+                },
+            );
+        }
+        // The moved-out value's sole owner is the fresh ordinary binding;
+        // the target root stays live [SET-2, OWN-1].
+        if bindings
+            .insert(
+                declaration_id,
+                LocalBinding {
+                    binding,
+                    declaration: declaration_id,
+                    mode: CheckedMode::Own,
+                    ty: target.ty(),
+                    live: true,
+                    loop_depth: scope.loops.len(),
+                    compiler_updated: false,
+                    borrow: None,
+                    slice: None,
+                    slice_loans: Vec::new(),
+                    suspended: false,
+                },
+            )
+            .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::Replace {
+                node_path: self.tree.path(node)?.clone(),
+                binding,
+                target,
+                value: value.expression,
+            },
+            value.effects.union(target_effects),
         ))
     }
 

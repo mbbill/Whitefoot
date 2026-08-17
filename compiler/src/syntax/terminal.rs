@@ -199,10 +199,12 @@ pub enum FixedTerminal {
     Ensures,
     /// `deny_claims`.
     DenyClaims,
+    /// `replace`.
+    Replace,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 90] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 91] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -252,6 +254,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 90] = [
     FixedTerminal::If,
     FixedTerminal::Else,
     FixedTerminal::Propagate,
+    FixedTerminal::Replace,
     FixedTerminal::Set,
     FixedTerminal::Return,
     FixedTerminal::Loop,
@@ -390,6 +393,7 @@ impl FixedTerminal {
             Self::DotDot => b"..",
             Self::Ensures => b"ensures",
             Self::DenyClaims => b"deny_claims",
+            Self::Replace => b"replace",
         }
     }
 
@@ -464,21 +468,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 98] = {
-    let mut predicates = [TerminalPredicate::Identifier; 98];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 99] = {
+    let mut predicates = [TerminalPredicate::Identifier; 99];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[90] = TerminalPredicate::Identifier;
-    predicates[91] = TerminalPredicate::TypeIdentifier;
-    predicates[92] = TerminalPredicate::RegionIdentifier;
-    predicates[93] = TerminalPredicate::Label;
-    predicates[94] = TerminalPredicate::OperationName;
-    predicates[95] = TerminalPredicate::Literal;
-    predicates[96] = TerminalPredicate::String;
-    predicates[97] = TerminalPredicate::Digits;
+    predicates[91] = TerminalPredicate::Identifier;
+    predicates[92] = TerminalPredicate::TypeIdentifier;
+    predicates[93] = TerminalPredicate::RegionIdentifier;
+    predicates[94] = TerminalPredicate::Label;
+    predicates[95] = TerminalPredicate::OperationName;
+    predicates[96] = TerminalPredicate::Literal;
+    predicates[97] = TerminalPredicate::String;
+    predicates[98] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -486,14 +490,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 90,
-            Self::TypeIdentifier => 91,
-            Self::RegionIdentifier => 92,
-            Self::Label => 93,
-            Self::OperationName => 94,
-            Self::Literal => 95,
-            Self::String => 96,
-            Self::Digits => 97,
+            Self::Identifier => 91,
+            Self::TypeIdentifier => 92,
+            Self::RegionIdentifier => 93,
+            Self::Label => 94,
+            Self::OperationName => 95,
+            Self::Literal => 96,
+            Self::String => 97,
+            Self::Digits => 98,
         }
     }
 }
@@ -725,6 +729,7 @@ mod tests {
         assert_eq!(FixedTerminal::DotDot as u8, 87);
         assert_eq!(FixedTerminal::Ensures as u8, 88);
         assert_eq!(FixedTerminal::DenyClaims as u8, 89);
+        assert_eq!(FixedTerminal::Replace as u8, 90);
     }
 
     #[test]

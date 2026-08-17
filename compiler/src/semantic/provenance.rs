@@ -735,6 +735,7 @@ impl<'check> FunctionPass<'check> {
                 | CheckedStatement::Region { body, .. } => self.collect_holders(body)?,
                 CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -954,6 +955,37 @@ impl<'check> FunctionPass<'check> {
                             self.set_binding(resolved, place.ty, &value)?;
                         }
                     }
+                }
+                CheckedStatement::Replace {
+                    binding,
+                    target,
+                    value,
+                    ..
+                } => {
+                    // [SET-2]: the write half is exactly a Set commit's
+                    // dependency flow; the fresh binding additionally owns
+                    // the target's previous value, represented conservatively
+                    // by the complete resolved-root dependency (union-only,
+                    // so the fixed point stays monotone and fail-closed).
+                    self.scan_set_target(target, summaries)?;
+                    let value = self.expression(value, summaries)?;
+                    let aggregate = value.aggregate();
+                    let root = target.binding();
+                    let seed_every_value_component =
+                        self.set_seeds_every_value_component(target)?;
+                    self.add_root_write(root, &aggregate, seed_every_value_component)?;
+                    if let CheckedSetTarget::Place(place) = target
+                        && place.fields.is_empty()
+                    {
+                        let resolved = self.resolve_root(place.binding)?;
+                        if resolved == place.binding {
+                            self.set_binding(resolved, place.ty, &value)?;
+                        }
+                    }
+                    let previous = self.root(root)?;
+                    let previous =
+                        ValueDependencies::from_aggregate(target.ty(), &previous, self.nominals);
+                    self.set_binding(*binding, target.ty(), &previous)?;
                 }
                 CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. } => {
@@ -1351,7 +1383,8 @@ fn binding_maximum(statements: &[CheckedStatement], maximum: &mut Option<u32>) {
     for statement in statements {
         match statement {
             CheckedStatement::Let { binding, .. }
-            | CheckedStatement::PropagateLet { binding, .. } => {
+            | CheckedStatement::PropagateLet { binding, .. }
+            | CheckedStatement::Replace { binding, .. } => {
                 include_binding(maximum, *binding);
             }
             CheckedStatement::Match { arms, .. } => {
@@ -1763,7 +1796,8 @@ fn collect_block_sites(
                     }
                 }
             }
-            CheckedStatement::Set { target, value, .. } => {
+            CheckedStatement::Set { target, value, .. }
+            | CheckedStatement::Replace { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
                     CheckedSetTarget::ArrayIndex(target) => {
@@ -2676,9 +2710,13 @@ impl<'check> CarrierReconstructor<'check> {
                         function, body, binding, selector, goal, visited, route,
                     )?;
                 }
+                // A replace-bound value's origin is storage, not an
+                // expression; yielding no carrier route here is the
+                // fail-closed disposition [PRV-1].
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -2739,6 +2777,7 @@ impl<'check> CarrierReconstructor<'check> {
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -2920,6 +2959,12 @@ impl<'check> CarrierReconstructor<'check> {
                     node_path,
                     target,
                     value,
+                }
+                | CheckedStatement::Replace {
+                    node_path,
+                    target,
+                    value,
+                    ..
                 } => {
                     if pass.resolve_root(target.binding())? == root {
                         choose_carrier_route(
@@ -3273,6 +3318,7 @@ impl<'check> CarrierReconstructor<'check> {
                 CheckedStatement::Let { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
                 | CheckedStatement::Check { .. }
@@ -3364,6 +3410,12 @@ impl<'check> CarrierReconstructor<'check> {
                     node_path,
                     target,
                     value,
+                }
+                | CheckedStatement::Replace {
+                    node_path,
+                    target,
+                    value,
+                    ..
                 } => {
                     let resolved = pass.resolve_root(target.binding())?;
                     let seeds_every_value_component =

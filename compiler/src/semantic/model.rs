@@ -1202,6 +1202,16 @@ pub(crate) enum CheckedStatement {
         target: CheckedSetTarget,
         value: CheckedExpression,
     },
+    /// A [SET-2] affine-place replacement: one read of the previous value
+    /// into the fresh binding and one write of the replacement into the
+    /// target, with no writer-observable point between them. The target
+    /// root stays live; the commit is not a consuming use.
+    Replace {
+        node_path: NodePath,
+        binding: BindingId,
+        target: CheckedSetTarget,
+        value: CheckedExpression,
+    },
     Evaluate(CheckedExpression),
     /// The discarded result of an expression statement, with the
     /// compiler-derived release it runs [STOR-3].

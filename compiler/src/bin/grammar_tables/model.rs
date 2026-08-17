@@ -112,6 +112,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("uniq", "Uniq"),
         ("let", "Let"),
         ("propagate", "Propagate"),
+        ("replace", "Replace"),
         ("set", "Set"),
         ("return", "Return"),
         ("loop", "Loop"),

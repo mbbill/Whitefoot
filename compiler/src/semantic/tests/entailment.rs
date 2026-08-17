@@ -167,6 +167,7 @@ fn collect_direct_calls<'checked>(
         match statement {
             CheckedStatement::Let { value, .. }
             | CheckedStatement::Set { value, .. }
+            | CheckedStatement::Replace { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),

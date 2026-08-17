@@ -44,7 +44,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 83] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 84] = [
     "+wrap",
     "-wrap",
     "*wrap",
@@ -90,6 +90,7 @@ pub(crate) const OPERATION_FAMILIES: [&str; 83] = [
     "arena_new",
     "array_new",
     "buffer_new",
+    "buffer_vacant",
     "iand",
     "ior",
     "ixor",
@@ -1389,7 +1390,7 @@ mod tests {
     #[test]
     fn exact_catalogs_are_closed_and_unique_where_required() {
         assert_eq!(PRELUDE_DECLARATIONS.len(), 24);
-        assert_eq!(OPERATION_FAMILIES.len(), 83);
+        assert_eq!(OPERATION_FAMILIES.len(), 84);
         assert_eq!(
             OPERATION_FAMILIES
                 .iter()

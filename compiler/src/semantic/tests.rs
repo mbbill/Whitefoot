@@ -28,6 +28,7 @@ mod options;
 mod postconditions;
 mod provenance;
 mod reinterpret;
+mod replace;
 mod requires;
 mod slices;
 mod strict;
@@ -992,8 +993,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
         SemanticRule::Stor1,
         SemanticIssueKind::AffineSetTarget {
             target_type: "Cell".to_owned(),
-            mechanical_fix:
-                "construct a fresh owner under a new let; do not replace an affine place",
+            mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
         },
     );
     assert_rule(
