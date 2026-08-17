@@ -41,6 +41,37 @@ fn general_scalar_and_enum_borrows_execute_through_host_llvm() {
     }
 }
 
+/// A borrow-returning call is typed by the callee's declared result mode: the
+/// call site receives an address, and a discarded borrow result is evaluated
+/// without any drop of the referent it does not own [OWN-2, TYPE-7, STOR-3].
+///
+/// Regression: the call definition used the referent value type and the
+/// borrow-typed callee result made the module invalid IR, an internal error
+/// on accepted source.
+#[test]
+fn a_discarded_borrow_returning_call_compiles_and_runs() {
+    let llvm = compile(
+        br#"fn source['r](x: &'r i32) -> &'r i32 pure {
+  return x;
+}
+
+fn main() -> own unit traps {
+  let v = 5_i32;
+  region 'a {
+    let h = &'a v;
+    source<'a>(x: h);
+  }
+  check ieq(v, 5_i32) else trap "owner value changed";
+  return unit;
+}
+"#,
+    );
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// A borrow-mode parameter crosses the call boundary as an address, so the
 /// callee's write lands in the caller's storage.
 #[test]

@@ -153,7 +153,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .first_child_with(node, Production::Call)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
                 let value = self.check_call(function, call, bindings, scope.loops.len())?;
-                let statement = if self.is_copy_type(value.expression.ty())? {
+                // A discarded borrow-mode result is a reference, never the
+                // owner of its referent: no drop or release may run for it
+                // [OWN-2, STOR-3]. Only an own-mode affine result is dropped.
+                let statement = if value.mode != CheckedMode::Own
+                    || self.is_copy_type(value.expression.ty())?
+                {
                     CheckedStatement::Evaluate(value.expression)
                 } else {
                     let release = self.release_of_type(value.expression.ty())?;
