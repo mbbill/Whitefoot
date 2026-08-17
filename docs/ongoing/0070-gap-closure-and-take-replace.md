@@ -68,7 +68,7 @@ regressions with negative controls.
 ### The v0.31 candidate
 
 `Status: CANDIDATE v0.31 supersedes v0.30 5ed21019…`, digest
-`fd77b195253d3c9552672faa7fcb4ab1b7266cbd75afa0f21cc7ba9e676ccf61`,
+`6657c3420bef8678be2e43bdf941d6db0095a4ccfece46c557beba26d09b07f4`,
 134 rules, grammar 74/96/99 two-path verified, five delta documents
 applied with byte-verified anchors, all integration switches live —
 the branch implements its candidate. Zero activation artifacts: no
